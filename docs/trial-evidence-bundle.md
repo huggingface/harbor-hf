@@ -802,6 +802,15 @@ identifies the selected execution, its checksum-manifest digest, and the reason
 executions, mismatched locks or summaries, and incomplete checksum envelopes are
 ambiguous and stop publication without writing a marker.
 
+A frozen-workspace reassessment verifies its source before extraction. The
+locked source checksum must match the canonical run checksum manifest, that
+manifest must bind the selected trial checksum manifest, and the trial checksum
+manifest must cover the exact retained trial tree. A stale, modified, or
+partially mounted source stops reassessment. Judge validation checks the
+forwarded model, reasoning policy, and absence of temperature directly; a
+request that already complied with those settings may legitimately record no
+transformation.
+
 ## Retention and access
 
 Trial evidence is private even when normalized result metadata is public. The

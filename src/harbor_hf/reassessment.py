@@ -22,6 +22,7 @@ import httpx
 from huggingface_hub import Sandbox
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from harbor_hf.evidence import verify_checksums
 from harbor_hf.judge_recorder import (
     JUDGE_RECORDER_PORT,
     JudgeEvidenceRecorder,
@@ -29,6 +30,7 @@ from harbor_hf.judge_recorder import (
     verify_judge_recorder_summary,
 )
 from harbor_hf.models import TrialEvidencePolicy
+from harbor_hf.publication_envelope import canonical_digest
 
 _OPENAI_CHAT_COMPLETIONS = "https://api.openai.com/v1/chat/completions"
 _GEMINI_CHAT_COMPLETIONS = (
@@ -238,20 +240,31 @@ def _assert_secrets_absent(root: Path, known_secrets: Iterable[str]) -> None:
             raise ReassessmentError("reassessment output contains a known secret")
 
 
-def _source_trial_root(evidence_root: Path, trial: ReassessmentTrial) -> Path:
+def _source_trial_root(
+    evidence_root: Path,
+    trial: ReassessmentTrial,
+    source: SourceEvaluation,
+) -> Path:
     root = evidence_root / trial.source_trial_path
+    expected = evidence_root / "runs" / source.run_id / "trials" / trial.trial_id
     if (
         not root.is_dir()
         or root.resolve().is_relative_to(evidence_root.resolve()) is False
+        or root.resolve() != expected.resolve()
     ):
         raise ReassessmentError("source trial root is missing or unsafe")
-    execution_lock = json.loads(
-        (
-            root / "executions" / trial.source_execution_id / "execution.lock.json"
-        ).read_text()
-    )
+    _verify_source_trial(root, evidence_root, trial, source)
+    try:
+        execution_lock = json.loads(
+            (
+                root / "executions" / trial.source_execution_id / "execution.lock.json"
+            ).read_text()
+        )
+    except (OSError, json.JSONDecodeError) as error:
+        raise ReassessmentError("source trial execution lock is invalid") from error
     if (
-        execution_lock.get("execution_id") != trial.source_execution_id
+        not isinstance(execution_lock, dict)
+        or execution_lock.get("execution_id") != trial.source_execution_id
         or execution_lock.get("trial_id") != trial.trial_id
         or execution_lock.get("task_name") != trial.task_name
         or execution_lock.get("task_digest") != trial.task_digest
@@ -259,6 +272,36 @@ def _source_trial_root(evidence_root: Path, trial: ReassessmentTrial) -> Path:
     ):
         raise ReassessmentError("source trial identity disagrees with plan")
     return root
+
+
+def _verify_source_trial(
+    root: Path,
+    evidence_root: Path,
+    trial: ReassessmentTrial,
+    source: SourceEvaluation,
+) -> None:
+    run_root = evidence_root / "runs" / source.run_id
+    run_manifest_path = run_root / "checksums.json"
+    trial_manifest_path = root / "checksums.json"
+    try:
+        run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ReassessmentError("source run checksum manifest is invalid") from error
+    if not isinstance(run_manifest, dict):
+        raise ReassessmentError("source run checksum manifest is invalid")
+    if canonical_digest(run_manifest) != source.source_checksum:
+        raise ReassessmentError("source run checksum does not match the plan")
+    relative_manifest = f"trials/{trial.trial_id}/checksums.json"
+    try:
+        trial_manifest_digest = _sha256(trial_manifest_path)
+    except OSError as error:
+        raise ReassessmentError("source trial checksum evidence is invalid") from error
+    if run_manifest.get(relative_manifest) != trial_manifest_digest:
+        raise ReassessmentError("source trial checksum is not bound to the run")
+    try:
+        verify_checksums(root)
+    except (OSError, RuntimeError) as error:
+        raise ReassessmentError("source trial checksum evidence is invalid") from error
 
 
 def _source_native_trial(source_trial_root: Path, trial: ReassessmentTrial) -> Path:
@@ -485,7 +528,6 @@ def _validate_judge_evidence(
             exchange.provider != expected_provider
             or exchange.forwarded_model != expected_model
             or exchange.outcome != "success"
-            or exchange.transformation != "parameters_enforced"
         ):
             raise ReassessmentError("reassessment judge exchange identity is invalid")
         forwarded = json.loads((path / "request-forwarded.bin").read_bytes())
@@ -639,7 +681,7 @@ def _execute_rejudge(
     final = _trial_output_root(output_root, trial)
     if _skip_or_require_absent(final, "reassessment trial"):
         return
-    source_root = _source_trial_root(evidence_root, trial)
+    source_root = _source_trial_root(evidence_root, trial, plan.source)
     native = _source_native_trial(source_root, trial)
     task_root, image, command = _task_config(tasks_root, trial)
     if image != plan.runtime_image:
@@ -798,8 +840,8 @@ async def _run_trials(
 
     async def one(trial: ReassessmentTrial) -> None:
         async with semaphore:
-            source_root = _source_trial_root(evidence_root, trial)
             if trial.action == "fixed_zero":
+                source_root = _source_trial_root(evidence_root, trial, plan.source)
                 await asyncio.to_thread(
                     _write_fixed_zero, output_root, trial, source_root, plan
                 )

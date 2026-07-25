@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
+from harbor_hf.evidence import write_checksums
+from harbor_hf.publication_envelope import canonical_digest
 from harbor_hf.reassessment import (
     ReassessmentError,
     ReassessmentPlan,
@@ -18,7 +23,9 @@ from harbor_hf.reassessment import (
     _recover_unambiguous_selection,
     _retain_failed_attempt,
     _reward,
+    _source_trial_root,
     _task_config,
+    _validate_judge_evidence,
     _write_fixed_zero,
     reassessment_plan_digest,
 )
@@ -129,6 +136,100 @@ def test_fixed_zero_requires_agent_failure() -> None:
     trial["source_reward"] = 1.0
     with pytest.raises(ValueError, match="nonzero"):
         ReassessmentTrial.model_validate(trial)
+
+
+def test_source_trial_is_checksum_bound_before_reassessment(tmp_path: Path) -> None:
+    payload = _plan_payload()
+    raw_trials = payload["trials"]
+    assert isinstance(raw_trials, list)
+    raw_trial = raw_trials[0]
+    assert isinstance(raw_trial, dict)
+    raw_trial = cast(dict[str, object], raw_trial)
+    trial_id = str(raw_trial["trial_id"])
+    execution_id = str(raw_trial["source_execution_id"])
+    evidence_root = tmp_path / "evidence"
+    trial_root = evidence_root / "runs" / "run" / "trials" / trial_id
+    execution = trial_root / "executions" / execution_id
+    execution.mkdir(parents=True)
+    (execution / "execution.lock.json").write_text(
+        json.dumps(
+            {
+                "execution_id": execution_id,
+                "trial_id": trial_id,
+                "task_name": raw_trial["task_name"],
+                "task_digest": raw_trial["task_digest"],
+                "logical_attempt": raw_trial["logical_attempt"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    archive = execution / "workspace.tar.zst"
+    archive.write_bytes(b"frozen workspace")
+    trial_manifest = trial_root / "checksums.json"
+    write_checksums(trial_root)
+    trial_manifest_digest = (
+        "sha256:" + hashlib.sha256(trial_manifest.read_bytes()).hexdigest()
+    )
+    run_manifest = {f"trials/{trial_id}/checksums.json": trial_manifest_digest}
+    (trial_root.parent.parent / "checksums.json").write_text(
+        json.dumps(run_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    source = payload["source"]
+    assert isinstance(source, dict)
+    source = cast(dict[str, object], source)
+    source["source_checksum"] = canonical_digest(run_manifest)
+    payload["plan_digest"] = reassessment_plan_digest(
+        {key: value for key, value in payload.items() if key != "plan_digest"}
+    )
+    plan = ReassessmentPlan.model_validate_json(json.dumps(payload))
+    trial = plan.trials[0]
+
+    assert _source_trial_root(evidence_root, trial, plan.source) == trial_root
+
+    archive.write_bytes(b"modified workspace")
+    with pytest.raises(ReassessmentError, match="checksum evidence is invalid"):
+        _source_trial_root(evidence_root, trial, plan.source)
+
+    write_checksums(trial_root)
+    with pytest.raises(ReassessmentError, match="not bound to the run"):
+        _source_trial_root(evidence_root, trial, plan.source)
+
+
+def test_reassessment_accepts_compliant_untransformed_judge_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    judge_root = tmp_path / "judge-records"
+    exchange_root = judge_root / "judge-0001"
+    exchange_root.mkdir(parents=True)
+    (exchange_root / "request-forwarded.bin").write_text(
+        json.dumps({"model": "gemini-3.6-flash"}), encoding="utf-8"
+    )
+    (tmp_path / "verifier").mkdir()
+    monkeypatch.setattr(
+        "harbor_hf.reassessment.verify_judge_recorder_summary",
+        lambda _path: SimpleNamespace(exchange_count=1, rejected_call_count=0),
+    )
+    monkeypatch.setattr(
+        "harbor_hf.reassessment.verify_judge_exchange",
+        lambda _path: SimpleNamespace(
+            provider="google-gemini-api",
+            forwarded_model="gemini-3.6-flash",
+            outcome="success",
+            transformation="none",
+        ),
+    )
+
+    count = _validate_judge_evidence(
+        tmp_path,
+        expected_provider="google-gemini-api",
+        expected_model="gemini-3.6-flash",
+        expected_reasoning_effort=None,
+    )
+
+    assert count == 1
+    assert (tmp_path / "verifier" / "judge-selection.json").is_file()
 
 
 def test_reward_prefers_structured_scores_and_bounds_values(tmp_path: Path) -> None:
