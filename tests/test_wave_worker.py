@@ -208,6 +208,12 @@ def test_openclaw_structured_transport_timeout_is_retryable(tmp_path: Path) -> N
             "transient",
         ),
         (
+            "huggingface_hub.errors.SandboxError: Sandbox job job-one terminated "
+            "during startup (status: ERROR, message: Job failed with exit code: 52. "
+            "Reason: Error). Last logs:\n  curl: (52) Empty reply from server",
+            "transient",
+        ),
+        (
             "huggingface_hub.errors.SandboxError: Sandbox API error (503): "
             "service unavailable",
             "transient",
@@ -241,6 +247,12 @@ def test_sandbox_failure_uses_trusted_exception_evidence(
         (
             "huggingface_hub.errors.SandboxError: Sandbox job job-one did not "
             "become ready within 120s.",
+            "transient",
+        ),
+        (
+            "huggingface_hub.errors.SandboxError: Sandbox job job-one terminated "
+            "during startup (status: ERROR, message: Job failed with exit code: 52. "
+            "Reason: Error). Last logs:\n  curl: (52) Empty reply from server",
             "transient",
         ),
         (

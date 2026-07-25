@@ -129,6 +129,7 @@ class BucketCampaignFinalizer:
     ) -> None:
         self.reader = reader
         self.writer = writer
+        self._staged: dict[tuple[str, str, str], bytes] = {}
 
     def finalize(
         self,
@@ -137,6 +138,7 @@ class BucketCampaignFinalizer:
         projection: RecoveryProjection,
         decision: TerminalDecision,
     ) -> None:
+        self._staged.clear()
         paths = self.reader.list_files(
             bucket=spec.artifacts.bucket,
             prefix=lock.artifact_prefix,
@@ -179,6 +181,7 @@ class BucketCampaignFinalizer:
         projection: RecoveryProjection,
     ) -> dict[str, str]:
         """Finalize publishable runs without rewriting campaign terminal evidence."""
+        self._staged.clear()
         if any(run.status != "complete" for run in projection.runs.values()):
             raise CampaignFinalizationError("sealed projection has an incomplete run")
         paths = self.reader.list_files(
@@ -369,16 +372,14 @@ class BucketCampaignFinalizer:
                 outcome,
             )
         _require_scored_outcome(outcome, trial.trial_id)
-        if f"{relative_prefix}/_SUCCESS" not in run_paths:
-            raise CampaignFinalizationError(
-                f"complete trial has no success marker: {trial.trial_id}"
-            )
-        summary = _JSON_OBJECT.validate_json(
-            self._read(spec, campaign, f"{prefix}/trial-summary.json")
+        selected_id = self._complete_trial_selection(
+            spec,
+            campaign,
+            run_prefix,
+            run_paths,
+            trial,
+            runtime_kind,
         )
-        selected_id = summary.get("execution_id")
-        if not isinstance(selected_id, str):
-            raise CampaignFinalizationError("trial summary has no selected execution")
         execution_paths = sorted(
             path
             for path in run_paths
@@ -431,6 +432,222 @@ class BucketCampaignFinalizer:
             verification_trials=[dict(verifier)],
             completed_at=selected[1],
         )
+
+    def _complete_trial_selection(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        run_prefix: str,
+        run_paths: list[str],
+        trial: CampaignTrialLock,
+        runtime_kind: RuntimeKind,
+    ) -> str:
+        relative_prefix = f"trials/{trial.trial_id}"
+        summary_path = f"{relative_prefix}/trial-summary.json"
+        marker_path = f"{relative_prefix}/_SUCCESS"
+        has_summary = summary_path in run_paths
+        has_marker = marker_path in run_paths
+        if has_marker and not has_summary:
+            raise CampaignFinalizationError(
+                f"complete trial has a success marker but no summary: {trial.trial_id}"
+            )
+        if has_summary:
+            summary = _JSON_OBJECT.validate_json(
+                self._read(spec, campaign, f"{run_prefix}/{summary_path}")
+            )
+            selected_id = summary.get("execution_id")
+            if not isinstance(selected_id, str):
+                raise CampaignFinalizationError(
+                    "trial summary has no selected execution"
+                )
+            if not has_marker:
+                successful = self._successful_execution_ids(
+                    spec, campaign, run_prefix, run_paths, trial, runtime_kind
+                )
+                if successful != [selected_id]:
+                    raise CampaignFinalizationError(
+                        "interrupted trial finalization has an ambiguous successful "
+                        "execution"
+                    )
+                execution_checksum = _sha256(
+                    self._read(
+                        spec,
+                        campaign,
+                        (
+                            f"{run_prefix}/{relative_prefix}/executions/"
+                            f"{selected_id}/checksums.json"
+                        ),
+                    )
+                )
+                if (
+                    summary.get("trial_id") != trial.trial_id
+                    or summary.get("execution_checksum") != execution_checksum
+                ):
+                    raise CampaignFinalizationError(
+                        "interrupted trial summary does not match its execution"
+                    )
+                recovery_path = f"{relative_prefix}/trial-finalization-recovery.json"
+                recovery = _json_bytes(
+                    {
+                        "schema_version": (
+                            "harbor-hf/trial-finalization-recovery/v1alpha1"
+                        ),
+                        "reason": "interrupted_trial_finalization",
+                        "trial_id": trial.trial_id,
+                        "selected_execution_id": selected_id,
+                        "selected_execution_checksum": execution_checksum,
+                    }
+                )
+                for path, content in (
+                    (recovery_path, recovery),
+                    (marker_path, b"\n"),
+                ):
+                    self._stage_immutable(
+                        spec,
+                        campaign,
+                        f"{run_prefix}/{path}",
+                        content,
+                    )
+                    run_paths.append(path)
+            return selected_id
+
+        successful = self._successful_execution_ids(
+            spec, campaign, run_prefix, run_paths, trial, runtime_kind
+        )
+        if len(successful) != 1:
+            raise CampaignFinalizationError(
+                "interrupted trial finalization has an ambiguous successful execution"
+            )
+        selected_id = successful[0]
+        execution_checksums_path = (
+            f"{run_prefix}/{relative_prefix}/executions/{selected_id}/checksums.json"
+        )
+        execution_checksum = _sha256(
+            self._read(spec, campaign, execution_checksums_path)
+        )
+        recovery_path = f"{relative_prefix}/trial-finalization-recovery.json"
+        recovery = _json_bytes(
+            {
+                "schema_version": ("harbor-hf/trial-finalization-recovery/v1alpha1"),
+                "reason": "interrupted_trial_finalization",
+                "trial_id": trial.trial_id,
+                "selected_execution_id": selected_id,
+                "selected_execution_checksum": execution_checksum,
+            }
+        )
+        summary = _json_bytes(
+            {
+                "trial_id": trial.trial_id,
+                "execution_id": selected_id,
+                "execution_checksum": execution_checksum,
+            }
+        )
+        for path, content in (
+            (recovery_path, recovery),
+            (summary_path, summary),
+            (marker_path, b"\n"),
+        ):
+            self._stage_immutable(
+                spec,
+                campaign,
+                f"{run_prefix}/{path}",
+                content,
+            )
+            run_paths.append(path)
+        return selected_id
+
+    def _successful_execution_ids(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        run_prefix: str,
+        run_paths: list[str],
+        trial: CampaignTrialLock,
+        runtime_kind: RuntimeKind,
+    ) -> list[str]:
+        relative_prefix = f"trials/{trial.trial_id}"
+        lock_paths = sorted(
+            path
+            for path in run_paths
+            if path.startswith(f"{relative_prefix}/executions/")
+            and path.endswith("/execution.lock.json")
+        )
+        run_id = run_prefix.removeprefix("runs/")
+        shard_ids = [
+            shard.shard_id
+            for run in campaign.runs
+            if run.run_id == run_id
+            for shard in run.shards
+            if any(candidate.trial_id == trial.trial_id for candidate in shard.trials)
+        ]
+        if len(shard_ids) != 1:
+            raise CampaignFinalizationError(
+                "successful execution trial has no unique locked shard"
+            )
+        successful: list[str] = []
+        for path in lock_paths:
+            execution_prefix = str(PurePosixPath(path).parent)
+            marker = _marker(run_paths, execution_prefix)
+            absolute_prefix = f"{run_prefix}/{execution_prefix}"
+            self._execution_record(
+                spec,
+                campaign,
+                run_paths,
+                execution_prefix,
+                absolute_prefix,
+                runtime_kind,
+            )
+            execution = ExecutionLock.model_validate_json(
+                self._read(spec, campaign, f"{run_prefix}/{path}")
+            )
+            observed = (
+                execution.campaign_id,
+                execution.run_id,
+                execution.shard_id,
+                execution.trial_id,
+                execution.task_name,
+                execution.task_digest,
+                execution.logical_attempt,
+                execution.execution_id,
+            )
+            expected = (
+                campaign.campaign_id,
+                run_id,
+                shard_ids[0],
+                trial.trial_id,
+                trial.task_name,
+                trial.task_digest,
+                trial.logical_attempt,
+                PurePosixPath(execution_prefix).name,
+            )
+            if observed != expected:
+                raise CampaignFinalizationError(
+                    "successful execution identity does not match its trial"
+                )
+            if marker == "_SUCCESS":
+                successful.append(execution.execution_id)
+        return successful
+
+    def _stage_immutable(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        path: str,
+        content: bytes,
+    ) -> None:
+        full_path = f"{campaign.artifact_prefix}/{path}"
+        key = (spec.artifacts.bucket, campaign.artifact_prefix, path)
+        previous = self._staged.get(key)
+        if previous is not None and previous != content:
+            raise CampaignFinalizationError(
+                f"immutable evidence conflicts during finalization: {full_path}"
+            )
+        self.writer.write_immutable(
+            bucket=spec.artifacts.bucket,
+            path=full_path,
+            content=content,
+        )
+        self._staged[key] = content
 
     def _failed_trial_records(
         self,
@@ -777,6 +994,11 @@ class BucketCampaignFinalizer:
         return covered
 
     def _read(self, spec: ExperimentSpec, campaign: CampaignLock, path: str) -> bytes:
+        staged = self._staged.get(
+            (spec.artifacts.bucket, campaign.artifact_prefix, path)
+        )
+        if staged is not None:
+            return staged
         return self.reader.read_bytes(
             bucket=spec.artifacts.bucket,
             prefix=campaign.artifact_prefix,

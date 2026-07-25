@@ -324,6 +324,11 @@ benchmark's agent timeout, but never above the controller Job timeout. Manifest
 validation enforces that upper bound so an abandoned Sandbox cannot outlive the
 controller's configured lifecycle.
 
+A Sandbox job that terminates during startup before agent or verifier work is a
+transient infrastructure failure. It receives a bounded physical retry under
+the same logical trial identity. Deterministic image and command errors remain
+benchmark failures and do not consume infrastructure retries.
+
 Only secret names are serialized. The configured token is forwarded through the
 HF Jobs secret mechanism to the controller and its cleanup watchdog, then
 inherited by Harbor through process environment. Its value is absent from
@@ -339,9 +344,14 @@ a parent-commit compare-and-swap in the private coordination repository. Bucket
 references are canonicalized before deriving the reservation, so equivalent
 URI spellings cannot reserve the same destination independently. Only
 the finalized, scrubbed tree is copied to its reserved Bucket prefix, and the
-root terminal marker is copied last. Nested task markers are preserved. If the
-controller is killed before finalization, raw sessions and logs disappear with
-the Job instead of remaining in the bucket. Submission queries both the
+root terminal marker is copied last. Nested task markers are preserved. If a
+successful physical execution reaches the Bucket but logical trial finalization
+is interrupted, campaign finalization adopts it only when it is the unique
+checksum-valid success. It records the recovery, recreates the trial summary,
+and writes the trial marker last without rerunning the agent. Ambiguous or
+invalid execution evidence stops publication. If the controller is killed
+before finalization, raw sessions and logs disappear with the Job instead of
+remaining in the bucket. Submission queries both the
 configured artifact Bucket and the managed `jobs-artifacts` input Bucket and
 refuses to start a Job unless both are private. It uploads manifests and locks
 under a content-addressed Job input prefix and mounts that exact Bucket

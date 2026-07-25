@@ -1593,7 +1593,7 @@ def _sandbox_result_exception(
 
 
 def _sandbox_exception_line_category(value: str) -> RetryCategory | None:
-    if "did not become ready within" in value:
+    if "did not become ready within" in value or "terminated during startup" in value:
         return "transient"
     if "sandbox api error (429)" in value:
         return "rate-limit"

@@ -777,6 +777,21 @@ are immutable. Recovery may adopt a completed execution only after verifying
 its root checksums, trial evidence manifest, inner references, execution
 identity, and task identity.
 
+The logical trial projection is finalized separately from its physical
+execution. A successful trial has `trial-summary.json` and `_SUCCESS`; the
+summary selects the successful execution and records the SHA-256 digest of that
+execution's checksum manifest. The trial marker is written last.
+
+Campaign finalization can recover an interrupted logical projection without
+rerunning the agent. Recovery is allowed only when the trial has no terminal
+marker and exactly one complete successful execution. The finalizer validates
+all retained physical executions, selects that unique success, writes
+`trial-finalization-recovery.json` and `trial-summary.json`, and then writes the
+trial marker. The recovery record identifies the selected execution, its
+checksum-manifest digest, and the reason `interrupted_trial_finalization`.
+Missing, invalid, or multiple successful executions are ambiguous and stop
+publication without writing a marker.
+
 ## Retention and access
 
 Trial evidence is private even when normalized result metadata is public. The
@@ -866,6 +881,8 @@ failures.
 | Known secret detected | `evidence` | Stop publication and require operator review before another attempt. |
 | Workspace policy limit exceeded | `configuration` | Stop until policy or task contents are corrected. |
 | Malformed benchmark judge declaration | `configuration` | Reject before remote work. |
+| Sandbox job terminates during startup before benchmark work | `transient` | Retry with a new physical execution under the locked limit. |
+| Deterministic Sandbox image or command error | `benchmark` | Record a terminal zero without infrastructure retry. |
 | Judge provider timeout with complete error evidence | Existing judge or benchmark policy | Preserve the exchange and apply the locked verifier behavior. |
 
 A direct judge fallback is forbidden. Missing recorder evidence cannot be
