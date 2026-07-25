@@ -153,11 +153,13 @@ A trusted recorder holds the upstream credential. The verifier receives the HF
 Job ingress credential through `AGENT_JUDGE_API_KEY`, plus an execution-scoped
 capability URL and the locked model in `AGENT_JUDGE_API_URL` and
 `AGENT_JUDGE_MODEL`. The recorder can enforce `reasoning_effort` and remove a
-verifier-supplied `temperature` before forwarding a request. It retains exact
-bounded request and response bodies while excluding credentials. Upstream and
-ingress credentials must not enter the manifest, lock, workspace, command, or
-evidence. Arbitrary judge hosts and mismatched provider secret names are
-rejected.
+verifier-supplied `temperature` before forwarding a request. Campaign workers
+and deployment profiling workers both construct the recorder from this locked
+judge configuration; profiling does not substitute the HF router for a direct
+OpenAI or Gemini judge. The recorder retains exact bounded request and response
+bodies while excluding credentials. Upstream and ingress credentials must not
+enter the manifest, lock, workspace, command, or evidence. Arbitrary judge
+hosts and mismatched provider secret names are rejected.
 
 ### Matrix
 
@@ -347,9 +349,11 @@ the finalized, scrubbed tree is copied to its reserved Bucket prefix, and the
 root terminal marker is copied last. Nested task markers are preserved. If a
 successful physical execution reaches the Bucket but logical trial finalization
 is interrupted, campaign finalization adopts it only when it is the unique
-checksum-valid success. It records the recovery, recreates the trial summary,
-and writes the trial marker last without rerunning the agent. Ambiguous or
-invalid execution evidence stops publication. If the controller is killed
+checksum-valid success. It records the recovery and recreates the locked,
+checksum-complete trial envelope before writing the trial marker last, without
+rerunning the agent. If the envelope was already complete, it validates the
+immutable checksums and writes only the missing marker. Ambiguous or invalid
+execution evidence stops publication. If the controller is killed
 before finalization, raw sessions and logs disappear with the Job instead of
 remaining in the bucket. Submission queries both the
 configured artifact Bucket and the managed `jobs-artifacts` input Bucket and

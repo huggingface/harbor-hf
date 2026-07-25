@@ -35,6 +35,7 @@ from harbor_hf.profile_worker import (
     _PointResult,
     _prepare_profile_destination,
     _profile_judge_assignments,
+    _profile_judge_transport,
     _request,
     _run_ladder,
     _run_point,
@@ -60,6 +61,7 @@ from harbor_hf.provider_models import (
     ProviderLimits,
     ProviderTarget,
 )
+from harbor_hf.runs import build_run_lock
 
 runner = CliRunner()
 
@@ -1078,6 +1080,71 @@ def test_judged_profile_submit_command_exposes_judge_recorder(
         if argument == "--expose"
     ]
     assert exposed == ["8001"]
+
+
+def test_profile_judge_transport_uses_locked_direct_judge(
+    remote_spec: ExperimentSpec,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = remote_spec.model_dump(mode="python")
+    raw["benchmark"]["judge"] = {
+        "api_url": "https://api.openai.com/v1/chat/completions",
+        "api_key_secret_name": "OPENAI_API_KEY",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "xhigh",
+        "strip_temperature": True,
+    }
+    lock = build_run_lock(ExperimentSpec.model_validate(raw))
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test-secret")
+    captured: dict[str, object] = {}
+
+    class Recorder:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def start(self, *, port: int) -> None:
+            captured["port"] = port
+
+        def close(self) -> None:
+            captured["closed"] = True
+
+    class Transport:
+        def attach_judge_recorder(self, recorder: object, base_url: str) -> None:
+            captured["attached"] = (recorder, base_url)
+
+        def detach_judge_recorder(self) -> None:
+            captured["detached"] = True
+
+    monkeypatch.setattr("harbor_hf.profile_worker.JudgeEvidenceRecorder", Recorder)
+    monkeypatch.setattr(
+        "harbor_hf.profile_worker.job_ingress_base_url",
+        lambda _port: "https://profile-job--8001.hf.jobs",
+    )
+    monkeypatch.setattr(
+        "harbor_hf.profile_worker.wait_ready",
+        lambda base_url, token, deadline: captured.update(
+            readiness=(base_url, token, deadline)
+        ),
+    )
+    transport = Transport()
+
+    with _profile_judge_transport(
+        lock, cast(Any, transport), "hf-ingress-secret", 123.0
+    ) as selected:
+        assert selected is transport
+
+    assert captured["token"] == "openai-test-secret"
+    assert captured["upstream_url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["reasoning_effort"] == "xhigh"
+    assert captured["strip_temperature"] is True
+    assert captured["deadline"] == 123.0
+    assert captured["readiness"] == (
+        "https://profile-job--8001.hf.jobs",
+        "hf-ingress-secret",
+        123.0,
+    )
+    assert captured["detached"] is True
+    assert captured["closed"] is True
 
 
 def test_provider_profile_uses_distinct_tasks_at_maximum_concurrency(

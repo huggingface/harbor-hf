@@ -43,6 +43,7 @@ from harbor_hf.judge_recorder import (
     JudgeEvidenceRecorder,
     JudgeExchange,
     JudgeRecorderSummary,
+    JudgeUpstreamUrl,
 )
 from harbor_hf.models import EndpointRef, ExperimentSpec
 from harbor_hf.private_artifacts import sanitize_private_artifact_special_files
@@ -410,7 +411,23 @@ def _profile_judge_transport(
     if not run_lock.judge_required_tasks:
         yield transport
         return
-    recorder = JudgeEvidenceRecorder(token=token, deadline=deadline)
+    judge = run_lock.benchmark_judge
+    if judge is None:
+        raise ProfileWorkerError(
+            "judge-required profile run is missing its judge specification"
+        )
+    judge_token = os.environ.get(judge.api_key_secret_name, "")
+    if not judge_token:
+        raise ProfileWorkerError(
+            f"required benchmark judge secret {judge.api_key_secret_name} is missing"
+        )
+    recorder = JudgeEvidenceRecorder(
+        token=judge_token,
+        upstream_url=cast(JudgeUpstreamUrl, str(judge.api_url)),
+        reasoning_effort=judge.reasoning_effort,
+        strip_temperature=judge.strip_temperature,
+        deadline=deadline,
+    )
     base_url = job_ingress_base_url(JUDGE_RECORDER_PORT)
     try:
         recorder.start(port=JUDGE_RECORDER_PORT)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import cast
 
 import pytest
@@ -33,6 +33,7 @@ from harbor_hf.control import (
     ExecutionOutcomePayload,
     new_event,
 )
+from harbor_hf.evidence import verify_checksums
 from harbor_hf.models import ExperimentSpec
 from harbor_hf.provider_models import ExplicitProviderRoute, ProviderTarget
 from harbor_hf.publication_envelope import canonical_digest
@@ -203,7 +204,6 @@ def _finalizer_files(
             "harbor-jobs/job/trial/result.json": _sha(native_result),
             "harbor-native-bundle.json": _sha(bundle),
             "verification.json": _sha(verification),
-            "_SUCCESS": _sha(b"\n"),
         }
     )
     return {
@@ -292,6 +292,7 @@ def _decision(lock: CampaignLock, status: str) -> TerminalDecision:
 
 def test_finalize_recovers_unique_success_missing_trial_projection(
     remote_spec: ExperimentSpec,
+    tmp_path: Path,
 ) -> None:
     lock = _campaign(remote_spec)
     run = lock.runs[0]
@@ -314,7 +315,15 @@ def test_finalize_recovers_unique_success_missing_trial_projection(
     recovery_path = f"{base}/trial-finalization-recovery.json"
     summary_path = f"{base}/trial-summary.json"
     marker_path = f"{base}/_SUCCESS"
-    assert list(writes)[:3] == [recovery_path, summary_path, marker_path]
+    lock_path = f"{base}/trial.lock.json"
+    checksums_path = f"{base}/checksums.json"
+    assert list(writes)[:5] == [
+        recovery_path,
+        lock_path,
+        summary_path,
+        checksums_path,
+        marker_path,
+    ]
     selected_checksums = files[
         f"{trial_prefix}/executions/execution-two/checksums.json"
     ]
@@ -330,7 +339,29 @@ def test_finalize_recovers_unique_success_missing_trial_projection(
         "execution_id": "execution-two",
         "trial_id": trial.trial_id,
     }
+    assert json.loads(writes[lock_path]) == trial.model_dump(mode="json")
     assert writes[marker_path] == b"\n"
+    trial_checksums = json.loads(writes[checksums_path])
+    assert trial_checksums["trial-finalization-recovery.json"] == _sha(
+        writes[recovery_path]
+    )
+    assert trial_checksums["trial.lock.json"] == _sha(writes[lock_path])
+    assert trial_checksums["trial-summary.json"] == _sha(writes[summary_path])
+
+    trial_root = tmp_path / "recovered-trial"
+    source_root = f"{trial_prefix}/"
+    for path, content in files.items():
+        if path.startswith(source_root):
+            destination = trial_root / path.removeprefix(source_root)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+    for path, content in writes.items():
+        if path.startswith(f"{base}/"):
+            destination = trial_root / path.removeprefix(f"{base}/")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+    verify_checksums(trial_root)
+
     run_checksums = json.loads(
         writes[f"{lock.artifact_prefix}/runs/{run.run_id}/checksums.json"]
     )
@@ -342,7 +373,7 @@ def test_finalize_recovers_unique_success_missing_trial_projection(
     )
 
 
-def test_finalize_completes_marker_after_summary_only(
+def test_finalize_completes_marker_after_checksum_publication(
     remote_spec: ExperimentSpec,
 ) -> None:
     lock = _campaign(remote_spec)
@@ -351,6 +382,15 @@ def test_finalize_completes_marker_after_summary_only(
     files = _finalizer_files(remote_spec, lock)
     trial_prefix = f"runs/{run.run_id}/trials/{trial.trial_id}"
     del files[f"{trial_prefix}/_SUCCESS"]
+    files[f"{trial_prefix}/trial.lock.json"] = _pretty(trial.model_dump(mode="json"))
+    trial_root = f"{trial_prefix}/"
+    files[f"{trial_prefix}/checksums.json"] = _pretty(
+        {
+            path.removeprefix(trial_root): _sha(content)
+            for path, content in sorted(files.items())
+            if path.startswith(trial_root)
+        }
+    )
     writer = _Writer()
 
     BucketCampaignFinalizer(_Reader(files), writer).finalize(
@@ -361,10 +401,8 @@ def test_finalize_completes_marker_after_summary_only(
     )
 
     paths = [path for _bucket, path, _content in writer.writes]
-    assert paths[:2] == [
-        f"{lock.artifact_prefix}/{trial_prefix}/trial-finalization-recovery.json",
-        f"{lock.artifact_prefix}/{trial_prefix}/_SUCCESS",
-    ]
+    assert paths[0] == f"{lock.artifact_prefix}/{trial_prefix}/_SUCCESS"
+    assert not any("trial-finalization-recovery.json" in path for path in paths)
 
 
 def test_finalize_rejects_success_marker_without_summary(

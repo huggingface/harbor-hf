@@ -785,12 +785,22 @@ execution's checksum manifest. The trial marker is written last.
 Campaign finalization can recover an interrupted logical projection without
 rerunning the agent. Recovery is allowed only when the trial has no terminal
 marker and exactly one complete successful execution. The finalizer validates
-all retained physical executions, selects that unique success, writes
-`trial-finalization-recovery.json` and `trial-summary.json`, and then writes the
-trial marker. The recovery record identifies the selected execution, its
-checksum-manifest digest, and the reason `interrupted_trial_finalization`.
-Missing, invalid, or multiple successful executions are ambiguous and stop
-publication without writing a marker.
+all retained physical executions and selects that unique success. When the
+worker did not publish the trial envelope, the finalizer writes
+`trial-finalization-recovery.json`, `trial.lock.json`, `trial-summary.json`, and
+a complete `checksums.json` before writing `_SUCCESS` last. The checksum
+manifest covers the recovered records and every retained execution file, so a
+later wave can validate and adopt the recovered trial through the normal
+terminal-trial path.
+
+If the worker already published a valid lock, summary, and checksum manifest
+but stopped before the marker, recovery validates that immutable envelope and
+writes only `_SUCCESS`. It does not insert a new record that would invalidate
+the existing checksum manifest. A newly reconstructed recovery record
+identifies the selected execution, its checksum-manifest digest, and the reason
+`interrupted_trial_finalization`. Missing, invalid, or multiple successful
+executions, mismatched locks or summaries, and incomplete checksum envelopes are
+ambiguous and stop publication without writing a marker.
 
 ## Retention and access
 

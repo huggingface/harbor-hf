@@ -116,6 +116,14 @@ Profile against the workload the full campaign will run. For benchmark-speed
 selection, use a representative task sample with the same agent, tools,
 reasoning mode, context limit, output limit, sampling, and sandbox shape.
 
+When sampled tasks require a benchmark judge, profiling uses the exact judge
+configuration preserved in the run lock. The profiling recorder reads the
+locked provider's matching secret, forwards to the locked API URL and model,
+and enforces the locked reasoning-effort and temperature policy. The HF Job
+token remains the separate ingress credential used to reach the recorder.
+Profiling must not silently replace a direct OpenAI or Gemini judge with the
+Hugging Face router.
+
 Synthetic request tests may separately characterize prefill and decode
 capacity, but they do not select Harbor task concurrency by themselves. Record
 observed prompt and output token distributions rather than claiming that every

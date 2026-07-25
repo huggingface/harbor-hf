@@ -461,54 +461,16 @@ class BucketCampaignFinalizer:
                     "trial summary has no selected execution"
                 )
             if not has_marker:
-                successful = self._successful_execution_ids(
-                    spec, campaign, run_prefix, run_paths, trial, runtime_kind
+                self._finish_interrupted_trial(
+                    spec,
+                    campaign,
+                    run_prefix,
+                    run_paths,
+                    trial,
+                    runtime_kind,
+                    selected_id,
+                    summary,
                 )
-                if successful != [selected_id]:
-                    raise CampaignFinalizationError(
-                        "interrupted trial finalization has an ambiguous successful "
-                        "execution"
-                    )
-                execution_checksum = _sha256(
-                    self._read(
-                        spec,
-                        campaign,
-                        (
-                            f"{run_prefix}/{relative_prefix}/executions/"
-                            f"{selected_id}/checksums.json"
-                        ),
-                    )
-                )
-                if (
-                    summary.get("trial_id") != trial.trial_id
-                    or summary.get("execution_checksum") != execution_checksum
-                ):
-                    raise CampaignFinalizationError(
-                        "interrupted trial summary does not match its execution"
-                    )
-                recovery_path = f"{relative_prefix}/trial-finalization-recovery.json"
-                recovery = _json_bytes(
-                    {
-                        "schema_version": (
-                            "harbor-hf/trial-finalization-recovery/v1alpha1"
-                        ),
-                        "reason": "interrupted_trial_finalization",
-                        "trial_id": trial.trial_id,
-                        "selected_execution_id": selected_id,
-                        "selected_execution_checksum": execution_checksum,
-                    }
-                )
-                for path, content in (
-                    (recovery_path, recovery),
-                    (marker_path, b"\n"),
-                ):
-                    self._stage_immutable(
-                        spec,
-                        campaign,
-                        f"{run_prefix}/{path}",
-                        content,
-                    )
-                    run_paths.append(path)
             return selected_id
 
         successful = self._successful_execution_ids(
@@ -519,21 +481,8 @@ class BucketCampaignFinalizer:
                 "interrupted trial finalization has an ambiguous successful execution"
             )
         selected_id = successful[0]
-        execution_checksums_path = (
-            f"{run_prefix}/{relative_prefix}/executions/{selected_id}/checksums.json"
-        )
-        execution_checksum = _sha256(
-            self._read(spec, campaign, execution_checksums_path)
-        )
-        recovery_path = f"{relative_prefix}/trial-finalization-recovery.json"
-        recovery = _json_bytes(
-            {
-                "schema_version": ("harbor-hf/trial-finalization-recovery/v1alpha1"),
-                "reason": "interrupted_trial_finalization",
-                "trial_id": trial.trial_id,
-                "selected_execution_id": selected_id,
-                "selected_execution_checksum": execution_checksum,
-            }
+        execution_checksum = self._execution_checksum(
+            spec, campaign, run_prefix, trial.trial_id, selected_id
         )
         summary = _json_bytes(
             {
@@ -542,19 +491,225 @@ class BucketCampaignFinalizer:
                 "execution_checksum": execution_checksum,
             }
         )
-        for path, content in (
-            (recovery_path, recovery),
-            (summary_path, summary),
-            (marker_path, b"\n"),
+        self._stage_trial_envelope(
+            spec,
+            campaign,
+            run_prefix,
+            run_paths,
+            trial,
+            selected_id,
+            execution_checksum,
+            summary=summary,
+        )
+        return selected_id
+
+    def _finish_interrupted_trial(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        run_prefix: str,
+        run_paths: list[str],
+        trial: CampaignTrialLock,
+        runtime_kind: RuntimeKind,
+        selected_id: str,
+        summary: dict[str, object],
+    ) -> None:
+        successful = self._successful_execution_ids(
+            spec, campaign, run_prefix, run_paths, trial, runtime_kind
+        )
+        if successful != [selected_id]:
+            raise CampaignFinalizationError(
+                "interrupted trial finalization has an ambiguous successful execution"
+            )
+        execution_checksum = self._execution_checksum(
+            spec, campaign, run_prefix, trial.trial_id, selected_id
+        )
+        if (
+            summary.get("trial_id") != trial.trial_id
+            or summary.get("execution_checksum") != execution_checksum
         ):
-            self._stage_immutable(
+            raise CampaignFinalizationError(
+                "interrupted trial summary does not match its execution"
+            )
+        self._stage_trial_envelope(
+            spec,
+            campaign,
+            run_prefix,
+            run_paths,
+            trial,
+            selected_id,
+            execution_checksum,
+            summary=None,
+        )
+
+    def _execution_checksum(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        run_prefix: str,
+        trial_id: str,
+        execution_id: str,
+    ) -> str:
+        path = (
+            f"{run_prefix}/trials/{trial_id}/executions/{execution_id}/checksums.json"
+        )
+        return _sha256(self._read(spec, campaign, path))
+
+    def _stage_trial_envelope(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        run_prefix: str,
+        run_paths: list[str],
+        trial: CampaignTrialLock,
+        selected_id: str,
+        execution_checksum: str,
+        *,
+        summary: bytes | None,
+    ) -> None:
+        prefix = f"trials/{trial.trial_id}"
+        lock_path = f"{prefix}/trial.lock.json"
+        summary_path = f"{prefix}/trial-summary.json"
+        checksums_path = f"{prefix}/checksums.json"
+        marker_path = f"{prefix}/_SUCCESS"
+        lock_content = _json_bytes(trial.model_dump(mode="json"))
+        lock_missing = self._trial_lock_missing(
+            spec,
+            campaign,
+            run_prefix,
+            run_paths,
+            lock_path,
+            checksums_path,
+            lock_content,
+        )
+
+        recovery_path = f"{prefix}/trial-finalization-recovery.json"
+        recovery = _json_bytes(
+            {
+                "schema_version": "harbor-hf/trial-finalization-recovery/v1alpha1",
+                "reason": "interrupted_trial_finalization",
+                "trial_id": trial.trial_id,
+                "selected_execution_id": selected_id,
+                "selected_execution_checksum": execution_checksum,
+            }
+        )
+        if checksums_path in run_paths:
+            self._complete_marker_only_trial(
                 spec,
                 campaign,
-                f"{run_prefix}/{path}",
-                content,
+                run_prefix,
+                run_paths,
+                prefix,
+                checksums_path,
+                lock_missing=lock_missing,
+                summary_missing=summary is not None,
             )
+        else:
+            additions = [(recovery_path, recovery)]
+            if lock_missing:
+                additions.append((lock_path, lock_content))
+            if summary is not None:
+                additions.append((summary_path, summary))
+            for path, content in additions:
+                self._stage_trial_file(
+                    spec, campaign, run_prefix, run_paths, path, content
+                )
+            trial_paths = _under(run_paths, prefix)
+            checksums = self._aggregate_checksums(
+                spec,
+                campaign,
+                f"{run_prefix}/{prefix}",
+                trial_paths,
+                {},
+            )
+            self._stage_trial_file(
+                spec,
+                campaign,
+                run_prefix,
+                run_paths,
+                checksums_path,
+                _json_bytes(checksums),
+            )
+        self._stage_trial_file(
+            spec, campaign, run_prefix, run_paths, marker_path, b"\n"
+        )
+
+    def _trial_lock_missing(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        run_prefix: str,
+        run_paths: list[str],
+        lock_path: str,
+        checksums_path: str,
+        lock_content: bytes,
+    ) -> bool:
+        if lock_path not in run_paths:
+            if checksums_path in run_paths:
+                raise CampaignFinalizationError(
+                    "interrupted trial checksum manifest has no trial lock"
+                )
+            return True
+        if self._read(spec, campaign, f"{run_prefix}/{lock_path}") != lock_content:
+            raise CampaignFinalizationError(
+                "interrupted trial lock does not match its campaign"
+            )
+        return False
+
+    def _complete_marker_only_trial(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        run_prefix: str,
+        run_paths: list[str],
+        prefix: str,
+        checksums_path: str,
+        *,
+        lock_missing: bool,
+        summary_missing: bool,
+    ) -> None:
+        if lock_missing or summary_missing:
+            raise CampaignFinalizationError(
+                "interrupted trial checksum manifest omits finalization evidence"
+            )
+        self._validate_trial_checksums(
+            spec, campaign, run_prefix, run_paths, prefix, checksums_path
+        )
+
+    def _validate_trial_checksums(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        run_prefix: str,
+        run_paths: list[str],
+        prefix: str,
+        checksums_path: str,
+    ) -> None:
+        observed = self._read(spec, campaign, f"{run_prefix}/{checksums_path}")
+        expected = self._aggregate_checksums(
+            spec,
+            campaign,
+            f"{run_prefix}/{prefix}",
+            _under(run_paths, prefix),
+            {},
+        )
+        if _json_bytes(expected) != observed:
+            raise CampaignFinalizationError(
+                "interrupted trial checksum manifest is not canonical"
+            )
+
+    def _stage_trial_file(
+        self,
+        spec: ExperimentSpec,
+        campaign: CampaignLock,
+        run_prefix: str,
+        run_paths: list[str],
+        path: str,
+        content: bytes,
+    ) -> None:
+        self._stage_immutable(spec, campaign, f"{run_prefix}/{path}", content)
+        if path not in run_paths:
             run_paths.append(path)
-        return selected_id
 
     def _successful_execution_ids(
         self,
