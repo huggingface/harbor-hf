@@ -375,12 +375,23 @@ def test_private_source_secret_uses_ephemeral_secret_file(
     )
     raw = remote_spec.model_dump(mode="python")
     raw["benchmark"].update(
-        {"dataset": "shellbench/public-115", "source": source.model_dump()}
+        {
+            "dataset": "shellbench/public-115",
+            "source": source.model_dump(),
+            "judge": BenchmarkJudgeSpec(
+                api_url="https://api.openai.com/v1/chat/completions",
+                model="gpt-5.6-luna",
+                api_key_secret_name="OPENAI_API_KEY",
+                reasoning_effort="xhigh",
+                strip_temperature=True,
+            ).model_dump(),
+        }
     )
     raw["benchmark"].pop("dataset_digest", None)
     spec = ExperimentSpec.model_validate(raw)
     lock = _wave_lock(spec)
     monkeypatch.setenv("GITHUB_TOKEN", "github-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
     runner = SecretFileRunner("Job started: " + "a" * 24)
     (tmp_path / "manifest.yaml").write_text("kind: Experiment\n")
 
@@ -393,9 +404,13 @@ def test_private_source_secret_uses_ephemeral_secret_file(
     )
 
     assert runner.command is not None
-    assert "github-secret" not in " ".join(runner.command)
+    rendered_command = " ".join(runner.command)
+    assert "github-secret" not in rendered_command
+    assert "openai-secret" not in rendered_command
     assert "--secrets-file" in runner.command
-    assert runner.secret_content == "GITHUB_TOKEN=github-secret\n"
+    assert runner.secret_content == (
+        "GITHUB_TOKEN=github-secret\nOPENAI_API_KEY=openai-secret\n"
+    )
     assert runner.secret_mode == 0o600
     assert runner.secret_path is not None and not runner.secret_path.exists()
     assert "--secrets-file" not in result.command

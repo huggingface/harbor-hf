@@ -257,14 +257,18 @@ def require_source_secrets(lock: RunLock | WaveLock) -> None:
 
 
 @contextmanager
-def _materialized_source_secrets(
+def _materialized_job_secrets(
     lock: RunLock | WaveLock, command: list[str]
 ) -> Iterator[list[str]]:
-    names = _source_secret_names(lock)
-    if not names:
+    token_name = lock.remote.job.token_secret_name
+    values = {
+        name: value
+        for name in job_secret_names(lock)
+        if name != token_name and (value := os.environ.get(name))
+    }
+    if not values:
         yield command
         return
-    values = {name: os.environ[name] for name in names}
     if any("\n" in value or "\r" in value for value in values.values()):
         raise ValueError("source secrets must be single-line values")
     path: Path | None = None
@@ -441,7 +445,7 @@ def submit(
         api=bucket_api,
     )
     command = build_submit_command(lock, input_dir=input_source, bucket=bucket)
-    with _materialized_source_secrets(lock, command) as runtime_command:
+    with _materialized_job_secrets(lock, command) as runtime_command:
         output = runner.run_text(runtime_command)
     match = _JOB_ID.search(output)
     if match is None:
@@ -479,7 +483,7 @@ def submit_wave(
         api=bucket_api,
     )
     command = build_submit_wave_command(lock, input_dir=input_source, bucket=bucket)
-    with _materialized_source_secrets(lock, command) as runtime_command:
+    with _materialized_job_secrets(lock, command) as runtime_command:
         output = runner.run_text(runtime_command)
     match = _JOB_ID.search(output)
     if match is None:
