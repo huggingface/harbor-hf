@@ -510,15 +510,36 @@ def _expected_agent_version(lock: RunLock) -> str:
 def effective_agent_parameters(lock: RunLock) -> dict[str, JsonValue]:
     parameters = deepcopy(lock.agent.parameters)
     target = lock.deployment
-    if lock.agent.name != "openclaw":
-        if isinstance(target, ProviderTarget):
-            raise WorkerError(
-                "Inference Provider request controls require the OpenClaw Harbor agent"
-            )
-        return parameters
-    if not isinstance(target, ProviderTarget) and "openclaw_config" not in parameters:
+    if isinstance(target, ProviderTarget):
+        return _effective_provider_agent_parameters(lock, parameters, target)
+    if lock.agent.name != "openclaw" or "openclaw_config" not in parameters:
         return parameters
     return _effective_openclaw_agent_parameters(lock, parameters, target)
+
+
+def _effective_provider_agent_parameters(
+    lock: RunLock,
+    parameters: dict[str, JsonValue],
+    target: ProviderTarget,
+) -> dict[str, JsonValue]:
+    agent_name = lock.agent.name
+    if agent_name == "openclaw":
+        if target.api != "chat-completions":
+            raise WorkerError("embedded OpenClaw requires the chat-completions API")
+        return _effective_openclaw_agent_parameters(lock, parameters, target)
+    if agent_name == "openclaw-codex":
+        if target.api != "responses":
+            raise WorkerError("OpenClaw Codex requires the responses API")
+        return parameters
+    if agent_name == "pi":
+        if target.api != "chat-completions":
+            raise WorkerError("Pi provider campaigns require the chat-completions API")
+        if "models_json" not in parameters:
+            raise WorkerError("Pi provider campaigns require a locked models_json")
+        return parameters
+    raise WorkerError(
+        "Inference Provider campaigns require openclaw, openclaw-codex, or pi"
+    )
 
 
 def _effective_openclaw_agent_parameters(

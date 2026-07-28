@@ -120,7 +120,7 @@ def test_provider_proxy_forwarding_precedence_and_stream_usage_contract() -> Non
 
     assert forwarded == {
         "seed": 17,
-        "temperature": 0.75,
+        "temperature": 0.25,
         "model": "org/model:groq",
         "messages": [{"role": "user", "content": "hello"}],
         "stream": True,

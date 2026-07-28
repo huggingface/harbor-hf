@@ -201,6 +201,18 @@ such as prefix caching, speculation or MTP, CUDA graphs, attention backend, and
 MoE backend. Values observed after startup are stored separately from requested
 values so a provider default cannot silently change the run definition.
 
+Inference Provider targets lock one wire API with `api`: `chat-completions`
+(the default) or `responses`. The scoped evidence proxy exposes only that route
+for the trial, forwards it to the matching Hugging Face Router endpoint, and
+rejects the other route. Deployment `parameters` are authoritative locked
+overrides: they replace same-named values supplied by an agent, while transport
+fields such as `model`, `input`, `messages`, `tools`, and `stream` are reserved.
+This keeps model-required controls such as `top_p` reproducible without letting
+an agent silently replace them. Both APIs record content-free request counts,
+routing, usage, latency, quota, and retry evidence; prompts, tool names,
+arguments, and response content are never written to the provider evidence
+stream.
+
 Inference Provider requests identify a model repository, but the provider API
 does not expose or accept a Hub commit for the weights it serves. The locked
 model profile still preserves the selected repository revision for source
@@ -218,6 +230,10 @@ presented as observed provider billing. Provider
 `limits.max_attempts` is a hard forwarding limit for identical requests within
 one logical trial, not only an evidence label. Independent trials have separate
 retry budgets even when their request payloads are identical.
+`limits.min_request_interval_seconds` optionally enforces a fleet-wide start
+interval inside one provider wave. Use it with the provider concurrency limit
+when a route has a request-per-second constraint; queued time is not reported as
+provider latency.
 
 The endpoint deployment shape supports independent engines such as vLLM and
 llama.cpp. The discriminated Inference Provider profile covers models that are

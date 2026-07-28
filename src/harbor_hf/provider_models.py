@@ -88,6 +88,12 @@ ProviderRoute = Annotated[
 class ProviderLimits(FrozenModel):
     max_concurrent_requests: int = Field(default=1, ge=1)
     max_attempts: int = Field(default=1, ge=1)
+    min_request_interval_seconds: float = Field(
+        default=0,
+        ge=0,
+        le=300,
+        exclude_if=lambda value: value == 0,
+    )
     max_spend_usd: Decimal | None = Field(default=None, gt=0)
     estimated_wave_cost_usd: Decimal | None = Field(default=None, gt=0)
 
@@ -111,6 +117,10 @@ class ProviderTarget(FrozenModel):
     id: ProviderProfileId
     kind: Literal["inference-provider"] = "inference-provider"
     service: Literal["hf-inference-providers"] = "hf-inference-providers"
+    api: Literal["chat-completions", "responses"] = Field(
+        default="chat-completions",
+        exclude_if=lambda value: value == "chat-completions",
+    )
     model: str = Field(min_length=1, pattern=r"^[^\s:]+/[^\s:]+$")
     routing: ProviderRoute = Field(default_factory=PolicyRoute)
     timeout_seconds: float = Field(default=60, gt=0, le=3600)
@@ -120,6 +130,20 @@ class ProviderTarget(FrozenModel):
 
     @model_validator(mode="after")
     def parameters_are_safe(self) -> ProviderTarget:
+        reserved = {
+            "input",
+            "messages",
+            "model",
+            "stream",
+            "stream_options",
+            "tools",
+        }
+        overlap = reserved.intersection(self.parameters)
+        if overlap:
+            raise ValueError(
+                "provider target parameters contain reserved keys: "
+                + ", ".join(sorted(overlap))
+            )
         _validate_parameters(self.parameters, "provider target")
         return self
 
@@ -128,6 +152,7 @@ class ProviderToolFunction(FrozenModel):
     name: str = Field(min_length=1)
     description: str | None = Field(default=None, min_length=1)
     parameters: dict[str, JsonValue]
+    strict: bool | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ProviderTool(FrozenModel):
@@ -143,7 +168,7 @@ class ProviderToolCall(FrozenModel):
 
 
 class ProviderMessage(FrozenModel):
-    role: Literal["system", "user", "assistant", "tool"]
+    role: Literal["system", "developer", "user", "assistant", "tool"]
     content: ProviderMessageContent | None = None
     reasoning_content: str | None = Field(
         default=None, exclude_if=lambda value: value is None
@@ -263,6 +288,13 @@ class ProviderEndpointEvidence(FrozenModel):
     precision: EvidenceValue[str] = Field(
         default_factory=lambda: unavailable("not_reported")
     )
+
+
+class ProviderRequestMetadata(FrozenModel):
+    request_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+    streaming: bool
+    message_count: int = Field(ge=1)
+    tool_count: int = Field(ge=0)
 
 
 class ProviderRequestEvidence(FrozenModel):

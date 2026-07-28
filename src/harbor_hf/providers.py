@@ -20,6 +20,7 @@ from harbor_hf.provider_models import (
     ProviderModelEvidence,
     ProviderQuotaEvidence,
     ProviderRequestEvidence,
+    ProviderRequestMetadata,
     ProviderRetryEvidence,
     ProviderRoutingEvidence,
     ProviderTarget,
@@ -33,6 +34,8 @@ from harbor_hf.provider_models import (
 HF_INFERENCE_PROVIDER_BASE_URL = "https://router.huggingface.co"
 _CHAT_COMPLETIONS_URL = f"{HF_INFERENCE_PROVIDER_BASE_URL}/v1/chat/completions"
 _REQUEST_ID_HEADERS = ("x-request-id", "x-amzn-requestid", "request-id")
+
+type _ObservedRequest = ProviderChatRequest | ProviderRequestMetadata
 
 
 class BoundaryModel(BaseModel):
@@ -67,6 +70,14 @@ class _RawCompletion(BoundaryModel):
     id: str | None = None
     model: str | None = None
     choices: list[_RawChoice] = Field(min_length=1)
+    usage: dict[str, JsonValue] | None = None
+
+
+class _RawResponsesCompletion(BoundaryModel):
+    id: str | None = None
+    model: str | None = None
+    status: str
+    output: list[dict[str, JsonValue]] = Field(default_factory=list)
     usage: dict[str, JsonValue] | None = None
 
 
@@ -190,6 +201,8 @@ class HfInferenceProviderAdapter:
         token: str,
         attempt: int = 1,
     ) -> ProviderCallResult:
+        if target.api != "chat-completions":
+            raise ValueError("chat_completion requires the chat-completions API")
         if not token:
             raise ValueError("provider token must not be empty")
         if attempt > target.limits.max_attempts:
@@ -401,6 +414,8 @@ def observe_provider_response(
     invalid_content_encoding: bool = False,
 ) -> ProviderCallResult:
     """Normalize evidence from a transparently forwarded provider response."""
+    if target.api != "chat-completions":
+        raise ValueError("chat response observation requires the chat-completions API")
     early = _early_provider_response(
         target,
         request,
@@ -457,9 +472,205 @@ def observe_provider_response(
     )
 
 
+def observe_responses_api_response(
+    target: ProviderTarget,
+    request: ProviderRequestMetadata,
+    *,
+    attempt: int,
+    status_code: int,
+    headers: httpx.Headers,
+    content: bytes,
+    total_ms: float,
+    time_to_first_token_ms: float | None = None,
+    transport_interrupted: bool = False,
+    invalid_content_encoding: bool = False,
+) -> ProviderCallResult:
+    """Normalize evidence from a transparently forwarded Responses API response."""
+    if target.api != "responses":
+        raise ValueError("Responses observation requires the responses API")
+    early = _early_provider_response(
+        target,
+        request,
+        attempt,
+        status_code,
+        headers,
+        total_ms,
+        time_to_first_token_ms,
+        transport_interrupted,
+        invalid_content_encoding,
+    )
+    if early is not None:
+        return early
+    if request.streaming:
+        return _observe_responses_stream(
+            target,
+            request,
+            attempt,
+            headers,
+            content,
+            total_ms,
+            time_to_first_token_ms,
+        )
+    try:
+        raw = _RawResponsesCompletion.model_validate_json(content)
+    except (ValidationError, ValueError):
+        return _responses_malformed_result(
+            target, request, attempt, headers, total_ms, stream=False
+        )
+    return _responses_completion_result(
+        target,
+        request,
+        attempt,
+        headers,
+        total_ms,
+        unavailable("not_applicable"),
+        raw,
+    )
+
+
+def _observe_responses_stream(
+    target: ProviderTarget,
+    request: ProviderRequestMetadata,
+    attempt: int,
+    headers: httpx.Headers,
+    content: bytes,
+    total_ms: float,
+    time_to_first_token_ms: float | None,
+) -> ProviderCallResult:
+    try:
+        response = _terminal_responses_stream_response(content)
+    except (UnicodeDecodeError, ValidationError, ValueError):
+        return _responses_malformed_result(
+            target, request, attempt, headers, total_ms, stream=True
+        )
+    if response is None:
+        return _responses_malformed_result(
+            target, request, attempt, headers, total_ms, stream=True
+        )
+    ttft = (
+        observed(time_to_first_token_ms)
+        if time_to_first_token_ms is not None
+        else unavailable("not_observed")
+    )
+    return _responses_completion_result(
+        target, request, attempt, headers, total_ms, ttft, response
+    )
+
+
+class _ResponsesStreamEvent(BoundaryModel):
+    type: str
+    response: _RawResponsesCompletion | None = None
+
+
+def _terminal_responses_stream_response(
+    content: bytes,
+) -> _RawResponsesCompletion | None:
+    response: _RawResponsesCompletion | None = None
+    for line in re.split(r"\r\n?|\n", content.decode("utf-8")):
+        if not line or line.startswith(":") or line.startswith("event:"):
+            continue
+        if not line.startswith("data:"):
+            raise ValueError("Responses stream line is not an SSE data event")
+        data = line.removeprefix("data:").strip()
+        if not data or data == "[DONE]":
+            continue
+        event = _ResponsesStreamEvent.model_validate_json(data)
+        if event.type not in {"response.completed", "response.failed"}:
+            continue
+        if event.response is None:
+            raise ValueError("terminal Responses event has no response")
+        response = event.response
+    return response
+
+
+def _responses_completion_result(
+    target: ProviderTarget,
+    request: ProviderRequestMetadata,
+    attempt: int,
+    headers: httpx.Headers,
+    total_ms: float,
+    ttft: EvidenceValue[float],
+    raw: _RawResponsesCompletion,
+) -> ProviderCallResult:
+    evidence = _evidence(
+        target,
+        request,
+        attempt,
+        headers,
+        total_ms,
+        ttft,
+        raw.model,
+        _responses_usage(raw.usage),
+        "no_retry",
+    )
+    if raw.status != "completed":
+        return ProviderCallResult(
+            status="provider_error",
+            remote_outcome="completed",
+            response_id=_optional_string(raw.id),
+            finish_reason=_optional_string(raw.status),
+            error_code=f"response_{raw.status}",
+            evidence=evidence,
+        )
+    return ProviderCallResult(
+        status="succeeded",
+        remote_outcome="completed",
+        response_id=_optional_string(raw.id),
+        finish_reason=observed(raw.status),
+        message=ProviderMessage(role="assistant", content=""),
+        evidence=evidence,
+    )
+
+
+def _responses_malformed_result(
+    target: ProviderTarget,
+    request: ProviderRequestMetadata,
+    attempt: int,
+    headers: httpx.Headers,
+    total_ms: float,
+    *,
+    stream: bool,
+) -> ProviderCallResult:
+    evidence = _evidence(
+        target,
+        request,
+        attempt,
+        headers,
+        total_ms,
+        unavailable("not_observed") if stream else unavailable("not_applicable"),
+        None,
+        None,
+        "inspect",
+    )
+    return ProviderCallResult(
+        status="malformed_response",
+        remote_outcome="ambiguous" if stream else "completed",
+        response_id=unavailable("not_observed" if stream else "not_reported"),
+        finish_reason=unavailable("not_observed" if stream else "not_reported"),
+        error_code="invalid_responses_api_response",
+        evidence=evidence,
+    )
+
+
+def _responses_usage(
+    usage: dict[str, JsonValue] | None,
+) -> dict[str, JsonValue] | None:
+    if usage is None:
+        return None
+    return {
+        key: usage[source]
+        for key, source in (
+            ("prompt_tokens", "input_tokens"),
+            ("completion_tokens", "output_tokens"),
+            ("total_tokens", "total_tokens"),
+        )
+        if source in usage
+    }
+
+
 def _early_provider_response(
     target: ProviderTarget,
-    request: ProviderChatRequest,
+    request: _ObservedRequest,
     attempt: int,
     status_code: int,
     headers: httpx.Headers,
@@ -486,15 +697,15 @@ def _early_provider_response(
 
 def _transport_interrupted_result(
     target: ProviderTarget,
-    request: ProviderChatRequest,
+    request: _ObservedRequest,
     attempt: int,
     headers: httpx.Headers,
     total_ms: float,
     time_to_first_token_ms: float | None,
 ) -> ProviderCallResult:
-    if request.stream and time_to_first_token_ms is not None:
+    if _request_streaming(request) and time_to_first_token_ms is not None:
         ttft = observed(time_to_first_token_ms)
-    elif request.stream:
+    elif _request_streaming(request):
         ttft = unavailable("not_observed")
     else:
         ttft = unavailable("not_applicable")
@@ -521,7 +732,7 @@ def _transport_interrupted_result(
 
 def _malformed_encoding_result(
     target: ProviderTarget,
-    request: ProviderChatRequest,
+    request: _ObservedRequest,
     attempt: int,
     headers: httpx.Headers,
     total_ms: float,
@@ -534,7 +745,7 @@ def _malformed_encoding_result(
         total_ms,
         (
             unavailable("not_observed")
-            if request.stream
+            if _request_streaming(request)
             else unavailable("not_applicable")
         ),
         None,
@@ -685,7 +896,7 @@ def _malformed_result(
 
 def _http_failure(
     target: ProviderTarget,
-    request: ProviderChatRequest,
+    request: _ObservedRequest,
     attempt: int,
     status_code: int,
     headers: httpx.Headers,
@@ -705,7 +916,7 @@ def _http_failure(
         total_ms,
         (
             unavailable("not_observed")
-            if request.stream
+            if _request_streaming(request)
             else unavailable("not_applicable")
         ),
         None,
@@ -736,9 +947,24 @@ def _classify_status(
     return "provider_error", "ambiguous", f"http_{status_code}"
 
 
+def _request_metadata(request: _ObservedRequest) -> ProviderRequestMetadata:
+    if isinstance(request, ProviderRequestMetadata):
+        return request
+    return ProviderRequestMetadata(
+        request_id=request.request_id,
+        streaming=request.stream,
+        message_count=len(request.messages),
+        tool_count=len(request.tools),
+    )
+
+
+def _request_streaming(request: _ObservedRequest) -> bool:
+    return _request_metadata(request).streaming
+
+
 def _evidence(
     target: ProviderTarget,
-    request: ProviderChatRequest,
+    request: _ObservedRequest,
     attempt: int,
     headers: httpx.Headers,
     total_ms: float,
@@ -752,13 +978,14 @@ def _evidence(
     route_value = (
         route.provider if isinstance(route, ExplicitProviderRoute) else route.policy
     )
+    metadata = _request_metadata(request)
     return ProviderEvidence(
         request=ProviderRequestEvidence(
-            request_id=request.request_id,
+            request_id=metadata.request_id,
             provider_request_id=_first_header(headers, _REQUEST_ID_HEADERS),
-            streaming=request.stream,
-            message_count=len(request.messages),
-            tool_count=len(request.tools),
+            streaming=metadata.streaming,
+            message_count=metadata.message_count,
+            tool_count=metadata.tool_count,
         ),
         model=ProviderModelEvidence(
             requested=target.model,

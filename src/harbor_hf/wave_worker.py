@@ -141,6 +141,8 @@ class FrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+_SCOPED_PROVIDER_API_KEY = "harbor-hf-scoped-provider-proxy"
+
 _TRIAL_FAILURE_MARKERS: tuple[tuple[RetryCategory, tuple[str, ...]], ...] = (
     (
         "authentication",
@@ -814,12 +816,16 @@ def _prepare_provider_target(
             "controller": controller_environment(lock.runs[0].configuration),
             "provider": {
                 "service": target.service,
+                "api": target.api,
                 "requested_model": target.model,
                 "routed_model": routed_provider_model(target),
                 "routing": target.routing.model_dump(mode="json"),
                 "request_controls": {
                     "max_attempts": target.limits.max_attempts,
                     "max_concurrent_requests": target.limits.max_concurrent_requests,
+                    "min_request_interval_seconds": (
+                        target.limits.min_request_interval_seconds
+                    ),
                     "parameters": target.parameters,
                     "timeout_seconds": target.timeout_seconds,
                 },
@@ -1167,6 +1173,12 @@ def _execute_trial(
             run,
             token=token,
             inference_base_url=trial_base_url,
+            agent_api_key=(
+                _SCOPED_PROVIDER_API_KEY if provider_proxy is not None else None
+            ),
+            judge_api_key=(
+                _SCOPED_PROVIDER_API_KEY if judge_recorder is not None else None
+            ),
             judge_api_url=judge_api_url,
             blocked_secret_names=blocked_secret_names,
             redaction_secrets=tuple(

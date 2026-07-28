@@ -561,6 +561,114 @@ def test_provider_command_preserves_locked_openclaw_model_capabilities(
     }
 
 
+def test_responses_provider_configures_registered_openclaw_codex_runtime(
+    remote_spec: ExperimentSpec, tmp_path: Path
+) -> None:
+    model = remote_spec.matrix.models[0]
+    target = ProviderTarget(
+        id="responses-provider",
+        api="responses",
+        model=model.repo,
+        routing=ExplicitProviderRoute(provider="together"),
+        parameters={"top_p": 0.95},
+    )
+    agent = remote_spec.matrix.agents[0].model_copy(
+        update={
+            "name": "openclaw-codex",
+            "parameters": {
+                "codex_plugin_version": "2026.7.1-1",
+                "openclaw_node_version": "24.15.0",
+            },
+        }
+    )
+    spec = remote_spec.model_copy(
+        update={
+            "matrix": remote_spec.matrix.model_copy(
+                update={"deployments": [target], "agents": [agent]}
+            )
+        }
+    )
+    lock = build_run_lock(spec, run_id="codex-provider", allow_provider=True)
+    task_name = next(iter(lock.benchmark_task_digests))
+
+    request = build_execution_request(
+        lock,
+        tmp_path / "jobs",
+        "https://provider.example",
+        task_names=[task_name],
+        attempts=1,
+        concurrency=1,
+        expected_task_digests={task_name: lock.benchmark_task_digests[task_name]},
+    )
+
+    configured_agents = request.harbor_config["agents"]
+    assert isinstance(configured_agents, list)
+    configured = configured_agents[0]
+    assert isinstance(configured, dict)
+    assert configured["name"] == "openclaw-codex"
+    assert configured["model_name"] == f"openai/{model.repo}:together"
+    assert configured["kwargs"] == {
+        "codex_plugin_version": "2026.7.1-1",
+        "openclaw_node_version": "24.15.0",
+        "version": agent.revision,
+    }
+    assert request.verification.expected_model_provider == "openai"
+    assert request.verification.expected_model_name == f"{model.repo}:together"
+
+
+def test_chat_provider_configures_pi_with_locked_models_json(
+    remote_spec: ExperimentSpec, tmp_path: Path
+) -> None:
+    model = remote_spec.matrix.models[0]
+    target = ProviderTarget(
+        id="chat-provider",
+        model=model.repo,
+        routing=ExplicitProviderRoute(provider="together"),
+    )
+    models_json = {
+        "providers": {
+            "openai": {
+                "baseUrl": "$OPENAI_BASE_URL",
+                "api": "openai-completions",
+                "models": [{"id": f"{model.repo}:together"}],
+            }
+        }
+    }
+    agent = remote_spec.matrix.agents[0].model_copy(
+        update={"name": "pi", "parameters": {"models_json": models_json}}
+    )
+    spec = remote_spec.model_copy(
+        update={
+            "matrix": remote_spec.matrix.model_copy(
+                update={"deployments": [target], "agents": [agent]}
+            )
+        }
+    )
+    lock = build_run_lock(spec, run_id="pi-provider", allow_provider=True)
+    task_name = next(iter(lock.benchmark_task_digests))
+
+    request = build_execution_request(
+        lock,
+        tmp_path / "jobs",
+        "https://provider.example",
+        task_names=[task_name],
+        attempts=1,
+        concurrency=1,
+        expected_task_digests={task_name: lock.benchmark_task_digests[task_name]},
+    )
+
+    configured_agents = request.harbor_config["agents"]
+    assert isinstance(configured_agents, list)
+    configured = configured_agents[0]
+    assert isinstance(configured, dict)
+    assert configured["name"] == "pi"
+    assert configured["model_name"] == f"openai/{model.repo}:together"
+    configured_kwargs = configured["kwargs"]
+    assert isinstance(configured_kwargs, dict)
+    assert configured_kwargs["models_json"] == models_json
+    assert request.verification.expected_model_provider == "openai"
+
+
 def test_provider_command_rejects_an_agent_without_request_control_support(
     remote_spec: ExperimentSpec, tmp_path: Path
 ) -> None:
@@ -580,7 +688,7 @@ def test_provider_command_rejects_an_agent_without_request_control_support(
 
     with pytest.raises(
         WorkerError,
-        match="request controls require the OpenClaw Harbor agent",
+        match="require openclaw, openclaw-codex, or pi",
     ):
         build_harbor_trial_command(
             lock,

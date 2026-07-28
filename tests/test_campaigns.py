@@ -158,7 +158,7 @@ def test_matrix_rules_filter_campaign_cells(remote_spec: ExperimentSpec) -> None
             "model",
             "Inference Provider target model must match the selected model profile",
         ),
-        ("agent", "Inference Provider targets require the OpenClaw Harbor agent"),
+        ("agent", "require openclaw, openclaw-codex, or pi"),
     ],
 )
 def test_campaign_plan_validates_every_resolved_provider_matrix_cell(

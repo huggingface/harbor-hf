@@ -1122,7 +1122,9 @@ def test_judged_wave_records_and_selects_exact_exchange(
                     "messages": [{"role": "user", "content": "grade"}],
                 }
             ).encode()
-            assert environment["AGENT_JUDGE_API_KEY"] == "test-token"
+            assert (
+                environment["AGENT_JUDGE_API_KEY"] == "harbor-hf-scoped-provider-proxy"
+            )
             assert environment["OPENAI_API_KEY"] == "test-token"
             assert "direct-judge-token" not in environment.values()
             request = urllib.request.Request(
@@ -1352,9 +1354,11 @@ def test_provider_wave_runs_shards_without_endpoint_lifecycle(
         "wave.lock.json",
     ]
     runtime = json.loads((destination / "runtime-environment.json").read_text())
+    assert runtime["provider"]["api"] == "chat-completions"
     assert runtime["provider"]["request_controls"] == {
         "max_attempts": 2,
         "max_concurrent_requests": 2,
+        "min_request_interval_seconds": 0.0,
         "parameters": {},
         "timeout_seconds": 60.0,
     }

@@ -297,6 +297,27 @@ def test_run_lock_preserves_and_renders_hosted_judge(
     }
 
 
+def test_scoped_agent_key_does_not_replace_controller_hf_token(
+    remote_spec: ExperimentSpec,
+) -> None:
+    lock = build_run_lock(remote_spec, run_id="scoped-agent-key")
+
+    with harbor_process_environment(
+        lock,
+        token="controller-hf-token",
+        agent_api_key="scoped-agent-key",
+        inference_base_url="https://proxy.example/scopes/capability",
+    ) as environment:
+        observed_environment = environment.copy()
+
+    assert observed_environment["HF_TOKEN"] == "controller-hf-token"
+    assert observed_environment["OPENAI_API_KEY"] == "scoped-agent-key"
+    assert (
+        observed_environment["OPENAI_BASE_URL"]
+        == "https://proxy.example/scopes/capability/v1"
+    )
+
+
 def test_run_lock_reader_accepts_legacy_v1alpha1(remote_spec: ExperimentSpec) -> None:
     payload = build_run_lock(remote_spec, run_id="legacy-lock").model_dump(mode="json")
     payload.pop("benchmark_source", None)
@@ -455,7 +476,7 @@ def test_provider_target_rejects_unsupported_agent_before_submission(
         }
     )
 
-    with pytest.raises(ValueError, match="require the OpenClaw Harbor agent"):
+    with pytest.raises(ValueError, match="require openclaw, openclaw-codex, or pi"):
         build_run_lock(spec, allow_provider=True)
 
 

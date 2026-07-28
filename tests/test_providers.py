@@ -13,11 +13,16 @@ from harbor_hf.provider_models import (
     ProviderChatRequest,
     ProviderLimits,
     ProviderMessage,
+    ProviderRequestMetadata,
     ProviderTarget,
     ProviderTool,
     ProviderToolFunction,
 )
-from harbor_hf.providers import HfInferenceProviderAdapter, observe_provider_response
+from harbor_hf.providers import (
+    HfInferenceProviderAdapter,
+    observe_provider_response,
+    observe_responses_api_response,
+)
 
 _JSON_OBJECT = TypeAdapter(dict[str, JsonValue])
 
@@ -254,6 +259,86 @@ def test_streaming_contract_records_ttft_and_terminal_usage() -> None:
     assert result.evidence.latency.time_to_first_token_ms.value == 10.0
     assert result.evidence.latency.total_ms.value == 40.0
     assert result.evidence.usage.total_tokens.value == 6
+
+
+def test_responses_api_non_streaming_usage_is_normalized() -> None:
+    target = _target().model_copy(update={"api": "responses"})
+    request = ProviderRequestMetadata(
+        request_id="responses-1",
+        streaming=False,
+        message_count=2,
+        tool_count=1,
+    )
+    result = observe_responses_api_response(
+        target,
+        request,
+        attempt=1,
+        status_code=200,
+        headers=httpx.Headers({"x-request-id": "upstream-responses"}),
+        content=json.dumps(
+            {
+                "id": "resp-one",
+                "model": "openai/gpt-oss-120b:fastest",
+                "status": "completed",
+                "output": [{"type": "function_call"}],
+                "usage": {
+                    "input_tokens": 12,
+                    "output_tokens": 3,
+                    "total_tokens": 15,
+                },
+            }
+        ).encode(),
+        total_ms=20,
+    )
+
+    assert result.status == "succeeded"
+    assert result.response_id.value == "resp-one"
+    assert result.finish_reason.value == "completed"
+    assert result.evidence.request.message_count == 2
+    assert result.evidence.request.tool_count == 1
+    assert result.evidence.usage.input_tokens.value == 12
+    assert result.evidence.usage.output_tokens.value == 3
+    assert result.evidence.usage.total_tokens.value == 15
+
+
+def test_responses_api_failed_stream_is_terminal_provider_error() -> None:
+    target = _target().model_copy(update={"api": "responses"})
+    request = ProviderRequestMetadata(
+        request_id="responses-1",
+        streaming=True,
+        message_count=1,
+        tool_count=0,
+    )
+    content = (
+        b"event: response.failed\n"
+        b'data: {"type":"response.failed","response":{"id":"resp-failed",'
+        b'"model":"openai/gpt-oss-120b:fastest","status":"failed",'
+        b'"output":[]}}\n\n'
+    )
+
+    result = observe_responses_api_response(
+        target,
+        request,
+        attempt=1,
+        status_code=200,
+        headers=httpx.Headers(),
+        content=content,
+        total_ms=20,
+    )
+
+    assert result.status == "provider_error"
+    assert result.remote_outcome == "completed"
+    assert result.error_code == "response_failed"
+    assert result.response_id.value == "resp-failed"
+
+
+def test_chat_adapter_rejects_responses_api_target() -> None:
+    target = _target().model_copy(update={"api": "responses"})
+
+    with pytest.raises(ValueError, match="requires the chat-completions API"):
+        _adapter(lambda request: httpx.Response(200)).chat_completion(
+            target, _request(), token="mock-token"
+        )
 
 
 def test_throttling_exposes_retry_and_quota_evidence() -> None:
