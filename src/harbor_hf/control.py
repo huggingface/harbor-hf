@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal, Protocol, cast
 
 from huggingface_hub import CommitOperationAdd, HfApi
-from huggingface_hub.errors import HfHubHTTPError
+from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from harbor_hf.campaigns import CampaignLock
@@ -685,13 +685,16 @@ class HubCampaignStore:
         )
 
     def _paths_under(self, prefix: str, revision: str) -> list[str]:
-        entries = cast(RepoTreeApi, self.api).list_repo_tree(
-            self.repository,
-            prefix.rstrip("/"),
-            repo_type="dataset",
-            revision=revision,
-            recursive=True,
-        )
+        try:
+            entries = cast(RepoTreeApi, self.api).list_repo_tree(
+                self.repository,
+                prefix.rstrip("/"),
+                repo_type="dataset",
+                revision=revision,
+                recursive=True,
+            )
+        except EntryNotFoundError:
+            return []
         return sorted(
             path
             for entry in entries
