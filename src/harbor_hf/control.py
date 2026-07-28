@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -579,6 +579,12 @@ class CampaignStoreApi(Protocol):
     ) -> object: ...
 
 
+class RepoTreeApi(Protocol):
+    def list_repo_tree(
+        self, repo_id: str, path_in_repo: str, **kwargs: object
+    ) -> Iterable[object]: ...
+
+
 class CampaignStore(Protocol):
     def create_campaign(
         self, lock: CampaignLock, request: bytes, event: CampaignEvent
@@ -678,17 +684,28 @@ class HubCampaignStore:
             control_commit=self._last_commit(lock_path, head),
         )
 
+    def _paths_under(self, prefix: str, revision: str) -> list[str]:
+        entries = cast(RepoTreeApi, self.api).list_repo_tree(
+            self.repository,
+            prefix.rstrip("/"),
+            repo_type="dataset",
+            revision=revision,
+            recursive=True,
+        )
+        return sorted(
+            path
+            for entry in entries
+            if isinstance((path := getattr(entry, "path", None)), str)
+            and path.startswith(prefix)
+        )
+
     def _load_events_at(self, campaign_id: str, revision: str) -> list[CampaignEvent]:
         prefix = f"campaigns/{campaign_id}/events/"
-        paths = sorted(
+        paths = [
             path
-            for path in self.api.list_repo_files(
-                self.repository,
-                repo_type="dataset",
-                revision=revision,
-            )
-            if path.startswith(prefix) and path.endswith(".json")
-        )
+            for path in self._paths_under(prefix, revision)
+            if path.endswith(".json")
+        ]
 
         def load(path: str) -> CampaignEvent:
             return CampaignEvent.model_validate(self._read_json(path, revision))
@@ -722,15 +739,9 @@ class HubCampaignStore:
     def load_action_reservations(self, campaign_id: str) -> list[dict[str, JsonValue]]:
         head = self._head()
         prefix = f"campaigns/{campaign_id}/reservations/"
-        paths = sorted(
-            path
-            for path in self.api.list_repo_files(
-                self.repository,
-                repo_type="dataset",
-                revision=head,
-            )
-            if path.startswith(prefix) and path.endswith(".json")
-        )
+        paths = [
+            path for path in self._paths_under(prefix, head) if path.endswith(".json")
+        ]
         reservations: list[dict[str, JsonValue]] = []
         for path in paths:
             value = self._read_json(path, head)

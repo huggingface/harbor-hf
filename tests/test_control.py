@@ -50,6 +50,7 @@ class FakeCampaignApi:
         self.commits: list[dict[str, object]] = []
         self.info_calls: list[tuple[str, dict[str, object]]] = []
         self.list_calls: list[tuple[str, dict[str, object]]] = []
+        self.tree_calls: list[tuple[str, str, dict[str, object]]] = []
         self.download_calls: list[tuple[str, str, dict[str, object]]] = []
 
     @property
@@ -79,6 +80,21 @@ class FakeCampaignApi:
         assert repo_id == "org/harbor-hf-coordination"
         assert kwargs == {"repo_type": "dataset", "revision": self.head}
         return list(self.files)
+
+    def list_repo_tree(
+        self, repo_id: str, path_in_repo: str, **kwargs: object
+    ) -> list[object]:
+        self.tree_calls.append((repo_id, path_in_repo, kwargs))
+        assert repo_id == "org/harbor-hf-coordination"
+        assert kwargs == {
+            "repo_type": "dataset",
+            "revision": self.head,
+            "recursive": True,
+        }
+        prefix = path_in_repo.rstrip("/") + "/"
+        return [
+            SimpleNamespace(path=path) for path in self.files if path.startswith(prefix)
+        ]
 
     def hf_hub_download(self, repo_id: str, filename: str, **kwargs: object) -> str:
         self.download_calls.append((repo_id, filename, kwargs))
@@ -352,6 +368,7 @@ def test_hub_store_snapshot_reads_every_object_from_one_exact_revision(
     api.files[f"campaigns/{lock.campaign_id}/events/ignored.txt"] = b"not json"
     api.info_calls.clear()
     api.list_calls.clear()
+    api.tree_calls.clear()
     api.download_calls.clear()
     expected_head = api.head
     expected_control_commit = api.last_commits[
@@ -371,7 +388,14 @@ def test_hub_store_snapshot_reads_every_object_from_one_exact_revision(
     assert api.info_calls == [
         (repository, {"repo_type": "dataset", "revision": "main"})
     ]
-    assert api.list_calls == [(repository, revision)]
+    assert api.list_calls == []
+    assert api.tree_calls == [
+        (
+            repository,
+            f"campaigns/{lock.campaign_id}/events",
+            {**revision, "recursive": True},
+        )
+    ]
     assert api.download_calls == [
         (
             repository,
