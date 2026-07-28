@@ -686,12 +686,14 @@ class HubCampaignStore:
 
     def _paths_under(self, prefix: str, revision: str) -> list[str]:
         try:
-            entries = cast(RepoTreeApi, self.api).list_repo_tree(
-                self.repository,
-                prefix.rstrip("/"),
-                repo_type="dataset",
-                revision=revision,
-                recursive=True,
+            entries = list(
+                cast(RepoTreeApi, self.api).list_repo_tree(
+                    self.repository,
+                    prefix.rstrip("/"),
+                    repo_type="dataset",
+                    revision=revision,
+                    recursive=True,
+                )
             )
         except EntryNotFoundError:
             return []
