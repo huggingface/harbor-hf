@@ -1122,9 +1122,7 @@ def test_judged_wave_records_and_selects_exact_exchange(
                     "messages": [{"role": "user", "content": "grade"}],
                 }
             ).encode()
-            assert (
-                environment["AGENT_JUDGE_API_KEY"] == "harbor-hf-scoped-provider-proxy"
-            )
+            assert environment["AGENT_JUDGE_API_KEY"] == "test-token"
             assert environment["OPENAI_API_KEY"] == "test-token"
             assert "direct-judge-token" not in environment.values()
             request = urllib.request.Request(

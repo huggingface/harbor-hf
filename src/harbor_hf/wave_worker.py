@@ -1176,9 +1176,7 @@ def _execute_trial(
             agent_api_key=(
                 _SCOPED_PROVIDER_API_KEY if provider_proxy is not None else None
             ),
-            judge_api_key=(
-                _SCOPED_PROVIDER_API_KEY if judge_recorder is not None else None
-            ),
+            judge_api_key=(token if judge_recorder is not None else None),
             judge_api_url=judge_api_url,
             blocked_secret_names=blocked_secret_names,
             redaction_secrets=tuple(
