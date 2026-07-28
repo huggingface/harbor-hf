@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import secrets
+import tempfile
 import threading
 import zlib
 from collections.abc import Callable, Mapping
@@ -56,6 +58,21 @@ _FORWARDED_RESPONSE_HEADERS = {
 }
 
 
+def _atomic_write(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 class ProviderProxyError(RuntimeError):
     """Raised when the hosted provider evidence proxy cannot run safely."""
 
@@ -103,6 +120,7 @@ class ProviderEvidenceProxy:
         self._rate_sleeper = rate_sleeper
         self._owns_client = client is None
         self._lock = threading.Lock()
+        self._checkpoint_lock = threading.Lock()
         self._rate_lock = threading.Lock()
         self._next_request_at = 0.0
         self._attempts: dict[tuple[str, str], int] = {}
@@ -337,6 +355,34 @@ class ProviderEvidenceProxy:
         )
         with self._lock, self.evidence_path.open("a", encoding="utf-8") as stream:
             stream.write(line + "\n")
+
+    def checkpoint(
+        self,
+        evidence_destination: Path,
+        progress_path: Path,
+        progress_destination: Path,
+        *,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        """Durably checkpoint complete provider records without blocking requests."""
+        with self._checkpoint_lock:
+            with self._lock:
+                payload = self.evidence_path.read_bytes()
+                request_count = self._request_counter
+            progress = {
+                "schema_version": "harbor-hf/provider-evidence-progress/v1",
+                "request_count": request_count,
+                "size_bytes": len(payload),
+                "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                **metadata,
+            }
+            _atomic_write(evidence_destination, payload)
+            encoded_progress = (
+                json.dumps(progress, indent=2, sort_keys=True).encode() + b"\n"
+            )
+            _atomic_write(progress_path, encoded_progress)
+            _atomic_write(progress_destination, encoded_progress)
+            return progress
 
     @staticmethod
     def _send_json(

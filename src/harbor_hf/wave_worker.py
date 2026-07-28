@@ -1008,6 +1008,27 @@ def _execute_shard_with_executor(
             failures,
             trial_checksums,
         )
+        if provider_proxy is not None:
+            wave_root = campaign_root / "waves" / wave.wave_id
+            progress_destination = (
+                output_root
+                / campaign.artifact_prefix
+                / "waves"
+                / wave.wave_id
+                / "provider-progress.json"
+            )
+            provider_proxy.checkpoint(
+                progress_destination.with_name("provider-requests.jsonl"),
+                wave_root / "provider-progress.json",
+                progress_destination,
+                metadata={
+                    "campaign_id": campaign.campaign_id,
+                    "wave_id": wave.wave_id,
+                    "shard_id": shard.shard_id,
+                    "last_terminal_trial_id": trial.trial_id,
+                    "checkpointed_at": clock().isoformat(),
+                },
+            )
     if failures:
         append_event(events, "shard_failed", failed_trials=len(failures))
         raise min(failures, key=lambda item: item[0])[1]

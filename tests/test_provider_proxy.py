@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import zlib
 from collections.abc import Callable, Iterator
@@ -131,6 +132,27 @@ def test_proxy_forwards_stream_and_records_content_free_provider_evidence(
     ttft = evidence["evidence"]["latency"]["time_to_first_token_ms"]
     assert ttft["status"] == "observed"
     assert ttft["value"] >= 0
+
+    checkpoint_evidence = tmp_path / "durable" / "provider-requests.jsonl"
+    local_progress = tmp_path / "provider-progress.json"
+    checkpoint_progress = tmp_path / "durable" / "provider-progress.json"
+    progress = proxy.checkpoint(
+        checkpoint_evidence,
+        local_progress,
+        checkpoint_progress,
+        metadata={"wave_id": "wave-one", "last_terminal_trial_id": "trial-one"},
+    )
+    assert checkpoint_evidence.read_bytes() == evidence_path.read_bytes()
+    assert json.loads(local_progress.read_text()) == progress
+    assert checkpoint_progress.read_bytes() == local_progress.read_bytes()
+    assert progress == {
+        "schema_version": "harbor-hf/provider-evidence-progress/v1",
+        "request_count": 1,
+        "size_bytes": len(evidence_path.read_bytes()),
+        "sha256": "sha256:" + hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
+        "wave_id": "wave-one",
+        "last_terminal_trial_id": "trial-one",
+    }
 
 
 def test_proxy_forwards_responses_stream_and_records_content_free_evidence(

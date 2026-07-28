@@ -1345,6 +1345,7 @@ def test_provider_wave_runs_shards_without_endpoint_lifecycle(
         "_SUCCESS",
         "checksums.json",
         "events.jsonl",
+        "provider-progress.json",
         "provider-requests.jsonl",
         "provider-target.json",
         "runtime-environment.json",
