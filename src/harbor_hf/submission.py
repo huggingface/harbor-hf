@@ -4,6 +4,9 @@ import hashlib
 import os
 import re
 import shlex
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -232,11 +235,68 @@ def _secret_arguments(lock: RunLock | WaveLock) -> list[str]:
     ]
 
 
+def _source_secret_names(lock: RunLock | WaveLock) -> list[str]:
+    run_locks = (
+        [lock]
+        if isinstance(lock, RunLock)
+        else [run.configuration for run in lock.runs]
+    )
+    names = {
+        source.credentials.secret_name
+        for run_lock in run_locks
+        if (source := run_lock.benchmark_source) is not None
+        and source.credentials is not None
+    }
+    return sorted(names)
+
+
 def require_source_secrets(lock: RunLock | WaveLock) -> None:
-    token_name = lock.remote.job.token_secret_name
-    for name in job_secret_names(lock):
-        if name != token_name and not os.environ.get(name, ""):
+    for name in _source_secret_names(lock):
+        if not os.environ.get(name, ""):
             raise ValueError(f"required secret {name} is not available")
+
+
+@contextmanager
+def _materialized_source_secrets(
+    lock: RunLock | WaveLock, command: list[str]
+) -> Iterator[list[str]]:
+    names = _source_secret_names(lock)
+    if not names:
+        yield command
+        return
+    values = {name: os.environ[name] for name in names}
+    if any("\n" in value or "\r" in value for value in values.values()):
+        raise ValueError("source secrets must be single-line values")
+    path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="harbor-hf-job-secrets-",
+            delete=False,
+        ) as stream:
+            path = Path(stream.name)
+            os.fchmod(stream.fileno(), 0o600)
+            for name, value in values.items():
+                stream.write(f"{name}={value}\n")
+        rendered: list[str] = []
+        index = 0
+        while index < len(command):
+            if (
+                command[index] == "--secrets"
+                and index + 1 < len(command)
+                and command[index + 1] in values
+            ):
+                index += 2
+                continue
+            rendered.append(command[index])
+            index += 1
+        option_end = rendered.index("--")
+        rendered[option_end:option_end] = ["--secrets-file", str(path)]
+        yield rendered
+    finally:
+        if path is not None:
+            path.unlink(missing_ok=True)
 
 
 def build_submit_command(
@@ -381,7 +441,8 @@ def submit(
         api=bucket_api,
     )
     command = build_submit_command(lock, input_dir=input_source, bucket=bucket)
-    output = runner.run_text(command)
+    with _materialized_source_secrets(lock, command) as runtime_command:
+        output = runner.run_text(runtime_command)
     match = _JOB_ID.search(output)
     if match is None:
         raise ValueError("HF Jobs submission did not return a job ID")
@@ -418,7 +479,8 @@ def submit_wave(
         api=bucket_api,
     )
     command = build_submit_wave_command(lock, input_dir=input_source, bucket=bucket)
-    output = runner.run_text(command)
+    with _materialized_source_secrets(lock, command) as runtime_command:
+        output = runner.run_text(runtime_command)
     match = _JOB_ID.search(output)
     if match is None:
         raise ValueError("HF Jobs wave submission did not return a job ID")

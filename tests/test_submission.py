@@ -52,6 +52,22 @@ class FakeRunner:
         return self.output
 
 
+class SecretFileRunner(FakeRunner):
+    def __init__(self, output: str) -> None:
+        super().__init__(output)
+        self.secret_path: Path | None = None
+        self.secret_content: str | None = None
+        self.secret_mode: int | None = None
+
+    def run_text(self, command: list[str]) -> str:
+        self.command = command
+        index = command.index("--secrets-file")
+        self.secret_path = Path(command[index + 1])
+        self.secret_content = self.secret_path.read_text(encoding="utf-8")
+        self.secret_mode = self.secret_path.stat().st_mode & 0o777
+        return self.output
+
+
 class FakeBucketApi:
     def __init__(
         self,
@@ -344,6 +360,48 @@ def test_private_source_submission_requires_local_secret_before_staging(
     assert runner.command is None
     assert api.created == []
     assert api.created_repositories == []
+
+
+def test_private_source_secret_uses_ephemeral_secret_file(
+    remote_spec: ExperimentSpec,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = GitBenchmarkSource(
+        repository="ShellBench/public-tasks",
+        revision="8" * 40,
+        path="tasks/115-tasks",
+        credentials=GitHubTokenCredentials(secret_name="GITHUB_TOKEN"),
+    )
+    raw = remote_spec.model_dump(mode="python")
+    raw["benchmark"].update(
+        {"dataset": "shellbench/public-115", "source": source.model_dump()}
+    )
+    raw["benchmark"].pop("dataset_digest", None)
+    spec = ExperimentSpec.model_validate(raw)
+    lock = _wave_lock(spec)
+    monkeypatch.setenv("GITHUB_TOKEN", "github-secret")
+    runner = SecretFileRunner("Job started: " + "a" * 24)
+    (tmp_path / "manifest.yaml").write_text("kind: Experiment\n")
+
+    result = submit_wave(
+        lock,
+        input_dir=tmp_path,
+        bucket=lock.artifact_bucket,
+        runner=runner,
+        bucket_api=FakeBucketApi(),
+    )
+
+    assert runner.command is not None
+    assert "github-secret" not in " ".join(runner.command)
+    assert "--secrets-file" in runner.command
+    assert runner.secret_content == "GITHUB_TOKEN=github-secret\n"
+    assert runner.secret_mode == 0o600
+    assert runner.secret_path is not None and not runner.secret_path.exists()
+    assert "--secrets-file" not in result.command
+    assert result.command[result.command.index("--secrets") + 1] == "HF_TOKEN"
+    github_secret = result.command.index("GITHUB_TOKEN")
+    assert result.command[github_secret - 1] == "--secrets"
 
 
 def test_provider_wave_submission_has_no_endpoint_lease_label(
