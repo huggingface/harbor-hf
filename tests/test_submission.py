@@ -390,6 +390,7 @@ def test_private_source_secret_uses_ephemeral_secret_file(
     raw["benchmark"].pop("dataset_digest", None)
     spec = ExperimentSpec.model_validate(raw)
     lock = _wave_lock(spec)
+    monkeypatch.setenv("HF_TOKEN", "hf-secret")
     monkeypatch.setenv("GITHUB_TOKEN", "github-secret")
     monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
     runner = SecretFileRunner("Job started: " + "a" * 24)
@@ -405,11 +406,12 @@ def test_private_source_secret_uses_ephemeral_secret_file(
 
     assert runner.command is not None
     rendered_command = " ".join(runner.command)
+    assert "hf-secret" not in rendered_command
     assert "github-secret" not in rendered_command
     assert "openai-secret" not in rendered_command
     assert "--secrets-file" in runner.command
     assert runner.secret_content == (
-        "GITHUB_TOKEN=github-secret\nOPENAI_API_KEY=openai-secret\n"
+        "HF_TOKEN=hf-secret\nGITHUB_TOKEN=github-secret\nOPENAI_API_KEY=openai-secret\n"
     )
     assert runner.secret_mode == 0o600
     assert runner.secret_path is not None and not runner.secret_path.exists()

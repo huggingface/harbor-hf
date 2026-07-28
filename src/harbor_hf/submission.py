@@ -260,11 +260,10 @@ def require_source_secrets(lock: RunLock | WaveLock) -> None:
 def _materialized_job_secrets(
     lock: RunLock | WaveLock, command: list[str]
 ) -> Iterator[list[str]]:
-    token_name = lock.remote.job.token_secret_name
     values = {
         name: value
         for name in job_secret_names(lock)
-        if name != token_name and (value := os.environ.get(name))
+        if (value := os.environ.get(name))
     }
     if not values:
         yield command
