@@ -123,6 +123,7 @@ class FilesystemHarborExecutionAdapter:
                 agent_package_source=(
                     provider_agent_package_source()
                     if isinstance(lock.deployment, ProviderTarget)
+                    or lock.agent.import_path is not None
                     else None
                 ),
             ),

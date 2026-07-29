@@ -264,6 +264,34 @@ def test_adapter_prepares_one_immutable_harbor_config(
         )
 
 
+def test_adapter_layers_custom_agent_package_for_endpoint_run(
+    remote_spec: ExperimentSpec, tmp_path: Path
+) -> None:
+    lock, _ = _request(remote_spec, tmp_path)
+    lock = lock.model_copy(
+        update={
+            "agent": lock.agent.model_copy(
+                update={"import_path": "harbor_hf_agents.pi.agent:PiAgent"}
+            )
+        }
+    )
+
+    prepared = FilesystemHarborExecutionAdapter().prepare(
+        lock,
+        tmp_path,
+        tmp_path / "jobs",
+        "https://endpoint.example",
+        tmp_path / "harbor",
+        task_names=list(lock.benchmark_tasks),
+        attempts=lock.attempts,
+        concurrency=lock.concurrent_trials,
+        expected_task_digests=dict(lock.benchmark_task_digests),
+    )
+
+    with_index = prepared.command.index("--with")
+    assert prepared.command[with_index + 1].endswith("packages/harbor-hf-agents")
+
+
 def test_request_digest_rejects_tampering(
     remote_spec: ExperimentSpec, tmp_path: Path
 ) -> None:
