@@ -118,6 +118,21 @@ zero-score outcomes. The
 [Harbor Cookbook](docs/harbor-cookbook.md) walks through full campaign
 operation end to end.
 
+### Ask your coding agent
+
+Copy this block when you want an agent to plan or operate a campaign.
+
+```text
+Use Harbor HF to plan or operate this benchmark campaign.
+
+Start with this skill before changing files or creating remote work:
+https://raw.githubusercontent.com/osolmaz/harbor-hf/main/skills/harbor-hf/SKILL.md
+
+Follow the skill and its linked source documents. Run the duration and spend
+gates before paid work. Ask me for missing protocol choices and explicit
+authorization for remote writes.
+```
+
 ## Publish Results
 
 ```bash

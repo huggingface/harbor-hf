@@ -19,3 +19,6 @@
 - Use Conventional Commits.
 - Apply the standards in
   `https://github.com/osolmaz/slophammer/blob/main/docs/AGENT_ENTRYPOINT.md`.
+- Before planning, launching, monitoring, reconciling, recovering, verifying,
+  or publishing a Harbor HF campaign, read and follow
+  `skills/harbor-hf/SKILL.md`.
