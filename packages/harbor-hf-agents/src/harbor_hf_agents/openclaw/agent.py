@@ -589,8 +589,7 @@ class OpenClawAgent(BaseInstalledAgent):
         script = body + "\n_openclaw_container_copy_session_transcript()\n"
         return "python3 -c " + shlex.quote(script)
 
-    def _shell_persist_openclaw_sessions(self) -> str:
-        """Redirect OpenClaw's session directory into Harbor's agent log mount."""
+    def _resolved_openclaw_agent_id(self) -> str:
         raw_agent_id = str(
             self._resolved_flags.get("openclaw_agent_id") or "main"
         ).strip()
@@ -598,6 +597,11 @@ class OpenClawAgent(BaseInstalledAgent):
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", raw_agent_id, re.I):
             agent_id = re.sub(r"[^a-z0-9_-]+", "-", agent_id)
             agent_id = agent_id.lstrip("-").rstrip("-")[:64] or "main"
+        return agent_id
+
+    def _shell_persist_openclaw_sessions(self) -> str:
+        """Redirect OpenClaw's session directory into Harbor's agent log mount."""
+        agent_id = self._resolved_openclaw_agent_id()
         logs_dir = f"{EnvironmentPaths.agent_dir}/openclaw-sessions"
         return (
             f"agent_id={shlex.quote(agent_id)}; "

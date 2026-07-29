@@ -21,16 +21,20 @@ def _materialize_openclaw_codex_config() -> None:
     """Write the isolated Codex provider config from runtime-only environment."""
     import json
     import os
+    import re
     from pathlib import Path
 
     base_url = os.environ.get("OPENAI_BASE_URL")
     if not base_url:
         raise RuntimeError("OPENAI_BASE_URL is required for the Codex runtime")
+    agent_id = os.environ.get("OPENCLAW_AGENT_ID", "main")
+    if re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", agent_id) is None:
+        raise RuntimeError("OPENCLAW_AGENT_ID is invalid")
     destination = (
         Path.home()
         / ".openclaw"
         / "agents"
-        / "main"
+        / agent_id
         / "agent"
         / "codex-home"
         / "config.toml"
@@ -392,6 +396,7 @@ class OpenClawCodexAgent(OpenClawAgent):
             for key in self._provider_env_keys(self._model_provider() or "")
             if (value := self._get_env(key))
         }
+        env["OPENCLAW_AGENT_ID"] = self._resolved_openclaw_agent_id()
         bridged = await prepare_hf_jobs_ingress_bridge(
             self,
             environment,
@@ -426,7 +431,9 @@ class OpenClawCodexAgent(OpenClawAgent):
                 await self.exec_as_agent(
                     environment,
                     command=(
-                        "rm -f $HOME/.openclaw/agents/main/agent/codex-home/config.toml"
+                        "agent_id=$OPENCLAW_AGENT_ID; "
+                        'rm -f "$HOME/.openclaw/agents/$agent_id/agent/'
+                        'codex-home/config.toml"'
                     ),
                     env=env,
                 )

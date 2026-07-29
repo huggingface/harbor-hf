@@ -11,6 +11,7 @@ from harbor.models.trial.config import AgentConfig
 from harbor_hf_agents.openclaw_codex.agent import (
     OpenClawCodexAgent,
     _collect_openclaw_codex_evidence,
+    _materialize_openclaw_codex_config,
 )
 
 
@@ -42,6 +43,27 @@ def test_codex_trajectory_uses_subclass_identity(tmp_path: Path) -> None:
     assert fallback.agent.name == "openclaw-codex"
     assert session is not None
     assert session.agent.name == "openclaw-codex"
+
+
+def test_codex_config_uses_selected_openclaw_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:18080/v1")
+    monkeypatch.setenv("OPENCLAW_AGENT_ID", "custom-agent")
+
+    _materialize_openclaw_codex_config()
+
+    config = (
+        tmp_path
+        / ".openclaw"
+        / "agents"
+        / "custom-agent"
+        / "agent"
+        / "codex-home"
+        / "config.toml"
+    )
+    assert config.read_text() == 'openai_base_url = "http://127.0.0.1:18080/v1"\n'
 
 
 def test_codex_runtime_config_is_forced_for_selected_model(tmp_path: Path) -> None:
