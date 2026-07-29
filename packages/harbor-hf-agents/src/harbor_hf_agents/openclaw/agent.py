@@ -894,7 +894,7 @@ class OpenClawAgent(BaseInstalledAgent):
             schema_version="ATIF-v1.7",
             session_id=session_id,
             agent=Agent(
-                name="openclaw",
+                name=self.name(),
                 version=self.version() or "unknown",
                 model_name=self.model_name,
             ),
@@ -1027,7 +1027,7 @@ class OpenClawAgent(BaseInstalledAgent):
             schema_version="ATIF-v1.7",
             session_id=session_id,
             agent=Agent(
-                name="openclaw",
+                name=self.name(),
                 version=self.version() or "unknown",
                 model_name=self.model_name,
             ),

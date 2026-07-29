@@ -218,7 +218,10 @@ class TestPiAgent:
         assert "scoped-token" not in json.dumps(template)
         assert "/scopes/private/" not in json.dumps(template)
         commands = [call.kwargs["command"] for call in mock_env.exec.call_args_list]
-        assert any("_materialize_pi_models_json" in command for command in commands)
+        materialize = next(
+            command for command in commands if "_materialize_pi_models_json" in command
+        )
+        assert "import os" in materialize
         mock_env.upload_file.assert_awaited_once_with(
             temp_dir / "pi.models.template.json",
             "/logs/agent/pi.models.template.json",

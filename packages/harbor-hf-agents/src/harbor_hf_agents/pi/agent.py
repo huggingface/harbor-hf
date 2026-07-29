@@ -1,6 +1,5 @@
 import inspect
 import json
-import os
 import re
 import shlex
 from collections.abc import Mapping
@@ -42,6 +41,7 @@ _PI_PACKAGE_RENAME_VERSION = Version("0.74.0")
 def _materialize_pi_models_json() -> None:
     """Create Pi's runtime models file without retaining scoped route values."""
     import json
+    import os
     from pathlib import Path
 
     source = Path("/logs/agent/pi.models.template.json")

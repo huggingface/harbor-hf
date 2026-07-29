@@ -26,6 +26,24 @@ def test_factory_creates_registered_openclaw_codex_agent(tmp_path: Path) -> None
     assert agent.name() == "openclaw-codex"
 
 
+def test_codex_trajectory_uses_subclass_identity(tmp_path: Path) -> None:
+    agent = OpenClawCodexAgent(
+        logs_dir=tmp_path,
+        model_name="openai/moonshotai/Kimi-K3:together",
+        version="2026.7.1-2",
+    )
+
+    fallback = agent._convert_envelope_to_trajectory(
+        {"payloads": [{"text": "done"}], "meta": {}}, "task"
+    )
+
+    assert fallback is not None
+    session = agent._trajectory_from_envelope_with_steps({}, fallback.steps)
+    assert fallback.agent.name == "openclaw-codex"
+    assert session is not None
+    assert session.agent.name == "openclaw-codex"
+
+
 def test_codex_runtime_config_is_forced_for_selected_model(tmp_path: Path) -> None:
     agent = OpenClawCodexAgent(
         logs_dir=tmp_path,
