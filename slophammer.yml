@@ -11,6 +11,10 @@ python:
     paths:
       - src/harbor_hf
       - space
+      - packages/harbor-hf-agents/src/harbor_hf_agents
+    exclude:
+      - pattern: packages/harbor-hf-agents/src/harbor_hf_agents/openclaw/agent.py
+        reason: The container helper is serialized as one self-contained function.
     copied_blocks:
       enabled: true
       min_tokens: 100
@@ -19,4 +23,6 @@ python:
       - src/harbor_hf
   dependency_boundaries:
     - from: src/harbor_hf
+      allow: []
+    - from: packages/harbor-hf-agents/src/harbor_hf_agents
       allow: []

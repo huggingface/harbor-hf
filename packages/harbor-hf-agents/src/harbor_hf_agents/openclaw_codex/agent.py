@@ -43,10 +43,10 @@ def _materialize_openclaw_codex_config() -> None:
     destination.chmod(0o600)
 
 
-def _collect_openclaw_codex_evidence(
+def _collect_openclaw_codex_evidence(  # noqa: C901 -- parser branches
     log_root: str = "/logs/agent", home: str | None = None
 ) -> None:
-    """Validate the Codex runtime identity and retain non-credential runtime evidence."""
+    """Validate Codex identity and retain non-credential runtime evidence."""
     import json
     import os
     from pathlib import Path
@@ -259,12 +259,12 @@ class OpenClawCodexAgent(OpenClawAgent):
 
     def __init__(
         self,
-        *args: Any,
+        *args: Any,  # noqa: ANN401 -- Harbor API
         codex_plugin_version: str = _DEFAULT_CODEX_PLUGIN_VERSION,
         codex_request_timeout_ms: int = 600_000,
         model_context_window: int = 262_144,
         model_max_tokens: int = 32_768,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401 -- Harbor API
     ) -> None:
         super().__init__(*args, **kwargs)
         if (

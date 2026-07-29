@@ -105,9 +105,9 @@ class HermesAgent(BaseInstalledAgent):
 
     def __init__(
         self,
-        *args: Any,
+        *args: Any,  # noqa: ANN401 -- Harbor API
         provider_runtime: dict[str, Any] | None = None,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401 -- Harbor API
     ) -> None:
         self._runtime_config = HermesRuntimeConfig()
         self._provider_runtime = self._validate_provider_runtime(provider_runtime)
@@ -329,7 +329,7 @@ class HermesAgent(BaseInstalledAgent):
                 return session
         return sessions[-1]
 
-    def _convert_hermes_session_to_atif(
+    def _convert_hermes_session_to_atif(  # noqa: C901 -- parser branches
         self, jsonl_text: str, session_id: str
     ) -> Trajectory | None:
         """Convert redacted Hermes session exports to ATIF-v1.7."""
@@ -522,7 +522,7 @@ class HermesAgent(BaseInstalledAgent):
     # ------------------------------------------------------------------
 
     @with_prompt_template
-    async def run(
+    async def run(  # noqa: C901 -- parser branches
         self,
         instruction: str,
         environment: BaseEnvironment,

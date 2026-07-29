@@ -28,9 +28,20 @@ def last_stats(output: str) -> dict[str, int] | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--min-kill-rate", type=float, required=True)
+    parser.add_argument(
+        "--repository",
+        type=Path,
+        help="Project root to mutate; defaults to the repository root.",
+    )
     arguments = parser.parse_args()
 
-    repository = Path(__file__).resolve().parents[1]
+    repository = (
+        arguments.repository.resolve()
+        if arguments.repository is not None
+        else Path(__file__).resolve().parents[1]
+    )
+    if not (repository / "pyproject.toml").is_file():
+        parser.error(f"mutation project has no pyproject.toml: {repository}")
     mutant_workspace = repository / "mutants"
     if mutant_workspace.exists():
         shutil.rmtree(mutant_workspace)

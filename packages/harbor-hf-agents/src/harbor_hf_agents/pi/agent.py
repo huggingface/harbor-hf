@@ -66,7 +66,7 @@ def _materialize_pi_models_json() -> None:
     destination.chmod(0o600)
 
 
-def pi_jsonl_to_atif_trajectory(
+def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
     path: Path | str,
     *,
     version: str,
@@ -234,10 +234,10 @@ class PiAgent(BaseInstalledAgent):
 
     def __init__(
         self,
-        *args: Any,
+        *args: Any,  # noqa: ANN401 -- Harbor API
         models_json: dict[str, Any] | None = None,
         provider_runtime: dict[str, Any] | None = None,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401 -- Harbor API
     ) -> None:
         super().__init__(*args, **kwargs)
         self._models_json = models_json
@@ -381,7 +381,7 @@ class PiAgent(BaseInstalledAgent):
 
     @override
     @with_prompt_template
-    async def run(
+    async def run(  # noqa: C901 -- parser branches
         self,
         instruction: str,
         environment: BaseEnvironment,
@@ -481,7 +481,9 @@ class PiAgent(BaseInstalledAgent):
                     f"{model_args}"
                     f"{cli_flags}"
                     f"{escaped_instruction} "
-                    f'2>&1 </dev/null | grep -v \'"type":"message_update"\' | stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}'
+                    "2>&1 </dev/null | "
+                    'grep -v \'"type":"message_update"\' | '
+                    f"stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}"
                 ),
                 env=env,
             )
@@ -498,7 +500,9 @@ class PiAgent(BaseInstalledAgent):
                     await stop_hf_jobs_ingress_bridge(self, environment)
 
     @override
-    def populate_context_post_run(self, context: AgentContext) -> None:
+    def populate_context_post_run(  # noqa: C901 -- parser branches
+        self, context: AgentContext
+    ) -> None:
         output_file = self.logs_dir / self._OUTPUT_FILENAME
         if not output_file.exists():
             return

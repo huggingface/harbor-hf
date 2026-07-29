@@ -26,3 +26,13 @@ jobs:
       - run: uv run slophammer-py dry .
       - run: uv run pip-audit
       - run: uv run slophammer-py check . --baseline
+      - run: uv sync --all-groups --locked
+        working-directory: packages/harbor-hf-agents
+      - run: uv run ruff check .
+        working-directory: packages/harbor-hf-agents
+      - run: uv run ruff format --check .
+        working-directory: packages/harbor-hf-agents
+      - run: uv run ty check
+        working-directory: packages/harbor-hf-agents
+      - run: uv run pytest
+        working-directory: packages/harbor-hf-agents

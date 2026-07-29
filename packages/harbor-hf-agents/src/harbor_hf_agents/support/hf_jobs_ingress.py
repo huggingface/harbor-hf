@@ -17,7 +17,7 @@ _HF_JOBS_HOST = re.compile(r"^[a-z0-9-]+\.hf\.jobs$")
 _LOCAL_API_KEY = "harbor-local-ingress-bridge"
 
 
-def _run_hf_jobs_ingress_bridge() -> None:
+def _run_hf_jobs_ingress_bridge() -> None:  # noqa: C901 -- parser branches
     """Run as root inside the sandbox and inject the private ingress token."""
     import http.client
     import json
@@ -38,7 +38,7 @@ def _run_hf_jobs_ingress_bridge() -> None:
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
-        def do_POST(self) -> None:
+        def do_POST(self) -> None:  # noqa: C901 -- parser branches
             if self.path not in allowed_paths:
                 self.send_error(404)
                 return

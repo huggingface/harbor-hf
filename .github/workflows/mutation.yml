@@ -15,3 +15,7 @@ jobs:
       - uses: astral-sh/setup-uv@v8.1.0
       - run: uv sync --all-groups --locked
       - run: uv run python scripts/check_mutation.py --min-kill-rate 90
+      - run: uv sync --all-groups --locked
+        working-directory: packages/harbor-hf-agents
+      - run: uv run python ../../scripts/check_mutation.py --repository . --min-kill-rate 90
+        working-directory: packages/harbor-hf-agents

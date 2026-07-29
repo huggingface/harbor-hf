@@ -37,7 +37,7 @@ from harbor_hf_agents.support.hf_jobs_ingress import (
 OPENCLAW_AGENT_SETUP_TIMEOUT_SEC = 1200.0
 
 
-def openclaw_session_jsonl_to_atif_steps(
+def openclaw_session_jsonl_to_atif_steps(  # noqa: C901 -- parser branches
     path: Path | str,
     *,
     instruction: str,
@@ -56,7 +56,9 @@ def openclaw_session_jsonl_to_atif_steps(
     except OSError:
         return None
 
-    def _text_from_content(content: Any) -> str:
+    def _text_from_content(
+        content: Any,  # noqa: ANN401 -- raw JSON
+    ) -> str:
         if isinstance(content, str):
             return content
         if not isinstance(content, list):
@@ -69,7 +71,9 @@ def openclaw_session_jsonl_to_atif_steps(
             and isinstance(p.get("text"), str)
         )
 
-    def _assistant_parts(content: Any) -> tuple[str, list[ToolCall]]:
+    def _assistant_parts(  # noqa: C901 -- parser branches
+        content: Any,  # noqa: ANN401 -- raw JSON
+    ) -> tuple[str, list[ToolCall]]:
         if not isinstance(content, list):
             return "", []
         texts: list[str] = []
@@ -100,7 +104,9 @@ def openclaw_session_jsonl_to_atif_steps(
                 )
         return "".join(texts), tools
 
-    def _usage_metrics(usage: Any) -> Metrics | None:
+    def _usage_metrics(
+        usage: Any,  # noqa: ANN401 -- raw JSON
+    ) -> Metrics | None:
         if not isinstance(usage, dict):
             return None
         inp = int(usage.get("input") or 0)
@@ -309,7 +315,7 @@ def _openclaw_container_sanitize_log() -> None:
     path.write_bytes(content)
 
 
-def _openclaw_container_copy_session_transcript() -> None:
+def _openclaw_container_copy_session_transcript() -> None:  # noqa: C901 -- parser branches
     """
     Stdlib-only logic run inside the agent container ("python3 -c").
     Serialized via "inspect.getsource" as a **single** self-contained function.
@@ -420,7 +426,8 @@ class OpenClawAgent(BaseInstalledAgent):
         "chat-completions"
     )
 
-    # Host-written full config; trial mounts logs here as /logs/agent - copied into ~/.openclaw/
+    # Host-written full config. Trial mounts logs here as /logs/agent and copies
+    # the config into ~/.openclaw/.
     _UPLOAD_CONFIG_FILENAME = "openclaw.upload.json"
     _CONTAINER_LOGS_AGENT = "/logs/agent"
 
@@ -431,7 +438,8 @@ class OpenClawAgent(BaseInstalledAgent):
     }
 
     CLI_FLAGS = [
-        # OpenClaw's embedded CLI requires a session target; default install uses agent "main".
+        # OpenClaw's embedded CLI requires a session target. The default
+        # installation uses agent "main".
         CliFlag("openclaw_agent_id", cli="--agent", type="str", default="main"),
         CliFlag("thinking", cli="--thinking", type="str", default="high"),
         CliFlag("timeout", cli="--timeout", type="int"),
@@ -465,7 +473,7 @@ class OpenClawAgent(BaseInstalledAgent):
 
     @classmethod
     def _validate_provider(cls, provider: str) -> None:
-        """Raise ``ValueError`` if ``provider`` isn't in :attr:`_SUPPORTED_PROVIDERS`."""
+        """Raise when ``provider`` is not in :attr:`_SUPPORTED_PROVIDERS`."""
         if provider not in cls._SUPPORTED_PROVIDERS:
             raise ValueError(
                 f"Unsupported provider {provider!r}. Supported providers: "
@@ -475,11 +483,11 @@ class OpenClawAgent(BaseInstalledAgent):
 
     def __init__(
         self,
-        *args: Any,
+        *args: Any,  # noqa: ANN401 -- Harbor API
         openclaw_config: dict[str, Any] | None = None,
         openclaw_node_version: str = "24",
         provider_runtime: dict[str, Any] | None = None,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401 -- Harbor API
     ) -> None:
         override_setup_timeout_sec = kwargs.pop("override_setup_timeout_sec", None)
         if not openclaw_node_version or any(
@@ -538,7 +546,7 @@ class OpenClawAgent(BaseInstalledAgent):
 
     @classmethod
     def _merge_harbor_headless_tool_denies(cls, cfg: dict[str, Any]) -> None:
-        """Append Harbor headless denies to "tools.deny" without dropping user entries."""
+        """Append headless denies to ``tools.deny`` without dropping entries."""
         raw_tools = cfg.get("tools")
         if not isinstance(raw_tools, dict):
             cfg["tools"] = {"deny": list(cls._HEADLESS_TOOL_DENY)}
@@ -605,7 +613,7 @@ class OpenClawAgent(BaseInstalledAgent):
     async def _copy_openclaw_session_file_to_agent_logs(
         self, environment: BaseEnvironment, env: dict[str, str]
     ) -> None:
-        """Copy OpenClaw session JSONL into the trial agent logs mount (best-effort)."""
+        """Copy session JSONL into the trial agent logs mount on a best effort."""
         try:
             await self.exec_as_agent(
                 environment,
@@ -638,7 +646,8 @@ class OpenClawAgent(BaseInstalledAgent):
         await self.exec_as_root(
             environment,
             command=(
-                f"apt-get update && apt-get install -y --no-install-recommends {root_pkgs}"
+                "apt-get update && apt-get install -y --no-install-recommends "
+                + root_pkgs
             ),
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
@@ -647,7 +656,9 @@ class OpenClawAgent(BaseInstalledAgent):
             environment,
             command=(
                 "set -o pipefail; "
-                "retry_all=$(curl --help all 2>/dev/null | grep -q -- '--retry-all-errors' && echo '--retry-all-errors'); "
+                "retry_all=$(curl --help all 2>/dev/null "
+                "| grep -q -- '--retry-all-errors' "
+                "&& echo '--retry-all-errors'); "
                 "curl -fsSL --retry 5 --retry-delay 2 $retry_all "
                 "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh "
                 "| bash"
@@ -714,7 +725,7 @@ class OpenClawAgent(BaseInstalledAgent):
         return self.model_name.split("/", 1)[0]
 
     def _merge_provider_base_url_from_env(self, cfg: dict[str, Any]) -> None:
-        """Apply "<PROVIDER>_BASE_URL" to "models.providers.<provider>" if not already configured.
+        """Apply the provider base URL unless it is already configured.
 
         Generic across providers; e.g. "openai/gpt-4.1" reads "OPENAI_BASE_URL".
         """
@@ -853,7 +864,7 @@ class OpenClawAgent(BaseInstalledAgent):
     def _trajectory_from_envelope_with_steps(
         self, envelope: dict[str, Any], steps: list[Step]
     ) -> Trajectory | None:
-        """ATIF shell from CLI envelope meta + caller-supplied steps (e.g. session JSONL)."""
+        """Build an ATIF shell from envelope metadata and supplied steps."""
         meta = envelope.get("meta")
         if not isinstance(meta, dict):
             meta = {}
@@ -891,7 +902,7 @@ class OpenClawAgent(BaseInstalledAgent):
             final_metrics=final_metrics,
         )
 
-    def _convert_envelope_to_trajectory(
+    def _convert_envelope_to_trajectory(  # noqa: C901 -- parser branches
         self, envelope: dict[str, Any], instruction: str
     ) -> Trajectory | None:
         """Map OpenClaw CLI JSON (embedded "--local" run) to ATIF."""
@@ -1025,7 +1036,9 @@ class OpenClawAgent(BaseInstalledAgent):
         )
 
     @override
-    def populate_context_post_run(self, context: AgentContext) -> None:
+    def populate_context_post_run(  # noqa: C901 -- parser branches
+        self, context: AgentContext
+    ) -> None:
         envelope = self._parse_stdout()
         if not envelope:
             return

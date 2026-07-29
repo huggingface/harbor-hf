@@ -12,6 +12,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
   "harbor @ git+https://github.com/harbor-framework/harbor.git@8e18dc8887f0371533c403a45a0aa0841e7fd0c8",
+  "mutmut==3.6.0",
   "pytest>=8.4.0",
   "pytest-asyncio>=1.2.0",
   "ruff>=0.15.21",
@@ -33,5 +34,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "C90"]
 max-complexity = 8
 
 [tool.ruff.lint.per-file-ignores]
-"src/**/*.py" = ["ANN401", "C901", "E501"]
 "tests/**/*.py" = ["ANN"]
+
+[tool.mutmut]
+source_paths = ["src/harbor_hf_agents"]
+pytest_add_cli_args_test_selection = ["tests"]
