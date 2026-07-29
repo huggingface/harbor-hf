@@ -1728,8 +1728,21 @@ def test_provider_wave_uses_provider_identity_without_endpoint_side_effects(
     assert endpoints.inspect_calls == []
     assert endpoints.create_calls == []
     assert endpoints.pause_calls == []
-    run_evidence = _run_evidence(lock, wave.runs[0].configuration, NOW, quality="clean")
+    run_configuration = wave.runs[0].configuration
+    run_evidence = _run_evidence(lock, run_configuration, NOW, quality="clean")
     assert run_evidence.model_revision == "not_observed"
+
+    git_revision = "1" * 40
+    git_agent = run_configuration.agent.model_copy(
+        update={
+            "revision": git_revision,
+            "revision_kind": "git",
+            "reported_version": None,
+        }
+    )
+    git_configuration = run_configuration.model_copy(update={"agent": git_agent})
+    git_evidence = _run_evidence(lock, git_configuration, NOW, quality="clean")
+    assert git_evidence.agent_revision == git_revision
 
 
 def test_spend_capped_provider_wave_uses_locked_estimate_without_cli_context(

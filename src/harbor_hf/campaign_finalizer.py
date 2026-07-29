@@ -1213,9 +1213,9 @@ def _run_evidence(
         hardware = "not_reported"
         accelerators = 0
     agent_revision = (
-        lock.agent.revision
-        if lock.agent.revision_kind == "package"
-        else cast(str, lock.agent.reported_version)
+        cast(str, lock.agent.reported_version)
+        if lock.agent.revision_kind == "harbor-source"
+        else lock.agent.revision
     )
     return RunEvidence(
         run_id=lock.run_id,
