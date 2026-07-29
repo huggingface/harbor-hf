@@ -30,5 +30,6 @@ async def test_agent_commands_run_as_dedicated_unprivileged_user(temp_dir) -> No
         assert call.kwargs["user"] == "root"
         assert "runuser -u harbor-agent" in call.kwargs["command"]
         assert "HOME=/tmp/harbor-agent-home" in call.kwargs["command"]
+        assert "NVM_DIR=/tmp/harbor-agent-home/.nvm" in call.kwargs["command"]
     assert first.kwargs["env"]["OPENAI_API_KEY"] == "scoped-agent-key"
     assert "scoped-agent-key" not in first.kwargs["command"]

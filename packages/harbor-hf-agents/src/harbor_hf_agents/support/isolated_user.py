@@ -46,6 +46,7 @@ class IsolatedProviderAgent(BaseInstalledAgent):
         wrapped = (
             f"runuser -u {_AGENT_USER} -- env "
             f"HOME={shlex.quote(_AGENT_HOME)} "
+            f"NVM_DIR={shlex.quote(_AGENT_HOME + '/.nvm')} "
             f"USER={_AGENT_USER} LOGNAME={_AGENT_USER} "
             f"/bin/bash -lc {shlex.quote(command)}"
         )
