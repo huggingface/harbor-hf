@@ -232,8 +232,8 @@ class ProviderEvidenceProxy:
             return
         try:
             payload = self._read_request(handler)
-            request, attempt = self._request(payload, scope=scope)
             forwarded = _forwarded_payload(self.target, payload)
+            request, attempt = self._request(forwarded, scope=scope)
         except (ProviderProxyError, ValidationError, ValueError) as error:
             self._send_json(handler, 400, {"error": str(error)})
             return

@@ -648,6 +648,7 @@ def test_proxy_lifecycle_and_http_failure_matrix(tmp_path: Path) -> None:
     target = ProviderTarget(
         id="provider-one",
         model="org/model",
+        parameters={"top_p": 0.95},
         limits=ProviderLimits(max_attempts=2),
     )
     evidence_path = tmp_path / "provider-requests.jsonl"
@@ -681,15 +682,16 @@ def test_proxy_lifecycle_and_http_failure_matrix(tmp_path: Path) -> None:
                 json={
                     "model": "ignored",
                     "messages": [{"role": "user", "content": content}],
+                    "top_p": top_p,
                 },
                 timeout=5,
             )
-            for url, content in (
-                (throttled_url, "PRIVATE_THROTTLE"),
-                (throttled_url, "PRIVATE_THROTTLE"),
-                (throttled_url, "PRIVATE_THROTTLE"),
-                (complete_url, "PRIVATE_COMPLETE"),
-                (timeout_url, "PRIVATE_TIMEOUT"),
+            for url, content, top_p in (
+                (throttled_url, "PRIVATE_THROTTLE", 0.1),
+                (throttled_url, "PRIVATE_THROTTLE", 0.2),
+                (throttled_url, "PRIVATE_THROTTLE", 0.3),
+                (complete_url, "PRIVATE_COMPLETE", 0.4),
+                (timeout_url, "PRIVATE_TIMEOUT", 0.5),
             )
         ]
     finally:
