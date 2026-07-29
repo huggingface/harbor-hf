@@ -174,6 +174,9 @@ class ProviderMessage(FrozenModel):
         default=None, exclude_if=lambda value: value is None
     )
     reasoning: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    name: str | None = Field(
+        default=None, min_length=1, exclude_if=lambda value: value is None
+    )
     tool_call_id: str | None = Field(default=None, min_length=1)
     tool_calls: list[ProviderToolCall] = Field(default_factory=list)
 

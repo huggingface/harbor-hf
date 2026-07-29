@@ -505,7 +505,12 @@ def test_proxy_request_translation_preserves_openai_tool_contract() -> None:
                         }
                     ],
                 },
-                {"role": "tool", "content": "result", "tool_call_id": "call-one"},
+                {
+                    "role": "tool",
+                    "content": "result",
+                    "name": "shell",
+                    "tool_call_id": "call-one",
+                },
             ],
             "tools": [
                 {
@@ -550,6 +555,7 @@ def test_proxy_request_translation_preserves_openai_tool_contract() -> None:
             {
                 "role": "tool",
                 "content": "result",
+                "name": "shell",
                 "tool_call_id": "call-one",
                 "tool_calls": [],
             },
