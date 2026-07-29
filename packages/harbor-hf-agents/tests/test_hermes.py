@@ -140,6 +140,22 @@ class TestHermesRunCommands:
             "checkpoints": {"enabled": False},
         }
 
+    def test_custom_config_uses_local_bridge_without_scoped_capability(self):
+        config = yaml.safe_load(
+            HermesAgent._build_config_yaml(
+                "routed-model",
+                custom_base_url="http://127.0.0.1:18080/v1",
+                custom_api_key="harbor-local-ingress-bridge",
+            )
+        )
+        assert config["model"] == {
+            "default": "routed-model",
+            "provider": "custom",
+            "base_url": "http://127.0.0.1:18080/v1",
+            "api_key": "harbor-local-ingress-bridge",
+        }
+        assert "provider" not in config
+
     def test_runtime_config_rejects_unknown_fields(self):
         with pytest.raises(ValueError, match="Extra inputs are not permitted"):
             HermesRuntimeConfig.model_validate({"unknown": True})
@@ -207,6 +223,15 @@ class TestHermesRunCommands:
         )
         assert "HF_TOKEN" not in run_call.kwargs["env"]
         assert "runuser -u harbor-agent" in run_call.kwargs["command"]
+        assert "--provider custom" in run_call.kwargs["command"]
+        assert "--model routed-model" in run_call.kwargs["command"]
+        config_call = next(
+            call
+            for call in mock_env.exec.call_args_list
+            if "config.yaml" in call.kwargs["command"]
+        )
+        assert "provider: custom" in config_call.kwargs["command"]
+        assert "scoped-route-capability" not in config_call.kwargs["command"]
         root_calls = [
             call
             for call in mock_env.exec.call_args_list

@@ -191,7 +191,12 @@ class HermesAgent(IsolatedProviderAgent):
         return self._runtime_config
 
     @staticmethod
-    def _build_config_yaml(model: str) -> str:
+    def _build_config_yaml(
+        model: str,
+        *,
+        custom_base_url: str | None = None,
+        custom_api_key: str | None = None,
+    ) -> str:
         """Render the fixed, secret-free Hermes ``config.yaml``."""
         config = HermesRuntimeConfig()
         value: dict[str, object] = {
@@ -199,6 +204,16 @@ class HermesAgent(IsolatedProviderAgent):
             "provider": "auto",
             **config.model_dump(mode="json"),
         }
+        if custom_base_url is not None:
+            if custom_api_key is None:
+                raise ValueError("custom Hermes endpoint requires a local API key")
+            value["model"] = {
+                "default": model,
+                "provider": "custom",
+                "base_url": custom_base_url,
+                "api_key": custom_api_key,
+            }
+            value.pop("provider")
         return yaml.safe_dump(value, default_flow_style=False, sort_keys=True)
 
     # ------------------------------------------------------------------
@@ -580,8 +595,17 @@ class HermesAgent(IsolatedProviderAgent):
                 api="chat-completions",
             )
 
-        cli_model = model if hermes_provider_flag else self.model_name
-        config_yaml = self._build_config_yaml(cli_model)
+        if bridged:
+            hermes_provider_flag = "custom"
+            cli_model = model
+            config_yaml = self._build_config_yaml(
+                cli_model,
+                custom_base_url=env["OPENAI_BASE_URL"],
+                custom_api_key=env["OPENAI_API_KEY"],
+            )
+        else:
+            cli_model = model if hermes_provider_flag else self.model_name
+            config_yaml = self._build_config_yaml(cli_model)
         env["HARBOR_INSTRUCTION"] = instruction
 
         await self.exec_as_agent(
