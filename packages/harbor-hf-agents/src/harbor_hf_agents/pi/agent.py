@@ -7,11 +7,7 @@ from pathlib import Path
 from typing import Any, cast, override
 from urllib.parse import urlsplit
 
-from harbor.agents.installed.base import (
-    BaseInstalledAgent,
-    CliFlag,
-    with_prompt_template,
-)
+from harbor.agents.installed.base import CliFlag, with_prompt_template
 from harbor.agents.installed.node_install import nvm_node_install_snippet
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
@@ -32,6 +28,7 @@ from harbor_hf_agents.support.hf_jobs_ingress import (
     prepare_hf_jobs_ingress_bridge,
     stop_hf_jobs_ingress_bridge,
 )
+from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
 
 _CURRENT_PI_PACKAGE = "@earendil-works/pi-coding-agent"
 _LEGACY_PI_PACKAGE = "@mariozechner/pi-coding-agent"
@@ -227,7 +224,7 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
     )
 
 
-class PiAgent(BaseInstalledAgent):
+class PiAgent(IsolatedProviderAgent):
     SUPPORTS_ATIF: bool = True
     _OUTPUT_FILENAME = "pi.txt"
     _MODELS_TEMPLATE_FILENAME = "pi.models.template.json"
@@ -342,7 +339,10 @@ class PiAgent(BaseInstalledAgent):
     async def install(self, environment: BaseEnvironment) -> None:
         await self.exec_as_root(
             environment,
-            command="apt-get update && apt-get install -y curl",
+            command=(
+                "apt-get update && apt-get install -y --no-install-recommends "
+                "ca-certificates curl passwd util-linux"
+            ),
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
         package = _CURRENT_PI_PACKAGE

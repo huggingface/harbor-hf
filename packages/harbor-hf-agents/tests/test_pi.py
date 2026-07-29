@@ -227,7 +227,7 @@ class TestPiAgent:
             "/logs/agent/pi.models.template.json",
         )
         assert any("pi --print" in command for command in commands)
-        assert commands[-1].endswith("rm -f $HOME/.pi/agent/models.json")
+        assert "rm -f $HOME/.pi/agent/models.json" in commands[-1]
 
     @pytest.mark.parametrize(
         ("models_json", "message"),

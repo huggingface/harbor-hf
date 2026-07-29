@@ -9,11 +9,7 @@ import shlex
 from pathlib import Path
 from typing import Any, ClassVar, Literal, override
 
-from harbor.agents.installed.base import (
-    BaseInstalledAgent,
-    CliFlag,
-    with_prompt_template,
-)
+from harbor.agents.installed.base import CliFlag, with_prompt_template
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.trajectories import (
@@ -33,6 +29,7 @@ from harbor_hf_agents.support.hf_jobs_ingress import (
     prepare_hf_jobs_ingress_bridge,
     stop_hf_jobs_ingress_bridge,
 )
+from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
 
 OPENCLAW_AGENT_SETUP_TIMEOUT_SEC = 1200.0
 
@@ -383,7 +380,7 @@ def _openclaw_container_copy_session_transcript() -> None:  # noqa: C901 -- pars
     dst.write_bytes(content)
 
 
-class OpenClawAgent(BaseInstalledAgent):
+class OpenClawAgent(IsolatedProviderAgent):
     """
     OpenClaw in Harbor: ``openclaw agent --local --json``.
 
@@ -646,7 +643,7 @@ class OpenClawAgent(BaseInstalledAgent):
 
     @override
     async def install(self, environment: BaseEnvironment) -> None:
-        root_pkgs = "curl ca-certificates"
+        root_pkgs = "curl ca-certificates passwd util-linux"
         await self.exec_as_root(
             environment,
             command=(

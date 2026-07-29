@@ -121,7 +121,7 @@ class TestHermesRunCommands:
         mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
         await agent.run("do something", mock_env, AsyncMock())
         exec_calls = mock_env.exec.call_args_list
-        assert "config.yaml" in exec_calls[0].kwargs["command"]
+        assert any("config.yaml" in call.kwargs["command"] for call in exec_calls)
 
     def test_config_yaml_matches_shellbench_runtime_contract(self):
         config = yaml.safe_load(HermesAgent._build_config_yaml("test-model"))
@@ -206,17 +206,20 @@ class TestHermesRunCommands:
             "http://127.0.0.1:18080/v1"
         )
         assert "HF_TOKEN" not in run_call.kwargs["env"]
+        assert "runuser -u harbor-agent" in run_call.kwargs["command"]
         root_calls = [
             call
             for call in mock_env.exec.call_args_list
-            if call.kwargs.get("user") == "root"
+            if "/tmp/harbor-hf-ingress-bridge.pid" in call.kwargs["command"]
+            and "runuser" not in call.kwargs["command"]
         ]
-        assert len(root_calls) == 2
-        assert root_calls[0].kwargs["env"]["HARBOR_HF_INGRESS_TOKEN"] == (
-            "private-hf-token"
+        start = next(
+            call for call in root_calls if "nohup python3" in call.kwargs["command"]
         )
-        assert "private-hf-token" not in root_calls[0].kwargs["command"]
-        assert "kill" in root_calls[1].kwargs["command"]
+        stop = root_calls[-1]
+        assert start.kwargs["env"]["HARBOR_HF_INGRESS_TOKEN"] == "private-hf-token"
+        assert "private-hf-token" not in start.kwargs["command"]
+        assert "kill" in stop.kwargs["command"]
 
 
 class TestHermesInstall:
@@ -232,7 +235,7 @@ class TestHermesInstall:
         await agent.install(AsyncMock())
 
         root_command = agent.exec_as_root.await_args.kwargs["command"]
-        assert "curl git ripgrep xz-utils" in root_command
+        assert "curl git passwd ripgrep util-linux xz-utils" in root_command
         command = agent.exec_as_agent.await_args.kwargs["command"]
         assert f"hermes-agent/{revision}/scripts/install.sh" in command
         assert f"--commit {revision}" in command

@@ -7,11 +7,7 @@ import shlex
 from typing import Any, ClassVar, Literal, cast, override
 
 import yaml
-from harbor.agents.installed.base import (
-    BaseInstalledAgent,
-    CliFlag,
-    with_prompt_template,
-)
+from harbor.agents.installed.base import CliFlag, with_prompt_template
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.trajectories import (
@@ -31,6 +27,7 @@ from harbor_hf_agents.support.hf_jobs_ingress import (
     prepare_hf_jobs_ingress_bridge,
     stop_hf_jobs_ingress_bridge,
 )
+from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
 
 # Hermes native provider routing.
 # Maps Harbor provider prefix → (hermes --provider CLI flag, env var names).
@@ -96,7 +93,7 @@ class HermesRuntimeConfig(_HermesConfigModel):
     )
 
 
-class HermesAgent(BaseInstalledAgent):
+class HermesAgent(IsolatedProviderAgent):
     """NousResearch Hermes Agent integration."""
 
     SUPPORTS_ATIF: bool = True
@@ -168,7 +165,7 @@ class HermesAgent(BaseInstalledAgent):
             environment,
             command=(
                 "apt-get update && apt-get install -y --no-install-recommends "
-                "curl git ripgrep xz-utils"
+                "curl git passwd ripgrep util-linux xz-utils"
             ),
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
