@@ -226,11 +226,13 @@ class TestHermesInstall:
         agent = HermesAgent(
             logs_dir=temp_dir, model_name="openai/model", version=revision
         )
-        agent.ensure_system_dependencies = AsyncMock()
+        agent.exec_as_root = AsyncMock()
         agent.exec_as_agent = AsyncMock()
 
         await agent.install(AsyncMock())
 
+        root_command = agent.exec_as_root.await_args.kwargs["command"]
+        assert "curl git ripgrep xz-utils" in root_command
         command = agent.exec_as_agent.await_args.kwargs["command"]
         assert f"hermes-agent/{revision}/scripts/install.sh" in command
         assert f"--commit {revision}" in command
@@ -241,7 +243,7 @@ class TestHermesInstall:
         agent = HermesAgent(
             logs_dir=temp_dir, model_name="openai/model", version="main"
         )
-        agent.ensure_system_dependencies = AsyncMock()
+        agent.exec_as_root = AsyncMock()
         agent.exec_as_agent = AsyncMock()
 
         with pytest.raises(ValueError, match="full Git commit"):

@@ -163,10 +163,15 @@ class HermesAgent(BaseInstalledAgent):
 
     @override
     async def install(self, environment: BaseEnvironment) -> None:
-        await self.ensure_system_dependencies(
-            environment, ("curl", "git", "ripgrep", "xz")
-        )
         installer_url, revision_flag = self._installation_spec(self._version)
+        await self.exec_as_root(
+            environment,
+            command=(
+                "apt-get update && apt-get install -y --no-install-recommends "
+                "curl git ripgrep xz-utils"
+            ),
+            env={"DEBIAN_FRONTEND": "noninteractive"},
+        )
         await self.exec_as_agent(
             environment,
             command=(
