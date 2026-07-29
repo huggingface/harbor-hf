@@ -158,10 +158,17 @@ def _collect_openclaw_codex_evidence(  # noqa: C901 -- parser branches
         raise RuntimeError("OpenClaw output has no session file")
 
     session_file = Path(session_file_value)
-    try:
-        session_file.resolve().relative_to(user_home.resolve())
-    except ValueError as error:
-        raise RuntimeError("OpenClaw session file is outside the agent home") from error
+    resolved_session_file = session_file.resolve()
+    allowed_session_roots = (
+        user_home.resolve(),
+        (logs / "openclaw-sessions").resolve(),
+    )
+    if not any(
+        resolved_session_file.is_relative_to(root) for root in allowed_session_roots
+    ):
+        raise RuntimeError(
+            "OpenClaw session file is outside the retained session roots"
+        )
     if not session_file.is_file():
         raise RuntimeError("OpenClaw session file is missing")
     sessions_store = session_file.parent / "sessions.json"

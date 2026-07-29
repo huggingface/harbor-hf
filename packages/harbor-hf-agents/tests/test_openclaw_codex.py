@@ -175,11 +175,15 @@ def test_collect_runtime_evidence_validates_harness_and_retains_transcripts(
 ) -> None:
     logs = tmp_path / "logs"
     home = tmp_path / "home"
-    sessions = home / ".openclaw" / "agents" / "main" / "sessions"
-    codex_home = sessions.parent / "codex-home"
+    agent_root = home / ".openclaw" / "agents" / "main"
+    sessions = agent_root / "sessions"
+    persisted_sessions = logs / "openclaw-sessions"
+    codex_home = agent_root / "codex-home"
     native = codex_home / "sessions" / "2026" / "07"
     logs.mkdir()
-    sessions.mkdir(parents=True)
+    persisted_sessions.mkdir()
+    agent_root.mkdir(parents=True)
+    sessions.symlink_to(persisted_sessions, target_is_directory=True)
     native.mkdir(parents=True)
 
     session_file = sessions / "session-one.jsonl"
