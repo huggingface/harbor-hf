@@ -369,7 +369,7 @@ def test_agent_revision_metadata_is_explicit() -> None:
             revision="commit",
             revision_kind="harbor-source",
         )
-    with pytest.raises(ValueError, match="report their package revision"):
+    with pytest.raises(ValueError, match="report their locked revision"):
         AgentProfile(
             id="agent",
             name="openclaw",

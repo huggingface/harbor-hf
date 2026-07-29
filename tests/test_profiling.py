@@ -130,6 +130,12 @@ def profiled_provider_spec(spec: ExperimentSpec) -> ExperimentSpec:
     task_digests = {
         f"provider-task-{index:02d}": "sha256:" + f"{index:064x}" for index in range(32)
     }
+    agent = profiled.matrix.agents[0].model_copy(
+        update={
+            "import_path": "harbor_hf_agents.openclaw.agent:OpenClawAgent",
+            "parameters": {"openclaw_config": {}},
+        }
+    )
     return profiled.model_copy(
         update={
             "benchmark": profiled.benchmark.model_copy(
@@ -137,7 +143,8 @@ def profiled_provider_spec(spec: ExperimentSpec) -> ExperimentSpec:
                     "task_names": sorted(task_digests),
                     "task_digests": task_digests,
                 }
-            )
+            ),
+            "matrix": profiled.matrix.model_copy(update={"agents": [agent]}),
         }
     )
 

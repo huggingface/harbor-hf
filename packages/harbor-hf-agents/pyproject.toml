@@ -1,0 +1,37 @@
+[project]
+name = "harbor-hf-agents"
+version = "0.1.0"
+description = "Provider-backed custom Harbor agents for harbor-hf."
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+  "harbor @ git+https://github.com/harbor-framework/harbor.git@8e18dc8887f0371533c403a45a0aa0841e7fd0c8",
+  "pytest>=8.4.0",
+  "pytest-asyncio>=1.2.0",
+  "ruff>=0.15.21",
+  "ty>=0.0.59",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.per-file-ignores]
+"src/**/*.py" = ["ANN401", "C901", "E501"]
+"tests/**/*.py" = ["ANN"]

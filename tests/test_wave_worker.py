@@ -376,7 +376,12 @@ def test_failed_execution_retains_malformed_compatibility_evidence(
     )
     (tmp_path / "harbor-compatibility.json").write_text("{", encoding="utf-8")
 
-    _finalize_execution(tmp_path, "test-token", strict_compatibility=False)
+    _finalize_execution(
+        tmp_path,
+        "test-token",
+        strict_compatibility=False,
+        session_required=False,
+    )
 
     verify_checksums(tmp_path)
     assert (tmp_path / "artifacts.tar.gz").is_file()
@@ -399,7 +404,12 @@ def test_failed_execution_recreates_rejected_jobs_symlink(tmp_path: Path) -> Non
         encoding="utf-8",
     )
 
-    _finalize_execution(tmp_path, "test-token", strict_compatibility=False)
+    _finalize_execution(
+        tmp_path,
+        "test-token",
+        strict_compatibility=False,
+        session_required=False,
+    )
 
     assert jobs.is_dir()
     assert not jobs.is_symlink()
@@ -421,7 +431,12 @@ def test_failed_execution_recreates_rejected_jobs_file(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    _finalize_execution(tmp_path, "test-token", strict_compatibility=False)
+    _finalize_execution(
+        tmp_path,
+        "test-token",
+        strict_compatibility=False,
+        session_required=False,
+    )
 
     assert jobs.is_dir()
     assert (tmp_path / "artifacts.tar.gz").is_file()
@@ -448,7 +463,12 @@ def test_failed_execution_prunes_unsafe_evidence_and_still_finalizes(
     with oversized.open("wb") as stream:
         stream.truncate(64 * 1024 * 1024 + 1)
 
-    _finalize_execution(tmp_path, "test-token", strict_compatibility=False)
+    _finalize_execution(
+        tmp_path,
+        "test-token",
+        strict_compatibility=False,
+        session_required=False,
+    )
 
     verify_checksums(tmp_path)
     manifest = json.loads((tmp_path / "private-artifacts.json").read_text())
@@ -484,14 +504,19 @@ def test_failed_execution_preserves_attempt_state_before_sanitizing(
         "harbor_hf.wave_worker.sanitize_private_artifact_tree", trim_attempt_event
     )
 
-    _finalize_execution(tmp_path, "test-token", strict_compatibility=False)
+    _finalize_execution(
+        tmp_path,
+        "test-token",
+        strict_compatibility=False,
+        session_required=False,
+    )
 
     manifest = json.loads((tmp_path / "private-artifacts.json").read_text())
     assert manifest["requirements"] == [
         {
             "name": "openclaw_session_jsonl",
             "paths": [],
-            "required": True,
+            "required": False,
             "satisfied": False,
         }
     ]
@@ -516,10 +541,15 @@ def test_failed_execution_sanitizes_result_before_session_probe(tmp_path: Path) 
         stream.truncate(64 * 1024 * 1024 + 1)
     (trial / "result.json").symlink_to(outside)
 
-    _finalize_execution(tmp_path, "test-token", strict_compatibility=False)
+    _finalize_execution(
+        tmp_path,
+        "test-token",
+        strict_compatibility=False,
+        session_required=False,
+    )
 
     manifest = json.loads((tmp_path / "private-artifacts.json").read_text())
-    assert manifest["requirements"][0]["required"] is True
+    assert manifest["requirements"][0]["required"] is False
     assert ("harbor-jobs/job/trial/result.json", "symlink") in {
         (item["path"], item["reason"]) for item in manifest["rejections"]
     }
@@ -548,7 +578,12 @@ def test_failed_execution_refreshes_compatibility_after_final_pruning(
 
     monkeypatch.setattr("harbor_hf.wave_worker.refresh_retained_bundle", refresh)
 
-    _finalize_execution(tmp_path, "test-token", strict_compatibility=False)
+    _finalize_execution(
+        tmp_path,
+        "test-token",
+        strict_compatibility=False,
+        session_required=False,
+    )
 
     assert refresh_calls == 2
     assert not (jobs / "late.log").exists()
@@ -560,7 +595,7 @@ def test_success_rejects_malformed_compatibility_evidence(tmp_path: Path) -> Non
     (tmp_path / "harbor-compatibility.json").write_text("{", encoding="utf-8")
 
     with pytest.raises(ValueError):
-        _finalize_execution(tmp_path, "test-token")
+        _finalize_execution(tmp_path, "test-token", session_required=True)
 
 
 def endpoint_snapshot(state: str, ready: int) -> dict[str, object]:
@@ -2675,7 +2710,21 @@ def _provider_wave_inputs(
     )
     spec = remote_spec.model_copy(
         update={
-            "matrix": remote_spec.matrix.model_copy(update={"deployments": [target]}),
+            "matrix": remote_spec.matrix.model_copy(
+                update={
+                    "deployments": [target],
+                    "agents": [
+                        remote_spec.matrix.agents[0].model_copy(
+                            update={
+                                "import_path": (
+                                    "harbor_hf_agents.openclaw.agent:OpenClawAgent"
+                                ),
+                                "parameters": {"openclaw_config": {}},
+                            }
+                        )
+                    ],
+                }
+            ),
             "execution": remote_spec.execution.model_copy(
                 update={
                     "attempts": attempts,

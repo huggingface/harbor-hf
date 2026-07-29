@@ -476,7 +476,9 @@ def test_provider_target_rejects_unsupported_agent_before_submission(
         }
     )
 
-    with pytest.raises(ValueError, match="require openclaw, openclaw-codex, or pi"):
+    with pytest.raises(
+        ValueError, match="require one of: hermes, openclaw, openclaw-codex, pi"
+    ):
         build_run_lock(spec, allow_provider=True)
 
 

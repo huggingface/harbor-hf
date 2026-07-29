@@ -58,6 +58,10 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ANN", "C90"]
 [tool.ruff.lint.mccabe]
 max-complexity = 8
 
+[tool.ruff.lint.per-file-ignores]
+"packages/harbor-hf-agents/src/**/*.py" = ["ANN401", "C901", "E501"]
+"packages/harbor-hf-agents/tests/**/*.py" = ["ANN"]
+
 [tool.coverage.run]
 branch = true
 source = ["src/harbor_hf"]

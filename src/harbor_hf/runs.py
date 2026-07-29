@@ -29,6 +29,7 @@ from harbor_hf.models import (
     resolved_judge_required_tasks,
 )
 from harbor_hf.planner import experiment_digest, resolved_cells
+from harbor_hf.provider_agents import validate_provider_agent
 from harbor_hf.provider_models import ProviderTarget
 
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
@@ -415,8 +416,4 @@ def validate_provider_cell(
         raise ValueError(
             "Inference Provider target model must match the selected model profile"
         )
-    supported_agents = {"openclaw", "openclaw-codex", "pi"}
-    if agent.name not in supported_agents:
-        raise ValueError(
-            "Inference Provider targets require openclaw, openclaw-codex, or pi"
-        )
+    validate_provider_agent(agent, deployment)

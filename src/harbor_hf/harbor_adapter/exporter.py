@@ -59,6 +59,8 @@ def classify_private_artifact(path: str) -> ArtifactKind:
     name = parts[-1]
     if "trajectory" in name:
         return "trajectory"
+    if "agent" in parts and "session" in name and name.endswith(".jsonl"):
+        return "session"
     component_kinds: tuple[tuple[str, ArtifactKind], ...] = (
         ("openclaw-sessions", "session"),
         ("trajectories", "trajectory"),
@@ -68,7 +70,6 @@ def classify_private_artifact(path: str) -> ArtifactKind:
         if component in parts:
             return kind
     exact_kinds: dict[str, ArtifactKind] = {
-        "openclaw.session.jsonl": "session",
         "reward.txt": "verifier",
         "ctrf.json": "verifier",
         "result.json": "result",

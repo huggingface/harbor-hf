@@ -75,6 +75,10 @@ from harbor_hf.private_artifacts import (
     write_private_artifact_manifest,
 )
 from harbor_hf.process import CommandRunner, SubprocessRunner, run_streaming
+from harbor_hf.provider_agents import (
+    provider_agent_definition,
+    validate_provider_agent_evidence,
+)
 from harbor_hf.provider_models import (
     ProviderEndpointEvidence,
     ProviderTarget,
@@ -1244,7 +1248,11 @@ def _execute_trial(
                 else tuple(evidence_secrets)
             ),
         )
-        build_private_artifact_manifest(execution_root, strict_session=True)
+        build_private_artifact_manifest(
+            execution_root,
+            strict_session=True,
+            session_required=_execution_session_required(execution_root, run),
+        )
         append_event(events, "execution_succeeded")
     except Exception as caught:
         error = caught
@@ -1271,7 +1279,12 @@ def _execute_trial(
             "message": _redact_secret_values(str(error), secrets),
         }
         write_json(execution_root / "failure.json", failure_record)
-    _finalize_execution(execution_root, secrets, strict_compatibility=error is None)
+    _finalize_execution(
+        execution_root,
+        secrets,
+        strict_compatibility=error is None,
+        session_required=_execution_session_required(execution_root, run),
+    )
     if error is None:
         (execution_root / "_SUCCESS").write_text("\n", encoding="utf-8")
     else:
@@ -1427,6 +1440,19 @@ def _assemble_execution_trial_evidence(
             files=redacted,
         )
     assert_secret_absent(native_root, known_secrets, allow_symlinks=True)
+    if isinstance(run.deployment, ProviderTarget):
+        definition = provider_agent_definition(run.agent.name)
+        validate_provider_agent_evidence(
+            native_root,
+            definition=definition,
+            expected_agent_name=run.agent.name,
+            expected_agent_version=(
+                run.agent.revision
+                if run.agent.revision_kind in {"package", "git"}
+                else str(run.agent.reported_version)
+            ),
+            expected_model_name=routed_provider_model(run.deployment),
+        )
     assemble_trial_evidence(
         native_root,
         campaign_id=campaign.campaign_id,
@@ -1910,10 +1936,20 @@ def _trial_destination(
     )
 
 
-def _finalize_execution(
-    root: Path, secrets: SecretValues, *, strict_compatibility: bool = True
-) -> None:
+def _execution_session_required(root: Path, run: RunLock) -> bool:
+    if isinstance(run.deployment, ProviderTarget):
+        return provider_agent_definition(run.agent.name).session_required
     attempted = openclaw_execution_was_attempted(root)
+    return openclaw_execution_started(root, fallback_attempted=attempted)
+
+
+def _finalize_execution(
+    root: Path,
+    secrets: SecretValues,
+    *,
+    strict_compatibility: bool = True,
+    session_required: bool,
+) -> None:
     rejection_count = 0
     if not strict_compatibility:
         rejection_count = len(
@@ -1923,7 +1959,6 @@ def _finalize_execution(
             )
         )
         (root / "harbor-jobs").mkdir(exist_ok=True)
-    session_required = openclaw_execution_started(root, fallback_attempted=attempted)
     _redact_unit(root, secrets)
     refresh_error = refresh_retained_bundle(root, strict=strict_compatibility)
     if refresh_error is not None:

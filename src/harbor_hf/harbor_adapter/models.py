@@ -36,6 +36,7 @@ class HarborVerificationPolicy(FrozenModel):
     expected_task_names: list[str] | None = None
     expected_task_digests: dict[str, Sha256Digest] | None = None
     expected_agent_name: str | None = None
+    expected_agent_import_path: str | None = None
     expected_agent_version: str | None = None
     expected_model_provider: str | None = None
     expected_model_name: str | None = None
@@ -208,10 +209,22 @@ def ensure_no_policy_conflicts(
     if dataset.get("task_names") != policy.expected_task_names:
         raise ValueError("Harbor request tasks disagree with verification policy")
     agent = _only_mapping(agents, "agent")
-    if agent.get("name") != policy.expected_agent_name:
-        raise ValueError("Harbor request agent disagrees with verification policy")
+    _validate_agent_selection(agent, policy)
     if agent.get("n_concurrent") != concurrency:
         raise ValueError("Harbor agent concurrency must match trial concurrency")
+
+
+def _validate_agent_selection(
+    agent: dict[str, JsonValue], policy: HarborVerificationPolicy
+) -> None:
+    if policy.expected_agent_import_path is None:
+        if agent.get("name") != policy.expected_agent_name or "import_path" in agent:
+            raise ValueError("Harbor request agent disagrees with verification policy")
+        return
+    if agent.get("import_path") != policy.expected_agent_import_path or "name" in agent:
+        raise ValueError(
+            "Harbor request import path disagrees with verification policy"
+        )
 
 
 def _only_mapping(value: JsonValue | None, label: str) -> dict[str, JsonValue]:

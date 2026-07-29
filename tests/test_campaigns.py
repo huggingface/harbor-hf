@@ -158,7 +158,7 @@ def test_matrix_rules_filter_campaign_cells(remote_spec: ExperimentSpec) -> None
             "model",
             "Inference Provider target model must match the selected model profile",
         ),
-        ("agent", "require openclaw, openclaw-codex, or pi"),
+        ("agent", "require one of: hermes, openclaw, openclaw-codex, pi"),
     ],
 )
 def test_campaign_plan_validates_every_resolved_provider_matrix_cell(
@@ -175,7 +175,12 @@ def test_campaign_plan_validates_every_resolved_provider_matrix_cell(
         id="second-provider",
         model=(first_model.repo if invalid_dimension == "model" else second_model.repo),
     )
-    first_agent = remote_spec.matrix.agents[0]
+    first_agent = remote_spec.matrix.agents[0].model_copy(
+        update={
+            "import_path": "harbor_hf_agents.openclaw.agent:OpenClawAgent",
+            "parameters": {"openclaw_config": {}},
+        }
+    )
     second_agent = first_agent.model_copy(
         update={
             "id": "second-agent",
@@ -215,13 +220,19 @@ def test_campaign_plan_allows_agent_aliases_for_one_effective_deployment(
 ) -> None:
     model = remote_spec.matrix.models[0]
     provider = ProviderTarget(id="provider-one", model=model.repo)
-    second_agent = remote_spec.matrix.agents[0].model_copy(update={"id": "agent-two"})
+    first_agent = remote_spec.matrix.agents[0].model_copy(
+        update={
+            "import_path": "harbor_hf_agents.openclaw.agent:OpenClawAgent",
+            "parameters": {"openclaw_config": {}},
+        }
+    )
+    second_agent = first_agent.model_copy(update={"id": "agent-two"})
     spec = remote_spec.model_copy(
         update={
             "matrix": remote_spec.matrix.model_copy(
                 update={
                     "deployments": [provider],
-                    "agents": [remote_spec.matrix.agents[0], second_agent],
+                    "agents": [first_agent, second_agent],
                 }
             )
         }

@@ -428,7 +428,21 @@ def test_provider_wave_submission_has_no_endpoint_lease_label(
     target = ProviderTarget(id="hf-provider", model=model.repo)
     spec = remote_spec.model_copy(
         update={
-            "matrix": remote_spec.matrix.model_copy(update={"deployments": [target]})
+            "matrix": remote_spec.matrix.model_copy(
+                update={
+                    "deployments": [target],
+                    "agents": [
+                        remote_spec.matrix.agents[0].model_copy(
+                            update={
+                                "import_path": (
+                                    "harbor_hf_agents.openclaw.agent:OpenClawAgent"
+                                ),
+                                "parameters": {"openclaw_config": {}},
+                            }
+                        )
+                    ],
+                }
+            )
         }
     )
     lock = _wave_lock(spec)

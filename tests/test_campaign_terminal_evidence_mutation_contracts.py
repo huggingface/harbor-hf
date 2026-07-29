@@ -1414,9 +1414,17 @@ def test_provider_wave_without_pause_events_projects_cleaning_before_closed(
         model=model.repo,
         routing=ExplicitProviderRoute(provider="groq"),
     )
+    agent = remote_spec.matrix.agents[0].model_copy(
+        update={
+            "import_path": "harbor_hf_agents.openclaw.agent:OpenClawAgent",
+            "parameters": {"openclaw_config": {}},
+        }
+    )
     spec = remote_spec.model_copy(
         update={
-            "matrix": remote_spec.matrix.model_copy(update={"deployments": [provider]})
+            "matrix": remote_spec.matrix.model_copy(
+                update={"deployments": [provider], "agents": [agent]}
+            )
         }
     )
     lock = _campaign(spec)

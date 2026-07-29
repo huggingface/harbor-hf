@@ -75,7 +75,6 @@ def test_manifest_and_campaign_lock_provider_admission_separately_from_endpoints
     model = remote_spec.matrix.models[0]
     target = ProviderTarget(
         id="provider-target",
-        api="responses",
         model=model.repo,
         limits=ProviderLimits(
             max_concurrent_requests=3,
@@ -88,7 +87,19 @@ def test_manifest_and_campaign_lock_provider_admission_separately_from_endpoints
         remote_spec.model_copy(
             update={
                 "matrix": remote_spec.matrix.model_copy(
-                    update={"deployments": [target]}
+                    update={
+                        "deployments": [target],
+                        "agents": [
+                            remote_spec.matrix.agents[0].model_copy(
+                                update={
+                                    "import_path": (
+                                        "harbor_hf_agents.openclaw.agent:OpenClawAgent"
+                                    ),
+                                    "parameters": {"openclaw_config": {}},
+                                }
+                            )
+                        ],
+                    }
                 )
             }
         ).model_dump(mode="python")
@@ -119,7 +130,7 @@ def test_manifest_and_campaign_lock_provider_admission_separately_from_endpoints
     wave = build_wave_lock(campaign, spec, admitted.actions[0])
     assert isinstance(wave.target, ProviderWaveTarget)
     assert wave.target.provider == target
-    assert wave.target.provider.api == "responses"
+    assert wave.target.provider.api == "chat-completions"
     assert wave.endpoint is None
     assert wave.max_concurrent_shards == 1
     assert wave.spend_cap_microusd == 1_250_000

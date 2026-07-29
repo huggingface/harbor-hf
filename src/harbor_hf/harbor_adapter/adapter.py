@@ -27,11 +27,8 @@ from harbor_hf.harbor_adapter.validation import (
     load_compatibility_bundle,
     validate_compatibility_bundle,
 )
-from harbor_hf.models import (
-    DeploymentProfile,
-    DeploymentTarget,
-    pinned_harbor_dataset_reference,
-)
+from harbor_hf.models import DeploymentProfile, pinned_harbor_dataset_reference
+from harbor_hf.provider_agents import effective_provider_agent_parameters
 from harbor_hf.provider_models import ProviderTarget
 from harbor_hf.providers import routed_provider_model
 from harbor_hf.runs import RunLock
@@ -120,7 +117,15 @@ class FilesystemHarborExecutionAdapter:
             request=request,
             request_path=request_path,
             config_path=config_path,
-            command=render_harbor_command(harbor_source, config_path),
+            command=render_harbor_command(
+                harbor_source,
+                config_path,
+                agent_package_source=(
+                    provider_agent_package_source()
+                    if isinstance(lock.deployment, ProviderTarget)
+                    else None
+                ),
+            ),
         )
 
     def execute(
@@ -386,7 +391,7 @@ def build_execution_request(
             "task_names": task_names,
         }
     agent_kwargs = effective_agent_parameters(lock)
-    if lock.agent.revision_kind == "package":
+    if lock.agent.revision_kind in {"package", "git"}:
         agent_kwargs["version"] = lock.agent.revision
     host = urlparse(base_url).hostname or ""
     environment: dict[str, JsonValue] = {
@@ -414,7 +419,11 @@ def build_execution_request(
         "environment": environment,
         "agents": [
             {
-                "name": lock.agent.name,
+                **(
+                    {"import_path": lock.agent.import_path}
+                    if lock.agent.import_path is not None
+                    else {"name": lock.agent.name}
+                ),
                 "model_name": f"openai/{served_model_name}",
                 "n_concurrent": concurrency,
                 "extra_allowed_hosts": [host],
@@ -431,6 +440,7 @@ def build_execution_request(
         expected_task_names=task_names,
         expected_task_digests=expected_task_digests,
         expected_agent_name=lock.agent.name,
+        expected_agent_import_path=lock.agent.import_path,
         expected_agent_version=_expected_agent_version(lock),
         expected_model_provider="openai",
         expected_model_name=served_model_name,
@@ -444,8 +454,20 @@ def build_execution_request(
     )
 
 
-def render_harbor_command(harbor_source: Path, config_path: Path) -> list[str]:
-    return [
+def provider_agent_package_source() -> Path:
+    source = Path(__file__).parents[3] / "packages" / "harbor-hf-agents"
+    if not (source / "pyproject.toml").is_file() or not (source / "uv.lock").is_file():
+        raise WorkerError("pinned worker checkout has no locked provider-agent package")
+    return source
+
+
+def render_harbor_command(
+    harbor_source: Path,
+    config_path: Path,
+    *,
+    agent_package_source: Path | None = None,
+) -> list[str]:
+    command = [
         "uv",
         "run",
         "--project",
@@ -454,12 +476,11 @@ def render_harbor_command(harbor_source: Path, config_path: Path) -> list[str]:
         "--no-dev",
         "--extra",
         "hf-sandbox",
-        "harbor",
-        "run",
-        "--config",
-        str(config_path),
-        "--yes",
     ]
+    if agent_package_source is not None:
+        command.extend(["--with", str(agent_package_source)])
+    command.extend(["harbor", "run", "--config", str(config_path), "--yes"])
+    return command
 
 
 def render_export_command(
@@ -501,7 +522,7 @@ def _served_model_name(lock: RunLock) -> str:
 
 
 def _expected_agent_version(lock: RunLock) -> str:
-    if lock.agent.revision_kind == "package":
+    if lock.agent.revision_kind in {"package", "git"}:
         return lock.agent.revision
     assert lock.agent.reported_version is not None
     return lock.agent.reported_version
@@ -514,7 +535,7 @@ def effective_agent_parameters(lock: RunLock) -> dict[str, JsonValue]:
         return _effective_provider_agent_parameters(lock, parameters, target)
     if lock.agent.name != "openclaw" or "openclaw_config" not in parameters:
         return parameters
-    return _effective_openclaw_agent_parameters(lock, parameters, target)
+    return _effective_endpoint_openclaw_agent_parameters(lock, parameters, target)
 
 
 def _effective_provider_agent_parameters(
@@ -522,30 +543,17 @@ def _effective_provider_agent_parameters(
     parameters: dict[str, JsonValue],
     target: ProviderTarget,
 ) -> dict[str, JsonValue]:
-    agent_name = lock.agent.name
-    if agent_name == "openclaw":
-        if target.api != "chat-completions":
-            raise WorkerError("embedded OpenClaw requires the chat-completions API")
-        return _effective_openclaw_agent_parameters(lock, parameters, target)
-    if agent_name == "openclaw-codex":
-        if target.api != "responses":
-            raise WorkerError("OpenClaw Codex requires the responses API")
-        return parameters
-    if agent_name == "pi":
-        if target.api != "chat-completions":
-            raise WorkerError("Pi provider campaigns require the chat-completions API")
-        if "models_json" not in parameters:
-            raise WorkerError("Pi provider campaigns require a locked models_json")
-        return parameters
-    raise WorkerError(
-        "Inference Provider campaigns require openclaw, openclaw-codex, or pi"
-    )
+    del parameters
+    try:
+        return effective_provider_agent_parameters(lock.agent, target)
+    except ValueError as error:
+        raise WorkerError(str(error)) from error
 
 
-def _effective_openclaw_agent_parameters(
+def _effective_endpoint_openclaw_agent_parameters(
     lock: RunLock,
     parameters: dict[str, JsonValue],
-    target: DeploymentTarget,
+    target: DeploymentProfile,
 ) -> dict[str, JsonValue]:
     existing = parameters.get("openclaw_config", {})
     if not isinstance(existing, dict):
@@ -562,51 +570,23 @@ def _effective_openclaw_agent_parameters(
         raise WorkerError(
             "OpenClaw OpenAI provider configuration must be a JSON object"
         )
-    routed_model = (
-        routed_provider_model(target)
-        if isinstance(target, ProviderTarget)
-        else _served_model_name(lock)
-    )
+    routed_model = _served_model_name(lock)
     model_template = _openclaw_provider_model_template(
         provider, requested_model=lock.model.repo, routed_model=routed_model
-    )
-    if not isinstance(target, ProviderTarget):
-        provider.update(
-            {
-                "api": "openai-completions",
-                "models": [
-                    {
-                        **model_template,
-                        "id": routed_model,
-                        "name": routed_model,
-                    }
-                ],
-            }
-        )
-        _set_openclaw_primary_model(config, routed_model)
-        parameters["openclaw_config"] = config
-        return parameters
-    request_parameters = dict(target.parameters)
-    request_parameters.update(
-        {
-            "maxRetries": target.limits.max_attempts - 1,
-            "timeoutMs": int(target.timeout_seconds * 1000),
-        }
     )
     provider.update(
         {
             "api": "openai-completions",
-            "timeoutSeconds": math.ceil(target.timeout_seconds),
             "models": [
                 {
                     **model_template,
                     "id": routed_model,
                     "name": routed_model,
-                    "params": request_parameters,
                 }
             ],
         }
     )
+    _set_openclaw_primary_model(config, routed_model)
     parameters["openclaw_config"] = config
     return parameters
 

@@ -287,17 +287,28 @@ DeploymentTarget = DeploymentProfile | ProviderTarget
 class AgentProfile(StrictModel):
     id: ProfileId
     name: str = Field(min_length=1)
+    import_path: str | None = Field(
+        default=None,
+        pattern=(
+            r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*"
+            r":[A-Za-z_][A-Za-z0-9_]*$"
+        ),
+    )
     revision: str = Field(min_length=1)
-    revision_kind: Literal["package", "harbor-source"]
+    revision_kind: Literal["package", "git", "harbor-source"]
     reported_version: str | None = Field(default=None, min_length=1)
     parameters: dict[str, JsonValue] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def revision_metadata_is_consistent(self) -> AgentProfile:
-        if self.revision_kind == "package" and self.reported_version is not None:
-            raise ValueError("package agents report their package revision")
+        if self.revision_kind in {"package", "git"} and (
+            self.reported_version is not None
+        ):
+            raise ValueError("package and Git agents report their locked revision")
         if self.revision_kind == "harbor-source" and self.reported_version is None:
             raise ValueError("Harbor-source agents require reported_version")
+        if self.revision_kind == "harbor-source" and self.import_path is not None:
+            raise ValueError("Harbor-source agents cannot use a custom import path")
         ambiguous_keys = [
             key
             for key in self.parameters
@@ -729,7 +740,7 @@ def _split_dataset_reference(dataset: str) -> tuple[str, str | None]:
 
 
 def _is_immutable_agent_revision(agent: AgentProfile) -> bool:
-    if agent.revision_kind == "harbor-source":
+    if agent.revision_kind in {"git", "harbor-source"}:
         return re.fullmatch(r"[0-9a-f]{40}", agent.revision) is not None
     return (
         re.fullmatch(
