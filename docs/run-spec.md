@@ -202,7 +202,15 @@ MoE backend. Values observed after startup are stored separately from requested
 values so a provider default cannot silently change the run definition.
 
 Inference Provider targets lock one wire API with `api`: `chat-completions`
-(the default) or `responses`. The scoped evidence proxy exposes only that route
+(the default) or `responses`. Every provider-backed agent is an external custom
+agent from `packages/harbor-hf-agents` in the pinned worker checkout and is
+loaded through Harbor's public `AgentConfig.import_path` field. New provider
+runs do not select Harbor built-in agents. One declarative registry validates
+the logical agent, import path, wire API, parameters, trajectory schema, session
+requirement, and retry taxonomy without placing agent-specific branches in the
+generic worker.
+
+The scoped evidence proxy exposes only that route
 for the trial, forwards it to the matching Hugging Face Router endpoint, and
 rejects the other route. Deployment `parameters` are authoritative locked
 overrides: they replace same-named values supplied by an agent, while transport
@@ -270,12 +278,44 @@ names, and compares each trial's Harbor `lock.json` task digest with the run
 lock. It then validates every resulting trial for exceptions and finite numeric
 verifier rewards.
 
-Agent revisions declare how they are enforced. `package` passes the revision to
-an installed agent and requires an exact numeric package version rather than a
-tag or version range; Harbor must report that same version.
-`harbor-source` means the agent implementation is part of Harbor: its revision
-must equal `remote.harbor.source.revision`, no package version is passed, and
+Agent profiles contain a stable logical `name` and may contain `import_path` for
+a Harbor custom-agent class. Provider-backed agents require `import_path` and
+must match the corresponding registry definition. Their implementation is
+pinned by the existing `remote.worker.revision`, because the complete
+`harbor-hf-agents` package lives in this repository.
+
+Agent revisions declare how the underlying runtime is enforced. `package`
+passes the revision to the custom agent and requires an exact numeric package
+version rather than a tag or version range; Harbor must report that same
+version. `git` requires a full 40-character commit and Harbor must report that
+commit. `harbor-source` remains valid only for endpoint-backed agents whose
+implementation is part of Harbor: its revision must equal
+`remote.harbor.source.revision`, no package version is passed, and
 `reported_version` records the semantic version Harbor must report.
+
+Example provider-agent profiles:
+
+```yaml
+matrix:
+  agents:
+    - id: hermes
+      name: hermes
+      import_path: harbor_hf_agents.hermes.agent:HermesAgent
+      revision: cb06017b1d6e1b9ae0cb35f99a48ffa6bcbaa828
+      revision_kind: git
+    - id: pi
+      name: pi
+      import_path: harbor_hf_agents.pi.agent:PiAgent
+      revision: 0.82.1
+      revision_kind: package
+      parameters:
+        models_json: {}
+```
+
+Agent parameters remain part of the existing run lock and digest. Each custom
+agent validates its parameters through its own strict configuration model and
+renders its own runtime files. `harbor-hf` does not render Hermes, OpenClaw,
+OpenClaw Codex, or Pi configuration in generic modules.
 
 ### Artifacts
 
@@ -295,7 +335,11 @@ roles must omit it. Only final publications enter the primary results catalog.
 ### Remote Execution
 
 `remote.job` pins the HF Job namespace, digest-pinned controller image, hardware
-flavor, timeout, and `HF_TOKEN` secret injection. The token secret name is fixed
+flavor, timeout, and `HF_TOKEN` secret injection. `remote.worker.revision` also
+pins the complete `packages/harbor-hf-agents` implementation used by every
+provider-backed run. The worker layers that dependency-free package into the
+separately pinned Harbor environment with `uv run --with`; it does not modify
+Harbor source or its lock file. The token secret name is fixed
 because the HF CLI can resolve it from the authenticated local credential
 without putting a token value in the command. `remote.worker` pins this package
 to an exact GitHub commit. `remote.harbor.source` likewise pins Harbor to an

@@ -28,6 +28,12 @@ is not implemented yet. The
 complete and remotely verified across the HF Job and Harbor Sandbox network
 boundary.
 
+The remaining architecture work also includes the
+[provider-agent migration](provider-agent-architecture.md). All provider-backed
+agents will move to one installable package in this repository and Harbor's
+public custom-agent import path. Upstream Harbor remains unchanged. This is a
+hard replacement for new provider campaigns, not a second execution path.
+
 ## Starting Point
 
 The original single-run implementation provides the execution kernel reused by
@@ -122,6 +128,26 @@ Use narrow typed ports for:
 HF adapters validate untrusted response data at their boundary. The existing
 controller behavior moves behind these ports incrementally; there is no
 big-bang package rewrite.
+
+### External Provider Agents
+
+Hermes, OpenClaw, OpenClaw Codex, and Pi live in separate modules in the
+`packages/harbor-hf-agents` distribution. The pinned worker revision identifies
+that package. The worker layers it into an unmodified, separately pinned Harbor
+environment and selects the agent with `AgentConfig.import_path`.
+
+One declarative registry defines the provider API, allowed parameters,
+trajectory schema, session requirement, and retry taxonomy for each logical
+agent. Generic planning, request, worker, provider, and evidence modules use the
+registry and contain no agent-name branches. Each custom-agent module owns its
+installation, strict configuration, invocation, session export, and trajectory
+conversion. Agent modules share only neutral ingress, redaction, and evidence
+utilities.
+
+The migration replaces every existing provider-agent path together. No built-in
+Harbor fallback, compatibility alias, dual writer, or runtime source patch
+remains for new campaigns. Historical evidence stays readable through its
+immutable records.
 
 ## Durable Domain Model
 
@@ -723,6 +749,50 @@ recent checksum-valid private session checkpoint, while campaign recovery still
 reruns or fails the incomplete trial according to policy and publishes no
 partial benchmark result.
 
+### Milestone 9: Unified Provider Agents
+
+Status: planned.
+
+Deliverables:
+
+- add the dependency-free `packages/harbor-hf-agents` distribution;
+- implement separate custom Harbor agents for Hermes, OpenClaw, OpenClaw Codex,
+  and Pi using only public Harbor APIs;
+- add `AgentProfile.import_path` and Git-backed agent revisions to the existing
+  pre-release manifest schema;
+- add expected import-path verification to the existing Harbor verification
+  policy;
+- add one declarative provider-agent registry and remove literal agent-name
+  branches from generic orchestration and evidence code;
+- install the agent package from the pinned worker checkout with `uv --with`
+  while preserving Harbor's locked environment;
+- add a root-owned loopback ingress bridge shared only as neutral security
+  support;
+- preserve each agent's native request protocol, session format, and ATIF-v1.7
+  conversion in its own module;
+- migrate every provider campaign profile to the custom import path; and
+- remove built-in-agent assumptions, Harbor fork pins, compatibility aliases,
+  runtime-manifest experiments, and exact agent-session filename entries.
+
+Tests:
+
+- unmodified-Harbor import-path contract tests for all four agents;
+- worker-revision, import-path, underlying revision, model, and API drift tests;
+- strict per-agent configuration and deterministic rendering tests;
+- bridge UID separation, path restriction, authorization injection, body limit,
+  teardown, and planted-secret tests;
+- session export, redaction, ambiguity, Unicode, parallel tool, and ATIF-v1.7
+  tests;
+- provider evidence, checksum, terminal-marker, and infrastructure-only retry
+  mutation tests; and
+- Fireworks and Together paid canaries covering every applicable API and agent
+  family.
+
+Exit criteria: every supported provider-backed agent runs through its custom
+import path against an unchanged Harbor revision, retains complete secret-free
+evidence, and passes the paid canaries. No new campaign can select the removed
+provider-agent path.
+
 ## Quality Gates For Every Milestone
 
 - Ruff format and lint pass.
@@ -756,6 +826,10 @@ Rollback is code-only: stop webhook and scheduled reconciliation, cancel queued
 campaign work, let watchdogs pause active endpoints, and continue using the
 existing single-run path. Durable campaign plans and evidence remain readable.
 
+Provider-agent migration is not dual-path. Once the unified agents are enabled,
+rollback means reverting the release before submitting more campaigns; it does
+not reactivate built-in Harbor provider agents or preserve a fallback writer.
+
 ## Scaling Boundary
 
 The first production control plane intentionally uses HF Datasets and Buckets,
@@ -778,6 +852,7 @@ and result schemas must remain unchanged across that migration.
 ## Non-Goals
 
 - Supporting benchmark harnesses other than Harbor.
+- Modifying, forking, patching, or monkeypatching Harbor core.
 - Running inference or task containers locally.
 - Treating a Space as the execution service or source of truth.
 - Sharing one endpoint across unrelated campaigns by default.

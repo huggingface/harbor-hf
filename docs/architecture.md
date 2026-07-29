@@ -43,10 +43,14 @@ resource types. Using the Red Hat recipe does not mean routing requests through
 Hugging Face Inference Providers.
 
 Inference Providers are a secondary path for models that are too large or too
-expensive to host on a dedicated endpoint. Provider-backed runs use the same
-Harbor agent contract, but do not pretend that unreported runtime, hardware, or
-quantization details are known. Endpoint and provider profiles remain distinct
-in manifests, locks, metrics, and result tables.
+expensive to host on a dedicated endpoint. Provider-backed runs use external
+custom agents through Harbor's public `AgentConfig.import_path` surface; Harbor
+core remains unchanged. Hermes, OpenClaw, OpenClaw Codex, and Pi follow the
+same [provider-agent architecture](provider-agent-architecture.md), with
+separate runtime modules and one generic orchestration registry. Provider runs
+do not pretend that unreported runtime, hardware, or quantization details are
+known. Endpoint and provider profiles remain distinct in manifests, locks,
+metrics, and result tables.
 
 ### Planner
 
@@ -143,6 +147,16 @@ Harbor remains the only benchmark execution engine. The adapter translates a
 resolved run into Harbor job configuration and registers public lifecycle hooks
 for incremental artifact publication. It must not patch Harbor internals.
 
+Provider-backed agents are supplied by one installable package under
+`packages/harbor-hf-agents` in this repository. The existing pinned worker
+revision fixes that package. The worker layers the dependency-free package into
+the pinned Harbor environment and selects the agent with
+`AgentConfig.import_path`. Agent-specific
+installation, configuration, invocation, session export, and trajectory
+conversion live in separate external modules. Generic `harbor-hf` code performs
+a declarative registry lookup and never renders one agent's configuration for
+another. New provider campaigns have no built-in-agent fallback.
+
 ### Artifact Store
 
 A private HF Storage Bucket is the complete evidence archive. Requested and
@@ -193,7 +207,8 @@ results must be labeled explicitly and must not appear as single-run results.
 A resolved run lock records:
 
 - benchmark source, revision, task-set digest, and verifier digest;
-- Harbor, agent, tool, prompt, and skill revisions;
+- Harbor and worker source revisions, custom-agent import path, underlying
+  agent, tool, prompt, and skill revisions;
 - model, tokenizer, chat-template, and generation-config revisions;
 - weight format and quantization separately from activation and KV precision;
 - resource type and, when known, provider, region, hardware, accelerator count,
@@ -288,7 +303,9 @@ changing benchmark validity.
 ## Boundaries
 
 - No local model loading or inference.
-- No benchmark-specific behavior in package code.
+- No benchmark-specific behavior in the `harbor_hf` orchestration package;
+  custom-agent behavior belongs to the isolated `harbor-hf-agents` package in
+  this repository.
 - No raw sessions in public Dataset repositories.
 - No secret values in manifests, logs, locks, or artifacts.
 - No state that exists only on the submitting machine.

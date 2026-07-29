@@ -7,9 +7,9 @@ the isolated legacy reader.
 
 ## Ownership Boundary
 
-Harbor owns the job config, task resolution, agent and environment config,
-trial execution, locks, results, verifier rewards, exceptions, timing, token
-usage, and trial artifact inventory.
+Harbor owns the job config, task resolution, custom-agent loading, environment
+config, trial execution, locks, results, verifier rewards, exceptions, timing,
+token usage, and trial artifact inventory. Upstream Harbor remains unchanged.
 
 `harbor-hf` owns campaign and physical execution identity, Hugging Face
 infrastructure, immutable request storage, endpoint cleanup, infrastructure
@@ -28,21 +28,51 @@ Each physical execution writes two immutable files before Harbor starts:
   Harbor revision, and the independent `harbor-hf` verification policy.
 
 The job config is the only source for attempts, concurrency, retry policy,
-dataset and task selection, agent identity and parameters, model identity,
-environment type and parameters, output path, and allowed model host. Internal
-Harbor retries are fixed at zero. Agent concurrency equals trial concurrency.
+dataset and task selection, logical agent identity, custom-agent import path and
+parameters, model identity, environment type and parameters, output path, and
+allowed model host. Internal Harbor retries are fixed at zero. Agent concurrency
+equals trial concurrency.
 
 The process command is deliberately small:
 
 ```text
 uv run --project HARBOR_SOURCE --locked --no-dev --extra hf-sandbox \
+  --with WORKER_SOURCE/packages/harbor-hf-agents \
   harbor run --config HARBOR_JOB_JSON --yes
 ```
 
+`WORKER_SOURCE` is the existing immutable `remote.worker` checkout. The agent
+package is dependency-free, so layering it into Harbor does not resolve or
+replace Harbor dependencies.
+
 Harbor receives `HF_TOKEN`, `OPENAI_API_KEY`, and `OPENAI_BASE_URL` in the
 process environment. Secret values are not serialized into either input file.
-The adapter checks both files byte-for-byte before execution and again before
-accepting output.
+For provider-backed agents, the custom agent starts a root-owned loopback bridge
+and passes only a localhost URL and non-secret placeholder key to the
+unprivileged agent process. The agent never receives `HF_TOKEN`, the private HF
+Jobs ingress credential, scoped route URL, provider credentials, or judge
+credentials. The adapter checks both input files byte-for-byte before execution
+and again before accepting output.
+
+## Custom Provider Agents
+
+Every provider-backed agent is loaded through Harbor's public
+`AgentConfig.import_path` field. Hermes, OpenClaw, OpenClaw Codex, and Pi live in
+separate modules under the `harbor-hf-agents` package. New provider executions
+do not select Harbor built-ins and have no fallback to them.
+
+One internal registry validates the logical agent name, import path, required
+wire API, permitted non-secret parameters, trajectory schema, session
+requirement, and retry taxonomy. This registry is Python data, not another
+serialized protocol. Generic Harbor request, worker, and evidence code perform
+a registry lookup and contain no agent-name branches.
+
+The existing pinned worker revision identifies the package implementation. The
+agent profile identifies the custom import path and exact underlying agent
+revision. Package-backed agents use exact numeric versions; Git-backed agents
+use full commits. Harbor's result must report the same logical agent name,
+revision, model provider, and model name that the independent verification
+policy expects.
 
 ## Compatibility Export
 
@@ -72,11 +102,12 @@ together.
 
 The controller writes `private-artifacts.json` for every direct Harbor trial and
 for each complete campaign physical execution. Entries are sorted,
-private-only, size-bounded, and checksummed. A successful OpenClaw trial whose
-agent execution started must include a session JSONL. Failed and timed-out
-trials retain the same requirement record without turning incomplete evidence
-into a score. Raw files and this private manifest cannot cross the normalized
-result publication boundary.
+private-only, size-bounded, and checksummed. A successful provider-agent trial
+whose registry definition requires a native session must include a non-empty
+session JSONL. Failed and timed-out trials
+retain the same requirement record without turning incomplete evidence into a
+score. Raw files and this private manifest cannot cross the normalized result
+publication boundary.
 
 ## Additional Policy
 
@@ -86,7 +117,8 @@ The typed bundle is accepted only when all of these checks pass:
 - the number and names of trials match the fully resolved task set and attempt
   count, including wildcard selectors;
 - every trial lock has the expected task content digest;
-- agent name, agent version, model provider, and model name match the request;
+- custom-agent import path, logical agent name, agent version, model provider,
+  and model name match the request;
 - trial and multi-step exception fields are empty;
 - every trial has at least one finite numeric verifier reward.
 

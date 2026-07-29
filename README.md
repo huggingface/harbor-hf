@@ -160,8 +160,10 @@ coordination Dataset — there is no server to keep alive. The
 deterministic endpoint ownership. The
 [deployment profiling contract](docs/deployment-profiling.md) defines the
 powers-of-two concurrency method, immutable profile evidence, stopping rules,
-and selection criteria used before a full campaign. The proposed [trial
-evidence bundle](docs/trial-evidence-bundle.md) and its [implementation
+and selection criteria used before a full campaign. The [provider-agent
+architecture](docs/provider-agent-architecture.md) defines the unmodified-Harbor
+custom-agent package used for Hermes, OpenClaw, OpenClaw Codex, and Pi. The
+proposed [trial evidence bundle](docs/trial-evidence-bundle.md) and its [implementation
 plan](docs/trial-evidence-implementation-plan.md) define complete post-agent
 workspace capture and exact verifier-judge records.
 
