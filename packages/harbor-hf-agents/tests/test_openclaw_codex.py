@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from harbor.agents.factory import AgentFactory
@@ -25,6 +26,33 @@ def test_factory_creates_registered_openclaw_codex_agent(tmp_path: Path) -> None
 
     assert isinstance(agent, OpenClawCodexAgent)
     assert agent.name() == "openclaw-codex"
+
+
+@pytest.mark.asyncio
+async def test_codex_run_applies_prompt_template(tmp_path: Path) -> None:
+    template = tmp_path / "prompt.j2"
+    template.write_text("wrapped: {{ instruction }}", encoding="utf-8")
+    agent = OpenClawCodexAgent(
+        logs_dir=tmp_path,
+        model_name="openai/moonshotai/Kimi-K3:together",
+        prompt_template_path=template,
+    )
+    agent.exec_as_agent = AsyncMock()
+    agent._run_prepared = AsyncMock()
+
+    with (
+        patch(
+            "harbor_hf_agents.openclaw_codex.agent.prepare_hf_jobs_ingress_bridge",
+            AsyncMock(return_value=False),
+        ),
+        patch(
+            "harbor_hf_agents.openclaw_codex.agent.stop_hf_jobs_ingress_bridge",
+            AsyncMock(),
+        ),
+    ):
+        await agent.run("do work", AsyncMock(), AsyncMock())
+
+    assert agent._run_prepared.await_args.args[0] == "wrapped: do work"
 
 
 def test_codex_trajectory_uses_subclass_identity(tmp_path: Path) -> None:

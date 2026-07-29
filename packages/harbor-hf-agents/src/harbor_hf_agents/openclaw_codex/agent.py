@@ -5,6 +5,7 @@ import re
 import shlex
 from typing import Any, override
 
+from harbor.agents.installed.base import with_prompt_template
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
@@ -385,6 +386,7 @@ class OpenClawCodexAgent(OpenClawAgent):
         return "python3 -c " + shlex.quote(script)
 
     @override
+    @with_prompt_template
     async def run(
         self,
         instruction: str,
