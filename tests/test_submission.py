@@ -861,6 +861,7 @@ def test_locked_source_command_passes_arguments_after_shell_script(
         "bash",
         "-lc",
         "set -euo pipefail\n"
+        'export HARBOR_HF_JOB_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"\n'
         "repo_dir=$(mktemp -d)\n"
         "git clone --filter=blob:none --no-checkout "
         'https://github.com/osolmaz/harbor-hf "$repo_dir"\n'
