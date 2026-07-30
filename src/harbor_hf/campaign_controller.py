@@ -345,6 +345,14 @@ class CampaignController:
                     started_at=started_at,
                 )
             )
+            observed_lock, observed_events = self.store.load_campaign(lock.campaign_id)
+            self._write_status(
+                claim,
+                "starting",
+                project_recovery(observed_lock, observed_events),
+                started_at,
+                started_monotonic,
+            )
             heartbeat = _Heartbeat(
                 self.state_store,
                 claim,

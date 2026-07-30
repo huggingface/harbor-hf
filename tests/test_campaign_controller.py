@@ -272,6 +272,18 @@ class FailingStartStateStore(MemoryControllerStateStore):
         raise OSError("start receipt unavailable")
 
 
+class FailingPrepareExecutor:
+    def __init__(self, state: MemoryControllerStateStore) -> None:
+        self.state = state
+        self.observed_state: str | None = None
+
+    def prepare(self, source: object) -> None:
+        del source
+        assert self.state.status is not None
+        self.observed_state = self.state.status.state
+        raise OSError("source preparation failed")
+
+
 class PreparedWaveExecutor:
     def __init__(self) -> None:
         self.prepared: list[object] = []
@@ -485,6 +497,30 @@ def test_interrupted_attempt_can_resume_in_one_sequential_replacement(
     assert reconciler.calls == 1
     assert [receipt.attempt for receipt in state.started] == [1, 2]
     assert [receipt.attempt for receipt in state.ended] == [1, 2]
+
+
+def test_controller_persists_starting_status_before_source_preparation(
+    tmp_path: Path,
+    remote_spec: ExperimentSpec,
+) -> None:
+    store, state, reconciler, _executor, validated = _runtime(tmp_path, remote_spec)
+    executor = FailingPrepareExecutor(state)
+
+    result = _controller(
+        tmp_path,
+        store,
+        state,
+        reconciler,
+        cast(PreparedWaveExecutor, executor),
+        validated,
+        attempt=1,
+    ).run()
+
+    assert executor.observed_state == "starting"
+    assert result.state == "failed-infrastructure"
+    assert result.message == "source preparation failed"
+    assert reconciler.calls == 0
+    assert state.claim is None
 
 
 def test_controller_releases_claim_when_start_receipt_fails(
