@@ -965,8 +965,11 @@ def _execute_shard_with_executor(
             shard_id=shard.shard_id,
         )
         if recovered:
-            shutil.copytree(destination, trial_root)
+            trial_checksums[trial.trial_id] = _file_digest(
+                destination / "checksums.json"
+            )
             append_event(events, "trial_recovered", trial_id=trial.trial_id)
+            continue
         elif (
             wave.action_kind == "retry-shard"
             and trial.trial_id not in selected_trial_ids
@@ -1000,7 +1003,6 @@ def _execute_shard_with_executor(
             )
             pending[future] = (trial_index, trial, trial_root)
             continue
-        trial_checksums[trial.trial_id] = _file_digest(trial_root / "checksums.json")
     for future in as_completed(pending):
         trial_index, trial, trial_root = pending[future]
         task_local_failures |= _record_trial_result(

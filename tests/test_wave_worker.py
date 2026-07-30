@@ -2127,6 +2127,13 @@ def test_wave_recovery_skips_checksum_valid_terminal_trial(
     replacement_path = tmp_path / "replacement-wave.lock.json"
     replacement_path.write_text(replacement.model_dump_json(), encoding="utf-8")
 
+    def fail_if_terminal_evidence_is_copied(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("terminal trial evidence must not be copied into staging")
+
+    monkeypatch.setattr(
+        "harbor_hf.wave_worker.shutil.copytree",
+        fail_if_terminal_evidence_is_copied,
+    )
     run_wave_worker(
         manifest,
         campaign_path,

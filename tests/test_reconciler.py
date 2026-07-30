@@ -272,6 +272,65 @@ def test_reconcile_closed_wave_retains_shards_with_terminal_evidence(
     assert plan.actions[0].shard_ids == [untouched_shard]
 
 
+def test_reconcile_closed_wave_retries_skipped_trial_in_partial_shard(
+    remote_spec: ExperimentSpec,
+) -> None:
+    tasks = {f"task-{index}": f"sha256:{index:064x}" for index in range(1, 3)}
+    spec = remote_spec.model_copy(
+        update={
+            "benchmark": remote_spec.benchmark.model_copy(
+                update={"task_names": ["task-*"], "task_digests": tasks}
+            ),
+            "execution": remote_spec.execution.model_copy(
+                update={"max_trials_per_shard": 2, "max_shards_per_wave": 1}
+            ),
+        }
+    )
+    lock, submitted = _campaign(spec)
+    _projection, initial = plan_reconciliation(lock, [submitted], now=NOW)
+    action = initial.actions[0]
+    shard = lock.runs[0].shards[0]
+    completed_trial, skipped_trial = [trial.trial_id for trial in shard.trials]
+    started = new_event(
+        subject_type="execution",
+        subject_id="exec-1",
+        kind="execution.started",
+        producer="wave-controller",
+        payload=ExecutionStartedPayload(
+            trial_id=completed_trial,
+            shard_id=shard.shard_id,
+            physical_attempt=1,
+            wave_id=action.wave_id,
+        ),
+        clock=lambda: NOW + timedelta(seconds=10),
+        identifier=lambda: "d" * 32,
+    )
+    completed = new_event(
+        subject_type="execution",
+        subject_id="exec-1",
+        kind="execution.completed",
+        producer="wave-controller",
+        payload=ExecutionOutcomePayload(trial_id=completed_trial, physical_attempt=1),
+        clock=lambda: NOW + timedelta(seconds=20),
+        identifier=lambda: "e" * 32,
+    )
+    events = [
+        submitted,
+        started,
+        completed,
+        *_submitted_wave_events(lock, action, NOW + timedelta(seconds=60)),
+    ]
+
+    projection, plan = plan_reconciliation(
+        lock, events, now=NOW + timedelta(seconds=61)
+    )
+
+    assert projection.trials[skipped_trial].status == "planned"
+    assert [item.kind for item in plan.actions] == ["retry-shard"]
+    assert plan.actions[0].shard_ids == [shard.shard_id]
+    assert plan.actions[0].trial_ids == [skipped_trial]
+
+
 def test_reconcile_closed_wave_routes_retryable_evidence_to_retry(
     remote_spec: ExperimentSpec,
 ) -> None:

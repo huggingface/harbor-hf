@@ -18,6 +18,7 @@ from harbor_hf.control import ActionKind, ActionProjection, CampaignEvent
 from harbor_hf.recovery import (
     RecoveryProjection,
     TerminalDecision,
+    TrialProjection,
     WaveProjection,
     project_recovery,
     retry_is_ready,
@@ -397,11 +398,10 @@ def _retry_candidates(
     ready: dict[str, list[str]] = defaultdict(list)
     waiting: dict[str, list[str]] = defaultdict(list)
     for trial in projection.trials.values():
-        if trial.status != "retry_wait":
+        queue = _retry_queue(projection, trial, now)
+        if trial.trial_id in reserved_trial_ids or queue is None:
             continue
-        if trial.trial_id in reserved_trial_ids:
-            continue
-        target = ready if retry_is_ready(trial, now) else waiting
+        target = ready if queue == "ready" else waiting
         target[trial.shard_id].append(trial.trial_id)
     groups: dict[str, list[str]] = defaultdict(list)
     for shard_id in sorted(ready):
@@ -515,6 +515,29 @@ def _shard_has_execution_evidence(
         projection.trials[trial_id].executions
         or projection.trials[trial_id].status != "planned"
         for trial_id in projection.shards[shard_id].trial_ids
+    )
+
+
+def _retry_queue(
+    projection: RecoveryProjection,
+    trial: TrialProjection,
+    now: datetime,
+) -> Literal["ready", "waiting"] | None:
+    if trial.status == "planned" and _trial_was_skipped_in_closed_wave(
+        projection, trial.shard_id
+    ):
+        return "ready"
+    if trial.status != "retry_wait":
+        return None
+    return "ready" if retry_is_ready(trial, now) else "waiting"
+
+
+def _trial_was_skipped_in_closed_wave(
+    projection: RecoveryProjection, shard_id: str
+) -> bool:
+    return _shard_has_execution_evidence(projection, shard_id) and any(
+        wave.status == "closed" and shard_id in wave.shard_ids
+        for wave in projection.waves.values()
     )
 
 
