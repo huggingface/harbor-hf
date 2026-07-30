@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials[].task_digest",
+  "decision": "keep",
+  "finalName": "task_digest",
+  "finalPath": "runs[].shards[].trials[].task_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "Keeps the exact immutable task content selected for a trial. task_name is a human-facing label and trial_digest identifies the composite trial; neither safely substitutes for the task artifact reference.",
+  "alternatives": [
+    "Remove it and resolve tasks by task_name, which makes plans vulnerable to task-name reuse or content drift.",
+    "Derive it from trial_digest, which is not generally reversible."
+  ],
+  "simplestChoice": "Keep task_digest as the immutable task-content reference, using the project-wide digest encoding and validation rules.",
+  "confidence": "high",
+  "questions": []
+}

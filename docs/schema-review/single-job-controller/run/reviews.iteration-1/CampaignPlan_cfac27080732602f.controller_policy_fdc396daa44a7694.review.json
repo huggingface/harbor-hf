@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy",
+  "decision": "keep",
+  "finalName": "controller_policy",
+  "finalPath": "CampaignPlan.controller_policy",
+  "finalType": "ControllerPolicy",
+  "required": false,
+  "rationale": "This is the plan-owned immutable controller contract: timing reserves, heartbeat and staleness thresholds, attempt bound, and exact-decimal headroom. Grouping these coupled controller-wide limits prevents duplicating them across waves or provider records; the established declarative name is clear.",
+  "alternatives": [
+    "Make it required once every valid plan must supply immutable controller bounds.",
+    "Merge individual timing fields into CampaignPlan only if there will never be another controller-level setting."
+  ],
+  "simplestChoice": "Keep controller_policy as a closed ControllerPolicy object.",
+  "confidence": "high",
+  "questions": []
+}

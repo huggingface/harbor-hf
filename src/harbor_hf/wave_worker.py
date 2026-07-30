@@ -343,6 +343,25 @@ def validate_wave_lock(
         raise WorkerError("wave lock fields do not match the campaign and manifest")
 
 
+def run_standalone_wave_worker(
+    manifest_path: Path,
+    campaign_lock_path: Path,
+    wave_lock_path: Path,
+    output_root: Path,
+) -> Path:
+    lock = WaveLock.model_validate_json(wave_lock_path.read_text(encoding="utf-8"))
+    if isinstance(lock.target, ProviderWaveTarget):
+        raise WorkerError(
+            "provider wave locks must run inside their owning campaign controller"
+        )
+    return run_wave_worker(
+        manifest_path,
+        campaign_lock_path,
+        wave_lock_path,
+        output_root,
+    )
+
+
 def run_wave_worker(
     manifest_path: Path,
     campaign_lock_path: Path,
@@ -403,7 +422,67 @@ def run_wave_worker(
                 identifier,
                 clock,
                 monotonic,
+                prepared_harbor_source=None,
             )
+
+
+def run_provider_wave_execution(
+    manifest_path: Path,
+    campaign: CampaignLock,
+    lock: WaveLock,
+    output_root: Path,
+    staging_root: Path,
+    prepared_harbor_source: Path,
+    *,
+    runner: CommandRunner | None = None,
+    stream_runner: StreamRunner = run_streaming,
+    identifier: IdentifierFactory = lambda: uuid.uuid4().hex,
+    clock: Clock = lambda: datetime.now(UTC),
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Path:
+    """Execute one provider wave inside its owning campaign controller Job."""
+    spec = load_experiment(manifest_path)
+    validate_wave_lock(spec, campaign, lock)
+    if not isinstance(lock.target, ProviderWaveTarget):
+        raise WorkerError("in-process campaign execution requires a provider wave")
+    token = os.environ.get(lock.remote.job.token_secret_name, "")
+    if not token:
+        raise WorkerError(
+            f"required secret {lock.remote.job.token_secret_name} is not available"
+        )
+    try:
+        for run in lock.runs:
+            require_benchmark_source_secret(run.configuration)
+    except ValueError as error:
+        raise WorkerError(str(error)) from error
+    os.environ["HF_TOKEN"] = token
+    process_runner = runner or SubprocessRunner()
+    destination = output_root / lock.artifact_prefix
+    _reject_terminal_wave(destination)
+    campaign_root = staging_root / campaign.artifact_prefix
+    _stage_campaign_records(
+        campaign_root,
+        campaign,
+        lock,
+        _wave_secret_values(lock, token),
+        output_root,
+    )
+    return _run_staged_wave(
+        manifest_path,
+        campaign,
+        lock,
+        campaign_root,
+        output_root,
+        token,
+        process_runner,
+        stream_runner,
+        prepare_locked_source,
+        None,
+        identifier,
+        clock,
+        monotonic,
+        prepared_harbor_source=prepared_harbor_source,
+    )
 
 
 @contextmanager
@@ -454,6 +533,8 @@ def _run_staged_wave(
     identifier: IdentifierFactory,
     clock: Clock,
     monotonic: Callable[[], float],
+    *,
+    prepared_harbor_source: Path | None = None,
 ) -> Path:
     wave_root = campaign_root / "waves" / lock.wave_id
     wave_root.mkdir(parents=True)
@@ -481,12 +562,19 @@ def _run_staged_wave(
     secrets = _wave_secret_values(lock, token)
     try:
         require_executable("git")
-        harbor_source = (
+        harbor_source = prepared_harbor_source or (
             campaign_root.parent
             / "sources"
             / f"harbor-{lock.remote.harbor.source.revision}"
         )
-        source_preparer(lock.remote.harbor.source, harbor_source, runner)
+        if prepared_harbor_source is None:
+            source_preparer(lock.remote.harbor.source, harbor_source, runner)
+        else:
+            _verify_prepared_source(
+                harbor_source,
+                lock.remote.harbor.source.revision,
+                runner,
+            )
         deadline = monotonic() + lock.duration_seconds
         base_url, provider_proxy = _prepare_wave_transport(
             lock,
@@ -562,6 +650,18 @@ def _run_staged_wave(
             str(cleanup_error), secrets
         )
     raise WorkerError(failure_message) from terminal_error
+
+
+def _verify_prepared_source(
+    source: Path,
+    revision: str,
+    runner: CommandRunner,
+) -> None:
+    if not source.is_dir() or not (source / "uv.lock").is_file():
+        raise WorkerError("prepared Harbor source is incomplete")
+    observed = runner.run_text(["git", "-C", str(source), "rev-parse", "HEAD"]).strip()
+    if observed != revision:
+        raise WorkerError("prepared Harbor source revision changed")
 
 
 def _prepare_wave_transport(
@@ -1722,7 +1822,7 @@ def _stage_campaign_records(
     secrets: SecretValues,
     output_root: Path,
 ) -> None:
-    campaign_root.mkdir(parents=True)
+    campaign_root.mkdir(parents=True, exist_ok=True)
     campaign_lock_path = campaign_root / "campaign.lock.json"
     write_json(campaign_lock_path, campaign.model_dump(mode="json"))
     assert_secret_absent(campaign_root, secrets)

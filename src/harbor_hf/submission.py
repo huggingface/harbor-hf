@@ -5,8 +5,9 @@ import os
 import re
 import shlex
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -14,10 +15,21 @@ from huggingface_hub import CommitOperationAdd
 from huggingface_hub.errors import HfHubHTTPError
 from pydantic import BaseModel, ConfigDict
 
-from harbor_hf.campaigns import EndpointWaveTarget, WaveLock
+from harbor_hf.campaign_input import write_campaign_input
+from harbor_hf.campaigns import CampaignLock, EndpointWaveTarget, WaveLock
+from harbor_hf.controller_status import (
+    ControllerAttemptReservation,
+    ControllerStateStore,
+)
 from harbor_hf.coordination import bucket_id, coordination_repository
 from harbor_hf.judge_recorder import JUDGE_RECORDER_PORT
-from harbor_hf.models import DeploymentProfile, EndpointRef, SourcePin
+from harbor_hf.models import (
+    DeploymentProfile,
+    EndpointRef,
+    ExperimentSpec,
+    SourcePin,
+)
+from harbor_hf.process import ProcessError
 from harbor_hf.provider_proxy import PROVIDER_RECORDER_PORT
 from harbor_hf.runs import RunLock
 
@@ -73,6 +85,23 @@ class WaveSubmission(BaseModel):
     artifact_prefix: str
     job_id: str | None
     command: list[str]
+
+
+class CampaignControllerSubmission(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    campaign_id: str
+    plan_digest: str
+    input_digest: str
+    input_uri: str
+    job_id: str | None
+    attempt: int
+    launch_receipt: str
+    command: list[str]
+
+
+class ControllerJobsApi(Protocol):
+    def list_jobs(self, **kwargs: object) -> Iterable[object]: ...
 
 
 def github_archive(repository: str, revision: str) -> str:
@@ -260,11 +289,15 @@ def require_source_secrets(lock: RunLock | WaveLock) -> None:
 def _materialized_job_secrets(
     lock: RunLock | WaveLock, command: list[str]
 ) -> Iterator[list[str]]:
-    values = {
-        name: value
-        for name in job_secret_names(lock)
-        if (value := os.environ.get(name))
-    }
+    with _materialized_named_job_secrets(job_secret_names(lock), command) as rendered:
+        yield rendered
+
+
+@contextmanager
+def _materialized_named_job_secrets(
+    names: list[str], command: list[str]
+) -> Iterator[list[str]]:
+    values = {name: value for name in names if (value := os.environ.get(name))}
     if not values:
         yield command
         return
@@ -412,6 +445,83 @@ def build_submit_wave_command(
     ]
 
 
+def build_submit_campaign_controller_command(
+    lock: CampaignLock,
+    spec: ExperimentSpec,
+    *,
+    input_dir: Path | str,
+    bucket: str,
+    attempt: int,
+) -> list[str]:
+    if spec.remote is None or lock.controller_policy is None:
+        raise ValueError("campaign controller submission requires provider settings")
+    if attempt < 1 or attempt > lock.controller_policy.max_attempts:
+        raise ValueError("campaign controller attempt is outside its locked limit")
+    job = spec.remote.job
+    exposed_ports = ["--expose", str(PROVIDER_RECORDER_PORT)]
+    if spec.benchmark.judge is not None:
+        exposed_ports.extend(["--expose", str(JUDGE_RECORDER_PORT)])
+    return [
+        "hf",
+        "jobs",
+        "run",
+        "--detach",
+        "--namespace",
+        job.namespace,
+        "--flavor",
+        job.flavor,
+        "--timeout",
+        f"{job.timeout_seconds}s",
+        *exposed_ports,
+        *[
+            argument
+            for name in campaign_job_secret_names(spec)
+            for argument in ("--secrets", name)
+        ],
+        "--label",
+        "harbor-hf-role=campaign-controller",
+        "--label",
+        f"harbor-hf-campaign={lock.campaign_id}",
+        "--label",
+        f"harbor-hf-plan={lock.plan_digest.removeprefix('sha256:')[:16]}",
+        "--label",
+        f"harbor-hf-controller-attempt={attempt}",
+        "--volume",
+        f"{input_dir}:/input:ro",
+        "--volume",
+        f"{bucket_uri(bucket)}:/output:rw",
+        "--",
+        job.image,
+        *locked_source_command(
+            spec.remote.worker,
+            "harbor-hf",
+            "campaign-controller",
+            "/input/manifest.yaml",
+            "/input/campaign.lock.json",
+            "--attempt",
+            str(attempt),
+            *(["--prior-job-terminal"] if attempt > 1 else []),
+            "--output-root",
+            "/output",
+        ),
+    ]
+
+
+def campaign_job_secret_names(spec: ExperimentSpec) -> list[str]:
+    if spec.remote is None:
+        raise ValueError("campaign controller requires remote execution")
+    names = {spec.remote.job.token_secret_name}
+    if (
+        spec.benchmark.source is not None
+        and spec.benchmark.source.credentials is not None
+    ):
+        names.add(spec.benchmark.source.credentials.secret_name)
+    if spec.benchmark.judge is not None:
+        names.add(spec.benchmark.judge.api_key_secret_name)
+    token_name = spec.remote.job.token_secret_name
+    return [token_name, *sorted(names - {token_name})]
+
+
 def _endpoint_binding(lock: RunLock) -> EndpointRef:
     deployment = lock.deployment
     if not isinstance(deployment, DeploymentProfile) or deployment.endpoint is None:
@@ -455,6 +565,189 @@ def submit(
         job_id=match.group(),
         command=command,
     )
+
+
+def submit_campaign_controller(
+    lock: CampaignLock,
+    spec: ExperimentSpec,
+    *,
+    request: bytes,
+    bucket: str,
+    runner: TextRunner,
+    bucket_api: BucketApi,
+    jobs_api: ControllerJobsApi,
+    state_store: ControllerStateStore,
+    attempt: int = 1,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> CampaignControllerSubmission:
+    if spec.remote is None or lock.controller_policy is None:
+        raise ValueError("campaign controller submission requires provider settings")
+    for name in campaign_job_secret_names(spec):
+        if name != spec.remote.job.token_secret_name and not os.environ.get(name, ""):
+            raise ValueError(f"required secret {name} is not available")
+    ensure_private_coordination_repository(spec.remote.job.namespace, api=bucket_api)
+    input_bucket = ensure_private_job_input_bucket(
+        spec.remote.job.namespace, api=bucket_api
+    )
+    require_private_bucket(bucket, api=bucket_api)
+    with tempfile.TemporaryDirectory(prefix="harbor-hf-campaign-input-") as name:
+        staging = Path(name)
+        input_manifest = write_campaign_input(
+            staging,
+            request=request,
+            lock=lock,
+        )
+        input_uri = stage_job_input(
+            staging,
+            bucket=input_bucket,
+            identity=lock.campaign_id,
+            api=bucket_api,
+        )
+    reservation = ControllerAttemptReservation(
+        campaign_id=lock.campaign_id,
+        plan_digest=lock.plan_digest,
+        input_digest=input_manifest.input_digest,
+        input_uri=input_uri,
+        output_uri=bucket_uri(bucket),
+        worker_revision=spec.remote.worker.revision,
+        attempt=attempt,
+        reserved_at=clock().astimezone(UTC),
+    )
+    state_store.reserve_attempt(reservation)
+    command = build_submit_campaign_controller_command(
+        lock,
+        spec,
+        input_dir=input_uri,
+        bucket=bucket,
+        attempt=attempt,
+    )
+    labels = _controller_labels(lock, attempt)
+    job_id = _launch_or_adopt_controller(
+        jobs_api=jobs_api,
+        namespace=spec.remote.job.namespace,
+        labels=labels,
+        runner=runner,
+        command=command,
+        secret_names=campaign_job_secret_names(spec),
+    )
+    return CampaignControllerSubmission(
+        campaign_id=lock.campaign_id,
+        plan_digest=lock.plan_digest,
+        input_digest=input_manifest.input_digest,
+        input_uri=input_uri,
+        job_id=job_id,
+        attempt=attempt,
+        launch_receipt=(
+            f"campaigns/{lock.campaign_id}/controller-attempts/{attempt}.json"
+        ),
+        command=command,
+    )
+
+
+def launch_reserved_campaign_controller(
+    lock: CampaignLock,
+    spec: ExperimentSpec,
+    reservation: ControllerAttemptReservation,
+    *,
+    runner: TextRunner,
+    jobs_api: ControllerJobsApi,
+) -> CampaignControllerSubmission:
+    if spec.remote is None:
+        raise ValueError("campaign controller requires remote execution")
+    if (
+        reservation.campaign_id != lock.campaign_id
+        or reservation.plan_digest != lock.plan_digest
+        or reservation.worker_revision != spec.remote.worker.revision
+    ):
+        raise ValueError("controller attempt reservation changed the launch contract")
+    command = build_submit_campaign_controller_command(
+        lock,
+        spec,
+        input_dir=reservation.input_uri,
+        bucket=reservation.output_uri,
+        attempt=reservation.attempt,
+    )
+    job_id = _launch_or_adopt_controller(
+        jobs_api=jobs_api,
+        namespace=spec.remote.job.namespace,
+        labels=_controller_labels(lock, reservation.attempt),
+        runner=runner,
+        command=command,
+        secret_names=campaign_job_secret_names(spec),
+    )
+    return CampaignControllerSubmission(
+        campaign_id=lock.campaign_id,
+        plan_digest=lock.plan_digest,
+        input_digest=reservation.input_digest,
+        input_uri=reservation.input_uri,
+        job_id=job_id,
+        attempt=reservation.attempt,
+        launch_receipt=(
+            f"campaigns/{lock.campaign_id}/controller-attempts/"
+            f"{reservation.attempt}.json"
+        ),
+        command=command,
+    )
+
+
+def _launch_or_adopt_controller(
+    *,
+    jobs_api: ControllerJobsApi,
+    namespace: str,
+    labels: Mapping[str, str],
+    runner: TextRunner,
+    command: list[str],
+    secret_names: list[str],
+) -> str:
+    existing = _find_controller_jobs(jobs_api, namespace, labels)
+    if existing:
+        return existing[0]
+    try:
+        with _materialized_named_job_secrets(secret_names, command) as runtime_command:
+            output = runner.run_text(runtime_command)
+    except ProcessError:
+        adopted = _find_controller_jobs(jobs_api, namespace, labels)
+        if not adopted:
+            raise
+        return adopted[0]
+    match = _JOB_ID.search(output)
+    if match is not None:
+        return match.group()
+    adopted = _find_controller_jobs(jobs_api, namespace, labels)
+    if adopted:
+        return adopted[0]
+    raise ValueError("HF Jobs controller submission did not return a job ID")
+
+
+def _controller_labels(lock: CampaignLock, attempt: int) -> dict[str, str]:
+    return {
+        "harbor-hf-role": "campaign-controller",
+        "harbor-hf-campaign": lock.campaign_id,
+        "harbor-hf-plan": lock.plan_digest.removeprefix("sha256:")[:16],
+        "harbor-hf-controller-attempt": str(attempt),
+    }
+
+
+def _find_controller_jobs(
+    api: ControllerJobsApi,
+    namespace: str,
+    labels: Mapping[str, str],
+) -> list[str]:
+    resources = list(api.list_jobs(labels=dict(labels), namespace=namespace))
+    identifiers: list[str] = []
+    for resource in resources:
+        identifier = getattr(resource, "id", None)
+        observed_labels = getattr(resource, "labels", None)
+        if not isinstance(identifier, str) or _JOB_ID.fullmatch(identifier) is None:
+            raise ValueError("HF Job response has no valid controller ID")
+        if not isinstance(observed_labels, Mapping) or any(
+            observed_labels.get(key) != value for key, value in labels.items()
+        ):
+            raise ValueError("HF Job response has the wrong controller labels")
+        identifiers.append(identifier)
+    if len(identifiers) > 1:
+        raise ValueError("multiple HF Jobs have one controller attempt identity")
+    return identifiers
 
 
 def submit_wave(

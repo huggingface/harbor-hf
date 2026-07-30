@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.wave_reserve_seconds",
+  "decision": "keep",
+  "finalName": "wave_reserve_seconds",
+  "finalPath": "controller_policy.wave_reserve_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "Per-wave controller overhead is a distinct, durable planning bound; the explicit duration name fits the established policy vocabulary.",
+  "alternatives": [
+    "merge into controller_reserve_seconds",
+    "remove"
+  ],
+  "simplestChoice": "keep",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.controller_reserve_seconds",
+  "decision": "keep",
+  "finalName": "controller_reserve_seconds",
+  "finalPath": "controller_policy.controller_reserve_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A controller-specific duration reserve is a distinct immutable bound: it preserves time for controller lifecycle work rather than admitting more wave work. Its name is direct, uses established controller vocabulary, and has the required explicit seconds unit.",
+  "alternatives": [
+    "merge with wave_reserve_seconds: conflates controller lifecycle time with wave capacity",
+    "remove: loses an explicit duration bound needed for safe controller scheduling"
+  ],
+  "simplestChoice": "Keep controller_reserve_seconds as the controller lifecycle duration reserve.",
+  "confidence": "high",
+  "questions": []
+}

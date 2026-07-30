@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].model",
+  "decision": "keep",
+  "finalName": "model",
+  "finalPath": "runs[].model",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A run must bind its requested model independently of its deployment. `model` is established domain vocabulary; an observed provider revision belongs in execution evidence, not this plan selector.",
+  "alternatives": [
+    "merge into deployment",
+    "derive from manifest"
+  ],
+  "simplestChoice": "keep `model` as the required requested-model selector",
+  "confidence": "high",
+  "questions": []
+}

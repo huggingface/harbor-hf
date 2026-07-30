@@ -1,0 +1,71 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "ended_at": {
+      "format": "date-time",
+      "title": "Ended At",
+      "type": "string"
+    },
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "message": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Message"
+    },
+    "plan_digest": {
+      "title": "Plan Digest",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "harbor-hf/controller-ended/v1alpha1",
+      "default": "harbor-hf/controller-ended/v1alpha1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "starting",
+        "running",
+        "waiting-retry",
+        "finalizing",
+        "completed",
+        "paused-capacity",
+        "paused-policy",
+        "failed-infrastructure",
+        "failed-deterministic"
+      ],
+      "title": "State",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "plan_digest",
+    "job_id",
+    "attempt",
+    "state",
+    "ended_at"
+  ],
+  "title": "ControllerEndedReceipt",
+  "type": "object"
+}

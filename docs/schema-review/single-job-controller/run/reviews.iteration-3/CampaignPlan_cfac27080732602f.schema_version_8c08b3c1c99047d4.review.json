@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "schema_version",
+  "decision": "remove",
+  "finalName": "schema_version",
+  "finalType": "absent",
+  "required": false,
+  "rationale": "CampaignPlan is validated as part of the existing v1alpha1 campaign format, so an optional free-form per-plan version is redundant and cannot safely select a contract. Keeping it creates a second, potentially conflicting version authority without a current use case.",
+  "alternatives": [
+    "keep as a required, constrained document-format discriminator only if plans must be independently decoded across concurrently supported formats",
+    "derive the format from the enclosing campaign/package contract"
+  ],
+  "simplestChoice": "Remove it; let the enclosing campaign format and generated schema define the plan contract.",
+  "confidence": "high",
+  "questions": []
+}

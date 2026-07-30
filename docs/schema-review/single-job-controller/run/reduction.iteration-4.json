@@ -1,0 +1,16 @@
+{
+  "changed": true,
+  "applied": [
+    {
+      "decision": "remove",
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].estimated_wave_cost_microusd"
+    },
+    {
+      "decision": "derive",
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].shards[].shard_digest"
+    }
+  ],
+  "skipped": []
+}

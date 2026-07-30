@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "initial_waves",
+  "decision": "keep",
+  "finalName": "initial_waves",
+  "finalPath": "CampaignPlan.initial_waves",
+  "finalType": "array[InitialWavePlan]",
+  "required": false,
+  "rationale": "The deterministic initial wave plan is a stable controller input. Its shard membership cannot be inferred without reintroducing planning logic or relying on ordering, and `wave` is established domain vocabulary.",
+  "alternatives": [
+    "derive from runs and recovery policy"
+  ],
+  "simplestChoice": "Keep `initial_waves` as the ordered, explicit initial wave plan.",
+  "confidence": "high",
+  "questions": []
+}

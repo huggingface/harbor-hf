@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.max_physical_executions_per_trial",
+  "decision": "keep",
+  "finalName": "max_physical_executions_per_trial",
+  "finalPath": "recovery_policy.max_physical_executions_per_trial",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "This is a durable recovery bound: it limits repeat provider executions for one logical trial, bounding retries, duplicate work, and spend while preserving the distinction between a logical trial and physical execution.",
+  "alternatives": [
+    "rename to max_physical_attempts_per_trial",
+    "derive from spend_cap_microusd"
+  ],
+  "simplestChoice": "Keep the explicit per-trial physical-execution limit.",
+  "confidence": "high",
+  "questions": []
+}

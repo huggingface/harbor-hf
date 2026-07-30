@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.cancellation_grace_seconds",
+  "decision": "keep",
+  "finalName": "cancellation_grace_seconds",
+  "finalPath": "recovery_policy.cancellation_grace_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "An intentional provider cancellation may complete asynchronously. This distinct bounded wait prevents recovery from treating a cancelling physical execution as gone and starting a duplicate. It is not equivalent to stale detection or retry backoff.",
+  "alternatives": [
+    "Derive from stale_after_seconds: conflates intentional cancellation with missing ownership.",
+    "Remove: loses an explicit bound for provider cancellation settlement."
+  ],
+  "simplestChoice": "Keep cancellation_grace_seconds in recovery_policy.",
+  "confidence": "high",
+  "questions": []
+}

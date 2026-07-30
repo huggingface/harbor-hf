@@ -27,8 +27,7 @@ class AutomationRequest(FrozenModel):
     schedule: str = Field(min_length=1)
     remote: RemoteExecutionSpec
     secret_names: list[str] = Field(default_factory=list)
-    provider_active_waves: int | None = Field(default=None, ge=1)
-    campaign_ids: list[str] = Field(default_factory=list)
+    campaign_ids: list[str] = Field(default_factory=list, min_length=1)
     suspended: bool = False
 
     @field_validator("secret_names")
@@ -67,7 +66,6 @@ class AutomationPlan(FrozenModel):
     image: str
     command: list[str]
     secret_names: list[str]
-    provider_active_waves: int | None
     campaign_ids: list[str]
     control_repository: str
 
@@ -82,18 +80,15 @@ class AutomationApi(Protocol):
     def create_webhook(self, **kwargs: object) -> object: ...
 
 
-def scheduled_reconciler_command(request: AutomationRequest) -> list[str]:
+def scheduled_controller_watchdog_command(request: AutomationRequest) -> list[str]:
     command = locked_source_command(
         request.remote.worker,
         "harbor-hf",
         "campaign",
-        "reconcile-all",
+        "watchdog",
         "--namespace",
         request.namespace,
-        "--apply",
     )
-    if request.provider_active_waves is not None:
-        command.extend(["--provider-active-waves", str(request.provider_active_waves)])
     for campaign_id in request.campaign_ids:
         command.extend(["--campaign-id", campaign_id])
     return command
@@ -135,13 +130,13 @@ def _install_scheduled_job(
         if _managed_job(job, request.namespace)
     ]
     if len(managed_jobs) > 1:
-        raise AutomationError("multiple managed reconciliation schedules exist")
+        raise AutomationError("multiple managed controller watchdog schedules exist")
     created_job = not managed_jobs
     if managed_jobs:
         job = managed_jobs[0]
         if not _scheduled_job_matches(job, request):
             raise AutomationError(
-                "managed reconciliation schedule has configuration drift"
+                "managed controller watchdog schedule has configuration drift"
             )
     else:
         job = client.create_scheduled_job(
@@ -170,13 +165,13 @@ def _install_webhook(
         if _managed_webhook(webhook, request.namespace)
     ]
     if len(managed_webhooks) > 1:
-        raise AutomationError("multiple managed reconciliation webhooks exist")
+        raise AutomationError("multiple managed controller watchdog webhooks exist")
     created_webhook = not managed_webhooks
     if managed_webhooks:
         webhook = managed_webhooks[0]
         if not _webhook_matches(webhook, request):
             raise AutomationError(
-                "managed reconciliation webhook has configuration drift"
+                "managed controller watchdog webhook has configuration drift"
             )
     else:
         webhook = client.create_webhook(
@@ -200,12 +195,11 @@ def automation_plan(request: AutomationRequest) -> AutomationPlan:
         schedule=request.schedule,
         suspended=request.suspended,
         image=request.remote.job.image,
-        command=scheduled_reconciler_command(request),
+        command=scheduled_controller_watchdog_command(request),
         secret_names=[
             request.remote.job.token_secret_name,
             *request.secret_names,
         ],
-        provider_active_waves=request.provider_active_waves,
         campaign_ids=request.campaign_ids,
         control_repository=coordination_repository(request.namespace),
     )
@@ -213,7 +207,7 @@ def automation_plan(request: AutomationRequest) -> AutomationPlan:
 
 def _managed_labels(namespace: str) -> dict[str, str]:
     return {
-        "harbor-hf-role": "campaign-reconciler",
+        "harbor-hf-role": "campaign-controller-watchdog",
         "harbor-hf-namespace": namespace,
     }
 
@@ -242,7 +236,8 @@ def _scheduled_job_matches(value: object, request: AutomationRequest) -> bool:
         and getattr(value, "suspend", None) is request.suspended
         and getattr(value, "concurrency", None) is False
         and getattr(spec, "docker_image", None) == request.remote.job.image
-        and getattr(spec, "command", None) == scheduled_reconciler_command(request)
+        and getattr(spec, "command", None)
+        == scheduled_controller_watchdog_command(request)
         and flavor_value == request.remote.job.flavor
         and getattr(spec, "timeout", None) == request.remote.job.timeout_seconds
         and secret_names
@@ -275,7 +270,8 @@ def _webhook_matches(value: object, request: AutomationRequest) -> bool:
 def _scheduled_spec_matches(spec: object, request: AutomationRequest) -> bool:
     return (
         getattr(spec, "docker_image", None) == request.remote.job.image
-        and getattr(spec, "command", None) == scheduled_reconciler_command(request)
+        and getattr(spec, "command", None)
+        == scheduled_controller_watchdog_command(request)
         and _managed_spec(spec, request.namespace)
     )
 

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.max_physical_executions_per_trial",
+  "decision": "keep",
+  "finalName": "max_physical_executions_per_trial",
+  "finalPath": "recovery_policy.max_physical_executions_per_trial",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A per-trial cap is required to bound recovery work and provider spend after failures. “Physical executions” preserves the established distinction from controller attempts and avoids reintroducing the removed logical-attempt concept.",
+  "alternatives": [
+    "max_attempts_per_trial",
+    "max_physical_attempts_per_trial"
+  ],
+  "simplestChoice": "Keep max_physical_executions_per_trial.",
+  "confidence": "high",
+  "questions": []
+}

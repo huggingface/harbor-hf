@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].shard_digest",
+  "decision": "keep",
+  "finalName": "shard_digest",
+  "finalPath": "runs[].shards[].shard_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A shard needs a stable, content-addressed identity so initial waves can select exact shards and the immutable plan can be verified independently of array position.",
+  "alternatives": [
+    "derive from the ordered trial digests"
+  ],
+  "simplestChoice": "Keep shard_digest as the explicit shard identity.",
+  "confidence": "high",
+  "questions": []
+}

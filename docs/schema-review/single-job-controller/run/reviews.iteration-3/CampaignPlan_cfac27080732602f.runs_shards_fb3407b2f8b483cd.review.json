@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards",
+  "decision": "keep",
+  "finalName": "shards",
+  "finalPath": "runs[].shards",
+  "finalType": "array",
+  "required": true,
+  "rationale": "Shards are the durable, run-owned units that group trials and are selected by initial waves via shard digests. The grouping is planning output, not derivable from trials without losing the planned execution boundary.",
+  "alternatives": [
+    "derive from trials",
+    "move to a campaign-level shard registry"
+  ],
+  "simplestChoice": "keep",
+  "confidence": "high",
+  "questions": []
+}

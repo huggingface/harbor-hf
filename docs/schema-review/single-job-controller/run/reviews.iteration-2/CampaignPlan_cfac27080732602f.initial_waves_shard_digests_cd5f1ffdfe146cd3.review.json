@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "initial_waves[].shard_digests",
+  "decision": "keep",
+  "finalName": "shard_digests",
+  "finalPath": "initial_waves[].shard_digests",
+  "finalType": "array<string>",
+  "required": false,
+  "rationale": "Initial waves require an explicit, deterministic membership list. The shard definitions under runs cannot recover which shards belong to each initial wave.",
+  "alternatives": [
+    "derive from runs[].shards, but it does not encode wave membership",
+    "remove, but then an initial wave lacks its concrete shard selection"
+  ],
+  "simplestChoice": "Keep shard_digests as the ordered list of shard references for an initial wave.",
+  "confidence": "high",
+  "questions": []
+}

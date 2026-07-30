@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "evaluation_id",
+  "decision": "defer",
+  "finalName": "evaluation_id",
+  "finalPath": "CampaignPlan.evaluation_id",
+  "finalType": "string",
+  "required": false,
+  "rationale": "No stated consumer distinguishes this required identifier from experiment or the immutable manifest_digest. Its purpose and source of truth are not established in the graph.",
+  "alternatives": [
+    "keep evaluation_id if it is the stable external identity of the evaluated artifact and consumers require it",
+    "derive it from the manifest if it is only a label encoded there",
+    "remove it if experiment already identifies the evaluation"
+  ],
+  "simplestChoice": "Defer the field and do not require it until a current consumer and owner boundary are explicit.",
+  "confidence": "medium",
+  "questions": [
+    "Which consumer needs evaluation_id, and why cannot it use experiment or manifest_digest?"
+  ]
+}

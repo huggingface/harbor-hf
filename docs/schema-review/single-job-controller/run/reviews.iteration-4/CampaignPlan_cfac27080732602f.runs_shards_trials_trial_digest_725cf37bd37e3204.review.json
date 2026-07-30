@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials[].trial_digest",
+  "decision": "keep",
+  "finalName": "trial_digest",
+  "finalPath": "runs[].shards[].trials[].trial_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A trial needs its own durable content identity for immutable attempt reservations and receipts. It is distinct from task_digest, which identifies the task definition rather than the planned trial.",
+  "alternatives": [
+    "derive if a trial is permanently defined as exactly one task definition; the current contract does not establish that equivalence"
+  ],
+  "simplestChoice": "Keep trial_digest.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "initial_waves[].shard_digests",
+  "decision": "keep",
+  "finalName": "shard_digests",
+  "finalPath": "initial_waves[].shard_digests",
+  "finalType": "array[string]",
+  "required": false,
+  "rationale": "Each initial wave needs an explicit, deterministic membership list. Shard digests are established content-addressed identities, and this field preserves the planned grouping without coupling the plan to later physical execution state.",
+  "alternatives": [
+    "derive membership from runs and max_shards_per_wave",
+    "store shard indexes instead of digests"
+  ],
+  "simplestChoice": "Keep shard_digests as the ordered list of planned shard content digests for the wave.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,928 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "summary": {
+    "totalFields": 51,
+    "keep": 34,
+    "rename": 2,
+    "merge": 0,
+    "derive": 7,
+    "move": 1,
+    "defer": 1,
+    "remove": 6,
+    "opaque": 0
+  },
+  "decisions": [
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "component_kind",
+      "decision": "remove",
+      "finalName": "component_kind",
+      "finalType": "absent",
+      "required": true,
+      "rationale": "CampaignPlan is already a typed, named artifact. No current use case establishes a second in-band discriminator, and the generic term \"component\" is not stable domain vocabulary. The package file identity and strict schema validation should identify a plan.",
+      "alternatives": [
+        "Keep only if independently stored payloads are dispatched without trusted file identity; then use kind: Literal['campaign_plan']."
+      ],
+      "simplestChoice": "Remove component_kind.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "controller_policy",
+      "decision": "keep",
+      "finalName": "controller_policy",
+      "finalPath": "CampaignPlan.controller_policy",
+      "finalType": "ControllerPolicy",
+      "required": false,
+      "rationale": "This is the plan-owned immutable controller contract: timing reserves, heartbeat and staleness thresholds, attempt bound, and exact-decimal headroom. Grouping these coupled controller-wide limits prevents duplicating them across waves or provider records; the established declarative name is clear.",
+      "alternatives": [
+        "Make it required once every valid plan must supply immutable controller bounds.",
+        "Merge individual timing fields into CampaignPlan only if there will never be another controller-level setting."
+      ],
+      "simplestChoice": "Keep controller_policy as a closed ControllerPolicy object.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "controller_policy.controller_reserve_seconds",
+      "decision": "keep",
+      "finalName": "controller_reserve_seconds",
+      "finalPath": "controller_policy.controller_reserve_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "This is an immutable policy input that reserves time for controller lifecycle work within the physical Job duration. It is distinct from a per-wave reserve and cannot be derived from heartbeat or stale thresholds.",
+      "alternatives": [
+        "merge with wave_reserve_seconds",
+        "remove and rely on an implicit provider buffer"
+      ],
+      "simplestChoice": "Keep controller_reserve_seconds.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "controller_policy.headroom_factor",
+      "decision": "keep",
+      "finalName": "headroom_factor",
+      "finalPath": "controller_policy.headroom_factor",
+      "finalType": "Decimal",
+      "required": false,
+      "rationale": "An immutable controller-policy multiplier for planned duration headroom. It has a present planning use case, and exact Decimal arithmetic is explicitly required.",
+      "alternatives": [
+        "duration_headroom_factor",
+        "headroom_ratio",
+        "derive from a fixed policy"
+      ],
+      "simplestChoice": "Keep headroom_factor as Decimal.",
+      "confidence": "high",
+      "questions": [],
+      "ownerBoundary": "CampaignPlan.controller_policy"
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "controller_policy.heartbeat_seconds",
+      "decision": "keep",
+      "finalName": "heartbeat_seconds",
+      "finalPath": "controller_policy.heartbeat_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "The controller needs an explicit, immutable interval for renewable ownership heartbeats. The name is established domain vocabulary and has an unambiguous seconds unit.",
+      "alternatives": [
+        "Derive from stale_after_seconds, but heartbeat cadence and staleness tolerance are independently meaningful controls.",
+        "Remove only if all campaigns share one fixed controller heartbeat interval."
+      ],
+      "simplestChoice": "Keep heartbeat_seconds as an optional integer within controller_policy.",
+      "confidence": "high",
+      "questions": [],
+      "ownerBoundary": "CampaignPlan.controller_policy"
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "controller_policy.max_attempts",
+      "decision": "rename",
+      "finalName": "max_controller_attempts",
+      "finalPath": "controller_policy.max_controller_attempts",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "The retry bound is a durable controller concept, but `max_attempts` is ambiguous beside trial logical attempts and per-trial physical-execution limits. Naming the controlled subject keeps the independent bounds clear.",
+      "alternatives": [
+        "Keep `max_attempts` because its parent scopes it to the controller.",
+        "Move it to `recovery_policy.max_controller_attempts` if it governs campaign recovery rather than provider controller execution."
+      ],
+      "simplestChoice": "controller_policy.max_controller_attempts",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "controller_policy.planning_trial_seconds",
+      "decision": "keep",
+      "finalName": "planning_trial_seconds",
+      "finalPath": "controller_policy.planning_trial_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "An immutable per-trial duration input is needed to deterministically form and validate initial wave plans. It is not derivable from wave totals because concurrency and reserves affect those totals.",
+      "alternatives": [
+        "planned_trial_seconds",
+        "trial_duration_seconds"
+      ],
+      "simplestChoice": "Keep planning_trial_seconds.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "controller_policy.stale_after_seconds",
+      "decision": "keep",
+      "finalName": "stale_after_seconds",
+      "finalPath": "controller_policy.stale_after_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "An explicit staleness threshold is an immutable controller policy used to decide when missed liveness evidence permits recovery. It is not safely derivable from heartbeat_seconds because acceptable missed-heartbeat tolerance is an independent operational choice.",
+      "alternatives": [
+        "derive from heartbeat_seconds",
+        "rename to liveness_timeout_seconds"
+      ],
+      "simplestChoice": "Keep stale_after_seconds as an optional integer in controller_policy.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "controller_policy.wave_reserve_seconds",
+      "decision": "keep",
+      "finalName": "wave_reserve_seconds",
+      "finalPath": "controller_policy.wave_reserve_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "A controller-level duration reserve per wave is a durable scheduling bound. It belongs with immutable controller policy, uses established wave vocabulary, and has the required explicit seconds unit.",
+      "alternatives": [
+        "remove if no controller scheduling or recovery calculation consumes a per-wave reserve",
+        "merge into controller_reserve_seconds only if both values always represent the same reservation"
+      ],
+      "simplestChoice": "Keep wave_reserve_seconds as an optional integer under controller_policy.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "evaluation_id",
+      "decision": "defer",
+      "finalName": "evaluation_id",
+      "finalPath": "CampaignPlan.evaluation_id",
+      "finalType": "string",
+      "required": false,
+      "rationale": "No stated consumer distinguishes this required identifier from experiment or the immutable manifest_digest. Its purpose and source of truth are not established in the graph.",
+      "alternatives": [
+        "keep evaluation_id if it is the stable external identity of the evaluated artifact and consumers require it",
+        "derive it from the manifest if it is only a label encoded there",
+        "remove it if experiment already identifies the evaluation"
+      ],
+      "simplestChoice": "Defer the field and do not require it until a current consumer and owner boundary are explicit.",
+      "confidence": "medium",
+      "questions": [
+        "Which consumer needs evaluation_id, and why cannot it use experiment or manifest_digest?"
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "experiment",
+      "decision": "remove",
+      "finalName": "experiment",
+      "finalType": "absent",
+      "required": true,
+      "rationale": "`experiment` is a vague, unscoped label with no distinct use case shown. `evaluation_id` already identifies the evaluated workload, while the campaign and plan identify the execution unit. Retaining a required generic string creates an extra identity that can drift without adding durable meaning.",
+      "alternatives": [
+        "Keep only if it is a separately governed external experiment identifier with consumers that cannot use `evaluation_id` or the campaign identity.",
+        "Rename to `campaign` only if it is the campaign's canonical identity; otherwise that concept belongs outside this plan."
+      ],
+      "simplestChoice": "Remove `experiment`; use `evaluation_id` plus the campaign identity already owning the plan.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "initial_waves",
+      "decision": "keep",
+      "finalName": "initial_waves",
+      "finalPath": "initial_waves",
+      "finalType": "array[InitialWavePlan]",
+      "required": false,
+      "rationale": "The plan must persist a deterministic initial wave schedule. It cannot be safely derived later from mutable capacity or recovery state, and it is distinct from the run and shard definitions it selects.",
+      "alternatives": [
+        "derive from runs and max_shards_per_wave",
+        "remove and plan waves only at controller startup"
+      ],
+      "simplestChoice": "Keep the optional closed list of deterministic initial wave plans.",
+      "confidence": "high",
+      "questions": [],
+      "ownerBoundary": "CampaignPlan"
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "initial_waves[].deployment_digest",
+      "decision": "derive",
+      "finalName": "deployment_digest",
+      "finalType": "string",
+      "required": false,
+      "rationale": "A wave’s deployment is derivable from its shard_digests by resolving each shard in runs[].shards[] to its run’s deployment_digest. Keeping it duplicates immutable plan data and risks disagreement; require all shards in a wave to resolve to the same deployment digest instead.",
+      "alternatives": [
+        "keep as a denormalized consistency-checked selector",
+        "remove only if waves may intentionally mix deployments"
+      ],
+      "simplestChoice": "Derive the deployment digest from the wave’s shard digests and validate wave homogeneity.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "initial_waves[].effective_concurrency",
+      "decision": "derive",
+      "finalName": "effective_concurrency",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "“Effective” marks this as a computed result, not an independent plan fact. Keeping it alongside immutable deployment content, shard membership, and request-limit inputs creates conflicting sources of truth. Derive it when constructing the controller input from the wave’s shards and the immutable deployment/run concurrency limits.",
+      "alternatives": [
+        "keep it only if it freezes a planner decision that cannot be deterministically recomputed from the plan and deployment content",
+        "rename to concurrency only if it becomes an explicit operator-selected wave limit"
+      ],
+      "simplestChoice": "Do not store it; derive the value at controller-input construction.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "initial_waves[].planned_duration_seconds",
+      "decision": "keep",
+      "finalName": "planned_duration_seconds",
+      "finalPath": "initial_waves[].planned_duration_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "A wave needs its planned duration as immutable, concrete scheduling input. It is not reliably derivable from trial count or concurrency, and the name states both intent and units.",
+      "alternatives": [
+        "Derive it from trial count and concurrency, but that loses planner-specific estimates and is not reliable."
+      ],
+      "simplestChoice": "Keep planned_duration_seconds.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "initial_waves[].shard_digests",
+      "decision": "keep",
+      "finalName": "shard_digests",
+      "finalPath": "initial_waves[].shard_digests",
+      "finalType": "array[string]",
+      "required": false,
+      "rationale": "Each initial wave needs an explicit, deterministic membership list. Shard digests are established content-addressed identities, and this field preserves the planned grouping without coupling the plan to later physical execution state.",
+      "alternatives": [
+        "derive membership from runs and max_shards_per_wave",
+        "store shard indexes instead of digests"
+      ],
+      "simplestChoice": "Keep shard_digests as the ordered list of planned shard content digests for the wave.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "initial_waves[].trial_count",
+      "decision": "derive",
+      "finalName": "trial_count",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "Each wave's trial count is a summary of its referenced shards' trials. Persisting it duplicates authoritative plan data and can drift.",
+      "alternatives": [
+        "Keep as a denormalized scheduling summary if resolving shard digests is demonstrably too costly."
+      ],
+      "simplestChoice": "Derive the count from initial_waves[].shard_digests and the plan's shard trial lists.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "initial_waves[].wave_index",
+      "decision": "derive",
+      "finalName": "array position",
+      "finalPath": "initial_waves[]",
+      "finalType": "integer (derived, zero-based)",
+      "required": false,
+      "rationale": "An immutable, ordered initial-wave plan already defines each wave's ordinal. Storing it duplicates array position and permits inconsistent plans.",
+      "alternatives": [
+        "Keep wave_index only if another durable object must reference waves independently of plan ordering."
+      ],
+      "simplestChoice": "Derive the zero-based wave ordinal from initial_waves order.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "manifest_digest",
+      "decision": "keep",
+      "finalName": "manifest_digest",
+      "finalPath": "CampaignPlan.manifest_digest",
+      "finalType": "string",
+      "required": true,
+      "rationale": "Keeps the plan reproducibly bound to its source manifest. plan_digest authenticates the complete plan but cannot identify or retrieve the manifest independently.",
+      "alternatives": [
+        "derive from plan_digest (loses the independent manifest reference)"
+      ],
+      "simplestChoice": "Keep manifest_digest as the content-digest reference to the campaign manifest.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "max_shards_per_wave",
+      "decision": "remove",
+      "finalName": "max_shards_per_wave",
+      "finalType": "none",
+      "required": false,
+      "rationale": "Initial waves already record the authoritative shard assignments. A planning-time cap is not needed by the controller after those assignments are materialized, and the observed largest wave would not preserve the cap's distinct intended meaning.",
+      "alternatives": [
+        "Keep only if the controller creates later waves from unassigned shards."
+      ],
+      "simplestChoice": "Remove it; make the deterministic initial_waves plan authoritative.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "plan_digest",
+      "decision": "keep",
+      "finalName": "plan_digest",
+      "finalPath": "plan_digest",
+      "finalType": "string",
+      "required": true,
+      "rationale": "A plan digest is a stable content-addressed identity for the immutable deterministic campaign plan and is needed to bind controller ownership, locks, and input-package artifacts to exactly that plan.",
+      "alternatives": [
+        "Derive it only at transport boundaries; this weakens explicit cross-artifact identity and verification."
+      ],
+      "simplestChoice": "Keep plan_digest as the required sha256: content digest of the canonical plan representation.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "planned_campaign_duration_seconds",
+      "decision": "keep",
+      "finalName": "planned_campaign_duration_seconds",
+      "finalPath": "planned_campaign_duration_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "The campaign-level planned duration is an immutable controller duration bound. It cannot reliably be reconstructed from wave durations because scheduling, concurrency, controller overhead, and recovery policy affect the physical controller Job's required lifetime.",
+      "alternatives": [
+        "Rename to planned_duration_seconds",
+        "Derive from initial_waves and controller_policy"
+      ],
+      "simplestChoice": "Keep planned_campaign_duration_seconds as an optional integer.",
+      "confidence": "medium",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "publication_role",
+      "decision": "remove",
+      "finalName": "publication_role",
+      "finalType": "absent",
+      "required": false,
+      "rationale": "The name does not identify a durable execution or planning concept, and no current consumer or closed set of values is shown. Publication is a downstream concern, not intrinsic to an immutable campaign plan.",
+      "alternatives": [
+        "If it selects a concrete output contract with active consumers, replace it with a narrowly named closed selector at that output boundary."
+      ],
+      "simplestChoice": "Remove it.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "recovery_policy",
+      "decision": "keep",
+      "finalName": "recovery_policy",
+      "finalPath": "recovery_policy",
+      "finalType": "#/$defs/CampaignRecoveryPolicy",
+      "required": true,
+      "rationale": "Recovery limits, retry timing, cancellation grace, concurrency, and campaign spending bounds are immutable plan inputs that govern how the single controller recovers work. The object groups one cohesive, durable concern without duplicating status or provider execution details.",
+      "alternatives": [
+        "Merge into controller_policy: rejected because recovery behavior is distinct from controller operating policy.",
+        "Rename to recovery: less clear; the contained values are declarative rules, not recovery state."
+      ],
+      "simplestChoice": "Keep recovery_policy as the required CampaignRecoveryPolicy object.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "recovery_policy.cancellation_grace_seconds",
+      "decision": "keep",
+      "finalName": "cancellation_grace_seconds",
+      "finalPath": "recovery_policy.cancellation_grace_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "A bounded wait after cancellation is necessary for safe recovery and replacement without overlapping physical controller Jobs. The name is direct, duration units are explicit, and recovery policy is the appropriate owner.",
+      "alternatives": [
+        "remove"
+      ],
+      "simplestChoice": "keep",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "recovery_policy.max_active_waves",
+      "decision": "keep",
+      "finalName": "max_active_waves",
+      "finalPath": "recovery_policy.max_active_waves",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "A recovery controller needs a durable, explicit concurrency bound for simultaneously active waves. The name is precise, uses established wave vocabulary, and is not derivable from the immutable initial-wave plan because recovery may change which waves are active.",
+      "alternatives": [
+        "Derive it from initial_waves, but that conflates a schedule with an operational safety limit.",
+        "Merge it with max_shards_per_wave, but shard packing and concurrent-wave capacity are independent controls."
+      ],
+      "simplestChoice": "Keep max_active_waves as an optional integer in recovery_policy.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "recovery_policy.max_physical_executions_per_trial",
+      "decision": "keep",
+      "finalName": "max_physical_executions_per_trial",
+      "finalPath": "recovery_policy.max_physical_executions_per_trial",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "A logical trial can require more than one physical execution during recovery. This immutable limit bounds retries, duplicate provider work, and spend independently of controller Job attempts. The name clearly distinguishes physical executions from logical attempts and from controller_policy.max_attempts.",
+      "alternatives": [
+        "derive from controller_policy.max_attempts: wrong scope; controller attempts and trial executions are independent",
+        "rename to max_executions_per_trial: loses the important physical/logical distinction",
+        "remove: leaves recovery work unbounded per trial"
+      ],
+      "simplestChoice": "Keep the optional integer limit.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "recovery_policy.retry_base_seconds",
+      "decision": "keep",
+      "finalName": "retry_base_seconds",
+      "finalPath": "recovery_policy.retry_base_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "The initial delay is an independent, immutable recovery-policy parameter for bounded retry backoff. Its name is concise, uses the established seconds suffix, and pairs clearly with retry_max_seconds. Validate it as positive and no greater than retry_max_seconds when both are present.",
+      "alternatives": [
+        "Derive it from retry_max_seconds",
+        "Move it into controller_policy",
+        "Remove configurable retry timing"
+      ],
+      "simplestChoice": "Keep retry_base_seconds as an optional integer.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "recovery_policy.retry_max_seconds",
+      "decision": "keep",
+      "finalName": "retry_max_seconds",
+      "finalPath": "recovery_policy.retry_max_seconds",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "A retry backoff needs an independent upper bound to prevent unbounded recovery delays. It is a durable operational constraint and cannot be derived from retry_base_seconds without embedding an implicit policy elsewhere.",
+      "alternatives": [
+        "derive from retry_base_seconds",
+        "remove and use an implementation constant"
+      ],
+      "simplestChoice": "Keep retry_max_seconds as the optional cap for retry delay.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "recovery_policy.spend_cap_microusd",
+      "decision": "keep",
+      "finalName": "spend_cap_microusd",
+      "finalPath": "recovery_policy.spend_cap_microusd",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "A campaign-level aggregate spend ceiling is a durable recovery control: it prevents retries or replacement executions from exceeding an approved budget. Its enclosing recovery_policy establishes that it constrains recovery decisions rather than being a per-run estimate or cap.",
+      "alternatives": [
+        "Move to CampaignPlan if it caps all planned and recovery spend, not only recovery decisions.",
+        "Remove it if max_physical_executions_per_trial and per-run spend_cap_microusd are the only intended cost controls."
+      ],
+      "simplestChoice": "Keep one optional non-negative integer aggregate cap in recovery_policy.",
+      "confidence": "medium",
+      "questions": [
+        "Does this cap apply only to additional recovery executions, or to all campaign spend? If it applies to all spend, move it to CampaignPlan."
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "run_count",
+      "decision": "derive",
+      "finalName": "run_count",
+      "finalType": "integer (derived from runs length)",
+      "required": false,
+      "rationale": "`run_count` duplicates the cardinality of the required `runs` array. Storing both creates an avoidable consistency invariant in an otherwise strict, immutable plan.",
+      "alternatives": [
+        "Keep it only if it is an independently meaningful declared target that may differ from the number of concrete runs; no such use case is present."
+      ],
+      "simplestChoice": "Remove the stored field and derive it as `len(runs)`.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs",
+      "decision": "keep",
+      "finalName": "runs",
+      "finalPath": "runs",
+      "finalType": "array",
+      "required": true,
+      "rationale": "A plan needs an ordered, deterministic set of logical runs that groups a shared deployment and its shards and trials. `run` is established domain vocabulary, and this collection is the source plan rather than a derivable summary.",
+      "alternatives": [
+        "Rename to `executions`, but that conflates logical planned work with physical execution attempts.",
+        "Remove and flatten shards into CampaignPlan, but that loses the deployment-level grouping needed for planning waves."
+      ],
+      "simplestChoice": "Keep `runs` as the required collection of planned logical runs.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].agent",
+      "decision": "keep",
+      "finalName": "agent",
+      "finalPath": "runs[].agent",
+      "finalType": "string",
+      "required": true,
+      "rationale": "A run needs to identify the agent being evaluated; model and deployment do not express that choice. `agent` is the shortest established noun for this closed selector and is not redundant with the surrounding fields.",
+      "alternatives": [
+        "Rename to `agent_name` (adds no useful distinction).",
+        "Remove it only if every plan can prove a single implicit agent, which the current per-run shape does not establish."
+      ],
+      "simplestChoice": "Keep `runs[].agent` as a required string selector.",
+      "confidence": "medium",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].cell_digest",
+      "decision": "rename",
+      "finalName": "run_digest",
+      "finalPath": "runs[].run_digest",
+      "finalType": "string",
+      "required": false,
+      "rationale": "\"Cell\" is unexplained matrix jargon, while the enclosing object is already the durable domain concept: a run. Keep the content identity, rename it to run_digest, and validate it as the established sha256: content-digest form.",
+      "alternatives": [
+        "Derive run_digest only if a canonical, separately persisted run document is the authoritative identity.",
+        "Remove it if no current content-addressing, deduplication, or ownership operation consumes the run identity."
+      ],
+      "simplestChoice": "Rename cell_digest to run_digest.",
+      "confidence": "medium",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].deployment",
+      "decision": "keep",
+      "finalName": "deployment",
+      "finalPath": "runs[].deployment",
+      "finalType": "string",
+      "required": true,
+      "rationale": "A run needs its declarative deployment reference; the paired deployment_digest records the resolved immutable content and does not replace that reference.",
+      "alternatives": [
+        "derive it from deployment_digest only",
+        "rename to deployment_name"
+      ],
+      "simplestChoice": "Keep deployment as the established, concise deployment reference.",
+      "confidence": "medium",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].deployment_digest",
+      "decision": "keep",
+      "finalName": "deployment_digest",
+      "finalPath": "runs[].deployment_digest",
+      "finalType": "string",
+      "required": true,
+      "rationale": "Binds each planned run to an immutable deployment revision. The mutable or human-readable deployment reference cannot provide the same reproducibility guarantee, and initial waves already use this digest to group concrete work.",
+      "alternatives": [
+        "Derive it from deployment only if deployment is itself a stable content-addressed identifier, which is not established here."
+      ],
+      "simplestChoice": "Keep deployment_digest as the required immutable deployment reference for each run.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].estimated_wave_cost_microusd",
+      "decision": "move",
+      "finalName": "estimated_cost_microusd",
+      "finalPath": "initial_waves[].estimated_cost_microusd",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "A run can span multiple waves, so a run-level wave cost is ambiguous. Attach the non-negative integer estimate to each concrete initial wave, whose shard set, duration, and concurrency define what is being estimated.",
+      "alternatives": [
+        "derive the estimate from a versioned provider pricing input if one becomes part of the plan",
+        "remove it if estimates have no admission-control or reporting consumer"
+      ],
+      "simplestChoice": "Move it to initial_waves[] as estimated_cost_microusd.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].max_concurrent_requests",
+      "decision": "keep",
+      "finalName": "max_concurrent_requests",
+      "finalPath": "runs[].max_concurrent_requests",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "A run-level cap is a durable execution constraint needed to form and recover waves; effective concurrency is recorded separately per initial wave and may be lower than this maximum.",
+      "alternatives": [
+        "derive from initial_waves[].effective_concurrency",
+        "rename to max_concurrency"
+      ],
+      "simplestChoice": "Keep max_concurrent_requests as an optional positive integer.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].model",
+      "decision": "keep",
+      "finalName": "model",
+      "finalPath": "runs[].model",
+      "finalType": "string",
+      "required": true,
+      "rationale": "A run needs the requested model identity as an immutable planning input. `model` is established domain vocabulary, concise, and distinct from the optional provider and deployment fields.",
+      "alternatives": [
+        "model_reference",
+        "provider_model"
+      ],
+      "simplestChoice": "Keep `model` as the required string identity; record a separately proven provider revision only where observation occurs.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].provider",
+      "decision": "keep",
+      "finalName": "provider",
+      "finalPath": "runs[].provider",
+      "finalType": "Provider",
+      "required": true,
+      "rationale": "Provider is established domain vocabulary and identifies the execution service independently of the deployment name. Keep it as a closed provider selector, not an unconstrained value.",
+      "alternatives": [
+        "derive from deployment, but deployment names are provider-specific implementation identities and should not carry this classification implicitly",
+        "remove if CampaignPlan is permanently limited to one provider"
+      ],
+      "simplestChoice": "Keep provider as a required Provider enum.",
+      "confidence": "medium",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].shards",
+      "decision": "keep",
+      "finalName": "shards",
+      "finalPath": "runs[].shards",
+      "finalType": "array",
+      "required": true,
+      "rationale": "A shard is established domain vocabulary and the required deterministic grouping of a run's trials. Its digest is referenced by initial wave plans, while its trial membership preserves the concrete execution plan; neither can be derived without losing the planned grouping.",
+      "alternatives": [
+        "Derive shards from trials: loses the explicitly planned grouping and stable shard digests.",
+        "Rename to groups: less precise and breaks established vocabulary."
+      ],
+      "simplestChoice": "Keep `shards` as the required list of deterministic trial groups for a run.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].shards[].shard_digest",
+      "decision": "keep",
+      "finalName": "shard_digest",
+      "finalPath": "runs[].shards[].shard_digest",
+      "finalType": "string",
+      "required": true,
+      "rationale": "A shard needs a stable, content-addressed identity so initial waves can select exact shards and the immutable plan can be verified independently of array position.",
+      "alternatives": [
+        "derive from the ordered trial digests"
+      ],
+      "simplestChoice": "Keep shard_digest as the explicit shard identity.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].shards[].trials",
+      "decision": "keep",
+      "finalName": "trials",
+      "finalPath": "runs[].shards[].trials",
+      "finalType": "array of trial descriptors",
+      "required": true,
+      "rationale": "A shard needs its explicit, immutable list of logical trials to define deterministic work and preserve task and trial digests. “trials” is established domain vocabulary and is concise.",
+      "alternatives": [
+        "Derive from task inputs, but that would weaken deterministic planning and omit per-trial logical-attempt state.",
+        "Rename to tasks, but each item represents a trial, not merely a task."
+      ],
+      "simplestChoice": "Keep `trials` as the required ordered list of immutable trial descriptors within a shard.",
+      "confidence": "high",
+      "questions": [],
+      "ownerBoundary": "CampaignPlan"
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].shards[].trials[].logical_attempt",
+      "decision": "remove",
+      "finalName": "logical_attempt",
+      "finalType": "absent",
+      "required": false,
+      "rationale": "Each entry in trials already represents one planned logical trial and is identified by trial_digest. Attempt counts belong to runtime physical-execution and recovery records, where retries occur; keeping one in the immutable plan duplicates or prematurely encodes that state.",
+      "alternatives": [
+        "Keep only if a trial can contain multiple distinct planned logical attempts that share a trial_digest; in that case the digest contract must explicitly include this number."
+      ],
+      "simplestChoice": "Remove it; use the trial entry and trial_digest as the planned logical-trial identity.",
+      "confidence": "medium",
+      "questions": [],
+      "ownerBoundary": "Campaign runtime recovery records"
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].shards[].trials[].task_digest",
+      "decision": "keep",
+      "finalName": "task_digest",
+      "finalPath": "runs[].shards[].trials[].task_digest",
+      "finalType": "string",
+      "required": true,
+      "rationale": "A trial needs an immutable content identity for the exact task it runs. task_name is a human-readable label and may be reused or renamed; trial_digest identifies the whole trial. This digest preserves reproducibility and supports deterministic shard and plan construction.",
+      "alternatives": [
+        "Derive it from trial_digest only if no planner, controller, lock, or receipt needs to address or verify task content independently.",
+        "Rename to task_sha256 only if this field is specifically a raw SHA-256 hex digest; otherwise retain the established digest vocabulary and enforce the project-wide digest format."
+      ],
+      "simplestChoice": "Keep task_digest as the required immutable task-content reference.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].shards[].trials[].task_name",
+      "decision": "keep",
+      "finalName": "task_name",
+      "finalPath": "runs[].shards[].trials[].task_name",
+      "finalType": "string",
+      "required": true,
+      "rationale": "Keep the stable logical task reference alongside task_digest. The digest fixes exact task content, while the name preserves the declared task identity needed to select and report the trial without resolving content-addressed data.",
+      "alternatives": [
+        "derive from task_digest by resolving the controller input package",
+        "remove and treat task_digest as the sole task reference"
+      ],
+      "simplestChoice": "Keep task_name as the logical task reference and task_digest as its immutable content identity.",
+      "confidence": "medium",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].shards[].trials[].trial_digest",
+      "decision": "keep",
+      "finalName": "trial_digest",
+      "finalPath": "runs[].shards[].trials[].trial_digest",
+      "finalType": "string (sha256 content digest)",
+      "required": true,
+      "rationale": "A trial has a distinct immutable identity beyond task_digest and logical_attempt. Its digest supports deterministic planning, shard membership, locking, and recovery without reconstructing an implicit trial payload.",
+      "alternatives": [
+        "derive from task_digest and logical_attempt",
+        "rename to digest"
+      ],
+      "simplestChoice": "Keep trial_digest as the stable content identity for the planned trial.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].spend_cap_microusd",
+      "decision": "remove",
+      "finalName": "spend_cap_microusd",
+      "finalType": "absent",
+      "required": false,
+      "rationale": "The campaign already has a single controller and a campaign-wide spend cap at recovery_policy.spend_cap_microusd. A run-level cap introduces a second, unspecified budget authority and enforcement rule without a stated use case.",
+      "alternatives": [
+        "Keep it only if the controller must enforce independently configurable per-run budgets; then make it a non-negative integer microusd value and specify its interaction with the campaign cap."
+      ],
+      "simplestChoice": "Use the existing campaign-wide spend cap and remove the run-level field.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "schema_version",
+      "decision": "keep",
+      "finalName": "schema_version",
+      "finalPath": "schema_version",
+      "finalType": "string",
+      "required": true,
+      "rationale": "A document-level schema version is required to select the correct strict parser before interpreting the plan. It cannot be derived from plan content or component_kind.",
+      "alternatives": [
+        "Remove it and rely on an external format envelope; this makes standalone plans ambiguous.",
+        "Derive it from component_kind; component kind identifies the document role, not its schema contract."
+      ],
+      "simplestChoice": "Keep schema_version as a required string.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "shard_count",
+      "decision": "derive",
+      "finalName": "shard_count",
+      "finalType": "integer",
+      "required": false,
+      "rationale": "It duplicates the total number of concrete shard entries already represented by runs[].shards and can be derived deterministically.",
+      "alternatives": [
+        "keep as an integrity-checking denormalization"
+      ],
+      "simplestChoice": "Derive the total from runs[].shards; do not persist it.",
+      "confidence": "high",
+      "questions": []
+    },
+    {
+      "schemaVersion": 1,
+      "model": "CampaignPlan",
+      "fieldPath": "trial_count",
+      "decision": "derive",
+      "finalName": "trial_count",
+      "finalType": "integer (derived)",
+      "required": false,
+      "rationale": "It duplicates the canonical nested trial records in runs[].shards[].trials and can drift from them. Derive the total from those records.",
+      "alternatives": [
+        "Keep only if the nested records can be intentionally incomplete, with an invariant tying the count to their total."
+      ],
+      "simplestChoice": "Remove the stored field and derive the total number of trial records.",
+      "confidence": "high",
+      "questions": []
+    }
+  ],
+  "findings": [
+    {
+      "severity": "warning",
+      "model": "CampaignPlan",
+      "fieldPath": "runs[].estimated_wave_cost_microusd",
+      "message": "Decision move is a manual structural proposal and is not auto-applied by the v1 graph reducer."
+    }
+  ]
+}

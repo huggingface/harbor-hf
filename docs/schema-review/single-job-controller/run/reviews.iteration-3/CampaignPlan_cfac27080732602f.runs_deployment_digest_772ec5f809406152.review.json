@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].deployment_digest",
+  "decision": "keep",
+  "finalName": "deployment_digest",
+  "finalPath": "runs[].deployment_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "Preserves the immutable content identity of the run's deployment independently of its declared deployment reference. It prevents reference drift and supports deterministic run and wave planning.",
+  "alternatives": [
+    "derive from deployment: unsafe when deployment is a mutable reference",
+    "merge into deployment: loses either the declared reference or its immutable content identity"
+  ],
+  "simplestChoice": "Keep deployment_digest.",
+  "confidence": "high",
+  "questions": []
+}

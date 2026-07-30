@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials[].task_name",
+  "decision": "keep",
+  "finalName": "task_name",
+  "finalPath": "runs[].shards[].trials[].task_name",
+  "finalType": "string",
+  "required": true,
+  "rationale": "The task name is the stable, executable task selector; task_digest supplies immutable content identity but does not replace the selector needed to identify the task to the controller.",
+  "alternatives": [
+    "remove: viable only if every controller and artifact consumer can resolve a task solely from task_digest",
+    "rename to task: shorter, but less clear alongside task_digest"
+  ],
+  "simplestChoice": "Keep task_name as the task selector and task_digest as its integrity identity.",
+  "confidence": "high",
+  "questions": []
+}

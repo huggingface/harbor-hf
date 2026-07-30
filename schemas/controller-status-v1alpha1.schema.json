@@ -1,0 +1,186 @@
+{
+  "$defs": {
+    "ControllerProjectionCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "active_trials": {
+          "minimum": 0,
+          "title": "Active Trials",
+          "type": "integer"
+        },
+        "logical_trials": {
+          "minimum": 0,
+          "title": "Logical Trials",
+          "type": "integer"
+        },
+        "physical_executions": {
+          "minimum": 0,
+          "title": "Physical Executions",
+          "type": "integer"
+        },
+        "terminal_trials": {
+          "minimum": 0,
+          "title": "Terminal Trials",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "logical_trials",
+        "terminal_trials",
+        "active_trials",
+        "physical_executions"
+      ],
+      "title": "ControllerProjectionCounts",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "block_reason": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Block Reason"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "current_action": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Current Action"
+    },
+    "current_wave": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Current Wave"
+    },
+    "event_revision": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Event Revision"
+    },
+    "evidence_revision": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Revision"
+    },
+    "heartbeat_at": {
+      "format": "date-time",
+      "title": "Heartbeat At",
+      "type": "string"
+    },
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "lease_expires_at": {
+      "format": "date-time",
+      "title": "Lease Expires At",
+      "type": "string"
+    },
+    "physical_deadline": {
+      "format": "date-time",
+      "title": "Physical Deadline",
+      "type": "string"
+    },
+    "plan_digest": {
+      "title": "Plan Digest",
+      "type": "string"
+    },
+    "projection": {
+      "$ref": "#/$defs/ControllerProjectionCounts"
+    },
+    "remaining_seconds": {
+      "minimum": 0,
+      "title": "Remaining Seconds",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "harbor-hf/controller-status/v1alpha1",
+      "default": "harbor-hf/controller-status/v1alpha1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "spend_reserved_microusd": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Spend Reserved Microusd",
+      "type": "integer"
+    },
+    "state": {
+      "enum": [
+        "starting",
+        "running",
+        "waiting-retry",
+        "finalizing",
+        "completed",
+        "paused-capacity",
+        "paused-policy",
+        "failed-infrastructure",
+        "failed-deterministic"
+      ],
+      "title": "State",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "plan_digest",
+    "job_id",
+    "attempt",
+    "state",
+    "heartbeat_at",
+    "lease_expires_at",
+    "physical_deadline",
+    "remaining_seconds",
+    "projection"
+  ],
+  "title": "ControllerStatus",
+  "type": "object"
+}

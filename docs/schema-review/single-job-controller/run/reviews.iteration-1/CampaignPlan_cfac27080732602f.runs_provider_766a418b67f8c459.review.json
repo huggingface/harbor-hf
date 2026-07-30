@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].provider",
+  "decision": "keep",
+  "finalName": "provider",
+  "finalPath": "runs[].provider",
+  "finalType": "Provider",
+  "required": true,
+  "rationale": "Provider is established domain vocabulary and identifies the execution service independently of the deployment name. Keep it as a closed provider selector, not an unconstrained value.",
+  "alternatives": [
+    "derive from deployment, but deployment names are provider-specific implementation identities and should not carry this classification implicitly",
+    "remove if CampaignPlan is permanently limited to one provider"
+  ],
+  "simplestChoice": "Keep provider as a required Provider enum.",
+  "confidence": "medium",
+  "questions": []
+}

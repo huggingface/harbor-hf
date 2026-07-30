@@ -1594,6 +1594,7 @@ def hugging_face_campaign_reconciler(
     jobs_api: HfJobsApi | None = None,
     bucket_api: BucketApi | None = None,
     runner: TextRunner | None = None,
+    jobs: WaveJobPort | None = None,
     endpoint_adapter: HuggingFaceEndpointAdapter | None = None,
 ) -> CampaignReconciler:
     """Compose production HF adapters around the campaign application layer."""
@@ -1601,7 +1602,7 @@ def hugging_face_campaign_reconciler(
         from harbor_hf.control import HubCampaignStore
 
         store = HubCampaignStore(namespace)
-    if jobs_api is None or bucket_api is None:
+    if jobs is None and (jobs_api is None or bucket_api is None):
         from huggingface_hub import HfApi
 
         api = HfApi()
@@ -1660,10 +1661,14 @@ def hugging_face_campaign_reconciler(
     return CampaignReconciler(
         store,
         endpoints=EndpointProvisioner(adapter),
-        jobs=HuggingFaceWaveJobAdapter(
-            api=jobs_api,
-            runner=runner or SubprocessRunner(),
-            bucket_api=bucket_api,
+        jobs=(
+            jobs
+            if jobs is not None
+            else HuggingFaceWaveJobAdapter(
+                api=cast(HfJobsApi, jobs_api),
+                runner=runner or SubprocessRunner(),
+                bucket_api=cast(BucketApi, bucket_api),
+            )
         ),
         action_claims=claims,
         observer=BucketCampaignObserver(reader),

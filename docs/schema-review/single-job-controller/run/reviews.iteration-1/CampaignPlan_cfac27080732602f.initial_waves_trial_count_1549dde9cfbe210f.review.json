@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "initial_waves[].trial_count",
+  "decision": "derive",
+  "finalName": "trial_count",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "Each wave's trial count is a summary of its referenced shards' trials. Persisting it duplicates authoritative plan data and can drift.",
+  "alternatives": [
+    "Keep as a denormalized scheduling summary if resolving shard digests is demonstrably too costly."
+  ],
+  "simplestChoice": "Derive the count from initial_waves[].shard_digests and the plan's shard trial lists.",
+  "confidence": "high",
+  "questions": []
+}

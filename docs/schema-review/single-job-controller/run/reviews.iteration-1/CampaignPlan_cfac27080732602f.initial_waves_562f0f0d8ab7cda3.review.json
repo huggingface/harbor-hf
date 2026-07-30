@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "initial_waves",
+  "decision": "keep",
+  "finalName": "initial_waves",
+  "finalPath": "initial_waves",
+  "finalType": "array[InitialWavePlan]",
+  "required": false,
+  "rationale": "The plan must persist a deterministic initial wave schedule. It cannot be safely derived later from mutable capacity or recovery state, and it is distinct from the run and shard definitions it selects.",
+  "alternatives": [
+    "derive from runs and max_shards_per_wave",
+    "remove and plan waves only at controller startup"
+  ],
+  "simplestChoice": "Keep the optional closed list of deterministic initial wave plans.",
+  "confidence": "high",
+  "questions": [],
+  "ownerBoundary": "CampaignPlan"
+}

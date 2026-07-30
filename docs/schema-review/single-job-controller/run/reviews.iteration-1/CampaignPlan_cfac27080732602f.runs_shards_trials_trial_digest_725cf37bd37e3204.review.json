@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials[].trial_digest",
+  "decision": "keep",
+  "finalName": "trial_digest",
+  "finalPath": "runs[].shards[].trials[].trial_digest",
+  "finalType": "string (sha256 content digest)",
+  "required": true,
+  "rationale": "A trial has a distinct immutable identity beyond task_digest and logical_attempt. Its digest supports deterministic planning, shard membership, locking, and recovery without reconstructing an implicit trial payload.",
+  "alternatives": [
+    "derive from task_digest and logical_attempt",
+    "rename to digest"
+  ],
+  "simplestChoice": "Keep trial_digest as the stable content identity for the planned trial.",
+  "confidence": "high",
+  "questions": []
+}

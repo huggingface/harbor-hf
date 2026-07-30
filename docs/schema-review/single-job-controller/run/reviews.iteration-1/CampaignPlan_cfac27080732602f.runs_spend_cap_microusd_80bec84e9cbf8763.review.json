@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].spend_cap_microusd",
+  "decision": "remove",
+  "finalName": "spend_cap_microusd",
+  "finalType": "absent",
+  "required": false,
+  "rationale": "The campaign already has a single controller and a campaign-wide spend cap at recovery_policy.spend_cap_microusd. A run-level cap introduces a second, unspecified budget authority and enforcement rule without a stated use case.",
+  "alternatives": [
+    "Keep it only if the controller must enforce independently configurable per-run budgets; then make it a non-negative integer microusd value and specify its interaction with the campaign cap."
+  ],
+  "simplestChoice": "Use the existing campaign-wide spend cap and remove the run-level field.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "manifest_digest",
+  "decision": "keep",
+  "finalName": "manifest_digest",
+  "finalPath": "CampaignPlan.manifest_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "Keeps the plan tied to its source manifest for provenance and reproducibility. It is a durable content reference, distinct from derived run, shard, deployment, and plan digests.",
+  "alternatives": [
+    "derive from the manifest content, but the manifest is outside this model and its reference must be recorded"
+  ],
+  "simplestChoice": "Keep manifest_digest as the required source-manifest content reference.",
+  "confidence": "high",
+  "questions": []
+}

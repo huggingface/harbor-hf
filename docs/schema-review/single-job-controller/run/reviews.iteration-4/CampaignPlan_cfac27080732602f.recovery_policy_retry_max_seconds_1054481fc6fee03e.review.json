@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.retry_max_seconds",
+  "decision": "keep",
+  "finalName": "retry_max_seconds",
+  "finalPath": "recovery_policy.retry_max_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "An independent maximum retry delay bounds recovery backoff. It cannot be derived from retry_base_seconds without imposing an arbitrary outage-recovery policy, and its paired name is clear in this closed recovery-policy context.",
+  "alternatives": [
+    "rename to retry_max_delay_seconds",
+    "remove and use an implicit cap"
+  ],
+  "simplestChoice": "Keep retry_max_seconds alongside retry_base_seconds.",
+  "confidence": "high",
+  "questions": []
+}

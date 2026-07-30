@@ -1,0 +1,471 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+    "revision": null
+  },
+  "models": [
+    {
+      "id": "CampaignPlan",
+      "kind": "object",
+      "source": {
+        "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+        "span": {
+          "startLine": 1,
+          "endLine": 430
+        }
+      },
+      "fields": [
+        {
+          "path": "controller_policy",
+          "name": "controller_policy",
+          "type": "unknown",
+          "required": false,
+          "nullable": true,
+          "parent": "CampaignPlan",
+          "objectLike": true,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "controller_policy.controller_reserve_seconds",
+          "name": "controller_reserve_seconds",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "controller_policy.headroom_factor",
+          "name": "headroom_factor",
+          "type": "unknown",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "controller_policy.heartbeat_seconds",
+          "name": "heartbeat_seconds",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "controller_policy.max_controller_attempts",
+          "name": "max_controller_attempts",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "controller_policy.stale_after_seconds",
+          "name": "stale_after_seconds",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "controller_policy.wave_reserve_seconds",
+          "name": "wave_reserve_seconds",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "initial_waves",
+          "name": "initial_waves",
+          "type": "array",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": true,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "initial_waves[].shard_digests",
+          "name": "shard_digests",
+          "type": "array",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "manifest_digest",
+          "name": "manifest_digest",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "recovery_policy",
+          "name": "recovery_policy",
+          "type": "#/$defs/CampaignRecoveryPolicy",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": true,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          },
+          "ref": "#/$defs/CampaignRecoveryPolicy"
+        },
+        {
+          "path": "recovery_policy.cancellation_grace_seconds",
+          "name": "cancellation_grace_seconds",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "recovery_policy.max_active_waves",
+          "name": "max_active_waves",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "recovery_policy.max_physical_executions_per_trial",
+          "name": "max_physical_executions_per_trial",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "recovery_policy.retry_base_seconds",
+          "name": "retry_base_seconds",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "recovery_policy.retry_max_seconds",
+          "name": "retry_max_seconds",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "recovery_policy.spend_cap_microusd",
+          "name": "spend_cap_microusd",
+          "type": "unknown",
+          "required": false,
+          "nullable": true,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs",
+          "name": "runs",
+          "type": "array",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": true,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].agent",
+          "name": "agent",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].deployment_path",
+          "name": "deployment_path",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].deployment_digest",
+          "name": "deployment_digest",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].max_concurrent_requests",
+          "name": "max_concurrent_requests",
+          "type": "unknown",
+          "required": false,
+          "nullable": true,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].model",
+          "name": "model",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].shards",
+          "name": "shards",
+          "type": "array",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": true,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].shards[].trials",
+          "name": "trials",
+          "type": "array",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": true,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].shards[].trials[].task_digest",
+          "name": "task_digest",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].shards[].trials[].task_name",
+          "name": "task_name",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        },
+        {
+          "path": "runs[].shards[].trials[].trial_digest",
+          "name": "trial_digest",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "parent": "CampaignPlan",
+          "objectLike": false,
+          "source": {
+            "path": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+            "span": {
+              "startLine": 1,
+              "endLine": 430
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

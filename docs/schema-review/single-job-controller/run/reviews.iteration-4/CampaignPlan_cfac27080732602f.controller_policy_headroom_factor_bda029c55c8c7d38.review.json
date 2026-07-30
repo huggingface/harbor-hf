@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.headroom_factor",
+  "decision": "keep",
+  "finalName": "headroom_factor",
+  "finalPath": "controller_policy.headroom_factor",
+  "finalType": "Decimal",
+  "required": false,
+  "rationale": "A decimal multiplier for conservative controller duration planning is a durable policy input. The established name is concise and unambiguous in this context; preserve it as an exact Decimal rather than a binary floating-point value.",
+  "alternatives": [
+    "remove: would force an implicit, less auditable planning margin",
+    "rename to duration_headroom_factor: adds redundant context within controller_policy"
+  ],
+  "simplestChoice": "Keep headroom_factor as an exact Decimal controller-policy field.",
+  "confidence": "high",
+  "questions": [],
+  "ownerBoundary": "CampaignPlan.controller_policy"
+}

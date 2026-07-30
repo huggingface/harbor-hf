@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy",
+  "decision": "keep",
+  "finalName": "controller_policy",
+  "finalPath": "CampaignPlan.controller_policy",
+  "finalType": "ControllerPolicy",
+  "required": false,
+  "rationale": "An immutable controller policy is a stated, durable campaign concept. The existing name is established domain vocabulary and clearly owns the controller timing, reserve, heartbeat, and attempt bounds.",
+  "alternatives": [
+    "Make the field required when a plan becomes executable; do not supply a production default.",
+    "Do not merge it into recovery_policy: recovery behavior and controller operation are distinct concerns."
+  ],
+  "simplestChoice": "Keep controller_policy as a typed ControllerPolicy object on CampaignPlan.",
+  "confidence": "high",
+  "questions": [],
+  "ownerBoundary": "CampaignPlan"
+}

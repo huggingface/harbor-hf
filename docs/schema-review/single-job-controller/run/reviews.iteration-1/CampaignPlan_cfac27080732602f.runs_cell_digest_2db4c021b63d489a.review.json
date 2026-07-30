@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].cell_digest",
+  "decision": "rename",
+  "finalName": "run_digest",
+  "finalPath": "runs[].run_digest",
+  "finalType": "string",
+  "required": false,
+  "rationale": "\"Cell\" is unexplained matrix jargon, while the enclosing object is already the durable domain concept: a run. Keep the content identity, rename it to run_digest, and validate it as the established sha256: content-digest form.",
+  "alternatives": [
+    "Derive run_digest only if a canonical, separately persisted run document is the authoritative identity.",
+    "Remove it if no current content-addressing, deduplication, or ownership operation consumes the run identity."
+  ],
+  "simplestChoice": "Rename cell_digest to run_digest.",
+  "confidence": "medium",
+  "questions": []
+}

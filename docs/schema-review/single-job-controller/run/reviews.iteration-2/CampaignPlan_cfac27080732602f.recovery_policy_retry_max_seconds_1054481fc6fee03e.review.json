@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.retry_max_seconds",
+  "decision": "keep",
+  "finalName": "retry_max_seconds",
+  "finalPath": "recovery_policy.retry_max_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "Caps retry delay for bounded recovery behavior; paired with retry_base_seconds, it is a durable and unambiguous duration setting.",
+  "alternatives": [
+    "derive from retry_base_seconds, but this removes an operational safety bound"
+  ],
+  "simplestChoice": "Keep retry_max_seconds as an optional integer.",
+  "confidence": "high",
+  "questions": []
+}

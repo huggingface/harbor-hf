@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "initial_waves[].shard_digests",
+  "decision": "keep",
+  "finalName": "shard_digests",
+  "finalPath": "initial_waves[].shard_digests",
+  "finalType": "array[string]",
+  "required": true,
+  "rationale": "This is the minimal concrete membership declaration for a deterministic initial wave. The values reference the canonical shard definitions in runs[].shards and let order derive wave position without duplicating per-wave execution details. Each declared initial wave must contain this field; an empty or absent selector would not be a viable wave.",
+  "alternatives": [
+    "derive from a separate wave-size rule, but that would not preserve a deterministic initial allocation",
+    "store shard objects, but that duplicates canonical shard definitions"
+  ],
+  "simplestChoice": "Keep shard_digests as the required ordered shard selector on each initial wave.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].estimated_wave_cost_microusd",
+  "decision": "move",
+  "finalName": "estimated_cost_microusd",
+  "finalPath": "initial_waves[].estimated_cost_microusd",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A run can span multiple waves, so a run-level wave cost is ambiguous. Attach the non-negative integer estimate to each concrete initial wave, whose shard set, duration, and concurrency define what is being estimated.",
+  "alternatives": [
+    "derive the estimate from a versioned provider pricing input if one becomes part of the plan",
+    "remove it if estimates have no admission-control or reporting consumer"
+  ],
+  "simplestChoice": "Move it to initial_waves[] as estimated_cost_microusd.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.max_physical_executions_per_trial",
+  "decision": "keep",
+  "finalName": "max_physical_executions_per_trial",
+  "finalPath": "recovery_policy.max_physical_executions_per_trial",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A logical trial can require more than one physical execution during recovery. This immutable limit bounds retries, duplicate provider work, and spend independently of controller Job attempts. The name clearly distinguishes physical executions from logical attempts and from controller_policy.max_attempts.",
+  "alternatives": [
+    "derive from controller_policy.max_attempts: wrong scope; controller attempts and trial executions are independent",
+    "rename to max_executions_per_trial: loses the important physical/logical distinction",
+    "remove: leaves recovery work unbounded per trial"
+  ],
+  "simplestChoice": "Keep the optional integer limit.",
+  "confidence": "high",
+  "questions": []
+}

@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 from typing import cast
 
 import pytest
+from conftest import with_provider_controller
 
 from harbor_hf import campaign_finalizer, campaign_observer
 from harbor_hf.campaign_finalizer import (
@@ -1427,6 +1428,7 @@ def test_provider_wave_without_pause_events_projects_cleaning_before_closed(
             )
         }
     )
+    spec = with_provider_controller(spec)
     lock = _campaign(spec)
     submitted = new_event(
         subject_type="campaign",

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.retry_base_seconds",
+  "decision": "keep",
+  "finalName": "retry_base_seconds",
+  "finalPath": "recovery_policy.retry_base_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "The initial delay is an independent, immutable recovery-policy parameter for bounded retry backoff. Its name is concise, uses the established seconds suffix, and pairs clearly with retry_max_seconds. Validate it as positive and no greater than retry_max_seconds when both are present.",
+  "alternatives": [
+    "Derive it from retry_max_seconds",
+    "Move it into controller_policy",
+    "Remove configurable retry timing"
+  ],
+  "simplestChoice": "Keep retry_base_seconds as an optional integer.",
+  "confidence": "high",
+  "questions": []
+}

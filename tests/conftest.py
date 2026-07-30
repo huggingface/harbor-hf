@@ -8,9 +8,34 @@ import yaml
 
 from harbor_hf.harbor_adapter.exporter import classify_private_artifact
 from harbor_hf.io import load_experiment
-from harbor_hf.models import EndpointRef, ExperimentSpec, RemoteExecutionSpec
+from harbor_hf.models import (
+    CampaignControllerSpec,
+    EndpointRef,
+    ExperimentSpec,
+    RemoteExecutionSpec,
+)
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "shellbench.yaml"
+
+
+def with_provider_controller(spec: ExperimentSpec) -> ExperimentSpec:
+    return spec.model_copy(
+        update={
+            "execution": spec.execution.model_copy(
+                update={
+                    "controller": CampaignControllerSpec(
+                        planning_trial_seconds=1,
+                        headroom_factor="1.0",
+                        wave_reserve_seconds=1,
+                        controller_reserve_seconds=600,
+                        heartbeat_seconds=30,
+                        stale_after_seconds=90,
+                        max_attempts=3,
+                    )
+                }
+            )
+        }
+    )
 
 
 def write_fake_compatibility_bundle(command: Sequence[str], log_path: Path) -> None:

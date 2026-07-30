@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].model",
+  "decision": "keep",
+  "finalName": "model",
+  "finalPath": "runs[].model",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A run needs its requested model as a durable logical input, distinct from its agent and deployment artifact; any provider-observed revision belongs in execution receipts or status.",
+  "alternatives": [
+    "derive from deployment_path",
+    "rename to model_id",
+    "remove"
+  ],
+  "simplestChoice": "Keep model as the requested model reference.",
+  "confidence": "high",
+  "questions": []
+}

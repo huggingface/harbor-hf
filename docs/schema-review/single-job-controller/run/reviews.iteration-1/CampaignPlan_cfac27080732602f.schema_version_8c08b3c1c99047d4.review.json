@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "schema_version",
+  "decision": "keep",
+  "finalName": "schema_version",
+  "finalPath": "schema_version",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A document-level schema version is required to select the correct strict parser before interpreting the plan. It cannot be derived from plan content or component_kind.",
+  "alternatives": [
+    "Remove it and rely on an external format envelope; this makes standalone plans ambiguous.",
+    "Derive it from component_kind; component kind identifies the document role, not its schema contract."
+  ],
+  "simplestChoice": "Keep schema_version as a required string.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "shard_count",
+  "decision": "derive",
+  "finalName": "shard_count",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "It duplicates the total number of concrete shard entries already represented by runs[].shards and can be derived deterministically.",
+  "alternatives": [
+    "keep as an integrity-checking denormalization"
+  ],
+  "simplestChoice": "Derive the total from runs[].shards; do not persist it.",
+  "confidence": "high",
+  "questions": []
+}

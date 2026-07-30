@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.wave_reserve_seconds",
+  "decision": "keep",
+  "finalName": "wave_reserve_seconds",
+  "finalPath": "controller_policy.wave_reserve_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "An immutable per-wave time reserve is a direct input to deterministic wave-duration planning and keeps execution overhead separate from the controller-wide reserve. The name is concise and distinguishes its scope clearly.",
+  "alternatives": [
+    "derive from observed provider overhead",
+    "merge into controller_reserve_seconds",
+    "remove"
+  ],
+  "simplestChoice": "keep wave_reserve_seconds",
+  "confidence": "high",
+  "questions": []
+}

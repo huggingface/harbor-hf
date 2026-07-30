@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.stale_after_seconds",
+  "decision": "keep",
+  "finalName": "stale_after_seconds",
+  "finalPath": "controller_policy.stale_after_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A distinct, immutable timeout is needed to decide when a controller heartbeat is no longer credible and recovery may safely proceed. It cannot reliably be derived from heartbeat_seconds because acceptable missed-heartbeat tolerance is an operational policy choice.",
+  "alternatives": [
+    "derive from heartbeat_seconds"
+  ],
+  "simplestChoice": "Keep stale_after_seconds as an integer duration in controller_policy.",
+  "confidence": "high",
+  "questions": []
+}

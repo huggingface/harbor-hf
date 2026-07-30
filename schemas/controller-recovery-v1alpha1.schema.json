@@ -1,0 +1,65 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "category": {
+      "enum": [
+        "lost",
+        "transient",
+        "quota",
+        "rate-limit",
+        "ambiguous"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "checkpoint_revision": {
+      "title": "Checkpoint Revision",
+      "type": "string"
+    },
+    "decided_at": {
+      "format": "date-time",
+      "title": "Decided At",
+      "type": "string"
+    },
+    "plan_digest": {
+      "title": "Plan Digest",
+      "type": "string"
+    },
+    "prior_attempt": {
+      "minimum": 1,
+      "title": "Prior Attempt",
+      "type": "integer"
+    },
+    "prior_job_id": {
+      "title": "Prior Job Id",
+      "type": "string"
+    },
+    "replacement_attempt": {
+      "minimum": 2,
+      "title": "Replacement Attempt",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "harbor-hf/controller-recovery/v1alpha1",
+      "default": "harbor-hf/controller-recovery/v1alpha1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "plan_digest",
+    "prior_job_id",
+    "prior_attempt",
+    "replacement_attempt",
+    "checkpoint_revision",
+    "category",
+    "decided_at"
+  ],
+  "title": "ControllerRecoveryDecision",
+  "type": "object"
+}

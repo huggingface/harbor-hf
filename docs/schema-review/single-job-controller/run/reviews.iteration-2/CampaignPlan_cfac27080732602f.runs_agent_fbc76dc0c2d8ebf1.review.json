@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].agent",
+  "decision": "keep",
+  "finalName": "agent",
+  "finalPath": "runs[].agent",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A run needs an independent agent selector: model and deployment identify what is served, while agent identifies the run’s behavior. The established short name is clear in this execution context; no new evidence shows it is redundant or unused.",
+  "alternatives": [
+    "merge with deployment",
+    "remove"
+  ],
+  "simplestChoice": "keep",
+  "confidence": "medium",
+  "questions": []
+}

@@ -1,0 +1,62 @@
+{
+  "$defs": {
+    "InputFile": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes",
+        "sha256"
+      ],
+      "title": "InputFile",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "files": {
+      "additionalProperties": {
+        "$ref": "#/$defs/InputFile"
+      },
+      "title": "Files",
+      "type": "object"
+    },
+    "input_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Input Digest",
+      "type": "string"
+    },
+    "plan_digest": {
+      "title": "Plan Digest",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "harbor-hf/campaign-input/v1alpha1",
+      "default": "harbor-hf/campaign-input/v1alpha1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "plan_digest",
+    "files",
+    "input_digest"
+  ],
+  "title": "CampaignInputManifest",
+  "type": "object"
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy",
+  "decision": "keep",
+  "finalName": "controller_policy",
+  "finalPath": "CampaignPlan.controller_policy",
+  "finalType": "ControllerPolicy",
+  "required": true,
+  "rationale": "The immutable controller policy is an explicit, stable campaign input. It owns controller timing, retry-attempt bounds, and exact-decimal headroom rather than leaving them implicit in runtime configuration.",
+  "alternatives": [
+    "Remove it and rely on runtime defaults.",
+    "Move individual values into CampaignPlan."
+  ],
+  "simplestChoice": "Keep one required ControllerPolicy object on CampaignPlan with no production defaults.",
+  "confidence": "high",
+  "questions": [],
+  "ownerBoundary": "CampaignPlan"
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.max_controller_attempts",
+  "decision": "keep",
+  "finalName": "max_controller_attempts",
+  "finalPath": "controller_policy.max_controller_attempts",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "Caps physical controller Job attempts for a logical campaign, a distinct immutable provider-controller safety boundary.",
+  "alternatives": [
+    "remove: leaves controller recovery unbounded",
+    "merge with recovery_policy: conflates controller-job recovery with trial execution recovery"
+  ],
+  "simplestChoice": "Keep max_controller_attempts.",
+  "confidence": "high",
+  "questions": []
+}

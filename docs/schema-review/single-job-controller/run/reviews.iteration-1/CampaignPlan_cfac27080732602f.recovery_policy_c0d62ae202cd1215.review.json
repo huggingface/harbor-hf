@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy",
+  "decision": "keep",
+  "finalName": "recovery_policy",
+  "finalPath": "recovery_policy",
+  "finalType": "#/$defs/CampaignRecoveryPolicy",
+  "required": true,
+  "rationale": "Recovery limits, retry timing, cancellation grace, concurrency, and campaign spending bounds are immutable plan inputs that govern how the single controller recovers work. The object groups one cohesive, durable concern without duplicating status or provider execution details.",
+  "alternatives": [
+    "Merge into controller_policy: rejected because recovery behavior is distinct from controller operating policy.",
+    "Rename to recovery: less clear; the contained values are declarative rules, not recovery state."
+  ],
+  "simplestChoice": "Keep recovery_policy as the required CampaignRecoveryPolicy object.",
+  "confidence": "high",
+  "questions": []
+}

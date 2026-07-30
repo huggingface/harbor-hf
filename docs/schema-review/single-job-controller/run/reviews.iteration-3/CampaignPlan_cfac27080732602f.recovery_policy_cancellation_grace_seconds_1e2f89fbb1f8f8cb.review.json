@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.cancellation_grace_seconds",
+  "decision": "keep",
+  "finalName": "cancellation_grace_seconds",
+  "finalPath": "recovery_policy.cancellation_grace_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "Recovery needs a fixed bounded wait after requesting cancellation before treating a physical execution as recoverable; this helps prevent overlapping replacements while provider cancellation propagates. The name is explicit and follows the established duration convention.",
+  "alternatives": [
+    "Move to controller_policy if cancellation handling is defined as a controller-wide operational policy rather than recovery behavior.",
+    "Remove only if cancellation completion is synchronously proven by the provider before recovery decisions."
+  ],
+  "simplestChoice": "Keep cancellation_grace_seconds in recovery_policy.",
+  "confidence": "high",
+  "questions": []
+}

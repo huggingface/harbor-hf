@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials[].task_digest",
+  "decision": "keep",
+  "finalName": "task_digest",
+  "finalPath": "runs[].shards[].trials[].task_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "Keeps the immutable content identity of the named task. task_name is human-facing and can be reused or change meaning; trial_digest identifies the complete trial rather than its task component.",
+  "alternatives": [
+    "derive from task_name: insufficient because names are not immutable content identities",
+    "remove in favor of trial_digest: loses independent task provenance and component-level integrity"
+  ],
+  "simplestChoice": "Keep task_digest as the task's content-addressed reference, using the established sha256: digest representation.",
+  "confidence": "high",
+  "questions": []
+}

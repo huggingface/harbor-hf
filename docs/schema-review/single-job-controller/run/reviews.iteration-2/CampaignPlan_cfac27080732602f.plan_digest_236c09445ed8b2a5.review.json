@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "plan_digest",
+  "decision": "derive",
+  "finalName": "plan_digest",
+  "finalType": "derived sha256: content digest string",
+  "required": true,
+  "rationale": "A plan's content digest is its externally computed identity. Embedding it in the plan creates a self-referential hashing rule or a special exclusion convention, neither of which belongs in the durable payload schema. Derive it from canonical plan bytes and store or reference it in the controller input-package metadata or lock where needed.",
+  "alternatives": [
+    "keep plan_digest with an explicit self-exclusion hashing rule",
+    "move plan_digest to an external input-package index or campaign lock"
+  ],
+  "simplestChoice": "Derive plan_digest from canonical CampaignPlan content and omit it from CampaignPlan.",
+  "confidence": "high",
+  "questions": [],
+  "ownerBoundary": "controller input-package metadata"
+}

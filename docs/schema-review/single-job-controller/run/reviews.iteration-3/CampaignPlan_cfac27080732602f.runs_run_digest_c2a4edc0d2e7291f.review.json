@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].run_digest",
+  "decision": "derive",
+  "finalName": "run_digest",
+  "finalPath": "runs[].run_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A run's immutable semantics are already present in its agent, deployment identity, provider/model settings, concurrency, and shard contents. Store those inputs and deterministically derive the canonical content digest; a stored digest duplicates them and can drift.",
+  "alternatives": [
+    "keep run_digest as a stored integrity assertion"
+  ],
+  "simplestChoice": "Derive run_digest from a canonical serialization of the run record.",
+  "confidence": "high",
+  "questions": [],
+  "ownerBoundary": "CampaignPlan canonicalization"
+}

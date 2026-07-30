@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "source": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+  "stableIteration": 4,
+  "stable": false,
+  "finalGraph": "graph.final.json",
+  "finalReport": "final-report.md",
+  "projectContext": "project-context.md",
+  "projectContextSha256": "d5e1d74a51b0434b83fa17a75f51ab5e26f6715b0aadfdcf81dcc3924ebc3563"
+}

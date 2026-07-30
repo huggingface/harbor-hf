@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].estimated_wave_cost_microusd",
+  "decision": "keep",
+  "finalName": "estimated_wave_cost_microusd",
+  "finalPath": "runs[].estimated_wave_cost_microusd",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A prospective per-wave cost is needed to reserve budget under the campaign spend cap before starting work. `estimated` durably distinguishes the plan value from actual attempt receipts, and the controller cannot derive it from the fields present without a pricing snapshot.",
+  "alternatives": [
+    "derive from provider pricing data",
+    "remove and rely only on actual-cost receipts"
+  ],
+  "simplestChoice": "Keep `estimated_wave_cost_microusd` as an optional integer.",
+  "confidence": "high",
+  "questions": []
+}

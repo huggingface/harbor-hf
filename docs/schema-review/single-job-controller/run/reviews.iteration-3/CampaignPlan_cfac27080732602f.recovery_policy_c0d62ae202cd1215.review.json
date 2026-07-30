@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy",
+  "decision": "keep",
+  "finalName": "recovery_policy",
+  "finalPath": "recovery_policy",
+  "finalType": "#/$defs/CampaignRecoveryPolicy",
+  "required": true,
+  "rationale": "It is the immutable, campaign-level policy governing retry, cancellation, concurrency, execution limits, and spend during recovery. These are coupled safety limits and cannot be derived from the plan or controller policy.",
+  "alternatives": [
+    "Merge selected limits into controller_policy, but recovery semantics are a distinct concern.",
+    "Move it to mutable status, but policy must be fixed before execution."
+  ],
+  "simplestChoice": "Keep recovery_policy as a required campaign-level policy object.",
+  "confidence": "high",
+  "questions": [],
+  "ownerBoundary": "Campaign planning and controller recovery"
+}

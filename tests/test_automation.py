@@ -16,7 +16,7 @@ from harbor_hf.automation import (
     _webhook_matches,
     automation_plan,
     install_automation,
-    scheduled_reconciler_command,
+    scheduled_controller_watchdog_command,
 )
 from harbor_hf.models import ExperimentSpec
 
@@ -75,6 +75,7 @@ def _request(spec: ExperimentSpec) -> AutomationRequest:
         namespace="osolmaz",
         schedule="*/10 * * * *",
         remote=spec.remote,
+        campaign_ids=["campaign-one"],
     )
 
 
@@ -84,9 +85,9 @@ def _provider_webhook(request: AutomationRequest) -> WebhookInfo:
         url=None,
         job=JobSpec(
             docker_image=request.remote.job.image,
-            command=scheduled_reconciler_command(request),
+            command=scheduled_controller_watchdog_command(request),
             labels={
-                "harbor-hf-role": "campaign-reconciler",
+                "harbor-hf-role": "campaign-controller-watchdog",
                 "harbor-hf-namespace": request.namespace,
             },
         ),
@@ -102,41 +103,43 @@ def _provider_webhook(request: AutomationRequest) -> WebhookInfo:
     )
 
 
-def test_builds_digest_pinned_scheduled_reconciler(remote_spec: ExperimentSpec) -> None:
+def test_builds_digest_pinned_scheduled_controller_watchdog(
+    remote_spec: ExperimentSpec,
+) -> None:
     request = _request(remote_spec)
 
-    command = scheduled_reconciler_command(request)
+    command = scheduled_controller_watchdog_command(request)
 
-    assert command[-6:] == [
+    assert command[-7:] == [
         "harbor-hf",
         "campaign",
-        "reconcile-all",
+        "watchdog",
         "--namespace",
         "osolmaz",
-        "--apply",
+        "--campaign-id",
+        "campaign-one",
     ]
     assert request.remote.worker.revision in command[2]
 
 
-def test_scheduled_reconciler_preserves_provider_wave_limit(
+def test_scheduled_watchdog_requires_explicit_campaign_scope(
     remote_spec: ExperimentSpec,
 ) -> None:
-    request = _request(remote_spec).model_copy(update={"provider_active_waves": 2})
+    value = _request(remote_spec).model_dump()
+    value["campaign_ids"] = []
 
-    command = scheduled_reconciler_command(request)
-
-    assert command[-2:] == ["--provider-active-waves", "2"]
-    assert automation_plan(request).provider_active_waves == 2
+    with pytest.raises(ValueError, match="at least 1 item"):
+        AutomationRequest.model_validate(value)
 
 
-def test_scheduled_reconciler_preserves_campaign_scope(
+def test_scheduled_watchdog_preserves_campaign_scope(
     remote_spec: ExperimentSpec,
 ) -> None:
     request = _request(remote_spec).model_copy(
         update={"campaign_ids": ["campaign-one", "campaign-two"]}
     )
 
-    command = scheduled_reconciler_command(request)
+    command = scheduled_controller_watchdog_command(request)
 
     assert command[-4:] == [
         "--campaign-id",
@@ -164,7 +167,7 @@ def test_installs_serial_schedule_and_dataset_webhook(
     assert api.job["concurrency"] is False
     assert set(cast(dict[str, str], api.job["secrets"])) == {"HF_TOKEN"}
     assert api.job["labels"] == {
-        "harbor-hf-role": "campaign-reconciler",
+        "harbor-hf-role": "campaign-controller-watchdog",
         "harbor-hf-namespace": "osolmaz",
     }
     assert api.webhook == {
@@ -303,10 +306,9 @@ def test_automation_plan_exposes_the_complete_installation_contract(
         "schedule": "17 */3 * * *",
         "suspended": True,
         "image": "ghcr.io/astral-sh/uv@sha256:" + "0" * 64,
-        "command": scheduled_reconciler_command(request),
+        "command": scheduled_controller_watchdog_command(request),
         "secret_names": ["HF_TOKEN"],
-        "provider_active_waves": None,
-        "campaign_ids": [],
+        "campaign_ids": ["campaign-one"],
         "control_repository": "osolmaz/harbor-hf-coordination",
     }
 
@@ -385,7 +387,7 @@ def test_every_managed_schedule_field_participates_in_drift_detection(
         install_automation(request, token="test-only", api=api)
 
     assert str(captured.value) == (
-        "managed reconciliation schedule has configuration drift"
+        "managed controller watchdog schedule has configuration drift"
     )
 
 
@@ -423,15 +425,15 @@ def test_every_managed_webhook_field_participates_in_drift_detection(
         install_automation(request, token="test-only", api=api)
 
     assert str(captured.value) == (
-        "managed reconciliation webhook has configuration drift"
+        "managed controller watchdog webhook has configuration drift"
     )
 
 
 @pytest.mark.parametrize(
     ("resource", "expected"),
     [
-        ("schedule", "multiple managed reconciliation schedules exist"),
-        ("webhook", "multiple managed reconciliation webhooks exist"),
+        ("schedule", "multiple managed controller watchdog schedules exist"),
+        ("webhook", "multiple managed controller watchdog webhooks exist"),
     ],
 )
 def test_install_rejects_multiple_managed_resources_with_exact_error(
@@ -475,7 +477,7 @@ def test_unmanaged_provider_resources_are_ignored(
         SimpleNamespace(
             job_spec=SimpleNamespace(
                 labels={
-                    "harbor-hf-role": "campaign-reconciler",
+                    "harbor-hf-role": "campaign-controller-watchdog",
                     "harbor-hf-namespace": "other",
                 }
             )
@@ -603,7 +605,7 @@ def test_scheduled_spec_matching_treats_a_missing_command_as_drift(
     incomplete = SimpleNamespace(
         docker_image=request.remote.job.image,
         labels={
-            "harbor-hf-role": "campaign-reconciler",
+            "harbor-hf-role": "campaign-controller-watchdog",
             "harbor-hf-namespace": "osolmaz",
         },
     )

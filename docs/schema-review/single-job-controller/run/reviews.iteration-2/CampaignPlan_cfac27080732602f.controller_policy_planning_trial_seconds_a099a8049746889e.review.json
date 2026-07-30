@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.planning_trial_seconds",
+  "decision": "remove",
+  "finalName": "planning_trial_seconds",
+  "finalType": "none",
+  "required": false,
+  "rationale": "Initial-wave planned durations are already concrete plan outputs. A uniform per-trial planning estimate has no separate controller-time use that warrants persisting it in the immutable policy.",
+  "alternatives": [
+    "Keep it as a build-time-only planner input outside CampaignPlan."
+  ],
+  "simplestChoice": "Remove the field.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs",
+  "decision": "keep",
+  "finalName": "runs",
+  "finalPath": "runs",
+  "finalType": "array",
+  "required": true,
+  "rationale": "A plan needs an ordered, deterministic set of logical runs that groups a shared deployment and its shards and trials. `run` is established domain vocabulary, and this collection is the source plan rather than a derivable summary.",
+  "alternatives": [
+    "Rename to `executions`, but that conflates logical planned work with physical execution attempts.",
+    "Remove and flatten shards into CampaignPlan, but that loses the deployment-level grouping needed for planning waves."
+  ],
+  "simplestChoice": "Keep `runs` as the required collection of planned logical runs.",
+  "confidence": "high",
+  "questions": []
+}

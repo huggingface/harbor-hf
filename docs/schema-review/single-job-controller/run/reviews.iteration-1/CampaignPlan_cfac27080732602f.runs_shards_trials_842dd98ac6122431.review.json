@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials",
+  "decision": "keep",
+  "finalName": "trials",
+  "finalPath": "runs[].shards[].trials",
+  "finalType": "array of trial descriptors",
+  "required": true,
+  "rationale": "A shard needs its explicit, immutable list of logical trials to define deterministic work and preserve task and trial digests. “trials” is established domain vocabulary and is concise.",
+  "alternatives": [
+    "Derive from task inputs, but that would weaken deterministic planning and omit per-trial logical-attempt state.",
+    "Rename to tasks, but each item represents a trial, not merely a task."
+  ],
+  "simplestChoice": "Keep `trials` as the required ordered list of immutable trial descriptors within a shard.",
+  "confidence": "high",
+  "questions": [],
+  "ownerBoundary": "CampaignPlan"
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "manifest_digest",
+  "decision": "keep",
+  "finalName": "manifest_digest",
+  "finalPath": "CampaignPlan.manifest_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "Required immutable provenance reference for the source manifest; distinct from plan_digest, which identifies the derived plan.",
+  "alternatives": [
+    "derive from plan_digest",
+    "merge with plan_digest"
+  ],
+  "simplestChoice": "Keep manifest_digest.",
+  "confidence": "high",
+  "questions": []
+}

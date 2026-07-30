@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "initial_waves",
+  "decision": "keep",
+  "finalName": "initial_waves",
+  "finalPath": "CampaignPlan.initial_waves",
+  "finalType": "array",
+  "required": false,
+  "rationale": "It is the immutable, deterministic initial wave partition that assigns concrete shard sets before controller execution. The `initial` distinction matters because later recovery scheduling is mutable controller behavior, not part of the plan.",
+  "alternatives": [
+    "rename to `waves` (loses the distinction from recovery-created scheduling)",
+    "derive from `runs` (would discard the declared deterministic shard grouping)",
+    "remove (would force the controller to invent initial scheduling)"
+  ],
+  "simplestChoice": "Keep `initial_waves` as the plan-owned list of initial shard groups.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.headroom_factor",
+  "decision": "keep",
+  "finalName": "headroom_factor",
+  "finalPath": "controller_policy.headroom_factor",
+  "finalType": "Decimal",
+  "required": false,
+  "rationale": "An immutable controller-policy multiplier for planned duration headroom. It has a present planning use case, and exact Decimal arithmetic is explicitly required.",
+  "alternatives": [
+    "duration_headroom_factor",
+    "headroom_ratio",
+    "derive from a fixed policy"
+  ],
+  "simplestChoice": "Keep headroom_factor as Decimal.",
+  "confidence": "high",
+  "questions": [],
+  "ownerBoundary": "CampaignPlan.controller_policy"
+}

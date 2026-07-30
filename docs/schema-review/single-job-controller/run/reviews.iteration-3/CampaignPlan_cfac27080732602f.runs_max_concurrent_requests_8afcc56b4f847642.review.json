@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].max_concurrent_requests",
+  "decision": "keep",
+  "finalName": "max_concurrent_requests",
+  "finalPath": "runs[].max_concurrent_requests",
+  "finalType": "integer (>= 1)",
+  "required": false,
+  "rationale": "A per-run concurrency ceiling is a durable planning input for deriving wave concurrency and respecting deployment capacity. The current name clearly identifies both the bound and unit.",
+  "alternatives": [
+    "concurrency (too ambiguous: target, limit, or observed value)",
+    "max_requests (omits concurrency)"
+  ],
+  "simplestChoice": "Keep as a positive integer limit.",
+  "confidence": "high",
+  "questions": []
+}

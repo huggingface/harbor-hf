@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import with_provider_controller
 from test_submission import FakeBucketApi, FakeRunner, _wave_lock
 
 from harbor_hf.models import ExperimentSpec
@@ -95,7 +96,7 @@ def test_wave_submission_provider_label_is_golden(
             )
         }
     )
-    lock = _wave_lock(spec)
+    lock = _wave_lock(with_provider_controller(spec))
 
     command = build_submit_wave_command(
         lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"

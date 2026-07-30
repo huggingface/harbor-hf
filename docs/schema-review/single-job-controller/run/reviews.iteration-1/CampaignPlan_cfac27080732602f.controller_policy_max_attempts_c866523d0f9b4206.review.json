@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.max_attempts",
+  "decision": "rename",
+  "finalName": "max_controller_attempts",
+  "finalPath": "controller_policy.max_controller_attempts",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "The retry bound is a durable controller concept, but `max_attempts` is ambiguous beside trial logical attempts and per-trial physical-execution limits. Naming the controlled subject keeps the independent bounds clear.",
+  "alternatives": [
+    "Keep `max_attempts` because its parent scopes it to the controller.",
+    "Move it to `recovery_policy.max_controller_attempts` if it governs campaign recovery rather than provider controller execution."
+  ],
+  "simplestChoice": "controller_policy.max_controller_attempts",
+  "confidence": "high",
+  "questions": []
+}

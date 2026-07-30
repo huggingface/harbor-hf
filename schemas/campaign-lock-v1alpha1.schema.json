@@ -1,0 +1,445 @@
+{
+  "$defs": {
+    "CampaignControllerSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "controller_reserve_seconds": {
+          "minimum": 600,
+          "title": "Controller Reserve Seconds",
+          "type": "integer"
+        },
+        "headroom_factor": {
+          "anyOf": [
+            {
+              "minimum": 1.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Headroom Factor"
+        },
+        "heartbeat_seconds": {
+          "maximum": 300,
+          "minimum": 30,
+          "title": "Heartbeat Seconds",
+          "type": "integer"
+        },
+        "max_attempts": {
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "planning_trial_seconds": {
+          "minimum": 1,
+          "title": "Planning Trial Seconds",
+          "type": "integer"
+        },
+        "stale_after_seconds": {
+          "minimum": 90,
+          "title": "Stale After Seconds",
+          "type": "integer"
+        },
+        "wave_reserve_seconds": {
+          "minimum": 1,
+          "title": "Wave Reserve Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "planning_trial_seconds",
+        "headroom_factor",
+        "wave_reserve_seconds",
+        "controller_reserve_seconds",
+        "heartbeat_seconds",
+        "stale_after_seconds",
+        "max_attempts"
+      ],
+      "title": "CampaignControllerSpec",
+      "type": "object"
+    },
+    "CampaignRecoveryPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "cancellation_grace_seconds": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cancellation Grace Seconds",
+          "type": "integer"
+        },
+        "max_active_waves": {
+          "default": 64,
+          "minimum": 1,
+          "title": "Max Active Waves",
+          "type": "integer"
+        },
+        "max_physical_executions_per_trial": {
+          "default": 3,
+          "minimum": 1,
+          "title": "Max Physical Executions Per Trial",
+          "type": "integer"
+        },
+        "retry_base_seconds": {
+          "default": 30,
+          "minimum": 1,
+          "title": "Retry Base Seconds",
+          "type": "integer"
+        },
+        "retry_max_seconds": {
+          "default": 1800,
+          "minimum": 1,
+          "title": "Retry Max Seconds",
+          "type": "integer"
+        },
+        "spend_cap_microusd": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spend Cap Microusd"
+        }
+      },
+      "title": "CampaignRecoveryPolicy",
+      "type": "object"
+    },
+    "CampaignRunLock": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "title": "Agent",
+          "type": "string"
+        },
+        "cell_digest": {
+          "title": "Cell Digest",
+          "type": "string"
+        },
+        "deployment": {
+          "title": "Deployment",
+          "type": "string"
+        },
+        "deployment_digest": {
+          "title": "Deployment Digest",
+          "type": "string"
+        },
+        "estimated_wave_cost_microusd": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Wave Cost Microusd"
+        },
+        "max_concurrent_requests": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Concurrent Requests"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "shards": {
+          "items": {
+            "$ref": "#/$defs/CampaignShardLock"
+          },
+          "title": "Shards",
+          "type": "array"
+        },
+        "spend_cap_microusd": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spend Cap Microusd"
+        }
+      },
+      "required": [
+        "cell_digest",
+        "deployment_digest",
+        "model",
+        "deployment",
+        "agent",
+        "run_id",
+        "shards"
+      ],
+      "title": "CampaignRunLock",
+      "type": "object"
+    },
+    "CampaignShardLock": {
+      "additionalProperties": false,
+      "properties": {
+        "shard_digest": {
+          "title": "Shard Digest",
+          "type": "string"
+        },
+        "shard_id": {
+          "title": "Shard Id",
+          "type": "string"
+        },
+        "trials": {
+          "items": {
+            "$ref": "#/$defs/CampaignTrialLock"
+          },
+          "title": "Trials",
+          "type": "array"
+        }
+      },
+      "required": [
+        "shard_id",
+        "shard_digest",
+        "trials"
+      ],
+      "title": "CampaignShardLock",
+      "type": "object"
+    },
+    "CampaignTrialLock": {
+      "additionalProperties": false,
+      "properties": {
+        "logical_attempt": {
+          "title": "Logical Attempt",
+          "type": "integer"
+        },
+        "task_digest": {
+          "title": "Task Digest",
+          "type": "string"
+        },
+        "task_name": {
+          "title": "Task Name",
+          "type": "string"
+        },
+        "trial_digest": {
+          "title": "Trial Digest",
+          "type": "string"
+        },
+        "trial_id": {
+          "title": "Trial Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "trial_id",
+        "trial_digest",
+        "task_name",
+        "task_digest",
+        "logical_attempt"
+      ],
+      "title": "CampaignTrialLock",
+      "type": "object"
+    },
+    "LockedInitialWave": {
+      "additionalProperties": false,
+      "properties": {
+        "deployment_digest": {
+          "title": "Deployment Digest",
+          "type": "string"
+        },
+        "effective_concurrency": {
+          "minimum": 1,
+          "title": "Effective Concurrency",
+          "type": "integer"
+        },
+        "planned_duration_seconds": {
+          "minimum": 1,
+          "title": "Planned Duration Seconds",
+          "type": "integer"
+        },
+        "shard_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Shard Ids",
+          "type": "array"
+        },
+        "trial_count": {
+          "minimum": 1,
+          "title": "Trial Count",
+          "type": "integer"
+        },
+        "wave_index": {
+          "minimum": 1,
+          "title": "Wave Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "wave_index",
+        "deployment_digest",
+        "shard_ids",
+        "trial_count",
+        "effective_concurrency",
+        "planned_duration_seconds"
+      ],
+      "title": "LockedInitialWave",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "artifact_prefix": {
+      "title": "Artifact Prefix",
+      "type": "string"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "component_kind": {
+      "anyOf": [
+        {
+          "enum": [
+            "base",
+            "correction"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Component Kind"
+    },
+    "controller_policy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CampaignControllerSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "evaluation_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+      "title": "Evaluation Id",
+      "type": "string"
+    },
+    "experiment": {
+      "title": "Experiment",
+      "type": "string"
+    },
+    "initial_waves": {
+      "items": {
+        "$ref": "#/$defs/LockedInitialWave"
+      },
+      "title": "Initial Waves",
+      "type": "array"
+    },
+    "manifest_digest": {
+      "title": "Manifest Digest",
+      "type": "string"
+    },
+    "max_shards_per_wave": {
+      "title": "Max Shards Per Wave",
+      "type": "integer"
+    },
+    "plan_digest": {
+      "title": "Plan Digest",
+      "type": "string"
+    },
+    "planned_campaign_duration_seconds": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Planned Campaign Duration Seconds"
+    },
+    "publication_role": {
+      "enum": [
+        "final",
+        "component",
+        "diagnostic"
+      ],
+      "title": "Publication Role",
+      "type": "string"
+    },
+    "recovery_policy": {
+      "$ref": "#/$defs/CampaignRecoveryPolicy"
+    },
+    "runs": {
+      "items": {
+        "$ref": "#/$defs/CampaignRunLock"
+      },
+      "title": "Runs",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "harbor-hf/campaign-lock/v1alpha1",
+      "default": "harbor-hf/campaign-lock/v1alpha1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "created_at",
+    "experiment",
+    "evaluation_id",
+    "publication_role",
+    "component_kind",
+    "manifest_digest",
+    "plan_digest",
+    "artifact_prefix",
+    "max_shards_per_wave",
+    "recovery_policy",
+    "runs"
+  ],
+  "title": "CampaignLock",
+  "type": "object"
+}

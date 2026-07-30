@@ -13,6 +13,7 @@ from typing import Literal, cast
 import httpx
 import pytest
 import yaml
+from conftest import with_provider_controller
 from huggingface_hub.errors import HfHubHTTPError
 from pydantic import JsonValue
 
@@ -442,7 +443,7 @@ def _provider_spec(
             )
         }
     )
-    return spec, target
+    return with_provider_controller(spec), target
 
 
 def _reconciler(

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.spend_cap_microusd",
+  "decision": "keep",
+  "finalName": "spend_cap_microusd",
+  "finalPath": "recovery_policy.spend_cap_microusd",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A recovery-specific monetary ceiling is a durable safety boundary for retries and replacement executions. Nesting already establishes its scope, so the short established monetary name is unambiguous.",
+  "alternatives": [
+    "Remove if recovery actions never incur separately controllable provider spend.",
+    "Rename to recovery_spend_cap_microusd only if this field moves out of recovery_policy."
+  ],
+  "simplestChoice": "Keep an optional integer spend_cap_microusd under recovery_policy.",
+  "confidence": "high",
+  "questions": []
+}

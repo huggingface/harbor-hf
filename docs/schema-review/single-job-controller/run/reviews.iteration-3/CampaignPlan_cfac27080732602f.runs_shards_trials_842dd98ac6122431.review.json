@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials",
+  "decision": "keep",
+  "finalName": "trials",
+  "finalPath": "runs[].shards[].trials",
+  "finalType": "array",
+  "required": true,
+  "rationale": "A shard needs an explicit set of trial specifications to define its deterministic work. This grouping cannot be derived from the run or shard alone, and `trials` is established domain vocabulary.",
+  "alternatives": [
+    "derive trial membership from an external task catalog",
+    "merge trial fields into the shard"
+  ],
+  "simplestChoice": "Keep the required `trials` array.",
+  "confidence": "high",
+  "questions": []
+}

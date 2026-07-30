@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].model",
+  "decision": "keep",
+  "finalName": "model",
+  "finalPath": "CampaignPlan.runs[].model",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A run needs an explicit requested model selector. It is a stable, user-meaningful input to planning and remains distinct from deployment identity, agent identity, and any later observed provider model revision.",
+  "alternatives": [
+    "derive from deployment: would hide a material run input and couple the plan to deployment internals",
+    "rename to model_id: adds no distinction because this field is a provider model selector, not necessarily a durable provider-assigned ID",
+    "replace with model_revision: conflates the requested model with a revision that may not be observable until execution"
+  ],
+  "simplestChoice": "Keep `model` as the required requested model selector; record any provider-observed revision separately in execution receipts/status.",
+  "confidence": "high",
+  "questions": []
+}

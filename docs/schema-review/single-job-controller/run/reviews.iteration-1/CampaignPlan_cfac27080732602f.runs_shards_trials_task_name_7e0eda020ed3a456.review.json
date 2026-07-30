@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials[].task_name",
+  "decision": "keep",
+  "finalName": "task_name",
+  "finalPath": "runs[].shards[].trials[].task_name",
+  "finalType": "string",
+  "required": true,
+  "rationale": "Keep the stable logical task reference alongside task_digest. The digest fixes exact task content, while the name preserves the declared task identity needed to select and report the trial without resolving content-addressed data.",
+  "alternatives": [
+    "derive from task_digest by resolving the controller input package",
+    "remove and treat task_digest as the sole task reference"
+  ],
+  "simplestChoice": "Keep task_name as the logical task reference and task_digest as its immutable content identity.",
+  "confidence": "medium",
+  "questions": []
+}

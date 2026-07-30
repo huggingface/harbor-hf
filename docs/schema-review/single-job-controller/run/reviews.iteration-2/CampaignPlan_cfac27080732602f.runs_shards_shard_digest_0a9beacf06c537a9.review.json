@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].shard_digest",
+  "decision": "keep",
+  "finalName": "shard_digest",
+  "finalPath": "runs[].shards[].shard_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A shard needs a stable content-addressed identity so initial waves can select shards independently of array position. The established digest vocabulary is clear and matches plan, run, task, and trial identities.",
+  "alternatives": [
+    "derive it solely from the ordered trial digests, but the plan still needs a named reference target for initial_waves[].shard_digests"
+  ],
+  "simplestChoice": "Keep shard_digest as the shard's stable content-addressed reference.",
+  "confidence": "high",
+  "questions": []
+}

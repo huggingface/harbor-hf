@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].deployment_digest",
+  "decision": "keep",
+  "finalName": "deployment_digest",
+  "finalPath": "runs[].deployment_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "Keeps each planned run bound to the exact deployment content; deployment_path alone is mutable and cannot provide that identity.",
+  "alternatives": [
+    "derive from deployment_path"
+  ],
+  "simplestChoice": "Keep deployment_digest.",
+  "confidence": "high",
+  "questions": []
+}

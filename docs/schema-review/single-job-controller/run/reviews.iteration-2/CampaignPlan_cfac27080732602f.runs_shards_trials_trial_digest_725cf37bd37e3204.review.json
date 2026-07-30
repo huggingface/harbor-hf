@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials[].trial_digest",
+  "decision": "keep",
+  "finalName": "trial_digest",
+  "finalPath": "runs[].shards[].trials[].trial_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A trial is a durable execution-planning unit distinct from its task definition. Its digest provides a content-addressed identity for the exact trial entry, including its placement and inherited run/shard context, without conflating it with task_digest.",
+  "alternatives": [
+    "derive from task_digest: unsafe when the same task is planned in more than one trial or context",
+    "remove: loses a stable content-addressed trial identity"
+  ],
+  "simplestChoice": "Keep trial_digest as the required content-addressed identity of a trial.",
+  "confidence": "high",
+  "questions": []
+}

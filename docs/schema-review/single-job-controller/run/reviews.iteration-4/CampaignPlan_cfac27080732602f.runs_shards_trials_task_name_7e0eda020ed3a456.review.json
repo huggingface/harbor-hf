@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials[].task_name",
+  "decision": "keep",
+  "finalName": "task_name",
+  "finalPath": "runs[].shards[].trials[].task_name",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A digest is an opaque content identity; task_name preserves the stable semantic task reference needed to interpret and group trials without resolving package contents. The name is already short, concrete, and established vocabulary.",
+  "alternatives": [
+    "remove: would make plans and reports depend on digest resolution for task identity.",
+    "derive: task_name cannot generally be recovered from a raw task_digest."
+  ],
+  "simplestChoice": "Keep task_name.",
+  "confidence": "medium",
+  "questions": []
+}

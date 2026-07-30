@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "run_count",
+  "decision": "derive",
+  "finalName": "run_count",
+  "finalType": "integer (derived from runs length)",
+  "required": false,
+  "rationale": "`run_count` duplicates the cardinality of the required `runs` array. Storing both creates an avoidable consistency invariant in an otherwise strict, immutable plan.",
+  "alternatives": [
+    "Keep it only if it is an independently meaningful declared target that may differ from the number of concrete runs; no such use case is present."
+  ],
+  "simplestChoice": "Remove the stored field and derive it as `len(runs)`.",
+  "confidence": "high",
+  "questions": []
+}

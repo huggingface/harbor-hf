@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Annotated, Literal
 
@@ -391,6 +392,31 @@ class ServingProfileBinding(StrictModel):
     sample_tasks_sha256: ContentDigest
 
 
+class CampaignControllerSpec(StrictModel):
+    planning_trial_seconds: int = Field(ge=1)
+    headroom_factor: Decimal = Field(ge=Decimal("1.0"))
+    wave_reserve_seconds: int = Field(ge=1)
+    controller_reserve_seconds: int = Field(ge=600)
+    heartbeat_seconds: int = Field(ge=30, le=300)
+    stale_after_seconds: int = Field(ge=90)
+    max_attempts: int = Field(ge=1, le=10)
+
+    @field_validator("headroom_factor", mode="before")
+    @classmethod
+    def headroom_is_an_exact_decimal_string(cls, value: object) -> object:
+        if not isinstance(value, (str, Decimal)):
+            raise ValueError("controller headroom_factor must be a decimal string")
+        return value
+
+    @model_validator(mode="after")
+    def staleness_covers_three_heartbeats(self) -> CampaignControllerSpec:
+        if self.stale_after_seconds < 3 * self.heartbeat_seconds:
+            raise ValueError(
+                "controller stale_after_seconds must cover at least three heartbeats"
+            )
+        return self
+
+
 class ExecutionSpec(StrictModel):
     attempts: int = Field(default=1, ge=1)
     concurrent_trials: int = Field(default=1, ge=1)
@@ -407,6 +433,9 @@ class ExecutionSpec(StrictModel):
         default=False, exclude_if=lambda value: value is False
     )
     serving_profile: ServingProfileBinding | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    controller: CampaignControllerSpec | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
 

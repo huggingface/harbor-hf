@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "schema_version",
+  "decision": "keep",
+  "finalName": "schema_version",
+  "finalPath": "schema_version",
+  "finalType": "string",
+  "required": false,
+  "rationale": "A content-addressed plan may be retrieved independently of its enclosing format, so it needs a self-describing schema discriminator. The established v1alpha1 format vocabulary makes this a durable, non-metaphorical name.",
+  "alternatives": [
+    "remove it and rely on the enclosing campaign format version",
+    "make it required with a constrained v1alpha1 value"
+  ],
+  "simplestChoice": "Keep schema_version; constrain it to the supported format value when the contract is finalized.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "planned_campaign_duration_seconds",
+  "decision": "keep",
+  "finalName": "planned_campaign_duration_seconds",
+  "finalPath": "planned_campaign_duration_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "The campaign-level planned duration is an immutable controller duration bound. It cannot reliably be reconstructed from wave durations because scheduling, concurrency, controller overhead, and recovery policy affect the physical controller Job's required lifetime.",
+  "alternatives": [
+    "Rename to planned_duration_seconds",
+    "Derive from initial_waves and controller_policy"
+  ],
+  "simplestChoice": "Keep planned_campaign_duration_seconds as an optional integer.",
+  "confidence": "medium",
+  "questions": []
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials[].task_name",
+  "decision": "keep",
+  "finalName": "task_name",
+  "finalPath": "runs[].shards[].trials[].task_name",
+  "finalType": "string",
+  "required": true,
+  "rationale": "The plan needs a stable task reference for execution and human inspection; task_digest provides content identity and cannot supply the referenced task name.",
+  "alternatives": [
+    "remove: loses the explicit task reference",
+    "rename to task: less precise beside task_digest"
+  ],
+  "simplestChoice": "Keep task_name as the task reference, paired with task_digest for integrity.",
+  "confidence": "high",
+  "questions": []
+}

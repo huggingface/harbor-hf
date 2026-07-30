@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "initial_waves[].effective_concurrency",
+  "decision": "derive",
+  "finalName": "effective_concurrency",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "“Effective” marks this as a computed result, not an independent plan fact. Keeping it alongside immutable deployment content, shard membership, and request-limit inputs creates conflicting sources of truth. Derive it when constructing the controller input from the wave’s shards and the immutable deployment/run concurrency limits.",
+  "alternatives": [
+    "keep it only if it freezes a planner decision that cannot be deterministically recomputed from the plan and deployment content",
+    "rename to concurrency only if it becomes an explicit operator-selected wave limit"
+  ],
+  "simplestChoice": "Do not store it; derive the value at controller-input construction.",
+  "confidence": "high",
+  "questions": []
+}

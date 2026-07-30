@@ -1,0 +1,33 @@
+{
+  "changed": true,
+  "applied": [
+    {
+      "decision": "remove",
+      "model": "CampaignPlan",
+      "fieldPath": "controller_policy.planning_trial_seconds"
+    },
+    {
+      "decision": "derive",
+      "model": "CampaignPlan",
+      "fieldPath": "initial_waves[].planned_duration_seconds"
+    },
+    {
+      "decision": "derive",
+      "model": "CampaignPlan",
+      "fieldPath": "plan_digest"
+    },
+    {
+      "decision": "derive",
+      "model": "CampaignPlan",
+      "fieldPath": "planned_campaign_duration_seconds"
+    }
+  ],
+  "skipped": [
+    {
+      "decision": "move",
+      "model": "CampaignPlan",
+      "fieldPath": "recovery_policy.max_active_waves",
+      "reason": "manual"
+    }
+  ]
+}

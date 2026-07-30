@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.retry_base_seconds",
+  "decision": "keep",
+  "finalName": "retry_base_seconds",
+  "finalPath": "recovery_policy.retry_base_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A recovery policy needs a durable initial delay for bounded retry backoff; retry_max_seconds alone cannot express it. The name is standard, specific, and uses the established seconds suffix.",
+  "alternatives": [
+    "remove and use a fixed retry delay",
+    "derive from retry_max_seconds"
+  ],
+  "simplestChoice": "Keep retry_base_seconds.",
+  "confidence": "high",
+  "questions": []
+}

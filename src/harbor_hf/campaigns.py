@@ -5,7 +5,7 @@ import json
 import re
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 from typing import Annotated, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -18,6 +18,7 @@ from harbor_hf.endpoints import (
 )
 from harbor_hf.models import (
     AgentProfile,
+    CampaignControllerSpec,
     ComponentKind,
     DeploymentTarget,
     EndpointRef,
@@ -81,6 +82,24 @@ class PlannedRun(RunAdmission):
     shards: list[PlannedShard]
 
 
+class PlannedInitialWave(FrozenModel):
+    wave_index: int = Field(ge=1)
+    deployment_digest: str
+    shard_digests: list[str] = Field(min_length=1)
+    trial_count: int = Field(ge=1)
+    effective_concurrency: int = Field(ge=1)
+    planned_duration_seconds: int = Field(ge=1)
+
+
+class LockedInitialWave(FrozenModel):
+    wave_index: int = Field(ge=1)
+    deployment_digest: str
+    shard_ids: list[str] = Field(min_length=1)
+    trial_count: int = Field(ge=1)
+    effective_concurrency: int = Field(ge=1)
+    planned_duration_seconds: int = Field(ge=1)
+
+
 class CampaignRecoveryPolicy(FrozenModel):
     max_active_waves: int = Field(default=64, ge=1)
     max_physical_executions_per_trial: int = Field(default=3, ge=1)
@@ -111,12 +130,29 @@ class CampaignPlan(FrozenModel):
     trial_count: int
     max_shards_per_wave: int
     recovery_policy: CampaignRecoveryPolicy
+    controller_policy: CampaignControllerSpec | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    planned_campaign_duration_seconds: int | None = Field(
+        default=None, ge=1, exclude_if=lambda value: value is None
+    )
+    initial_waves: list[PlannedInitialWave] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
     runs: list[PlannedRun]
 
     @model_validator(mode="after")
     def counts_match_contents(self) -> CampaignPlan:
         if (self.publication_role == "component") != (self.component_kind is not None):
             raise ValueError("component kind conflicts with publication role")
+        if (self.controller_policy is None) != (
+            self.planned_campaign_duration_seconds is None
+        ) or (self.controller_policy is None) != (not self.initial_waves):
+            raise ValueError("campaign controller planning fields are incomplete")
+        if [wave.wave_index for wave in self.initial_waves] != list(
+            range(1, len(self.initial_waves) + 1)
+        ):
+            raise ValueError("planned wave indexes must be contiguous")
         shard_count = sum(len(run.shards) for run in self.runs)
         trial_count = sum(
             len(shard.trials) for run in self.runs for shard in run.shards
@@ -164,12 +200,29 @@ class CampaignLock(FrozenModel):
     artifact_prefix: str
     max_shards_per_wave: int
     recovery_policy: CampaignRecoveryPolicy
+    controller_policy: CampaignControllerSpec | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    planned_campaign_duration_seconds: int | None = Field(
+        default=None, ge=1, exclude_if=lambda value: value is None
+    )
+    initial_waves: list[LockedInitialWave] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
     runs: list[CampaignRunLock]
 
     @model_validator(mode="after")
     def publication_role_is_consistent(self) -> CampaignLock:
         if (self.publication_role == "component") != (self.component_kind is not None):
             raise ValueError("component kind conflicts with publication role")
+        if (self.controller_policy is None) != (
+            self.planned_campaign_duration_seconds is None
+        ) or (self.controller_policy is None) != (not self.initial_waves):
+            raise ValueError("campaign controller lock fields are incomplete")
+        if [wave.wave_index for wave in self.initial_waves] != list(
+            range(1, len(self.initial_waves) + 1)
+        ):
+            raise ValueError("locked wave indexes must be contiguous")
         return self
 
 
@@ -382,6 +435,9 @@ def build_campaign_plan(
     cells = resolved_cells(spec)
     _validate_campaign_cells(cells, profiles)
     runs = [_plan_run(spec, cell, trials, profiles) for cell in cells]
+    controller_policy, initial_waves, planned_campaign_seconds = _controller_plan(
+        spec, runs
+    )
     plan_payload = {
         "schema_version": "harbor-hf/campaign-plan/v1alpha1",
         "experiment": spec.metadata.model_dump(mode="json"),
@@ -396,6 +452,16 @@ def build_campaign_plan(
         ),
         "runs": [run.model_dump(mode="json") for run in runs],
     }
+    if controller_policy is not None:
+        plan_payload.update(
+            {
+                "controller_policy": controller_policy.model_dump(mode="json"),
+                "planned_campaign_duration_seconds": planned_campaign_seconds,
+                "initial_waves": [
+                    wave.model_dump(mode="json") for wave in initial_waves
+                ],
+            }
+        )
     if spec.benchmark.source is not None:
         plan_payload["benchmark_source"] = spec.benchmark.source.model_dump(mode="json")
     if spec.benchmark.judge is not None:
@@ -412,6 +478,9 @@ def build_campaign_plan(
         trial_count=sum(len(shard.trials) for run in runs for shard in run.shards),
         max_shards_per_wave=spec.execution.max_shards_per_wave,
         recovery_policy=selected_recovery_policy,
+        controller_policy=controller_policy,
+        planned_campaign_duration_seconds=planned_campaign_seconds,
+        initial_waves=initial_waves,
         runs=runs,
     )
 
@@ -517,6 +586,153 @@ def _plan_run(
     )
 
 
+def _controller_plan(
+    spec: ExperimentSpec, runs: list[PlannedRun]
+) -> tuple[
+    CampaignControllerSpec | None,
+    list[PlannedInitialWave],
+    int | None,
+]:
+    policy = _provider_controller_policy(spec, runs)
+    if policy is None:
+        return None, [], None
+    grouped_shards, concurrency = _provider_wave_groups(spec, runs)
+    waves = _build_planned_initial_waves(
+        spec,
+        policy,
+        grouped_shards,
+        concurrency,
+    )
+    total = (
+        sum(wave.planned_duration_seconds for wave in waves)
+        + policy.controller_reserve_seconds
+    )
+    remote = spec.remote
+    if remote is None or total > remote.job.timeout_seconds:
+        raise ValueError(
+            "planned provider campaign duration exceeds remote.job.timeout_seconds"
+        )
+    return policy, waves, total
+
+
+def _provider_controller_policy(
+    spec: ExperimentSpec, runs: list[PlannedRun]
+) -> CampaignControllerSpec | None:
+    provider_count = sum(run.provider is not None for run in runs)
+    if 0 < provider_count < len(runs):
+        raise ValueError(
+            "campaigns cannot mix inference providers and inference endpoints"
+        )
+    policy = spec.execution.controller
+    if provider_count == 0:
+        if policy is not None:
+            raise ValueError(
+                "execution.controller is only valid for inference-provider campaigns"
+            )
+        return None
+    if policy is None:
+        raise ValueError(
+            "inference-provider campaigns require execution.controller settings"
+        )
+    if spec.remote is None:
+        raise ValueError("provider campaign controllers require remote execution")
+    return policy
+
+
+def _provider_wave_groups(
+    spec: ExperimentSpec,
+    runs: list[PlannedRun],
+) -> tuple[dict[str, list[PlannedShard]], dict[str, int]]:
+    grouped_shards: dict[str, list[PlannedShard]] = {}
+    concurrency: dict[str, int] = {}
+    profile_limit = (
+        spec.execution.serving_profile.concurrency
+        if spec.execution.serving_profile is not None
+        else spec.execution.concurrent_trials
+    )
+    for run in runs:
+        provider_limit = run.max_concurrent_requests
+        if provider_limit is None:
+            raise ValueError("provider campaign run has no request concurrency limit")
+        effective = min(
+            spec.execution.concurrent_trials,
+            provider_limit,
+            profile_limit,
+        )
+        previous = concurrency.setdefault(run.deployment_digest, effective)
+        if previous != effective:
+            raise ValueError("provider deployment has inconsistent concurrency limits")
+        grouped_shards.setdefault(run.deployment_digest, []).extend(run.shards)
+    return grouped_shards, concurrency
+
+
+def _build_planned_initial_waves(
+    spec: ExperimentSpec,
+    policy: CampaignControllerSpec,
+    grouped_shards: dict[str, list[PlannedShard]],
+    concurrency: dict[str, int],
+) -> list[PlannedInitialWave]:
+    waves: list[PlannedInitialWave] = []
+    for deployment_key in sorted(grouped_shards):
+        shards = grouped_shards[deployment_key]
+        for offset in range(0, len(shards), spec.execution.max_shards_per_wave):
+            chunk = shards[offset : offset + spec.execution.max_shards_per_wave]
+            trial_count = sum(len(shard.trials) for shard in chunk)
+            duration = planned_provider_wave_seconds(
+                policy,
+                trial_count=trial_count,
+                effective_concurrency=concurrency[deployment_key],
+            )
+            if duration > spec.execution.timeout_seconds:
+                raise ValueError(
+                    "planned provider wave duration exceeds execution.timeout_seconds"
+                )
+            waves.append(
+                PlannedInitialWave(
+                    wave_index=len(waves) + 1,
+                    deployment_digest=deployment_key,
+                    shard_digests=[shard.shard_digest for shard in chunk],
+                    trial_count=trial_count,
+                    effective_concurrency=concurrency[deployment_key],
+                    planned_duration_seconds=duration,
+                )
+            )
+    maximum_by_deployment = {
+        deployment_key: max(
+            wave.planned_duration_seconds
+            for wave in waves
+            if wave.deployment_digest == deployment_key
+        )
+        for deployment_key in grouped_shards
+    }
+    return [
+        wave.model_copy(
+            update={
+                "planned_duration_seconds": maximum_by_deployment[
+                    wave.deployment_digest
+                ]
+            }
+        )
+        for wave in waves
+    ]
+
+
+def planned_provider_wave_seconds(
+    policy: CampaignControllerSpec,
+    *,
+    trial_count: int,
+    effective_concurrency: int,
+) -> int:
+    if trial_count < 1 or effective_concurrency < 1:
+        raise ValueError("planned provider waves require trials and concurrency")
+    batches = (trial_count + effective_concurrency - 1) // effective_concurrency
+    trial_work = Decimal(batches * policy.planning_trial_seconds)
+    planned_work = int(
+        (trial_work * policy.headroom_factor).to_integral_value(rounding=ROUND_CEILING)
+    )
+    return planned_work + policy.wave_reserve_seconds
+
+
 def _dump_profile(profile: BaseModel) -> object:
     return profile.model_dump(mode="json", exclude_none=True)
 
@@ -577,6 +793,7 @@ def build_campaign_lock(
                 shards=shards,
             )
         )
+    initial_waves = _locked_initial_waves(plan, runs)
     return CampaignLock(
         campaign_id=campaign_id,
         created_at=clock().astimezone(UTC),
@@ -589,8 +806,48 @@ def build_campaign_lock(
         artifact_prefix=f"campaigns/{campaign_id}",
         max_shards_per_wave=plan.max_shards_per_wave,
         recovery_policy=plan.recovery_policy,
+        controller_policy=plan.controller_policy,
+        planned_campaign_duration_seconds=plan.planned_campaign_duration_seconds,
+        initial_waves=initial_waves,
         runs=runs,
     )
+
+
+def _locked_initial_waves(
+    plan: CampaignPlan,
+    runs: list[CampaignRunLock],
+) -> list[LockedInitialWave]:
+    if plan.controller_policy is None:
+        return []
+    concurrency = {
+        wave.deployment_digest: wave.effective_concurrency
+        for wave in plan.initial_waves
+    }
+    duration = {
+        wave.deployment_digest: wave.planned_duration_seconds
+        for wave in plan.initial_waves
+    }
+    grouped: dict[str, list[CampaignShardLock]] = {}
+    for run in sorted(runs, key=lambda value: value.run_id):
+        grouped.setdefault(run.deployment_digest, []).extend(
+            sorted(run.shards, key=lambda value: value.shard_id)
+        )
+    waves: list[LockedInitialWave] = []
+    for deployment_key in sorted(grouped):
+        shards = grouped[deployment_key]
+        for offset in range(0, len(shards), plan.max_shards_per_wave):
+            chunk = shards[offset : offset + plan.max_shards_per_wave]
+            waves.append(
+                LockedInitialWave(
+                    wave_index=len(waves) + 1,
+                    deployment_digest=deployment_key,
+                    shard_ids=[shard.shard_id for shard in chunk],
+                    trial_count=sum(len(shard.trials) for shard in chunk),
+                    effective_concurrency=concurrency[deployment_key],
+                    planned_duration_seconds=duration[deployment_key],
+                )
+            )
+    return waves
 
 
 def build_wave_lock(

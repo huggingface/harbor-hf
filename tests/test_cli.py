@@ -114,6 +114,13 @@ def test_campaign_schema_command_writes_json(tmp_path: Path) -> None:
         "campaign_plan",
         "campaign_lock",
         "wave_lock",
+        "campaign_input",
+        "controller_claim",
+        "controller_status",
+        "controller_started",
+        "controller_ended",
+        "controller_attempt",
+        "controller_recovery",
     }
 
 
@@ -518,6 +525,8 @@ def test_automation_install_dry_run_is_secret_safe(remote_manifest: Path) -> Non
             str(remote_manifest),
             "--schedule",
             "*/10 * * * *",
+            "--campaign-id",
+            "campaign-one",
             "--dry-run",
         ],
     )
@@ -557,6 +566,8 @@ def test_automation_install_derives_private_source_secret(
             str(manifest),
             "--schedule",
             "*/10 * * * *",
+            "--campaign-id",
+            "campaign-one",
             "--dry-run",
         ],
     )
@@ -707,7 +718,7 @@ def test_hidden_wave_worker_command_dispatches_all_locks(
         calls.append((manifest_path, campaign_path, wave_path, output_root))
         return output_root / "campaigns/campaign-one/waves/wave-one"
 
-    monkeypatch.setattr("harbor_hf.cli.run_wave_worker", fake_worker)
+    monkeypatch.setattr("harbor_hf.cli.run_standalone_wave_worker", fake_worker)
 
     result = runner.invoke(
         app,

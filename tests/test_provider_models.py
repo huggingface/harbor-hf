@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import pytest
+from conftest import with_provider_controller
 from pydantic import ValidationError
 
 from harbor_hf.campaigns import (
@@ -110,6 +111,7 @@ def test_manifest_and_campaign_lock_provider_admission_separately_from_endpoints
     with pytest.raises(ValueError, match="require campaign execution"):
         build_run_lock(spec)
 
+    spec = with_provider_controller(spec)
     campaign = build_campaign_lock(build_campaign_plan(spec), "provider-campaign")
     run = campaign.runs[0]
     assert run.provider == "hf-inference-providers"

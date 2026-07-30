@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "experiment",
+  "decision": "remove",
+  "finalName": "experiment",
+  "finalType": "absent",
+  "required": true,
+  "rationale": "`experiment` is a vague, unscoped label with no distinct use case shown. `evaluation_id` already identifies the evaluated workload, while the campaign and plan identify the execution unit. Retaining a required generic string creates an extra identity that can drift without adding durable meaning.",
+  "alternatives": [
+    "Keep only if it is a separately governed external experiment identifier with consumers that cannot use `evaluation_id` or the campaign identity.",
+    "Rename to `campaign` only if it is the campaign's canonical identity; otherwise that concept belongs outside this plan."
+  ],
+  "simplestChoice": "Remove `experiment`; use `evaluation_id` plus the campaign identity already owning the plan.",
+  "confidence": "high",
+  "questions": []
+}

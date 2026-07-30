@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "initial_waves[].deployment_digest",
+  "decision": "derive",
+  "finalName": "deployment_digest",
+  "finalType": "string",
+  "required": false,
+  "rationale": "A wave’s deployment is derivable from its shard_digests by resolving each shard in runs[].shards[] to its run’s deployment_digest. Keeping it duplicates immutable plan data and risks disagreement; require all shards in a wave to resolve to the same deployment digest instead.",
+  "alternatives": [
+    "keep as a denormalized consistency-checked selector",
+    "remove only if waves may intentionally mix deployments"
+  ],
+  "simplestChoice": "Derive the deployment digest from the wave’s shard digests and validate wave homogeneity.",
+  "confidence": "high",
+  "questions": []
+}

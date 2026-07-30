@@ -27,9 +27,19 @@ from harbor_hf.campaign_apply import (
     CampaignApplyError,
     hugging_face_campaign_reconciler,
 )
+from harbor_hf.campaign_controller import (
+    CampaignControllerError,
+    run_campaign_controller,
+)
 from harbor_hf.campaign_finalizer import CampaignFinalizationError
+from harbor_hf.campaign_input import campaign_input_json_schema, write_campaign_input
 from harbor_hf.campaign_observer import CampaignObservationError
+from harbor_hf.campaign_watchdog import (
+    CampaignWatchdogError,
+    run_campaign_watchdog,
+)
 from harbor_hf.campaigns import (
+    CampaignLock,
     build_campaign_lock,
     build_campaign_plan,
     campaign_json_schemas,
@@ -42,10 +52,17 @@ from harbor_hf.catalog_cutover import (
     HubCatalogCutover,
 )
 from harbor_hf.control import (
+    CampaignConflict,
+    CampaignEvent,
     CampaignSubmittedPayload,
     ControlError,
     HubCampaignStore,
     new_event,
+)
+from harbor_hf.controller_status import (
+    ControllerStatusError,
+    HubControllerStateStore,
+    controller_json_schemas,
 )
 from harbor_hf.coordination import CoordinationError, HubClaimStore
 from harbor_hf.io import ManifestError, load_experiment
@@ -85,13 +102,22 @@ from harbor_hf.result_publisher import (
 )
 from harbor_hf.results import CatalogDecision, ResultPublicationError
 from harbor_hf.runs import RunLock, build_run_lock
-from harbor_hf.submission import Submission, build_submit_command
+from harbor_hf.submission import (
+    BucketApi,
+    CampaignControllerSubmission,
+    ControllerJobsApi,
+    Submission,
+    build_submit_campaign_controller_command,
+    build_submit_command,
+    ensure_private_coordination_repository,
+    submit_campaign_controller,
+)
 from harbor_hf.submission import submit as submit_job
 from harbor_hf.trial_evidence import (
     restore_workspace,
     verify_trial_evidence,
 )
-from harbor_hf.wave_worker import run_wave_worker
+from harbor_hf.wave_worker import run_standalone_wave_worker
 from harbor_hf.worker import WorkerError, run_endpoint_watchdog, run_worker
 
 app = typer.Typer(
@@ -102,7 +128,7 @@ campaign_app = typer.Typer(no_args_is_help=True, help="Plan and run campaigns.")
 artifacts_app = typer.Typer(no_args_is_help=True, help="Inspect campaign evidence.")
 results_app = typer.Typer(no_args_is_help=True, help="Publish campaign results.")
 automation_app = typer.Typer(
-    no_args_is_help=True, help="Install campaign reconciliation automation."
+    no_args_is_help=True, help="Install campaign controller recovery automation."
 )
 profile_app = typer.Typer(no_args_is_help=True, help="Profile serving deployments.")
 app.add_typer(campaign_app, name="campaign")
@@ -127,6 +153,9 @@ _OPERATION_ERRORS = (
     CatalogCutoverError,
     ProfileWorkerError,
     ProfileTransportError,
+    CampaignControllerError,
+    CampaignWatchdogError,
+    ControllerStatusError,
 )
 
 
@@ -304,7 +333,12 @@ def campaign_schema(
     output: Annotated[Path | None, typer.Option("--output", dir_okay=False)] = None,
 ) -> None:
     """Export the campaign plan and lock JSON Schemas."""
-    rendered = json.dumps(campaign_json_schemas(), indent=2, sort_keys=True) + "\n"
+    schemas = {
+        **campaign_json_schemas(),
+        "campaign_input": campaign_input_json_schema(),
+        **controller_json_schemas(),
+    }
+    rendered = json.dumps(schemas, indent=2, sort_keys=True) + "\n"
     if output is None:
         typer.echo(rendered, nl=False)
         return
@@ -317,7 +351,7 @@ def campaign_submit(
     campaign_id: Annotated[str | None, typer.Option("--campaign-id")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
 ) -> None:
-    """Persist an immutable campaign request on Hugging Face."""
+    """Create an immutable campaign and launch its provider controller."""
     spec = _load_or_exit(manifest)
     try:
         if spec.remote is None:
@@ -334,28 +368,96 @@ def campaign_submit(
             producer="cli",
             payload=CampaignSubmittedPayload(plan_digest=resolved.plan_digest),
         )
-        if not dry_run:
-            from harbor_hf.submission import ensure_private_coordination_repository
+        request = manifest.read_bytes()
+        result = _submit_campaign(
+            spec,
+            lock,
+            request,
+            submitted,
+            dry_run=dry_run,
+        )
+    except _OPERATION_ERRORS as error:
+        _exit_operation(error)
+    _echo_json(result)
 
-            ensure_private_coordination_repository(spec.remote.job.namespace)
-            HubCampaignStore(spec.remote.job.namespace).create_campaign(
-                lock, manifest.read_bytes(), submitted
-            )
-    except (HTTPError, OSError, ValueError, ControlError, CoordinationError) as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=1) from error
-    typer.echo(
-        json.dumps(
-            {
+
+def _submit_campaign(
+    spec: ExperimentSpec,
+    lock: CampaignLock,
+    request: bytes,
+    submitted: CampaignEvent,
+    *,
+    dry_run: bool,
+) -> dict[str, object]:
+    if spec.remote is None:
+        raise ValueError("campaign submission requires remote execution")
+    if dry_run:
+        if lock.controller_policy is None:
+            return {
                 "campaign_id": lock.campaign_id,
                 "plan_digest": lock.plan_digest,
                 "artifact_prefix": lock.artifact_prefix,
-                "stored": not dry_run,
-            },
-            indent=2,
-            sort_keys=True,
+                "stored": False,
+            }
+        with tempfile.TemporaryDirectory(prefix="harbor-hf-campaign-dry-run-") as name:
+            input_manifest = write_campaign_input(
+                Path(name), request=request, lock=lock
+            )
+        command = build_submit_campaign_controller_command(
+            lock,
+            spec,
+            input_dir="hf://buckets/DRY_RUN/content-addressed-input",
+            bucket=spec.artifacts.bucket,
+            attempt=1,
         )
+        return CampaignControllerSubmission(
+            campaign_id=lock.campaign_id,
+            plan_digest=lock.plan_digest,
+            input_digest=input_manifest.input_digest,
+            input_uri="hf://buckets/DRY_RUN/content-addressed-input",
+            job_id=None,
+            attempt=1,
+            launch_receipt=(f"campaigns/{lock.campaign_id}/controller-attempts/1.json"),
+            command=command,
+        ).model_dump(mode="json")
+
+    ensure_private_coordination_repository(spec.remote.job.namespace)
+    store = HubCampaignStore(spec.remote.job.namespace)
+    try:
+        store.create_campaign(lock, request, submitted)
+    except CampaignConflict:
+        observed_lock, observed_events = store.load_campaign(lock.campaign_id)
+        if (
+            observed_lock != lock
+            or store.load_request(lock.campaign_id) != request
+            or not any(event == submitted for event in observed_events)
+        ):
+            raise
+    if lock.controller_policy is None:
+        return {
+            "campaign_id": lock.campaign_id,
+            "plan_digest": lock.plan_digest,
+            "artifact_prefix": lock.artifact_prefix,
+            "stored": True,
+        }
+    token = get_token()
+    if token is None:
+        raise ValueError("campaign controller submission requires HF authentication")
+    api = HfApi(token=token)
+    result = submit_campaign_controller(
+        lock,
+        spec,
+        request=request,
+        bucket=spec.artifacts.bucket,
+        runner=SubprocessRunner(),
+        bucket_api=cast(BucketApi, api),
+        jobs_api=cast(ControllerJobsApi, api),
+        state_store=HubControllerStateStore(
+            spec.remote.job.namespace,
+            token,
+        ),
     )
+    return result.model_dump(mode="json")
 
 
 @campaign_app.command("status")
@@ -367,11 +469,30 @@ def campaign_status(
     try:
         lock, events = HubCampaignStore(namespace).load_campaign(campaign_id)
         projection = project_recovery(lock, events)
-    except (HTTPError, OSError, ValueError, ControlError) as error:
+        controller = None
+        if lock.controller_policy is not None:
+            token = get_token()
+            if token is None:
+                raise ValueError(
+                    "campaign controller status requires HF authentication"
+                )
+            controller = HubControllerStateStore(namespace, token).read_status(
+                campaign_id
+            )
+    except (
+        HTTPError,
+        OSError,
+        ValueError,
+        ControlError,
+        ControllerStatusError,
+    ) as error:
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=1) from error
     payload = projection.model_dump(mode="json")
     payload["status"] = projection.status
+    payload["controller"] = (
+        controller.model_dump(mode="json") if controller is not None else None
+    )
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
 
 
@@ -388,6 +509,11 @@ def campaign_reconcile(
         raise typer.Exit(code=2)
     try:
         if apply:
+            lock, _events = HubCampaignStore(namespace).load_campaign(campaign_id)
+            if lock.controller_policy is not None:
+                raise ValueError(
+                    "provider campaigns are applied only by their owning controller"
+                )
             with hugging_face_campaign_reconciler(namespace) as reconciler:
                 result = reconciler.apply_campaign(campaign_id)
         else:
@@ -423,10 +549,19 @@ def campaign_reconcile_all(
     )
     try:
         if apply:
-            with hugging_face_campaign_reconciler(namespace) as reconciler:
+            store = HubCampaignStore(namespace)
+            selected_ids = campaign_ids or store.list_campaigns()
+            if any(
+                store.load_campaign(campaign_id)[0].controller_policy is not None
+                for campaign_id in selected_ids
+            ):
+                raise ValueError(
+                    "provider campaigns are applied only by their owning controllers"
+                )
+            with hugging_face_campaign_reconciler(namespace, store=store) as reconciler:
                 results = reconciler.apply_all(
                     context=context,
-                    campaign_ids=campaign_ids,
+                    campaign_ids=selected_ids,
                 )
         else:
             store = HubCampaignStore(namespace)
@@ -440,6 +575,38 @@ def campaign_reconcile_all(
                     else store.list_campaigns()
                 )
             ]
+    except _OPERATION_ERRORS as error:
+        _exit_operation(error)
+    _echo_json([result.model_dump(mode="json") for result in results])
+
+
+@campaign_app.command("watchdog")
+def campaign_watchdog(
+    namespace: Annotated[str, typer.Option("--namespace")],
+    campaign_ids: Annotated[list[str], typer.Option("--campaign-id")],
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+) -> None:
+    """Recover approved campaigns whose controller Job ended unexpectedly."""
+    try:
+        if not campaign_ids:
+            raise ValueError("campaign watchdog requires at least one campaign ID")
+        token = get_token()
+        if token is None:
+            raise ValueError("campaign watchdog requires HF authentication")
+        api = HfApi(token=token)
+        store = HubCampaignStore(namespace)
+        state_store = HubControllerStateStore(namespace, token)
+        results = [
+            run_campaign_watchdog(
+                campaign_id,
+                store=store,
+                state_store=state_store,
+                jobs_api=cast(ControllerJobsApi, api),
+                runner=SubprocessRunner(),
+                dry_run=dry_run,
+            )
+            for campaign_id in dict.fromkeys(campaign_ids)
+        ]
     except _OPERATION_ERRORS as error:
         _exit_operation(error)
     _echo_json([result.model_dump(mode="json") for result in results])
@@ -693,9 +860,6 @@ def automation_install(
     manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
     schedule: Annotated[str, typer.Option("--schedule")],
     namespace: Annotated[str | None, typer.Option("--namespace")] = None,
-    provider_active_waves: Annotated[
-        int | None, typer.Option("--provider-active-waves", min=1)
-    ] = None,
     campaign_ids: Annotated[list[str] | None, typer.Option("--campaign-id")] = None,
     suspended: Annotated[bool, typer.Option("--suspended")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
@@ -717,7 +881,6 @@ def automation_install(
                 and spec.benchmark.source.credentials is not None
                 else []
             ),
-            provider_active_waves=provider_active_waves,
             campaign_ids=campaign_ids or [],
             suspended=suspended,
         )
@@ -808,6 +971,28 @@ def worker(
     typer.echo(str(destination))
 
 
+@app.command("campaign-controller", hidden=True)
+def campaign_controller(
+    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    campaign_lock: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    attempt: Annotated[int, typer.Option("--attempt", min=1)],
+    output_root: Annotated[Path, typer.Option("--output-root", file_okay=False)],
+    prior_job_terminal: Annotated[bool, typer.Option("--prior-job-terminal")] = False,
+) -> None:
+    """Run one provider campaign inside a detached controller Job."""
+    try:
+        result = run_campaign_controller(
+            manifest,
+            campaign_lock,
+            output_root,
+            attempt=attempt,
+            prior_job_terminal=prior_job_terminal,
+        )
+    except (OSError, ValueError, CampaignControllerError) as error:
+        _exit_operation(error)
+    _echo_json(result.model_dump(mode="json"))
+
+
 @app.command("wave-worker", hidden=True)
 def wave_worker(
     manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
@@ -817,7 +1002,7 @@ def wave_worker(
 ) -> None:
     """Run one bounded deployment wave from inside a Hugging Face Job."""
     try:
-        destination = run_wave_worker(
+        destination = run_standalone_wave_worker(
             manifest,
             campaign_lock,
             wave_lock,

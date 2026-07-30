@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.wave_reserve_seconds",
+  "decision": "keep",
+  "finalName": "wave_reserve_seconds",
+  "finalPath": "controller_policy.wave_reserve_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A per-wave duration reserve is a durable controller-policy input for bounding planned controller time. It is distinct from controller_reserve_seconds, which covers controller-level overhead.",
+  "alternatives": [
+    "merge into controller_reserve_seconds"
+  ],
+  "simplestChoice": "Keep wave_reserve_seconds as the per-wave duration reserve.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].shards[].trials",
+  "decision": "keep",
+  "finalName": "trials",
+  "finalPath": "runs[].shards[].trials",
+  "finalType": "array",
+  "required": true,
+  "rationale": "A shard needs its ordered, immutable set of logical trials to define what the controller executes. The member records carry task identity and stable digests, so this is not a redundant generic container.",
+  "alternatives": [
+    "derive from the manifest, but that would make the plan insufficient to determine its own shard composition",
+    "merge into runs[].shards, but the trials are a real repeated child concept with per-trial identities"
+  ],
+  "simplestChoice": "Keep trials as the explicit collection of trial specifications owned by each shard.",
+  "confidence": "high",
+  "questions": []
+}

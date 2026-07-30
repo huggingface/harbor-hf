@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].deployment_path",
+  "decision": "keep",
+  "finalName": "deployment_path",
+  "finalPath": "runs[].deployment_path",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A run needs a stable, validated reference to its deployment definition. The paired deployment_digest verifies the referenced content but does not identify its logical location within the controller input package. The established name is precise and already reflects the intended path-identity constraints.",
+  "alternatives": [
+    "derive it from deployment_digest, but a digest alone cannot identify the deployment definition's logical path",
+    "remove it, but then the plan lacks a direct deployment reference"
+  ],
+  "simplestChoice": "Keep deployment_path as the validated logical deployment reference.",
+  "confidence": "high",
+  "questions": []
+}

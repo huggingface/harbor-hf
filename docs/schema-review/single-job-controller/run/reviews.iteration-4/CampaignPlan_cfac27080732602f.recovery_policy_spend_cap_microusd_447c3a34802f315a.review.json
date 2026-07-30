@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.spend_cap_microusd",
+  "decision": "keep",
+  "finalName": "spend_cap_microusd",
+  "finalPath": "recovery_policy.spend_cap_microusd",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A campaign-level cap bounds cumulative recovery spend across retries and physical executions. Its name is concise, expresses the limit, and states exact integer units; keeping it here avoids duplicating per-run caps.",
+  "alternatives": [
+    "remove: would leave retry recovery without a campaign-wide cost bound",
+    "rename to recovery_spend_cap_microusd: redundant because recovery_policy already supplies that scope"
+  ],
+  "simplestChoice": "Keep as an optional non-negative integer.",
+  "confidence": "high",
+  "questions": []
+}

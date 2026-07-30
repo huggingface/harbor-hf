@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from conftest import with_provider_controller
 from huggingface_hub import CommitOperationAdd
 from huggingface_hub.errors import HfHubHTTPError
 
@@ -445,7 +446,7 @@ def test_provider_wave_submission_has_no_endpoint_lease_label(
             )
         }
     )
-    lock = _wave_lock(spec)
+    lock = _wave_lock(with_provider_controller(spec))
 
     command = build_submit_wave_command(
         lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"

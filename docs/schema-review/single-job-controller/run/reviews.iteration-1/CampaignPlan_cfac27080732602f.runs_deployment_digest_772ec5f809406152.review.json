@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].deployment_digest",
+  "decision": "keep",
+  "finalName": "deployment_digest",
+  "finalPath": "runs[].deployment_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "Binds each planned run to an immutable deployment revision. The mutable or human-readable deployment reference cannot provide the same reproducibility guarantee, and initial waves already use this digest to group concrete work.",
+  "alternatives": [
+    "Derive it from deployment only if deployment is itself a stable content-addressed identifier, which is not established here."
+  ],
+  "simplestChoice": "Keep deployment_digest as the required immutable deployment reference for each run.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.cancellation_grace_seconds",
+  "decision": "keep",
+  "finalName": "cancellation_grace_seconds",
+  "finalPath": "recovery_policy.cancellation_grace_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A bounded cancellation wait is an independent recovery control: it prevents reclaiming or replacing work while the provider may still be terminating it. The name is explicit, uses established duration vocabulary, and belongs with retry and execution-limit controls.",
+  "alternatives": [
+    "Derive it from stale_after_seconds, but provider cancellation latency is distinct from heartbeat staleness.",
+    "Remove it only if every provider has a fixed, documented cancellation bound enforced outside the plan."
+  ],
+  "simplestChoice": "Keep one optional integer duration in recovery_policy.",
+  "confidence": "high",
+  "questions": []
+}

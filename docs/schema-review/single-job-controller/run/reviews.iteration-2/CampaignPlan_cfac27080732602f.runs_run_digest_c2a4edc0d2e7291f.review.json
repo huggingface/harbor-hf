@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].run_digest",
+  "decision": "keep",
+  "finalName": "run_digest",
+  "finalPath": "runs[].run_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A run is a durable planning unit that needs a stable content identity for references, locks, receipts, and deterministic child identities. The digest distinguishes the immutable run definition from its display fields and aligns with established run vocabulary.",
+  "alternatives": [
+    "derive it only if no external record, lock, or child identity ever refers to a run independently",
+    "remove it and identify runs structurally, at the cost of losing a compact stable reference"
+  ],
+  "simplestChoice": "Keep run_digest as the required stable identity of an immutable run definition.",
+  "confidence": "high",
+  "questions": []
+}

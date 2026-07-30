@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.retry_max_seconds",
+  "decision": "keep",
+  "finalName": "retry_max_seconds",
+  "finalPath": "recovery_policy.retry_max_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A retry backoff needs an independent upper bound to prevent unbounded recovery delays. It is a durable operational constraint and cannot be derived from retry_base_seconds without embedding an implicit policy elsewhere.",
+  "alternatives": [
+    "derive from retry_base_seconds",
+    "remove and use an implementation constant"
+  ],
+  "simplestChoice": "Keep retry_max_seconds as the optional cap for retry delay.",
+  "confidence": "high",
+  "questions": []
+}

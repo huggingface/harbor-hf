@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.controller_reserve_seconds",
+  "decision": "keep",
+  "finalName": "controller_reserve_seconds",
+  "finalPath": "controller_policy.controller_reserve_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "This is an immutable policy input that reserves time for controller lifecycle work within the physical Job duration. It is distinct from a per-wave reserve and cannot be derived from heartbeat or stale thresholds.",
+  "alternatives": [
+    "merge with wave_reserve_seconds",
+    "remove and rely on an implicit provider buffer"
+  ],
+  "simplestChoice": "Keep controller_reserve_seconds.",
+  "confidence": "high",
+  "questions": []
+}

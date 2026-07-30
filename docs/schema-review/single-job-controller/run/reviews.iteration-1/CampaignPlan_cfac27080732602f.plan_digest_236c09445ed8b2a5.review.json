@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "plan_digest",
+  "decision": "keep",
+  "finalName": "plan_digest",
+  "finalPath": "plan_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "A plan digest is a stable content-addressed identity for the immutable deterministic campaign plan and is needed to bind controller ownership, locks, and input-package artifacts to exactly that plan.",
+  "alternatives": [
+    "Derive it only at transport boundaries; this weakens explicit cross-artifact identity and verification."
+  ],
+  "simplestChoice": "Keep plan_digest as the required sha256: content digest of the canonical plan representation.",
+  "confidence": "high",
+  "questions": []
+}

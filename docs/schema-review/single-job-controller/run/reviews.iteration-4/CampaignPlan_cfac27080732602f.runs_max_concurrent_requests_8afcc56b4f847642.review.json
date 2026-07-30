@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].max_concurrent_requests",
+  "decision": "keep",
+  "finalName": "max_concurrent_requests",
+  "finalPath": "runs[].max_concurrent_requests",
+  "finalType": "positive integer",
+  "required": false,
+  "rationale": "This is the run-level concurrency limit used to form deterministic wave plans; the derived wave concurrency should not replace its configured source.",
+  "alternatives": [
+    "Derive it from deployment metadata if concurrency is immutable deployment-owned configuration."
+  ],
+  "simplestChoice": "Keep max_concurrent_requests as an optional positive integer.",
+  "confidence": "medium",
+  "questions": []
+}

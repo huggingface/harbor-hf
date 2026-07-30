@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "manifest_digest",
+  "decision": "keep",
+  "finalName": "manifest_digest",
+  "finalPath": "CampaignPlan.manifest_digest",
+  "finalType": "string",
+  "required": true,
+  "rationale": "Keeps the plan reproducibly bound to its source manifest. plan_digest authenticates the complete plan but cannot identify or retrieve the manifest independently.",
+  "alternatives": [
+    "derive from plan_digest (loses the independent manifest reference)"
+  ],
+  "simplestChoice": "Keep manifest_digest as the content-digest reference to the campaign manifest.",
+  "confidence": "high",
+  "questions": []
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy.heartbeat_seconds",
+  "decision": "keep",
+  "finalName": "heartbeat_seconds",
+  "finalPath": "controller_policy.heartbeat_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "The controller needs an explicit renewal cadence for its exclusive, renewable ownership. This is an immutable controller-policy input, distinct from stale_after_seconds, which defines when missed heartbeats become stale.",
+  "alternatives": [
+    "derive from stale_after_seconds, but that would hide an operational policy choice",
+    "remove, but the controller would lack a declared ownership-renewal cadence"
+  ],
+  "simplestChoice": "Keep heartbeat_seconds as the controller ownership-renewal interval.",
+  "confidence": "high",
+  "questions": []
+}

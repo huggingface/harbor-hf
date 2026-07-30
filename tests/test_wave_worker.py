@@ -13,7 +13,7 @@ from typing import Any, cast
 import httpx
 import pytest
 import yaml
-from conftest import write_fake_compatibility_bundle
+from conftest import with_provider_controller, write_fake_compatibility_bundle
 
 from harbor_hf.campaign_finalizer import BucketCampaignFinalizer
 from harbor_hf.campaign_observer import BucketCampaignObserver
@@ -2741,6 +2741,7 @@ def _provider_wave_inputs(
             ),
         }
     )
+    spec = with_provider_controller(spec)
     campaign = build_campaign_lock(build_campaign_plan(spec), "campaign-one")
     submitted = new_event(
         subject_type="campaign",

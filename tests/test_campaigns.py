@@ -3,6 +3,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from conftest import with_provider_controller
 from pydantic import ValidationError
 
 from harbor_hf.campaigns import (
@@ -16,10 +17,44 @@ from harbor_hf.campaigns import (
     campaign_json_schemas,
     new_campaign_id,
 )
+from harbor_hf.control import CampaignSubmittedPayload, new_event
 from harbor_hf.endpoints import deployment_digest
-from harbor_hf.models import DeploymentProfile, EndpointRef, ExperimentSpec, MatrixRule
-from harbor_hf.provider_models import ProviderTarget
-from harbor_hf.reconciler import ReconcileAction, plan_reconciliation
+from harbor_hf.models import (
+    CampaignControllerSpec,
+    DeploymentProfile,
+    EndpointRef,
+    ExperimentSpec,
+    MatrixRule,
+)
+from harbor_hf.provider_models import ProviderLimits, ProviderTarget
+from harbor_hf.reconciler import (
+    AdmissionLimits,
+    ReconcileAction,
+    ReconcileContext,
+    plan_reconciliation,
+)
+
+
+def _provider_campaign_spec(remote_spec: ExperimentSpec) -> ExperimentSpec:
+    model = remote_spec.matrix.models[0]
+    provider = ProviderTarget(
+        id="provider-controller",
+        model=model.repo,
+        limits=ProviderLimits(max_concurrent_requests=24, max_attempts=2),
+    )
+    agent = remote_spec.matrix.agents[0].model_copy(
+        update={
+            "import_path": "harbor_hf_agents.openclaw.agent:OpenClawAgent",
+            "parameters": {"openclaw_config": {}},
+        }
+    )
+    return remote_spec.model_copy(
+        update={
+            "matrix": remote_spec.matrix.model_copy(
+                update={"deployments": [provider], "agents": [agent]}
+            )
+        }
+    )
 
 
 def test_builds_content_addressed_campaign_plan(remote_spec: ExperimentSpec) -> None:
@@ -34,6 +69,109 @@ def test_builds_content_addressed_campaign_plan(remote_spec: ExperimentSpec) -> 
     assert plan.runs[0].deployment_digest == deployment_digest(
         remote_spec.matrix.models[0], remote_spec.matrix.deployments[0]
     )
+
+
+def test_provider_campaign_plans_690_trials_inside_one_controller_job(
+    remote_spec: ExperimentSpec,
+) -> None:
+    tasks = {f"task-{index:03d}": f"sha256:{index:064x}" for index in range(115)}
+    policy = CampaignControllerSpec(
+        planning_trial_seconds=900,
+        headroom_factor="1.25",
+        wave_reserve_seconds=900,
+        controller_reserve_seconds=1800,
+        heartbeat_seconds=60,
+        stale_after_seconds=600,
+        max_attempts=3,
+    )
+    base = _provider_campaign_spec(remote_spec)
+    assert base.remote is not None
+    spec = base.model_copy(
+        update={
+            "benchmark": base.benchmark.model_copy(
+                update={"task_names": ["task-*"], "task_digests": tasks}
+            ),
+            "execution": base.execution.model_copy(
+                update={
+                    "attempts": 6,
+                    "concurrent_trials": 24,
+                    "max_trials_per_shard": 24,
+                    "max_shards_per_wave": 4,
+                    "timeout_seconds": 16_200,
+                    "controller": policy,
+                }
+            ),
+            "remote": base.remote.model_copy(
+                update={
+                    "job": base.remote.job.model_copy(
+                        update={"timeout_seconds": 85_800}
+                    )
+                }
+            ),
+        }
+    )
+
+    plan = build_campaign_plan(spec)
+    lock = build_campaign_lock(plan, "provider-690")
+    submitted = new_event(
+        subject_type="campaign",
+        subject_id=lock.campaign_id,
+        kind="campaign.submitted",
+        producer="cli",
+        payload=CampaignSubmittedPayload(plan_digest=lock.plan_digest),
+    )
+    actions = plan_reconciliation(
+        lock,
+        [submitted],
+        context=ReconcileContext(
+            limits=AdmissionLimits(
+                action_limit=64,
+                global_active_waves=64,
+                deployment_active_waves=64,
+                provider_active_waves=64,
+                campaign_active_waves=64,
+            )
+        ),
+    )[1].actions
+
+    assert plan.trial_count == 690
+    assert len(plan.initial_waves) == len(lock.initial_waves) == 8
+    assert plan.planned_campaign_duration_seconds == 45_000
+    assert all(wave.planned_duration_seconds == 5_400 for wave in plan.initial_waves)
+    assert {frozenset(action.shard_ids) for action in actions} == {
+        frozenset(wave.shard_ids) for wave in lock.initial_waves
+    }
+
+
+def test_provider_campaign_requires_explicit_controller_policy(
+    remote_spec: ExperimentSpec,
+) -> None:
+    with pytest.raises(ValueError, match="require execution.controller"):
+        build_campaign_plan(_provider_campaign_spec(remote_spec))
+
+
+def test_controller_policy_requires_exact_decimal_and_bounded_duration(
+    remote_spec: ExperimentSpec,
+) -> None:
+    raw = {
+        "planning_trial_seconds": 1,
+        "headroom_factor": 1.25,
+        "wave_reserve_seconds": 1,
+        "controller_reserve_seconds": 600,
+        "heartbeat_seconds": 30,
+        "stale_after_seconds": 90,
+        "max_attempts": 3,
+    }
+    with pytest.raises(ValueError, match="decimal string"):
+        CampaignControllerSpec.model_validate(raw)
+
+    spec = with_provider_controller(_provider_campaign_spec(remote_spec))
+    assert spec.remote is not None
+    spec = spec.model_copy(
+        update={"execution": spec.execution.model_copy(update={"timeout_seconds": 1})}
+    )
+    with pytest.raises(ValueError, match="wave duration exceeds"):
+        build_campaign_plan(spec)
 
 
 def test_campaign_accepts_literal_bracketed_task_name(
@@ -238,6 +376,7 @@ def test_campaign_plan_allows_agent_aliases_for_one_effective_deployment(
         }
     )
 
+    spec = with_provider_controller(spec)
     plan = build_campaign_plan(spec)
     campaign = build_campaign_lock(plan, "campaign-agent-aliases")
     action = _wave_action(campaign)

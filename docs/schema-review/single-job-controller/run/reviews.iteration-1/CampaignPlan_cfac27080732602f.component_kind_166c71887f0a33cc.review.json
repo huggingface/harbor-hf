@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "component_kind",
+  "decision": "remove",
+  "finalName": "component_kind",
+  "finalType": "absent",
+  "required": true,
+  "rationale": "CampaignPlan is already a typed, named artifact. No current use case establishes a second in-band discriminator, and the generic term \"component\" is not stable domain vocabulary. The package file identity and strict schema validation should identify a plan.",
+  "alternatives": [
+    "Keep only if independently stored payloads are dispatched without trusted file identity; then use kind: Literal['campaign_plan']."
+  ],
+  "simplestChoice": "Remove component_kind.",
+  "confidence": "high",
+  "questions": []
+}

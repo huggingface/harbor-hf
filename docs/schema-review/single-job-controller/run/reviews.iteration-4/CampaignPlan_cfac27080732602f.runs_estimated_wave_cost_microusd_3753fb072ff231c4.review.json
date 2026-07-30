@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "runs[].estimated_wave_cost_microusd",
+  "decision": "remove",
+  "finalName": "estimated_wave_cost_microusd",
+  "finalType": "absent",
+  "required": false,
+  "rationale": "A per-run cost estimate is not an execution contract: the controller can enforce the campaign spend cap from immutable reservations and actual receipts. An estimate is provider-price- and timing-dependent, and no current controller decision requires preserving it in the plan.",
+  "alternatives": [
+    "derive from the immutable deployment, bounded duration, and an explicitly versioned provider price source if planning/reporting needs it",
+    "keep only if admission control demonstrably requires a plan-locked quote"
+  ],
+  "simplestChoice": "Remove it.",
+  "confidence": "high",
+  "questions": []
+}

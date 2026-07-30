@@ -1,0 +1,54 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "acquired_at": {
+      "format": "date-time",
+      "title": "Acquired At",
+      "type": "string"
+    },
+    "attempt": {
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "heartbeat_at": {
+      "format": "date-time",
+      "title": "Heartbeat At",
+      "type": "string"
+    },
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "plan_digest": {
+      "title": "Plan Digest",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "harbor-hf/controller-claim/v1alpha1",
+      "default": "harbor-hf/controller-claim/v1alpha1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "job_id",
+    "plan_digest",
+    "attempt",
+    "acquired_at",
+    "heartbeat_at",
+    "expires_at"
+  ],
+  "title": "ControllerClaim",
+  "type": "object"
+}

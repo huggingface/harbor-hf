@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "controller_policy",
+  "decision": "keep",
+  "finalName": "controller_policy",
+  "finalPath": "CampaignPlan.controller_policy",
+  "finalType": "CampaignControllerPolicy",
+  "required": true,
+  "rationale": "An immutable, explicit controller policy is a stable campaign-level concept and owns the controller attempt, heartbeat, staleness, reserve, and exact-decimal headroom bounds. It prevents production behavior from depending on defaults.",
+  "alternatives": [
+    "Inline the policy fields into CampaignPlan.",
+    "Move individual timing values into recovery_policy."
+  ],
+  "simplestChoice": "Keep controller_policy as a required closed CampaignControllerPolicy object.",
+  "confidence": "high",
+  "questions": []
+}

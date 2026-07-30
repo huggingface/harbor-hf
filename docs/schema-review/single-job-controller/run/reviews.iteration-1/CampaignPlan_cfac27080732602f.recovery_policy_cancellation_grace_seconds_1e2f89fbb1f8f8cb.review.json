@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "model": "CampaignPlan",
+  "fieldPath": "recovery_policy.cancellation_grace_seconds",
+  "decision": "keep",
+  "finalName": "cancellation_grace_seconds",
+  "finalPath": "recovery_policy.cancellation_grace_seconds",
+  "finalType": "integer",
+  "required": false,
+  "rationale": "A bounded wait after cancellation is necessary for safe recovery and replacement without overlapping physical controller Jobs. The name is direct, duration units are explicit, and recovery policy is the appropriate owner.",
+  "alternatives": [
+    "remove"
+  ],
+  "simplestChoice": "keep",
+  "confidence": "high",
+  "questions": []
+}
