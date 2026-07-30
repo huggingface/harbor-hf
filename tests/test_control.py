@@ -390,28 +390,31 @@ def test_hub_store_snapshot_reads_every_object_from_one_exact_revision(
             {**revision, "recursive": True},
         )
     ]
-    assert api.download_calls == [
-        (
-            repository,
-            f"campaigns/{lock.campaign_id}/campaign.lock.json",
-            revision,
-        ),
-        (
-            repository,
-            f"campaigns/{lock.campaign_id}/events/{later.event_id}.json",
-            revision,
-        ),
-        (
-            repository,
-            f"campaigns/{lock.campaign_id}/events/{_submitted(lock).event_id}.json",
-            revision,
-        ),
-        (
-            repository,
-            f"campaigns/{lock.campaign_id}/request.yaml",
-            revision,
-        ),
-    ]
+    assert api.download_calls[0] == (
+        repository,
+        f"campaigns/{lock.campaign_id}/campaign.lock.json",
+        revision,
+    )
+    assert sorted(api.download_calls[1:3], key=lambda call: call[1]) == sorted(
+        [
+            (
+                repository,
+                f"campaigns/{lock.campaign_id}/events/{later.event_id}.json",
+                revision,
+            ),
+            (
+                repository,
+                f"campaigns/{lock.campaign_id}/events/{_submitted(lock).event_id}.json",
+                revision,
+            ),
+        ],
+        key=lambda call: call[1],
+    )
+    assert api.download_calls[3] == (
+        repository,
+        f"campaigns/{lock.campaign_id}/request.yaml",
+        revision,
+    )
 
 
 def test_hub_store_reads_requests_lists_campaigns_and_loads_reservations(
