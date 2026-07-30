@@ -733,6 +733,21 @@ def planned_provider_wave_seconds(
     return planned_work + policy.wave_reserve_seconds
 
 
+def locked_provider_action_concurrency(
+    campaign: CampaignLock,
+    *,
+    deployment_digest: str,
+) -> int:
+    concurrency = {
+        wave.effective_concurrency
+        for wave in campaign.initial_waves
+        if wave.deployment_digest == deployment_digest
+    }
+    if len(concurrency) != 1:
+        raise ValueError("provider action has no locked concurrency")
+    return concurrency.pop()
+
+
 def locked_provider_action_seconds(
     campaign: CampaignLock,
     *,
@@ -755,17 +770,13 @@ def locked_provider_action_seconds(
         if len(matches) != 1:
             raise ValueError("provider action does not match one locked initial wave")
         return matches[0].planned_duration_seconds
-    concurrency = {
-        wave.effective_concurrency
-        for wave in campaign.initial_waves
-        if wave.deployment_digest == deployment_digest
-    }
-    if len(concurrency) != 1:
-        raise ValueError("retry action has no locked concurrency")
     return planned_provider_wave_seconds(
         policy,
         trial_count=trial_count,
-        effective_concurrency=concurrency.pop(),
+        effective_concurrency=locked_provider_action_concurrency(
+            campaign,
+            deployment_digest=deployment_digest,
+        ),
     )
 
 
@@ -1007,13 +1018,13 @@ def build_wave_lock(
             f"{deterministic_wave_id(action.action_key)}"
         ),
         max_shards=campaign.max_shards_per_wave,
-        max_concurrent_shards=min(
-            spec.execution.concurrent_trials,
-            (
-                provider_target.limits.max_concurrent_requests
-                if provider_target is not None
-                else spec.execution.concurrent_trials
-            ),
+        max_concurrent_shards=(
+            locked_provider_action_concurrency(
+                campaign,
+                deployment_digest=action.deployment_digest,
+            )
+            if provider_target is not None
+            else spec.execution.concurrent_trials
         ),
         spend_cap_microusd=(
             _usd_to_microusd(provider_target.limits.max_spend_usd)

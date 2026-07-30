@@ -1833,7 +1833,7 @@ def _stage_campaign_records(
     _publish_digest_sidecar(campaign_lock_path, output_root / campaign.artifact_prefix)
     for run in wave.runs:
         run_root = campaign_root / "runs" / run.configuration.run_id
-        run_root.mkdir(parents=True)
+        run_root.mkdir(parents=True, exist_ok=True)
         run_lock_path = run_root / "run.lock.json"
         write_json(run_lock_path, run.configuration.model_dump(mode="json"))
         assert_secret_absent(run_root, secrets)

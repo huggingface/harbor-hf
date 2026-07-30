@@ -63,6 +63,7 @@ from harbor_hf.wave_worker import (
     _launch_wave_watchdog,
     _remaining_seconds,
     _sandbox_failure_category,
+    _stage_campaign_records,
     _valid_terminal_trial,
     _validate_evidence_trial_identity,
     _wave_model_name,
@@ -834,6 +835,26 @@ def prepare_source(source: SourcePin, destination: Path, runner: CommandRunner) 
 def launch_watchdog(lock: WaveLock, endpoint: EndpointRef, token: str) -> str:
     del lock, endpoint, token
     return "watchdog-job"
+
+
+def test_campaign_records_can_be_staged_for_sequential_waves(
+    remote_spec: ExperimentSpec,
+    tmp_path: Path,
+) -> None:
+    _spec, campaign, wave, _manifest, _campaign_path, _wave_path = _wave_inputs(
+        remote_spec, tmp_path, attempts=1, concurrency=1
+    )
+    campaign_root = tmp_path / "staging" / campaign.artifact_prefix
+    output_root = tmp_path / "output"
+
+    _stage_campaign_records(campaign_root, campaign, wave, (), output_root)
+    _stage_campaign_records(campaign_root, campaign, wave, (), output_root)
+
+    run = wave.runs[0]
+    assert (
+        campaign_root / "runs" / run.configuration.run_id / "run.lock.json"
+    ).is_file()
+    assert (output_root / run.artifact_prefix / "run.lock.json").is_file()
 
 
 def test_wave_runs_two_attempt_shards_under_one_endpoint_startup(

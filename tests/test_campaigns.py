@@ -143,6 +143,11 @@ def test_provider_campaign_plans_690_trials_inside_one_controller_job(
     }
     wave_locks = [build_wave_lock(lock, spec, action) for action in actions]
     assert all(wave.duration_seconds == 4_500 for wave in wave_locks)
+    assert all(wave.max_concurrent_shards == 24 for wave in wave_locks)
+    assert all(
+        wave.max_concurrent_shards == planned.effective_concurrency
+        for wave, planned in zip(wave_locks, lock.initial_waves, strict=True)
+    )
     retry_trial = next(
         trial
         for run in lock.runs
