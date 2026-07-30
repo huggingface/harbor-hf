@@ -1,6 +1,11 @@
 import pytest
 
-from harbor_hf.controller_admission import RemainingTimeInput, decide_remaining_time
+from harbor_hf.controller_admission import (
+    RemainingTimeInput,
+    assess_observed_capacity,
+    decide_remaining_time,
+)
+from harbor_hf.models import CampaignControllerSpec
 
 
 def _input(**updates: object) -> RemainingTimeInput:
@@ -14,6 +19,18 @@ def _input(**updates: object) -> RemainingTimeInput:
     }
     values.update(updates)
     return RemainingTimeInput.model_validate(values)
+
+
+def _policy() -> CampaignControllerSpec:
+    return CampaignControllerSpec(
+        planning_trial_seconds=100,
+        headroom_factor="1.25",
+        wave_reserve_seconds=50,
+        controller_reserve_seconds=600,
+        heartbeat_seconds=30,
+        stale_after_seconds=90,
+        max_attempts=3,
+    )
 
 
 def test_remaining_time_admits_only_when_wave_and_reserve_fit() -> None:
@@ -48,6 +65,58 @@ def test_remaining_time_decision_precedence(
     updates: dict[str, object], decision: str
 ) -> None:
     assert decide_remaining_time(_input(**updates)).decision == decision
+
+
+def test_observed_capacity_publishes_raw_effect_and_blocks_invalid_assumptions() -> (
+    None
+):
+    valid = assess_observed_capacity(
+        [80.0, 90.0, 100.0, 110.0],
+        elapsed_seconds=500,
+        effective_concurrency=2,
+        remaining_trials=4,
+        remaining_waves=1,
+        available_seconds=1_000,
+        policy=_policy(),
+    )
+    invalid = assess_observed_capacity(
+        [80.0, 90.0, 100.0, 130.0],
+        elapsed_seconds=500,
+        effective_concurrency=2,
+        remaining_trials=4,
+        remaining_waves=1,
+        available_seconds=1_000,
+        policy=_policy(),
+    )
+
+    assert valid is not None and valid.assumptions_valid
+    assert valid.model_dump() == {
+        "completed_trial_count": 4,
+        "elapsed_seconds": 500,
+        "observed_effective_concurrency": 2,
+        "p50_trial_seconds": 90.0,
+        "p95_trial_seconds": 110.0,
+        "maximum_trial_seconds": 110.0,
+        "remaining_trials": 4,
+        "projected_remaining_seconds": 925,
+        "available_seconds": 1_000,
+        "assumptions_valid": True,
+    }
+    assert invalid is not None and not invalid.assumptions_valid
+    assert invalid.p95_trial_seconds == 130.0
+
+
+def test_observed_capacity_requires_finite_nonnegative_evidence() -> None:
+    with pytest.raises(ValueError, match="capacity evidence"):
+        assess_observed_capacity(
+            [float("nan")],
+            elapsed_seconds=0,
+            effective_concurrency=1,
+            remaining_trials=1,
+            remaining_waves=1,
+            available_seconds=1_000,
+            policy=_policy(),
+        )
 
 
 def test_remaining_time_rejects_inconsistent_or_backward_inputs() -> None:

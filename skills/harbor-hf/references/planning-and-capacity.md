@@ -204,14 +204,13 @@ cleanup time for the full-wave calculation.
 ## Spend arithmetic
 
 Provider campaigns require `max_spend_usd` and `estimated_wave_cost_usd`
-together. The reconciler reserves the wave estimate and may retain it after the
-wave closes when provider billing is unattributed.
+together. The controller reserves the next wave estimate and may retain it after
+the wave closes when provider billing is unattributed.
 
 Before launch, compute:
 
 ```text
-maximum concurrently reserved spend =
-    estimated wave cost * maximum active provider waves
+maximum concurrently reserved campaign spend = estimated next-wave cost
 
 retry reservation requirement =
     estimated cost of every infrastructure retry generation allowed by policy

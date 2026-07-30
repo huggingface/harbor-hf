@@ -75,31 +75,31 @@ headline score.
 ```bash
 uv run harbor-hf campaign submit experiment.yaml
 uv run harbor-hf campaign status CAMPAIGN_ID --namespace NAMESPACE
-uv run harbor-hf campaign reconcile CAMPAIGN_ID --namespace NAMESPACE --apply
 ```
 
-`submit` persists an immutable campaign request in the coordination Dataset.
-Each `reconcile` pass is stateless: it rebuilds campaign state from
-append-only events, provisions or adopts the endpoints the next shards need,
-submits bounded deployment waves as HF Jobs, observes worker evidence, and
-exits. `reconcile-all --apply` does one pass over every campaign in the
-namespace. Every mutating command takes `--dry-run` to preview its actions
-without touching remote resources.
+For an Inference Provider campaign, `submit` stores one immutable input package
+and launches one detached controller Job. The controller runs each bounded wave
+inside its own process, commits trial evidence as work finishes, and publishes
+the result. It does not need a local reconciliation loop or child wave Jobs.
 
-Install the managed automation so reconciliation runs without you:
+Endpoint-backed campaigns keep their separate endpoint safety path. Operators
+can inspect either campaign with `campaign reconcile --dry-run`. An applied
+reconcile is available only for endpoint campaigns. The current CLI never
+creates a provider wave Job; historical provider campaigns remain tied to their
+pinned Harbor HF revision.
+
+Install one shared recovery watchdog for an approved campaign list:
 
 ```bash
 uv run harbor-hf automation install automation.yaml --schedule "<cron>" \
-  --provider-active-waves 2
+  --campaign-id CAMPAIGN_ID
 ```
 
-For a bounded campaign queue, repeat `--campaign-id CAMPAIGN_ID` to keep each
-automation pass scoped to that queue instead of scanning historical campaigns.
-
-This sets up a scheduled HF Job plus a control webhook, so campaigns make
-progress promptly after every state change and recover when a webhook is
-missed. Set `--provider-active-waves` to the live serving quota when several
-campaigns share one inference provider.
+Repeat `--campaign-id` for each approved campaign. The scheduled Job checks
+controller heartbeats and exact Job labels. It starts a sequential replacement
+only after the prior Job is terminal, the claim is stale, the durable checkpoint
+verifies, and the locked attempt and spend limits permit recovery. Capacity and
+policy pauses always require an operator decision.
 
 Operate a running campaign with:
 

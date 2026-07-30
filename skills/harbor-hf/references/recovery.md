@@ -10,8 +10,10 @@ Collect a secret-free snapshot:
 
 - immutable campaign manifest and plan plus the lock;
 - complete append-only event history and current projection;
-- action, wave, endpoint, and publisher leases;
-- HF Job identities and terminal states;
+- controller claim, status history, attempts, start and end receipts, and
+  recovery decisions;
+- action, endpoint wave, endpoint, and publisher leases;
+- HF Job identities, exact labels, and terminal states;
 - endpoint state, ready replicas, and watchdog identity when applicable;
 - wave, shard, trial, and physical execution prefixes in the Bucket;
 - execution locks, failures, compatibility bundles, checksums, and markers;
@@ -59,20 +61,25 @@ contained a credential. Do not copy or redact it.
 
 ## Terminal Job without Bucket evidence
 
-When a managed Job becomes terminal before terminal Bucket evidence appears:
+When a provider controller Job becomes terminal before terminal Bucket evidence
+appears:
 
-1. Inspect the deterministic Job identity and final state.
-2. Inspect the wave lease and latest wave checkpoint.
-3. List execution and trial prefixes without modifying them.
-4. Run reconciliation in dry-run mode.
-5. Confirm that the proposed action marks active executions lost, drains the
-   wave, performs endpoint cleanup when applicable, and admits only bounded
-   infrastructure retries.
-6. Apply one reviewed reconciliation pass.
+1. Inspect its exact campaign, attempt, plan, and input labels and final state.
+2. Inspect the controller claim, latest status, start receipt, and checkpoint.
+3. List wave, execution, and trial prefixes without modifying them.
+4. Run the controller watchdog in dry-run mode for that campaign ID.
+5. Confirm that the decision classifies only infrastructure loss, preserves
+   completed trials, fits the original duration and spend bounds, and names the
+   next sequential attempt.
+6. Apply the reviewed watchdog pass. Verify the immutable recovery decision and
+   replacement launch receipt before the new controller does provider work.
+
+For an endpoint wave Job, inspect its wave and endpoint leases and use the
+existing dry-run and applied reconciliation path so endpoint cleanup completes.
 
 A timeout from an HF create, submit, inspect, cancel, resume, or pause call is an
-ambiguous control outcome. The next pass must observe the deterministic remote
-identity before another side effect.
+ambiguous control outcome. The next watchdog or endpoint reconcile pass must
+observe the deterministic remote identity before another side effect.
 
 ## Interrupted trial finalization
 
@@ -117,7 +124,9 @@ uv run harbor-hf campaign retry CAMPAIGN_ID \
 ```
 
 Review the exact target trial IDs and current classifications. Apply by removing
-`--dry-run`, then preview reconciliation before submitting the retry wave.
+`--dry-run`. A live provider controller observes the request at its next action
+boundary and runs the admitted retry wave in process. For endpoint campaigns,
+preview reconciliation before submitting the retry wave.
 
 A retry creates a new physical execution under the same logical trial. It does
 not change the task, agent, model, judge, provider, logical attempt, or evidence
@@ -125,9 +134,9 @@ policy.
 
 ## Spend-cap blocks
 
-The reconciler conservatively retains provider wave reservations when billing
-cannot be attributed. A retry candidate can therefore remain blocked even when
-the prior Job is terminal.
+The controller projection conservatively retains provider wave reservations
+when billing cannot be attributed. A retry candidate can therefore remain
+blocked even when the prior Job is terminal.
 
 Inspect:
 
@@ -247,8 +256,10 @@ uncertain.
 
 ## Cancellation recovery
 
-A durable cancellation can return before cleanup finishes. Continue status and
-reconciliation passes until:
+A durable cancellation can return before cleanup finishes. The provider
+controller stops admission at its next action boundary and lets the active wave
+finish its evidence path. Continue status checks, plus endpoint reconciliation
+when applicable, until:
 
 - no queued or active owned Jobs remain;
 - active executions are drained or terminal;

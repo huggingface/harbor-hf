@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import signal
 import tempfile
@@ -27,8 +28,13 @@ from harbor_hf.campaigns import (
     planned_provider_wave_seconds,
 )
 from harbor_hf.control import CampaignStore
-from harbor_hf.controller_admission import RemainingTimeInput, decide_remaining_time
+from harbor_hf.controller_admission import (
+    RemainingTimeInput,
+    assess_observed_capacity,
+    decide_remaining_time,
+)
 from harbor_hf.controller_status import (
+    ControllerCapacityEvidence,
     ControllerClaim,
     ControllerEndedReceipt,
     ControllerProjectionCounts,
@@ -318,7 +324,6 @@ class CampaignController:
                 started_at=started_at,
             )
         )
-        self.wave_executor.prepare(self.input.spec.remote.harbor.source)
         heartbeat = _Heartbeat(
             self.state_store,
             claim,
@@ -331,17 +336,28 @@ class CampaignController:
         message: str | None = None
         iterations = 0
         try:
+            self.wave_executor.prepare(self.input.spec.remote.harbor.source)
             state, message, iterations = self._drive(
                 heartbeat,
                 started_at=started_at,
                 started_monotonic=started_monotonic,
                 heartbeat_seconds=policy.heartbeat_seconds,
             )
-        except CampaignControllerError as error:
+        except (
+            CampaignControllerError,
+            ControllerStatusError,
+            OSError,
+            WorkerError,
+        ) as error:
             state = "failed-infrastructure"
             message = str(error)
-        except (OSError, ValueError, ControllerStatusError) as error:
+        except ValueError as error:
             state = "failed-deterministic"
+            message = str(error)
+        except Exception as error:
+            # An unexpected controller failure is infrastructure evidence. It must
+            # never become a benchmark outcome or an unbounded in-process retry.
+            state = "failed-infrastructure"
             message = str(error)
         finally:
             heartbeat.stop()
@@ -423,10 +439,16 @@ class CampaignController:
                 message="controller received a termination signal",
             )
         action = plan.actions[0] if plan.actions else None
+        capacity = self._capacity_evidence(
+            lock,
+            projection,
+            started_monotonic=started_monotonic,
+        )
         admission = self._admit_action(
             lock,
             action,
             started_monotonic=started_monotonic,
+            capacity=capacity,
         )
         paused_state: ControllerState | None = None
         if admission == "paused-capacity":
@@ -442,6 +464,7 @@ class CampaignController:
                 started_at,
                 started_monotonic,
                 block_reason=message,
+                capacity=capacity,
             )
             return _IterationResult(
                 state=paused_state,
@@ -456,6 +479,7 @@ class CampaignController:
             started_at,
             started_monotonic,
             action=action,
+            capacity=capacity,
         )
         applied = self.reconciler.apply_campaign(lock.campaign_id).applied
         return _result_after_apply(applied, plan.blocked, state)
@@ -479,6 +503,11 @@ class CampaignController:
                 started_at,
                 started_monotonic,
                 block_reason=message,
+                capacity=self._capacity_evidence(
+                    lock,
+                    projection,
+                    started_monotonic=started_monotonic,
+                ),
             )
             self.state_store.write_ended(
                 ControllerEndedReceipt(
@@ -500,6 +529,7 @@ class CampaignController:
         action: ReconcileAction | None,
         *,
         started_monotonic: float,
+        capacity: ControllerCapacityEvidence | None,
     ) -> Literal["admit", "wait", "finalize", "paused-capacity", "paused-policy"]:
         if action is None or action.kind not in {"submit-wave", "retry-shard"}:
             return "finalize" if action is None else "admit"
@@ -516,6 +546,9 @@ class CampaignController:
                 controller_reserve_seconds=policy.controller_reserve_seconds,
                 planned_next_wave_seconds=planned_seconds,
                 work_remaining=True,
+                capacity_assumptions_valid=(
+                    capacity is None or capacity.assumptions_valid
+                ),
             )
         )
         if decision.decision == "pause-capacity":
@@ -534,6 +567,7 @@ class CampaignController:
         *,
         action: ReconcileAction | None = None,
         block_reason: str | None = None,
+        capacity: ControllerCapacityEvidence | None = None,
     ) -> None:
         now = self.clock().astimezone(UTC)
         elapsed = max(0, int(self.monotonic() - started_monotonic))
@@ -557,7 +591,41 @@ class CampaignController:
                 current_wave=action.wave_id if action is not None else None,
                 spend_reserved_microusd=projection.spend_microusd,
                 block_reason=block_reason,
+                capacity=capacity,
             )
+        )
+
+    def _capacity_evidence(
+        self,
+        lock: CampaignLock,
+        projection: RecoveryProjection,
+        *,
+        started_monotonic: float,
+    ) -> ControllerCapacityEvidence | None:
+        policy = lock.controller_policy
+        if policy is None or not lock.initial_waves:
+            return None
+        elapsed = max(0, int(self.monotonic() - started_monotonic))
+        timeout = self._remote().job.timeout_seconds
+        remaining = sum(
+            trial.status
+            not in {"complete", "invalid", "failed_infrastructure", "cancelled"}
+            for trial in projection.trials.values()
+        )
+        wave_capacity = max(wave.trial_count for wave in lock.initial_waves)
+        remaining_waves = (
+            0 if remaining == 0 else (remaining + wave_capacity - 1) // wave_capacity
+        )
+        return assess_observed_capacity(
+            _published_execution_durations(self.output_root, lock),
+            elapsed_seconds=elapsed,
+            effective_concurrency=min(
+                wave.effective_concurrency for wave in lock.initial_waves
+            ),
+            remaining_trials=remaining,
+            remaining_waves=remaining_waves,
+            available_seconds=max(0, timeout - elapsed),
+            policy=policy,
         )
 
     def _remote(self) -> RemoteExecutionSpec:
@@ -629,6 +697,60 @@ def _install_signal_handlers(controller: CampaignController) -> None:
 
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
+
+
+def _published_execution_durations(
+    output_root: Path,
+    lock: CampaignLock,
+) -> list[float]:
+    campaign_root = output_root / lock.artifact_prefix
+    if not campaign_root.exists():
+        return []
+    durations = [
+        duration
+        for path in sorted(campaign_root.rglob("events.jsonl"))
+        if "executions" in path.parts
+        if (duration := _execution_duration(path)) is not None
+    ]
+    return durations
+
+
+def _execution_duration(path: Path) -> float | None:
+    events = _read_execution_events(path)
+    starts = [timestamp for event, timestamp in events if event == "execution_started"]
+    ends = [
+        timestamp
+        for event, timestamp in events
+        if event in {"execution_succeeded", "execution_failed"}
+    ]
+    if not starts or not ends:
+        return None
+    duration = (ends[-1] - starts[0]).total_seconds()
+    if duration < 0:
+        raise ValueError("execution evidence time moved backwards")
+    return duration
+
+
+def _read_execution_events(path: Path) -> list[tuple[str, datetime]]:
+    try:
+        values = [
+            json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("controller capacity evidence cannot be read") from error
+    events: list[tuple[str, datetime]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            raise ValueError("execution event must be an object")
+        event = value.get("event")
+        observed_at = value.get("at")
+        if not isinstance(event, str) or not isinstance(observed_at, str):
+            continue
+        timestamp = datetime.fromisoformat(observed_at)
+        if timestamp.tzinfo is None:
+            raise ValueError("execution event timestamp must include UTC")
+        events.append((event, timestamp.astimezone(UTC)))
+    return events
 
 
 def _result_after_apply(

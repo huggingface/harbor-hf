@@ -510,7 +510,7 @@ def campaign_reconcile(
     try:
         if apply:
             lock, _events = HubCampaignStore(namespace).load_campaign(campaign_id)
-            if lock.controller_policy is not None:
+            if _is_provider_campaign(lock):
                 raise ValueError(
                     "provider campaigns are applied only by their owning controller"
                 )
@@ -552,7 +552,7 @@ def campaign_reconcile_all(
             store = HubCampaignStore(namespace)
             selected_ids = campaign_ids or store.list_campaigns()
             if any(
-                store.load_campaign(campaign_id)[0].controller_policy is not None
+                _is_provider_campaign(store.load_campaign(campaign_id)[0])
                 for campaign_id in selected_ids
             ):
                 raise ValueError(
@@ -610,6 +610,10 @@ def campaign_watchdog(
     except _OPERATION_ERRORS as error:
         _exit_operation(error)
     _echo_json([result.model_dump(mode="json") for result in results])
+
+
+def _is_provider_campaign(lock: CampaignLock) -> bool:
+    return any(run.provider is not None for run in lock.runs)
 
 
 @campaign_app.command("cancel")

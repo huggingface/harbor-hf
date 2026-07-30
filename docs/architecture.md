@@ -17,12 +17,13 @@ changes.
 experiment.yaml
       |
       v
-planner -> resolved run locks -> controller
-                               |          |          |
-                      HF Endpoints   HF Providers   HF Jobs/Sandboxes
-                    (vLLM/llama.cpp)  (large models)       |
-                               |          |                |
-                               +----------+ Harbor trials -+
+planner -> campaign lock -> provider controller Job
+              |                       |            |
+              |                 HF Providers   HF Sandboxes
+              |                       |            |
+              +-> endpoint wave Job -> Harbor trials
+                          |
+                    HF Endpoints
                                               |
                                     private HF bucket
                                               |
@@ -61,36 +62,39 @@ submitted.
 
 ### Controller
 
-The submission CLI rejects mutable dataset, task, model, image, source, and
-agent references, then stages the pinned manifest and run lock and starts an HF
-Job. That remote Job is the controller: it starts endpoint inference only when
-work is ready, submits bounded Harbor trials to HF Sandboxes, records lifecycle
-events, and pauses the endpoint in a `finally` path. The submitting machine does
-not execute benchmark tasks. Provider-backed runs will skip endpoint
-provisioning but retain request, quota, retry, and accounting state.
+A provider campaign runs inside one detached HF Job. Submission stages a
+content-addressed folder containing the manifest, campaign lock, and input
+manifest. The controller verifies those files, acquires the campaign claim,
+prepares pinned sources, and runs one internal wave at a time. Trial concurrency
+stays inside each wave.
 
-### Campaign Reconciler
+The controller records a heartbeat while a long trial runs. It stops admitting
+work if ownership becomes uncertain, the remaining Job time cannot fit the next
+wave, observed throughput breaks the locked duration bound, or policy blocks
+continuation. Completed trial evidence is committed before the next action.
+
+Endpoint-backed campaigns keep the existing wave Job and independent endpoint
+watchdog. A killed endpoint worker needs an outside process that can pause the
+endpoint, so endpoint execution does not use the provider controller.
+
+### Campaign reconciler
 
 Campaigns are durable submissions of an immutable resolved plan. A campaign
-lock content-addresses its run cells, bounded shards, and logical trials. The
-same plan may be submitted more than once under distinct campaign IDs without
-overwriting or silently adopting an earlier measurement.
+lock content-addresses its run cells, bounded shards, logical trials, controller
+policy, and initial wave durations. The same plan may be submitted more than
+once under distinct campaign IDs without overwriting an earlier measurement.
 
-The stateless reconciler reads campaign locks and append-only typed events from
-the private coordination Dataset, rebuilds projections, and derives
-deterministic actions. Action reservations and their events are committed
-atomically with the repository head as the expected parent. A repeated or
-concurrent pass adopts an existing reservation. Before executing a pending
-action, it acquires a parent-checked, expiring action lease; only the lease
-winner may issue the remote side effect. The lease is released after the
-durable outcome and expires after two hours if the reconciler dies. Compatible
-shards are grouped by a digest of their exact model and deployment
-configuration; agent differences do not force a second endpoint startup.
-Namespace-wide reconciliation carries active and ambiguously submitted wave
-usage forward between campaigns in the same pass. Successful actions without
-worker evidence remain admitted until their wave is observed and closed, so
-global, deployment, provider, campaign, and spend limits cannot be exceeded by
-sequential reconciliation of independently stored campaigns.
+The domain reconciler reads the campaign lock and append-only events, rebuilds
+the projection, and selects one deterministic action. It reserves that action
+before applying a side effect and records the outcome before selecting another.
+Cleanup and publication actions run before billable work.
+
+For provider campaigns, `submit-wave` means that the owning controller admits
+and executes the wave in process. It no longer submits an HF Job. The endpoint
+adapter keeps the older remote wave meaning because endpoint ownership and
+cleanup require separate resources. Read-only reconciliation remains useful for
+diagnosis. An applied pass is available only for endpoint campaigns. Historical
+provider campaigns remain bound to their pinned Harbor HF revision.
 
 Endpoint-backed controller and watchdog Jobs carry a deterministic label
 derived from the endpoint namespace and name. They coordinate through one
@@ -118,14 +122,12 @@ from an earlier wave only when campaign, run, shard, trial, task, and logical
 attempt identities all match. This avoids rerunning completed work without
 allowing evidence from another campaign or task to cross the boundary.
 
-Every hosted wave Job acquires a second expiring lease keyed by campaign and
-wave before endpoint or provider work begins. This lease spans benchmark
-execution and terminal evidence publication, so an ambiguously duplicated Job
-cannot race another writer on the Bucket mount. The worker uses the mount's
-supported temporary-file rename while it holds the lease. The lease expires at
-the complete locked HF Job timeout, including source preparation and cleanup
-headroom, rather than at the shorter benchmark execution duration. It is
-released immediately after the terminal marker is published.
+Every endpoint wave Job acquires a second expiring lease keyed by campaign and
+wave before endpoint work begins. The provider controller instead holds one
+campaign claim and renews it throughout the physical Job. A duplicate
+controller exits before source preparation or provider requests. Claim expiry
+allows investigation but does not authorize recovery until the prior Job is
+also terminal or absent.
 
 ### Endpoint Provisioner
 

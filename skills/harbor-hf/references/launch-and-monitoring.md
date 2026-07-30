@@ -40,16 +40,18 @@ Submit once:
 uv run harbor-hf campaign submit MANIFEST
 ```
 
-Record the complete response. At minimum, preserve the campaign ID, plan digest,
-manifest digest, control repository and revision, timestamp, operator checkout,
-and approved launch record.
+Record the complete response. At minimum, preserve the campaign ID, plan and
+manifest digests, controller Job ID, controller attempt, input URI and digest,
+control revision, timestamp, operator checkout, and approved launch record.
 
-Submission creates durable control state. It does not imply that a wave has
-started or that paid provider calls have occurred.
+For an Inference Provider campaign, submission creates the durable control state
+and launches its one detached controller Job. It still does not prove that a
+wave started or that paid provider calls occurred. The controller must first
+verify its inputs and acquire ownership.
 
 ## Reconciliation
 
-Read status and preview actions:
+Read status and preview the next domain action:
 
 ```bash
 uv run harbor-hf campaign status CAMPAIGN_ID --namespace NAMESPACE
@@ -57,52 +59,33 @@ uv run harbor-hf campaign reconcile CAMPAIGN_ID \
   --namespace NAMESPACE --dry-run
 ```
 
-Inspect every action kind and target shard or trial. Check the deployment
-digest, estimated cost, and block reason. Apply only the reviewed pass:
+For a provider campaign with a controller lock, do not apply local
+reconciliation. The detached controller owns all provider wave execution, and
+the CLI rejects an applied pass. Use the preview to inspect action kind, shard
+or trial identity, deployment digest, estimated cost, and block reason.
 
-```bash
-uv run harbor-hf campaign reconcile CAMPAIGN_ID \
-  --namespace NAMESPACE --apply
-```
-
-Run one applied control pass at a time for a campaign. Wait for its durable
-outcome before another mutation. The action and wave leases protect remote side
-effects, while serialized operator control makes intent and recovery easier to
-audit.
-
-`reconcile-all` can operate a bounded queue:
-
-```bash
-uv run harbor-hf campaign reconcile-all \
-  --namespace NAMESPACE \
-  --campaign-id CAMPAIGN_ID \
-  --provider-active-waves LIMIT \
-  --dry-run
-```
-
-Repeat `--campaign-id` for an approved queue. Do not scan and mutate every
-historical campaign merely because `reconcile-all` supports it. Apply only after
-reviewing the dry run.
+Only endpoint campaigns retain the applied reconciliation path. Serialize those
+passes and wait for each durable outcome before the next mutation. Historical
+provider campaigns remain tied to their pinned Harbor HF revision; do not drive
+them with the current CLI.
 
 ## Managed automation
 
 Automation is a remote mutation and needs explicit authorization. Preview the
-exact schedule and campaign filter together with the namespace and provider
-wave limit:
+exact schedule and explicit campaign list:
 
 ```bash
 uv run harbor-hf automation install AUTOMATION_MANIFEST \
   --schedule 'CRON' \
   --namespace NAMESPACE \
   --campaign-id CAMPAIGN_ID \
-  --provider-active-waves LIMIT \
   --dry-run
 ```
 
-Install only after the preview matches the approved campaign queue. Record the
-scheduled Job and webhook identities. Automation reduces latency; campaign
-correctness still comes from immutable plans and append-only events together with leases and canonical
-evidence.
+Repeat `--campaign-id` for each approved campaign. Install only after the
+preview matches that list. Record the scheduled watchdog Job identity. The
+watchdog checks controller liveness and may start a sequential replacement; it
+does not reconcile trials or execute waves.
 
 ## HF Job inspection
 
@@ -125,18 +108,20 @@ A closed log stream does not prove the Job completed successfully. Inspect the
 Job after log following exits.
 
 Do not submit, cancel, or recreate a Job directly when Harbor HF owns it unless
-the documented recovery path explicitly requires an operator action. Campaign
-reconciliation must observe deterministic Job identity and record the outcome.
+the documented recovery path explicitly requires an operator action. Controller
+launch and recovery must preserve exact labels and immutable receipts.
 
 ## Live status review
 
 On every control pass, record:
 
-- campaign outcome and control revision;
+- campaign outcome, control revision, and controller status revision;
 - queued, active, retry-wait, complete, failed, invalid, exhausted, cancelled,
   plus lost logical trial counts;
 - physical execution count and retry generation;
-- active wave IDs, HF Job IDs, deployment digests, and leases;
+- controller attempt, Job ID, claim, heartbeat age, current wave, and remaining
+  Job time;
+- active wave IDs, deployment digests, and trial counts;
 - provider request success and throttle observations together with retry and
   transport errors plus usage and pacing observations;
 - endpoint startup and readiness together with the active and drain states,
@@ -178,10 +163,10 @@ required remaining time =
     remaining work estimate + drain and publication reserve
 ```
 
-If required remaining time exceeds the remaining execution time, request a
-durable campaign cancellation or stop the next reconciliation admission. Let
-active work drain according to policy. Preserving a smaller valid partial wave
-is safer than forcing dozens of trials into the final minutes.
+If required remaining time exceeds the remaining execution time, the controller
+must publish `paused-capacity` before admitting another wave. Let active work
+drain according to policy. Preserving valid completed trials is safer than
+forcing more work into the final minutes.
 
 Do not start trial processes with a timeout shorter than the locked agent and
 verifier lifecycle, including the judge, capture, and publication path.
@@ -232,21 +217,23 @@ uv run harbor-hf campaign cancel CAMPAIGN_ID \
   --dry-run
 ```
 
-Apply by removing `--dry-run` after review. Continue reconciliation and status
-checks until active Jobs, waves, endpoint leases, and cleanup actions are
-terminal. Valid completed trials remain preserved.
+Apply by removing `--dry-run` after review. A provider controller observes the
+cancellation at its next action boundary: it admits no new wave and lets an
+active in-process wave finish its evidence path. Continue status checks until
+the controller and active wave are terminal. Endpoint campaigns continue their
+cleanup reconciliation. Valid completed trials remain preserved.
 
-Repeating cancellation is safe. Directly killing a controller can leave cleanup
-and evidence ambiguous, so use campaign cancellation first unless immediate
-safety requires direct intervention.
+Repeating cancellation is safe. Directly killing a controller can leave the
+current wave and evidence ambiguous, so use campaign cancellation first unless
+immediate safety requires direct intervention.
 
 ## Operator handoff
 
 A handoff record should contain:
 
-- campaign ID, namespace, manifest and plan digests;
+- campaign ID, namespace, manifest, plan, and controller input digests;
 - current control revision and latest status snapshot path;
-- active and terminal wave and Job IDs;
+- controller attempt and claim plus active and terminal wave and Job IDs;
 - endpoint state or provider route state;
 - trial counts by state and latest durable progress time;
 - spend reservation, observed spend status, and deadline headroom;

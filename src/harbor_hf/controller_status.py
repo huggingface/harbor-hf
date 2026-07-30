@@ -61,6 +61,19 @@ class ControllerClaim(FrozenModel):
         return self
 
 
+class ControllerCapacityEvidence(FrozenModel):
+    completed_trial_count: int = Field(ge=1)
+    elapsed_seconds: int = Field(ge=0)
+    observed_effective_concurrency: int = Field(ge=1)
+    p50_trial_seconds: float = Field(ge=0)
+    p95_trial_seconds: float = Field(ge=0)
+    maximum_trial_seconds: float = Field(ge=0)
+    remaining_trials: int = Field(ge=0)
+    projected_remaining_seconds: int = Field(ge=0)
+    available_seconds: int = Field(ge=0)
+    assumptions_valid: bool
+
+
 class ControllerProjectionCounts(FrozenModel):
     logical_trials: int = Field(ge=0)
     terminal_trials: int = Field(ge=0)
@@ -107,6 +120,9 @@ class ControllerStatus(FrozenModel):
     block_reason: str | None = Field(default=None, min_length=1)
     event_revision: str | None = Field(default=None, min_length=1)
     evidence_revision: str | None = Field(default=None, min_length=1)
+    capacity: ControllerCapacityEvidence | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @field_validator("campaign_id", "job_id")
     @classmethod

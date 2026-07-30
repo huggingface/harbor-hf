@@ -4,10 +4,11 @@ from pathlib import Path
 import httpx
 import pytest
 import yaml
+from conftest import with_provider_controller
 from typer.testing import CliRunner
 
 from harbor_hf.campaigns import build_campaign_lock, build_campaign_plan
-from harbor_hf.cli import _write_lock, app
+from harbor_hf.cli import _is_provider_campaign, _write_lock, app
 from harbor_hf.control import CampaignSubmittedPayload, new_event
 from harbor_hf.models import (
     ExperimentSpec,
@@ -24,6 +25,7 @@ from harbor_hf.operations import (
     VerifiedRun,
 )
 from harbor_hf.process import ProcessError
+from harbor_hf.provider_models import ProviderTarget
 from harbor_hf.runs import build_run_lock
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "shellbench.yaml"
@@ -243,6 +245,47 @@ def test_campaign_status_and_dry_reconcile(
     assert json.loads(status.stdout)["status"] == "queued"
     assert reconcile.exit_code == 0
     assert json.loads(reconcile.stdout)["action_count"] == 1
+
+
+def test_provider_detection_rejects_old_and_controller_campaign_locks(
+    remote_spec: ExperimentSpec,
+) -> None:
+    model = remote_spec.matrix.models[0]
+    agent = remote_spec.matrix.agents[0].model_copy(
+        update={
+            "import_path": "harbor_hf_agents.openclaw.agent:OpenClawAgent",
+            "parameters": {"openclaw_config": {}},
+        }
+    )
+    provider_spec = with_provider_controller(
+        remote_spec.model_copy(
+            update={
+                "matrix": remote_spec.matrix.model_copy(
+                    update={
+                        "deployments": [
+                            ProviderTarget(id="provider-one", model=model.repo)
+                        ],
+                        "agents": [agent],
+                    }
+                )
+            }
+        )
+    )
+    controller_lock = build_campaign_lock(
+        build_campaign_plan(provider_spec), "provider-controller"
+    )
+    old_lock = controller_lock.model_copy(
+        update={
+            "controller_policy": None,
+            "planned_campaign_duration_seconds": None,
+            "initial_waves": [],
+        }
+    )
+    endpoint_lock = build_campaign_lock(build_campaign_plan(remote_spec), "endpoint")
+
+    assert _is_provider_campaign(controller_lock)
+    assert _is_provider_campaign(old_lock)
+    assert not _is_provider_campaign(endpoint_lock)
 
 
 def test_campaign_reconcile_requires_an_explicit_mode() -> None:

@@ -267,9 +267,45 @@ run locks and participates in campaign and experiment digests.
 in one campaign shard and defaults to 64. `max_shards_per_wave` bounds compatible
 shards assigned under one endpoint startup and defaults to 8. Provider request
 concurrency is part of the deployment profile. Timeout values are in seconds.
-`timeout_seconds` is a wall-clock limit for Harbor execution; on expiry, the
-controller terminates the Harbor process group and immediately enters verified
-endpoint cleanup.
+`timeout_seconds` is a wall-clock limit for Harbor execution. On expiry, an
+endpoint worker terminates the Harbor process group and starts verified cleanup.
+A provider controller drains the internal wave and records its durable state.
+
+Inference Provider campaigns require `execution.controller` with every field
+written explicitly:
+
+```yaml
+execution:
+  attempts: 6
+  concurrent_trials: 24
+  timeout_seconds: 16200
+  max_trials_per_shard: 24
+  max_shards_per_wave: 4
+  controller:
+    planning_trial_seconds: 900
+    headroom_factor: "1.25"
+    wave_reserve_seconds: 900
+    controller_reserve_seconds: 1800
+    heartbeat_seconds: 60
+    stale_after_seconds: 600
+    max_attempts: 3
+```
+
+`planning_trial_seconds` comes from a representative end-to-end pilot.
+`headroom_factor` is an exact decimal string. The wave reserve covers setup,
+drain, evidence publication, and route closure. The controller reserve covers
+source setup, final reconciliation, publication, and exit. Heartbeats run every
+30 to 300 seconds, and `stale_after_seconds` must cover at least three heartbeat
+periods. `max_attempts` limits sequential physical controller Jobs to 10 or
+fewer.
+
+The planner computes effective concurrency as the minimum of trial concurrency,
+provider request concurrency, and selected serving-profile concurrency. It
+then computes each initial wave duration from the number of concurrency batches,
+the planning trial duration, headroom, and wave reserve. Every wave must fit
+`execution.timeout_seconds`. The sum of the initial waves and controller reserve
+must fit `remote.job.timeout_seconds`. The plan and campaign lock store these
+values and include them in their digests.
 
 Every task selected by `benchmark.task_names` is passed to Harbor. The resolved
 `task_digests` map gives exact and glob selections a deterministic trial count.
@@ -360,6 +396,22 @@ endpoint-specific file committed against an expected parent revision as an
 atomic lease and removes it with the same compare-and-swap protocol only after
 verified cleanup.
 
+Provider controllers use one campaign claim in the same coordination Dataset.
+The claim records campaign, plan, physical Job, attempt, heartbeat, and expiry.
+The controller also writes immutable attempt reservations and start and end
+receipts plus a latest status record whose Dataset history preserves every
+revision. A second owner exits before source preparation. An expired claim is
+insufficient for recovery until the previous physical Job is terminal or
+absent.
+
+One shared scheduled watchdog inspects only campaign IDs listed in its command.
+It never executes trials or reconciliation actions. For a retryable controller
+failure, it verifies the latest checkpoint, records an immutable recovery
+decision, reserves the next sequential attempt, and launches from the original
+input and worker revision. It does nothing for healthy or terminal campaigns.
+`paused-capacity`, `paused-policy`, deterministic failure, spend changes, and
+attempt exhaustion require an operator decision.
+
 The controller Job timeout is limited to 85,800 seconds. The remaining 600
 seconds within HF Jobs' 86,400-second maximum are reserved for watchdog startup
 and verified endpoint cleanup. It must also exceed `execution.timeout_seconds`
@@ -415,11 +467,12 @@ rerunning the agent. If the envelope was already complete, it validates the
 immutable checksums and writes only the missing marker. Ambiguous or invalid
 execution evidence stops publication. If the controller is killed
 before finalization, raw sessions and logs disappear with the Job instead of
-remaining in the bucket. Submission queries both the
-configured artifact Bucket and the managed `jobs-artifacts` input Bucket and
-refuses to start a Job unless both are private. It uploads manifests and locks
-under a content-addressed Job input prefix and mounts that exact Bucket
-subdirectory read-only.
+remaining in the bucket. Submission queries both the configured artifact Bucket and the managed
+`jobs-artifacts` input Bucket and refuses to start a Job unless both are private.
+A provider campaign input contains exactly `manifest.yaml`,
+`campaign.lock.json`, and `input-manifest.json`. The input manifest records the
+byte count and SHA-256 of the other files. Submission uploads that folder under
+a content-addressed prefix and mounts it read-only.
 
 ## Loading And Resolution
 

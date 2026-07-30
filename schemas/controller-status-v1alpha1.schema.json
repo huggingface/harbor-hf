@@ -1,5 +1,73 @@
 {
   "$defs": {
+    "ControllerCapacityEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions_valid": {
+          "title": "Assumptions Valid",
+          "type": "boolean"
+        },
+        "available_seconds": {
+          "minimum": 0,
+          "title": "Available Seconds",
+          "type": "integer"
+        },
+        "completed_trial_count": {
+          "minimum": 1,
+          "title": "Completed Trial Count",
+          "type": "integer"
+        },
+        "elapsed_seconds": {
+          "minimum": 0,
+          "title": "Elapsed Seconds",
+          "type": "integer"
+        },
+        "maximum_trial_seconds": {
+          "minimum": 0,
+          "title": "Maximum Trial Seconds",
+          "type": "number"
+        },
+        "observed_effective_concurrency": {
+          "minimum": 1,
+          "title": "Observed Effective Concurrency",
+          "type": "integer"
+        },
+        "p50_trial_seconds": {
+          "minimum": 0,
+          "title": "P50 Trial Seconds",
+          "type": "number"
+        },
+        "p95_trial_seconds": {
+          "minimum": 0,
+          "title": "P95 Trial Seconds",
+          "type": "number"
+        },
+        "projected_remaining_seconds": {
+          "minimum": 0,
+          "title": "Projected Remaining Seconds",
+          "type": "integer"
+        },
+        "remaining_trials": {
+          "minimum": 0,
+          "title": "Remaining Trials",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "completed_trial_count",
+        "elapsed_seconds",
+        "observed_effective_concurrency",
+        "p50_trial_seconds",
+        "p95_trial_seconds",
+        "maximum_trial_seconds",
+        "remaining_trials",
+        "projected_remaining_seconds",
+        "available_seconds",
+        "assumptions_valid"
+      ],
+      "title": "ControllerCapacityEvidence",
+      "type": "object"
+    },
     "ControllerProjectionCounts": {
       "additionalProperties": false,
       "properties": {
@@ -57,6 +125,17 @@
     "campaign_id": {
       "title": "Campaign Id",
       "type": "string"
+    },
+    "capacity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ControllerCapacityEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "current_action": {
       "anyOf": [

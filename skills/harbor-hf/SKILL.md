@@ -17,8 +17,8 @@ canonical evidence from the private Bucket.
 
 Read the complete source document before acting in that area:
 
-- New campaign or live operation: `docs/harbor-cookbook.md` and
-  `docs/run-spec.md`.
+- New campaign or live operation: `docs/harbor-cookbook.md`,
+  `docs/run-spec.md`, and `docs/single-job-campaign-controller.md`.
 - New deployment or concurrency change: `docs/deployment-profiling.md`.
 - Provider-backed agent: `docs/provider-agent-architecture.md` and
   `docs/harbor-integration-contract.md`.
@@ -54,8 +54,8 @@ Keep these rules in force throughout the session:
   as agents and workers.
 - Keep the control Dataset, input Bucket, evidence Bucket, and unpublished
   results private.
-- Serialize campaign control mutations. Remote waves may overlap only within
-  the declared provider or endpoint capacity.
+- Serialize campaign control mutations. A provider controller runs one internal
+  wave at a time; trial requests may overlap only within locked provider limits.
 - Treat `execution.concurrent_trials` and provider request concurrency as
   separate limits.
 - Admit a wave only after measured end-to-end duration fits its deadline with
@@ -167,26 +167,31 @@ Before submission:
    revision, Harbor revision, agent revision, provider route, and judge policy.
 5. Confirm duration arithmetic and budget arithmetic from the same manifest.
 6. Save the approved manifest, plan, duration report, and launch decision.
-7. Submit once and capture the returned campaign ID and control revision.
+7. Submit once and capture the returned campaign ID, controller Job ID, input
+   digest, plan digest, and launch receipt.
 
 ### Live operation
 
-Use campaign projections as the primary status surface:
+The campaign projection and controller status are the primary status surfaces:
 
 ```bash
 uv run harbor-hf campaign status CAMPAIGN_ID --namespace NAMESPACE
 uv run harbor-hf campaign reconcile CAMPAIGN_ID --namespace NAMESPACE --dry-run
-uv run harbor-hf campaign reconcile CAMPAIGN_ID --namespace NAMESPACE --apply
 ```
 
-Inspect the dry run before each applied control pass. Keep applied passes
-serialized. Check HF Job state and logs as supporting evidence. While waves are
-active, confirm that terminal bundles and provider records are appearing in the
-private Bucket.
+A provider campaign advances inside its detached controller Job. Do not run an
+applied local reconciliation loop. Check the controller attempt, claim,
+heartbeat age, current wave, remaining-time admission, and block reason. HF Job
+state and logs are supporting evidence. While work runs, confirm that terminal
+trial bundles and provider records appear in the private Bucket.
 
-Stop admitting new work when observed throughput makes the deadline infeasible,
-provider errors exceed the profile boundary, evidence publication stalls, the
-spend reservation is unsafe, or endpoint cleanup becomes uncertain.
+Install the shared watchdog only for an explicit campaign list. The watchdog
+may launch a sequential replacement after a retryable infrastructure failure.
+It cannot continue a capacity or policy pause.
+
+The controller stops new work when observed throughput makes the locked duration
+infeasible, provider errors exceed the profile boundary, evidence publication
+stalls, spend admission fails, or ownership becomes uncertain.
 
 ### Recovery gate
 
@@ -247,7 +252,7 @@ Stop without launching or mutating when any of these conditions holds:
 Report concrete evidence:
 
 - manifest and plan paths plus SHA-256 digests;
-- campaign, run, wave, shard, trial, execution, and HF Job IDs;
+- campaign, controller attempt, run, wave, shard, trial, execution, and HF Job IDs;
 - requested and observed concurrency, pacing, trial latency, wave duration, and
   deadline headroom;
 - spend cap, reservation, observed or unreported spend, and retry capacity;

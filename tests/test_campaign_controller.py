@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -99,6 +100,30 @@ class CompletingReconciler:
             )
         )
         return SimpleNamespace(applied=[SimpleNamespace()])
+
+
+class CancellingReconciler(CompletingReconciler):
+    def apply_campaign(self, campaign_id: str) -> object:
+        self.calls += 1
+        self.store.events.append(
+            new_event(
+                subject_type="campaign",
+                subject_id=campaign_id,
+                kind="campaign.cancelled",
+                producer="wave-controller",
+                payload=TerminalPayload(message="operator cancellation drained"),
+                clock=lambda: NOW + timedelta(seconds=1),
+                identifier=lambda: "3" * 32,
+            )
+        )
+        return SimpleNamespace(applied=[SimpleNamespace()])
+
+
+class FailingReconciler(CompletingReconciler):
+    def apply_campaign(self, campaign_id: str) -> object:
+        del campaign_id
+        self.calls += 1
+        raise RuntimeError("unexpected controller defect")
 
 
 class MemoryControllerStateStore:
@@ -257,6 +282,51 @@ def test_controller_runs_without_a_local_loop_and_writes_terminal_receipts(
     assert state.claim is None
 
 
+def test_controller_pauses_when_observed_trial_duration_breaks_the_lock(
+    tmp_path: Path,
+    remote_spec: ExperimentSpec,
+) -> None:
+    store, state, reconciler, executor, validated = _runtime(tmp_path, remote_spec)
+    events = (
+        tmp_path
+        / "output"
+        / store.lock.artifact_prefix
+        / "runs/run/trials/trial/executions/execution/events.jsonl"
+    )
+    events.parent.mkdir(parents=True)
+    events.write_text(
+        "\n".join(
+            json.dumps(value)
+            for value in (
+                {"event": "execution_started", "at": NOW.isoformat()},
+                {
+                    "event": "execution_succeeded",
+                    "at": (NOW + timedelta(seconds=2)).isoformat(),
+                },
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = _controller(
+        tmp_path,
+        store,
+        state,
+        reconciler,
+        executor,
+        validated,
+        attempt=1,
+    ).run()
+
+    assert result.state == "paused-capacity"
+    assert reconciler.calls == 0
+    assert state.status is not None
+    assert state.status.capacity is not None
+    assert not state.status.capacity.assumptions_valid
+    assert state.status.capacity.p95_trial_seconds == 2.0
+
+
 def test_interrupted_attempt_can_resume_in_one_sequential_replacement(
     tmp_path: Path,
     remote_spec: ExperimentSpec,
@@ -294,6 +364,77 @@ def test_interrupted_attempt_can_resume_in_one_sequential_replacement(
     assert reconciler.calls == 1
     assert [receipt.attempt for receipt in state.started] == [1, 2]
     assert [receipt.attempt for receipt in state.ended] == [1, 2]
+
+
+def test_controller_drains_one_action_then_honors_campaign_cancellation(
+    tmp_path: Path,
+    remote_spec: ExperimentSpec,
+) -> None:
+    store, state, _reconciler, executor, validated = _runtime(tmp_path, remote_spec)
+    reconciler = CancellingReconciler(store)
+
+    result = _controller(
+        tmp_path,
+        store,
+        state,
+        reconciler,
+        executor,
+        validated,
+        attempt=1,
+    ).run()
+
+    assert result.state == "completed"
+    assert reconciler.calls == 1
+    assert [receipt.state for receipt in state.ended] == ["completed"]
+    assert state.claim is None
+
+
+def test_controller_signal_stops_before_admitting_another_action(
+    tmp_path: Path,
+    remote_spec: ExperimentSpec,
+) -> None:
+    store, state, reconciler, executor, validated = _runtime(tmp_path, remote_spec)
+    controller = _controller(
+        tmp_path,
+        store,
+        state,
+        reconciler,
+        executor,
+        validated,
+        attempt=1,
+    )
+    controller.request_stop()
+
+    result = controller.run()
+
+    assert result.state == "failed-infrastructure"
+    assert result.message == "controller received a termination signal"
+    assert reconciler.calls == 0
+    assert len(executor.prepared) == 1
+    assert state.claim is None
+
+
+def test_unexpected_controller_exception_is_durable_infrastructure_evidence(
+    tmp_path: Path,
+    remote_spec: ExperimentSpec,
+) -> None:
+    store, state, _reconciler, executor, validated = _runtime(tmp_path, remote_spec)
+    reconciler = FailingReconciler(store)
+
+    result = _controller(
+        tmp_path,
+        store,
+        state,
+        reconciler,
+        executor,
+        validated,
+        attempt=1,
+    ).run()
+
+    assert result.state == "failed-infrastructure"
+    assert result.message == "unexpected controller defect"
+    assert [receipt.state for receipt in state.ended] == ["failed-infrastructure"]
+    assert state.claim is None
 
 
 def test_controller_rejects_an_unreserved_attempt_before_claiming(

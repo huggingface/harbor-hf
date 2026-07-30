@@ -70,21 +70,23 @@ inspecting the named artifact or command output.
 - [ ] Launch record contains the manifest and plan plus duration and canary
       evidence.
 - [ ] User has approved the exact paid launch.
-- [ ] Submission response and campaign ID are saved.
-- [ ] First reconcile dry run is reviewed before apply.
+- [ ] Submission response, campaign ID, controller Job ID, attempt, and input
+      digest are saved.
+- [ ] Provider campaigns have one controller Job and no child wave Jobs.
 
 ## Live campaign checklist
 
-- [ ] Applied control passes remain serialized.
-- [ ] Status projection and latest control revision are saved.
-- [ ] Active wave and HF Job identities match control state.
+- [ ] Provider campaigns are not driven by an applied local reconcile loop.
+- [ ] Status projection plus latest control and controller revisions are saved.
+- [ ] Controller attempt, claim, heartbeat, wave, and HF Job identity match.
 - [ ] Provider or endpoint identity matches the lock.
 - [ ] Spend reservation remains within the approved bound.
 - [ ] Provider records and terminal bundles advance in the Bucket.
 - [ ] Completed trial count and observed throughput advance.
-- [ ] Remaining work still fits the wave deadline with reserve.
+- [ ] Remaining work still fits the wave and controller deadlines with reserve.
 - [ ] Retry counts stay within policy.
 - [ ] No benchmark or agent failure is queued for infrastructure retry.
+- [ ] Controller watchdog is scoped to the approved campaign list.
 - [ ] Endpoint watchdog and lease remain healthy when applicable.
 - [ ] The operator handoff names the next safe action.
 
