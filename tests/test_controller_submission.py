@@ -10,6 +10,9 @@ from test_submission import FakeBucketApi, FakeRunner
 from harbor_hf.campaigns import CampaignLock, build_campaign_lock, build_campaign_plan
 from harbor_hf.controller_status import (
     ControllerAttemptReservation,
+    ControllerLaunchClaim,
+    ControllerLaunchReceipt,
+    ControllerLaunchUnavailable,
     ControllerStateStore,
 )
 from harbor_hf.models import ExperimentSpec
@@ -47,6 +50,8 @@ def _campaign(remote_spec: ExperimentSpec) -> tuple[ExperimentSpec, CampaignLock
 class StateStore:
     def __init__(self) -> None:
         self.reservations: list[ControllerAttemptReservation] = []
+        self.launch_claim: ControllerLaunchClaim | None = None
+        self.launches: dict[int, ControllerLaunchReceipt] = {}
 
     def read_attempt(
         self, campaign_id: str, attempt: int
@@ -67,6 +72,40 @@ class StateStore:
             self.reservations.append(reservation)
         else:
             assert observed == reservation
+
+    def acquire_launch(self, claim: ControllerLaunchClaim) -> None:
+        if (
+            self.launch_claim is not None
+            and self.launch_claim != claim
+            and self.launch_claim.expires_at > claim.acquired_at
+        ):
+            raise ControllerLaunchUnavailable("launch is in progress")
+        self.launch_claim = claim
+
+    def release_launch(self, claim: ControllerLaunchClaim) -> None:
+        assert self.launch_claim == claim
+        self.launch_claim = None
+
+    def read_launch_claim(
+        self, campaign_id: str, attempt: int
+    ) -> ControllerLaunchClaim | None:
+        if self.launch_claim is None:
+            return None
+        assert self.launch_claim.campaign_id == campaign_id
+        assert self.launch_claim.attempt == attempt
+        return self.launch_claim
+
+    def write_launch(self, receipt: ControllerLaunchReceipt) -> None:
+        observed = self.launches.get(receipt.attempt)
+        if observed is not None:
+            assert observed == receipt
+        self.launches[receipt.attempt] = receipt
+
+    def read_launch(
+        self, campaign_id: str, attempt: int
+    ) -> ControllerLaunchReceipt | None:
+        del campaign_id
+        return self.launches.get(attempt)
 
 
 class Jobs:
@@ -173,12 +212,48 @@ def test_repeated_submission_reuses_the_initial_attempt_after_launch_failure(
         bucket_api=api,
         jobs_api=Jobs(),
         state_store=cast(ControllerStateStore, state),
-        clock=lambda: NOW + timedelta(minutes=5),
+        clock=lambda: NOW + timedelta(minutes=31),
     )
 
     assert result.job_id == "0123456789abcdef01234567"
     assert len(state.reservations) == 1
     assert state.reservations[0].reserved_at == NOW
+    assert state.launch_claim is None
+    assert state.launches[1].job_id == "0123456789abcdef01234567"
+
+
+def test_concurrent_submission_does_not_launch_while_attempt_is_owned(
+    remote_spec: ExperimentSpec,
+    remote_manifest: Path,
+) -> None:
+    spec, lock = _campaign(remote_spec)
+    state = StateStore()
+    state.launch_claim = ControllerLaunchClaim(
+        campaign_id=lock.campaign_id,
+        plan_digest=lock.plan_digest,
+        attempt=1,
+        launcher_id="other-launcher",
+        acquired_at=NOW,
+        expires_at=NOW + timedelta(minutes=30),
+    )
+
+    class RejectRunner:
+        def run_text(self, command: list[str]) -> str:
+            del command
+            raise AssertionError("a competing launch must not run")
+
+    with pytest.raises(ControllerLaunchUnavailable, match="in progress"):
+        submit_campaign_controller(
+            lock,
+            spec,
+            request=remote_manifest.read_bytes(),
+            bucket=spec.artifacts.bucket,
+            runner=RejectRunner(),
+            bucket_api=FakeBucketApi(),
+            jobs_api=Jobs(),
+            state_store=cast(ControllerStateStore, state),
+            clock=lambda: NOW + timedelta(minutes=1),
+        )
 
 
 def test_repeated_submission_adopts_the_exact_controller_attempt(

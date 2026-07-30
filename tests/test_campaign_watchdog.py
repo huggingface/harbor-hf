@@ -23,6 +23,9 @@ from harbor_hf.control import (
 from harbor_hf.controller_status import (
     ControllerAttemptReservation,
     ControllerClaim,
+    ControllerLaunchClaim,
+    ControllerLaunchReceipt,
+    ControllerLaunchUnavailable,
     ControllerProjectionCounts,
     ControllerRecoveryDecision,
     ControllerStateStore,
@@ -217,6 +220,8 @@ class WatchdogState:
             )
         }
         self.recoveries: dict[int, ControllerRecoveryDecision] = {}
+        self.launch_claim: ControllerLaunchClaim | None = None
+        self.launches: dict[int, ControllerLaunchReceipt] = {}
 
     def read_status(self, campaign_id: str) -> ControllerStatus:
         assert campaign_id == self.lock.campaign_id
@@ -249,6 +254,37 @@ class WatchdogState:
         if observed is not None and observed != value:
             raise AssertionError("recovery changed")
         self.recoveries[value.replacement_attempt] = value
+
+    def acquire_launch(self, claim: ControllerLaunchClaim) -> None:
+        if (
+            self.launch_claim is not None
+            and self.launch_claim != claim
+            and self.launch_claim.expires_at > claim.acquired_at
+        ):
+            raise ControllerLaunchUnavailable("launch is in progress")
+        self.launch_claim = claim
+
+    def release_launch(self, claim: ControllerLaunchClaim) -> None:
+        assert self.launch_claim == claim
+        self.launch_claim = None
+
+    def read_launch_claim(
+        self, campaign_id: str, attempt: int
+    ) -> ControllerLaunchClaim | None:
+        del campaign_id, attempt
+        return self.launch_claim
+
+    def write_launch(self, receipt: ControllerLaunchReceipt) -> None:
+        observed = self.launches.get(receipt.attempt)
+        if observed is not None:
+            assert observed == receipt
+        self.launches[receipt.attempt] = receipt
+
+    def read_launch(
+        self, campaign_id: str, attempt: int
+    ) -> ControllerLaunchReceipt | None:
+        del campaign_id
+        return self.launches.get(attempt)
 
 
 class WatchdogJobs:
@@ -313,7 +349,7 @@ def test_watchdog_reuses_recovery_records_after_a_failed_launch(
         state_store=cast(ControllerStateStore, state),
         jobs_api=jobs,
         runner=runner,
-        clock=lambda: NOW + timedelta(minutes=5),
+        clock=lambda: NOW + timedelta(minutes=31),
     )
 
     assert result.submission is not None

@@ -337,10 +337,7 @@ def test_hub_store_creates_and_loads_campaign(
     snapshot = store.load_snapshot(lock.campaign_id)
     assert snapshot.lock == lock
     assert snapshot.request == b"kind: Experiment\n"
-    assert (
-        snapshot.control_commit
-        == api.last_commits[f"campaigns/{lock.campaign_id}/campaign.lock.json"]
-    )
+    assert snapshot.control_commit == api.head
     with pytest.raises(CampaignConflict, match="campaign already exists"):
         store.create_campaign(lock, b"different", _submitted(lock))
 
@@ -371,9 +368,6 @@ def test_hub_store_snapshot_reads_every_object_from_one_exact_revision(
     api.tree_calls.clear()
     api.download_calls.clear()
     expected_head = api.head
-    expected_control_commit = api.last_commits[
-        f"campaigns/{lock.campaign_id}/campaign.lock.json"
-    ]
 
     snapshot = store.load_snapshot(lock.campaign_id)
 
@@ -383,7 +377,7 @@ def test_hub_store_snapshot_reads_every_object_from_one_exact_revision(
         lock=lock,
         events=[later, _submitted(lock)],
         request=request,
-        control_commit=expected_control_commit,
+        control_commit=expected_head,
     )
     assert api.info_calls == [
         (repository, {"repo_type": "dataset", "revision": "main"})
@@ -1304,46 +1298,3 @@ def test_hub_store_rejects_non_object_action_reservation(
         store.load_action_reservations(lock.campaign_id)
 
     assert str(captured.value) == f"action reservation must be an object: {path}"
-
-
-def test_hub_store_snapshot_requires_lock_commit_identity(
-    remote_spec: ExperimentSpec, tmp_path: Path
-) -> None:
-    lock = _lock(remote_spec)
-    api = FakeCampaignApi(tmp_path)
-    store = HubCampaignStore("org", api=api)
-    store.create_campaign(lock, b"manifest", _submitted(lock))
-    lock_path = f"campaigns/{lock.campaign_id}/campaign.lock.json"
-    api.last_commits[lock_path] = ""
-
-    with pytest.raises(ControlError) as captured:
-        store.load_snapshot(lock.campaign_id)
-
-    assert str(captured.value) == (
-        f"control record has no immutable commit: {lock_path}"
-    )
-
-
-def test_hub_store_snapshot_requires_one_lock_commit_record(
-    remote_spec: ExperimentSpec, tmp_path: Path
-) -> None:
-    class MissingCommitApi(FakeCampaignApi):
-        def get_paths_info(
-            self, repo_id: str, paths: list[str] | str, **kwargs: object
-        ) -> list[object]:
-            if kwargs.get("expand") is True:
-                return []
-            return super().get_paths_info(repo_id, paths, **kwargs)
-
-    lock = _lock(remote_spec)
-    api = MissingCommitApi(tmp_path)
-    store = HubCampaignStore("org", api=api)
-    store.create_campaign(lock, b"manifest", _submitted(lock))
-    lock_path = f"campaigns/{lock.campaign_id}/campaign.lock.json"
-
-    with pytest.raises(ControlError) as captured:
-        store.load_snapshot(lock.campaign_id)
-
-    assert str(captured.value) == (
-        f"control record has no immutable commit: {lock_path}"
-    )

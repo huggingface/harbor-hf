@@ -119,6 +119,8 @@ def test_campaign_schema_command_writes_json(tmp_path: Path) -> None:
         "campaign_input",
         "controller_claim",
         "controller_status",
+        "controller_launch_claim",
+        "controller_launch_receipt",
         "provider_capacity_claim",
         "controller_started",
         "controller_ended",
@@ -150,6 +152,31 @@ def test_campaign_submit_dry_run_has_no_remote_mutation(
         "plan_digest": payload["plan_digest"],
         "stored": False,
     }
+
+
+def test_campaign_submit_reports_controller_launch_failure_without_traceback(
+    remote_manifest: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise ProcessError("controller launch failed")
+
+    monkeypatch.setattr("harbor_hf.cli._submit_campaign", fail)
+
+    result = runner.invoke(
+        app,
+        [
+            "campaign",
+            "submit",
+            str(remote_manifest),
+            "--campaign-id",
+            "campaign-one",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr == "Error: controller launch failed\n"
 
 
 def test_campaign_submit_requires_remote_configuration() -> None:

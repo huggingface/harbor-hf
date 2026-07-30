@@ -153,6 +153,7 @@ _OPERATION_ERRORS = (
     CatalogCutoverError,
     ProfileWorkerError,
     ProfileTransportError,
+    ProcessError,
     CampaignControllerError,
     CampaignWatchdogError,
     ControllerStatusError,

@@ -166,9 +166,12 @@ The controller recalculates projected completion from observed trial durations a
 2. Verify that the complete initial campaign fits one physical Job.
 3. Create the immutable campaign and input package.
 4. Reserve controller attempt 1 with a parent-checked commit.
-5. Search for an existing Job with the exact campaign label.
-6. Launch one detached controller Job if no matching Job exists.
-7. Record the physical Job ID and launch result.
+5. Adopt an immutable launch receipt when one already exists.
+6. Acquire the parent-checked launch claim for this controller attempt.
+7. Search for an existing Job with the exact campaign label.
+8. Launch one detached controller Job if no matching Job exists.
+9. Record the physical Job ID in an immutable launch receipt.
+10. Release the launch claim.
 
 The Job command is:
 
@@ -188,6 +191,14 @@ harbor-hf-plan=<short-plan-digest>
 ```
 
 The platform `JOB_ID` identifies the physical controller attempt. It is recorded in controller receipts, execution locks, status, and the final campaign report.
+
+Launch claims use `claims/controller-launches/<campaign-id>/<attempt>.json`.
+They serialize the check-and-launch sequence across CLI retries, watchdog schedule
+runs, and webhook runs. A successful launch writes
+`campaigns/<campaign-id>/controller-launches/<attempt>.json` before releasing
+the claim. If launch outcome is uncertain and no exact-label Job is visible, the
+claim remains for 30 minutes. A retry may adopt a matching Job immediately, but
+it cannot issue another launch until the claim expires.
 
 The launch exposes the provider and judge recorder ports required by any resolved run. It injects secret values through Hugging Face Job secrets. Commands, locks, events, and evidence contain secret names only.
 

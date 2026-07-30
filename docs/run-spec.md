@@ -400,11 +400,14 @@ verified cleanup.
 
 Provider controllers use one campaign claim in the same coordination Dataset.
 The claim records campaign, plan, physical Job, attempt, heartbeat, and expiry.
-The controller also writes immutable attempt reservations and start and end
-receipts plus a latest status record whose Dataset history preserves every
-revision. A second owner exits before source preparation. An expired claim is
-insufficient for recovery until the previous physical Job is terminal or
-absent.
+The controller also writes immutable attempt reservations, launch receipts,
+and start and end receipts plus a latest status record whose Dataset history
+preserves every revision. A parent-checked launch claim serializes the
+exact-label lookup and launch for one attempt. An uncertain launch keeps that
+claim for 30 minutes, preventing another process from launching a duplicate
+while still allowing exact-label adoption. A second controller owner exits
+before source preparation. An expired controller claim is insufficient for
+recovery until the previous physical Job is terminal or absent.
 
 Every billable provider action also uses one parent-checked capacity claim keyed
 by provider service. The namespace runs at most one internal wave per provider

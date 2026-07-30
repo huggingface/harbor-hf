@@ -681,7 +681,7 @@ class HubCampaignStore:
             lock=lock,
             events=events,
             request=self._read_bytes(_campaign_request_path(campaign_id), head),
-            control_commit=self._last_commit(lock_path, head),
+            control_commit=head,
         )
 
     def _paths_under(self, prefix: str, revision: str) -> list[str]:
@@ -1089,22 +1089,6 @@ class HubCampaignStore:
                 revision=revision,
             )
         )
-
-    def _last_commit(self, path: str, revision: str) -> str:
-        records = self.api.get_paths_info(
-            self.repository,
-            path,
-            repo_type="dataset",
-            revision=revision,
-            expand=True,
-        )
-        if len(records) != 1:
-            raise ControlError(f"control record has no immutable commit: {path}")
-        last_commit = getattr(records[0], "last_commit", None)
-        oid = getattr(last_commit, "oid", None)
-        if not isinstance(oid, str) or not oid:
-            raise ControlError(f"control record has no immutable commit: {path}")
-        return oid
 
     def _read_json(self, path: str, revision: str) -> object:
         try:

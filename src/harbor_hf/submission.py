@@ -5,9 +5,10 @@ import os
 import re
 import shlex
 import tempfile
+import uuid
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -19,7 +20,11 @@ from harbor_hf.campaign_input import write_campaign_input
 from harbor_hf.campaigns import CampaignLock, EndpointWaveTarget, WaveLock
 from harbor_hf.controller_status import (
     ControllerAttemptReservation,
+    ControllerLaunchClaim,
+    ControllerLaunchReceipt,
+    ControllerLaunchUnavailable,
     ControllerStateStore,
+    controller_launch_receipt_path,
 )
 from harbor_hf.coordination import bucket_id, coordination_repository
 from harbor_hf.judge_recorder import JUDGE_RECORDER_PORT
@@ -41,6 +46,7 @@ _GITHUB_REPOSITORY = re.compile(
 _JOB_INPUT_BUCKET_NAME = "jobs-artifacts"
 _COORDINATION_INITIALIZATION_PATH = ".harbor-hf-initialized"
 _COORDINATION_INITIALIZATION_PAYLOAD = b"harbor-hf coordination repository\n"
+_CONTROLLER_LAUNCH_LEASE = timedelta(minutes=30)
 
 
 class TextRunner(Protocol):
@@ -570,6 +576,7 @@ def submit_campaign_controller(
     state_store: ControllerStateStore,
     attempt: int = 1,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    identifier: Callable[[], str] = lambda: uuid.uuid4().hex,
 ) -> CampaignControllerSubmission:
     if spec.remote is None or lock.controller_policy is None:
         raise ValueError("campaign controller submission requires provider settings")
@@ -625,6 +632,10 @@ def submit_campaign_controller(
         runner=runner,
         command=command,
         secret_names=campaign_job_secret_names(spec),
+        reservation=reservation,
+        state_store=state_store,
+        clock=clock,
+        identifier=identifier,
     )
     return CampaignControllerSubmission(
         campaign_id=lock.campaign_id,
@@ -633,9 +644,7 @@ def submit_campaign_controller(
         input_uri=input_uri,
         job_id=job_id,
         attempt=attempt,
-        launch_receipt=(
-            f"campaigns/{lock.campaign_id}/controller-attempts/{attempt}.json"
-        ),
+        launch_receipt=controller_launch_receipt_path(lock.campaign_id, attempt),
         command=command,
     )
 
@@ -647,6 +656,9 @@ def launch_reserved_campaign_controller(
     *,
     runner: TextRunner,
     jobs_api: ControllerJobsApi,
+    state_store: ControllerStateStore,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    identifier: Callable[[], str] = lambda: uuid.uuid4().hex,
 ) -> CampaignControllerSubmission:
     if spec.remote is None:
         raise ValueError("campaign controller requires remote execution")
@@ -670,6 +682,10 @@ def launch_reserved_campaign_controller(
         runner=runner,
         command=command,
         secret_names=campaign_job_secret_names(spec),
+        reservation=reservation,
+        state_store=state_store,
+        clock=clock,
+        identifier=identifier,
     )
     return CampaignControllerSubmission(
         campaign_id=lock.campaign_id,
@@ -678,9 +694,8 @@ def launch_reserved_campaign_controller(
         input_uri=reservation.input_uri,
         job_id=job_id,
         attempt=reservation.attempt,
-        launch_receipt=(
-            f"campaigns/{lock.campaign_id}/controller-attempts/"
-            f"{reservation.attempt}.json"
+        launch_receipt=controller_launch_receipt_path(
+            lock.campaign_id, reservation.attempt
         ),
         command=command,
     )
@@ -694,10 +709,81 @@ def _launch_or_adopt_controller(
     runner: TextRunner,
     command: list[str],
     secret_names: list[str],
+    reservation: ControllerAttemptReservation,
+    state_store: ControllerStateStore,
+    clock: Callable[[], datetime],
+    identifier: Callable[[], str],
 ) -> str:
+    adopted = _existing_controller_launch(
+        state_store, reservation, jobs_api, namespace, labels
+    )
+    if adopted is not None:
+        return adopted
+    acquired_at = clock().astimezone(UTC)
+    claim = ControllerLaunchClaim(
+        campaign_id=reservation.campaign_id,
+        plan_digest=reservation.plan_digest,
+        attempt=reservation.attempt,
+        launcher_id=identifier(),
+        acquired_at=acquired_at,
+        expires_at=acquired_at + _CONTROLLER_LAUNCH_LEASE,
+    )
+    try:
+        state_store.acquire_launch(claim)
+    except ControllerLaunchUnavailable:
+        adopted = _existing_controller_launch(
+            state_store, reservation, jobs_api, namespace, labels
+        )
+        if adopted is not None:
+            return adopted
+        raise
+    adopted = _existing_controller_launch(
+        state_store, reservation, jobs_api, namespace, labels
+    )
+    job_id = (
+        adopted
+        if adopted is not None
+        else _run_controller_launch(
+            state_store,
+            reservation,
+            jobs_api,
+            namespace,
+            labels,
+            runner,
+            command,
+            secret_names,
+        )
+    )
+    state_store.release_launch(claim)
+    return job_id
+
+
+def _existing_controller_launch(
+    state_store: ControllerStateStore,
+    reservation: ControllerAttemptReservation,
+    jobs_api: ControllerJobsApi,
+    namespace: str,
+    labels: Mapping[str, str],
+) -> str | None:
+    recorded = state_store.read_launch(reservation.campaign_id, reservation.attempt)
+    if recorded is not None:
+        return _validated_launch_receipt(recorded, reservation)
     existing = _find_controller_jobs(jobs_api, namespace, labels)
-    if existing:
-        return existing[0]
+    if not existing:
+        return None
+    return _record_controller_launch(state_store, reservation, existing[0])
+
+
+def _run_controller_launch(
+    state_store: ControllerStateStore,
+    reservation: ControllerAttemptReservation,
+    jobs_api: ControllerJobsApi,
+    namespace: str,
+    labels: Mapping[str, str],
+    runner: TextRunner,
+    command: list[str],
+    secret_names: list[str],
+) -> str:
     try:
         with _materialized_named_job_secrets(secret_names, command) as runtime_command:
             output = runner.run_text(runtime_command)
@@ -705,14 +791,51 @@ def _launch_or_adopt_controller(
         adopted = _find_controller_jobs(jobs_api, namespace, labels)
         if not adopted:
             raise
-        return adopted[0]
+        return _record_controller_launch(state_store, reservation, adopted[0])
     match = _JOB_ID.search(output)
     if match is not None:
-        return match.group()
+        return _record_controller_launch(state_store, reservation, match.group())
     adopted = _find_controller_jobs(jobs_api, namespace, labels)
-    if adopted:
-        return adopted[0]
-    raise ValueError("HF Jobs controller submission did not return a job ID")
+    if not adopted:
+        raise ValueError("HF Jobs controller submission did not return a job ID")
+    return _record_controller_launch(state_store, reservation, adopted[0])
+
+
+def _record_controller_launch(
+    state_store: ControllerStateStore,
+    reservation: ControllerAttemptReservation,
+    job_id: str,
+) -> str:
+    receipt = ControllerLaunchReceipt(
+        campaign_id=reservation.campaign_id,
+        plan_digest=reservation.plan_digest,
+        input_digest=reservation.input_digest,
+        attempt=reservation.attempt,
+        job_id=job_id,
+    )
+    state_store.write_launch(receipt)
+    return job_id
+
+
+def _validated_launch_receipt(
+    receipt: ControllerLaunchReceipt,
+    reservation: ControllerAttemptReservation,
+) -> str:
+    expected = (
+        reservation.campaign_id,
+        reservation.plan_digest,
+        reservation.input_digest,
+        reservation.attempt,
+    )
+    observed = (
+        receipt.campaign_id,
+        receipt.plan_digest,
+        receipt.input_digest,
+        receipt.attempt,
+    )
+    if observed != expected:
+        raise ValueError("controller launch receipt changed the launch contract")
+    return receipt.job_id
 
 
 def _controller_labels(lock: CampaignLock, attempt: int) -> dict[str, str]:

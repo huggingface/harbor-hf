@@ -210,6 +210,8 @@ def run_campaign_watchdog(
         replacement,
         runner=runner,
         jobs_api=jobs_api,
+        state_store=state_store,
+        clock=clock,
     )
     return WatchdogResult(
         campaign_id=campaign_id,

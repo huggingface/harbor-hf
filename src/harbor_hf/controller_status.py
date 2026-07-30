@@ -29,6 +29,10 @@ class ProviderCapacityUnavailable(ControllerStatusError):
     """Raised when another controller holds shared provider capacity."""
 
 
+class ControllerLaunchUnavailable(ControllerStatusError):
+    """Raised when another process owns one controller attempt launch."""
+
+
 class FrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -179,6 +183,58 @@ class ProviderCapacityClaim(FrozenModel):
         return value
 
 
+class ControllerLaunchClaim(FrozenModel):
+    schema_version: Literal["harbor-hf/controller-launch-claim/v1alpha1"] = (
+        "harbor-hf/controller-launch-claim/v1alpha1"
+    )
+    campaign_id: str
+    plan_digest: str
+    attempt: int = Field(ge=1)
+    launcher_id: str
+    acquired_at: datetime
+    expires_at: datetime
+
+    @field_validator("campaign_id", "launcher_id")
+    @classmethod
+    def identity_is_safe(cls, value: str) -> str:
+        if _SAFE_ID.fullmatch(value) is None:
+            raise ValueError(
+                "controller launch identities must be safe path components"
+            )
+        return value
+
+    @field_validator("acquired_at", "expires_at")
+    @classmethod
+    def timestamp_is_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
+            raise ValueError("controller launch timestamps must use UTC")
+        return value
+
+    @model_validator(mode="after")
+    def lease_is_ordered(self) -> ControllerLaunchClaim:
+        if self.acquired_at >= self.expires_at:
+            raise ValueError("controller launch claim must have a positive lease")
+        return self
+
+
+class ControllerLaunchReceipt(FrozenModel):
+    schema_version: Literal["harbor-hf/controller-launch-receipt/v1alpha1"] = (
+        "harbor-hf/controller-launch-receipt/v1alpha1"
+    )
+    campaign_id: str
+    plan_digest: str
+    input_digest: str
+    attempt: int = Field(ge=1)
+    job_id: str = Field(pattern=r"^[0-9a-f]{24}$")
+
+    @field_validator("campaign_id")
+    @classmethod
+    def campaign_identity_is_safe(cls, value: str) -> str:
+        if _SAFE_ID.fullmatch(value) is None:
+            raise ValueError("controller launch campaign must be a safe path component")
+        return value
+
+
 class ControllerStartedReceipt(FrozenModel):
     schema_version: Literal["harbor-hf/controller-started/v1alpha1"] = (
         "harbor-hf/controller-started/v1alpha1"
@@ -295,6 +351,20 @@ class ControllerStateStore(Protocol):
     def read_status(self, campaign_id: str) -> ControllerStatus | None: ...
 
     def write_status(self, status: ControllerStatus) -> None: ...
+
+    def acquire_launch(self, claim: ControllerLaunchClaim) -> None: ...
+
+    def release_launch(self, claim: ControllerLaunchClaim) -> None: ...
+
+    def read_launch_claim(
+        self, campaign_id: str, attempt: int
+    ) -> ControllerLaunchClaim | None: ...
+
+    def write_launch(self, receipt: ControllerLaunchReceipt) -> None: ...
+
+    def read_launch(
+        self, campaign_id: str, attempt: int
+    ) -> ControllerLaunchReceipt | None: ...
 
     def acquire_provider_capacity(self, claim: ProviderCapacityClaim) -> None: ...
 
@@ -455,6 +525,80 @@ class HubControllerStateStore:
                 if not _is_parent_conflict(error):
                     raise
         raise ControllerStatusError("controller status remained contended")
+
+    def acquire_launch(self, claim: ControllerLaunchClaim) -> None:
+        path = controller_launch_claim_path(claim.campaign_id, claim.attempt)
+        for _attempt in range(_MAX_COMMIT_ATTEMPTS):
+            head = self._head()
+            observed = self._read_optional(path, head, ControllerLaunchClaim)
+            if observed is not None:
+                if observed == claim:
+                    return
+                if observed.expires_at > claim.acquired_at:
+                    raise ControllerLaunchUnavailable(
+                        "controller attempt launch is already in progress"
+                    )
+            try:
+                self._commit(
+                    head,
+                    [self._add(path, claim)],
+                    "chore: acquire controller launch",
+                )
+                return
+            except HfHubHTTPError as error:
+                if not _is_parent_conflict(error):
+                    raise
+        raise ControllerStatusError("controller launch claim remained contended")
+
+    def release_launch(self, claim: ControllerLaunchClaim) -> None:
+        path = controller_launch_claim_path(claim.campaign_id, claim.attempt)
+        for _attempt in range(_MAX_COMMIT_ATTEMPTS):
+            head = self._head()
+            observed = self._read_optional(path, head, ControllerLaunchClaim)
+            if observed is None:
+                return
+            if observed != claim:
+                raise ControllerStatusError(
+                    "controller launch claim ownership cannot be verified"
+                )
+            try:
+                self._commit(
+                    head,
+                    [CommitOperationDelete(path_in_repo=path)],
+                    "chore: release controller launch",
+                )
+                return
+            except HfHubHTTPError as error:
+                if not _is_parent_conflict(error):
+                    raise
+        raise ControllerStatusError("controller launch release remained contended")
+
+    def read_launch_claim(
+        self, campaign_id: str, attempt: int
+    ) -> ControllerLaunchClaim | None:
+        head = self._head()
+        return self._read_optional(
+            controller_launch_claim_path(campaign_id, attempt),
+            head,
+            ControllerLaunchClaim,
+        )
+
+    def write_launch(self, receipt: ControllerLaunchReceipt) -> None:
+        self._write_immutable(
+            controller_launch_receipt_path(receipt.campaign_id, receipt.attempt),
+            receipt,
+            "record controller launch",
+        )
+
+    def read_launch(
+        self, campaign_id: str, attempt: int
+    ) -> ControllerLaunchReceipt | None:
+        head = self._head()
+        return self._read_optional(
+            controller_launch_receipt_path(campaign_id, attempt),
+            head,
+            ControllerLaunchReceipt,
+        )
 
     def acquire_provider_capacity(self, claim: ProviderCapacityClaim) -> None:
         path = provider_capacity_claim_path(claim.provider)
@@ -708,6 +852,8 @@ def controller_json_schemas() -> dict[str, dict[str, object]]:
     return {
         "controller_claim": ControllerClaim.model_json_schema(),
         "controller_status": ControllerStatus.model_json_schema(),
+        "controller_launch_claim": ControllerLaunchClaim.model_json_schema(),
+        "controller_launch_receipt": ControllerLaunchReceipt.model_json_schema(),
         "provider_capacity_claim": ProviderCapacityClaim.model_json_schema(),
         "controller_started": ControllerStartedReceipt.model_json_schema(),
         "controller_ended": ControllerEndedReceipt.model_json_schema(),
@@ -724,6 +870,20 @@ def controller_claim_path(campaign_id: str) -> str:
 def controller_status_path(campaign_id: str) -> str:
     _require_safe_id(campaign_id)
     return f"campaigns/{campaign_id}/controller-status.json"
+
+
+def controller_launch_claim_path(campaign_id: str, attempt: int) -> str:
+    _require_safe_id(campaign_id)
+    if attempt < 1:
+        raise ValueError("controller launch attempt must be positive")
+    return f"claims/controller-launches/{campaign_id}/{attempt}.json"
+
+
+def controller_launch_receipt_path(campaign_id: str, attempt: int) -> str:
+    _require_safe_id(campaign_id)
+    if attempt < 1:
+        raise ValueError("controller launch attempt must be positive")
+    return f"campaigns/{campaign_id}/controller-launches/{attempt}.json"
 
 
 def provider_capacity_claim_path(provider: str) -> str:

@@ -64,9 +64,11 @@ submitted.
 
 A provider campaign runs inside one detached HF Job. Submission stages a
 content-addressed folder containing the manifest, campaign lock, and input
-manifest. The controller verifies those files, acquires the campaign claim,
-prepares pinned sources, and runs one internal wave at a time. Trial concurrency
-stays inside each wave.
+manifest. A parent-checked launch claim serializes the exact-label Job lookup and
+launch, and an immutable receipt binds the attempt to its physical Job. The
+controller verifies the input files, acquires the campaign claim, prepares
+pinned sources, and runs one internal wave at a time. Trial concurrency stays
+inside each wave.
 
 The controller records a heartbeat while a long trial runs. Before billable
 work, it acquires a parent-checked namespace claim keyed by provider service, so

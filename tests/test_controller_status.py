@@ -9,6 +9,9 @@ from harbor_hf.controller_status import (
     ControllerAttemptReservation,
     ControllerClaim,
     ControllerEndedReceipt,
+    ControllerLaunchClaim,
+    ControllerLaunchReceipt,
+    ControllerLaunchUnavailable,
     ControllerOwnershipConflict,
     ControllerProjectionCounts,
     ControllerRecoveryDecision,
@@ -148,6 +151,54 @@ def test_expired_claim_still_requires_terminal_job_proof(tmp_path: Path) -> None
         store.acquire(replacement, prior_job_terminal=False)
     store.acquire(replacement, prior_job_terminal=True)
     assert store.read_claim(first.campaign_id) == replacement
+
+
+def test_controller_launch_is_serialized_and_has_an_immutable_receipt(
+    tmp_path: Path,
+) -> None:
+    store = HubControllerStateStore("org", "token", api=FakeControllerApi(tmp_path))
+    first = ControllerLaunchClaim(
+        campaign_id="campaign-one",
+        plan_digest="sha256:" + "1" * 64,
+        attempt=1,
+        launcher_id="launcher-one",
+        acquired_at=NOW,
+        expires_at=NOW + timedelta(minutes=30),
+    )
+    competing = first.model_copy(
+        update={
+            "launcher_id": "launcher-two",
+            "acquired_at": NOW + timedelta(minutes=1),
+            "expires_at": NOW + timedelta(minutes=31),
+        }
+    )
+
+    store.acquire_launch(first)
+    with pytest.raises(ControllerLaunchUnavailable, match="in progress"):
+        store.acquire_launch(competing)
+    assert store.read_launch_claim(first.campaign_id, first.attempt) == first
+
+    takeover = competing.model_copy(
+        update={
+            "acquired_at": NOW + timedelta(minutes=31),
+            "expires_at": NOW + timedelta(minutes=61),
+        }
+    )
+    store.acquire_launch(takeover)
+    receipt = ControllerLaunchReceipt(
+        campaign_id=first.campaign_id,
+        plan_digest=first.plan_digest,
+        input_digest="sha256:" + "2" * 64,
+        attempt=1,
+        job_id="a" * 24,
+    )
+    store.write_launch(receipt)
+    store.write_launch(receipt)
+    assert store.read_launch(first.campaign_id, 1) == receipt
+    with pytest.raises(ControllerStatusError, match="immutable"):
+        store.write_launch(receipt.model_copy(update={"job_id": "b" * 24}))
+    store.release_launch(takeover)
+    assert store.read_launch_claim(first.campaign_id, 1) is None
 
 
 def test_provider_capacity_is_exclusive_and_released_exactly(tmp_path: Path) -> None:
