@@ -68,10 +68,13 @@ manifest. The controller verifies those files, acquires the campaign claim,
 prepares pinned sources, and runs one internal wave at a time. Trial concurrency
 stays inside each wave.
 
-The controller records a heartbeat while a long trial runs. It stops admitting
-work if ownership becomes uncertain, the remaining Job time cannot fit the next
-wave, observed throughput breaks the locked duration bound, or policy blocks
-continuation. Completed trial evidence is committed before the next action.
+The controller records a heartbeat while a long trial runs. Before billable
+work, it acquires a parent-checked namespace claim keyed by provider service, so
+two campaign Jobs cannot run internal waves against the same shared provider at
+once. It stops admitting work if ownership becomes uncertain, shared capacity is
+occupied, the remaining Job time cannot fit the next wave, observed throughput
+breaks the locked duration bound, or policy blocks continuation. Completed trial
+evidence is committed before the next action.
 
 Endpoint-backed campaigns keep the existing wave Job and independent endpoint
 watchdog. A killed endpoint worker needs an outside process that can pause the
@@ -127,7 +130,10 @@ wave before endpoint work begins. The provider controller instead holds one
 campaign claim and renews it throughout the physical Job. A duplicate
 controller exits before source preparation or provider requests. Claim expiry
 allows investigation but does not authorize recovery until the prior Job is
-also terminal or absent.
+also terminal or absent. A separate provider-capacity claim serializes billable
+waves by provider service. It is released by exact ownership and has no
+cross-campaign expiry takeover; only the same campaign's sequential replacement
+may recover it after terminal predecessor proof.
 
 ### Endpoint Provisioner
 

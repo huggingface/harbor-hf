@@ -16,6 +16,9 @@ from harbor_hf.controller_status import (
     ControllerStatus,
     ControllerStatusError,
     HubControllerStateStore,
+    ProviderCapacityClaim,
+    ProviderCapacityUnavailable,
+    provider_capacity_claim_path,
 )
 
 NOW = datetime(2026, 7, 30, tzinfo=UTC)
@@ -145,6 +148,68 @@ def test_expired_claim_still_requires_terminal_job_proof(tmp_path: Path) -> None
         store.acquire(replacement, prior_job_terminal=False)
     store.acquire(replacement, prior_job_terminal=True)
     assert store.read_claim(first.campaign_id) == replacement
+
+
+def test_provider_capacity_is_exclusive_and_released_exactly(tmp_path: Path) -> None:
+    store = HubControllerStateStore("org", "token", api=FakeControllerApi(tmp_path))
+    first = ProviderCapacityClaim(
+        provider="hf-inference-providers",
+        campaign_id="campaign-one",
+        plan_digest="sha256:" + "1" * 64,
+        job_id="job-one",
+        attempt=1,
+        action_id="act-one",
+        acquired_at=NOW,
+    )
+    competing = first.model_copy(
+        update={"campaign_id": "campaign-two", "job_id": "job-two"}
+    )
+
+    store.acquire_provider_capacity(first)
+    store.acquire_provider_capacity(first)
+    assert store.read_provider_capacity(first.provider) == first
+    with pytest.raises(ProviderCapacityUnavailable, match="occupied"):
+        store.acquire_provider_capacity(competing)
+    with pytest.raises(ControllerStatusError, match="ownership"):
+        store.release_provider_capacity(competing)
+
+    store.release_provider_capacity(first)
+    assert store.read_provider_capacity(first.provider) is None
+    assert provider_capacity_claim_path(first.provider).startswith(
+        "claims/provider-capacity/"
+    )
+
+
+def test_replacement_recovers_only_its_terminal_predecessor_provider_claim(
+    tmp_path: Path,
+) -> None:
+    store = HubControllerStateStore("org", "token", api=FakeControllerApi(tmp_path))
+    capacity = ProviderCapacityClaim(
+        provider="hf-inference-providers",
+        campaign_id="campaign-one",
+        plan_digest="sha256:" + "1" * 64,
+        job_id="job-one",
+        attempt=1,
+        action_id="act-one",
+        acquired_at=NOW,
+    )
+    replacement = _claim("job-two", attempt=2).model_copy(
+        update={
+            "acquired_at": NOW + timedelta(minutes=1),
+            "heartbeat_at": NOW + timedelta(minutes=1),
+            "expires_at": NOW + timedelta(minutes=11),
+        }
+    )
+    store.acquire_provider_capacity(capacity)
+
+    with pytest.raises(ControllerStatusError, match="cannot be recovered safely"):
+        store.recover_provider_capacity(
+            capacity.provider, replacement, prior_job_terminal=False
+        )
+    store.recover_provider_capacity(
+        capacity.provider, replacement, prior_job_terminal=True
+    )
+    assert store.read_provider_capacity(capacity.provider) is None
 
 
 def test_controller_status_and_receipts_reject_backward_or_conflicting_writes(

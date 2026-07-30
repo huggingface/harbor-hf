@@ -80,7 +80,9 @@ uv run harbor-hf campaign status CAMPAIGN_ID --namespace NAMESPACE
 For an Inference Provider campaign, `submit` stores one immutable input package
 and launches one detached controller Job. The controller runs each bounded wave
 inside its own process, commits trial evidence as work finishes, and publishes
-the result. It does not need a local reconciliation loop or child wave Jobs.
+the result. A namespace-level claim serializes internal waves that share one
+provider service. It does not need a local reconciliation loop or child wave
+Jobs.
 
 Endpoint-backed campaigns keep their separate endpoint safety path. Operators
 can inspect either campaign with `campaign reconcile --dry-run`. An applied

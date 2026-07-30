@@ -119,6 +119,7 @@ def test_campaign_schema_command_writes_json(tmp_path: Path) -> None:
         "campaign_input",
         "controller_claim",
         "controller_status",
+        "provider_capacity_claim",
         "controller_started",
         "controller_ended",
         "controller_attempt",

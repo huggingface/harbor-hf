@@ -61,6 +61,11 @@ class BucketCampaignObserver:
     def __init__(self, reader: EvidenceReader) -> None:
         self.reader = reader
 
+    def refresh(self) -> None:
+        refresh = getattr(self.reader, "refresh", None)
+        if callable(refresh):
+            refresh()
+
     def observe(self, lock: CampaignLock, spec: ExperimentSpec) -> list[CampaignEvent]:
         paths = self.reader.list_files(
             bucket=spec.artifacts.bucket,

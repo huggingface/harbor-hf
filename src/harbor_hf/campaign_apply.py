@@ -389,17 +389,18 @@ class CampaignReconciler:
         cleanup, self._cleanup = self._cleanup, lambda: None
         cleanup()
 
-    def apply_campaign(
-        self,
-        campaign_id: str,
-        *,
-        context: ReconcileContext | None = None,
-        expected_action_id: str | None = None,
-    ) -> CampaignApplyResult:
+    def refresh_observation(
+        self, campaign_id: str
+    ) -> tuple[CampaignLock, list[CampaignEvent], bytes, ExperimentSpec]:
         lock, events = self.store.load_campaign(campaign_id)
         request = self.store.load_request(campaign_id)
         spec = _validated_request(lock, request)
-        terminal_recorded = any(
+        if self.observer is None:
+            return lock, events, request, spec
+        refresh = getattr(self.observer, "refresh", None)
+        if callable(refresh):
+            refresh()
+        if any(
             event.kind
             in {
                 "campaign.completed",
@@ -408,16 +409,21 @@ class CampaignReconciler:
                 "campaign.cancelled",
             }
             for event in events
-        )
-        if self.observer is not None and not terminal_recorded:
-            missing = _missing_observed_events(
-                events, self.observer.observe(lock, spec)
-            )
-            changed = (
-                self.store.ensure_events(campaign_id, missing) if missing else False
-            )
-            if changed:
-                lock, events = self.store.load_campaign(campaign_id)
+        ):
+            return lock, events, request, spec
+        missing = _missing_observed_events(events, self.observer.observe(lock, spec))
+        if missing and self.store.ensure_events(campaign_id, missing):
+            lock, events = self.store.load_campaign(campaign_id)
+        return lock, events, request, spec
+
+    def apply_campaign(
+        self,
+        campaign_id: str,
+        *,
+        context: ReconcileContext | None = None,
+        expected_action_id: str | None = None,
+    ) -> CampaignApplyResult:
+        lock, events, request, spec = self.refresh_observation(campaign_id)
         self._last_observed_at = max(event.observed_at for event in events)
         reservations = _validated_reservations(
             self.store.load_action_reservations(campaign_id),

@@ -31,6 +31,8 @@ from harbor_hf.controller_status import (
     ControllerStartedReceipt,
     ControllerStateStore,
     ControllerStatus,
+    ProviderCapacityClaim,
+    ProviderCapacityUnavailable,
 )
 from harbor_hf.models import ExperimentSpec
 from harbor_hf.provider_models import ProviderTarget
@@ -86,6 +88,11 @@ class CompletingReconciler:
     def __init__(self, store: MemoryCampaignStore) -> None:
         self.store = store
         self.calls = 0
+        self.refresh_calls = 0
+
+    def refresh_observation(self, campaign_id: str) -> None:
+        assert campaign_id == self.store.lock.campaign_id
+        self.refresh_calls += 1
 
     def apply_campaign(
         self,
@@ -157,6 +164,8 @@ class MemoryControllerStateStore:
         self.ended: list[ControllerEndedReceipt] = []
         self.attempts: dict[int, ControllerAttemptReservation] = {}
         self.recoveries: list[ControllerRecoveryDecision] = []
+        self.provider_claims: dict[str, ProviderCapacityClaim] = {}
+        self.recovered_providers: list[str] = []
 
     def acquire(self, claim: ControllerClaim, *, prior_job_terminal: bool) -> None:
         del prior_job_terminal
@@ -182,6 +191,36 @@ class MemoryControllerStateStore:
 
     def write_status(self, status: ControllerStatus) -> None:
         self.status = status
+
+    def acquire_provider_capacity(self, claim: ProviderCapacityClaim) -> None:
+        observed = self.provider_claims.get(claim.provider)
+        if observed is not None and observed != claim:
+            raise ProviderCapacityUnavailable("shared provider capacity is occupied")
+        self.provider_claims[claim.provider] = claim
+
+    def release_provider_capacity(self, claim: ProviderCapacityClaim) -> None:
+        assert self.provider_claims.get(claim.provider) == claim
+        del self.provider_claims[claim.provider]
+
+    def recover_provider_capacity(
+        self,
+        provider: str,
+        replacement: ControllerClaim,
+        *,
+        prior_job_terminal: bool,
+    ) -> None:
+        self.recovered_providers.append(provider)
+        observed = self.provider_claims.get(provider)
+        if (
+            observed is not None
+            and observed.campaign_id == replacement.campaign_id
+            and observed.attempt < replacement.attempt
+            and prior_job_terminal
+        ):
+            del self.provider_claims[provider]
+
+    def read_provider_capacity(self, provider: str) -> ProviderCapacityClaim | None:
+        return self.provider_claims.get(provider)
 
     def write_started(self, receipt: ControllerStartedReceipt) -> None:
         self.started.append(receipt)
@@ -213,6 +252,18 @@ class MemoryControllerStateStore:
             ),
             None,
         )
+
+
+class BusyOnceStateStore(MemoryControllerStateStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.capacity_attempts = 0
+
+    def acquire_provider_capacity(self, claim: ProviderCapacityClaim) -> None:
+        self.capacity_attempts += 1
+        if self.capacity_attempts == 1:
+            raise ProviderCapacityUnavailable("shared provider capacity is occupied")
+        super().acquire_provider_capacity(claim)
 
 
 class FailingStartStateStore(MemoryControllerStateStore):
@@ -318,10 +369,38 @@ def test_controller_runs_without_a_local_loop_and_writes_terminal_receipts(
     assert result.state == "completed"
     assert result.iterations == 2
     assert reconciler.calls == 1
+    assert reconciler.refresh_calls == 2
     assert len(executor.prepared) == 1
     assert [receipt.attempt for receipt in state.started] == [1]
     assert [receipt.state for receipt in state.ended] == ["completed"]
     assert state.claim is None
+
+
+def test_controller_waits_for_shared_provider_capacity_before_running(
+    tmp_path: Path,
+    remote_spec: ExperimentSpec,
+) -> None:
+    store, original_state, reconciler, executor, validated = _runtime(
+        tmp_path, remote_spec
+    )
+    state = BusyOnceStateStore()
+    state.attempts = original_state.attempts
+
+    result = _controller(
+        tmp_path,
+        store,
+        state,
+        reconciler,
+        executor,
+        validated,
+        attempt=1,
+    ).run()
+
+    assert result.state == "completed"
+    assert result.iterations == 3
+    assert state.capacity_attempts == 2
+    assert state.provider_claims == {}
+    assert reconciler.calls == 1
 
 
 def test_controller_pauses_when_observed_trial_duration_breaks_the_lock(

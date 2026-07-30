@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import UTC, datetime
@@ -22,6 +23,10 @@ class ControllerStatusError(RuntimeError):
 
 class ControllerOwnershipConflict(ControllerStatusError):
     """Raised when another physical Job owns the campaign controller."""
+
+
+class ProviderCapacityUnavailable(ControllerStatusError):
+    """Raised when another controller holds shared provider capacity."""
 
 
 class FrozenModel(BaseModel):
@@ -145,6 +150,35 @@ class ControllerStatus(FrozenModel):
         return self
 
 
+class ProviderCapacityClaim(FrozenModel):
+    schema_version: Literal["harbor-hf/provider-capacity-claim/v1alpha1"] = (
+        "harbor-hf/provider-capacity-claim/v1alpha1"
+    )
+    provider: str = Field(min_length=1)
+    campaign_id: str
+    plan_digest: str
+    job_id: str
+    attempt: int = Field(ge=1)
+    action_id: str = Field(min_length=1)
+    acquired_at: datetime
+
+    @field_validator("campaign_id", "job_id")
+    @classmethod
+    def identity_is_safe(cls, value: str) -> str:
+        if _SAFE_ID.fullmatch(value) is None:
+            raise ValueError(
+                "provider capacity identities must be safe path components"
+            )
+        return value
+
+    @field_validator("acquired_at")
+    @classmethod
+    def acquired_at_is_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
+            raise ValueError("provider capacity timestamps must use UTC")
+        return value
+
+
 class ControllerStartedReceipt(FrozenModel):
     schema_version: Literal["harbor-hf/controller-started/v1alpha1"] = (
         "harbor-hf/controller-started/v1alpha1"
@@ -261,6 +295,20 @@ class ControllerStateStore(Protocol):
     def read_status(self, campaign_id: str) -> ControllerStatus | None: ...
 
     def write_status(self, status: ControllerStatus) -> None: ...
+
+    def acquire_provider_capacity(self, claim: ProviderCapacityClaim) -> None: ...
+
+    def release_provider_capacity(self, claim: ProviderCapacityClaim) -> None: ...
+
+    def recover_provider_capacity(
+        self,
+        provider: str,
+        replacement: ControllerClaim,
+        *,
+        prior_job_terminal: bool,
+    ) -> None: ...
+
+    def read_provider_capacity(self, provider: str) -> ProviderCapacityClaim | None: ...
 
     def write_started(self, receipt: ControllerStartedReceipt) -> None: ...
 
@@ -407,6 +455,89 @@ class HubControllerStateStore:
                 if not _is_parent_conflict(error):
                     raise
         raise ControllerStatusError("controller status remained contended")
+
+    def acquire_provider_capacity(self, claim: ProviderCapacityClaim) -> None:
+        path = provider_capacity_claim_path(claim.provider)
+        for _attempt in range(_MAX_COMMIT_ATTEMPTS):
+            head = self._head()
+            observed = self._read_optional(path, head, ProviderCapacityClaim)
+            if observed is not None:
+                if observed == claim:
+                    return
+                raise ProviderCapacityUnavailable(
+                    f"shared provider capacity is occupied: {claim.provider}"
+                )
+            try:
+                self._commit(
+                    head,
+                    [self._add(path, claim)],
+                    f"chore: acquire provider capacity {claim.provider}",
+                )
+                return
+            except HfHubHTTPError as error:
+                if not _is_parent_conflict(error):
+                    raise
+        raise ControllerStatusError("provider capacity claim remained contended")
+
+    def release_provider_capacity(self, claim: ProviderCapacityClaim) -> None:
+        path = provider_capacity_claim_path(claim.provider)
+        for _attempt in range(_MAX_COMMIT_ATTEMPTS):
+            head = self._head()
+            observed = self._read_optional(path, head, ProviderCapacityClaim)
+            if observed is None:
+                return
+            if observed != claim:
+                raise ControllerStatusError(
+                    "provider capacity claim ownership cannot be verified"
+                )
+            try:
+                self._commit(
+                    head,
+                    [CommitOperationDelete(path_in_repo=path)],
+                    f"chore: release provider capacity {claim.provider}",
+                )
+                return
+            except HfHubHTTPError as error:
+                if not _is_parent_conflict(error):
+                    raise
+        raise ControllerStatusError("provider capacity release remained contended")
+
+    def recover_provider_capacity(
+        self,
+        provider: str,
+        replacement: ControllerClaim,
+        *,
+        prior_job_terminal: bool,
+    ) -> None:
+        path = provider_capacity_claim_path(provider)
+        for _attempt in range(_MAX_COMMIT_ATTEMPTS):
+            head = self._head()
+            observed = self._read_optional(path, head, ProviderCapacityClaim)
+            if observed is None or observed.job_id == replacement.job_id:
+                return
+            if observed.campaign_id != replacement.campaign_id:
+                return
+            if not prior_job_terminal or observed.attempt >= replacement.attempt:
+                raise ControllerStatusError(
+                    "abandoned provider capacity cannot be recovered safely"
+                )
+            try:
+                self._commit(
+                    head,
+                    [CommitOperationDelete(path_in_repo=path)],
+                    f"chore: recover provider capacity {provider}",
+                )
+                return
+            except HfHubHTTPError as error:
+                if not _is_parent_conflict(error):
+                    raise
+        raise ControllerStatusError("provider capacity recovery remained contended")
+
+    def read_provider_capacity(self, provider: str) -> ProviderCapacityClaim | None:
+        head = self._head()
+        return self._read_optional(
+            provider_capacity_claim_path(provider), head, ProviderCapacityClaim
+        )
 
     def write_started(self, receipt: ControllerStartedReceipt) -> None:
         self._write_immutable(
@@ -577,6 +708,7 @@ def controller_json_schemas() -> dict[str, dict[str, object]]:
     return {
         "controller_claim": ControllerClaim.model_json_schema(),
         "controller_status": ControllerStatus.model_json_schema(),
+        "provider_capacity_claim": ProviderCapacityClaim.model_json_schema(),
         "controller_started": ControllerStartedReceipt.model_json_schema(),
         "controller_ended": ControllerEndedReceipt.model_json_schema(),
         "controller_attempt": ControllerAttemptReservation.model_json_schema(),
@@ -592,6 +724,13 @@ def controller_claim_path(campaign_id: str) -> str:
 def controller_status_path(campaign_id: str) -> str:
     _require_safe_id(campaign_id)
     return f"campaigns/{campaign_id}/controller-status.json"
+
+
+def provider_capacity_claim_path(provider: str) -> str:
+    if not provider or provider != provider.strip():
+        raise ValueError("provider capacity identity must be non-empty and canonical")
+    identity = hashlib.sha256(provider.encode()).hexdigest()
+    return f"claims/provider-capacity/{identity}.json"
 
 
 def controller_started_path(receipt: ControllerStartedReceipt) -> str:

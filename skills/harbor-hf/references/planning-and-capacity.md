@@ -77,7 +77,10 @@ manifest supports it.
 
 Provider-backed agents still need profiling. Provider request concurrency,
 Harbor trial concurrency, request spacing, and active waves are separate
-limits. Record all four.
+limits. Record all four. The controller uses one parent-checked namespace claim
+per provider service, so independent campaigns cannot run internal waves against
+the same service concurrently. This conservative limit stays at one until a
+future immutable contract can prove and divide a larger shared quota.
 
 ## Effective concurrency
 

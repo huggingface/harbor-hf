@@ -406,6 +406,14 @@ revision. A second owner exits before source preparation. An expired claim is
 insufficient for recovery until the previous physical Job is terminal or
 absent.
 
+Every billable provider action also uses one parent-checked capacity claim keyed
+by provider service. The namespace runs at most one internal wave per provider
+service because independent manifests do not prove a larger shared quota. A
+busy controller waits and reruns remaining-time admission without reserving the
+action. Capacity claims do not expire across campaigns. The exact owner releases
+the claim after synchronous execution, or the same campaign's sequential
+replacement recovers it after terminal predecessor proof.
+
 One shared scheduled watchdog inspects only campaign IDs listed in its command.
 It never executes trials or reconciliation actions. For a retryable controller
 failure, it verifies the latest checkpoint, records an immutable recovery

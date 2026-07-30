@@ -216,6 +216,29 @@ Claim creation and renewal use the current repository head as the expected paren
 
 The claim expires only after `stale_after_seconds`. Claim expiry permits investigation; it does not by itself authorize another Job. Recovery also requires proof that the prior physical Job is terminal or absent.
 
+## Shared provider capacity
+
+Before a `submit-wave` or `retry-shard` action, the controller acquires one
+parent-checked capacity claim keyed by the locked provider service:
+
+```text
+claims/provider-capacity/<sha256-of-provider>.json
+```
+
+The claim records the provider, campaign, plan, physical Job, controller
+attempt, action, and acquisition time. One namespace therefore runs at most one
+internal wave against the same provider service at a time. This is the safe
+baseline because separate campaign manifests do not establish a trusted shared
+quota. Request concurrency remains inside the wave and follows each deployment's
+locked `max_concurrent_requests`.
+
+A controller that finds the capacity claim occupied waits without reserving or
+running the action. Remaining-time admission continues while it waits. The
+claim is released only by its exact owner after synchronous wave execution
+returns. It has no time-based cross-campaign takeover. After a controller crash,
+only a sequential replacement for the same campaign may remove the abandoned
+claim, and only after the watchdog has proved the predecessor Job terminal.
+
 ## Controller receipts and status
 
 Immutable attempt receipts use:
@@ -268,17 +291,19 @@ After acquiring ownership, the controller performs this loop:
 
 1. Validate the input package and reproduce the campaign lock from the manifest.
 2. Prepare the pinned Harbor and worker sources once.
-3. Observe compact Bucket evidence and append any missing idempotent campaign events.
+3. Refresh the Bucket listing, observe compact evidence, and append any missing idempotent campaign events.
 4. Rebuild the recovery projection from the immutable lock and append-only events.
 5. Derive one deterministic next action.
 6. Apply non-billable cleanup and finalization actions first.
 7. Check spend, retry, concurrency, and remaining-time admission before billable work.
-8. Build one deterministic wave lock.
-9. Execute the wave inside the controller process.
-10. Publish the wave and trial evidence with terminal markers last.
-11. Commit the resulting campaign events.
-12. Update the controller status and heartbeat.
-13. Repeat until the campaign is terminal or durably blocked.
+8. Acquire the shared provider capacity claim for a billable action.
+9. Build one deterministic wave lock.
+10. Execute the wave inside the controller process.
+11. Publish the wave and trial evidence with terminal markers last.
+12. Release the provider capacity claim.
+13. Refresh and commit the resulting campaign events.
+14. Update the controller status and heartbeat.
+15. Repeat until the campaign is terminal or durably blocked.
 
 The controller executes at most one internal wave at a time. Trial concurrency remains inside that wave and follows the locked effective concurrency. This keeps provider pacing and spend accounting unchanged while removing child Job handoffs.
 

@@ -43,6 +43,8 @@ from harbor_hf.controller_status import (
     ControllerStateStore,
     ControllerStatus,
     ControllerStatusError,
+    ProviderCapacityClaim,
+    ProviderCapacityUnavailable,
 )
 from harbor_hf.models import RemoteExecutionSpec
 from harbor_hf.process import CommandRunner, SubprocessRunner
@@ -324,6 +326,14 @@ class CampaignController:
         iterations = 0
         heartbeat: _Heartbeat | None = None
         try:
+            for provider in sorted(
+                {run.provider for run in lock.runs if run.provider is not None}
+            ):
+                self.state_store.recover_provider_capacity(
+                    provider,
+                    claim,
+                    prior_job_terminal=self.prior_job_terminal,
+                )
             self.state_store.write_started(
                 ControllerStartedReceipt(
                     campaign_id=lock.campaign_id,
@@ -435,6 +445,7 @@ class CampaignController:
                 finished=True,
                 message="controller ownership heartbeat failed",
             )
+        self.reconciler.refresh_observation(self.input.lock.campaign_id)
         lock, events = self.store.load_campaign(self.input.lock.campaign_id)
         context = ReconcileContext(limits=AdmissionLimits(action_limit=1))
         projection, plan = plan_reconciliation(
@@ -482,22 +493,89 @@ class CampaignController:
                 finished=True,
                 message=message,
             )
-        state = _action_state(action)
-        self._write_status(
+        return self._apply_admitted_action(
             heartbeat.claim,
-            state,
+            lock,
+            action,
+            context,
+            plan.blocked,
             projection,
-            started_at,
-            started_monotonic,
-            action=action,
+            started_at=started_at,
+            started_monotonic=started_monotonic,
             capacity=capacity,
         )
-        applied = self.reconciler.apply_campaign(
-            lock.campaign_id,
-            context=context,
-            expected_action_id=action.action_id if action is not None else None,
-        ).applied
-        return _result_after_apply(applied, plan.blocked, state)
+
+    def _apply_admitted_action(
+        self,
+        owner: ControllerClaim,
+        lock: CampaignLock,
+        action: ReconcileAction | None,
+        context: ReconcileContext,
+        blocked: list[BlockedAction],
+        projection: RecoveryProjection,
+        *,
+        started_at: datetime,
+        started_monotonic: float,
+        capacity: ControllerCapacityEvidence | None,
+    ) -> _IterationResult:
+        provider_claim = self._provider_capacity_claim(owner, action)
+        if provider_claim is not None:
+            try:
+                self.state_store.acquire_provider_capacity(provider_claim)
+            except ProviderCapacityUnavailable as error:
+                self._write_status(
+                    owner,
+                    "waiting-retry",
+                    projection,
+                    started_at,
+                    started_monotonic,
+                    action=action,
+                    block_reason=str(error),
+                    capacity=capacity,
+                )
+                return _IterationResult(
+                    state="waiting-retry",
+                    message=str(error),
+                )
+        state = _action_state(action)
+        try:
+            self._write_status(
+                owner,
+                state,
+                projection,
+                started_at,
+                started_monotonic,
+                action=action,
+                capacity=capacity,
+            )
+            applied = self.reconciler.apply_campaign(
+                lock.campaign_id,
+                context=context,
+                expected_action_id=action.action_id if action is not None else None,
+            ).applied
+        finally:
+            if provider_claim is not None:
+                self.state_store.release_provider_capacity(provider_claim)
+        return _result_after_apply(applied, blocked, state)
+
+    def _provider_capacity_claim(
+        self,
+        owner: ControllerClaim,
+        action: ReconcileAction | None,
+    ) -> ProviderCapacityClaim | None:
+        if action is None or action.kind not in {"submit-wave", "retry-shard"}:
+            return None
+        if not action.provider:
+            raise CampaignControllerError("provider action has no capacity identity")
+        return ProviderCapacityClaim(
+            provider=action.provider,
+            campaign_id=owner.campaign_id,
+            plan_digest=owner.plan_digest,
+            job_id=owner.job_id,
+            attempt=owner.attempt,
+            action_id=action.action_id,
+            acquired_at=self.clock().astimezone(UTC),
+        )
 
     def _finish_attempt(
         self,
