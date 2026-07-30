@@ -30,6 +30,7 @@ from harbor_hf.controller_status import (
     ControllerRecoveryDecision,
     ControllerStateStore,
     ControllerStatus,
+    ProviderCapacityClaim,
 )
 from harbor_hf.models import ExperimentSpec
 from harbor_hf.process import ProcessError
@@ -222,6 +223,7 @@ class WatchdogState:
         self.recoveries: dict[int, ControllerRecoveryDecision] = {}
         self.launch_claim: ControllerLaunchClaim | None = None
         self.launches: dict[int, ControllerLaunchReceipt] = {}
+        self.provider_claims: dict[str, ProviderCapacityClaim] = {}
 
     def read_status(self, campaign_id: str) -> ControllerStatus:
         assert campaign_id == self.lock.campaign_id
@@ -286,6 +288,13 @@ class WatchdogState:
         del campaign_id
         return self.launches.get(attempt)
 
+    def read_provider_capacity(self, provider: str) -> ProviderCapacityClaim | None:
+        return self.provider_claims.get(provider)
+
+    def release_provider_capacity(self, claim: ProviderCapacityClaim) -> None:
+        assert self.provider_claims.get(claim.provider) == claim
+        del self.provider_claims[claim.provider]
+
 
 class WatchdogJobs:
     def __init__(self, lock: CampaignLock) -> None:
@@ -301,6 +310,46 @@ class WatchdogJobs:
         if "harbor-hf-controller-attempt" in selected:
             return []
         return [SimpleNamespace(id="job-1", labels=self.labels, status="ERROR")]
+
+
+def test_watchdog_releases_abandoned_provider_capacity_without_recovery(
+    remote_spec: ExperimentSpec,
+) -> None:
+    spec = _spec(remote_spec)
+    lock = build_campaign_lock(
+        build_campaign_plan(spec), "campaign-one", clock=lambda: NOW
+    )
+    store = WatchdogStore(lock, spec)
+    state = WatchdogState(lock, spec)
+    state.status = _status(lock, "paused-policy")
+    provider = lock.runs[0].provider
+    assert provider is not None
+    state.provider_claims[provider] = ProviderCapacityClaim(
+        provider=provider,
+        campaign_id=lock.campaign_id,
+        plan_digest=lock.plan_digest,
+        job_id="job-1",
+        attempt=1,
+        action_id="act-one",
+        acquired_at=NOW - timedelta(minutes=30),
+    )
+
+    class RejectRunner:
+        def run_text(self, command: list[str]) -> str:
+            del command
+            raise AssertionError("policy-blocked campaign must not launch")
+
+    result = run_campaign_watchdog(
+        lock.campaign_id,
+        store=cast(SnapshotCampaignStore, store),
+        state_store=cast(ControllerStateStore, state),
+        jobs_api=WatchdogJobs(lock),
+        runner=RejectRunner(),
+        clock=lambda: NOW,
+    )
+
+    assert result.decision.action == "operator"
+    assert state.provider_claims == {}
 
 
 class FlakyRunner:

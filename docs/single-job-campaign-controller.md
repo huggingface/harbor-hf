@@ -247,8 +247,10 @@ A controller that finds the capacity claim occupied waits without reserving or
 running the action. Remaining-time admission continues while it waits. The
 claim is released only by its exact owner after synchronous wave execution
 returns. It has no time-based cross-campaign takeover. After a controller crash,
-only a sequential replacement for the same campaign may remove the abandoned
-claim, and only after the watchdog has proved the predecessor Job terminal.
+the owning campaign's watchdog removes the abandoned claim only after proving
+the physical Job terminal or absent. This cleanup runs even when policy blocks a
+replacement, so unrelated campaigns do not remain blocked. A sequential
+replacement may then acquire capacity normally.
 
 ## Controller receipts and status
 

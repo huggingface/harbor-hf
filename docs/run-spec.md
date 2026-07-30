@@ -414,8 +414,10 @@ by provider service. The namespace runs at most one internal wave per provider
 service because independent manifests do not prove a larger shared quota. A
 busy controller waits and reruns remaining-time admission without reserving the
 action. Capacity claims do not expire across campaigns. The exact owner releases
-the claim after synchronous execution, or the same campaign's sequential
-replacement recovers it after terminal predecessor proof.
+the claim after synchronous execution. If that Job crashes, the owning
+campaign's watchdog releases the abandoned claim after proving the Job terminal
+or absent, even when policy blocks a replacement. Other campaigns can then
+acquire the provider normally.
 
 One shared scheduled watchdog inspects only campaign IDs listed in its command.
 It never executes trials or reconciliation actions. For a retryable controller

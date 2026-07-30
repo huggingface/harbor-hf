@@ -134,8 +134,10 @@ controller exits before source preparation or provider requests. Claim expiry
 allows investigation but does not authorize recovery until the prior Job is
 also terminal or absent. A separate provider-capacity claim serializes billable
 waves by provider service. It is released by exact ownership and has no
-cross-campaign expiry takeover; only the same campaign's sequential replacement
-may recover it after terminal predecessor proof.
+cross-campaign expiry takeover. The owning campaign's watchdog releases an
+abandoned capacity claim after proving its physical Job terminal or absent,
+even when policy blocks a replacement. Other campaigns can then acquire the
+provider normally.
 
 ### Endpoint Provisioner
 

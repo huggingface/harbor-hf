@@ -14,6 +14,7 @@ from harbor_hf.controller_status import (
     ControllerRecoveryDecision,
     ControllerStateStore,
     ControllerStatus,
+    ProviderCapacityClaim,
 )
 from harbor_hf.io import load_experiment_bytes
 from harbor_hf.models import CampaignControllerSpec
@@ -142,6 +143,12 @@ def run_campaign_watchdog(
     jobs = _controller_jobs(
         jobs_api, snapshot.lock, spec.remote.job.namespace if spec.remote else ""
     )
+    if not dry_run:
+        _release_abandoned_provider_capacity(
+            snapshot.lock,
+            state_store,
+            jobs,
+        )
     decision = plan_controller_watchdog(
         snapshot.lock,
         status,
@@ -217,6 +224,33 @@ def run_campaign_watchdog(
         campaign_id=campaign_id,
         decision=decision,
         submission=submission,
+    )
+
+
+def _release_abandoned_provider_capacity(
+    lock: CampaignLock,
+    state_store: ControllerStateStore,
+    jobs: list[ControllerJob],
+) -> None:
+    active_job_ids = {job.job_id for job in jobs if not job.terminal}
+    providers = sorted({run.provider for run in lock.runs if run.provider is not None})
+    for provider in providers:
+        claim = state_store.read_provider_capacity(provider)
+        if not _capacity_is_abandoned(claim, lock.campaign_id, active_job_ids):
+            continue
+        assert claim is not None
+        state_store.release_provider_capacity(claim)
+
+
+def _capacity_is_abandoned(
+    claim: ProviderCapacityClaim | None,
+    campaign_id: str,
+    active_job_ids: set[str],
+) -> bool:
+    return (
+        claim is not None
+        and claim.campaign_id == campaign_id
+        and claim.job_id not in active_job_ids
     )
 
 
