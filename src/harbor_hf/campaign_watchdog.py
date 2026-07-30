@@ -160,24 +160,48 @@ def run_campaign_watchdog(
         raise CampaignWatchdogError(
             "watchdog recovery has no immutable launch contract"
         )
+    replacement_attempt = decision.replacement_attempt
+    existing_recovery = state_store.read_recovery(campaign_id, replacement_attempt)
+    existing_replacement = state_store.read_attempt(campaign_id, replacement_attempt)
+    recorded_at = (
+        existing_recovery.decided_at
+        if existing_recovery is not None
+        else (
+            existing_replacement.reserved_at
+            if existing_replacement is not None
+            else clock().astimezone(UTC)
+        )
+    )
     replacement = ControllerAttemptReservation(
         **prior.model_dump(
             mode="python",
             exclude={"attempt", "reserved_at"},
         ),
-        attempt=decision.replacement_attempt,
-        reserved_at=clock().astimezone(UTC),
+        attempt=replacement_attempt,
+        reserved_at=recorded_at,
     )
     recovery = ControllerRecoveryDecision(
         campaign_id=campaign_id,
         plan_digest=snapshot.lock.plan_digest,
         prior_job_id=status.job_id,
         prior_attempt=status.attempt,
-        replacement_attempt=decision.replacement_attempt,
-        checkpoint_revision=snapshot.control_commit,
+        replacement_attempt=replacement_attempt,
+        checkpoint_revision=(
+            existing_recovery.checkpoint_revision
+            if existing_recovery is not None
+            else snapshot.control_commit
+        ),
         category="lost",
-        decided_at=clock().astimezone(UTC),
+        decided_at=recorded_at,
     )
+    if existing_recovery is not None and existing_recovery != recovery:
+        raise CampaignWatchdogError(
+            "watchdog recovery decision conflicts with the campaign state"
+        )
+    if existing_replacement is not None and existing_replacement != replacement:
+        raise CampaignWatchdogError(
+            "watchdog replacement attempt conflicts with the launch contract"
+        )
     state_store.write_recovery(recovery)
     state_store.reserve_attempt(replacement)
     submission = launch_reserved_campaign_controller(

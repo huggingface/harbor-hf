@@ -23,6 +23,7 @@ from harbor_hf.campaign_finalizer import (
 from harbor_hf.campaign_observer import BucketCampaignObserver, CampaignObserver
 from harbor_hf.campaigns import (
     CampaignLock,
+    EndpointWaveTarget,
     WaveLock,
     build_campaign_lock,
     build_campaign_plan,
@@ -206,6 +207,13 @@ class HfJobsApi(Protocol):
     def cancel_job(self, **kwargs: object) -> None: ...
 
 
+def _require_standalone_endpoint_wave(lock: WaveLock) -> None:
+    if not isinstance(lock.target, EndpointWaveTarget):
+        raise ActionExecutionError(
+            "provider wave locks must run inside their owning campaign controller"
+        )
+
+
 class HuggingFaceWaveJobAdapter:
     """Narrow HF Jobs adapter with deterministic label-based adoption."""
 
@@ -258,6 +266,7 @@ class HuggingFaceWaveJobAdapter:
         request: bytes,
         campaign: CampaignLock,
     ) -> RemoteWaveJob:
+        _require_standalone_endpoint_wave(lock)
         try:
             with tempfile.TemporaryDirectory(prefix="harbor-hf-wave-") as name:
                 staging = Path(name)
@@ -385,6 +394,7 @@ class CampaignReconciler:
         campaign_id: str,
         *,
         context: ReconcileContext | None = None,
+        expected_action_id: str | None = None,
     ) -> CampaignApplyResult:
         lock, events = self.store.load_campaign(campaign_id)
         request = self.store.load_request(campaign_id)
@@ -465,12 +475,21 @@ class CampaignReconciler:
             key=lambda action: (_ACTION_PRIORITY[action.kind], action.action_id),
         )
         limit = effective_context.limits.action_limit
+        selected = selected[:limit]
+        if (
+            expected_action_id is not None
+            and selected
+            and selected[0].action_id != expected_action_id
+        ):
+            raise ActionExecutionError(
+                "reconciler action changed after controller admission"
+            )
         allow_billable = projection.campaign.status in {"queued", "active"}
         applied = self._apply_selected(
             lock,
             spec,
             request,
-            selected[:limit],
+            selected,
             projection=projection,
             terminal_decision=plan.terminal_decision,
             allow_billable=allow_billable,

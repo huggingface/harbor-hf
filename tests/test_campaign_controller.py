@@ -34,6 +34,7 @@ from harbor_hf.controller_status import (
 )
 from harbor_hf.models import ExperimentSpec
 from harbor_hf.provider_models import ProviderTarget
+from harbor_hf.reconciler import ReconcileContext
 
 NOW = datetime(2026, 7, 30, tzinfo=UTC)
 
@@ -86,7 +87,15 @@ class CompletingReconciler:
         self.store = store
         self.calls = 0
 
-    def apply_campaign(self, campaign_id: str) -> object:
+    def apply_campaign(
+        self,
+        campaign_id: str,
+        *,
+        context: ReconcileContext | None = None,
+        expected_action_id: str | None = None,
+    ) -> object:
+        assert context is not None and context.limits.action_limit == 1
+        assert expected_action_id is not None
         self.calls += 1
         self.store.events.append(
             new_event(
@@ -103,7 +112,15 @@ class CompletingReconciler:
 
 
 class CancellingReconciler(CompletingReconciler):
-    def apply_campaign(self, campaign_id: str) -> object:
+    def apply_campaign(
+        self,
+        campaign_id: str,
+        *,
+        context: ReconcileContext | None = None,
+        expected_action_id: str | None = None,
+    ) -> object:
+        assert context is not None and context.limits.action_limit == 1
+        assert expected_action_id is not None
         self.calls += 1
         self.store.events.append(
             new_event(
@@ -120,8 +137,14 @@ class CancellingReconciler(CompletingReconciler):
 
 
 class FailingReconciler(CompletingReconciler):
-    def apply_campaign(self, campaign_id: str) -> object:
-        del campaign_id
+    def apply_campaign(
+        self,
+        campaign_id: str,
+        *,
+        context: ReconcileContext | None = None,
+        expected_action_id: str | None = None,
+    ) -> object:
+        del campaign_id, context, expected_action_id
         self.calls += 1
         raise RuntimeError("unexpected controller defect")
 
@@ -177,6 +200,19 @@ class MemoryControllerStateStore:
 
     def write_recovery(self, decision: ControllerRecoveryDecision) -> None:
         self.recoveries.append(decision)
+
+    def read_recovery(
+        self, campaign_id: str, replacement_attempt: int
+    ) -> ControllerRecoveryDecision | None:
+        return next(
+            (
+                decision
+                for decision in self.recoveries
+                if decision.campaign_id == campaign_id
+                and decision.replacement_attempt == replacement_attempt
+            ),
+            None,
+        )
 
 
 class PreparedWaveExecutor:

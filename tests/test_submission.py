@@ -422,7 +422,7 @@ def test_private_source_secret_uses_ephemeral_secret_file(
     assert result.command[github_secret - 1] == "--secrets"
 
 
-def test_provider_wave_submission_has_no_endpoint_lease_label(
+def test_provider_wave_submission_is_rejected_before_creating_a_child_job(
     remote_spec: ExperimentSpec, tmp_path: Path
 ) -> None:
     model = remote_spec.matrix.models[0]
@@ -448,15 +448,10 @@ def test_provider_wave_submission_has_no_endpoint_lease_label(
     )
     lock = _wave_lock(with_provider_controller(spec))
 
-    command = build_submit_wave_command(
-        lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
-    )
-    rendered = " ".join(command)
-
-    assert "harbor-hf-provider=" in rendered
-    assert "harbor-hf-endpoint=" not in rendered
-    expose = command.index("--expose")
-    assert command[expose : expose + 2] == ["--expose", "8000"]
+    with pytest.raises(ValueError, match="owning campaign controller"):
+        build_submit_wave_command(
+            lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
+        )
 
 
 def test_submit_wave_parses_job_id_and_checks_private_stores(

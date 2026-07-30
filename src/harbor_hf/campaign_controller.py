@@ -46,7 +46,13 @@ from harbor_hf.controller_status import (
 )
 from harbor_hf.models import RemoteExecutionSpec
 from harbor_hf.process import CommandRunner, SubprocessRunner
-from harbor_hf.reconciler import BlockedAction, ReconcileAction, plan_reconciliation
+from harbor_hf.reconciler import (
+    AdmissionLimits,
+    BlockedAction,
+    ReconcileAction,
+    ReconcileContext,
+    plan_reconciliation,
+)
 from harbor_hf.recovery import RecoveryProjection, project_recovery
 from harbor_hf.wave_worker import run_provider_wave_execution
 from harbor_hf.worker import WorkerError, prepare_locked_source
@@ -428,7 +434,10 @@ class CampaignController:
                 message="controller ownership heartbeat failed",
             )
         lock, events = self.store.load_campaign(self.input.lock.campaign_id)
-        projection, plan = plan_reconciliation(lock, events, now=self.clock())
+        context = ReconcileContext(limits=AdmissionLimits(action_limit=1))
+        projection, plan = plan_reconciliation(
+            lock, events, context=context, now=self.clock()
+        )
         terminal = _terminal_controller_state(projection)
         if terminal is not None:
             return _IterationResult(state=terminal, finished=True)
@@ -481,7 +490,11 @@ class CampaignController:
             action=action,
             capacity=capacity,
         )
-        applied = self.reconciler.apply_campaign(lock.campaign_id).applied
+        applied = self.reconciler.apply_campaign(
+            lock.campaign_id,
+            context=context,
+            expected_action_id=action.action_id if action is not None else None,
+        ).applied
         return _result_after_apply(applied, plan.blocked, state)
 
     def _finish_attempt(

@@ -78,7 +78,7 @@ def test_submit_stages_input_under_run_identity(
     assert all(path.startswith("job-inputs/run-42/") for path in paths)
 
 
-def test_wave_submission_provider_label_is_golden(
+def test_provider_wave_submission_rejection_is_golden(
     remote_spec: ExperimentSpec, tmp_path: Path
 ) -> None:
     model = remote_spec.matrix.models[0]
@@ -98,12 +98,14 @@ def test_wave_submission_provider_label_is_golden(
     )
     lock = _wave_lock(with_provider_controller(spec))
 
-    command = build_submit_wave_command(
-        lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
-    )
+    with pytest.raises(ValueError) as caught:
+        build_submit_wave_command(
+            lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
+        )
 
-    label_index = command.index("harbor-hf-provider=22425020c0be5b2b7b01777dbb6c25d3")
-    assert command[label_index - 1] == "--label"
+    assert str(caught.value) == (
+        "provider wave locks must run inside their owning campaign controller"
+    )
 
 
 def test_coordination_repository_requires_strictly_private_flag() -> None:

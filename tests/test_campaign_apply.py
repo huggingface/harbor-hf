@@ -990,7 +990,9 @@ def test_apply_all_carries_new_admission_into_the_next_campaign(
             campaign_id: str,
             *,
             context: ReconcileContext | None = None,
+            expected_action_id: str | None = None,
         ) -> CampaignApplyResult:
+            del expected_action_id
             lock, event = (
                 (first, first_submitted)
                 if campaign_id == first.campaign_id
@@ -1034,10 +1036,15 @@ def test_apply_all_reports_one_failure_and_continues_other_campaigns(
             campaign_id: str,
             *,
             context: ReconcileContext | None = None,
+            expected_action_id: str | None = None,
         ) -> CampaignApplyResult:
             if campaign_id == "broken-campaign":
                 raise CampaignApplyError("malformed campaign")
-            return super().apply_campaign(campaign_id, context=context)
+            return super().apply_campaign(
+                campaign_id,
+                context=context,
+                expected_action_id=expected_action_id,
+            )
 
     reconciler = IsolatingReconciler(
         MultiStore(lock, request, [submitted]),
@@ -1324,6 +1331,25 @@ def test_apply_context_limits_pending_actions_before_side_effects(
     assert len(result.applied) == 1
     assert result.applied[0].kind == "cancel-wave"
     assert jobs.cancellations == [("abcdef012345abcdef012345", "osolmaz")]
+
+
+def test_apply_rejects_an_action_that_changed_after_controller_admission(
+    remote_spec: ExperimentSpec,
+) -> None:
+    lock, request, submitted = _campaign(remote_spec)
+    store = FakeStore(lock, request, [submitted])
+    jobs = FakeJobs()
+
+    with pytest.raises(
+        ActionExecutionError, match="changed after controller admission"
+    ):
+        _reconciler(store, FakeEndpoints(), jobs).apply_campaign(
+            lock.campaign_id,
+            context=ReconcileContext(limits=AdmissionLimits(action_limit=1)),
+            expected_action_id="different-action",
+        )
+
+    assert jobs.submissions == []
 
 
 def test_apply_context_admission_usage_blocks_new_billable_action(

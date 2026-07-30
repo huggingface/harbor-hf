@@ -274,6 +274,10 @@ class ControllerStateStore(Protocol):
 
     def write_recovery(self, decision: ControllerRecoveryDecision) -> None: ...
 
+    def read_recovery(
+        self, campaign_id: str, replacement_attempt: int
+    ) -> ControllerRecoveryDecision | None: ...
+
 
 class HubControllerStateStore:
     """Parent-checked controller records in the private coordination Dataset."""
@@ -445,6 +449,16 @@ class HubControllerStateStore:
             ),
             decision,
             "record controller recovery decision",
+        )
+
+    def read_recovery(
+        self, campaign_id: str, replacement_attempt: int
+    ) -> ControllerRecoveryDecision | None:
+        head = self._head()
+        return self._read_optional(
+            controller_recovery_path(campaign_id, replacement_attempt),
+            head,
+            ControllerRecoveryDecision,
         )
 
     def _write_immutable(self, path: str, value: BaseModel, message: str) -> None:

@@ -11,6 +11,7 @@ from harbor_hf.controller_status import (
     ControllerEndedReceipt,
     ControllerOwnershipConflict,
     ControllerProjectionCounts,
+    ControllerRecoveryDecision,
     ControllerStartedReceipt,
     ControllerStatus,
     ControllerStatusError,
@@ -212,3 +213,16 @@ def test_controller_attempt_reservations_are_sequential_and_immutable(
     )
     store.reserve_attempt(second)
     assert store.read_attempt(first.campaign_id, 2) == second
+
+    recovery = ControllerRecoveryDecision(
+        campaign_id=first.campaign_id,
+        plan_digest=first.plan_digest,
+        prior_job_id="job-one",
+        prior_attempt=1,
+        replacement_attempt=2,
+        checkpoint_revision="commit-one",
+        category="lost",
+        decided_at=second.reserved_at,
+    )
+    store.write_recovery(recovery)
+    assert store.read_recovery(first.campaign_id, 2) == recovery

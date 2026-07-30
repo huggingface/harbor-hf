@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -435,10 +433,10 @@ def test_submit_returns_exact_endpoint_wave_identity(
     )
 
 
-def test_submit_returns_exact_provider_wave_identity(
+def test_submit_rejects_provider_wave_before_remote_staging(
     remote_spec: ExperimentSpec,
 ) -> None:
-    spec, target = _provider_spec(remote_spec)
+    spec, _target = _provider_spec(remote_spec)
     lock, request, submitted = _campaign(spec)
     action = plan_reconciliation(lock, [submitted], now=NOW)[1].actions[0]
     wave = build_wave_lock(lock, spec, action)
@@ -449,24 +447,13 @@ def test_submit_returns_exact_provider_wave_identity(
         bucket_api=bucket_api,
     )
 
-    job = adapter.submit(wave, request=request, campaign=lock)
+    with pytest.raises(ActionExecutionError) as caught:
+        adapter.submit(wave, request=request, campaign=lock)
 
-    assert job == RemoteWaveJob(
-        job_id="0123456789abcdef01234567",
-        wave_id=wave.wave_id,
-        endpoint_label=hashlib.sha256(target.service.encode()).hexdigest()[:32],
-        target_label_key="harbor-hf-provider",
-        stage="SCHEDULING",
+    assert str(caught.value) == (
+        "provider wave locks must run inside their owning campaign controller"
     )
-    staged = {
-        path.rsplit("/", 1)[-1]: content for path, content in bucket_api.staged.items()
-    }
-    assert staged["wave.lock.json"] == (
-        json.dumps(wave.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
-    assert staged["campaign.lock.json"] == (
-        json.dumps(lock.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
+    assert bucket_api.staged == {}
 
 
 def test_reservation_validation_rejects_malformed_records(

@@ -386,30 +386,21 @@ def build_submit_wave_command(
     input_dir: Path | str,
     bucket: str,
 ) -> list[str]:
+    if not isinstance(lock.target, EndpointWaveTarget):
+        raise ValueError(
+            "provider wave locks must run inside their owning campaign controller"
+        )
     job = lock.remote.job
-    labels = ["--label", f"harbor-hf-wave={lock.wave_id}"]
+    labels = [
+        "--label",
+        f"harbor-hf-wave={lock.wave_id}",
+        "--label",
+        "harbor-hf-endpoint="
+        + endpoint_lease_label_for(
+            lock.target.endpoint.namespace, lock.target.endpoint.name
+        ),
+    ]
     exposed_ports: list[str] = []
-    if isinstance(lock.target, EndpointWaveTarget):
-        labels.extend(
-            (
-                "--label",
-                "harbor-hf-endpoint="
-                + endpoint_lease_label_for(
-                    lock.target.endpoint.namespace, lock.target.endpoint.name
-                ),
-            )
-        )
-    else:
-        exposed_ports.extend(["--expose", str(PROVIDER_RECORDER_PORT)])
-        labels.extend(
-            (
-                "--label",
-                "harbor-hf-provider="
-                + hashlib.sha256(lock.target.provider.service.encode()).hexdigest()[
-                    :32
-                ],
-            )
-        )
     if any(run.configuration.judge_required_tasks for run in lock.runs):
         exposed_ports.extend(["--expose", str(JUDGE_RECORDER_PORT)])
     return [

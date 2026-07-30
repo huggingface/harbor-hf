@@ -72,4 +72,11 @@ skip_covered = true
 [tool.mutmut]
 source_paths = ["src/harbor_hf"]
 pytest_add_cli_args_test_selection = ["tests"]
-also_copy = ["examples", "deploy"]
+also_copy = [
+  "examples",
+  "deploy",
+  "docs",
+  "schemas",
+  "skills",
+  "packages/harbor-hf-agents",
+]
