@@ -70,13 +70,16 @@ controller verifies the input files, acquires the campaign claim, prepares
 pinned sources, and runs one internal wave at a time. Trial concurrency stays
 inside each wave.
 
-The controller records a heartbeat while a long trial runs. Before billable
-work, it acquires a parent-checked namespace claim keyed by provider service, so
-two campaign Jobs cannot run internal waves against the same shared provider at
-once. It stops admitting work if ownership becomes uncertain, shared capacity is
-occupied, the remaining Job time cannot fit the next wave, observed throughput
-breaks the locked duration bound, or policy blocks continuation. Completed trial
-evidence is committed before the next action.
+The controller records a heartbeat while a long trial runs. Its container
+wrapper records the physical start before pinned source checkout, so admission
+includes bootstrap time. Before billable work, it acquires a parent-checked
+namespace claim keyed by provider service, so two campaign Jobs cannot run
+internal waves against the same shared provider at once. Provider recorder setup
+draws from the locked wave reserve rather than the trial-work duration. The
+controller stops admitting work if ownership becomes uncertain, shared capacity
+is occupied, the remaining Job time cannot fit the next wave, observed
+throughput breaks the locked duration bound, or policy blocks continuation.
+Completed trial evidence is committed before the next action.
 
 Endpoint-backed campaigns keep the existing wave Job and independent endpoint
 watchdog. A killed endpoint worker needs an outside process that can pause the

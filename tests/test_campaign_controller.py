@@ -14,7 +14,11 @@ from harbor_hf.campaign_controller import (
     CampaignControllerError,
     InProcessWaveExecutor,
 )
-from harbor_hf.campaign_input import validate_campaign_input, write_campaign_input
+from harbor_hf.campaign_input import (
+    ValidatedCampaignInput,
+    validate_campaign_input,
+    write_campaign_input,
+)
 from harbor_hf.campaigns import CampaignLock, build_campaign_lock, build_campaign_plan
 from harbor_hf.control import (
     CampaignEvent,
@@ -341,6 +345,7 @@ def _controller(
     validated: object,
     *,
     attempt: int,
+    physical_started_at: datetime | None = None,
     max_iterations: int | None = None,
 ) -> CampaignController:
     from harbor_hf.campaign_input import ValidatedCampaignInput
@@ -355,6 +360,7 @@ def _controller(
         job_id=f"job-{attempt}",
         attempt=attempt,
         prior_job_terminal=attempt > 1,
+        physical_started_at=physical_started_at,
         clock=lambda: NOW,
         monotonic=lambda: 100.0,
         sleep=lambda _seconds: None,
@@ -386,6 +392,35 @@ def test_controller_runs_without_a_local_loop_and_writes_terminal_receipts(
     assert [receipt.attempt for receipt in state.started] == [1]
     assert [receipt.state for receipt in state.ended] == ["completed"]
     assert state.claim is None
+
+
+def test_controller_admission_includes_locked_source_bootstrap_time(
+    tmp_path: Path,
+    remote_spec: ExperimentSpec,
+) -> None:
+    store, state, reconciler, executor, validated = _runtime(tmp_path, remote_spec)
+    physical_started_at = NOW - timedelta(seconds=60)
+
+    result = _controller(
+        tmp_path,
+        store,
+        state,
+        reconciler,
+        executor,
+        validated,
+        attempt=1,
+        physical_started_at=physical_started_at,
+    ).run()
+
+    assert result.state == "completed"
+    assert state.status is not None
+    validated_input = cast(ValidatedCampaignInput, validated)
+    assert validated_input.spec.remote is not None
+    timeout = validated_input.spec.remote.job.timeout_seconds
+    assert state.status.physical_deadline == physical_started_at + timedelta(
+        seconds=timeout
+    )
+    assert state.status.remaining_seconds == timeout - 60
 
 
 def test_controller_waits_for_shared_provider_capacity_before_running(

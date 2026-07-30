@@ -156,7 +156,7 @@ planned wave seconds <= execution.timeout_seconds
 
 The normal one-Job claim covers initial logical executions. Infrastructure retries remain bounded by the recovery and spend policy and may require a sequential recovery Job.
 
-The controller recalculates projected completion from observed trial durations after every wave. It must stop admitting new trial work when the remaining campaign no longer fits the physical Job deadline with the locked controller reserve. It drains current work, publishes a capacity-blocked checkpoint, and exits without claiming campaign completion. The watchdog must not automatically resume a capacity-blocked campaign because the approved throughput assumption has changed.
+The controller recalculates projected completion from observed trial durations after every wave. It must stop admitting new trial work when the remaining campaign no longer fits the physical Job deadline with the locked controller reserve. The physical deadline starts at container entry, before pinned worker source setup. Within a provider wave, recorder setup uses the locked wave reserve; trial work still receives its planned work duration while setup remains inside that reserve. It drains current work, publishes a capacity-blocked checkpoint, and exits without claiming campaign completion. The watchdog must not automatically resume a capacity-blocked campaign because the approved throughput assumption has changed.
 
 ## Job launch
 
@@ -190,7 +190,7 @@ harbor-hf-campaign=<campaign-id>
 harbor-hf-plan=<short-plan-digest>
 ```
 
-The platform `JOB_ID` identifies the physical controller attempt. It is recorded in controller receipts, execution locks, status, and the final campaign report.
+The platform `JOB_ID` identifies the physical controller attempt. It is recorded in controller receipts, execution locks, status, and the final campaign report. The container wrapper records `HARBOR_HF_JOB_STARTED_AT` before cloning the pinned worker source. Remaining-time admission uses that timestamp, so worker checkout and `uv` startup consume the physical Job timeout.
 
 Launch claims use `claims/controller-launches/<campaign-id>/<attempt>.json`.
 They serialize the check-and-launch sequence across CLI retries, watchdog schedule

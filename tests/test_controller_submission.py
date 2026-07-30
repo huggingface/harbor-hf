@@ -140,6 +140,7 @@ def test_controller_command_runs_the_campaign_without_child_wave_jobs(
     assert "wave-worker" not in rendered
     assert "--expose 8000" in rendered
     assert "--prior-job-terminal" not in command
+    assert "HARBOR_HF_JOB_STARTED_AT" in rendered
 
 
 def test_controller_submission_stages_exact_input_and_reserves_before_launch(

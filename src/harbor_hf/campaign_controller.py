@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import signal
 import tempfile
@@ -58,6 +59,8 @@ from harbor_hf.reconciler import (
 from harbor_hf.recovery import RecoveryProjection, project_recovery
 from harbor_hf.wave_worker import run_provider_wave_execution
 from harbor_hf.worker import WorkerError, prepare_locked_source
+
+_PHYSICAL_JOB_STARTED_AT_ENV = "HARBOR_HF_JOB_STARTED_AT"
 
 
 class CampaignControllerError(RuntimeError):
@@ -276,6 +279,7 @@ class CampaignController:
         job_id: str,
         attempt: int,
         prior_job_terminal: bool = False,
+        physical_started_at: datetime | None = None,
         clock: Clock = lambda: datetime.now(UTC),
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
@@ -290,6 +294,7 @@ class CampaignController:
         self.job_id = job_id
         self.attempt = attempt
         self.prior_job_terminal = prior_job_terminal
+        self.physical_started_at = physical_started_at
         self.clock = clock
         self.monotonic = monotonic
         self.sleep = sleep
@@ -309,8 +314,12 @@ class CampaignController:
         if self.attempt > policy.max_attempts:
             raise CampaignControllerError("controller attempt limit is exhausted")
         self._validate_attempt_reservation(lock)
-        started_at = self.clock().astimezone(UTC)
-        started_monotonic = self.monotonic()
+        controller_started_at = self.clock().astimezone(UTC)
+        started_at = self._physical_start(controller_started_at)
+        bootstrap_seconds = math.ceil(
+            (controller_started_at - started_at).total_seconds()
+        )
+        started_monotonic = self.monotonic() - bootstrap_seconds
         claim = ControllerClaim(
             campaign_id=lock.campaign_id,
             job_id=self.job_id,
@@ -402,6 +411,17 @@ class CampaignController:
             iterations=iterations,
             message=message,
         )
+
+    def _physical_start(self, controller_started_at: datetime) -> datetime:
+        started_at = self.physical_started_at or controller_started_at
+        if started_at.tzinfo is None or started_at.utcoffset() != UTC.utcoffset(
+            started_at
+        ):
+            raise CampaignControllerError("physical Job start must use UTC")
+        started_at = started_at.astimezone(UTC)
+        if started_at > controller_started_at:
+            raise CampaignControllerError("physical Job start is in the future")
+        return started_at
 
     def _validate_attempt_reservation(self, lock: CampaignLock) -> None:
         reservation = self.state_store.read_attempt(lock.campaign_id, self.attempt)
@@ -787,9 +807,23 @@ def run_campaign_controller(
                 job_id=job_id,
                 attempt=attempt,
                 prior_job_terminal=prior_job_terminal,
+                physical_started_at=_physical_job_started_at(),
             )
             _install_signal_handlers(controller)
             return controller.run()
+
+
+def _physical_job_started_at() -> datetime | None:
+    value = os.environ.get(_PHYSICAL_JOB_STARTED_AT_ENV)
+    if value is None:
+        return None
+    try:
+        started_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise CampaignControllerError("physical Job start is invalid") from error
+    if started_at.tzinfo is None or started_at.utcoffset() != UTC.utcoffset(started_at):
+        raise CampaignControllerError("physical Job start must use UTC")
+    return started_at.astimezone(UTC)
 
 
 def _install_signal_handlers(controller: CampaignController) -> None:

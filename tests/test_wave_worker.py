@@ -61,9 +61,11 @@ from harbor_hf.wave_worker import (
     _file_digest,
     _finalize_execution,
     _launch_wave_watchdog,
+    _overall_wave_deadline,
     _remaining_seconds,
     _sandbox_failure_category,
     _stage_campaign_records,
+    _trial_work_deadline,
     _valid_terminal_trial,
     _validate_evidence_trial_identity,
     _wave_model_name,
@@ -835,6 +837,31 @@ def prepare_source(source: SourcePin, destination: Path, runner: CommandRunner) 
 def launch_watchdog(lock: WaveLock, endpoint: EndpointRef, token: str) -> str:
     del lock, endpoint, token
     return "watchdog-job"
+
+
+def test_provider_wave_setup_uses_the_locked_reserve(
+    remote_spec: ExperimentSpec,
+    tmp_path: Path,
+) -> None:
+    _spec, campaign, wave, _manifest, _campaign_path, _wave_path = (
+        _provider_wave_inputs(
+            remote_spec,
+            tmp_path,
+            attempts=1,
+            concurrency=1,
+            provider_concurrency=1,
+        )
+    )
+    policy = campaign.controller_policy
+    assert policy is not None
+
+    overall = _overall_wave_deadline(campaign, wave, lambda: 100.0)
+    before_reserve_is_spent = _trial_work_deadline(overall, wave, lambda: 100.5)
+    after_reserve_is_spent = _trial_work_deadline(overall, wave, lambda: 101.5)
+
+    assert overall == 100 + wave.duration_seconds + policy.wave_reserve_seconds
+    assert before_reserve_is_spent == 100.5 + wave.duration_seconds
+    assert after_reserve_is_spent == overall
 
 
 def test_campaign_records_can_be_staged_for_sequential_waves(

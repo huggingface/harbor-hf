@@ -305,9 +305,9 @@ then computes each initial wave duration from the number of concurrency batches,
 the planning trial duration, headroom, and wave reserve. Every wave must fit
 `execution.timeout_seconds`. The sum of the initial waves and controller reserve
 must fit `remote.job.timeout_seconds`. A provider wave lock enforces the planned
-trial-work duration and leaves `wave_reserve_seconds` outside that deadline for
-drain and evidence publication. The plan and campaign lock store these values
-and include them in their digests.
+trial-work duration. Recorder setup draws from `wave_reserve_seconds`, and any
+unused setup allowance remains for drain and evidence publication. The plan and
+campaign lock store these values and include them in their digests.
 
 Every task selected by `benchmark.task_names` is passed to Harbor. The resolved
 `task_digests` map gives exact and glob selections a deterministic trial count.
@@ -399,6 +399,8 @@ atomic lease and removes it with the same compare-and-swap protocol only after
 verified cleanup.
 
 Provider controllers use one campaign claim in the same coordination Dataset.
+The Job wrapper records its start time before cloning the pinned worker source,
+so remaining-time admission includes checkout and `uv` startup.
 The claim records campaign, plan, physical Job, attempt, heartbeat, and expiry.
 The controller also writes immutable attempt reservations, launch receipts,
 and start and end receipts plus a latest status record whose Dataset history

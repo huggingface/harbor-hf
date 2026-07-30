@@ -575,19 +575,20 @@ def _run_staged_wave(
                 lock.remote.harbor.source.revision,
                 runner,
             )
-        deadline = monotonic() + lock.duration_seconds
+        overall_deadline = _overall_wave_deadline(campaign, lock, monotonic)
         base_url, provider_proxy = _prepare_wave_transport(
             lock,
             wave_root,
             events,
             lifecycle,
             token,
-            deadline,
+            overall_deadline,
             monotonic,
         )
         judge_base_url, judge_recorder = _prepare_judge_transport(
-            lock, events, token, deadline, monotonic
+            lock, events, token, overall_deadline, monotonic
         )
+        trial_deadline = _trial_work_deadline(overall_deadline, lock, monotonic)
         shard_checksums = _execute_shards(
             manifest_path,
             campaign,
@@ -598,7 +599,7 @@ def _run_staged_wave(
             base_url,
             token,
             stream_runner,
-            deadline,
+            trial_deadline,
             identifier,
             clock,
             monotonic,
@@ -650,6 +651,28 @@ def _run_staged_wave(
             str(cleanup_error), secrets
         )
     raise WorkerError(failure_message) from terminal_error
+
+
+def _overall_wave_deadline(
+    campaign: CampaignLock,
+    lock: WaveLock,
+    monotonic: Callable[[], float],
+) -> float:
+    reserve_seconds = (
+        campaign.controller_policy.wave_reserve_seconds
+        if isinstance(lock.target, ProviderWaveTarget)
+        and campaign.controller_policy is not None
+        else 0
+    )
+    return monotonic() + lock.duration_seconds + reserve_seconds
+
+
+def _trial_work_deadline(
+    overall_deadline: float,
+    lock: WaveLock,
+    monotonic: Callable[[], float],
+) -> float:
+    return min(overall_deadline, monotonic() + lock.duration_seconds)
 
 
 def _verify_prepared_source(

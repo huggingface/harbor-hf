@@ -47,6 +47,7 @@ _JOB_INPUT_BUCKET_NAME = "jobs-artifacts"
 _COORDINATION_INITIALIZATION_PATH = ".harbor-hf-initialized"
 _COORDINATION_INITIALIZATION_PAYLOAD = b"harbor-hf coordination repository\n"
 _CONTROLLER_LAUNCH_LEASE = timedelta(minutes=30)
+_PHYSICAL_JOB_STARTED_AT_ENV = "HARBOR_HF_JOB_STARTED_AT"
 
 
 class TextRunner(Protocol):
@@ -126,6 +127,7 @@ def locked_source_command(source: SourcePin, *arguments: str) -> list[str]:
     revision = shlex.quote(source.revision)
     script = (
         "set -euo pipefail\n"
+        f'export {_PHYSICAL_JOB_STARTED_AT_ENV}="$(date -u +%Y-%m-%dT%H:%M:%SZ)"\n'
         "repo_dir=$(mktemp -d)\n"
         f'git clone --filter=blob:none --no-checkout {repository} "$repo_dir"\n'
         f'git -C "$repo_dir" fetch --depth 1 origin {revision}\n'
