@@ -38,4 +38,3 @@ This is a source-editing plan, not an auto-applied patch. Apply these changes to
 - Final path: controller_policy.max_active_waves
 - Confidence: high
 - Rationale: This is a controller scheduling limit that applies to both initial execution and recovery; it is not itself a recovery rule.
-

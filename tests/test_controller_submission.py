@@ -1,8 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
 from conftest import with_provider_controller
 from test_submission import FakeBucketApi, FakeRunner
 
@@ -12,6 +13,7 @@ from harbor_hf.controller_status import (
     ControllerStateStore,
 )
 from harbor_hf.models import ExperimentSpec
+from harbor_hf.process import ProcessError
 from harbor_hf.provider_models import ProviderTarget
 from harbor_hf.submission import (
     build_submit_campaign_controller_command,
@@ -46,8 +48,25 @@ class StateStore:
     def __init__(self) -> None:
         self.reservations: list[ControllerAttemptReservation] = []
 
+    def read_attempt(
+        self, campaign_id: str, attempt: int
+    ) -> ControllerAttemptReservation | None:
+        return next(
+            (
+                reservation
+                for reservation in self.reservations
+                if reservation.campaign_id == campaign_id
+                and reservation.attempt == attempt
+            ),
+            None,
+        )
+
     def reserve_attempt(self, reservation: ControllerAttemptReservation) -> None:
-        self.reservations.append(reservation)
+        observed = self.read_attempt(reservation.campaign_id, reservation.attempt)
+        if observed is None:
+            self.reservations.append(reservation)
+        else:
+            assert observed == reservation
 
 
 class Jobs:
@@ -117,6 +136,49 @@ def test_controller_submission_stages_exact_input_and_reserves_before_launch(
     }
     assert spec.remote is not None
     assert jobs.requests[0]["namespace"] == spec.remote.job.namespace
+
+
+def test_repeated_submission_reuses_the_initial_attempt_after_launch_failure(
+    remote_spec: ExperimentSpec,
+    remote_manifest: Path,
+) -> None:
+    spec, lock = _campaign(remote_spec)
+    state = StateStore()
+    api = FakeBucketApi()
+
+    class FailingRunner:
+        def run_text(self, command: list[str]) -> str:
+            del command
+            raise ProcessError("launch failed")
+
+    with pytest.raises(ProcessError, match="launch failed"):
+        submit_campaign_controller(
+            lock,
+            spec,
+            request=remote_manifest.read_bytes(),
+            bucket=spec.artifacts.bucket,
+            runner=FailingRunner(),
+            bucket_api=api,
+            jobs_api=Jobs(),
+            state_store=cast(ControllerStateStore, state),
+            clock=lambda: NOW,
+        )
+
+    result = submit_campaign_controller(
+        lock,
+        spec,
+        request=remote_manifest.read_bytes(),
+        bucket=spec.artifacts.bucket,
+        runner=FakeRunner("Job started: 0123456789abcdef01234567\n"),
+        bucket_api=api,
+        jobs_api=Jobs(),
+        state_store=cast(ControllerStateStore, state),
+        clock=lambda: NOW + timedelta(minutes=5),
+    )
+
+    assert result.job_id == "0123456789abcdef01234567"
+    assert len(state.reservations) == 1
+    assert state.reservations[0].reserved_at == NOW
 
 
 def test_repeated_submission_adopts_the_exact_controller_attempt(

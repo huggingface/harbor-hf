@@ -141,6 +141,19 @@ def test_provider_campaign_plans_690_trials_inside_one_controller_job(
     assert {frozenset(action.shard_ids) for action in actions} == {
         frozenset(wave.shard_ids) for wave in lock.initial_waves
     }
+    wave_locks = [build_wave_lock(lock, spec, action) for action in actions]
+    assert all(wave.duration_seconds == 4_500 for wave in wave_locks)
+    retry_trial = next(
+        trial
+        for run in lock.runs
+        for shard in run.shards
+        if shard.shard_id in actions[0].shard_ids
+        for trial in shard.trials
+    )
+    retry = actions[0].model_copy(
+        update={"kind": "retry-shard", "trial_ids": [retry_trial.trial_id]}
+    )
+    assert build_wave_lock(lock, spec, retry).duration_seconds == 1_125
 
 
 def test_provider_campaign_requires_explicit_controller_policy(

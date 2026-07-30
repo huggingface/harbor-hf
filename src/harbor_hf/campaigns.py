@@ -733,6 +733,42 @@ def planned_provider_wave_seconds(
     return planned_work + policy.wave_reserve_seconds
 
 
+def locked_provider_action_seconds(
+    campaign: CampaignLock,
+    *,
+    action_kind: Literal["submit-wave", "retry-shard"],
+    deployment_digest: str,
+    shard_ids: list[str],
+    trial_count: int,
+) -> int:
+    policy = campaign.controller_policy
+    if policy is None:
+        raise ValueError("provider action has no controller policy")
+    if action_kind == "submit-wave":
+        requested = set(shard_ids)
+        matches = [
+            wave
+            for wave in campaign.initial_waves
+            if wave.deployment_digest == deployment_digest
+            and set(wave.shard_ids) == requested
+        ]
+        if len(matches) != 1:
+            raise ValueError("provider action does not match one locked initial wave")
+        return matches[0].planned_duration_seconds
+    concurrency = {
+        wave.effective_concurrency
+        for wave in campaign.initial_waves
+        if wave.deployment_digest == deployment_digest
+    }
+    if len(concurrency) != 1:
+        raise ValueError("retry action has no locked concurrency")
+    return planned_provider_wave_seconds(
+        policy,
+        trial_count=trial_count,
+        effective_concurrency=concurrency.pop(),
+    )
+
+
 def _dump_profile(profile: BaseModel) -> object:
     return profile.model_dump(mode="json", exclude_none=True)
 
@@ -850,6 +886,30 @@ def _locked_initial_waves(
     return waves
 
 
+def _wave_duration_seconds(
+    campaign: CampaignLock,
+    spec: ExperimentSpec,
+    action: SubmitWaveAction,
+    provider_target: ProviderTarget | None,
+) -> int:
+    if provider_target is None:
+        return spec.execution.timeout_seconds
+    policy = campaign.controller_policy
+    if policy is None:
+        raise ValueError("provider wave has no controller policy")
+    action_kind: Literal["submit-wave", "retry-shard"] = (
+        "retry-shard" if action.kind == "retry-shard" else "submit-wave"
+    )
+    planned_seconds = locked_provider_action_seconds(
+        campaign,
+        action_kind=action_kind,
+        deployment_digest=action.deployment_digest,
+        shard_ids=action.shard_ids,
+        trial_count=len(action.trial_ids),
+    )
+    return planned_seconds - policy.wave_reserve_seconds
+
+
 def build_wave_lock(
     campaign: CampaignLock,
     spec: ExperimentSpec,
@@ -929,6 +989,7 @@ def build_wave_lock(
     provider_target = (
         target.provider if isinstance(target, ProviderWaveTarget) else None
     )
+    duration_seconds = _wave_duration_seconds(campaign, spec, action, provider_target)
     return WaveLock(
         wave_id=deterministic_wave_id(action.action_key),
         action_id=action.action_id,
@@ -960,7 +1021,7 @@ def build_wave_lock(
             else None
         ),
         estimated_cost_microusd=locked_wave_estimate,
-        duration_seconds=spec.execution.timeout_seconds,
+        duration_seconds=duration_seconds,
         remote=spec.remote,
         shard_ids=action.shard_ids,
         trial_ids=action.trial_ids,

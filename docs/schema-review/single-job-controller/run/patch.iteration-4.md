@@ -17,4 +17,3 @@ This is a source-editing plan, not an auto-applied patch. Apply these changes to
 - Final path: runs[].shards[].shard_digest
 - Confidence: high
 - Rationale: A shard digest is a content address, not independent campaign input. Derive it deterministically from the canonical ordered shard trial contents; initial_waves can refer to that derived value without storing a redundant, mismatch-prone copy.
-

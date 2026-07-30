@@ -304,8 +304,10 @@ provider request concurrency, and selected serving-profile concurrency. It
 then computes each initial wave duration from the number of concurrency batches,
 the planning trial duration, headroom, and wave reserve. Every wave must fit
 `execution.timeout_seconds`. The sum of the initial waves and controller reserve
-must fit `remote.job.timeout_seconds`. The plan and campaign lock store these
-values and include them in their digests.
+must fit `remote.job.timeout_seconds`. A provider wave lock enforces the planned
+trial-work duration and leaves `wave_reserve_seconds` outside that deadline for
+drain and evidence publication. The plan and campaign lock store these values
+and include them in their digests.
 
 Every task selected by `benchmark.task_names` is passed to Harbor. The resolved
 `task_digests` map gives exact and glob selections a deterministic trial count.

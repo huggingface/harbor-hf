@@ -50,4 +50,3 @@ Suggested rename:
 - Final path: schema_version
 - Confidence: high
 - Rationale: CampaignPlan is validated as part of the existing v1alpha1 campaign format, so an optional free-form per-plan version is redundant and cannot safely select a contract. Keeping it creates a second, potentially conflicting version authority without a current use case.
-

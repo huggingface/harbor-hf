@@ -25,7 +25,7 @@ from harbor_hf.campaigns import (
     CampaignLock,
     ProviderWaveTarget,
     WaveLock,
-    planned_provider_wave_seconds,
+    locked_provider_action_seconds,
 )
 from harbor_hf.control import CampaignStore
 from harbor_hf.controller_admission import (
@@ -319,29 +319,30 @@ class CampaignController:
             expires_at=started_at + timedelta(seconds=policy.stale_after_seconds),
         )
         self.state_store.acquire(claim, prior_job_terminal=self.prior_job_terminal)
-        self.state_store.write_started(
-            ControllerStartedReceipt(
-                campaign_id=lock.campaign_id,
-                plan_digest=lock.plan_digest,
-                input_digest=self.input.manifest.input_digest,
-                worker_revision=self.input.spec.remote.worker.revision,
-                job_id=self.job_id,
-                attempt=self.attempt,
-                started_at=started_at,
-            )
-        )
-        heartbeat = _Heartbeat(
-            self.state_store,
-            claim,
-            interval_seconds=policy.heartbeat_seconds,
-            stale_after_seconds=policy.stale_after_seconds,
-            clock=self.clock,
-        )
-        heartbeat.start()
         state: ControllerState = "starting"
         message: str | None = None
         iterations = 0
+        heartbeat: _Heartbeat | None = None
         try:
+            self.state_store.write_started(
+                ControllerStartedReceipt(
+                    campaign_id=lock.campaign_id,
+                    plan_digest=lock.plan_digest,
+                    input_digest=self.input.manifest.input_digest,
+                    worker_revision=self.input.spec.remote.worker.revision,
+                    job_id=self.job_id,
+                    attempt=self.attempt,
+                    started_at=started_at,
+                )
+            )
+            heartbeat = _Heartbeat(
+                self.state_store,
+                claim,
+                interval_seconds=policy.heartbeat_seconds,
+                stale_after_seconds=policy.stale_after_seconds,
+                clock=self.clock,
+            )
+            heartbeat.start()
             self.wave_executor.prepare(self.input.spec.remote.harbor.source)
             state, message, iterations = self._drive(
                 heartbeat,
@@ -366,9 +367,10 @@ class CampaignController:
             state = "failed-infrastructure"
             message = str(error)
         finally:
-            heartbeat.stop()
+            if heartbeat is not None:
+                heartbeat.stop()
             self._finish_attempt(
-                heartbeat.claim,
+                heartbeat.claim if heartbeat is not None else claim,
                 state,
                 message,
                 started_at=started_at,
@@ -817,30 +819,18 @@ def _action_state(action: ReconcileAction | None) -> ControllerState:
 
 
 def _planned_action_seconds(lock: CampaignLock, action: ReconcileAction) -> int:
-    policy = lock.controller_policy
-    if policy is None:
-        raise CampaignControllerError("provider action has no controller policy")
-    if action.kind == "submit-wave":
-        requested = set(action.shard_ids)
-        matches = [
-            wave for wave in lock.initial_waves if set(wave.shard_ids) == requested
-        ]
-        if len(matches) != 1:
-            raise CampaignControllerError(
-                "provider action does not match one locked initial wave"
-            )
-        return matches[0].planned_duration_seconds
-    if action.kind != "retry-shard":
+    if action.kind not in {"submit-wave", "retry-shard"}:
         raise CampaignControllerError("action is not billable provider work")
-    concurrency = {
-        wave.effective_concurrency
-        for wave in lock.initial_waves
-        if wave.deployment_digest == action.deployment_digest
-    }
-    if len(concurrency) != 1:
-        raise CampaignControllerError("retry action has no locked concurrency")
-    return planned_provider_wave_seconds(
-        policy,
-        trial_count=len(action.trial_ids),
-        effective_concurrency=concurrency.pop(),
+    action_kind: Literal["submit-wave", "retry-shard"] = (
+        "submit-wave" if action.kind == "submit-wave" else "retry-shard"
     )
+    try:
+        return locked_provider_action_seconds(
+            lock,
+            action_kind=action_kind,
+            deployment_digest=action.deployment_digest,
+            shard_ids=action.shard_ids,
+            trial_count=len(action.trial_ids),
+        )
+    except ValueError as error:
+        raise CampaignControllerError(str(error)) from error

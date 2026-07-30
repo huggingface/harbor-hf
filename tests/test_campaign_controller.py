@@ -215,6 +215,12 @@ class MemoryControllerStateStore:
         )
 
 
+class FailingStartStateStore(MemoryControllerStateStore):
+    def write_started(self, receipt: ControllerStartedReceipt) -> None:
+        del receipt
+        raise OSError("start receipt unavailable")
+
+
 class PreparedWaveExecutor:
     def __init__(self) -> None:
         self.prepared: list[object] = []
@@ -400,6 +406,34 @@ def test_interrupted_attempt_can_resume_in_one_sequential_replacement(
     assert reconciler.calls == 1
     assert [receipt.attempt for receipt in state.started] == [1, 2]
     assert [receipt.attempt for receipt in state.ended] == [1, 2]
+
+
+def test_controller_releases_claim_when_start_receipt_fails(
+    tmp_path: Path,
+    remote_spec: ExperimentSpec,
+) -> None:
+    store, original_state, reconciler, executor, validated = _runtime(
+        tmp_path, remote_spec
+    )
+    state = FailingStartStateStore()
+    state.attempts = original_state.attempts
+
+    result = _controller(
+        tmp_path,
+        store,
+        state,
+        reconciler,
+        executor,
+        validated,
+        attempt=1,
+    ).run()
+
+    assert result.state == "failed-infrastructure"
+    assert result.message == "start receipt unavailable"
+    assert state.claim is None
+    assert state.started == []
+    assert [receipt.state for receipt in state.ended] == ["failed-infrastructure"]
+    assert reconciler.calls == 0
 
 
 def test_controller_drains_one_action_then_honors_campaign_cancellation(

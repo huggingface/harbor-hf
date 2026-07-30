@@ -132,4 +132,3 @@ Suggested rename:
 - Final path: trial_count
 - Confidence: high
 - Rationale: It duplicates the canonical nested trial records in runs[].shards[].trials and can drift from them. Derive the total from those records.
-

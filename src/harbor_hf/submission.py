@@ -594,6 +594,7 @@ def submit_campaign_controller(
             identity=lock.campaign_id,
             api=bucket_api,
         )
+    existing = state_store.read_attempt(lock.campaign_id, attempt)
     reservation = ControllerAttemptReservation(
         campaign_id=lock.campaign_id,
         plan_digest=lock.plan_digest,
@@ -602,8 +603,12 @@ def submit_campaign_controller(
         output_uri=bucket_uri(bucket),
         worker_revision=spec.remote.worker.revision,
         attempt=attempt,
-        reserved_at=clock().astimezone(UTC),
+        reserved_at=(
+            existing.reserved_at if existing is not None else clock().astimezone(UTC)
+        ),
     )
+    if existing is not None and existing != reservation:
+        raise ValueError("existing controller attempt changed the launch contract")
     state_store.reserve_attempt(reservation)
     command = build_submit_campaign_controller_command(
         lock,
