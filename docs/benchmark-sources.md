@@ -102,7 +102,7 @@ Harbor-HF must not forward `GITHUB_TOKEN`, `GH_TOKEN`, an SSH key, an SSH agent,
 
 Private Git may still be used on the operator machine. The operator may use an existing local checkout or use locally configured Git authentication in place, then submit that directory as a bundle. The credential remains in its original local store.
 
-This boundary does not remove runtime credentials that are independently required for private HF storage, model inference, or judging. Each runtime credential requires a purpose-scoped value and explicit approval for its exact source and remote destination. Local submission reads remote Job values only from purpose-scoped variables such as `HARBOR_HF_JOB_TOKEN` and `HARBOR_HF_JOB_OPENAI_API_KEY`; it does not forward the similarly named ambient account variable.
+This boundary does not remove runtime credentials that are independently required for private HF storage, model inference, or judging. Each runtime credential requires a purpose-scoped value and explicit approval for its exact source and remote destination. A remote HF token comes from `HARBOR_HF_JOB_TOKEN` or from a fine-grained named token explicitly selected with `harbor-hf auth use-job-token`. Harbor HF stores only the selected name in its local config and reads the value from the official Hugging Face credential store when it builds a Job request. Other remote Job values come from purpose-scoped variables such as `HARBOR_HF_JOB_OPENAI_API_KEY`. Submission never forwards the similarly named ambient account variable or the active HF CLI login.
 
 ## Resolved source lock
 

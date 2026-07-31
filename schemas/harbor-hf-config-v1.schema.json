@@ -1,0 +1,29 @@
+{
+  "additionalProperties": false,
+  "description": "Local, secret-free Harbor HF operator configuration.",
+  "properties": {
+    "hf_job_token_name": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Hf Job Token Name"
+    },
+    "schema_version": {
+      "const": "harbor-hf/config/v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version"
+  ],
+  "title": "HarborHFConfig",
+  "type": "object"
+}

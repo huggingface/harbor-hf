@@ -99,6 +99,12 @@ builds a content-addressed bundle, and uploads it to the managed private input
 Bucket. The remote Job receives the verified bundle, not the source credential
 or operator path.
 
+A purpose-scoped remote HF token may come from `HARBOR_HF_JOB_TOKEN` or from a
+fine-grained named token selected with `harbor-hf auth use-job-token`. The
+selection records approval to reuse that exact local credential as the
+`HF_TOKEN` secret on future Harbor HF Jobs. Harbor HF config stores only its
+name. Never use the active HF CLI login as an implicit remote secret.
+
 Reject a launch when it would forward `GITHUB_TOKEN`, `GH_TOKEN`, an SSH key,
 an SSH agent, a Git credential helper, or `gh auth token`. Do not treat a
 temporary secret file, later deletion, environment blanking, or log redaction

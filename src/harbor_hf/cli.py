@@ -13,6 +13,7 @@ import typer
 from httpx import HTTPError
 from huggingface_hub import HfApi, get_token
 
+from harbor_hf import credentials
 from harbor_hf.automation import (
     AutomationError,
     AutomationRequest,
@@ -67,6 +68,7 @@ from harbor_hf.catalog_cutover import (
     CutoverDatasetApi,
     HubCatalogCutover,
 )
+from harbor_hf.config import harbor_hf_config_json_schema
 from harbor_hf.control import (
     CampaignConflict,
     CampaignEvent,
@@ -152,11 +154,15 @@ automation_app = typer.Typer(
     no_args_is_help=True, help="Install campaign controller recovery automation."
 )
 profile_app = typer.Typer(no_args_is_help=True, help="Profile serving deployments.")
+auth_app = typer.Typer(
+    no_args_is_help=True, help="Select a saved credential for remote Jobs."
+)
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(artifacts_app, name="artifacts")
 app.add_typer(results_app, name="results")
 app.add_typer(automation_app, name="automation")
 app.add_typer(profile_app, name="profile")
+app.add_typer(auth_app, name="auth")
 
 _OPERATION_ERRORS = (
     HTTPError,
@@ -204,6 +210,104 @@ def _load_profile_plan(path: Path) -> ProfilePlan:
     except (OSError, ValueError) as error:
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=2) from error
+
+
+@auth_app.command("schema")
+def auth_schema(
+    output: Annotated[Path | None, typer.Option("--output", dir_okay=False)] = None,
+) -> None:
+    """Export the secret-free local config JSON Schema."""
+    rendered = (
+        json.dumps(harbor_hf_config_json_schema(), indent=2, sort_keys=True) + "\n"
+    )
+    if output is None:
+        typer.echo(rendered, nl=False)
+        return
+    output.write_text(rendered, encoding="utf-8")
+
+
+@auth_app.command("tokens")
+def auth_tokens() -> None:
+    """List saved Hugging Face token names without showing their values."""
+    try:
+        available = credentials.stored_hf_tokens()
+        status = credentials.job_hf_token_status(tokens=available)
+    except (OSError, ValueError) as error:
+        _exit_operation(error)
+    selected = status["selected_token_name"]
+    _echo_json(
+        {
+            "config_path": status["config_path"],
+            "tokens": [
+                {"name": name, "selected": name == selected}
+                for name in sorted(available)
+            ],
+        }
+    )
+
+
+@auth_app.command("use-job-token")
+def auth_use_job_token(
+    token_name: Annotated[str, typer.Argument()],
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            help="Approve reuse as HF_TOKEN on future Harbor HF Jobs.",
+        ),
+    ] = False,
+) -> None:
+    """Select and verify a saved fine-grained token for remote Jobs."""
+    try:
+        available = credentials.stored_hf_tokens()
+        if token_name not in available:
+            raise ValueError(
+                f"Hugging Face token {token_name!r} is not saved; run `hf auth list`"
+            )
+        if not yes:
+            typer.confirm(
+                f"Use saved token {token_name!r} as secret HF_TOKEN on future "
+                "Harbor HF Jobs?",
+                abort=True,
+            )
+        _config, identity = credentials.select_job_hf_token(
+            token_name, tokens=available
+        )
+        status = credentials.job_hf_token_status(tokens=available)
+    except (HTTPError, OSError, ValueError) as error:
+        _exit_operation(error)
+    _echo_json(
+        {
+            "config_path": status["config_path"],
+            "environment_override": status["environment_override"],
+            "owner": identity["owner"],
+            "role": identity["role"],
+            "selected_token_name": token_name,
+            "remote_job_secret_name": "HF_TOKEN",
+            "token_value_stored_in_config": False,
+        }
+    )
+
+
+@auth_app.command("status")
+def auth_status() -> None:
+    """Show the selected token name and whether it is still available."""
+    try:
+        status = credentials.job_hf_token_status()
+    except (OSError, ValueError) as error:
+        _exit_operation(error)
+    _echo_json(status)
+
+
+@auth_app.command("clear-job-token")
+def auth_clear_job_token() -> None:
+    """Clear the selection without deleting the saved Hugging Face token."""
+    try:
+        credentials.clear_job_hf_token()
+        status = credentials.job_hf_token_status()
+    except (OSError, ValueError) as error:
+        _exit_operation(error)
+    _echo_json(status)
 
 
 @profile_app.command("plan")

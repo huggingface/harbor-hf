@@ -36,6 +36,9 @@ inspecting the named artifact or command output.
 - [ ] Manifest and plan contain only explicitly approved runtime secret names.
 - [ ] Every runtime credential is purpose-scoped and approved for its exact
       source and destination; the submitter can load it without printing it.
+- [ ] A configured named HF Job token still exists in the official Hugging Face
+      credential store, is fine-grained, and its value is absent from Harbor HF
+      config.
 - [ ] Provider-agent isolation requirements are present.
 - [ ] Public publication destinations cannot receive raw private evidence.
 

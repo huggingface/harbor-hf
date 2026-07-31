@@ -39,12 +39,32 @@ cd harbor-hf
 uv sync
 ```
 
-Remote operations authenticate through your Hugging Face token
+Local operator actions authenticate through your active Hugging Face login
 (`hf auth login`, or set `HF_TOKEN`). The account needs access to HF Jobs,
 Inference Endpoints, and Buckets in the target namespace. On first submission,
 `harbor-hf` creates a private `harbor-hf-coordination` Dataset in the
 namespace to hold campaign state, and verifies that it and the artifact
 Buckets are private before doing any work.
+
+A remote Job uses a separate purpose-scoped token. Save that token with the HF
+CLI, then select its name once:
+
+```bash
+hf auth login
+hf auth list
+uv run harbor-hf auth tokens
+uv run harbor-hf auth use-job-token TOKEN_NAME
+uv run harbor-hf auth status
+```
+
+Selection confirms that the named local credential may become the `HF_TOKEN`
+secret on future Harbor HF Jobs. Harbor HF verifies that it is fine-grained and
+stores only its name in `~/.config/harbor-hf/config.json`, or beneath
+`XDG_CONFIG_HOME`. Set `HARBOR_HF_CONFIG` to use another config path. The token
+value stays in the Hugging Face credential store.
+`HARBOR_HF_JOB_TOKEN` remains an explicit per-process override. Harbor HF never
+falls back to the active `HF_TOKEN` login or the output of `hf auth token` for a
+remote Job.
 
 ## Plan an Experiment
 

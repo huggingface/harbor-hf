@@ -41,6 +41,7 @@ from harbor_hf.controller_status import (
     controller_launch_receipt_path,
 )
 from harbor_hf.coordination import bucket_id, coordination_repository
+from harbor_hf.credentials import configured_job_hf_token
 from harbor_hf.judge_recorder import JUDGE_RECORDER_PORT
 from harbor_hf.models import (
     BundleBenchmarkSource,
@@ -398,15 +399,24 @@ def remote_job_secret_values(names: list[str]) -> dict[str, str]:
         name: _REMOTE_SECRET_SOURCES.get(name, f"HARBOR_HF_JOB_{name}")
         for name in names
     }
-    values = {
-        name: os.environ.get(source_name, "")
-        for name, source_name in source_names.items()
-    }
+    values: dict[str, str] = {}
+    for name, source_name in source_names.items():
+        if name == "HF_TOKEN":
+            values[name] = configured_job_hf_token() or ""
+        else:
+            values[name] = os.environ.get(source_name, "")
     missing = [source_names[name] for name, value in values.items() if not value]
     if missing:
+        hint = ""
+        if "HARBOR_HF_JOB_TOKEN" in missing:
+            hint = (
+                "; set HARBOR_HF_JOB_TOKEN or run "
+                "`harbor-hf auth use-job-token TOKEN_NAME`"
+            )
         raise ValueError(
             "required purpose-scoped Job secret sources are unavailable: "
             + ", ".join(sorted(missing))
+            + hint
         )
     return values
 

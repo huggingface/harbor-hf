@@ -18,6 +18,7 @@ from harbor_hf.campaigns import (
     build_campaign_plan,
     build_wave_lock,
 )
+from harbor_hf.config import HarborHFConfig, save_harbor_hf_config
 from harbor_hf.control import CampaignSubmittedPayload, new_event
 from harbor_hf.models import (
     BenchmarkJudgeSpec,
@@ -40,6 +41,7 @@ from harbor_hf.submission import (
     github_repository,
     job_secret_names,
     locked_source_command,
+    remote_job_secret_values,
     require_private_bucket,
     stage_job_input,
     submit,
@@ -121,6 +123,40 @@ class FakeBucketApi:
         self.repository_commits.append((repo_id, operations, kwargs))
         self.repository_sha = "2" * 40
         return SimpleNamespace(oid=self.repository_sha)
+
+
+def test_remote_job_secret_values_reuses_selected_named_hf_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "config.json"
+    save_harbor_hf_config(
+        HarborHFConfig(
+            schema_version="harbor-hf/config/v1",
+            hf_job_token_name="campaign-job-token",
+        ),
+        config_path,
+    )
+    monkeypatch.setenv("HARBOR_HF_CONFIG", str(config_path))
+    monkeypatch.delenv("HARBOR_HF_JOB_TOKEN")
+    monkeypatch.setattr(
+        "harbor_hf.credentials.stored_hf_tokens",
+        lambda: {"campaign-job-token": "purpose-scoped-secret"},
+    )
+
+    assert remote_job_secret_values(["HF_TOKEN"]) == {
+        "HF_TOKEN": "purpose-scoped-secret"
+    }
+
+
+def test_remote_job_secret_values_never_falls_back_to_ambient_hf_login(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HARBOR_HF_CONFIG", str(tmp_path / "missing.json"))
+    monkeypatch.delenv("HARBOR_HF_JOB_TOKEN")
+    monkeypatch.setenv("HF_TOKEN", "ambient-login-must-not-be-forwarded")
+
+    with pytest.raises(ValueError, match="auth use-job-token"):
+        remote_job_secret_values(["HF_TOKEN"])
 
 
 def test_build_submit_command_contains_only_secret_name(

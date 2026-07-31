@@ -71,7 +71,8 @@ Keep these rules in force throughout the session:
   local credential helper into remote infrastructure.
 - Never copy an ambient local login into a remote secret. Every runtime
   credential must be purpose-scoped and explicitly approved for its exact
-  source and destination.
+  source and destination. A named HF Job token selected through
+  `harbor-hf auth use-job-token` records that approval and stores only its name.
 - Never put credentials, route capabilities, authorization headers, cookies,
   secret query parameters, or environment values in durable artifacts.
 - For endpoint work, success requires a verified paused endpoint with zero

@@ -389,7 +389,13 @@ roles must omit it. Only final publications enter the primary results catalog.
 `remote.job` pins the HF Job namespace, digest-pinned controller image, hardware
 flavor, timeout, and the name of an explicitly approved, purpose-scoped HF
 workload token. Submission must not copy the operator's ambient HF login into a
-remote secret. `remote.worker.revision` also pins the complete
+remote secret. The remote Job token value comes from the explicit `HARBOR_HF_JOB_TOKEN`
+environment variable or from a fine-grained token selected by name with
+`harbor-hf auth use-job-token`. The selection command records approval to use
+that named local Hugging Face credential as the `HF_TOKEN` secret on future
+Harbor HF Jobs. Harbor HF config stores only the name; it never stores the token
+value or silently selects the active HF CLI login.
+`remote.worker.revision` also pins the complete
 `packages/harbor-hf-agents` implementation used by every provider-backed run.
 The worker layers that dependency-free package into the separately pinned
 Harbor environment with `uv run --with`; it does not modify Harbor source or its
