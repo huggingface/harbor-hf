@@ -46,25 +46,26 @@ Inference Endpoints, and Buckets in the target namespace. On first submission,
 namespace to hold campaign state, and verifies that it and the artifact
 Buckets are private before doing any work.
 
-A remote Job uses a separate purpose-scoped token. Save that token with the HF
-CLI, then select its name once:
+A remote Job uses a separate purpose-scoped token. Add it to Harbor HF once:
 
 ```bash
-hf auth login
-hf auth list
-uv run harbor-hf auth tokens
-uv run harbor-hf auth use-job-token TOKEN_NAME
+uv run harbor-hf auth add-job-token harbor-hf-job
 uv run harbor-hf auth status
 ```
 
-Selection confirms that the named local credential may become the `HF_TOKEN`
-secret on future Harbor HF Jobs. Harbor HF verifies that it is fine-grained and
-stores only its name in `~/.config/harbor-hf/config.json`, or beneath
-`XDG_CONFIG_HOME`. Set `HARBOR_HF_CONFIG` to use another config path. The token
-value stays in the Hugging Face credential store.
+`add-job-token` asks for approval, reads the token through a hidden prompt,
+verifies that it is fine-grained, stores it in Harbor HF's private local token
+file, and selects it for future Jobs. The token file defaults to
+`~/.config/harbor-hf/stored_tokens`; its directory is `0700` and the file is
+`0600`. Like the HF CLI's token store, this is a plaintext file protected by
+local filesystem permissions. Harbor HF's JSON config stores only the selected
+name. Set `HARBOR_HF_TOKEN_STORE` or `HARBOR_HF_CONFIG` to override their paths.
+Use `auth tokens`, `auth use-job-token`, and `auth remove-job-token` to manage
+saved entries. See the [local token store](docs/token-store.md) for the full
+format and validation rules.
 `HARBOR_HF_JOB_TOKEN` remains an explicit per-process override. Harbor HF never
-falls back to the active `HF_TOKEN` login or the output of `hf auth token` for a
-remote Job.
+reads the Hugging Face CLI token store, the active `HF_TOKEN` login, or the
+output of `hf auth token` for a remote Job.
 
 ## Plan an Experiment
 

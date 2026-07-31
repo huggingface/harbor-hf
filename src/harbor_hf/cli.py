@@ -155,7 +155,7 @@ automation_app = typer.Typer(
 )
 profile_app = typer.Typer(no_args_is_help=True, help="Profile serving deployments.")
 auth_app = typer.Typer(
-    no_args_is_help=True, help="Select a saved credential for remote Jobs."
+    no_args_is_help=True, help="Store and select credentials for remote Jobs."
 )
 app.add_typer(campaign_app, name="campaign")
 app.add_typer(artifacts_app, name="artifacts")
@@ -228,9 +228,9 @@ def auth_schema(
 
 @auth_app.command("tokens")
 def auth_tokens() -> None:
-    """List saved Hugging Face token names without showing their values."""
+    """List Harbor HF token names without showing their values."""
     try:
-        available = credentials.stored_hf_tokens()
+        available = credentials.stored_job_hf_tokens()
         status = credentials.job_hf_token_status(tokens=available)
     except (OSError, ValueError) as error:
         _exit_operation(error)
@@ -238,10 +238,62 @@ def auth_tokens() -> None:
     _echo_json(
         {
             "config_path": status["config_path"],
+            "token_store_path": status["token_store_path"],
             "tokens": [
                 {"name": name, "selected": name == selected}
                 for name in sorted(available)
             ],
+        }
+    )
+
+
+@auth_app.command("add-job-token")
+def auth_add_job_token(
+    token_name: Annotated[str, typer.Argument()],
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Replace an existing token with this name."),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            help="Approve local storage and reuse as remote secret HF_TOKEN.",
+        ),
+    ] = False,
+) -> None:
+    """Store, verify, and select one fine-grained token."""
+    try:
+        available = credentials.stored_job_hf_tokens()
+        if token_name in available and not force:
+            raise ValueError(
+                f"Harbor HF token {token_name!r} is already saved; "
+                "pass --force to replace it"
+            )
+        if not yes:
+            typer.confirm(
+                f"Store token {token_name!r} in Harbor HF's local token store "
+                "and use it as secret HF_TOKEN on future Harbor HF Jobs?",
+                abort=True,
+            )
+        token = typer.prompt("Hugging Face token", hide_input=True)
+        _config, identity, store_path = credentials.add_job_hf_token(
+            token_name, token, replace=force
+        )
+        status = credentials.job_hf_token_status()
+    except (HTTPError, OSError, ValueError) as error:
+        _exit_operation(error)
+    _echo_json(
+        {
+            "config_path": status["config_path"],
+            "environment_override": status["environment_override"],
+            "owner": identity["owner"],
+            "role": identity["role"],
+            "selected_token_name": token_name,
+            "remote_job_secret_name": "HF_TOKEN",
+            "token_store_path": str(store_path),
+            "token_value_stored_in_config": False,
+            "token_value_stored_in_harbor_token_store": True,
         }
     )
 
@@ -257,16 +309,17 @@ def auth_use_job_token(
         ),
     ] = False,
 ) -> None:
-    """Select and verify a saved fine-grained token for remote Jobs."""
+    """Select and verify a token already saved by Harbor HF."""
     try:
-        available = credentials.stored_hf_tokens()
+        available = credentials.stored_job_hf_tokens()
         if token_name not in available:
             raise ValueError(
-                f"Hugging Face token {token_name!r} is not saved; run `hf auth list`"
+                f"Harbor HF token {token_name!r} is not saved; run "
+                "`harbor-hf auth add-job-token TOKEN_NAME`"
             )
         if not yes:
             typer.confirm(
-                f"Use saved token {token_name!r} as secret HF_TOKEN on future "
+                f"Use Harbor HF token {token_name!r} as secret HF_TOKEN on future "
                 "Harbor HF Jobs?",
                 abort=True,
             )
@@ -284,7 +337,38 @@ def auth_use_job_token(
             "role": identity["role"],
             "selected_token_name": token_name,
             "remote_job_secret_name": "HF_TOKEN",
+            "token_store_path": status["token_store_path"],
             "token_value_stored_in_config": False,
+            "token_value_stored_in_harbor_token_store": True,
+        }
+    )
+
+
+@auth_app.command("remove-job-token")
+def auth_remove_job_token(
+    token_name: Annotated[str, typer.Argument()],
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", help="Confirm removal from the local token store."),
+    ] = False,
+) -> None:
+    """Remove one token and clear its selection if necessary."""
+    try:
+        if not yes:
+            typer.confirm(
+                f"Remove token {token_name!r} from Harbor HF's local token store?",
+                abort=True,
+            )
+        store_path, cleared_selection = credentials.remove_job_hf_token(token_name)
+        status = credentials.job_hf_token_status()
+    except (OSError, ValueError) as error:
+        _exit_operation(error)
+    _echo_json(
+        {
+            **status,
+            "cleared_selection": cleared_selection,
+            "removed_token_name": token_name,
+            "token_store_path": str(store_path),
         }
     )
 
@@ -301,7 +385,7 @@ def auth_status() -> None:
 
 @auth_app.command("clear-job-token")
 def auth_clear_job_token() -> None:
-    """Clear the selection without deleting the saved Hugging Face token."""
+    """Clear the selection without deleting the saved Harbor HF token."""
     try:
         credentials.clear_job_hf_token()
         status = credentials.job_hf_token_status()

@@ -394,11 +394,12 @@ roles must omit it. Only final publications enter the primary results catalog.
 flavor, timeout, and the name of an explicitly approved, purpose-scoped HF
 workload token. Submission must not copy the operator's ambient HF login into a
 remote secret. The remote Job token value comes from the explicit `HARBOR_HF_JOB_TOKEN`
-environment variable or from a fine-grained token selected by name with
-`harbor-hf auth use-job-token`. The selection command records approval to use
-that named local Hugging Face credential as the `HF_TOKEN` secret on future
-Harbor HF Jobs. Harbor HF config stores only the name; it never stores the token
-value or silently selects the active HF CLI login.
+environment variable or from a fine-grained token added with
+`harbor-hf auth add-job-token`. That command records approval to store the value
+in Harbor HF's owner-only local token file and use it as the `HF_TOKEN` secret
+on future Harbor HF Jobs. Harbor HF config stores only the selected name.
+Submission never reads the Hugging Face CLI token store or silently selects the
+active HF login.
 `remote.worker.revision` also pins the complete
 `packages/harbor-hf-agents` implementation used by every provider-backed run.
 The worker layers that dependency-free package into the separately pinned

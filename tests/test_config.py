@@ -61,8 +61,10 @@ def test_config_round_trip_stores_only_token_name(
         "schema_version": "harbor-hf/config/v1",
     }
     monkeypatch.setenv("HARBOR_HF_CONFIG", str(path))
+    monkeypatch.setenv("HARBOR_HF_TOKEN_STORE", str(path.parent / "stored_tokens"))
     assert job_hf_token_status(tokens={"campaign-job-token": token_value}) == {
         "config_path": str(path),
+        "token_store_path": str(path.parent / "stored_tokens"),
         "selected_token_name": "campaign-job-token",
         "selected_token_available": True,
         "environment_override": True,

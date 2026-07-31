@@ -74,14 +74,14 @@ GitHub personal token, an SSH key, or a local Git credential helper to a remote
 runtime.
 
 Give orchestration, execution, and publication separate purpose-scoped HF
-tokens where the Hub permission model permits it. For remote Jobs, save a
-fine-grained token with the HF CLI and select its name with
-`harbor-hf auth use-job-token`, or provide `HARBOR_HF_JOB_TOKEN` as an explicit
-process override. The selection command confirms the exact transfer to the
-remote `HF_TOKEN` Job secret; Harbor HF config retains only the token name.
-Copy no ambient local login into a remote secret. Do not put a token in a
-manifest, lock, event, log, Dataset row, Bucket object, test fixture, or result
-Space.
+tokens where the Hub permission model permits it. For remote Jobs, run
+`harbor-hf auth add-job-token TOKEN_NAME`, or provide `HARBOR_HF_JOB_TOKEN` as
+an explicit process override. The add command reads the value through a hidden
+prompt and confirms its local storage and exact transfer to the remote
+`HF_TOKEN` Job secret. Harbor HF's private token file contains the value; its
+JSON config contains only the selected name. Copy no ambient local login into a
+remote secret. Do not put a token in a manifest, lock, event, log, Dataset row,
+Bucket object, test fixture, or result Space.
 
 Plan twice in clean checkouts when introducing a new benchmark or deployment:
 

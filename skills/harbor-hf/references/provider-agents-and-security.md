@@ -100,10 +100,11 @@ Bucket. The remote Job receives the verified bundle, not the source credential
 or operator path.
 
 A purpose-scoped remote HF token may come from `HARBOR_HF_JOB_TOKEN` or from a
-fine-grained named token selected with `harbor-hf auth use-job-token`. The
-selection records approval to reuse that exact local credential as the
-`HF_TOKEN` secret on future Harbor HF Jobs. Harbor HF config stores only its
-name. Never use the active HF CLI login as an implicit remote secret.
+fine-grained token added with `harbor-hf auth add-job-token`. The command reads
+the value through a hidden prompt and records approval to store it in Harbor
+HF's owner-only plaintext token file and reuse it as the `HF_TOKEN` secret on
+future Harbor HF Jobs. Harbor HF config stores only the selected name. Never read the
+Hugging Face CLI token store or active login as an implicit remote secret.
 
 Reject a launch when it would forward `GITHUB_TOKEN`, `GH_TOKEN`, an SSH key,
 an SSH agent, a Git credential helper, or `gh auth token`. Do not treat a

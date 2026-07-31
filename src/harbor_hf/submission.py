@@ -411,7 +411,7 @@ def remote_job_secret_values(names: list[str]) -> dict[str, str]:
         if "HARBOR_HF_JOB_TOKEN" in missing:
             hint = (
                 "; set HARBOR_HF_JOB_TOKEN or run "
-                "`harbor-hf auth use-job-token TOKEN_NAME`"
+                "`harbor-hf auth add-job-token TOKEN_NAME`"
             )
         raise ValueError(
             "required purpose-scoped Job secret sources are unavailable: "
