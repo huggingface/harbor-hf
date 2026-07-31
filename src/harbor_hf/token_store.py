@@ -5,8 +5,11 @@ import io
 import os
 import stat
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
+
+from filelock import FileLock, Timeout
 
 from harbor_hf.config import harbor_hf_config_path
 
@@ -14,6 +17,7 @@ _TOKEN_STORE_ENVIRONMENT_VARIABLE = "HARBOR_HF_TOKEN_STORE"
 _MAX_TOKEN_STORE_BYTES = 1024 * 1024
 _MAX_TOKEN_COUNT = 256
 _MAX_TOKEN_BYTES = 16 * 1024
+_TOKEN_STORE_LOCK_TIMEOUT_SECONDS = 10
 
 
 class _CaseSensitiveConfigParser(configparser.ConfigParser):
@@ -47,44 +51,10 @@ def save_harbor_hf_tokens(
     tokens: Mapping[str, str],
     path: Path | None = None,
 ) -> Path:
-    if len(tokens) > _MAX_TOKEN_COUNT:
-        raise ValueError("Harbor HF token store exceeds the 256-token limit")
-    normalized: dict[str, str] = {}
-    for token_name, token in tokens.items():
-        _validate_token_name(token_name)
-        _validate_token_value(token)
-        normalized[token_name] = token
+    normalized = _validated_tokens(tokens)
     destination = harbor_hf_token_store_path() if path is None else path
-    parent = destination.parent
-    _prepare_private_directory(parent)
-    if destination.exists() or destination.is_symlink():
-        _validate_token_store_file(destination)
-    parser = _token_parser()
-    for token_name in sorted(normalized):
-        parser.add_section(token_name)
-        parser.set(token_name, "hf_token", normalized[token_name])
-    buffer = io.StringIO()
-    parser.write(buffer)
-    payload = buffer.getvalue().encode("utf-8")
-    if len(payload) > _MAX_TOKEN_STORE_BYTES:
-        raise ValueError("Harbor HF token store exceeds the 1 MiB limit")
-    temporary: Path | None = None
-    try:
-        descriptor, name = tempfile.mkstemp(prefix=".stored-tokens-", dir=parent)
-        temporary = Path(name)
-        with os.fdopen(descriptor, "wb") as stream:
-            os.fchmod(stream.fileno(), 0o600)
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, destination)
-        temporary = None
-        os.chmod(destination, 0o600)
-        _sync_directory(parent)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-    return destination
+    with _token_store_lock(destination):
+        return _save_harbor_hf_tokens_unlocked(normalized, destination)
 
 
 def store_harbor_hf_token(
@@ -94,15 +64,18 @@ def store_harbor_hf_token(
     replace: bool = False,
     path: Path | None = None,
 ) -> Path:
+    _validate_token_name(token_name)
+    _validate_token_value(token)
     destination = harbor_hf_token_store_path() if path is None else path
-    tokens = load_harbor_hf_tokens(destination)
-    if token_name in tokens and not replace:
-        raise ValueError(
-            f"Harbor HF token {token_name!r} is already saved; "
-            "pass --force to replace it"
-        )
-    tokens[token_name] = token
-    return save_harbor_hf_tokens(tokens, destination)
+    with _token_store_lock(destination):
+        tokens = load_harbor_hf_tokens(destination)
+        if token_name in tokens and not replace:
+            raise ValueError(
+                f"Harbor HF token {token_name!r} is already saved; "
+                "pass --force to replace it"
+            )
+        tokens[token_name] = token
+        return _save_harbor_hf_tokens_unlocked(tokens, destination)
 
 
 def remove_harbor_hf_token(
@@ -110,12 +83,79 @@ def remove_harbor_hf_token(
     *,
     path: Path | None = None,
 ) -> Path:
+    _validate_token_name(token_name)
     destination = harbor_hf_token_store_path() if path is None else path
-    tokens = load_harbor_hf_tokens(destination)
-    if token_name not in tokens:
-        raise ValueError(f"Harbor HF token {token_name!r} is not saved")
-    del tokens[token_name]
-    return save_harbor_hf_tokens(tokens, destination)
+    with _token_store_lock(destination):
+        tokens = load_harbor_hf_tokens(destination)
+        if token_name not in tokens:
+            raise ValueError(f"Harbor HF token {token_name!r} is not saved")
+        del tokens[token_name]
+        return _save_harbor_hf_tokens_unlocked(tokens, destination)
+
+
+def _validated_tokens(tokens: Mapping[str, str]) -> dict[str, str]:
+    if len(tokens) > _MAX_TOKEN_COUNT:
+        raise ValueError("Harbor HF token store exceeds the 256-token limit")
+    normalized: dict[str, str] = {}
+    for token_name, token in tokens.items():
+        _validate_token_name(token_name)
+        _validate_token_value(token)
+        normalized[token_name] = token
+    return normalized
+
+
+def _save_harbor_hf_tokens_unlocked(
+    tokens: Mapping[str, str], destination: Path
+) -> Path:
+    if destination.exists() or destination.is_symlink():
+        _validate_token_store_file(destination)
+    parser = _token_parser()
+    for token_name in sorted(tokens):
+        parser.add_section(token_name)
+        parser.set(token_name, "hf_token", tokens[token_name])
+    buffer = io.StringIO()
+    parser.write(buffer)
+    payload = buffer.getvalue().encode("utf-8")
+    if len(payload) > _MAX_TOKEN_STORE_BYTES:
+        raise ValueError("Harbor HF token store exceeds the 1 MiB limit")
+    temporary: Path | None = None
+    try:
+        descriptor, name = tempfile.mkstemp(
+            prefix=".stored-tokens-", dir=destination.parent
+        )
+        temporary = Path(name)
+        with os.fdopen(descriptor, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+        temporary = None
+        os.chmod(destination, 0o600)
+        _sync_directory(destination.parent)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return destination
+
+
+@contextmanager
+def _token_store_lock(destination: Path) -> Iterator[None]:
+    _prepare_private_directory(destination.parent)
+    lock_path = destination.with_name(f".{destination.name}.lock")
+    lock = FileLock(
+        lock_path,
+        timeout=_TOKEN_STORE_LOCK_TIMEOUT_SECONDS,
+        mode=0o600,
+    )
+    try:
+        with lock:
+            os.chmod(lock_path, 0o600)
+            yield
+    except Timeout as error:
+        raise ValueError(
+            f"timed out waiting for Harbor HF token store lock: {lock_path}"
+        ) from error
 
 
 def _parse_token_store(source: Path, payload: bytes) -> dict[str, str]:

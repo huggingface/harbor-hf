@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import os
+import time
+from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 
+import harbor_hf.token_store as token_store_module
 from harbor_hf.token_store import (
     harbor_hf_token_store_path,
     load_harbor_hf_tokens,
@@ -59,6 +63,7 @@ def test_token_store_round_trip_is_sorted_and_private(tmp_path: Path) -> None:
     }
     assert path.stat().st_mode & 0o777 == 0o600
     assert path.parent.stat().st_mode & 0o777 == 0o700
+    assert (path.parent / ".stored_tokens.lock").stat().st_mode & 0o777 == 0o600
     assert path.read_text(encoding="utf-8") == (
         "[first]\nhf_token = hf_first\n\n[second]\nhf_token = hf_second\n\n"
     )
@@ -220,6 +225,37 @@ def test_load_rejects_insecure_store_directory(tmp_path: Path) -> None:
         load_harbor_hf_tokens(path)
 
 
+def test_concurrent_updates_preserve_every_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "private" / "stored_tokens"
+    original_save = token_store_module._save_harbor_hf_tokens_unlocked
+
+    def delayed_save(tokens: Mapping[str, str], destination: Path) -> Path:
+        time.sleep(0.01)
+        return original_save(tokens, destination)
+
+    monkeypatch.setattr(
+        token_store_module, "_save_harbor_hf_tokens_unlocked", delayed_save
+    )
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [
+            executor.submit(
+                store_harbor_hf_token,
+                f"token-{index}",
+                f"secret-{index}",
+                path=path,
+            )
+            for index in range(16)
+        ]
+        for future in futures:
+            future.result()
+
+    assert load_harbor_hf_tokens(path) == {
+        f"token-{index}": f"secret-{index}" for index in range(16)
+    }
+
+
 def test_failed_atomic_replace_removes_temporary_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -235,4 +271,4 @@ def test_failed_atomic_replace_removes_temporary_file(
     with pytest.raises(OSError, match="replace failed"):
         save_harbor_hf_tokens({"name": "secret"}, path)
 
-    assert list(parent.iterdir()) == []
+    assert [entry.name for entry in parent.iterdir()] == [".stored_tokens.lock"]

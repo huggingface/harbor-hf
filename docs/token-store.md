@@ -53,9 +53,10 @@ its directory must be owned by the current user with mode `0700`; the file must
 be an owner-owned regular file with mode `0600`. Harbor HF rejects symlinks and
 insecure permissions.
 
-Writes use a temporary `0600` file in the same directory, flush it, replace the
-old file atomically, and sync the directory. A failed replacement removes the
-temporary file.
+Writes hold an owner-only `.stored_tokens.lock` file across the complete
+read-modify-write operation. They use a temporary `0600` file in the same
+directory, flush it, replace the old file atomically, and sync the directory.
+A failed replacement removes the temporary file.
 
 ## Commands
 
