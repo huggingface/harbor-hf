@@ -14,6 +14,11 @@
 - Do not load models or run inference locally. Remote integration tests must be
   explicit and leave every Inference Endpoint paused.
 - Never write secret values to manifests, logs, tests, locks, or artifacts.
+- Never pass a locally configured personal or broad account credential, including
+  the output of `gh auth token`, to a Hugging Face Job, Sandbox, Endpoint, or
+  other remote runtime. Never copy any credential between stores without the
+  user's explicit approval for that exact source and destination. Use a
+  purpose-scoped credential approved for the remote workload instead.
 - Add tests for every behavior change and preserve at least 85% coverage.
 - Avoid `Any`; validate untrusted provider data at the adapter boundary.
 - Use Conventional Commits.
