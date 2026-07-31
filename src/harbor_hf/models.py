@@ -455,6 +455,9 @@ class ExecutionSpec(StrictModel):
     max_trials_per_shard: int = Field(default=64, ge=1)
     max_shards_per_wave: int = Field(default=8, ge=1)
     timeout_seconds: int = Field(default=3600, ge=1)
+    agent_setup_timeout_multiplier: float | None = Field(
+        default=None, gt=0, exclude_if=lambda value: value is None
+    )
     server_context_tokens: int | None = Field(
         default=None, ge=1, exclude_if=lambda value: value is None
     )

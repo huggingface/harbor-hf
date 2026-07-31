@@ -281,6 +281,9 @@ run locks and participates in campaign and experiment digests.
 in one campaign shard and defaults to 64. `max_shards_per_wave` bounds compatible
 shards assigned under one endpoint startup and defaults to 8. Provider request
 concurrency is part of the deployment profile. Timeout values are in seconds.
+`agent_setup_timeout_multiplier` is an optional positive multiplier forwarded to
+Harbor for agent installation and setup. Set it only when measured setup time
+exceeds Harbor's default; it does not extend the campaign wall-clock limit.
 `timeout_seconds` is a wall-clock limit for Harbor execution. On expiry, an
 endpoint worker terminates the Harbor process group and starts verified cleanup.
 A provider controller drains the internal wave and records its durable state.
@@ -293,6 +296,7 @@ execution:
   attempts: 6
   concurrent_trials: 24
   timeout_seconds: 16200
+  agent_setup_timeout_multiplier: 3
   max_trials_per_shard: 24
   max_shards_per_wave: 4
   controller:

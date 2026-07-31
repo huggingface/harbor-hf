@@ -422,6 +422,8 @@ def build_execution_request(
         ],
         "datasets": [dataset],
     }
+    if lock.agent_setup_timeout_multiplier is not None:
+        config["agent_setup_timeout_multiplier"] = lock.agent_setup_timeout_multiplier
     expected_trials = len(expected_task_digests) * attempts
     policy = HarborVerificationPolicy(
         expected_trials=expected_trials,

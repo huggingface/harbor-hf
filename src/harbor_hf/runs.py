@@ -88,6 +88,9 @@ class RunLock(BaseModel):
         default=None, exclude_if=lambda value: value is None
     )
     timeout_seconds: int
+    agent_setup_timeout_multiplier: float | None = Field(
+        default=None, gt=0, exclude_if=lambda value: value is None
+    )
     artifact_bucket: str
     artifact_prefix: str
     remote: RemoteExecutionSpec
@@ -213,6 +216,7 @@ def build_run_lock(
         concurrent_trials=spec.execution.concurrent_trials,
         serving_profile=spec.execution.serving_profile,
         timeout_seconds=spec.execution.timeout_seconds,
+        agent_setup_timeout_multiplier=(spec.execution.agent_setup_timeout_multiplier),
         artifact_bucket=spec.artifacts.bucket,
         artifact_prefix=f"runs/{spec.metadata.name}/{resolved_id}",
         remote=spec.remote,

@@ -243,6 +243,7 @@ def test_adapter_prepares_one_immutable_harbor_config(
     )
 
     assert prepared.request == request
+    assert "agent_setup_timeout_multiplier" not in request.harbor_config
     assert prepared.config_path.read_bytes() == request.config_bytes()
     assert prepared.request_path.read_bytes() == request.request_bytes()
     assert prepared.command[-3:] == [
@@ -262,6 +263,23 @@ def test_adapter_prepares_one_immutable_harbor_config(
             concurrency=lock.concurrent_trials,
             expected_task_digests=dict(lock.benchmark_task_digests),
         )
+
+
+def test_adapter_forwards_agent_setup_timeout_multiplier(
+    remote_spec: ExperimentSpec, tmp_path: Path
+) -> None:
+    spec = remote_spec.model_copy(
+        update={
+            "execution": remote_spec.execution.model_copy(
+                update={"agent_setup_timeout_multiplier": 3.0}
+            )
+        }
+    )
+
+    lock, request = _request(spec, tmp_path)
+
+    assert lock.agent_setup_timeout_multiplier == 3.0
+    assert request.harbor_config["agent_setup_timeout_multiplier"] == 3.0
 
 
 def test_adapter_layers_custom_agent_package_for_endpoint_run(
