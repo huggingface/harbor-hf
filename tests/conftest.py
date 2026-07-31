@@ -146,6 +146,7 @@ class _WaveClaims:
 @pytest.fixture(autouse=True)
 def wave_worker_identity(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("JOB_ID", "test-wave-job")
+    monkeypatch.setenv("HARBOR_HF_JOB_TOKEN", "test-purpose-scoped-token")
     monkeypatch.setattr(
         "harbor_hf.wave_worker._wait_for_provider_recorder",
         lambda *_args, **_kwargs: None,

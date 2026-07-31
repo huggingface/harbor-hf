@@ -1,10 +1,10 @@
 # Benchmark source specification
 
-Status: proposed
+Status: implemented
 
 This specification defines how one Harbor-HF campaign identifies and loads its benchmark files. An operator selects one source in the campaign YAML. Harbor-HF resolves that request into one immutable source lock before it creates remote work.
 
-The current CLI does not yet implement directory bundles. Until the accompanying implementation is complete, new campaigns may use a content-addressed Harbor package or an anonymously readable public Git repository. Authenticated remote Git is prohibited even if an older checkout accepts its manifest shape.
+The CLI supports content-addressed Harbor packages, anonymous public Git repositories, local directories, and existing private bundles. Authenticated remote Git is prohibited even if an older pinned worker accepts its manifest shape.
 
 ## Campaign YAML
 
@@ -68,7 +68,7 @@ Unknown source types and unknown fields are errors. A source object cannot combi
 
 `directory.path` is an operator-machine path. A relative path is resolved from the directory containing the campaign YAML. An absolute path is accepted but is less portable. Shell expansion, environment expansion, and `~` expansion do not occur.
 
-The path must identify a real directory. The root and every descendant must be a real directory or regular file. Harbor-HF rejects:
+The path must identify a real directory. The root and every descendant must be a real directory or regular file. One file may contain at most 8 GiB, all regular files together may contain at most 32 GiB, one bundle may contain at most 1,000,000 entries, the manifest may contain at most 256 MiB, and the compressed payload may contain at most 33 GiB. Harbor-HF rejects:
 
 - symbolic links
 - sockets and named pipes, as well as devices
@@ -88,7 +88,7 @@ The exact requested YAML remains part of private campaign audit history. The loc
 
 `git.path` is a nonempty POSIX path relative to the repository root. Absolute paths, `.` as the complete value, backslashes, empty components, and `..` components are invalid.
 
-Planning and execution must prove that the repository and commit are anonymously readable. The check runs with credential helpers, SSH agents, askpass programs, interactive prompting, global Git configuration, system Git configuration, and Git authentication environment variables disabled. The remote checkout must report the locked commit before Harbor reads any task.
+Planning and execution must prove that the repository, commit, and selected directory are anonymously readable. The check runs with credential helpers, SSH agents, askpass programs, interactive prompting, injected Git configuration, global Git configuration, system Git configuration, Git authentication environment variables, and the operator's home directory disabled. An empty temporary home also prevents `.netrc` credentials from being read. The remote Job repeats this check before Harbor reads any task.
 
 A public Git source must not require submodules, private dependencies, or authenticated Git LFS objects. When those files are needed, the operator checks out the source locally and uses `type: directory`.
 
@@ -102,7 +102,7 @@ Harbor-HF must not forward `GITHUB_TOKEN`, `GH_TOKEN`, an SSH key, an SSH agent,
 
 Private Git may still be used on the operator machine. The operator may use an existing local checkout or use locally configured Git authentication in place, then submit that directory as a bundle. The credential remains in its original local store.
 
-This boundary does not remove runtime credentials that are independently required for private HF storage, model inference, or judging. Each runtime credential requires a purpose-scoped value and explicit approval for its exact source and remote destination.
+This boundary does not remove runtime credentials that are independently required for private HF storage, model inference, or judging. Each runtime credential requires a purpose-scoped value and explicit approval for its exact source and remote destination. Local submission reads remote Job values only from purpose-scoped variables such as `HARBOR_HF_JOB_TOKEN` and `HARBOR_HF_JOB_OPENAI_API_KEY`; it does not forward the similarly named ambient account variable.
 
 ## Resolved source lock
 
@@ -280,6 +280,8 @@ Bundles are shared immutable inputs. Campaign locks reference them by digest. No
 A separate dry-run garbage collector may identify bundles unreachable from retained campaign locks. Deletion requires an explicit operator action, a fresh reachability scan, and a record of every deleted digest. Age alone is not sufficient proof that a bundle is unused.
 
 ## Validation failures
+
+`campaign plan` reports the source-lock digest and source type. For a local directory it also reports the content digest, file count, uncompressed byte count, and managed Bucket destination without reading or writing that Bucket. `campaign submit --dry-run` includes the complete source lock, source-lock digest, planned bundle receipt, and runtime secret names. For a controller-backed campaign, its rendered Job command also shows the exact read-only mount.
 
 Planning or submission fails when:
 

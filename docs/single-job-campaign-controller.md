@@ -73,7 +73,7 @@ bundle reference. The lock never contains a local path or source credential.
 
 `input-manifest.json` records the exact byte count and SHA-256 of the other three files. The input folder is stored under a content-addressed private Bucket path and mounted read-only. A benchmark bundle is stored once beneath its own content address and mounted separately.
 
-Extra files are invalid. Symlinks are invalid. Every digest uses SHA-256 over exact file bytes. The source-lock addition takes effect with the [benchmark source implementation](benchmark-source-implementation-plan.md); authenticated Git has no fallback path.
+Extra files are invalid. Symlinks are invalid. Every digest uses SHA-256 over exact file bytes. The source lock is required by the [benchmark source contract](benchmark-sources.md), and authenticated Git has no fallback path.
 
 ## Minimal manifest addition
 
@@ -169,14 +169,15 @@ The controller recalculates projected completion from observed trial durations a
 
 1. Validate and plan the campaign.
 2. Verify that the complete initial campaign fits one physical Job.
-3. Create the immutable campaign and input package.
-4. Reserve controller attempt 1 with a parent-checked commit.
-5. Adopt an immutable launch receipt when one already exists.
-6. Acquire the parent-checked launch claim for this controller attempt.
-7. Search for an existing Job with the exact campaign label.
-8. Launch one detached controller Job if no matching Job exists.
-9. Record the physical Job ID in an immutable launch receipt.
-10. Release the launch claim.
+3. Upload or verify any benchmark bundle before creating campaign state.
+4. Create the immutable campaign and input package.
+5. Reserve controller attempt 1 with a parent-checked commit.
+6. Adopt an immutable launch receipt when one already exists.
+7. Acquire the parent-checked launch claim for this controller attempt.
+8. Search for an existing Job with the exact campaign label.
+9. Launch one detached controller Job if no matching Job exists.
+10. Record the physical Job ID in an immutable launch receipt.
+11. Release the launch claim.
 
 The Job command is:
 
@@ -184,9 +185,10 @@ The Job command is:
 harbor-hf campaign-controller \
   /input/manifest.yaml \
   /input/campaign.lock.json \
-  --source-lock /input/source.lock.json \
   --output-root /output
 ```
+
+The controller requires `source.lock.json` beside the two positional input files and verifies it through `input-manifest.json` before planning any action.
 
 The Job has these labels:
 

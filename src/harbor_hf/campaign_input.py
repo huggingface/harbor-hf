@@ -7,11 +7,17 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from harbor_hf.benchmark_source import (
+    BenchmarkSourceLock,
+    load_source_lock,
+    resolved_experiment,
+    source_lock_bytes,
+)
 from harbor_hf.campaigns import CampaignLock, build_campaign_lock, build_campaign_plan
 from harbor_hf.io import load_experiment
 from harbor_hf.models import ExperimentSpec
 
-_INPUT_FILES = ("campaign.lock.json", "manifest.yaml")
+_INPUT_FILES = ("campaign.lock.json", "manifest.yaml", "source.lock.json")
 
 
 class FrozenModel(BaseModel):
@@ -43,7 +49,9 @@ class CampaignInputManifest(FrozenModel):
 
 
 class ValidatedCampaignInput(FrozenModel):
+    requested_spec: ExperimentSpec
     spec: ExperimentSpec
+    source_lock: BenchmarkSourceLock
     lock: CampaignLock
     manifest: CampaignInputManifest
 
@@ -54,19 +62,26 @@ def write_campaign_input(
     request: bytes,
     lock: CampaignLock,
 ) -> CampaignInputManifest:
-    if destination.exists() and any(destination.iterdir()):
-        raise ValueError("campaign input destination must be empty")
+    if destination.exists():
+        if destination.is_symlink() or not destination.is_dir():
+            raise ValueError("campaign input destination must be a real directory")
+        if any(destination.iterdir()):
+            raise ValueError("campaign input destination must be empty")
     destination.mkdir(parents=True, exist_ok=True)
     manifest_path = destination / "manifest.yaml"
+    source_lock_path = destination / "source.lock.json"
     lock_path = destination / "campaign.lock.json"
     manifest_path.write_bytes(request)
+    source_lock_path.write_bytes(source_lock_bytes(lock.source_lock))
     lock_path.write_text(
         json.dumps(lock.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     files = {
         path.name: _file_record(path)
-        for path in sorted((lock_path, manifest_path), key=lambda value: value.name)
+        for path in sorted(
+            (lock_path, manifest_path, source_lock_path), key=lambda value: value.name
+        )
     }
     input_manifest = CampaignInputManifest(
         campaign_id=lock.campaign_id,
@@ -83,29 +98,27 @@ def write_campaign_input(
 
 
 def validate_campaign_input(root: Path) -> ValidatedCampaignInput:
-    if root.is_symlink() or not root.is_dir():
-        raise ValueError("campaign input root must be a real directory")
-    entries = sorted(root.iterdir(), key=lambda path: path.name)
-    if any(path.is_symlink() or not path.is_file() for path in entries):
-        raise ValueError("campaign input cannot contain symlinks or directories")
-    if [path.name for path in entries] != [
-        "campaign.lock.json",
-        "input-manifest.json",
-        "manifest.yaml",
-    ]:
-        raise ValueError("campaign input must contain exactly three files")
+    _validate_campaign_input_paths(root)
     input_manifest = CampaignInputManifest.model_validate_json(
         (root / "input-manifest.json").read_text(encoding="utf-8")
     )
     for name, expected in input_manifest.files.items():
         if _file_record(root / name) != expected:
             raise ValueError(f"campaign input file does not match its digest: {name}")
-    spec = load_experiment(root / "manifest.yaml")
+    requested_spec = load_experiment(root / "manifest.yaml")
+    source_lock = load_source_lock(root / "source.lock.json")
+    spec = resolved_experiment(requested_spec, source_lock)
     lock = CampaignLock.model_validate_json(
         (root / "campaign.lock.json").read_text(encoding="utf-8")
     )
+    if source_lock != lock.source_lock:
+        raise ValueError("campaign input source lock does not match its campaign")
     expected_lock = build_campaign_lock(
-        build_campaign_plan(spec, recovery_policy=lock.recovery_policy),
+        build_campaign_plan(
+            requested_spec,
+            source_lock=source_lock,
+            recovery_policy=lock.recovery_policy,
+        ),
         lock.campaign_id,
         clock=lambda: lock.created_at,
     )
@@ -116,7 +129,28 @@ def validate_campaign_input(root: Path) -> ValidatedCampaignInput:
         or input_manifest.plan_digest != lock.plan_digest
     ):
         raise ValueError("campaign input identity does not match its lock")
-    return ValidatedCampaignInput(spec=spec, lock=lock, manifest=input_manifest)
+    return ValidatedCampaignInput(
+        requested_spec=requested_spec,
+        spec=spec,
+        source_lock=source_lock,
+        lock=lock,
+        manifest=input_manifest,
+    )
+
+
+def _validate_campaign_input_paths(root: Path) -> None:
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("campaign input root must be a real directory")
+    entries = sorted(root.iterdir(), key=lambda path: path.name)
+    if any(path.is_symlink() or not path.is_file() for path in entries):
+        raise ValueError("campaign input cannot contain symlinks or directories")
+    if [path.name for path in entries] != [
+        "campaign.lock.json",
+        "input-manifest.json",
+        "manifest.yaml",
+        "source.lock.json",
+    ]:
+        raise ValueError("campaign input must contain exactly four files")
 
 
 def campaign_input_json_schema() -> dict[str, object]:

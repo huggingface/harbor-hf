@@ -1710,7 +1710,11 @@ def _validated_request(lock: CampaignLock, request: bytes) -> ExperimentSpec:
         raise CampaignApplyError("campaign request is not a valid manifest") from error
     try:
         expected = build_campaign_lock(
-            build_campaign_plan(spec, recovery_policy=lock.recovery_policy),
+            build_campaign_plan(
+                spec,
+                source_lock=lock.source_lock,
+                recovery_policy=lock.recovery_policy,
+            ),
             lock.campaign_id,
             clock=lambda: lock.created_at,
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 from datetime import UTC, datetime
@@ -17,6 +18,21 @@ from harbor_hf.automation import (
     AutomationRequest,
     automation_plan,
     install_automation,
+)
+from harbor_hf.benchmark_bundle import (
+    PreparedBenchmarkBundle,
+    benchmark_bundle_json_schema,
+)
+from harbor_hf.benchmark_source import (
+    resolve_benchmark_source,
+    resolved_experiment,
+    source_lock_bytes,
+    source_lock_digest,
+    source_lock_json_schema,
+)
+from harbor_hf.benchmark_staging import (
+    BenchmarkBundleReceipt,
+    benchmark_bundle_receipt,
 )
 from harbor_hf.bucket_evidence import (
     BucketEvidenceError,
@@ -66,7 +82,7 @@ from harbor_hf.controller_status import (
 )
 from harbor_hf.coordination import CoordinationError, HubClaimStore
 from harbor_hf.io import ManifestError, load_experiment
-from harbor_hf.models import ExperimentSpec
+from harbor_hf.models import BundleBenchmarkSource, ExperimentSpec
 from harbor_hf.operations import (
     AutomaticCampaignPublisher,
     DatasetRepositoryApi,
@@ -77,7 +93,7 @@ from harbor_hf.operations import (
     seal_partial_campaign_runs,
     verify_campaign_artifacts,
 )
-from harbor_hf.planner import build_plan
+from harbor_hf.planner import build_plan, experiment_digest
 from harbor_hf.process import ProcessError, SubprocessRunner
 from harbor_hf.profile_preflight import preflight_profile_plan
 from harbor_hf.profile_submission import (
@@ -109,7 +125,12 @@ from harbor_hf.submission import (
     Submission,
     build_submit_campaign_controller_command,
     build_submit_command,
+    campaign_job_secret_names,
     ensure_private_coordination_repository,
+    ensure_private_job_input_bucket,
+    prepare_benchmark_bundle_input,
+    require_campaign_job_secret_sources,
+    require_private_bucket,
     submit_campaign_controller,
 )
 from harbor_hf.submission import submit as submit_job
@@ -313,7 +334,10 @@ def campaign_plan(
 ) -> None:
     """Resolve an immutable campaign without creating remote resources."""
     try:
-        resolved = build_campaign_plan(_load_or_exit(manifest))
+        spec = _load_or_exit(manifest)
+        with tempfile.TemporaryDirectory(prefix="harbor-hf-source-plan-") as name:
+            source = resolve_benchmark_source(spec, manifest, Path(name))
+            resolved = build_campaign_plan(spec, source_lock=source.lock)
     except ValueError as error:
         typer.echo(f"Error: {error}", err=True)
         raise typer.Exit(code=2) from error
@@ -324,6 +348,18 @@ def campaign_plan(
         return
     typer.echo(f"Campaign plan: {resolved.experiment}")
     typer.echo(f"Plan digest: {resolved.plan_digest}")
+    typer.echo(f"Source lock digest: {source_lock_digest(resolved.source_lock)}")
+    typer.echo(f"Source type: {resolved.source_lock.source.type}")
+    if source.bundle is not None:
+        namespace = (
+            spec.remote.job.namespace if spec.remote is not None else "NAMESPACE"
+        )
+        bundle = benchmark_bundle_receipt(source.bundle, namespace, "planned")
+        typer.echo(f"Source content digest: {bundle.content_digest}")
+        typer.echo(f"Bundle files: {bundle.file_count}")
+        typer.echo(f"Bundle bytes: {bundle.total_bytes}")
+        typer.echo(f"Bundle destination: {bundle.uri}")
+        typer.echo("Existing remote bundle inspected: no")
     typer.echo(f"Runs: {resolved.run_count}")
     typer.echo(f"Shards: {resolved.shard_count}")
     typer.echo(f"Trials: {resolved.trial_count}")
@@ -337,6 +373,8 @@ def campaign_schema(
     schemas = {
         **campaign_json_schemas(),
         "campaign_input": campaign_input_json_schema(),
+        "benchmark_source_lock": source_lock_json_schema(),
+        "benchmark_bundle": benchmark_bundle_json_schema(),
         **controller_json_schemas(),
     }
     rendered = json.dumps(schemas, indent=2, sort_keys=True) + "\n"
@@ -359,24 +397,27 @@ def campaign_submit(
             raise ValueError("campaign submission requires a remote configuration")
         if spec.publishing.index_dataset is None:
             raise ValueError("campaign submission requires publishing.index_dataset")
-        resolved = build_campaign_plan(spec)
-        resolved_id = campaign_id or new_campaign_id(resolved)
-        lock = build_campaign_lock(resolved, resolved_id)
-        submitted = new_event(
-            subject_type="campaign",
-            subject_id=resolved_id,
-            kind="campaign.submitted",
-            producer="cli",
-            payload=CampaignSubmittedPayload(plan_digest=resolved.plan_digest),
-        )
-        request = manifest.read_bytes()
-        result = _submit_campaign(
-            spec,
-            lock,
-            request,
-            submitted,
-            dry_run=dry_run,
-        )
+        with tempfile.TemporaryDirectory(prefix="harbor-hf-source-submit-") as name:
+            source = resolve_benchmark_source(spec, manifest, Path(name))
+            resolved = build_campaign_plan(spec, source_lock=source.lock)
+            resolved_id = campaign_id or new_campaign_id(resolved)
+            lock = build_campaign_lock(resolved, resolved_id)
+            submitted = new_event(
+                subject_type="campaign",
+                subject_id=resolved_id,
+                kind="campaign.submitted",
+                producer="cli",
+                payload=CampaignSubmittedPayload(plan_digest=resolved.plan_digest),
+            )
+            request = manifest.read_bytes()
+            result = _submit_campaign(
+                spec,
+                lock,
+                request,
+                submitted,
+                bundle=source.bundle,
+                dry_run=dry_run,
+            )
     except _OPERATION_ERRORS as error:
         _exit_operation(error)
     _echo_json(result)
@@ -389,40 +430,101 @@ def _submit_campaign(
     submitted: CampaignEvent,
     *,
     dry_run: bool,
+    bundle: PreparedBenchmarkBundle | None = None,
 ) -> dict[str, object]:
     if spec.remote is None:
         raise ValueError("campaign submission requires remote execution")
     if dry_run:
-        if lock.controller_policy is None:
-            return {
-                "campaign_id": lock.campaign_id,
-                "plan_digest": lock.plan_digest,
-                "artifact_prefix": lock.artifact_prefix,
-                "stored": False,
-            }
-        with tempfile.TemporaryDirectory(prefix="harbor-hf-campaign-dry-run-") as name:
-            input_manifest = write_campaign_input(
-                Path(name), request=request, lock=lock
-            )
-        command = build_submit_campaign_controller_command(
-            lock,
-            spec,
-            input_dir="hf://buckets/DRY_RUN/content-addressed-input",
-            bucket=spec.artifacts.bucket,
-            attempt=1,
-        )
-        return CampaignControllerSubmission(
-            campaign_id=lock.campaign_id,
-            plan_digest=lock.plan_digest,
-            input_digest=input_manifest.input_digest,
-            input_uri="hf://buckets/DRY_RUN/content-addressed-input",
-            job_id=None,
-            attempt=1,
-            launch_receipt=(f"campaigns/{lock.campaign_id}/controller-attempts/1.json"),
-            command=command,
-        ).model_dump(mode="json")
+        return _campaign_submission_dry_run(spec, lock, request, bundle)
 
-    ensure_private_coordination_repository(spec.remote.job.namespace)
+    if lock.controller_policy is not None:
+        require_campaign_job_secret_sources(spec)
+    token, api, bundle_receipt = _prepare_campaign_source(spec, lock, bundle)
+    _create_or_adopt_campaign(spec, lock, request, submitted)
+    if lock.controller_policy is None:
+        return {
+            "campaign_id": lock.campaign_id,
+            "plan_digest": lock.plan_digest,
+            "artifact_prefix": lock.artifact_prefix,
+            "source_lock_digest": source_lock_digest(lock.source_lock),
+            "bundle": (
+                bundle_receipt.model_dump(mode="json")
+                if bundle_receipt is not None
+                else None
+            ),
+            "stored": True,
+        }
+    return _launch_campaign_controller(spec, lock, request, token, api, bundle_receipt)
+
+
+def _launch_campaign_controller(
+    spec: ExperimentSpec,
+    lock: CampaignLock,
+    request: bytes,
+    token: str | None,
+    api: HfApi | None,
+    bundle_receipt: BenchmarkBundleReceipt | None,
+) -> dict[str, object]:
+    assert spec.remote is not None
+    selected_token = token or get_token()
+    if selected_token is None:
+        raise ValueError("campaign controller submission requires HF authentication")
+    selected_api = api or HfApi(token=selected_token)
+    result = submit_campaign_controller(
+        lock,
+        spec,
+        request=request,
+        bucket=spec.artifacts.bucket,
+        runner=SubprocessRunner(),
+        bucket_api=cast(BucketApi, selected_api),
+        jobs_api=cast(ControllerJobsApi, selected_api),
+        state_store=HubControllerStateStore(
+            spec.remote.job.namespace,
+            selected_token,
+        ),
+        bundle=None,
+    )
+    if bundle_receipt is not None:
+        result = result.model_copy(update={"bundle": bundle_receipt})
+    return result.model_dump(mode="json")
+
+
+def _prepare_campaign_source(
+    spec: ExperimentSpec,
+    lock: CampaignLock,
+    bundle: PreparedBenchmarkBundle | None,
+) -> tuple[str | None, HfApi | None, BenchmarkBundleReceipt | None]:
+    assert spec.remote is not None
+    if not isinstance(lock.source_lock.source, BundleBenchmarkSource):
+        ensure_private_coordination_repository(spec.remote.job.namespace)
+        return None, None, None
+    token = get_token()
+    if token is None:
+        raise ValueError("benchmark bundle staging requires HF authentication")
+    api = HfApi(token=token)
+    bucket_api = cast(BucketApi, api)
+    ensure_private_coordination_repository(spec.remote.job.namespace, api=bucket_api)
+    input_bucket = ensure_private_job_input_bucket(
+        spec.remote.job.namespace, api=bucket_api
+    )
+    require_private_bucket(spec.artifacts.bucket, api=bucket_api)
+    receipt = prepare_benchmark_bundle_input(
+        lock.source_lock.source,
+        bundle=bundle,
+        namespace=spec.remote.job.namespace,
+        bucket=input_bucket,
+        api=bucket_api,
+    )
+    return token, api, receipt
+
+
+def _create_or_adopt_campaign(
+    spec: ExperimentSpec,
+    lock: CampaignLock,
+    request: bytes,
+    submitted: CampaignEvent,
+) -> None:
+    assert spec.remote is not None
     store = HubCampaignStore(spec.remote.job.namespace)
     try:
         store.create_campaign(lock, request, submitted)
@@ -431,34 +533,63 @@ def _submit_campaign(
         if (
             observed_lock != lock
             or store.load_request(lock.campaign_id) != request
-            or not any(event == submitted for event in observed_events)
+            or submitted not in observed_events
         ):
             raise
+
+
+def _campaign_submission_dry_run(
+    spec: ExperimentSpec,
+    lock: CampaignLock,
+    request: bytes,
+    bundle: PreparedBenchmarkBundle | None,
+) -> dict[str, object]:
+    if spec.remote is None:
+        raise ValueError("campaign submission requires remote execution")
     if lock.controller_policy is None:
         return {
             "campaign_id": lock.campaign_id,
             "plan_digest": lock.plan_digest,
             "artifact_prefix": lock.artifact_prefix,
-            "stored": True,
+            "source_lock": lock.source_lock.model_dump(mode="json"),
+            "source_lock_digest": source_lock_digest(lock.source_lock),
+            "secret_names": campaign_job_secret_names(spec),
+            "bundle": (
+                benchmark_bundle_receipt(
+                    bundle, spec.remote.job.namespace, "planned"
+                ).model_dump(mode="json")
+                if bundle is not None
+                else None
+            ),
+            "stored": False,
         }
-    token = get_token()
-    if token is None:
-        raise ValueError("campaign controller submission requires HF authentication")
-    api = HfApi(token=token)
-    result = submit_campaign_controller(
+    with tempfile.TemporaryDirectory(prefix="harbor-hf-campaign-dry-run-") as name:
+        input_manifest = write_campaign_input(Path(name), request=request, lock=lock)
+    command = build_submit_campaign_controller_command(
         lock,
         spec,
-        request=request,
+        input_dir="hf://buckets/DRY_RUN/content-addressed-input",
         bucket=spec.artifacts.bucket,
-        runner=SubprocessRunner(),
-        bucket_api=cast(BucketApi, api),
-        jobs_api=cast(ControllerJobsApi, api),
-        state_store=HubControllerStateStore(
-            spec.remote.job.namespace,
-            token,
-        ),
+        attempt=1,
     )
-    return result.model_dump(mode="json")
+    return CampaignControllerSubmission(
+        campaign_id=lock.campaign_id,
+        plan_digest=lock.plan_digest,
+        input_digest=input_manifest.input_digest,
+        input_uri="hf://buckets/DRY_RUN/content-addressed-input",
+        job_id=None,
+        attempt=1,
+        launch_receipt=f"campaigns/{lock.campaign_id}/controller-attempts/1.json",
+        source_lock=lock.source_lock,
+        source_lock_digest=source_lock_digest(lock.source_lock),
+        secret_names=campaign_job_secret_names(spec),
+        bundle=(
+            benchmark_bundle_receipt(bundle, spec.remote.job.namespace, "planned")
+            if bundle is not None
+            else None
+        ),
+        command=command,
+    ).model_dump(mode="json")
 
 
 @campaign_app.command("status")
@@ -880,12 +1011,7 @@ def automation_install(
             namespace=namespace or spec.remote.job.namespace,
             schedule=schedule,
             remote=spec.remote,
-            secret_names=(
-                [spec.benchmark.source.credentials.secret_name]
-                if spec.benchmark.source is not None
-                and spec.benchmark.source.credentials is not None
-                else []
-            ),
+            secret_names=[],
             campaign_ids=campaign_ids or [],
             suspended=suspended,
         )
@@ -896,9 +1022,9 @@ def automation_install(
                 "dry_run": True,
             }
         else:
-            token = get_token()
-            if token is None:
-                raise ValueError("automation installation requires HF authentication")
+            token = os.environ.get("HARBOR_HF_JOB_TOKEN", "")
+            if not token:
+                raise ValueError("automation installation requires HARBOR_HF_JOB_TOKEN")
             installation = install_automation(request, token=token)
             payload = {
                 **installation.model_dump(mode="json"),
@@ -922,42 +1048,56 @@ def submit(
     """Submit one resolved matrix cell to a remote Hugging Face Job."""
     spec = _load_or_exit(manifest)
     try:
-        lock = build_run_lock(
-            spec,
-            model_id=model,
-            deployment_id=deployment,
-            agent_id=agent,
-            run_id=run_id,
-        )
-    except ValueError as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=2) from error
-
-    with tempfile.TemporaryDirectory(prefix="harbor-hf-") as staging_name:
-        staging = Path(staging_name)
-        shutil.copyfile(manifest, staging / "manifest.yaml")
-        _write_lock(staging / "run.lock.json", lock)
-        if dry_run:
-            command = build_submit_command(
-                lock, input_dir=staging, bucket=spec.artifacts.bucket
+        with tempfile.TemporaryDirectory(prefix="harbor-hf-") as staging_name:
+            root = Path(staging_name)
+            source = resolve_benchmark_source(spec, manifest, root / "source")
+            resolved_spec = resolved_experiment(spec, source.lock)
+            lock = build_run_lock(
+                resolved_spec,
+                model_id=model,
+                deployment_id=deployment,
+                agent_id=agent,
+                run_id=run_id,
+                manifest_digest=experiment_digest(spec),
             )
-            result = Submission(
-                run_id=lock.run_id,
-                artifact_prefix=lock.artifact_prefix,
-                job_id=None,
-                command=command,
-            )
-        else:
-            try:
+            staging = root / "input"
+            staging.mkdir()
+            shutil.copyfile(manifest, staging / "manifest.yaml")
+            (staging / "source.lock.json").write_bytes(source_lock_bytes(source.lock))
+            _write_lock(staging / "run.lock.json", lock)
+            if dry_run:
+                command = build_submit_command(
+                    lock, input_dir=staging, bucket=resolved_spec.artifacts.bucket
+                )
+                result = Submission(
+                    run_id=lock.run_id,
+                    artifact_prefix=lock.artifact_prefix,
+                    job_id=None,
+                    source_lock_digest=source_lock_digest(source.lock),
+                    bundle=(
+                        benchmark_bundle_receipt(
+                            source.bundle,
+                            resolved_spec.remote.job.namespace,
+                            "planned",
+                        )
+                        if source.bundle is not None
+                        and resolved_spec.remote is not None
+                        else None
+                    ),
+                    command=command,
+                )
+            else:
                 result = submit_job(
                     lock,
                     input_dir=staging,
-                    bucket=spec.artifacts.bucket,
+                    bucket=resolved_spec.artifacts.bucket,
                     runner=SubprocessRunner(),
+                    source_lock=source.lock,
+                    bundle=source.bundle,
                 )
-            except (HTTPError, ProcessError, ValueError) as error:
-                typer.echo(f"Error: {error}", err=True)
-                raise typer.Exit(code=1) from error
+    except (HTTPError, ProcessError, ValueError) as error:
+        typer.echo(f"Error: {error}", err=True)
+        raise typer.Exit(code=2 if dry_run else 1) from error
     typer.echo(json.dumps(result.model_dump(mode="json"), indent=2))
 
 

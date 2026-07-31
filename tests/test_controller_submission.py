@@ -173,6 +173,7 @@ def test_controller_submission_stages_exact_input_and_reserves_before_launch(
         "campaign.lock.json",
         "input-manifest.json",
         "manifest.yaml",
+        "source.lock.json",
     }
     assert spec.remote is not None
     assert jobs.requests[0]["namespace"] == spec.remote.job.namespace

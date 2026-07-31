@@ -30,12 +30,17 @@ def test_campaign_input_is_exact_content_addressed_and_reproducible(
 
     assert validated.lock.campaign_id == "campaign-input"
     assert validated.manifest.plan_digest == validated.lock.plan_digest
-    assert set(validated.manifest.files) == {"campaign.lock.json", "manifest.yaml"}
+    assert set(validated.manifest.files) == {
+        "campaign.lock.json",
+        "manifest.yaml",
+        "source.lock.json",
+    }
     assert validated.manifest.input_digest.startswith("sha256:")
     assert set(path.name for path in root.iterdir()) == {
         "campaign.lock.json",
         "input-manifest.json",
         "manifest.yaml",
+        "source.lock.json",
     }
 
 
@@ -46,7 +51,7 @@ def test_campaign_input_rejects_extra_files_symlinks_and_changed_bytes(
 ) -> None:
     root = _input(tmp_path, remote_manifest, remote_spec)
     (root / "extra.txt").write_text("unexpected", encoding="utf-8")
-    with pytest.raises(ValueError, match="exactly three files"):
+    with pytest.raises(ValueError, match="exactly four files"):
         validate_campaign_input(root)
     (root / "extra.txt").unlink()
 

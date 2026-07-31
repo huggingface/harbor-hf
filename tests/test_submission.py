@@ -7,6 +7,11 @@ from conftest import with_provider_controller
 from huggingface_hub import CommitOperationAdd
 from huggingface_hub.errors import HfHubHTTPError
 
+from harbor_hf.benchmark_source import (
+    BenchmarkSourceLock,
+    source_lock_bytes,
+    source_lock_from_spec,
+)
 from harbor_hf.campaigns import (
     WaveLock,
     build_campaign_lock,
@@ -16,9 +21,8 @@ from harbor_hf.campaigns import (
 from harbor_hf.control import CampaignSubmittedPayload, new_event
 from harbor_hf.models import (
     BenchmarkJudgeSpec,
+    BundleBenchmarkSource,
     ExperimentSpec,
-    GitBenchmarkSource,
-    GitHubTokenCredentials,
 )
 from harbor_hf.provider_models import ProviderTarget
 from harbor_hf.reconciler import plan_reconciliation
@@ -43,6 +47,12 @@ from harbor_hf.submission import (
 )
 
 
+def _write_source_lock(path: Path, spec: ExperimentSpec) -> BenchmarkSourceLock:
+    lock = source_lock_from_spec(spec)
+    (path / "source.lock.json").write_bytes(source_lock_bytes(lock))
+    return lock
+
+
 class FakeRunner:
     def __init__(self, output: str) -> None:
         self.output = output
@@ -50,22 +60,6 @@ class FakeRunner:
 
     def run_text(self, command: list[str]) -> str:
         self.command = command
-        return self.output
-
-
-class SecretFileRunner(FakeRunner):
-    def __init__(self, output: str) -> None:
-        super().__init__(output)
-        self.secret_path: Path | None = None
-        self.secret_content: str | None = None
-        self.secret_mode: int | None = None
-
-    def run_text(self, command: list[str]) -> str:
-        self.command = command
-        index = command.index("--secrets-file")
-        self.secret_path = Path(command[index + 1])
-        self.secret_content = self.secret_path.read_text(encoding="utf-8")
-        self.secret_mode = self.secret_path.stat().st_mode & 0o777
         return self.output
 
 
@@ -88,7 +82,7 @@ class FakeBucketApi:
         self.inspected_repositories: list[tuple[str, dict[str, object]]] = []
         self.repository_commits: list[tuple[str, list[object], dict[str, object]]] = []
         self.bucket_batches: list[
-            tuple[str, list[tuple[bytes, str]], dict[str, object]]
+            tuple[str, list[tuple[str | Path | bytes, str]], dict[str, object]]
         ] = []
 
     def create_bucket(self, bucket_id: str, **kwargs: object) -> object:
@@ -104,7 +98,7 @@ class FakeBucketApi:
         self,
         bucket_id: str,
         *,
-        add: list[tuple[bytes, str]],
+        add: list[tuple[str | Path | bytes, str]],
         **kwargs: object,
     ) -> object:
         self.bucket_batches.append((bucket_id, add, kwargs))
@@ -163,7 +157,10 @@ def test_build_submit_command_contains_only_secret_name(
         "ghcr.io/astral-sh/uv@sha256:" + "0" * 64,
     ]
     assert command[22:25] == ["bash", "-lc", command[24]]
-    assert "git clone --filter=blob:none --no-checkout" in command[24]
+    assert (
+        "git -c credential.helper= clone --filter=blob:none --no-checkout"
+        in command[24]
+    )
     assert "uv run --project" in command[24]
     assert "--locked" in command[24]
     assert command[25:] == [
@@ -176,6 +173,36 @@ def test_build_submit_command_contains_only_secret_name(
         "/output",
     ]
     assert "super-secret" not in " ".join(command)
+
+
+def test_bundle_submit_mounts_the_managed_prefix_without_git_secrets(
+    remote_spec: ExperimentSpec,
+    tmp_path: Path,
+) -> None:
+    source = BundleBenchmarkSource(
+        content_digest="sha256:" + "8" * 64,
+        manifest_sha256="9" * 64,
+    )
+    raw = remote_spec.model_dump(mode="python")
+    raw["benchmark"].update(
+        {"dataset": "shellbench/local", "source": source.model_dump()}
+    )
+    raw["benchmark"].pop("dataset_digest", None)
+    spec = ExperimentSpec.model_validate(raw)
+    lock = build_run_lock(spec, run_id="bundle-run")
+
+    command = build_submit_command(
+        lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
+    )
+
+    assert (
+        "hf://buckets/osolmaz/jobs-artifacts/benchmark-bundles/sha256/"
+        + "8" * 64
+        + ":/benchmark-source:ro"
+    ) in command
+    assert job_secret_names(lock) == ["HF_TOKEN"]
+    assert "GITHUB_TOKEN" not in command
+    assert "GH_TOKEN" not in command
 
 
 def test_direct_submit_rejects_judge_required_run(
@@ -260,45 +287,32 @@ def test_build_submit_wave_command_targets_hidden_worker(
     assert "test-token" not in " ".join(command)
 
 
-def test_authenticated_source_adds_named_secret_to_controller_jobs(
-    remote_spec: ExperimentSpec, tmp_path: Path
+def test_git_credential_secret_names_are_rejected_by_the_launch_contract(
+    remote_spec: ExperimentSpec,
+    tmp_path: Path,
 ) -> None:
-    source = GitBenchmarkSource(
-        repository="ShellBench/public-tasks",
-        revision="8" * 40,
-        path="tasks/115-tasks",
-        credentials=GitHubTokenCredentials(secret_name="GITHUB_TOKEN"),
+    judge = BenchmarkJudgeSpec(
+        api_url="https://api.openai.com/v1/chat/completions",
+        model="judge/model",
+        api_key_secret_name="OPENAI_API_KEY",
+    ).model_copy(update={"api_key_secret_name": "GITHUB_TOKEN"})
+    spec = remote_spec.model_copy(
+        update={"benchmark": remote_spec.benchmark.model_copy(update={"judge": judge})}
     )
-    raw = remote_spec.model_dump(mode="python")
-    raw["benchmark"].update(
-        {
-            "dataset": "shellbench/public-115",
-            "source": source.model_dump(mode="python"),
-        }
-    )
-    raw["benchmark"].pop("dataset_digest", None)
-    spec = ExperimentSpec.model_validate(raw)
-    run_lock = build_run_lock(spec, run_id="private-source")
-    wave_lock = _wave_lock(spec)
+    runner = FakeRunner("Job started: " + "a" * 24)
+    api = FakeBucketApi()
 
-    run_command = build_submit_command(
-        run_lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
-    )
-    wave_command = build_submit_wave_command(
-        wave_lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
-    )
+    with pytest.raises(ValueError, match="Input should be"):
+        submit_wave(
+            _wave_lock(spec),
+            input_dir=tmp_path,
+            bucket=spec.artifacts.bucket,
+            runner=runner,
+            bucket_api=api,
+        )
 
-    assert job_secret_names(run_lock) == ["HF_TOKEN", "GITHUB_TOKEN"]
-    assert job_secret_names(wave_lock) == ["HF_TOKEN", "GITHUB_TOKEN"]
-    assert run_command.count("--secrets") == 2
-    assert wave_command.count("--secrets") == 2
-    assert run_command[10:14] == [
-        "--secrets",
-        "HF_TOKEN",
-        "--secrets",
-        "GITHUB_TOKEN",
-    ]
-    assert "github-secret" not in " ".join(run_command + wave_command)
+    assert runner.command is None
+    assert api.created == []
 
 
 def test_direct_judge_adds_provider_secret_to_wave_job(
@@ -316,110 +330,6 @@ def test_direct_judge_adds_provider_secret_to_wave_job(
     )
 
     assert job_secret_names(_wave_lock(spec)) == ["HF_TOKEN", "OPENAI_API_KEY"]
-
-
-def test_private_source_submission_requires_local_secret_before_staging(
-    remote_spec: ExperimentSpec,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source = GitBenchmarkSource(
-        repository="ShellBench/public-tasks",
-        revision="8" * 40,
-        path="tasks/115-tasks",
-        credentials=GitHubTokenCredentials(secret_name="GITHUB_TOKEN"),
-    )
-    raw = remote_spec.model_dump(mode="python")
-    raw["benchmark"].update(
-        {"dataset": "shellbench/public-115", "source": source.model_dump()}
-    )
-    raw["benchmark"].pop("dataset_digest", None)
-    spec = ExperimentSpec.model_validate(raw)
-    run_lock = build_run_lock(spec, run_id="private-source")
-    wave_lock = _wave_lock(spec)
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    runner = FakeRunner("a" * 24)
-    api = FakeBucketApi()
-
-    with pytest.raises(ValueError, match="required secret GITHUB_TOKEN"):
-        submit(
-            run_lock,
-            input_dir=tmp_path,
-            bucket="osolmaz/benchmark-runs",
-            runner=runner,
-            bucket_api=api,
-        )
-    with pytest.raises(ValueError, match="required secret GITHUB_TOKEN"):
-        submit_wave(
-            wave_lock,
-            input_dir=tmp_path,
-            bucket="osolmaz/benchmark-runs",
-            runner=runner,
-            bucket_api=api,
-        )
-
-    assert runner.command is None
-    assert api.created == []
-    assert api.created_repositories == []
-
-
-def test_private_source_secret_uses_ephemeral_secret_file(
-    remote_spec: ExperimentSpec,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source = GitBenchmarkSource(
-        repository="ShellBench/public-tasks",
-        revision="8" * 40,
-        path="tasks/115-tasks",
-        credentials=GitHubTokenCredentials(secret_name="GITHUB_TOKEN"),
-    )
-    raw = remote_spec.model_dump(mode="python")
-    raw["benchmark"].update(
-        {
-            "dataset": "shellbench/public-115",
-            "source": source.model_dump(),
-            "judge": BenchmarkJudgeSpec(
-                api_url="https://api.openai.com/v1/chat/completions",
-                model="gpt-5.6-luna",
-                api_key_secret_name="OPENAI_API_KEY",
-                reasoning_effort="xhigh",
-                strip_temperature=True,
-            ).model_dump(),
-        }
-    )
-    raw["benchmark"].pop("dataset_digest", None)
-    spec = ExperimentSpec.model_validate(raw)
-    lock = _wave_lock(spec)
-    monkeypatch.setenv("HF_TOKEN", "hf-secret")
-    monkeypatch.setenv("GITHUB_TOKEN", "github-secret")
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
-    runner = SecretFileRunner("Job started: " + "a" * 24)
-    (tmp_path / "manifest.yaml").write_text("kind: Experiment\n")
-
-    result = submit_wave(
-        lock,
-        input_dir=tmp_path,
-        bucket=lock.artifact_bucket,
-        runner=runner,
-        bucket_api=FakeBucketApi(),
-    )
-
-    assert runner.command is not None
-    rendered_command = " ".join(runner.command)
-    assert "hf-secret" not in rendered_command
-    assert "github-secret" not in rendered_command
-    assert "openai-secret" not in rendered_command
-    assert "--secrets-file" in runner.command
-    assert runner.secret_content == (
-        "HF_TOKEN=hf-secret\nGITHUB_TOKEN=github-secret\nOPENAI_API_KEY=openai-secret\n"
-    )
-    assert runner.secret_mode == 0o600
-    assert runner.secret_path is not None and not runner.secret_path.exists()
-    assert "--secrets-file" not in result.command
-    assert result.command[result.command.index("--secrets") + 1] == "HF_TOKEN"
-    github_secret = result.command.index("GITHUB_TOKEN")
-    assert result.command[github_secret - 1] == "--secrets"
 
 
 def test_provider_wave_submission_is_rejected_before_creating_a_child_job(
@@ -530,17 +440,47 @@ def test_endpoint_lease_label_requires_endpoint_binding(
         endpoint_lease_label(lock)
 
 
+def test_submit_rejects_a_source_lock_that_does_not_match_the_run(
+    remote_spec: ExperimentSpec,
+    tmp_path: Path,
+) -> None:
+    source_lock = _write_source_lock(tmp_path, remote_spec)
+    changed = source_lock.model_copy(
+        update={
+            "source": source_lock.source.model_copy(
+                update={"reference": "harbor/other@sha256:" + "9" * 64}
+            )
+        }
+    )
+    (tmp_path / "source.lock.json").write_bytes(source_lock_bytes(changed))
+    runner = FakeRunner("must not run")
+
+    with pytest.raises(ValueError, match="changed before submission"):
+        submit(
+            build_run_lock(remote_spec),
+            input_dir=tmp_path,
+            bucket="osolmaz/benchmark-runs",
+            runner=runner,
+            source_lock=source_lock,
+            bucket_api=FakeBucketApi(),
+        )
+
+    assert runner.command is None
+
+
 def test_submit_parses_job_id(remote_spec: ExperimentSpec, tmp_path: Path) -> None:
     lock = build_run_lock(remote_spec, run_id="run-1")
     runner = FakeRunner("Job started: 0123456789abcdef01234567\n")
     bucket_api = FakeBucketApi()
     (tmp_path / "manifest.yaml").write_text("kind: Experiment\n")
+    source_lock = _write_source_lock(tmp_path, remote_spec)
 
     result = submit(
         lock,
         input_dir=tmp_path,
         bucket="osolmaz/benchmark-runs",
         runner=runner,
+        source_lock=source_lock,
         bucket_api=bucket_api,
     )
 
@@ -570,12 +510,14 @@ def test_submit_builds_default_bucket_api(
     monkeypatch.setattr("huggingface_hub.HfApi", lambda: api)
     runner = FakeRunner("0123456789abcdef01234567")
     (tmp_path / "manifest.yaml").write_text("kind: Experiment\n")
+    source_lock = _write_source_lock(tmp_path, remote_spec)
 
     result = submit(
         build_run_lock(remote_spec),
         input_dir=tmp_path,
         bucket="osolmaz/benchmark-runs",
         runner=runner,
+        source_lock=source_lock,
     )
 
     assert result.job_id == "0123456789abcdef01234567"
@@ -596,6 +538,7 @@ def test_submit_rejects_missing_job_id(
 ) -> None:
     lock = build_run_lock(remote_spec)
     (tmp_path / "manifest.yaml").write_text("kind: Experiment\n")
+    source_lock = _write_source_lock(tmp_path, remote_spec)
 
     with pytest.raises(
         ValueError, match="^HF Jobs submission did not return a job ID$"
@@ -605,6 +548,7 @@ def test_submit_rejects_missing_job_id(
             input_dir=tmp_path,
             bucket="osolmaz/benchmark-runs",
             runner=FakeRunner("submitted"),
+            source_lock=source_lock,
             bucket_api=FakeBucketApi(),
         )
 
@@ -615,6 +559,7 @@ def test_submit_does_not_extract_job_id_from_longer_hex_digest(
 ) -> None:
     lock = build_run_lock(remote_spec)
     (tmp_path / "manifest.yaml").write_text("kind: Experiment\n")
+    source_lock = _write_source_lock(tmp_path, remote_spec)
 
     with pytest.raises(ValueError, match="did not return a job ID"):
         submit(
@@ -622,6 +567,7 @@ def test_submit_does_not_extract_job_id_from_longer_hex_digest(
             input_dir=tmp_path,
             bucket="osolmaz/benchmark-runs",
             runner=FakeRunner(f"revision {digest}"),
+            source_lock=source_lock,
             bucket_api=FakeBucketApi(),
         )
 
@@ -862,13 +808,22 @@ def test_locked_source_command_passes_arguments_after_shell_script(
         "-lc",
         "set -euo pipefail\n"
         'export HARBOR_HF_JOB_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"\n'
+        "unset GITHUB_TOKEN GH_TOKEN SSH_AUTH_SOCK GIT_SSH GIT_SSH_COMMAND "
+        "GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_SYSTEM\n"
+        "export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1 "
+        "GIT_CONFIG_GLOBAL=/dev/null GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false\n"
         "repo_dir=$(mktemp -d)\n"
-        "git clone --filter=blob:none --no-checkout "
+        "git_home=$(mktemp -d)\n"
+        'HOME="$git_home" XDG_CONFIG_HOME="$git_home" '
+        "git -c credential.helper= clone --filter=blob:none --no-checkout "
         'https://github.com/osolmaz/harbor-hf "$repo_dir"\n'
-        'git -C "$repo_dir" fetch --depth 1 origin '
+        'HOME="$git_home" XDG_CONFIG_HOME="$git_home" '
+        'git -C "$repo_dir" -c credential.helper= fetch --depth 1 origin '
         "1234567890abcdef1234567890abcdef12345678\n"
-        'git -C "$repo_dir" checkout --detach '
+        'HOME="$git_home" XDG_CONFIG_HOME="$git_home" '
+        'git -C "$repo_dir" -c credential.helper= checkout --detach '
         "1234567890abcdef1234567890abcdef12345678\n"
+        'test ! -f "$repo_dir/.gitmodules"\n'
         'exec uv run --project "$repo_dir" --locked --no-dev "$@"\n',
         "locked-source",
         "harbor-hf",

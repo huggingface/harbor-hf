@@ -2533,12 +2533,14 @@ class FakeBucketApi:
         self,
         bucket_id: str,
         *,
-        add: list[tuple[bytes, str]],
+        add: list[tuple[str | Path | bytes, str]],
         **kwargs: object,
     ) -> object:
         assert bucket_id == "osolmaz/jobs-artifacts"
         assert kwargs == {}
-        self.staged.update({path: content for content, path in add})
+        for content, path in add:
+            assert isinstance(content, bytes)
+            self.staged[path] = content
         return object()
 
     def create_repo(self, repo_id: str, **kwargs: object) -> object:

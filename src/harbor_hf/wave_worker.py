@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
+from harbor_hf.benchmark_source import prepare_benchmark_source, source_lock_bytes
 from harbor_hf.campaigns import (
     CampaignLock,
     CampaignTrialLock,
@@ -86,12 +87,7 @@ from harbor_hf.provider_models import (
 )
 from harbor_hf.provider_proxy import PROVIDER_RECORDER_PORT, ProviderEvidenceProxy
 from harbor_hf.providers import routed_provider_model
-from harbor_hf.runs import (
-    RunLock,
-    harbor_process_environment,
-    require_benchmark_source_secret,
-    run_secret_values,
-)
+from harbor_hf.runs import RunLock, harbor_process_environment, run_secret_values
 from harbor_hf.trial_evidence import (
     TrialEvidenceError,
     assemble_trial_evidence,
@@ -388,11 +384,6 @@ def run_wave_worker(
         raise WorkerError(
             f"required secret {lock.remote.job.token_secret_name} is not available"
         )
-    try:
-        for run in lock.runs:
-            require_benchmark_source_secret(run.configuration)
-    except ValueError as error:
-        raise WorkerError(str(error)) from error
     os.environ["HF_TOKEN"] = token
 
     with _wave_worker_lease(lock, token, claim_store, clock):
@@ -434,6 +425,7 @@ def run_provider_wave_execution(
     staging_root: Path,
     prepared_harbor_source: Path,
     *,
+    prepared_benchmark_root: Path | None = None,
     runner: CommandRunner | None = None,
     stream_runner: StreamRunner = run_streaming,
     identifier: IdentifierFactory = lambda: uuid.uuid4().hex,
@@ -450,11 +442,6 @@ def run_provider_wave_execution(
         raise WorkerError(
             f"required secret {lock.remote.job.token_secret_name} is not available"
         )
-    try:
-        for run in lock.runs:
-            require_benchmark_source_secret(run.configuration)
-    except ValueError as error:
-        raise WorkerError(str(error)) from error
     os.environ["HF_TOKEN"] = token
     process_runner = runner or SubprocessRunner()
     destination = output_root / lock.artifact_prefix
@@ -482,6 +469,7 @@ def run_provider_wave_execution(
         clock,
         monotonic,
         prepared_harbor_source=prepared_harbor_source,
+        prepared_benchmark_root=prepared_benchmark_root,
     )
 
 
@@ -535,6 +523,8 @@ def _run_staged_wave(
     monotonic: Callable[[], float],
     *,
     prepared_harbor_source: Path | None = None,
+    prepared_benchmark_root: Path | None = None,
+    mounted_bundle_root: Path = Path("/benchmark-source"),
 ) -> Path:
     wave_root = campaign_root / "waves" / lock.wave_id
     wave_root.mkdir(parents=True)
@@ -575,6 +565,13 @@ def _run_staged_wave(
                 lock.remote.harbor.source.revision,
                 runner,
             )
+        benchmark_root = prepared_benchmark_root
+        if benchmark_root is None:
+            benchmark_root = prepare_benchmark_source(
+                campaign.source_lock,
+                mounted_bundle_root=mounted_bundle_root,
+                destination=campaign_root.parent / "sources" / "benchmark",
+            )
         overall_deadline = _overall_wave_deadline(campaign, lock, monotonic)
         base_url, provider_proxy = _prepare_wave_transport(
             lock,
@@ -596,6 +593,7 @@ def _run_staged_wave(
             campaign_root,
             output_root,
             harbor_source,
+            benchmark_root,
             base_url,
             token,
             stream_runner,
@@ -872,6 +870,7 @@ def _execute_shards(
     campaign_root: Path,
     output_root: Path,
     harbor_source: Path,
+    benchmark_root: Path | None,
     base_url: str,
     token: str,
     stream_runner: StreamRunner,
@@ -903,6 +902,7 @@ def _execute_shards(
                 campaign_root,
                 output_root,
                 harbor_source,
+                benchmark_root,
                 base_url,
                 token,
                 stream_runner,
@@ -988,6 +988,7 @@ def _execute_shard(
     campaign_root: Path,
     output_root: Path,
     harbor_source: Path,
+    benchmark_root: Path | None,
     base_url: str,
     token: str,
     stream_runner: StreamRunner,
@@ -1013,6 +1014,7 @@ def _execute_shard(
             campaign_root,
             output_root,
             harbor_source,
+            benchmark_root,
             base_url,
             token,
             stream_runner,
@@ -1047,6 +1049,7 @@ def _execute_shard_with_executor(
     campaign_root: Path,
     output_root: Path,
     harbor_source: Path,
+    benchmark_root: Path | None,
     base_url: str,
     token: str,
     stream_runner: StreamRunner,
@@ -1113,6 +1116,7 @@ def _execute_shard_with_executor(
                 trial_root,
                 output_root,
                 harbor_source,
+                benchmark_root,
                 base_url,
                 token,
                 stream_runner,
@@ -1221,6 +1225,7 @@ def _execute_trial(
     trial_root: Path,
     output_root: Path,
     harbor_source: Path,
+    benchmark_root: Path | None,
     base_url: str,
     token: str,
     stream_runner: StreamRunner,
@@ -1302,23 +1307,18 @@ def _execute_trial(
             concurrency=1,
             expected_task_digests={trial.task_name: trial.task_digest},
             extra_environment_hosts=_judge_environment_hosts(judge_api_url),
+            benchmark_root=benchmark_root,
         )
         failure_phase = "execution"
         timeout = _remaining_seconds(deadline, monotonic)
         append_event(events, "harbor_started")
         blocked_secret_names = {
-            candidate.configuration.benchmark_source.credentials.secret_name
-            for candidate in wave.runs
-            if candidate.configuration.benchmark_source is not None
-            and candidate.configuration.benchmark_source.credentials is not None
-        }
-        blocked_secret_names.update(
             candidate.configuration.benchmark_judge.api_key_secret_name
             for candidate in wave.runs
             if candidate.configuration.benchmark_judge is not None
             and candidate.configuration.benchmark_judge.api_key_secret_name
             not in {"HF_TOKEN", "OPENAI_API_KEY"}
-        )
+        }
         with harbor_process_environment(
             run,
             token=token,
@@ -1847,13 +1847,21 @@ def _stage_campaign_records(
 ) -> None:
     campaign_root.mkdir(parents=True, exist_ok=True)
     campaign_lock_path = campaign_root / "campaign.lock.json"
+    source_lock_path = campaign_root / "source.lock.json"
     write_json(campaign_lock_path, campaign.model_dump(mode="json"))
+    source_lock_path.write_bytes(source_lock_bytes(campaign.source_lock))
     assert_secret_absent(campaign_root, secrets)
+    campaign_destination = output_root / campaign.artifact_prefix
     _publish_immutable_file(
         campaign_lock_path,
-        output_root / campaign.artifact_prefix / "campaign.lock.json",
+        campaign_destination / "campaign.lock.json",
     )
-    _publish_digest_sidecar(campaign_lock_path, output_root / campaign.artifact_prefix)
+    _publish_digest_sidecar(campaign_lock_path, campaign_destination)
+    _publish_immutable_file(
+        source_lock_path,
+        campaign_destination / "source.lock.json",
+    )
+    _publish_digest_sidecar(source_lock_path, campaign_destination)
     for run in wave.runs:
         run_root = campaign_root / "runs" / run.configuration.run_id
         run_root.mkdir(parents=True, exist_ok=True)

@@ -1,8 +1,10 @@
 # Benchmark source implementation plan
 
-Status: proposed
+Status: implemented; remote acceptance pending
 
 This plan implements the [benchmark source specification](benchmark-sources.md). It keeps anonymous public Git checkout, adds immutable local-directory bundles, and removes authenticated Git from new remote execution.
+
+The implementation now includes the strict source union, generated source-lock and bundle schemas, deterministic tar+zstd bundles, private content-addressed Bucket staging, source-aware campaign identities, anonymous Git preflight in planning and remote execution, safe remote extraction, Harbor local-path rendering, purpose-scoped Job secret inputs, and removal of the authenticated Git helper. Local quality gates and the two remote acceptance checks remain the final release evidence.
 
 The implementation changes the current `harbor-hf/v1alpha1` contract in place. Historical campaigns remain readable through their pinned worker revisions. Current code does not keep a compatibility path that forwards source credentials.
 

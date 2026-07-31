@@ -39,8 +39,6 @@ from harbor_hf.models import (
     BenchmarkJudgeSpec,
     EndpointRef,
     ExperimentSpec,
-    GitBenchmarkSource,
-    GitHubTokenCredentials,
     SourcePin,
 )
 from harbor_hf.process import CommandRunner
@@ -2015,45 +2013,6 @@ def test_wave_validates_lock_and_secret_before_remote_work(
     assert endpoint.commands == []
 
 
-def test_wave_requires_git_source_secret_before_remote_work(
-    remote_spec: ExperimentSpec,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source = GitBenchmarkSource(
-        repository="ShellBench/public-tasks",
-        revision="8" * 40,
-        path="tasks/115-tasks",
-        credentials=GitHubTokenCredentials(secret_name="GITHUB_TOKEN"),
-    )
-    raw = remote_spec.model_dump(mode="python")
-    raw["benchmark"].update(
-        {
-            "dataset": "shellbench/public-115",
-            "source": source.model_dump(mode="python"),
-        }
-    )
-    raw["benchmark"].pop("dataset_digest", None)
-    private_spec = ExperimentSpec.model_validate(raw)
-    _spec, _campaign, _wave, manifest, campaign_path, wave_path = _wave_inputs(
-        private_spec, tmp_path, attempts=1, concurrency=1
-    )
-    monkeypatch.setenv("HF_TOKEN", "test-token")
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    endpoint = EndpointRunner([])
-
-    with pytest.raises(WorkerError, match="required secret GITHUB_TOKEN"):
-        run_wave_worker(
-            manifest,
-            campaign_path,
-            wave_path,
-            tmp_path / "missing-git-token",
-            runner=endpoint,
-        )
-
-    assert endpoint.commands == []
-
-
 @pytest.mark.parametrize("marker", ["_SUCCESS", "_FAILED", "_CANCELLED"])
 def test_wave_never_overwrites_terminal_wave_evidence(
     remote_spec: ExperimentSpec,
@@ -2448,7 +2407,7 @@ def test_shard_continues_after_one_trial_fails(
         trial = cast(CampaignTrialLock, args[5])
         trial_id = trial.trial_id
         trial_root = cast(Path, args[6])
-        deadline = cast(float, args[12])
+        deadline = cast(float, args[13])
         with calls_lock:
             calls.append((trial_id, deadline))
         barrier.wait(timeout=5)
@@ -2470,6 +2429,7 @@ def test_shard_continues_after_one_trial_fails(
             campaign_root,
             output,
             tmp_path / "harbor",
+            None,
             "https://endpoint.example",
             "test-token",
             lambda *_args, **_kwargs: 0,
@@ -2515,7 +2475,7 @@ def test_one_shard_runs_multiple_trials_at_configured_concurrency(
         del kwargs
         trial = cast(CampaignTrialLock, args[5])
         trial_root = cast(Path, args[6])
-        deadline = cast(float, args[12])
+        deadline = cast(float, args[13])
         with calls_lock:
             calls.append((trial.trial_id, deadline))
         barrier.wait(timeout=5)
@@ -2533,6 +2493,7 @@ def test_one_shard_runs_multiple_trials_at_configured_concurrency(
         campaign_root,
         tmp_path / "output",
         tmp_path / "harbor",
+        None,
         "https://endpoint.example",
         "test-token",
         lambda *_args, **_kwargs: 0,
@@ -2612,6 +2573,7 @@ def test_retry_shard_executes_only_admitted_trials(
         campaign_root,
         tmp_path / "output",
         tmp_path / "harbor",
+        None,
         "https://endpoint.example",
         "test-token",
         lambda *_args, **_kwargs: 0,

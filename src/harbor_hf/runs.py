@@ -13,9 +13,11 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from harbor_hf.benchmark_source import anonymous_git_environment
 from harbor_hf.models import (
     AgentProfile,
     BenchmarkJudgeSpec,
+    BundleBenchmarkSource,
     ComponentKind,
     DeploymentTarget,
     EvaluationId,
@@ -35,9 +37,6 @@ from harbor_hf.provider_models import ProviderTarget
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 RUN_LOCK_V1ALPHA1 = "harbor-hf/run-lock/v1alpha1"
 RUN_LOCK_V1ALPHA2 = "harbor-hf/run-lock/v1alpha2"
-RUN_LOCK_V1ALPHA3 = "harbor-hf/run-lock/v1alpha3"
-_GIT_CREDENTIAL_FILE_ENV = "HARBOR_HF_GIT_CREDENTIAL_FILE"
-_GIT_REPOSITORY_ENV = "HARBOR_HF_GIT_REPOSITORY"
 _REDACTION_SECRET_FILE_ENV = "HARBOR_HF_REDACTION_SECRET_FILE"
 
 
@@ -56,7 +55,6 @@ class RunLock(BaseModel):
     schema_version: Literal[
         "harbor-hf/run-lock/v1alpha1",
         "harbor-hf/run-lock/v1alpha2",
-        "harbor-hf/run-lock/v1alpha3",
     ] = RUN_LOCK_V1ALPHA1
     run_id: str
     created_at: datetime
@@ -67,8 +65,8 @@ class RunLock(BaseModel):
     spec_digest: str
     benchmark_dataset: str
     benchmark_dataset_digest: str
-    benchmark_source: GitBenchmarkSource | None = Field(
-        default=None, exclude_if=lambda value: value is None
+    benchmark_source: GitBenchmarkSource | BundleBenchmarkSource | None = Field(
+        default=None, discriminator="type", exclude_if=lambda value: value is None
     )
     benchmark_judge: BenchmarkJudgeSpec | None = Field(
         default=None, exclude_if=lambda value: value is None
@@ -103,14 +101,6 @@ class RunLock(BaseModel):
             self.benchmark_source is not None or self.benchmark_judge is not None
         ):
             raise ValueError("run-lock/v1alpha1 cannot contain source or judge fields")
-        if (
-            self.schema_version != RUN_LOCK_V1ALPHA3
-            and self.benchmark_source is not None
-            and self.benchmark_source.credentials is not None
-        ):
-            raise ValueError(
-                f"{self.schema_version} cannot contain authenticated source fields"
-            )
         if (self.benchmark_judge is None) != (self.judge_required_tasks is None):
             raise ValueError(
                 "run lock judge configuration requires its resolved "
@@ -153,6 +143,7 @@ def build_run_lock(
     run_id: str | None = None,
     allow_provider: bool = False,
     clock: Clock = lambda: datetime.now(UTC),
+    manifest_digest: str | None = None,
 ) -> RunLock:
     spec = ExperimentSpec.model_validate(spec.model_dump(mode="python"))
     if spec.remote is None:
@@ -183,7 +174,7 @@ def build_run_lock(
     )
 
     created_at = clock().astimezone(UTC)
-    digest = experiment_digest(spec)
+    digest = manifest_digest or experiment_digest(spec)
     if run_id is not None and _RUN_ID.fullmatch(run_id) is None:
         raise ValueError(
             "run ID must be one safe path component containing only letters, "
@@ -192,14 +183,9 @@ def build_run_lock(
     resolved_id = run_id or _new_run_id(spec.metadata.name, digest, created_at)
     return RunLock(
         schema_version=(
-            RUN_LOCK_V1ALPHA3
-            if spec.benchmark.source is not None
-            and spec.benchmark.source.credentials is not None
-            else (
-                RUN_LOCK_V1ALPHA2
-                if spec.benchmark.source is not None or spec.benchmark.judge is not None
-                else RUN_LOCK_V1ALPHA1
-            )
+            RUN_LOCK_V1ALPHA2
+            if spec.benchmark.source is not None or spec.benchmark.judge is not None
+            else RUN_LOCK_V1ALPHA1
         ),
         run_id=resolved_id,
         created_at=created_at,
@@ -270,50 +256,14 @@ def harbor_process_environment(
     blocked = set(blocked_secret_names)
     redaction_values = [value for value in redaction_secrets if value]
     source = lock.benchmark_source
-    credential_path: Path | None = None
     redaction_path: Path | None = None
+    git_home: tempfile.TemporaryDirectory[str] | None = None
     try:
-        if source is not None and source.credentials is not None:
-            secret_name = source.credentials.secret_name
-            source_token = os.environ.get(secret_name, "")
-            if not source_token:
-                raise ValueError(f"required secret {secret_name} is not available")
-            blocked.add(secret_name)
-            redaction_values.append(source_token)
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                prefix="harbor-hf-git-credential-",
-                delete=False,
-            ) as stream:
-                credential_path = Path(stream.name)
-                os.fchmod(stream.fileno(), 0o600)
-                stream.write(source_token)
+        if isinstance(source, GitBenchmarkSource):
+            git_home = tempfile.TemporaryDirectory(prefix="harbor-hf-git-home-")
+            environment.update(anonymous_git_environment({}))
             environment.update(
-                {
-                    "GIT_CONFIG_COUNT": "5",
-                    "GIT_CONFIG_KEY_0": "credential.useHttpPath",
-                    "GIT_CONFIG_VALUE_0": "true",
-                    "GIT_CONFIG_KEY_1": (
-                        f"credential.https://github.com/{source.repository}.git.helper"
-                    ),
-                    "GIT_CONFIG_VALUE_1": "",
-                    "GIT_CONFIG_KEY_2": (
-                        f"credential.https://github.com/{source.repository}.git.helper"
-                    ),
-                    "GIT_CONFIG_VALUE_2": "harbor-hf",
-                    "GIT_CONFIG_KEY_3": (
-                        f"credential.https://github.com/{source.repository}.helper"
-                    ),
-                    "GIT_CONFIG_VALUE_3": "",
-                    "GIT_CONFIG_KEY_4": (
-                        f"credential.https://github.com/{source.repository}.helper"
-                    ),
-                    "GIT_CONFIG_VALUE_4": "harbor-hf",
-                    "GIT_TERMINAL_PROMPT": "0",
-                    _GIT_CREDENTIAL_FILE_ENV: str(credential_path),
-                    _GIT_REPOSITORY_ENV: source.repository,
-                }
+                {"HOME": git_home.name, "XDG_CONFIG_HOME": git_home.name}
             )
         redaction_path = _write_redaction_secrets(redaction_values)
         if redaction_path is not None:
@@ -322,10 +272,10 @@ def harbor_process_environment(
             environment[secret_name] = ""
         yield environment
     finally:
-        if credential_path is not None:
-            credential_path.unlink(missing_ok=True)
         if redaction_path is not None:
             redaction_path.unlink(missing_ok=True)
+        if git_home is not None:
+            git_home.cleanup()
 
 
 def _write_redaction_secrets(values: list[str]) -> Path | None:
@@ -344,22 +294,8 @@ def _write_redaction_secrets(values: list[str]) -> Path | None:
     return path
 
 
-def require_benchmark_source_secret(lock: RunLock) -> None:
-    source = lock.benchmark_source
-    if source is None or source.credentials is None:
-        return
-    secret_name = source.credentials.secret_name
-    if not os.environ.get(secret_name, ""):
-        raise ValueError(f"required secret {secret_name} is not available")
-
-
 def run_secret_values(lock: RunLock, token: str) -> str | tuple[str, ...]:
     values = [token]
-    source = lock.benchmark_source
-    if source is not None and source.credentials is not None:
-        source_token = os.environ.get(source.credentials.secret_name, "")
-        if source_token:
-            values.append(source_token)
     judge = lock.benchmark_judge
     if judge is not None:
         judge_token = os.environ.get(judge.api_key_secret_name, "")

@@ -151,6 +151,33 @@
       "title": "BenchmarkJudgeSpec",
       "type": "object"
     },
+    "BundleBenchmarkSource": {
+      "additionalProperties": false,
+      "properties": {
+        "content_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Manifest Sha256",
+          "type": "string"
+        },
+        "type": {
+          "const": "bundle",
+          "default": "bundle",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content_digest",
+        "manifest_sha256"
+      ],
+      "title": "BundleBenchmarkSource",
+      "type": "object"
+    },
     "CampaignShardLock": {
       "additionalProperties": false,
       "properties": {
@@ -393,17 +420,6 @@
     "GitBenchmarkSource": {
       "additionalProperties": false,
       "properties": {
-        "credentials": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GitHubTokenCredentials"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "path": {
           "minLength": 1,
           "title": "Path",
@@ -432,27 +448,6 @@
         "path"
       ],
       "title": "GitBenchmarkSource",
-      "type": "object"
-    },
-    "GitHubTokenCredentials": {
-      "additionalProperties": false,
-      "properties": {
-        "secret_name": {
-          "pattern": "^[A-Z][A-Z0-9_]{0,120}_TOKEN$",
-          "title": "Secret Name",
-          "type": "string"
-        },
-        "type": {
-          "const": "github-token",
-          "default": "github-token",
-          "title": "Type",
-          "type": "string"
-        }
-      },
-      "required": [
-        "secret_name"
-      ],
-      "title": "GitHubTokenCredentials",
       "type": "object"
     },
     "HarborRuntimeSpec": {
@@ -827,13 +822,28 @@
         "benchmark_source": {
           "anyOf": [
             {
-              "$ref": "#/$defs/GitBenchmarkSource"
+              "discriminator": {
+                "mapping": {
+                  "bundle": "#/$defs/BundleBenchmarkSource",
+                  "git": "#/$defs/GitBenchmarkSource"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/GitBenchmarkSource"
+                },
+                {
+                  "$ref": "#/$defs/BundleBenchmarkSource"
+                }
+              ]
             },
             {
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "title": "Benchmark Source"
         },
         "benchmark_task_digests": {
           "additionalProperties": {
@@ -931,8 +941,7 @@
           "default": "harbor-hf/run-lock/v1alpha1",
           "enum": [
             "harbor-hf/run-lock/v1alpha1",
-            "harbor-hf/run-lock/v1alpha2",
-            "harbor-hf/run-lock/v1alpha3"
+            "harbor-hf/run-lock/v1alpha2"
           ],
           "title": "Schema Version",
           "type": "string"

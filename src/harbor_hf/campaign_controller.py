@@ -14,6 +14,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
+from harbor_hf.benchmark_source import prepare_benchmark_source
 from harbor_hf.campaign_apply import (
     ActionExecutionError,
     AppliedAction,
@@ -116,6 +117,7 @@ class InProcessWaveExecutor(WaveJobPort):
         output_root: Path,
         staging_root: Path,
         job_id: str,
+        mounted_bundle_root: Path = Path("/benchmark-source"),
         runner: CommandRunner | None = None,
     ) -> None:
         self.manifest_path = manifest_path
@@ -123,12 +125,15 @@ class InProcessWaveExecutor(WaveJobPort):
         self.output_root = output_root
         self.staging_root = staging_root
         self.job_id = job_id
+        self.source_lock = campaign.source_lock
+        self.mounted_bundle_root = mounted_bundle_root
         self.runner = runner or SubprocessRunner()
         self.harbor_source = (
             staging_root
             / "sources"
             / f"harbor-{campaign.plan_digest.removeprefix('sha256:')[:16]}"
         )
+        self.benchmark_root: Path | None = None
         self._jobs: dict[str, RemoteWaveJob] = {}
 
     def prepare(self, source: object) -> None:
@@ -136,6 +141,11 @@ class InProcessWaveExecutor(WaveJobPort):
 
         pin = SourcePin.model_validate(source)
         prepare_locked_source(pin, self.harbor_source, self.runner)
+        self.benchmark_root = prepare_benchmark_source(
+            self.source_lock,
+            mounted_bundle_root=self.mounted_bundle_root,
+            destination=self.staging_root / "sources" / "benchmark",
+        )
 
     def find_wave(
         self,
@@ -188,6 +198,7 @@ class InProcessWaveExecutor(WaveJobPort):
                 self.output_root,
                 self.staging_root,
                 self.harbor_source,
+                prepared_benchmark_root=self.benchmark_root,
                 runner=self.runner,
             )
         except WorkerError:
@@ -763,6 +774,7 @@ def run_campaign_controller(
     *,
     attempt: int,
     prior_job_terminal: bool = False,
+    mounted_bundle_root: Path = Path("/benchmark-source"),
 ) -> CampaignControllerResult:
     if manifest_path.parent != campaign_lock_path.parent:
         raise CampaignControllerError("controller input files must share one directory")
@@ -791,6 +803,7 @@ def run_campaign_controller(
             output_root=output_root,
             staging_root=Path(staging_name),
             job_id=job_id,
+            mounted_bundle_root=mounted_bundle_root,
         )
         with hugging_face_campaign_reconciler(
             remote.job.namespace,

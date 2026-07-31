@@ -11,17 +11,21 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-import yaml
 from conftest import write_fake_compatibility_bundle
 
+from harbor_hf.benchmark_source import (
+    BenchmarkSourceLock,
+    PackageBenchmarkSourceLock,
+    source_lock_bytes,
+    source_lock_from_spec,
+)
 from harbor_hf.coordination import ClaimConflict, run_claim_path
 from harbor_hf.harbor_adapter import build_execution_request
 from harbor_hf.models import (
     DeploymentProfile,
     ExperimentSpec,
-    GitBenchmarkSource,
-    GitHubTokenCredentials,
     SourcePin,
+    pinned_harbor_dataset_reference,
 )
 from harbor_hf.private_artifacts import (
     PrivateArtifactRejection,
@@ -3158,6 +3162,19 @@ def test_publish_evidence_retries_transient_copy_without_losing_staging(
 
 def _write_lock(path: Path, lock: RunLock) -> None:
     path.write_text(lock.model_dump_json(), encoding="utf-8")
+    source = lock.benchmark_source
+    source_lock = BenchmarkSourceLock(
+        source=(
+            source
+            if source is not None
+            else PackageBenchmarkSourceLock(
+                reference=pinned_harbor_dataset_reference(
+                    lock.benchmark_dataset, lock.benchmark_dataset_digest
+                )
+            )
+        )
+    )
+    (path.parent / "source.lock.json").write_bytes(source_lock_bytes(source_lock))
 
 
 def _successful_stream(
@@ -3346,6 +3363,7 @@ def test_worker_publishes_success_after_cleanup(
         "manifest.yaml",
         "run.lock.json",
         "runtime-environment.json",
+        "source.lock.json",
         "verification.json",
     ]
     assert (root / "_SUCCESS").read_text(encoding="utf-8") == "\n"
@@ -3411,6 +3429,7 @@ def test_worker_publishes_success_after_cleanup(
         "manifest.yaml",
         "run.lock.json",
         "runtime-environment.json",
+        "source.lock.json",
         "verification.json",
     }
     assert runner.commands == [
@@ -3956,7 +3975,7 @@ def test_run_lock_validation_rejects_tampered_agent_metadata(
         WorkerError,
         match="^run lock fields do not match the resolved manifest cell$",
     ):
-        validate_run_lock(remote_spec, reserved)
+        validate_run_lock(remote_spec, source_lock_from_spec(remote_spec), reserved)
 
     remote = remote_spec.remote
     assert remote is not None
@@ -3967,12 +3986,14 @@ def test_run_lock_validation_rejects_tampered_agent_metadata(
             "reported_version": "2.0.0",
         }
     )
-    source_lock = lock.model_copy(update={"agent": source_agent})
+    tampered_lock = lock.model_copy(update={"agent": source_agent})
     with pytest.raises(
         WorkerError,
         match="^run lock fields do not match the resolved manifest cell$",
     ):
-        validate_run_lock(remote_spec, source_lock)
+        validate_run_lock(
+            remote_spec, source_lock_from_spec(remote_spec), tampered_lock
+        )
 
 
 def test_run_lock_validation_reconstructs_selected_matrix_cell(
@@ -4011,7 +4032,7 @@ def test_run_lock_validation_reconstructs_selected_matrix_cell(
         run_id="selected-cell",
     )
 
-    validate_run_lock(spec, lock)
+    validate_run_lock(spec, source_lock_from_spec(spec), lock)
 
 
 def test_run_lock_validation_rejects_missing_trial_evidence(
@@ -4020,7 +4041,7 @@ def test_run_lock_validation_rejects_missing_trial_evidence(
     lock = build_run_lock(remote_spec).model_copy(update={"trial_evidence": None})
 
     with pytest.raises(WorkerError, match="complete trial evidence policy"):
-        validate_run_lock(remote_spec, lock)
+        validate_run_lock(remote_spec, source_lock_from_spec(remote_spec), lock)
 
 
 def test_run_lock_validation_reports_digest_and_resolution_errors(
@@ -4031,7 +4052,7 @@ def test_run_lock_validation_reports_digest_and_resolution_errors(
     with pytest.raises(
         WorkerError, match="^manifest digest does not match the run lock$"
     ):
-        validate_run_lock(remote_spec, bad_digest)
+        validate_run_lock(remote_spec, source_lock_from_spec(remote_spec), bad_digest)
 
     unknown_model = lock.model_copy(
         update={"model": lock.model.model_copy(update={"id": "unknown-model"})}
@@ -4043,7 +4064,9 @@ def test_run_lock_validation_reports_digest_and_resolution_errors(
             "unknown model profile: unknown-model$"
         ),
     ):
-        validate_run_lock(remote_spec, unknown_model)
+        validate_run_lock(
+            remote_spec, source_lock_from_spec(remote_spec), unknown_model
+        )
 
 
 def test_worker_requires_named_secret(
@@ -4061,49 +4084,6 @@ def test_worker_requires_named_secret(
         WorkerError, match="^required secret HF_TOKEN is not available$"
     ):
         run_worker(remote_manifest, lock_path, tmp_path / "output")
-
-
-def test_worker_requires_git_source_secret_before_claim_or_remote_work(
-    remote_spec: ExperimentSpec,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source = GitBenchmarkSource(
-        repository="ShellBench/public-tasks",
-        revision="8" * 40,
-        path="tasks/115-tasks",
-        credentials=GitHubTokenCredentials(secret_name="GITHUB_TOKEN"),
-    )
-    raw = remote_spec.model_dump(mode="python")
-    raw["benchmark"].update(
-        {
-            "dataset": "shellbench/public-115",
-            "source": source.model_dump(mode="python"),
-        }
-    )
-    raw["benchmark"].pop("dataset_digest", None)
-    spec = ExperimentSpec.model_validate(raw)
-    lock = build_run_lock(spec, run_id="missing-git-secret")
-    manifest = tmp_path / "manifest.yaml"
-    manifest.write_text(yaml.safe_dump(spec.model_dump(mode="json")), encoding="utf-8")
-    lock_path = tmp_path / "lock.json"
-    _write_lock(lock_path, lock)
-    monkeypatch.setenv("HF_TOKEN", "test-token")
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    claims = FakeClaimStore()
-
-    with pytest.raises(
-        WorkerError, match="^required secret GITHUB_TOKEN is not available$"
-    ):
-        run_worker(
-            manifest,
-            lock_path,
-            tmp_path / "output",
-            runner=EndpointRunner([]),
-            claim_store=claims,
-        )
-
-    assert claims.acquired == []
 
 
 def test_worker_rejects_lock_without_endpoint_binding(

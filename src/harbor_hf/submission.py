@@ -16,6 +16,20 @@ from huggingface_hub import CommitOperationAdd
 from huggingface_hub.errors import HfHubHTTPError
 from pydantic import BaseModel, ConfigDict
 
+from harbor_hf.benchmark_bundle import PreparedBenchmarkBundle
+from harbor_hf.benchmark_source import (
+    BenchmarkSourceLock,
+    PackageBenchmarkSourceLock,
+    bundle_uri,
+    load_source_lock,
+    source_lock_digest,
+)
+from harbor_hf.benchmark_staging import (
+    BenchmarkBundleReceipt,
+    BucketStagingApi,
+    stage_benchmark_bundle,
+    verify_staged_benchmark_bundle,
+)
 from harbor_hf.campaign_input import write_campaign_input
 from harbor_hf.campaigns import CampaignLock, EndpointWaveTarget, WaveLock
 from harbor_hf.controller_status import (
@@ -29,10 +43,12 @@ from harbor_hf.controller_status import (
 from harbor_hf.coordination import bucket_id, coordination_repository
 from harbor_hf.judge_recorder import JUDGE_RECORDER_PORT
 from harbor_hf.models import (
+    BundleBenchmarkSource,
     DeploymentProfile,
     EndpointRef,
     ExperimentSpec,
     SourcePin,
+    pinned_harbor_dataset_reference,
 )
 from harbor_hf.process import ProcessError
 from harbor_hf.provider_proxy import PROVIDER_RECORDER_PORT
@@ -48,6 +64,20 @@ _COORDINATION_INITIALIZATION_PATH = ".harbor-hf-initialized"
 _COORDINATION_INITIALIZATION_PAYLOAD = b"harbor-hf coordination repository\n"
 _CONTROLLER_LAUNCH_LEASE = timedelta(minutes=30)
 _PHYSICAL_JOB_STARTED_AT_ENV = "HARBOR_HF_JOB_STARTED_AT"
+_PROHIBITED_GIT_SECRET_NAMES = {
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+    "GIT_ASKPASS",
+    "SSH_ASKPASS",
+    "SSH_AUTH_SOCK",
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+}
+_REMOTE_SECRET_SOURCES = {
+    "HF_TOKEN": "HARBOR_HF_JOB_TOKEN",
+    "OPENAI_API_KEY": "HARBOR_HF_JOB_OPENAI_API_KEY",
+    "GEMINI_API_KEY": "HARBOR_HF_JOB_GEMINI_API_KEY",
+}
 
 
 class TextRunner(Protocol):
@@ -63,7 +93,7 @@ class BucketApi(Protocol):
         self,
         bucket_id: str,
         *,
-        add: list[tuple[bytes, str]],
+        add: list[tuple[str | Path | bytes, str]],
         **kwargs: object,
     ) -> object: ...
 
@@ -82,6 +112,8 @@ class Submission(BaseModel):
     run_id: str
     artifact_prefix: str
     job_id: str | None
+    source_lock_digest: str
+    bundle: BenchmarkBundleReceipt | None = None
     command: list[str]
 
 
@@ -104,6 +136,10 @@ class CampaignControllerSubmission(BaseModel):
     job_id: str | None
     attempt: int
     launch_receipt: str
+    source_lock: BenchmarkSourceLock
+    source_lock_digest: str
+    secret_names: list[str]
+    bundle: BenchmarkBundleReceipt | None = None
     command: list[str]
 
 
@@ -128,10 +164,20 @@ def locked_source_command(source: SourcePin, *arguments: str) -> list[str]:
     script = (
         "set -euo pipefail\n"
         f'export {_PHYSICAL_JOB_STARTED_AT_ENV}="$(date -u +%Y-%m-%dT%H:%M:%SZ)"\n'
+        "unset GITHUB_TOKEN GH_TOKEN SSH_AUTH_SOCK GIT_SSH GIT_SSH_COMMAND "
+        "GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_SYSTEM\n"
+        "export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1 "
+        "GIT_CONFIG_GLOBAL=/dev/null GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false\n"
         "repo_dir=$(mktemp -d)\n"
-        f'git clone --filter=blob:none --no-checkout {repository} "$repo_dir"\n'
-        f'git -C "$repo_dir" fetch --depth 1 origin {revision}\n'
-        f'git -C "$repo_dir" checkout --detach {revision}\n'
+        "git_home=$(mktemp -d)\n"
+        'HOME="$git_home" XDG_CONFIG_HOME="$git_home" '
+        "git -c credential.helper= clone --filter=blob:none --no-checkout "
+        f'{repository} "$repo_dir"\n'
+        'HOME="$git_home" XDG_CONFIG_HOME="$git_home" '
+        f'git -C "$repo_dir" -c credential.helper= fetch --depth 1 origin {revision}\n'
+        'HOME="$git_home" XDG_CONFIG_HOME="$git_home" '
+        f'git -C "$repo_dir" -c credential.helper= checkout --detach {revision}\n'
+        'test ! -f "$repo_dir/.gitmodules"\n'
         'exec uv run --project "$repo_dir" --locked --no-dev "$@"\n'
     )
     return ["bash", "-lc", script, "locked-source", *arguments]
@@ -215,7 +261,7 @@ def stage_job_input(
     if not files:
         raise ValueError("Job input directory must contain at least one file")
     digest = hashlib.sha256()
-    additions: list[tuple[bytes, str]] = []
+    additions: list[tuple[str | Path | bytes, str]] = []
     staged: list[tuple[str, bytes]] = []
     for path in files:
         relative = path.relative_to(input_dir).as_posix()
@@ -238,6 +284,66 @@ def require_private_bucket(bucket: str, *, api: BucketApi) -> str:
     return normalized
 
 
+def prepare_benchmark_bundle_input(
+    source: object,
+    *,
+    bundle: PreparedBenchmarkBundle | None,
+    namespace: str,
+    bucket: str,
+    api: BucketApi,
+) -> BenchmarkBundleReceipt | None:
+    if not isinstance(source, BundleBenchmarkSource):
+        if bundle is not None:
+            raise ValueError("prepared benchmark bundle has no bundle source lock")
+        return None
+    staging_api = cast(BucketStagingApi, api)
+    if bundle is None:
+        return verify_staged_benchmark_bundle(
+            content_digest=source.content_digest,
+            manifest_sha256=source.manifest_sha256,
+            namespace=namespace,
+            bucket=bucket,
+            api=staging_api,
+        )
+    if (
+        bundle.manifest.content_digest != source.content_digest
+        or bundle.manifest_sha256 != source.manifest_sha256
+    ):
+        raise ValueError("prepared benchmark bundle changed its source lock")
+    return stage_benchmark_bundle(
+        bundle,
+        namespace=namespace,
+        bucket=bucket,
+        api=staging_api,
+    )
+
+
+def _benchmark_bundle_volume(
+    source: object,
+    *,
+    namespace: str,
+) -> list[str]:
+    if not isinstance(source, BundleBenchmarkSource):
+        return []
+    return [
+        "--volume",
+        f"{bundle_uri(namespace, source.content_digest)}:/benchmark-source:ro",
+    ]
+
+
+def _wave_benchmark_bundle_volume(lock: WaveLock) -> list[str]:
+    sources = {
+        run.configuration.benchmark_source
+        for run in lock.runs
+        if isinstance(run.configuration.benchmark_source, BundleBenchmarkSource)
+    }
+    if not sources:
+        return []
+    if len(sources) != 1:
+        raise ValueError("wave runs must use one benchmark bundle")
+    return _benchmark_bundle_volume(sources.pop(), namespace=lock.remote.job.namespace)
+
+
 def endpoint_lease_label(lock: RunLock) -> str:
     endpoint = _endpoint_binding(lock)
     return endpoint_lease_label_for(endpoint.namespace, endpoint.name)
@@ -256,9 +362,6 @@ def job_secret_names(lock: RunLock | WaveLock) -> list[str]:
         else [run.configuration for run in lock.runs]
     )
     for run_lock in run_locks:
-        source = run_lock.benchmark_source
-        if source is not None and source.credentials is not None:
-            names.add(source.credentials.secret_name)
         judge = run_lock.benchmark_judge
         if judge is not None:
             names.add(judge.api_key_secret_name)
@@ -272,27 +375,6 @@ def _secret_arguments(lock: RunLock | WaveLock) -> list[str]:
     ]
 
 
-def _source_secret_names(lock: RunLock | WaveLock) -> list[str]:
-    run_locks = (
-        [lock]
-        if isinstance(lock, RunLock)
-        else [run.configuration for run in lock.runs]
-    )
-    names = {
-        source.credentials.secret_name
-        for run_lock in run_locks
-        if (source := run_lock.benchmark_source) is not None
-        and source.credentials is not None
-    }
-    return sorted(names)
-
-
-def require_source_secrets(lock: RunLock | WaveLock) -> None:
-    for name in _source_secret_names(lock):
-        if not os.environ.get(name, ""):
-            raise ValueError(f"required secret {name} is not available")
-
-
 @contextmanager
 def _materialized_job_secrets(
     lock: RunLock | WaveLock, command: list[str]
@@ -301,16 +383,41 @@ def _materialized_job_secrets(
         yield rendered
 
 
+def reject_git_secret_names(names: Iterable[str]) -> None:
+    prohibited = sorted(set(names) & _PROHIBITED_GIT_SECRET_NAMES)
+    if prohibited:
+        raise ValueError(
+            "Git credential secret names cannot be forwarded to remote Jobs: "
+            + ", ".join(prohibited)
+        )
+
+
+def remote_job_secret_values(names: list[str]) -> dict[str, str]:
+    reject_git_secret_names(names)
+    source_names = {
+        name: _REMOTE_SECRET_SOURCES.get(name, f"HARBOR_HF_JOB_{name}")
+        for name in names
+    }
+    values = {
+        name: os.environ.get(source_name, "")
+        for name, source_name in source_names.items()
+    }
+    missing = [source_names[name] for name, value in values.items() if not value]
+    if missing:
+        raise ValueError(
+            "required purpose-scoped Job secret sources are unavailable: "
+            + ", ".join(sorted(missing))
+        )
+    return values
+
+
 @contextmanager
 def _materialized_named_job_secrets(
     names: list[str], command: list[str]
 ) -> Iterator[list[str]]:
-    values = {name: value for name in names if (value := os.environ.get(name))}
-    if not values:
-        yield command
-        return
+    values = remote_job_secret_values(names)
     if any("\n" in value or "\r" in value for value in values.values()):
-        raise ValueError("source secrets must be single-line values")
+        raise ValueError("Job secrets must be single-line values")
     path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -372,6 +479,9 @@ def build_submit_command(
         f"harbor-hf-endpoint={endpoint_lease_label(lock)}",
         "--volume",
         f"{input_dir}:/input:ro",
+        *_benchmark_bundle_volume(
+            lock.benchmark_source, namespace=lock.remote.job.namespace
+        ),
         "--volume",
         f"{bucket_uri(bucket)}:/output:rw",
         "--",
@@ -427,6 +537,7 @@ def build_submit_wave_command(
         *labels,
         "--volume",
         f"{input_dir}:/input:ro",
+        *_wave_benchmark_bundle_volume(lock),
         "--volume",
         f"{bucket_uri(bucket)}:/output:rw",
         "--",
@@ -487,6 +598,7 @@ def build_submit_campaign_controller_command(
         f"harbor-hf-controller-attempt={attempt}",
         "--volume",
         f"{input_dir}:/input:ro",
+        *_benchmark_bundle_volume(lock.source_lock.source, namespace=job.namespace),
         "--volume",
         f"{bucket_uri(bucket)}:/output:rw",
         "--",
@@ -506,15 +618,14 @@ def build_submit_campaign_controller_command(
     ]
 
 
+def require_campaign_job_secret_sources(spec: ExperimentSpec) -> None:
+    remote_job_secret_values(campaign_job_secret_names(spec))
+
+
 def campaign_job_secret_names(spec: ExperimentSpec) -> list[str]:
     if spec.remote is None:
         raise ValueError("campaign controller requires remote execution")
     names = {spec.remote.job.token_secret_name}
-    if (
-        spec.benchmark.source is not None
-        and spec.benchmark.source.credentials is not None
-    ):
-        names.add(spec.benchmark.source.credentials.secret_name)
     if spec.benchmark.judge is not None:
         names.add(spec.benchmark.judge.api_key_secret_name)
     token_name = spec.remote.job.token_secret_name
@@ -534,9 +645,12 @@ def submit(
     input_dir: Path,
     bucket: str,
     runner: TextRunner,
+    source_lock: BenchmarkSourceLock,
     bucket_api: BucketApi | None = None,
+    bundle: PreparedBenchmarkBundle | None = None,
 ) -> Submission:
-    require_source_secrets(lock)
+    _validate_run_source_input(lock, source_lock, input_dir)
+    remote_job_secret_values(job_secret_names(lock))
     if bucket_api is None:
         from huggingface_hub import HfApi
 
@@ -546,6 +660,13 @@ def submit(
         lock.remote.job.namespace, api=bucket_api
     )
     require_private_bucket(bucket, api=bucket_api)
+    bundle_receipt = prepare_benchmark_bundle_input(
+        lock.benchmark_source,
+        bundle=bundle,
+        namespace=lock.remote.job.namespace,
+        bucket=input_bucket,
+        api=bucket_api,
+    )
     input_source = stage_job_input(
         input_dir,
         bucket=input_bucket,
@@ -562,8 +683,28 @@ def submit(
         run_id=lock.run_id,
         artifact_prefix=lock.artifact_prefix,
         job_id=match.group(),
+        source_lock_digest=source_lock_digest(source_lock),
+        bundle=bundle_receipt,
         command=command,
     )
+
+
+def _validate_run_source_input(
+    lock: RunLock,
+    source_lock: BenchmarkSourceLock,
+    input_dir: Path,
+) -> None:
+    if load_source_lock(input_dir / "source.lock.json") != source_lock:
+        raise ValueError("staged benchmark source lock changed before submission")
+    source = source_lock.source
+    if isinstance(source, PackageBenchmarkSourceLock):
+        expected = pinned_harbor_dataset_reference(
+            lock.benchmark_dataset, lock.benchmark_dataset_digest
+        )
+        if lock.benchmark_source is not None or source.reference != expected:
+            raise ValueError("benchmark source lock does not match the run lock")
+    elif lock.benchmark_source != source:
+        raise ValueError("benchmark source lock does not match the run lock")
 
 
 def submit_campaign_controller(
@@ -576,20 +717,26 @@ def submit_campaign_controller(
     bucket_api: BucketApi,
     jobs_api: ControllerJobsApi,
     state_store: ControllerStateStore,
+    bundle: PreparedBenchmarkBundle | None = None,
     attempt: int = 1,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     identifier: Callable[[], str] = lambda: uuid.uuid4().hex,
 ) -> CampaignControllerSubmission:
     if spec.remote is None or lock.controller_policy is None:
         raise ValueError("campaign controller submission requires provider settings")
-    for name in campaign_job_secret_names(spec):
-        if name != spec.remote.job.token_secret_name and not os.environ.get(name, ""):
-            raise ValueError(f"required secret {name} is not available")
+    remote_job_secret_values(campaign_job_secret_names(spec))
     ensure_private_coordination_repository(spec.remote.job.namespace, api=bucket_api)
     input_bucket = ensure_private_job_input_bucket(
         spec.remote.job.namespace, api=bucket_api
     )
     require_private_bucket(bucket, api=bucket_api)
+    bundle_receipt = prepare_benchmark_bundle_input(
+        lock.source_lock.source,
+        bundle=bundle,
+        namespace=spec.remote.job.namespace,
+        bucket=input_bucket,
+        api=bucket_api,
+    )
     with tempfile.TemporaryDirectory(prefix="harbor-hf-campaign-input-") as name:
         staging = Path(name)
         input_manifest = write_campaign_input(
@@ -647,6 +794,10 @@ def submit_campaign_controller(
         job_id=job_id,
         attempt=attempt,
         launch_receipt=controller_launch_receipt_path(lock.campaign_id, attempt),
+        source_lock=lock.source_lock,
+        source_lock_digest=source_lock_digest(lock.source_lock),
+        secret_names=campaign_job_secret_names(spec),
+        bundle=bundle_receipt,
         command=command,
     )
 
@@ -664,6 +815,7 @@ def launch_reserved_campaign_controller(
 ) -> CampaignControllerSubmission:
     if spec.remote is None:
         raise ValueError("campaign controller requires remote execution")
+    remote_job_secret_values(campaign_job_secret_names(spec))
     if (
         reservation.campaign_id != lock.campaign_id
         or reservation.plan_digest != lock.plan_digest
@@ -699,6 +851,10 @@ def launch_reserved_campaign_controller(
         launch_receipt=controller_launch_receipt_path(
             lock.campaign_id, reservation.attempt
         ),
+        source_lock=lock.source_lock,
+        source_lock_digest=source_lock_digest(lock.source_lock),
+        secret_names=campaign_job_secret_names(spec),
+        bundle=None,
         command=command,
     )
 
@@ -879,7 +1035,6 @@ def submit_wave(
     runner: TextRunner,
     bucket_api: BucketApi | None = None,
 ) -> WaveSubmission:
-    require_source_secrets(lock)
     if bucket_api is None:
         from huggingface_hub import HfApi
 

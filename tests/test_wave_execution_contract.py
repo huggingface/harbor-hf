@@ -286,6 +286,8 @@ def test_wave_execution_publishes_complete_linked_evidence_contract(
     expected_files = {
         "campaign.lock.json",
         "campaign.lock.json.sha256",
+        "source.lock.json",
+        "source.lock.json.sha256",
         f"runs/{run.configuration.run_id}/run.lock.json",
         f"runs/{run.configuration.run_id}/run.lock.json.sha256",
         f"runs/{run.configuration.run_id}/shards/{shard.shard_id}/_SUCCESS",

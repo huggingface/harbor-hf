@@ -53,26 +53,11 @@ class Metadata(StrictModel):
     labels: dict[str, str] = Field(default_factory=dict)
 
 
-class GitHubTokenCredentials(StrictModel):
-    type: Literal["github-token"] = "github-token"
-    secret_name: str = Field(pattern=r"^[A-Z][A-Z0-9_]{0,120}_TOKEN$")
-
-    @field_validator("secret_name")
-    @classmethod
-    def secret_is_separate_from_hugging_face_token(cls, value: str) -> str:
-        if value == "HF_TOKEN":
-            raise ValueError("GitHub credentials must not reuse HF_TOKEN")
-        return value
-
-
 class GitBenchmarkSource(StrictModel):
     type: Literal["git"] = "git"
     repository: GitHubRepository
     revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     path: str = Field(min_length=1)
-    credentials: GitHubTokenCredentials | None = Field(
-        default=None, exclude_if=lambda value: value is None
-    )
 
     @field_validator("repository", mode="before")
     @classmethod
@@ -88,7 +73,9 @@ class GitBenchmarkSource(StrictModel):
         path = PurePosixPath(value)
         if (
             path.is_absolute()
-            or ".." in path.parts
+            or "\\" in value
+            or "\0" in value
+            or any(part in {"", ".", ".."} for part in path.parts)
             or path.as_posix() != value
             or value in {"", "."}
         ):
@@ -96,13 +83,45 @@ class GitBenchmarkSource(StrictModel):
         return value
 
 
+class DirectoryBenchmarkSource(StrictModel):
+    type: Literal["directory"] = "directory"
+    path: str = Field(min_length=1)
+
+    @field_validator("path")
+    @classmethod
+    def path_is_literal(cls, value: str) -> str:
+        if value != value.strip() or "\0" in value or value in {"", "."}:
+            raise ValueError("benchmark directory path must be a literal directory")
+        return value
+
+
+class BundleBenchmarkSource(StrictModel):
+    type: Literal["bundle"] = "bundle"
+    content_digest: ContentDigest
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+BenchmarkSource = Annotated[
+    GitBenchmarkSource | DirectoryBenchmarkSource | BundleBenchmarkSource,
+    Field(discriminator="type"),
+]
+
+
 def git_benchmark_source_digest(source: GitBenchmarkSource) -> str:
     payload = json.dumps(
-        source.model_dump(mode="json", exclude={"credentials"}),
+        source.model_dump(mode="json"),
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def benchmark_source_digest(source: BenchmarkSource) -> str | None:
+    if isinstance(source, GitBenchmarkSource):
+        return git_benchmark_source_digest(source)
+    if isinstance(source, BundleBenchmarkSource):
+        return source.content_digest
+    return None
 
 
 class BenchmarkJudgeSpec(StrictModel):
@@ -181,8 +200,8 @@ class BenchmarkJudgeSpec(StrictModel):
 class BenchmarkSpec(StrictModel):
     dataset: str = Field(min_length=1)
     dataset_digest: ContentDigest | None = None
-    source: GitBenchmarkSource | None = Field(
-        default=None, exclude_if=lambda value: value is None
+    source: BenchmarkSource | None = Field(
+        default=None, discriminator="type", exclude_if=lambda value: value is None
     )
     judge: BenchmarkJudgeSpec | None = Field(
         default=None, exclude_if=lambda value: value is None
@@ -195,16 +214,7 @@ class BenchmarkSpec(StrictModel):
         if len(self.task_names) != len(set(self.task_names)):
             raise ValueError("benchmark task names must be unique")
         if self.source is not None:
-            if "@" in self.dataset:
-                raise ValueError(
-                    "Git-backed benchmark dataset names cannot contain a reference"
-                )
-            source_digest = git_benchmark_source_digest(self.source)
-            if self.dataset_digest is not None and self.dataset_digest != source_digest:
-                raise ValueError(
-                    "benchmark dataset digest must match its immutable Git source"
-                )
-            self.dataset_digest = source_digest
+            _resolve_benchmark_source_digest(self)
             return self
         _, reference = _split_dataset_reference(self.dataset)
         if reference is not None and reference.startswith("sha256:"):
@@ -219,6 +229,28 @@ class BenchmarkSpec(StrictModel):
                 )
             self.dataset_digest = reference
         return self
+
+
+def _resolve_benchmark_source_digest(benchmark: BenchmarkSpec) -> None:
+    source = benchmark.source
+    assert source is not None
+    if "@" in benchmark.dataset:
+        raise ValueError(
+            "source-backed benchmark dataset names cannot contain a reference"
+        )
+    source_digest = benchmark_source_digest(source)
+    if source_digest is None:
+        if benchmark.dataset_digest is not None:
+            raise ValueError(
+                "directory benchmark digest is resolved from local contents"
+            )
+        return
+    if (
+        benchmark.dataset_digest is not None
+        and benchmark.dataset_digest != source_digest
+    ):
+        raise ValueError("benchmark dataset digest must match its immutable source")
+    benchmark.dataset_digest = source_digest
 
 
 class QuantizationSpec(StrictModel):

@@ -27,7 +27,11 @@ from harbor_hf.harbor_adapter.validation import (
     load_compatibility_bundle,
     validate_compatibility_bundle,
 )
-from harbor_hf.models import DeploymentProfile, pinned_harbor_dataset_reference
+from harbor_hf.models import (
+    BundleBenchmarkSource,
+    DeploymentProfile,
+    pinned_harbor_dataset_reference,
+)
 from harbor_hf.provider_agents import effective_provider_agent_parameters
 from harbor_hf.provider_models import ProviderTarget
 from harbor_hf.providers import routed_provider_model
@@ -66,6 +70,7 @@ class HarborExecutionAdapter(Protocol):
         concurrency: int,
         expected_task_digests: dict[str, str],
         extra_environment_hosts: tuple[str, ...] = (),
+        benchmark_root: Path | None = None,
     ) -> PreparedHarborExecution: ...
 
     def execute(
@@ -98,6 +103,7 @@ class FilesystemHarborExecutionAdapter:
         concurrency: int,
         expected_task_digests: dict[str, str],
         extra_environment_hosts: tuple[str, ...] = (),
+        benchmark_root: Path | None = None,
     ) -> PreparedHarborExecution:
         request = build_execution_request(
             lock,
@@ -108,6 +114,7 @@ class FilesystemHarborExecutionAdapter:
             concurrency=concurrency,
             expected_task_digests=expected_task_digests,
             extra_environment_hosts=extra_environment_hosts,
+            benchmark_root=benchmark_root,
         )
         request_path = execution_root / "harbor-request.json"
         config_path = execution_root / "harbor-job.json"
@@ -347,6 +354,7 @@ def build_execution_request(
     concurrency: int,
     expected_task_digests: dict[str, str],
     extra_environment_hosts: tuple[str, ...] = (),
+    benchmark_root: Path | None = None,
 ) -> HarborExecutionRequest:
     if attempts < 1 or concurrency < 1:
         raise WorkerError("Harbor attempts and concurrency must be positive")
@@ -371,26 +379,7 @@ def build_execution_request(
     ):
         raise WorkerError("Harbor request contains a task outside the resolved run set")
     served_model_name = _served_model_name(lock)
-    if lock.benchmark_source is None:
-        try:
-            dataset_reference = pinned_harbor_dataset_reference(
-                lock.benchmark_dataset, lock.benchmark_dataset_digest
-            )
-        except ValueError as error:
-            raise WorkerError(str(error)) from error
-        dataset_name, dataset_ref = dataset_reference.rsplit("@", 1)
-        dataset: dict[str, JsonValue] = {
-            "name": dataset_name,
-            "ref": dataset_ref,
-            "task_names": task_names,
-        }
-    else:
-        source = lock.benchmark_source
-        dataset = {
-            "repo": f"{source.repository}@{source.revision}",
-            "path": source.path,
-            "task_names": task_names,
-        }
+    dataset = _benchmark_dataset(lock, task_names, benchmark_root)
     agent_kwargs = effective_agent_parameters(lock)
     if lock.agent.revision_kind in {"package", "git"}:
         agent_kwargs["version"] = lock.agent.revision
@@ -453,6 +442,40 @@ def build_execution_request(
         harbor_config_digest=sha256_digest(canonical_json_bytes(config)),
         verification=policy,
     )
+
+
+def _benchmark_dataset(
+    lock: RunLock,
+    task_names: list[str],
+    benchmark_root: Path | None,
+) -> dict[str, JsonValue]:
+    source = lock.benchmark_source
+    if source is None:
+        try:
+            dataset_reference = pinned_harbor_dataset_reference(
+                lock.benchmark_dataset, lock.benchmark_dataset_digest
+            )
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
+        dataset_name, dataset_ref = dataset_reference.rsplit("@", 1)
+        return {"name": dataset_name, "ref": dataset_ref, "task_names": task_names}
+    if isinstance(source, BundleBenchmarkSource):
+        if benchmark_root is None:
+            raise WorkerError("bundle benchmark requires a verified local root")
+        try:
+            resolved = benchmark_root.resolve(strict=True)
+        except OSError as error:
+            raise WorkerError(
+                "verified benchmark bundle root does not exist"
+            ) from error
+        if not resolved.is_dir() or benchmark_root.is_symlink():
+            raise WorkerError("verified benchmark bundle root must be a real directory")
+        return {"path": str(resolved), "task_names": task_names}
+    return {
+        "repo": f"{source.repository}@{source.revision}",
+        "path": source.path,
+        "task_names": task_names,
+    }
 
 
 def provider_agent_package_source() -> Path:

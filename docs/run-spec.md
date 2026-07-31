@@ -150,12 +150,11 @@ Bucket, and the remote Job mounts it read-only. The local path and local Git
 credentials never enter the remote source lock or Job. The plan digest covers
 the resolved source lock rather than the operator path.
 
-Directory and bundle sources are proposed and are not accepted by the current
-CLI until the
-[implementation plan](benchmark-source-implementation-plan.md) is complete.
-Authenticated remote Git is prohibited now, even when an older checkout still
-accepts its manifest shape. Use a package or anonymous public Git until bundle
-support lands; do not forward a Git credential as a temporary workaround.
+Directory and bundle sources are accepted by the current CLI. The
+[implementation record](benchmark-source-implementation-plan.md) describes the
+bundle format, private staging, remote validation, and credential boundary.
+Authenticated remote Git is prohibited, even when an older pinned worker still
+accepts its manifest shape. Do not forward a Git credential as a workaround.
 
 `benchmark.judge` optionally pins an OpenAI-compatible verifier judge. The
 allowed upstreams are the Hugging Face router, the direct OpenAI API, and the

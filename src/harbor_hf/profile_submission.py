@@ -25,7 +25,6 @@ from harbor_hf.submission import (
     job_secret_names,
     locked_source_command,
     require_private_bucket,
-    require_source_secrets,
     stage_job_input,
 )
 
@@ -129,15 +128,6 @@ def submit_profile(
     spec, _desired = bind_profile_target(plan)
     if spec.remote is None:
         raise ValueError("profile run requires remote configuration")
-    lock = build_run_lock(
-        spec,
-        model_id=plan.cell.model,
-        deployment_id=plan.cell.deployment,
-        agent_id=plan.cell.agent,
-        run_id=f"profile-{plan.profile_id}",
-        allow_provider=True,
-    )
-    require_source_secrets(lock)
     api = bucket_api or cast(BucketApi, HfApi())
     ensure_private_coordination_repository(spec.remote.job.namespace, api=api)
     input_bucket = ensure_private_job_input_bucket(spec.remote.job.namespace, api=api)

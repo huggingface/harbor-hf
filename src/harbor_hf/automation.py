@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from typing import Protocol, cast
 
@@ -9,7 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from harbor_hf.coordination import coordination_repository
 from harbor_hf.models import RemoteExecutionSpec
-from harbor_hf.submission import locked_source_command
+from harbor_hf.submission import (
+    locked_source_command,
+    reject_git_secret_names,
+    remote_job_secret_values,
+)
 
 _WEBHOOK_DOMAINS = ("repo",)
 
@@ -33,6 +36,7 @@ class AutomationRequest(FrozenModel):
     @field_validator("secret_names")
     @classmethod
     def extra_secrets_are_canonical(cls, value: list[str]) -> list[str]:
+        reject_git_secret_names(value)
         if "HF_TOKEN" in value:
             raise ValueError("automation secret_names must not repeat HF_TOKEN")
         if len(value) != len(set(value)):
@@ -188,6 +192,10 @@ def _install_webhook(
 
 
 def automation_plan(request: AutomationRequest) -> AutomationPlan:
+    try:
+        reject_git_secret_names(request.secret_names)
+    except ValueError as error:
+        raise AutomationError(str(error)) from error
     if request.remote.job.namespace != request.namespace:
         raise AutomationError("automation and remote Job namespaces must match")
     return AutomationPlan(
@@ -284,10 +292,8 @@ def _required_id(value: object, resource: str) -> str:
 
 
 def _automation_secrets(request: AutomationRequest, token: str) -> dict[str, str]:
-    secrets = {request.remote.job.token_secret_name: token}
-    for name in request.secret_names:
-        value = os.environ.get(name, "")
-        if not value:
-            raise AutomationError(f"required secret {name} is not available")
-        secrets[name] = value
-    return secrets
+    try:
+        extra = remote_job_secret_values(request.secret_names)
+    except ValueError as error:
+        raise AutomationError(str(error)) from error
+    return {request.remote.job.token_secret_name: token, **extra}

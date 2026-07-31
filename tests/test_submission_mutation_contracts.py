@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from conftest import with_provider_controller
-from test_submission import FakeBucketApi, FakeRunner, _wave_lock
+from test_submission import FakeBucketApi, FakeRunner, _wave_lock, _write_source_lock
 
 from harbor_hf.models import ExperimentSpec
 from harbor_hf.provider_models import ProviderTarget
@@ -62,18 +62,23 @@ def test_submit_stages_input_under_run_identity(
     runner = FakeRunner("Job started: 0123456789abcdef01234567\n")
     api = FakeBucketApi()
     (tmp_path / "manifest.yaml").write_text("kind: Experiment\n")
+    source_lock = _write_source_lock(tmp_path, remote_spec)
 
     result = submit(
         lock,
         input_dir=tmp_path,
         bucket="osolmaz/benchmark-runs",
         runner=runner,
+        source_lock=source_lock,
         bucket_api=api,
     )
 
     assert result.run_id == "run-42"
     assert result.artifact_prefix == lock.artifact_prefix
-    assert result.command == runner.command
+    assert runner.command is not None
+    assert "--secrets" in result.command
+    assert "--secrets-file" in runner.command
+    assert "test-purpose-scoped-token" not in " ".join(result.command + runner.command)
     paths = [path for _content, path in api.bucket_batches[0][1]]
     assert all(path.startswith("job-inputs/run-42/") for path in paths)
 

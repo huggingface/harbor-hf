@@ -12,8 +12,6 @@ from harbor_hf.cli import _is_provider_campaign, _write_lock, app
 from harbor_hf.control import CampaignSubmittedPayload, new_event
 from harbor_hf.models import (
     ExperimentSpec,
-    GitBenchmarkSource,
-    GitHubTokenCredentials,
 )
 from harbor_hf.operations import (
     ArtifactVerificationReport,
@@ -117,6 +115,8 @@ def test_campaign_schema_command_writes_json(tmp_path: Path) -> None:
         "campaign_lock",
         "wave_lock",
         "campaign_input",
+        "benchmark_source_lock",
+        "benchmark_bundle",
         "controller_claim",
         "controller_status",
         "controller_launch_claim",
@@ -150,8 +150,57 @@ def test_campaign_submit_dry_run_has_no_remote_mutation(
         "artifact_prefix": "campaigns/campaign-one",
         "campaign_id": "campaign-one",
         "plan_digest": payload["plan_digest"],
+        "source_lock": payload["source_lock"],
+        "source_lock_digest": payload["source_lock_digest"],
+        "secret_names": ["HF_TOKEN"],
+        "bundle": None,
         "stored": False,
     }
+
+
+def test_directory_campaign_plan_and_dry_run_report_a_remote_safe_bundle(
+    remote_spec: ExperimentSpec,
+    tmp_path: Path,
+) -> None:
+    tasks = tmp_path / "private-tasks"
+    tasks.mkdir()
+    (tasks / "task.toml").write_text("name='private'\n", encoding="utf-8")
+    raw = remote_spec.model_dump(mode="json")
+    raw["benchmark"].update(
+        {
+            "dataset": "shellbench/local",
+            "source": {"type": "directory", "path": str(tasks)},
+        }
+    )
+    raw["benchmark"].pop("dataset_digest", None)
+    manifest = tmp_path / "directory-campaign.yaml"
+    manifest.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    planned = runner.invoke(app, ["campaign", "plan", str(manifest)])
+    assert planned.exit_code == 0
+    assert "Source type: bundle" in planned.stdout
+    assert "Bundle files: 1" in planned.stdout
+    assert "Existing remote bundle inspected: no" in planned.stdout
+    assert str(tasks) not in planned.stdout
+
+    submitted = runner.invoke(
+        app,
+        [
+            "campaign",
+            "submit",
+            str(manifest),
+            "--campaign-id",
+            "directory-dry-run",
+            "--dry-run",
+        ],
+    )
+    assert submitted.exit_code == 0
+    payload = json.loads(submitted.stdout)
+    assert payload["source_lock"]["source"]["type"] == "bundle"
+    assert payload["bundle"]["action"] == "planned"
+    assert payload["bundle"]["file_count"] == 1
+    assert payload["secret_names"] == ["HF_TOKEN"]
+    assert str(tasks) not in submitted.stdout
 
 
 def test_campaign_submit_reports_controller_launch_failure_without_traceback(
@@ -607,45 +656,6 @@ def test_automation_install_dry_run_is_secret_safe(remote_manifest: Path) -> Non
     assert payload["installed"] is False
     assert payload["secret_names"] == ["HF_TOKEN"]
     assert "test-only" not in result.stdout
-
-
-def test_automation_install_derives_private_source_secret(
-    remote_spec: ExperimentSpec, tmp_path: Path
-) -> None:
-    source = GitBenchmarkSource(
-        repository="ShellBench/public-tasks",
-        revision="8" * 40,
-        path="tasks/115-tasks",
-        credentials=GitHubTokenCredentials(secret_name="GITHUB_TOKEN"),
-    )
-    raw = remote_spec.model_dump(mode="python")
-    raw["benchmark"].update(
-        {"dataset": "shellbench/public-115", "source": source.model_dump()}
-    )
-    raw["benchmark"].pop("dataset_digest", None)
-    manifest = tmp_path / "private-source.yaml"
-    manifest.write_text(
-        yaml.safe_dump(ExperimentSpec.model_validate(raw).model_dump(mode="json")),
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "automation",
-            "install",
-            str(manifest),
-            "--schedule",
-            "*/10 * * * *",
-            "--campaign-id",
-            "campaign-one",
-            "--dry-run",
-        ],
-    )
-
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["secret_names"] == ["HF_TOKEN", "GITHUB_TOKEN"]
 
 
 def test_invalid_manifest_reports_stderr_and_exit_two(tmp_path: Path) -> None:

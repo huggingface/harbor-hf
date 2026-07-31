@@ -18,6 +18,13 @@ from urllib.parse import urlparse
 
 from pydantic import JsonValue
 
+from harbor_hf.benchmark_source import (
+    BenchmarkSourceLock,
+    load_source_lock,
+    prepare_benchmark_source,
+    resolved_experiment,
+    source_lock_bytes,
+)
 from harbor_hf.coordination import (
     ClaimConflict,
     ClaimStore,
@@ -89,7 +96,6 @@ from harbor_hf.runs import (
     RunLock,
     build_run_lock,
     harbor_process_environment,
-    require_benchmark_source_secret,
     run_secret_values,
 )
 from harbor_hf.submission import (
@@ -417,21 +423,19 @@ def run_worker(
     source_preparer: Callable[[SourcePin, Path, CommandRunner], None] | None = None,
     watchdog_launcher: Callable[[RunLock, EndpointRef, str], str] | None = None,
     claim_store: ClaimStore | None = None,
+    mounted_bundle_root: Path = Path("/benchmark-source"),
 ) -> Path:
-    spec = load_experiment(manifest_path)
+    requested_spec = load_experiment(manifest_path)
+    source_lock = load_source_lock(manifest_path.parent / "source.lock.json")
     lock = RunLock.model_validate_json(
         lock_path.read_text(encoding="utf-8")  # pragma: no mutate
     )
-    validate_run_lock(spec, lock)
+    validate_run_lock(requested_spec, source_lock, lock)
 
     token_name = lock.remote.job.token_secret_name
     token = os.environ.get(token_name, "")
     if not token:
         raise WorkerError(f"required secret {token_name} is not available")
-    try:
-        require_benchmark_source_secret(lock)
-    except ValueError as error:
-        raise WorkerError(str(error)) from error
     os.environ["HF_TOKEN"] = token
 
     claims = claim_store or HubClaimStore(lock.remote.job.namespace, token)
@@ -457,6 +461,7 @@ def run_worker(
         with tempfile.TemporaryDirectory(prefix="harbor-hf-run-") as staging:
             return _run_staged_worker(
                 manifest_path,
+                source_lock,
                 lock,
                 Path(staging) / "run",
                 destination,
@@ -465,6 +470,7 @@ def run_worker(
                 stream_runner=stream_runner,
                 source_preparer=source_preparer,
                 watchdog_launcher=watchdog_launcher,
+                mounted_bundle_root=mounted_bundle_root,
             )
     except Exception:
         if not entered_worker or not any(
@@ -477,6 +483,7 @@ def run_worker(
 
 def _run_staged_worker(
     manifest_path: Path,
+    source_lock: BenchmarkSourceLock,
     lock: RunLock,
     root: Path,
     destination: Path,
@@ -486,10 +493,12 @@ def _run_staged_worker(
     stream_runner: Callable[..., int],
     source_preparer: Callable[[SourcePin, Path, CommandRunner], None] | None,
     watchdog_launcher: Callable[[RunLock, EndpointRef, str], str] | None,
+    mounted_bundle_root: Path,
 ) -> Path:
     root.mkdir(parents=True, exist_ok=False)
     (root / "harbor-jobs").mkdir()
     shutil.copyfile(manifest_path, root / "manifest.yaml")
+    (root / "source.lock.json").write_bytes(source_lock_bytes(source_lock))
     write_json(root / "run.lock.json", lock.model_dump(mode="json"))
     events = root / "events.jsonl"
     process_runner = runner or SubprocessRunner()
@@ -511,6 +520,11 @@ def _run_staged_worker(
             harbor_source,
             process_runner,
         )
+        benchmark_root = prepare_benchmark_source(
+            source_lock,
+            mounted_bundle_root=mounted_bundle_root,
+            destination=root.parent / "sources" / "benchmark",
+        )
         baseline = manager.describe()
         validate_endpoint_model(lock, baseline)
         require_paused_endpoint(baseline)
@@ -531,6 +545,7 @@ def _run_staged_worker(
             token,
             stream_runner,
             harbor_source,
+            benchmark_root,
         )
     except Exception as caught:
         error = caught
@@ -603,19 +618,25 @@ def _failure_details(
     return failure, record, event, reported_message
 
 
-def validate_run_lock(spec: ExperimentSpec, lock: RunLock) -> None:
+def validate_run_lock(
+    requested_spec: ExperimentSpec,
+    source_lock: BenchmarkSourceLock,
+    lock: RunLock,
+) -> None:
     if lock.trial_evidence is None:
         raise WorkerError("run lock requires a complete trial evidence policy")
-    if lock.spec_digest != experiment_digest(spec):
+    manifest_digest = experiment_digest(requested_spec)
+    if lock.spec_digest != manifest_digest:
         raise WorkerError("manifest digest does not match the run lock")
     try:
         expected = build_run_lock(
-            spec,
+            resolved_experiment(requested_spec, source_lock),
             model_id=lock.model.id,
             deployment_id=lock.deployment.id,
             agent_id=lock.agent.id,
             run_id=lock.run_id,
             clock=lambda: lock.created_at,
+            manifest_digest=manifest_digest,
         )
     except ValueError as error:
         raise WorkerError(
@@ -724,6 +745,7 @@ def _execute_benchmark(
     token: str,
     stream_runner: Callable[..., int],
     harbor_source: Path,
+    benchmark_root: Path | None,
 ) -> None:
     if lock.judge_required_tasks:
         raise WorkerError(
@@ -743,19 +765,13 @@ def _execute_benchmark(
         attempts=lock.attempts,
         concurrency=lock.concurrent_trials,
         expected_task_digests=dict(lock.benchmark_task_digests),
+        benchmark_root=benchmark_root,
     )
     append_event(events, "harbor_started")
-    source_secret_names = (
-        [lock.benchmark_source.credentials.secret_name]
-        if lock.benchmark_source is not None
-        and lock.benchmark_source.credentials is not None
-        else []
-    )
     with harbor_process_environment(
         lock,
         token=token,
         inference_base_url=base_url,
-        blocked_secret_names=source_secret_names,
     ) as environment:
         outcome = adapter.execute(
             prepared,

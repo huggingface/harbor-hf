@@ -184,34 +184,43 @@ def test_installs_serial_schedule_and_dataset_webhook(
     assert len(api.webhooks) == 1
 
 
-def test_installs_extra_controller_secrets_for_private_sources(
+def test_installs_extra_approved_controller_secrets(
     remote_spec: ExperimentSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    request = _request(remote_spec).model_copy(
-        update={"secret_names": ["GITHUB_TOKEN"]}
-    )
-    monkeypatch.setenv("GITHUB_TOKEN", "github-secret")
+    request = _request(remote_spec).model_copy(update={"secret_names": ["OTHER_TOKEN"]})
+    monkeypatch.setenv("HARBOR_HF_JOB_OTHER_TOKEN", "provider-secret")
     api = FakeApi()
 
     install_automation(request, token="hf-secret", api=api)
 
     assert api.job["secrets"] == {
         "HF_TOKEN": "hf-secret",
-        "GITHUB_TOKEN": "github-secret",
+        "OTHER_TOKEN": "provider-secret",
     }
-    assert automation_plan(request).secret_names == ["HF_TOKEN", "GITHUB_TOKEN"]
+    assert automation_plan(request).secret_names == ["HF_TOKEN", "OTHER_TOKEN"]
 
 
 def test_install_rejects_missing_extra_controller_secret(
     remote_spec: ExperimentSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    request = _request(remote_spec).model_copy(update={"secret_names": ["OTHER_TOKEN"]})
+    monkeypatch.delenv("HARBOR_HF_JOB_OTHER_TOKEN", raising=False)
+
+    with pytest.raises(
+        AutomationError, match="required purpose-scoped Job secret sources"
+    ):
+        install_automation(request, token="hf-secret", api=FakeApi())
+
+
+def test_automation_rejects_git_credential_secret_names(
+    remote_spec: ExperimentSpec,
+) -> None:
     request = _request(remote_spec).model_copy(
         update={"secret_names": ["GITHUB_TOKEN"]}
     )
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
 
-    with pytest.raises(AutomationError, match="required secret GITHUB_TOKEN"):
-        install_automation(request, token="hf-secret", api=FakeApi())
+    with pytest.raises(AutomationError, match="cannot be forwarded"):
+        automation_plan(request)
 
 
 def test_install_creates_supported_webhook_from_real_api_contract(

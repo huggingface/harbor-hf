@@ -172,7 +172,7 @@ storage boundaries. Benchmark tasks come from content-addressed Harbor
 packages, anonymously cloned commit-pinned public Git repositories, or
 immutable private bundles built from local directories. The [benchmark source
 specification](docs/benchmark-sources.md) defines those source forms and its
-[implementation plan](docs/benchmark-source-implementation-plan.md) describes
+[implementation record](docs/benchmark-source-implementation-plan.md) describes
 the bundle and credential-boundary work. Agents run in HF Sandboxes, models
 serve from Inference Endpoints or Inference Providers, and all coordination
 happens through parent-checked commits to the private coordination Dataset;

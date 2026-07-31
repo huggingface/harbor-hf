@@ -10,6 +10,12 @@ from typing import Annotated, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from harbor_hf.benchmark_source import (
+    BenchmarkSourceLock,
+    resolved_experiment,
+    source_lock_digest,
+    source_lock_from_spec,
+)
 from harbor_hf.endpoints import (
     bind_endpoint,
     deployment_digest,
@@ -124,6 +130,7 @@ class CampaignPlan(FrozenModel):
     publication_role: PublicationRole
     component_kind: ComponentKind | None
     manifest_digest: str
+    source_lock: BenchmarkSourceLock
     plan_digest: str
     run_count: int
     shard_count: int
@@ -196,6 +203,7 @@ class CampaignLock(FrozenModel):
     publication_role: PublicationRole
     component_kind: ComponentKind | None
     manifest_digest: str
+    source_lock: BenchmarkSourceLock
     plan_digest: str
     artifact_prefix: str
     max_shards_per_wave: int
@@ -407,10 +415,14 @@ class WaveLock(FrozenModel):
 def build_campaign_plan(
     spec: ExperimentSpec,
     *,
+    source_lock: BenchmarkSourceLock | None = None,
     recovery_policy: CampaignRecoveryPolicy | None = None,
 ) -> CampaignPlan:
+    selected_source_lock = source_lock or source_lock_from_spec(spec)
+    resolved_spec = resolved_experiment(spec, selected_source_lock)
     selected_recovery_policy = recovery_policy or CampaignRecoveryPolicy()
-    tasks = _resolved_tasks(spec)
+    source_identity = source_lock_digest(selected_source_lock)
+    tasks = _resolved_tasks(resolved_spec)
     trials = [
         PlannedTrial(
             trial_digest=_digest(
@@ -418,37 +430,44 @@ def build_campaign_plan(
                     "task_name": task_name,
                     "task_digest": task_digest,
                     "logical_attempt": logical_attempt,
+                    "source_lock_digest": source_identity,
                 }
             ),
             task_name=task_name,
             task_digest=task_digest,
             logical_attempt=logical_attempt,
         )
-        for logical_attempt in range(1, spec.execution.attempts + 1)
+        for logical_attempt in range(1, resolved_spec.execution.attempts + 1)
         for task_name, task_digest in tasks
     ]
     profiles = (
-        {profile.id: profile for profile in spec.matrix.models},
-        {profile.id: profile for profile in spec.matrix.deployments},
-        {profile.id: profile for profile in spec.matrix.agents},
+        {profile.id: profile for profile in resolved_spec.matrix.models},
+        {profile.id: profile for profile in resolved_spec.matrix.deployments},
+        {profile.id: profile for profile in resolved_spec.matrix.agents},
     )
-    cells = resolved_cells(spec)
+    cells = resolved_cells(resolved_spec)
     _validate_campaign_cells(cells, profiles)
-    runs = [_plan_run(spec, cell, trials, profiles) for cell in cells]
+    runs = [
+        _plan_run(resolved_spec, cell, trials, profiles, source_identity)
+        for cell in cells
+    ]
     controller_policy, initial_waves, planned_campaign_seconds = _controller_plan(
-        spec, runs
+        resolved_spec, runs
     )
     plan_payload = {
         "schema_version": "harbor-hf/campaign-plan/v1alpha1",
-        "experiment": spec.metadata.model_dump(mode="json"),
-        "benchmark_dataset": spec.benchmark.dataset,
-        "benchmark_dataset_digest": spec.benchmark.dataset_digest,
-        "execution": spec.execution.model_dump(mode="json"),
+        "experiment": resolved_spec.metadata.model_dump(mode="json"),
+        "benchmark_dataset": resolved_spec.benchmark.dataset,
+        "benchmark_dataset_digest": resolved_spec.benchmark.dataset_digest,
+        "source_lock": selected_source_lock.model_dump(mode="json"),
+        "execution": resolved_spec.execution.model_dump(mode="json"),
         "recovery_policy": selected_recovery_policy.model_dump(mode="json"),
-        "artifacts": spec.artifacts.model_dump(mode="json"),
-        "publishing": spec.publishing.model_dump(mode="json"),
+        "artifacts": resolved_spec.artifacts.model_dump(mode="json"),
+        "publishing": resolved_spec.publishing.model_dump(mode="json"),
         "remote": (
-            spec.remote.model_dump(mode="json") if spec.remote is not None else None
+            resolved_spec.remote.model_dump(mode="json")
+            if resolved_spec.remote is not None
+            else None
         ),
         "runs": [run.model_dump(mode="json") for run in runs],
     }
@@ -462,21 +481,22 @@ def build_campaign_plan(
                 ],
             }
         )
-    if spec.benchmark.source is not None:
-        plan_payload["benchmark_source"] = spec.benchmark.source.model_dump(mode="json")
-    if spec.benchmark.judge is not None:
-        plan_payload["benchmark_judge"] = spec.benchmark.judge.model_dump(mode="json")
+    if resolved_spec.benchmark.judge is not None:
+        plan_payload["benchmark_judge"] = resolved_spec.benchmark.judge.model_dump(
+            mode="json"
+        )
     return CampaignPlan(
-        experiment=spec.metadata.name,
-        evaluation_id=spec.publishing.evaluation_id,
-        publication_role=spec.publishing.role,
-        component_kind=spec.publishing.component_kind,
+        experiment=resolved_spec.metadata.name,
+        evaluation_id=resolved_spec.publishing.evaluation_id,
+        publication_role=resolved_spec.publishing.role,
+        component_kind=resolved_spec.publishing.component_kind,
         manifest_digest=experiment_digest(spec),
+        source_lock=selected_source_lock,
         plan_digest=_digest(plan_payload),
         run_count=len(runs),
         shard_count=sum(len(run.shards) for run in runs),
         trial_count=sum(len(shard.trials) for run in runs for shard in run.shards),
-        max_shards_per_wave=spec.execution.max_shards_per_wave,
+        max_shards_per_wave=resolved_spec.execution.max_shards_per_wave,
         recovery_policy=selected_recovery_policy,
         controller_policy=controller_policy,
         planned_campaign_duration_seconds=planned_campaign_seconds,
@@ -540,6 +560,7 @@ def _plan_run(
         dict[str, DeploymentTarget],
         dict[str, AgentProfile],
     ],
+    source_identity: str,
 ) -> PlannedRun:
     models, deployments, agents = profiles
     resolved_deployment_digest = deployment_digest(
@@ -550,6 +571,7 @@ def _plan_run(
             "model": _dump_profile(models[cell.model]),
             "deployment": _dump_profile(deployments[cell.deployment]),
             "agent": _dump_profile(agents[cell.agent]),
+            "source_lock_digest": source_identity,
         }
     )
     shard_size = spec.execution.max_trials_per_shard
@@ -849,6 +871,7 @@ def build_campaign_lock(
         publication_role=plan.publication_role,
         component_kind=plan.component_kind,
         manifest_digest=plan.manifest_digest,
+        source_lock=plan.source_lock,
         plan_digest=plan.plan_digest,
         artifact_prefix=f"campaigns/{campaign_id}",
         max_shards_per_wave=plan.max_shards_per_wave,
@@ -930,7 +953,11 @@ def build_wave_lock(
 ) -> WaveLock:
     """Resolve one reserved deployment wave for an allowed endpoint identity."""
     expected_campaign = build_campaign_lock(
-        build_campaign_plan(spec, recovery_policy=campaign.recovery_policy),
+        build_campaign_plan(
+            spec,
+            source_lock=campaign.source_lock,
+            recovery_policy=campaign.recovery_policy,
+        ),
         campaign.campaign_id,
         clock=lambda: campaign.created_at,
     )
@@ -938,6 +965,7 @@ def build_wave_lock(
         raise ValueError("campaign lock does not match the resolved manifest")
     _validate_submit_wave_action(campaign, action)
 
+    resolved_spec = resolved_experiment(spec, campaign.source_lock)
     selected = _selected_wave_shards(campaign, action)
     selected_trial_ids = {
         trial.trial_id
@@ -959,7 +987,7 @@ def build_wave_lock(
     for campaign_run, shards in selected:
         bound_spec = _bound_wave_spec(
             campaign,
-            spec,
+            resolved_spec,
             campaign_run,
             requested_endpoint,
         )
@@ -971,6 +999,7 @@ def build_wave_lock(
             run_id=campaign_run.run_id,
             allow_provider=True,
             clock=lambda: campaign.created_at,
+            manifest_digest=campaign.manifest_digest,
         )
         observed_target = _wave_target(configuration.deployment)
         if target is not None and observed_target != target:
@@ -995,12 +1024,14 @@ def build_wave_lock(
                 ],
             )
         )
-    if target is None or spec.remote is None:
+    if target is None or resolved_spec.remote is None:
         raise ValueError("deployment wave requires remote execution")
     provider_target = (
         target.provider if isinstance(target, ProviderWaveTarget) else None
     )
-    duration_seconds = _wave_duration_seconds(campaign, spec, action, provider_target)
+    duration_seconds = _wave_duration_seconds(
+        campaign, resolved_spec, action, provider_target
+    )
     return WaveLock(
         wave_id=deterministic_wave_id(action.action_key),
         action_id=action.action_id,
@@ -1012,7 +1043,7 @@ def build_wave_lock(
         plan_digest=campaign.plan_digest,
         deployment_digest=action.deployment_digest,
         target=target,
-        artifact_bucket=spec.artifacts.bucket,
+        artifact_bucket=resolved_spec.artifacts.bucket,
         artifact_prefix=(
             f"{campaign.artifact_prefix}/waves/"
             f"{deterministic_wave_id(action.action_key)}"
@@ -1024,7 +1055,7 @@ def build_wave_lock(
                 deployment_digest=action.deployment_digest,
             )
             if provider_target is not None
-            else spec.execution.concurrent_trials
+            else resolved_spec.execution.concurrent_trials
         ),
         spend_cap_microusd=(
             _usd_to_microusd(provider_target.limits.max_spend_usd)
@@ -1033,7 +1064,7 @@ def build_wave_lock(
         ),
         estimated_cost_microusd=locked_wave_estimate,
         duration_seconds=duration_seconds,
-        remote=spec.remote,
+        remote=resolved_spec.remote,
         shard_ids=action.shard_ids,
         trial_ids=action.trial_ids,
         runs=run_locks,

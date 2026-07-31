@@ -10,6 +10,7 @@ from test_wave_worker import _provider_wave_inputs, _wave_inputs
 
 import harbor_hf.wave_worker as wave_worker
 import harbor_hf.worker as worker
+from harbor_hf.benchmark_source import source_lock_from_spec
 from harbor_hf.models import DeploymentProfile, EndpointRef, ExperimentSpec, SourcePin
 from harbor_hf.process import CommandRunner
 from harbor_hf.provider_models import unavailable
@@ -49,6 +50,7 @@ def test_staged_worker_success_has_exact_ordered_side_effects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     lock = build_run_lock(remote_spec, run_id="staged-worker-contract")
+    source_lock = source_lock_from_spec(remote_spec)
     manifest = tmp_path / "manifest.yaml"
     manifest.write_text("manifest-contract\n", encoding="utf-8")
     root = tmp_path / "staging" / "run"
@@ -118,6 +120,7 @@ def test_staged_worker_success_has_exact_ordered_side_effects(
 
     result = worker._run_staged_worker(
         manifest,
+        source_lock,
         lock,
         root,
         destination,
@@ -126,6 +129,7 @@ def test_staged_worker_success_has_exact_ordered_side_effects(
         stream_runner=lambda *args, **kwargs: 0,
         source_preparer=prepare,
         watchdog_launcher=launch,
+        mounted_bundle_root=tmp_path / "unused-bundle",
     )
 
     assert isinstance(lock.deployment, DeploymentProfile)
@@ -194,6 +198,7 @@ def test_staged_worker_failure_before_lease_skips_cleanup_and_redacts_publicatio
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     lock = build_run_lock(remote_spec, run_id="staged-worker-failure")
+    source_lock = source_lock_from_spec(remote_spec)
     manifest = tmp_path / "manifest.yaml"
     manifest.write_text("manifest\n", encoding="utf-8")
     root = tmp_path / "stage" / "run"
@@ -223,6 +228,7 @@ def test_staged_worker_failure_before_lease_skips_cleanup_and_redacts_publicatio
     with pytest.raises(WorkerError) as captured:
         worker._run_staged_worker(
             manifest,
+            source_lock,
             lock,
             root,
             destination,
@@ -231,6 +237,7 @@ def test_staged_worker_failure_before_lease_skips_cleanup_and_redacts_publicatio
             stream_runner=lambda *args, **kwargs: 0,
             source_preparer=None,
             watchdog_launcher=None,
+            mounted_bundle_root=tmp_path / "unused-bundle",
         )
 
     assert str(captured.value) == "bad [REDACTED]"
