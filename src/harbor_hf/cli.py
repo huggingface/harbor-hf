@@ -231,7 +231,7 @@ def auth_tokens() -> None:
     """List Harbor HF token names without showing their values."""
     try:
         available = credentials.stored_job_hf_tokens()
-        status = credentials.job_hf_token_status(tokens=available)
+        status = credentials.job_hf_token_status()
     except (OSError, ValueError) as error:
         _exit_operation(error)
     selected = status["selected_token_name"]
@@ -323,10 +323,8 @@ def auth_use_job_token(
                 "Harbor HF Jobs?",
                 abort=True,
             )
-        _config, identity = credentials.select_job_hf_token(
-            token_name, tokens=available
-        )
-        status = credentials.job_hf_token_status(tokens=available)
+        _config, identity = credentials.select_job_hf_token(token_name)
+        status = credentials.job_hf_token_status()
     except (HTTPError, OSError, ValueError) as error:
         _exit_operation(error)
     _echo_json(

@@ -18,6 +18,7 @@ _MAX_TOKEN_STORE_BYTES = 1024 * 1024
 _MAX_TOKEN_COUNT = 256
 _MAX_TOKEN_BYTES = 16 * 1024
 _TOKEN_STORE_LOCK_TIMEOUT_SECONDS = 10
+_AUTH_LOCK_TIMEOUT_SECONDS = 60
 
 
 class _CaseSensitiveConfigParser(configparser.ConfigParser):
@@ -33,6 +34,18 @@ def harbor_hf_token_store_path(
     if explicit:
         return Path(explicit).expanduser()
     return harbor_hf_config_path(values).parent / "stored_tokens"
+
+
+@contextmanager
+def harbor_hf_auth_lock(path: Path | None = None) -> Iterator[None]:
+    destination = harbor_hf_token_store_path() if path is None else path
+    lock_path = destination.with_name(".auth.lock")
+    with _private_file_lock(
+        lock_path,
+        timeout_seconds=_AUTH_LOCK_TIMEOUT_SECONDS,
+        timeout_message="timed out waiting for Harbor HF auth lock",
+    ):
+        yield
 
 
 def load_harbor_hf_tokens(path: Path | None = None) -> dict[str, str]:
@@ -141,21 +154,30 @@ def _save_harbor_hf_tokens_unlocked(
 
 @contextmanager
 def _token_store_lock(destination: Path) -> Iterator[None]:
-    _prepare_private_directory(destination.parent)
     lock_path = destination.with_name(f".{destination.name}.lock")
-    lock = FileLock(
+    with _private_file_lock(
         lock_path,
-        timeout=_TOKEN_STORE_LOCK_TIMEOUT_SECONDS,
-        mode=0o600,
-    )
+        timeout_seconds=_TOKEN_STORE_LOCK_TIMEOUT_SECONDS,
+        timeout_message="timed out waiting for Harbor HF token store lock",
+    ):
+        yield
+
+
+@contextmanager
+def _private_file_lock(
+    lock_path: Path,
+    *,
+    timeout_seconds: int,
+    timeout_message: str,
+) -> Iterator[None]:
+    _prepare_private_directory(lock_path.parent)
+    lock = FileLock(lock_path, timeout=timeout_seconds, mode=0o600)
     try:
         with lock:
             os.chmod(lock_path, 0o600)
             yield
     except Timeout as error:
-        raise ValueError(
-            f"timed out waiting for Harbor HF token store lock: {lock_path}"
-        ) from error
+        raise ValueError(f"{timeout_message}: {lock_path}") from error
 
 
 def _parse_token_store(source: Path, payload: bytes) -> dict[str, str]:

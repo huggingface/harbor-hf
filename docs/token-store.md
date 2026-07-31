@@ -54,9 +54,11 @@ be an owner-owned regular file with mode `0600`. Harbor HF rejects symlinks and
 insecure permissions.
 
 Writes hold an owner-only `.stored_tokens.lock` file across the complete
-read-modify-write operation. They use a temporary `0600` file in the same
-directory, flush it, replace the old file atomically, and sync the directory.
-A failed replacement removes the temporary file.
+read-modify-write operation. Authentication commands also hold `.auth.lock`
+while changing the token store and selected name together. Writes use a
+temporary `0600` file in the same directory, flush it, replace the old file
+atomically, and sync the directory. A failed replacement removes the temporary
+file.
 
 ## Commands
 
