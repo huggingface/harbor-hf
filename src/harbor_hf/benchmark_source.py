@@ -331,12 +331,32 @@ def verify_anonymous_git_source(source: GitBenchmarkSource) -> None:
                 timeout=30,
                 env=environment,
             )
+            source_inventory = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repository_root),
+                    "ls-tree",
+                    "-r",
+                    "FETCH_HEAD",
+                    "--",
+                    source.path,
+                ],
+                text=True,
+                capture_output=True,
+                timeout=30,
+                env=environment,
+            )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise ValueError("public Git anonymous preflight could not run") from error
     if resolved.returncode != 0 or resolved.stdout.strip() != source.revision:
         raise ValueError("Git benchmark anonymous preflight returned another revision")
     if source_tree.returncode != 0 or source_tree.stdout.strip() != "tree":
         raise ValueError("Git benchmark path is not a directory at its locked revision")
+    if source_inventory.returncode != 0:
+        raise ValueError("Git benchmark tree inventory could not be verified")
+    if any(line.startswith("160000 ") for line in source_inventory.stdout.splitlines()):
+        raise ValueError("Git benchmark path cannot contain submodules")
 
 
 def known_credential_values(

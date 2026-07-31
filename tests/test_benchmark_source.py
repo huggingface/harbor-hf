@@ -253,6 +253,11 @@ def test_anonymous_git_preflight_checks_exact_commit_and_tree(
             SimpleNamespace(returncode=0, stdout="", stderr=""),
             SimpleNamespace(returncode=0, stdout=source.revision + "\n", stderr=""),
             SimpleNamespace(returncode=0, stdout="tree\n", stderr=""),
+            SimpleNamespace(
+                returncode=0,
+                stdout="100644 blob 0123456789abcdef\ttasks/115-tasks/task.toml\n",
+                stderr="",
+            ),
         ]
     )
 
@@ -269,13 +274,14 @@ def test_anonymous_git_preflight_checks_exact_commit_and_tree(
 
     verify_anonymous_git_source(source)
 
-    assert len(calls) == 4
+    assert len(calls) == 5
     assert calls[1][0][-2:] == [
         "https://github.com/ShellBench/public-tasks.git",
         source.revision,
     ]
     assert calls[2][0][-2:] == ["rev-parse", "FETCH_HEAD"]
     assert calls[3][0][-2:] == ["-t", "FETCH_HEAD:tasks/115-tasks"]
+    assert calls[4][0][-2:] == ["--", "tasks/115-tasks"]
     for _command, environment in calls:
         assert "must-not-leak" not in repr(environment)
         assert environment["GIT_CONFIG_COUNT"] == "0"
@@ -295,6 +301,7 @@ def test_anonymous_git_preflight_rejects_a_missing_tree(
             SimpleNamespace(returncode=0, stdout="", stderr=""),
             SimpleNamespace(returncode=0, stdout=source.revision + "\n", stderr=""),
             SimpleNamespace(returncode=1, stdout="", stderr="missing"),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
         ]
     )
     monkeypatch.setattr(
@@ -304,6 +311,40 @@ def test_anonymous_git_preflight_rejects_a_missing_tree(
     )
 
     with pytest.raises(ValueError, match="path is not a directory"):
+        verify_anonymous_git_source(source)
+
+
+def test_anonymous_git_preflight_rejects_submodules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = GitBenchmarkSource(
+        repository="ShellBench/public-tasks",
+        revision="8" * 40,
+        path="tasks/115-tasks",
+    )
+    results = iter(
+        [
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout=source.revision + "\n", stderr=""),
+            SimpleNamespace(returncode=0, stdout="tree\n", stderr=""),
+            SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "160000 commit 0123456789abcdef"
+                    "\ttasks/115-tasks/private-dependency\n"
+                ),
+                stderr="",
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        benchmark_source.subprocess,
+        "run",
+        lambda *_args, **_kwargs: next(results),
+    )
+
+    with pytest.raises(ValueError, match="cannot contain submodules"):
         verify_anonymous_git_source(source)
 
 
