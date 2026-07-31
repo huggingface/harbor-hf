@@ -8,7 +8,8 @@ operator must also prove that each wave fits its runtime and spend bounds.
 
 Collect these values before editing a manifest:
 
-- benchmark source, exact task selection, task digests, and attempt count;
+- benchmark source type, anonymous Git commit or local directory, exact task
+  selection, task digests, and attempt count;
 - model repository and full source commit;
 - deployment kind, provider route or endpoint identity, and wire API;
 - agent name, custom import path when required, and exact revision;
@@ -31,7 +32,8 @@ campaign with a different model, runtime, agent, judge, or provider.
 
 Inspect every behavior-affecting reference. Full campaigns require:
 
-- 40-character lowercase Git commits for source repositories;
+- 40-character lowercase commits for anonymously readable public Git sources,
+  or a verified content and manifest digest for a local-directory bundle;
 - `@sha256:` image digests;
 - exact package versions or full Git agent revisions;
 - a complete task-name-to-digest map;
@@ -42,8 +44,15 @@ Inspect every behavior-affecting reference. Full campaigns require:
 
 Planning should produce the same semantic plan from two clean checkouts. Keep
 both outputs when introducing a new source or deployment. Compare
-`plan_digest`, `manifest_digest`, run IDs, deployment digests, task identities,
-shard composition, and trial identities.
+`plan_digest`, `manifest_digest`, `source.lock.json`, bundle content and manifest
+digests when applicable, run IDs, deployment digests, task identities, shard
+composition, and trial identities. Equivalent directory contents at different
+operator paths must produce the same source content digest and semantic plan.
+
+A Git source must pass anonymous preflight with local credential helpers and
+authentication variables disabled. If it needs authentication, use a local
+checkout and the directory-bundle flow. Never solve a private-source failure by
+adding a Git token to an HF Job.
 
 ## Trial count review
 

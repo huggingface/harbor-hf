@@ -251,7 +251,11 @@ submit_campaign_controller()
 The submit command must:
 
 - create the immutable campaign once;
-- stage one content-addressed campaign input package;
+- stage one content-addressed campaign input package containing the requested
+  manifest, resolved benchmark source lock, campaign lock, and input manifest;
+- stage or adopt a separate immutable benchmark bundle when the source request
+  is an operator-local directory, as specified in
+  `docs/benchmark-source-implementation-plan.md`;
 - inspect exact labels before launch;
 - reserve controller attempt 1;
 - launch one detached Job;

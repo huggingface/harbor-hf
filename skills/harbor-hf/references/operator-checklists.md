@@ -15,8 +15,9 @@ inspecting the named artifact or command output.
 
 ### Identity
 
-- [ ] Worker and Harbor references are full commits. Benchmark and model
-      references are full commits. Git agent references are full commits too.
+- [ ] Worker and Harbor references are full commits. A public Git benchmark is
+      anonymously readable at a full commit; a local benchmark has a verified
+      bundle content digest. Model and Git agent references are full commits.
 - [ ] Package agents use exact versions.
 - [ ] Images use SHA-256 digests.
 - [ ] Every selected task has a content digest.
@@ -29,15 +30,21 @@ inspecting the named artifact or command output.
 
 - [ ] Control Dataset, input Bucket, evidence Bucket, and unpublished result
       stores are private.
-- [ ] Manifest and plan contain secret names only.
-- [ ] The submitter can load secrets without printing them.
+- [ ] Benchmark source models contain no secret names or values.
+- [ ] No Git credential, SSH key, SSH agent, or credential helper is forwarded
+      to remote infrastructure.
+- [ ] Manifest and plan contain only explicitly approved runtime secret names.
+- [ ] Every runtime credential is purpose-scoped and approved for its exact
+      source and destination; the submitter can load it without printing it.
 - [ ] Provider-agent isolation requirements are present.
 - [ ] Public publication destinations cannot receive raw private evidence.
 
 ### Planning
 
 - [ ] `harbor-hf validate` passes.
-- [ ] Campaign plan JSON is saved with a SHA-256 digest.
+- [ ] Campaign plan JSON and `source.lock.json` are saved with SHA-256 digests.
+- [ ] A directory source bundle has a complete validated manifest and payload;
+      a Git source passed anonymous preflight with credentials disabled.
 - [ ] A clean-checkout plan has the same semantic digest.
 - [ ] Plan task names and attempts match the protocol.
 - [ ] Infrastructure retries are separate from logical attempts.
@@ -66,7 +73,9 @@ inspecting the named artifact or command output.
 
 ### Submission
 
-- [ ] Submit dry run matches the approved plan.
+- [ ] Submit dry run matches the approved plan, source lock, bundle upload or
+      reuse action, and exact source mount.
+- [ ] The rendered Job secret list contains no source or Git credential.
 - [ ] Launch record contains the manifest and plan plus duration and canary
       evidence.
 - [ ] User has approved the exact paid launch.

@@ -30,8 +30,12 @@ Each physical execution writes two immutable files before Harbor starts:
 The job config is the only source for attempts, concurrency, retry policy,
 dataset and task selection, logical agent identity, custom-agent import path and
 parameters, model identity, environment type and parameters, output path, and
-allowed model host. Internal Harbor retries are fixed at zero. Agent concurrency
-equals trial concurrency.
+allowed model host. Its dataset configuration is derived from the verified
+`source.lock.json`: anonymous public Git uses Harbor's `repo` and `path` fields,
+a benchmark bundle uses Harbor's public local `path` field rooted at the
+verified extraction directory, and a package uses its content-addressed
+reference. Internal Harbor retries are fixed at zero. Agent concurrency equals
+trial concurrency.
 
 The process command is deliberately small:
 
@@ -45,8 +49,11 @@ uv run --project HARBOR_SOURCE --locked --no-dev --extra hf-sandbox \
 package is dependency-free, so layering it into Harbor does not resolve or
 replace Harbor dependencies.
 
-Harbor receives `HF_TOKEN`, `OPENAI_API_KEY`, and `OPENAI_BASE_URL` in the
-process environment. Secret values are not serialized into either input file.
+Harbor receives only the explicitly approved runtime values required by the
+selected deployment and judge, such as a purpose-scoped `HF_TOKEN`,
+`OPENAI_API_KEY`, and `OPENAI_BASE_URL`. It never receives a Git credential,
+SSH agent, operator path, or source-secret name. Secret values are not
+serialized into either input file.
 For provider-backed agents, the custom agent starts a root-owned loopback bridge
 and passes only a localhost URL and non-secret placeholder key to the
 unprivileged agent process. The agent never receives `HF_TOKEN`, the private HF

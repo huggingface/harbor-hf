@@ -168,11 +168,15 @@ it `_SUCCESS` or `_FAILED` only after endpoint cleanup is verified.
 ## Architecture
 
 The [architecture overview](docs/architecture.md) describes the execution and
-storage boundaries: benchmark tasks come from content-addressed Harbor
-packages or commit-pinned GitHub repositories, agents run in HF Sandboxes,
-models serve from Inference Endpoints or Inference Providers, and all
-coordination happens through parent-checked commits to the private
-coordination Dataset — there is no server to keep alive. The
+storage boundaries. Benchmark tasks come from content-addressed Harbor
+packages, anonymously cloned commit-pinned public Git repositories, or
+immutable private bundles built from local directories. The [benchmark source
+specification](docs/benchmark-sources.md) defines those source forms and its
+[implementation plan](docs/benchmark-source-implementation-plan.md) describes
+the bundle and credential-boundary work. Agents run in HF Sandboxes, models
+serve from Inference Endpoints or Inference Providers, and all coordination
+happens through parent-checked commits to the private coordination Dataset;
+there is no server to keep alive. The
 [endpoint provisioning contract](docs/endpoint-provisioning.md) documents
 deterministic endpoint ownership. The
 [deployment profiling contract](docs/deployment-profiling.md) defines the

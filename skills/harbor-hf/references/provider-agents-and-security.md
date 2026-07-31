@@ -85,6 +85,25 @@ A paid canary must prove:
 
 Redaction does not replace process isolation.
 
+## Benchmark source credentials
+
+Remote benchmark source loading has no credential path. A Git source must be
+anonymously readable at its full locked commit. Disable credential helpers,
+SSH agents, askpass programs, interactive prompts, global and system Git
+configuration, and ambient Git authentication during both preflight and remote
+checkout.
+
+Local and private benchmark files use the bundle contract in
+`docs/benchmark-sources.md`. The submitter uses local source access in place,
+builds a content-addressed bundle, and uploads it to the managed private input
+Bucket. The remote Job receives the verified bundle, not the source credential
+or operator path.
+
+Reject a launch when it would forward `GITHUB_TOKEN`, `GH_TOKEN`, an SSH key,
+an SSH agent, a Git credential helper, or `gh auth token`. Do not treat a
+temporary secret file, later deletion, environment blanking, or log redaction
+as permission to copy a personal credential into remote infrastructure.
+
 ## Provider evidence
 
 Record one content-free row for every provider attempt. Verify:

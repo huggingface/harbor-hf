@@ -55,20 +55,29 @@ metrics, and result tables.
 
 ### Planner
 
-The planner validates an experiment, expands its matrix, and produces one
-homogeneous run per model, deployment, and agent cell. Planning must not create
-remote resources. Every resolved run receives a content digest before it is
-submitted.
+The planner validates an experiment, resolves its benchmark source, expands its
+matrix, and produces one homogeneous run per model, deployment, and agent cell.
+A public Git request resolves to an anonymous commit-pinned source. A local
+directory resolves to an immutable bundle identity. An existing bundle or
+Harbor package remains content-addressed. Planning may read and snapshot local
+files but must not create remote resources. Every resolved run receives a
+content digest before it is submitted.
+
+The [benchmark source specification](benchmark-sources.md) defines the source
+union, `source.lock.json`, bundle format, anonymous Git boundary, and private
+Bucket layout. Filesystem, Git, archive, and Bucket adapters stay outside domain
+planning.
 
 ### Controller
 
 A provider campaign runs inside one detached HF Job. Submission stages a
-content-addressed folder containing the manifest, campaign lock, and input
-manifest. A parent-checked launch claim serializes the exact-label Job lookup and
-launch, and an immutable receipt binds the attempt to its physical Job. The
-controller verifies the input files, acquires the campaign claim, prepares
-pinned sources, and runs one internal wave at a time. Trial concurrency stays
-inside each wave.
+content-addressed folder containing the requested manifest, resolved source
+lock, campaign lock, and input manifest. A local benchmark bundle has its own
+shared content address and read-only mount. A parent-checked launch claim
+serializes the exact-label Job lookup and launch, and an immutable receipt binds
+the attempt to its physical Job. The controller verifies the input files and
+source, acquires the campaign claim, prepares pinned runtime sources, and runs
+one internal wave at a time. Trial concurrency stays inside each wave.
 
 The controller records a heartbeat while a long trial runs. Its container
 wrapper records the physical start before pinned source checkout, so admission
@@ -177,10 +186,12 @@ another. New provider campaigns have no built-in-agent fallback.
 A private HF Storage Bucket is the complete evidence archive. Requested and
 resolved configuration, endpoint snapshots, Harbor output, trajectories,
 sessions, verifier records, logs, and checksums are written under an immutable
-run prefix. Sanitized run evidence is published after validation and resource
-cleanup, and `_SUCCESS` is written only for a complete run. Each Harbor trial's
-task digest is read from its own `lock.json` and must match the pre-resolved task
-map in `run.lock.json`.
+run prefix. The separate managed `jobs-artifacts` Bucket stores campaign inputs
+and immutable benchmark bundles. Bundle payloads are published first and their
+validated manifests are written last as completion markers. Sanitized run
+evidence is published after validation and resource cleanup, and `_SUCCESS` is
+written only for a complete run. Each Harbor trial's task digest is read from
+its own `lock.json` and must match the pre-resolved task map in `run.lock.json`.
 The worker first adds a permanent run reservation to the private coordination
 repository with the same parent-commit compare-and-swap protocol. Duplicate run
 IDs therefore fail before source preparation, endpoint work, or failure
@@ -221,7 +232,8 @@ results must be labeled explicitly and must not appear as single-run results.
 
 A resolved run lock records:
 
-- benchmark source, revision, task-set digest, and verifier digest;
+- the benchmark source lock: anonymous Git commit, bundle content address, or
+  Harbor package digest, plus the task-set digest and verifier digest;
 - Harbor and worker source revisions, custom-agent import path, underlying
   agent, tool, prompt, and skill revisions;
 - model, tokenizer, chat-template, and generation-config revisions;
@@ -252,7 +264,8 @@ Each run preserves four separate configuration records:
 
 | Artifact | Authority |
 | --- | --- |
-| `manifest.yaml` | Immutable copy of what the user requested. |
+| `manifest.yaml` | Immutable copy of what the user requested, including an operator-local path when a directory was selected. |
+| `source.lock.json` | Remote-safe anonymous Git, bundle, or package identity resolved before semantic planning. |
 | `run.lock.json` | Resolved revisions, matrix cell, policy, and reproducibility contract fixed before execution. |
 | `endpoint.snapshot.json` | Effective endpoint or provider configuration observed after readiness. |
 | `runtime-environment.json` | Versions and feature controls reported from inside the serving runtime. |
@@ -262,9 +275,9 @@ Differences between requested and effective values remain explicit and are
 published as comparison fields.
 
 Before any remote work, the controller reconstructs the selected matrix cell
-from `manifest.yaml` and compares the complete result with `run.lock.json`.
-Matching only the manifest digest is insufficient because lock fields can be
-modified independently.
+from `manifest.yaml` and the verified `source.lock.json`, then compares the
+complete result with `run.lock.json`. Matching only the manifest digest is
+insufficient because source and run lock fields can be modified independently.
 
 Runtime evidence uses a status alongside nullable values. `reported` means the
 value came from a named probe or provider response, `not_reported` means the

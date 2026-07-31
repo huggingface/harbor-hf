@@ -814,10 +814,12 @@ Build the scan set from values already available to the remote worker:
 - `HF_TOKEN`;
 - agent inference credentials;
 - judge upstream credentials;
-- private benchmark source credentials;
 - recorder route capabilities;
 - endpoint or provider credentials injected by the selected deployment;
 - any additional locked secret names present in the worker environment.
+
+Benchmark sources contribute no remote credential. Public Git is anonymous and
+private inputs arrive through verified bundles.
 
 Do not serialize this set. Pass it through process memory and temporary
 mode-0600 files only where a subprocess needs bounded scanning.

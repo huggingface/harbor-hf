@@ -57,19 +57,27 @@ every placeholder with a durable reference:
 - full source commits for Harbor and `harbor-hf`;
 - a full model commit;
 - digest-pinned serving and controller images;
-- a digest-pinned Harbor package or commit-pinned Git benchmark source and the
-  complete task-name-to-digest map;
+- a digest-pinned Harbor package, an anonymously readable commit-pinned public
+  Git source, or a local directory that resolves to an immutable private bundle,
+  together with the complete task-name-to-digest map;
 - exact agent package versions or source commits;
 - an endpoint deployment profile or an Inference Provider target;
 - private control, input, artifact, and unpublished result storage;
 - campaign, wave, shard, retry, concurrency, idle-time, duration, and spend
   bounds.
 
-Record secret *names* in the manifest, never secret values. Give orchestration,
-execution, and publication separate least-privilege HF tokens where the Hub
-permission model permits it. Put those values only in the relevant HF Job or
-Endpoint secret store. Do not put a token in a manifest, lock, event, log,
-Dataset row, Bucket object, test fixture, or result Space.
+Record approved runtime secret *names* in the manifest, never secret values.
+Benchmark sources never declare a secret name. Public Git is anonymous; private
+or local files use the bundle flow in
+[`benchmark-sources.md`](benchmark-sources.md). Never pass `gh auth token`, a
+GitHub personal token, an SSH key, or a local Git credential helper to a remote
+runtime.
+
+Give orchestration, execution, and publication separate purpose-scoped HF
+tokens where the Hub permission model permits it. Copy no ambient local login
+into a remote secret. Every credential transfer requires approval naming its
+exact source and destination. Do not put a token in a manifest, lock, event,
+log, Dataset row, Bucket object, test fixture, or result Space.
 
 Plan twice in clean checkouts when introducing a new benchmark or deployment:
 
@@ -78,9 +86,11 @@ uv run harbor-hf validate campaign.yaml
 uv run harbor-hf campaign plan campaign.yaml --format json > campaign-plan.json
 ```
 
-Planning performs no inference and creates no remote compute. Preserve the plan
-digest, run IDs, shard IDs, trial IDs, source commits, model revision,
-deployment digest, image digests, and resolved task digests from the output.
+Planning performs no inference and creates no remote compute. It may inspect an
+anonymous public Git source or build a local directory snapshot. Preserve the
+plan digest, source-lock digest, bundle content digest when applicable, run IDs,
+shard IDs, trial IDs, source commits, model revision, deployment digest, image
+digests, and resolved task digests from the output.
 
 ## 2. Profile a new deployment
 

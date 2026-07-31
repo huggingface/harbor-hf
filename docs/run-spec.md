@@ -103,8 +103,17 @@ at least one pinned task, and every pinned task must match a selection. A task
 content digest covers its instructions, environment, verifier, and other task
 files.
 
-A benchmark may instead use Harbor's native Git dataset source. This keeps the
-task repository separate from `harbor-hf` while preserving an immutable source:
+A benchmark may instead use one of the source forms in the
+[benchmark source specification](benchmark-sources.md). The resolved source is
+one of:
+
+- an anonymously readable GitHub repository at a full commit and safe
+  repository-relative path;
+- an immutable bundle built from an operator-local directory;
+- an existing verified bundle; or
+- the content-addressed Harbor package named by `benchmark.dataset`.
+
+A public Git request keeps the current concise shape:
 
 ```yaml
 benchmark:
@@ -114,33 +123,39 @@ benchmark:
     repository: ShellBench/public-tasks
     revision: 0000000000000000000000000000000000000000
     path: tasks/115-tasks
-    credentials:
-      type: github-token
-      secret_name: GITHUB_TOKEN
   task_names: ["*"]
   task_digests:
     example-task: sha256:0000000000000000000000000000000000000000000000000000000000000000
 ```
 
-Git sources require a GitHub repository, full commit, and safe repository-relative
-path. Public repositories omit `credentials`. Private repositories declare a
-separate HF Job secret containing a GitHub token; `HF_TOKEN` cannot be reused.
-Set `GITHUB_TOKEN` in the environment that submits a run or installs scheduled
-automation. HF Jobs stores it as a remote secret, while the manifest and locks
-store only the secret name. Automation derives the required secret names from
-the experiment manifest and forwards them to campaign waves.
+Git sources are public and anonymous. They cannot declare credentials, require
+private submodules, or rely on authenticated Git LFS. Planning and execution
+disable credential helpers, SSH agents, askpass programs, interactive prompts,
+and ambient Git authentication. The worker verifies the locked commit before
+Harbor reads a task.
 
-`dataset_digest` is derived from the canonical repository, revision, and path.
-Credential metadata does not change content identity. The worker renders the
-source as Harbor's `repo` and `path` dataset configuration, so Harbor still owns
-cloning, task resolution, and task checksum calculation. For private sources,
-the controller passes a credential-free GitHub URL and installs a Git credential
-helper scoped to that exact repository. The helper reads the token from a
-mode-`0600` temporary file that is deleted after Harbor exits; source-token
-environment variables are blanked in Harbor and its task sandboxes. Terminal
-prompting is disabled, and final evidence scrubbing covers both the Hugging Face
-and GitHub token values. Live Harbor output also reads the temporary file as a
-redaction source, so credential text is removed before it reaches HF Job logs.
+Private or local files use a directory request:
+
+```yaml
+benchmark:
+  dataset: shellbench/public-115
+  source:
+    type: directory
+    path: ../../../../public-tasks/tasks/115-tasks
+```
+
+Planning resolves the directory into a content-addressed private bundle.
+Submission uploads or adopts that bundle in the managed `jobs-artifacts`
+Bucket, and the remote Job mounts it read-only. The local path and local Git
+credentials never enter the remote source lock or Job. The plan digest covers
+the resolved source lock rather than the operator path.
+
+Directory and bundle sources are proposed and are not accepted by the current
+CLI until the
+[implementation plan](benchmark-source-implementation-plan.md) is complete.
+Authenticated remote Git is prohibited now, even when an older checkout still
+accepts its manifest shape. Use a package or anonymous public Git until bundle
+support lands; do not forward a Git credential as a temporary workaround.
 
 `benchmark.judge` optionally pins an OpenAI-compatible verifier judge. The
 allowed upstreams are the Hugging Face router, the direct OpenAI API, and the
@@ -373,15 +388,15 @@ roles must omit it. Only final publications enter the primary results catalog.
 ### Remote Execution
 
 `remote.job` pins the HF Job namespace, digest-pinned controller image, hardware
-flavor, timeout, and `HF_TOKEN` secret injection. `remote.worker.revision` also
-pins the complete `packages/harbor-hf-agents` implementation used by every
-provider-backed run. The worker layers that dependency-free package into the
-separately pinned Harbor environment with `uv run --with`; it does not modify
-Harbor source or its lock file. The token secret name is fixed
-because the HF CLI can resolve it from the authenticated local credential
-without putting a token value in the command. `remote.worker` pins this package
-to an exact GitHub commit. `remote.harbor.source` likewise pins Harbor to an
-exact GitHub commit and configures the HF Sandbox flavor and idle timeout.
+flavor, timeout, and the name of an explicitly approved, purpose-scoped HF
+workload token. Submission must not copy the operator's ambient HF login into a
+remote secret. `remote.worker.revision` also pins the complete
+`packages/harbor-hf-agents` implementation used by every provider-backed run.
+The worker layers that dependency-free package into the separately pinned
+Harbor environment with `uv run --with`; it does not modify Harbor source or its
+lock file. `remote.worker` pins this package to an exact GitHub commit.
+`remote.harbor.source` likewise pins Harbor to an exact GitHub commit and
+configures the HF Sandbox flavor and idle timeout.
 Source revisions must be full lowercase 40-character Git commit IDs. The
 current source transport accepts GitHub `owner/name` references or HTTPS GitHub
 URLs. The controller checks out both revisions directly and runs them with
@@ -486,18 +501,25 @@ execution evidence stops publication. If the controller is killed
 before finalization, raw sessions and logs disappear with the Job instead of
 remaining in the bucket. Submission queries both the configured artifact Bucket and the managed
 `jobs-artifacts` input Bucket and refuses to start a Job unless both are private.
-A provider campaign input contains exactly `manifest.yaml`,
-`campaign.lock.json`, and `input-manifest.json`. The input manifest records the
-byte count and SHA-256 of the other files. Submission uploads that folder under
-a content-addressed prefix and mounts it read-only.
+The resolved benchmark-source contract changes a provider campaign input to
+exactly `manifest.yaml`, `source.lock.json`, `campaign.lock.json`, and
+`input-manifest.json`. The input manifest records the byte count and SHA-256 of
+the other three files. Submission uploads that folder under a content-addressed
+prefix and mounts it read-only. A benchmark bundle is stored once under its own
+content address and mounted separately; it is not duplicated in each campaign
+input package. This package change takes effect with the benchmark-source
+implementation and has no fallback to the old authenticated-Git path.
 
 ## Loading And Resolution
 
-Validation checks the requested document. Planning expands the matrix and
-computes a digest from canonical JSON. Remote validation and submission reject
-mutable dataset, task, model, serving-image, source, and agent references. The
-caller resolves them before submission; the separate lock preserves the exact
-selected matrix cell without rewriting the requested document.
+Validation checks the requested document. Source resolution then writes one
+immutable `source.lock.json`: public Git remains an anonymous commit-pinned
+source, a directory becomes a bundle reference, an existing bundle is verified,
+and a package remains content-addressed. Planning expands the matrix and
+computes a digest from canonical JSON that includes this source lock. Remote
+validation and submission reject mutable dataset, task, model, serving-image,
+source, and agent references. The campaign lock preserves the exact selected
+matrix cell without rewriting the requested document.
 
 Campaign planning additionally sorts resolved cells and tasks, creates one
 logical trial per task and requested attempt, splits those trials into bounded

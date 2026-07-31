@@ -53,22 +53,27 @@ A successful campaign uses one physical controller Job. If the controller suffer
 
 ## Input package
 
-The submitter stages one immutable input folder:
+The benchmark-source implementation stages one immutable input folder:
 
 ```text
 campaign-input/
 ├── manifest.yaml
+├── source.lock.json
 ├── campaign.lock.json
 └── input-manifest.json
 ```
 
 `manifest.yaml` is the exact requested experiment.
 
-`campaign.lock.json` fixes the campaign, runs, shards, logical trials, recovery policy, controller policy, and duration bounds.
+`source.lock.json` is the resolved benchmark source. A public Git request remains
+an anonymous commit-pinned source. An operator directory becomes an immutable
+bundle reference. The lock never contains a local path or source credential.
 
-`input-manifest.json` records the exact byte count and SHA-256 of the other two files. The input folder is stored under a content-addressed private Bucket path and mounted read-only.
+`campaign.lock.json` fixes the campaign, runs, shards, logical trials, recovery policy, controller policy, duration bounds, and resolved source identity.
 
-Extra files are invalid. Symlinks are invalid. Every digest uses SHA-256 over exact file bytes.
+`input-manifest.json` records the exact byte count and SHA-256 of the other three files. The input folder is stored under a content-addressed private Bucket path and mounted read-only. A benchmark bundle is stored once beneath its own content address and mounted separately.
+
+Extra files are invalid. Symlinks are invalid. Every digest uses SHA-256 over exact file bytes. The source-lock addition takes effect with the [benchmark source implementation](benchmark-source-implementation-plan.md); authenticated Git has no fallback path.
 
 ## Minimal manifest addition
 
@@ -179,6 +184,7 @@ The Job command is:
 harbor-hf campaign-controller \
   /input/manifest.yaml \
   /input/campaign.lock.json \
+  --source-lock /input/source.lock.json \
   --output-root /output
 ```
 
@@ -200,7 +206,7 @@ the claim. If launch outcome is uncertain and no exact-label Job is visible, the
 claim remains for 30 minutes. A retry may adopt a matching Job immediately, but
 it cannot issue another launch until the claim expires.
 
-The launch exposes the provider and judge recorder ports required by any resolved run. It injects secret values through Hugging Face Job secrets. Commands, locks, events, and evidence contain secret names only.
+The launch exposes the provider and judge recorder ports required by any resolved run. It injects only explicitly approved, purpose-scoped runtime secrets through Hugging Face Job secrets. Benchmark sources never contribute a secret name. Commands, locks, events, and evidence contain approved runtime secret names only.
 
 ## Ownership
 
@@ -302,8 +308,8 @@ failed-deterministic
 
 After acquiring ownership, the controller performs this loop:
 
-1. Validate the input package and reproduce the campaign lock from the manifest.
-2. Prepare the pinned Harbor and worker sources once.
+1. Validate the input package and reproduce the campaign lock from the manifest and source lock.
+2. Load the resolved benchmark source, then prepare the pinned Harbor and worker sources once. Anonymous Git uses no credential; a bundle is verified and extracted on Job-local storage.
 3. Refresh the Bucket listing, observe compact evidence, and append any missing idempotent campaign events.
 4. Rebuild the recovery projection from the immutable lock and append-only events.
 5. Derive one deterministic next action.
@@ -327,7 +333,7 @@ The existing wave lock remains the execution unit. The controller builds the sam
 The wave runner changes in these ways:
 
 - it runs in the controller process instead of a child HF Job;
-- it reuses verified source checkouts;
+- it reuses the verified anonymous Git checkout or extracted benchmark bundle;
 - it uses the controller `JOB_ID` as `remote_job_id`;
 - it starts and closes provider and judge recorders for the wave;
 - it writes trial evidence incrementally;
@@ -446,7 +452,10 @@ A campaign blocked by capacity, spend, exhausted recovery, ambiguous evidence, o
 
 The controller keeps the existing security boundary:
 
-- credentials are injected as Job secrets;
+- public Git runs anonymously with credential helpers and ambient Git authentication disabled;
+- local and private benchmark files arrive only through verified private bundles;
+- Git credentials are never injected into a Job or remote secret store;
+- independent runtime credentials are purpose-scoped, explicitly approved, and injected as Job secrets;
 - unprivileged agents never receive provider, judge, route, or Hub credentials;
 - evidence excludes credentials, authorization headers, cookies, route capabilities, secret query parameters, and environment secrets;
 - secret values are redacted before logs or evidence leave Job-local staging;
@@ -485,7 +494,8 @@ Submission fails before remote work when:
 - a wave does not fit its wave timeout;
 - controller staleness is less than three heartbeat periods;
 - spend or provider admission is incomplete;
-- required source or Job secrets are unavailable;
+- a Git source is not anonymously readable, a directory cannot produce the approved bundle, or an existing bundle does not verify;
+- a required approved runtime secret is unavailable;
 - the control Dataset or Buckets are not private;
 - another campaign or controller already owns the identity;
 - the launch dry run does not match the approved contract.
@@ -506,6 +516,8 @@ Runtime stops without new billable work when:
 The implementation is eligible for production only after all of these checks pass:
 
 - one representative 115-task by six-attempt provider campaign completes with exactly one controller Job;
+- a local-directory canary succeeds from a private bundle without any Git credential in Job configuration;
+- a public-Git no-inference check clones its full commit anonymously with credential helpers disabled;
 - no child wave Jobs exist for that campaign;
 - the result contains exactly 690 logical trials;
 - killing the controller after at least two complete trials preserves those trials and retries only incomplete infrastructure work;

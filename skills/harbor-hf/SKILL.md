@@ -18,7 +18,8 @@ canonical evidence from the private Bucket.
 Read the complete source document before acting in that area:
 
 - New campaign or live operation: `docs/harbor-cookbook.md`,
-  `docs/run-spec.md`, and `docs/single-job-campaign-controller.md`.
+  `docs/run-spec.md`, `docs/benchmark-sources.md`, and
+  `docs/single-job-campaign-controller.md`.
 - New deployment or concurrency change: `docs/deployment-profiling.md`.
 - Provider-backed agent: `docs/provider-agent-architecture.md` and
   `docs/harbor-integration-contract.md`.
@@ -65,6 +66,12 @@ Keep these rules in force throughout the session:
 - Never rerun an agent or judge to repair frozen historical evidence.
 - Preserve physical executions and terminal evidence together with hashes and
   recovery provenance. Write terminal markers last.
+- Public Git benchmark sources are anonymous. Local or private benchmark files
+  use immutable bundles. Never forward a Git credential, SSH key, SSH agent, or
+  local credential helper into remote infrastructure.
+- Never copy an ambient local login into a remote secret. Every runtime
+  credential must be purpose-scoped and explicitly approved for its exact
+  source and destination.
 - Never put credentials, route capabilities, authorization headers, cookies,
   secret query parameters, or environment values in durable artifacts.
 - For endpoint work, success requires a verified paused endpoint with zero
@@ -101,6 +108,8 @@ policy. Ask for missing choices. Never ask the user to paste a secret into chat.
 ### Immutable planning
 
 1. Resolve full commits and SHA-256 digests for every behavior-affecting input.
+   Resolve public Git anonymously. Resolve a local directory into the exact
+   bundle source lock without uploading it during planning.
 2. Verify the complete task set and exact logical attempt count.
 3. Validate the manifest and write the campaign plan to a durable local file.
 4. Plan again from a clean checkout when introducing a new benchmark,
@@ -163,8 +172,10 @@ Before submission:
 1. Re-run validation and planning from the pinned worker revision.
 2. Compare the new plan digest with the approved plan.
 3. Run `campaign submit --dry-run` and inspect every remote write.
-4. Confirm Bucket privacy, secret names, namespace, Job image digest, worker
-   revision, Harbor revision, agent revision, provider route, and judge policy.
+4. Confirm Bucket privacy, source lock, bundle upload or reuse action, secret
+   names, namespace, Job image digest, worker revision, Harbor revision, agent
+   revision, provider route, and judge policy. Prove that no Git credential is
+   included.
 5. Confirm duration arithmetic and budget arithmetic from the same manifest.
 6. Save the approved manifest, plan, duration report, and launch decision.
 7. Submit once and capture the returned campaign ID, controller Job ID, input
@@ -242,6 +253,10 @@ Stop without launching or mutating when any of these conditions holds:
   for the declared retry policy.
 - A provider or endpoint quota is unknown.
 - A secret value would enter a command, manifest, lock, log, or agent process.
+- A public Git source needs authentication, or a local/private source cannot be
+  represented by a complete verified bundle.
+- A credential would be copied from local configuration into a remote secret
+  without approval naming the exact source and destination.
 - An endpoint is running without a verified owner and watchdog.
 - Existing terminal evidence is ambiguous, checksum-invalid, or duplicated.
 - A requested retry would rerun an agent or benchmark failure.
