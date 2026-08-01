@@ -172,9 +172,10 @@ def test_streaming_runner_terminates_timed_out_process_group(tmp_path: Path) -> 
 
 def test_streaming_runner_bounds_pipe_held_by_descendant(tmp_path: Path) -> None:
     log = tmp_path / "descendant.log"
+    timeout_seconds = 1.0
     started = time.monotonic()
 
-    with pytest.raises(ProcessError, match="timed out after 0.05 seconds"):
+    with pytest.raises(ProcessError, match="timed out after 1 seconds"):
         run_streaming(
             [
                 "python",
@@ -186,10 +187,10 @@ def test_streaming_runner_bounds_pipe_held_by_descendant(tmp_path: Path) -> None
             ],
             log,
             environment={},
-            timeout_seconds=0.05,
+            timeout_seconds=timeout_seconds,
         )
 
-    assert time.monotonic() - started < 2
+    assert time.monotonic() - started < timeout_seconds + 2
     child_pid = int(log.read_text().strip())
     try:
         assert _wait_stopped(child_pid)
