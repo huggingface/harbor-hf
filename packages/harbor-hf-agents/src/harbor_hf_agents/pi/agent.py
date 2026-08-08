@@ -329,7 +329,7 @@ class PiAgent(IsolatedProviderAgent):
 
     @override
     def get_version_command(self) -> str | None:
-        return ". ~/.nvm/nvm.sh; pi --version"
+        return "bash -lc " + shlex.quote(". ~/.nvm/nvm.sh; pi --version")
 
     @override
     def parse_version(self, stdout: str) -> str:
@@ -353,14 +353,17 @@ class PiAgent(IsolatedProviderAgent):
             except InvalidVersion:
                 pass
         version_spec = f"@{self._version}" if self._version else "@latest"
+        install_script = (
+            "set -euo pipefail; "
+            f"{nvm_node_install_snippet()} && "
+            f"npm install -g {package}{version_spec} && "
+            "pi --version"
+        )
+        # nvm is a bash function; the default exec shell is /bin/sh, where
+        # sourcing nvm.sh yields "nvm: not found" (exit 127). Run under bash.
         await self.exec_as_agent(
             environment,
-            command=(
-                "set -euo pipefail; "
-                f"{nvm_node_install_snippet()} && "
-                f"npm install -g {package}{version_spec} && "
-                "pi --version"
-            ),
+            command=f"bash -lc {shlex.quote(install_script)}",
         )
 
     def _build_register_skills_command(self) -> str | None:
@@ -475,9 +478,9 @@ class PiAgent(IsolatedProviderAgent):
         try:
             await self.exec_as_agent(
                 environment,
-                command=(
-                    f". ~/.nvm/nvm.sh; "
-                    f"pi --print --mode json --session-dir /logs/agent/pi/sessions "
+                command="bash -lc " + shlex.quote(
+                    ". ~/.nvm/nvm.sh; "
+                    "pi --print --mode json --session-dir /logs/agent/pi/sessions "
                     f"{model_args}"
                     f"{cli_flags}"
                     f"{escaped_instruction} "

@@ -333,16 +333,21 @@ def _benchmark_bundle_volume(
 
 
 def _wave_benchmark_bundle_volume(lock: WaveLock) -> list[str]:
-    sources = {
-        run.configuration.benchmark_source
-        for run in lock.runs
-        if isinstance(run.configuration.benchmark_source, BundleBenchmarkSource)
-    }
+    # Deduplicate by content digest: BundleBenchmarkSource is a pydantic model
+    # without a hash, so collecting the models themselves in a set raises
+    # TypeError. The digest is the bundle's identity.
+    sources: dict[str, BundleBenchmarkSource] = {}
+    for run in lock.runs:
+        source = run.configuration.benchmark_source
+        if isinstance(source, BundleBenchmarkSource):
+            sources[source.content_digest] = source
     if not sources:
         return []
     if len(sources) != 1:
         raise ValueError("wave runs must use one benchmark bundle")
-    return _benchmark_bundle_volume(sources.pop(), namespace=lock.remote.job.namespace)
+    return _benchmark_bundle_volume(
+        next(iter(sources.values())), namespace=lock.remote.job.namespace
+    )
 
 
 def endpoint_lease_label(lock: RunLock) -> str:
