@@ -478,7 +478,8 @@ class PiAgent(IsolatedProviderAgent):
         try:
             await self.exec_as_agent(
                 environment,
-                command="bash -lc " + shlex.quote(
+                command="bash -lc "
+                + shlex.quote(
                     ". ~/.nvm/nvm.sh; "
                     "pi --print --mode json --session-dir /logs/agent/pi/sessions "
                     f"{model_args}"
