@@ -14,6 +14,36 @@ visibility differs and never changes repository privacy automatically. Private
 programs use a dedicated private index so no private publication enters a shared
 public catalog.
 
+## Completed campaigns from before the visibility cutover
+
+Do not edit an immutable campaign request or rerun an accepted agent to repair
+publication. Create a `harbor-hf/publication-correction/v1` YAML record instead:
+
+```yaml
+schema_version: harbor-hf/publication-correction/v1
+campaign_id: 20260813T051430Z-ce313eb9cb-08a5ffd196
+source_manifest_digest: sha256:6c61df50e1239efefde3089ab9019e4e55dc671fd7f129548a437e86fd1a9f39
+source_plan_digest: sha256:ce313eb9cbdc8caca8b76383f027b17327cb294168984b6ee0bf3376ec1c0dcd
+result_dataset: osolmaz/qrlow-evals-results
+result_dataset_visibility: private
+index_dataset: osolmaz/qrlow-evals-index
+index_dataset_visibility: private
+```
+
+Run:
+
+```bash
+harbor-hf results publish-correction CORRECTION.yaml \
+  --namespace osolmaz
+```
+
+The command accepts only a source request without visibility fields. It checks
+the source manifest and plan digests against the immutable campaign lock, then
+checks both destination visibilities before it reads evidence. It uses the
+normal checksum-verifying and idempotent publisher. It does not change the old
+request, lock, evidence, agent output, or repository visibility. A current
+manifest must use normal publication and cannot use this correction path.
+
 ## Safety boundary
 
 A run is publishable only when its evidence prefix has `_SUCCESS`, has no other

@@ -31,6 +31,10 @@ from harbor_hf.operations import (
     retry_campaign_shard,
     verify_campaign_artifacts,
 )
+from harbor_hf.publication_correction import (
+    PublicationCorrection,
+    publication_correction_digest,
+)
 from harbor_hf.reconciler import plan_reconciliation
 from harbor_hf.recovery import (
     durable_manual_intervention_resolution_event,
@@ -165,6 +169,38 @@ def _snapshot(spec: ExperimentSpec) -> CampaignSnapshot:
         events=[submitted],
         request=request,
         control_commit="c" * 40,
+    )
+
+
+def _legacy_publication_snapshot(spec: ExperimentSpec) -> CampaignSnapshot:
+    snapshot = _snapshot(spec)
+    request = yaml.safe_load(snapshot.request)
+    del request["publishing"]["dataset_visibility"]
+    del request["publishing"]["index_dataset_visibility"]
+    return CampaignSnapshot(
+        lock=snapshot.lock,
+        events=snapshot.events,
+        request=yaml.safe_dump(request).encode(),
+        control_commit=snapshot.control_commit,
+    )
+
+
+def _publication_correction(
+    snapshot: CampaignSnapshot,
+    *,
+    result_visibility: str = "private",
+    index_visibility: str = "private",
+) -> PublicationCorrection:
+    return PublicationCorrection.model_validate(
+        {
+            "campaign_id": snapshot.lock.campaign_id,
+            "source_manifest_digest": snapshot.lock.manifest_digest,
+            "source_plan_digest": snapshot.lock.plan_digest,
+            "result_dataset": "example/shellbench-results",
+            "result_dataset_visibility": result_visibility,
+            "index_dataset": "example/benchmark-run-index",
+            "index_dataset_visibility": index_visibility,
+        }
     )
 
 
@@ -1170,6 +1206,130 @@ def test_automatic_publisher_rejects_missing_index_without_side_effects(
     assert str(captured.value) == "campaign result publication requires index_dataset"
     assert interactions == []
     assert reader.refresh_calls == 0
+
+
+def test_automatic_publisher_correction_publishes_legacy_evidence_privately(
+    remote_spec: ExperimentSpec,
+) -> None:
+    interactions: list[object] = []
+    snapshot = _legacy_publication_snapshot(remote_spec)
+    source = _evidence(snapshot)
+    reader = MemoryEvidence(source.prefix, source.files, interactions=interactions)
+    publisher = FakePublisher(interactions=interactions)
+    repositories = MemoryRepositories(interactions)
+    correction = _publication_correction(snapshot)
+
+    report = AutomaticCampaignPublisher(
+        namespace="osolmaz",
+        store=MemoryStore(snapshot),
+        reader=reader,
+        publisher=publisher,
+        repositories=repositories,
+    ).publish_correction(correction)
+
+    assert report.runs[0].published
+    assert repositories.private == {
+        "example/shellbench-results": True,
+        "example/benchmark-run-index": True,
+    }
+    assert reader.refresh_calls == 1
+    assert len(publisher.publications) == 1
+    assert publication_correction_digest(correction).startswith("sha256:")
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        (
+            "source_manifest_digest",
+            "sha256:" + "0" * 64,
+            "source manifest digest does not match",
+        ),
+        (
+            "source_plan_digest",
+            "sha256:" + "0" * 64,
+            "source plan digest does not match",
+        ),
+    ],
+)
+def test_automatic_publisher_correction_rejects_source_mismatch_before_writes(
+    remote_spec: ExperimentSpec,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    interactions: list[object] = []
+    snapshot = _legacy_publication_snapshot(remote_spec)
+    source = _evidence(snapshot)
+    correction = _publication_correction(snapshot).model_copy(update={field: value})
+
+    with pytest.raises(ValueError, match=message):
+        AutomaticCampaignPublisher(
+            namespace="osolmaz",
+            store=MemoryStore(snapshot),
+            reader=MemoryEvidence(source.prefix, source.files),
+            publisher=FakePublisher(),
+            repositories=MemoryRepositories(interactions),
+        ).publish_correction(correction)
+
+    assert interactions == []
+
+
+def test_automatic_publisher_correction_rejects_current_request(
+    remote_spec: ExperimentSpec,
+) -> None:
+    interactions: list[object] = []
+    snapshot = _snapshot(remote_spec)
+    source = _evidence(snapshot)
+
+    with pytest.raises(ValueError, match="only for requests without visibility"):
+        AutomaticCampaignPublisher(
+            namespace="osolmaz",
+            store=MemoryStore(snapshot),
+            reader=MemoryEvidence(source.prefix, source.files),
+            publisher=FakePublisher(),
+            repositories=MemoryRepositories(interactions),
+        ).publish_correction(_publication_correction(snapshot))
+
+    assert interactions == []
+
+
+def test_automatic_publisher_correction_rejects_visibility_mismatch_before_evidence(
+    remote_spec: ExperimentSpec,
+) -> None:
+    interactions: list[object] = []
+    snapshot = _legacy_publication_snapshot(remote_spec)
+    source = _evidence(snapshot)
+    reader = MemoryEvidence(source.prefix, source.files, interactions=interactions)
+    correction = _publication_correction(snapshot)
+    repositories = MemoryRepositories(
+        interactions,
+        existing={
+            "example/shellbench-results": False,
+            "example/benchmark-run-index": True,
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Dataset repository example/shellbench-results is public; "
+            "manifest requires private"
+        ),
+    ):
+        AutomaticCampaignPublisher(
+            namespace="osolmaz",
+            store=MemoryStore(snapshot),
+            reader=reader,
+            publisher=FakePublisher(interactions=interactions),
+            repositories=repositories,
+        ).publish_correction(correction)
+
+    assert reader.refresh_calls == 0
+    assert not any(
+        isinstance(interaction, tuple) and interaction[0] == "publish"
+        for interaction in interactions
+    )
 
 
 def test_automatic_publisher_reports_campaign_identity_for_invalid_request(

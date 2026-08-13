@@ -13,6 +13,11 @@ from harbor_hf.campaign_finalizer import (
 )
 from harbor_hf.control import CampaignEvent, CampaignSnapshot
 from harbor_hf.io import load_experiment_bytes
+from harbor_hf.models import PublicationVisibility
+from harbor_hf.publication_correction import (
+    PublicationCorrection,
+    validate_publication_correction,
+)
 from harbor_hf.recovery import (
     durable_cancellation_event,
     durable_manual_intervention_resolution_event,
@@ -156,35 +161,7 @@ class AutomaticCampaignPublisher:
                 spec.publishing.index_dataset_visibility,
             ),
         )
-        for repository, visibility in repositories:
-            self.repositories.create_repo(
-                repository,
-                repo_type="dataset",
-                private=visibility == "private",
-                exist_ok=True,
-            )
-        repository_info = [
-            self.repositories.repo_info(repository, repo_type="dataset")
-            for repository, _visibility in repositories
-        ]
-        for (repository, visibility), info in zip(
-            repositories, repository_info, strict=True
-        ):
-            observed_private = getattr(info, "private", None)
-            expected_private = visibility == "private"
-            if observed_private is not expected_private:
-                observed_visibility = (
-                    "private" if observed_private is True else "public"
-                )
-                raise ValueError(
-                    f"Dataset repository {repository} is {observed_visibility}; "
-                    f"manifest requires {visibility}"
-                )
-        for (repository, _visibility), info in zip(
-            repositories, repository_info, strict=True
-        ):
-            if _commit_identity(info) is None:
-                _initialize_dataset_repository(repository, self.repositories)
+        _prepare_dataset_repositories(repositories, self.repositories)
         self.reader.refresh()
         return publish_campaign_results(
             snapshot,
@@ -193,6 +170,68 @@ class AutomaticCampaignPublisher:
             publisher=self.publisher,
             dry_run=False,
         )
+
+    def publish_correction(
+        self,
+        correction: PublicationCorrection,
+    ) -> CampaignPublicationReport:
+        """Publish frozen evidence through an explicit corrected target."""
+        snapshot = self.store.load_snapshot(correction.campaign_id)
+        artifact_bucket = validate_publication_correction(
+            snapshot, correction, self.namespace
+        )
+        _prepare_dataset_repositories(
+            (
+                (correction.result_dataset, correction.result_dataset_visibility),
+                (correction.index_dataset, correction.index_dataset_visibility),
+            ),
+            self.repositories,
+        )
+        self.reader.refresh()
+        return publish_campaign_results(
+            snapshot,
+            namespace=self.namespace,
+            reader=self.reader,
+            publisher=self.publisher,
+            dry_run=False,
+            destinations=(correction.result_dataset, correction.index_dataset),
+            artifact_bucket=artifact_bucket,
+        )
+
+
+def _prepare_dataset_repositories(
+    repositories: tuple[
+        tuple[str, PublicationVisibility], tuple[str, PublicationVisibility]
+    ],
+    api: DatasetRepositoryApi,
+) -> None:
+    for repository, visibility in repositories:
+        api.create_repo(
+            repository,
+            repo_type="dataset",
+            private=visibility == "private",
+            exist_ok=True,
+        )
+    repository_info = [
+        api.repo_info(repository, repo_type="dataset")
+        for repository, _visibility in repositories
+    ]
+    for (repository, visibility), info in zip(
+        repositories, repository_info, strict=True
+    ):
+        observed_private = getattr(info, "private", None)
+        expected_private = visibility == "private"
+        if observed_private is not expected_private:
+            observed_visibility = "private" if observed_private is True else "public"
+            raise ValueError(
+                f"Dataset repository {repository} is {observed_visibility}; "
+                f"manifest requires {visibility}"
+            )
+    for (repository, _visibility), info in zip(
+        repositories, repository_info, strict=True
+    ):
+        if _commit_identity(info) is None:
+            _initialize_dataset_repository(repository, api)
 
 
 def _initialize_dataset_repository(repository: str, api: DatasetRepositoryApi) -> None:
@@ -363,9 +402,15 @@ def publish_campaign_results(
     reader: EvidenceReader,
     publisher: ResultPublisher | None,
     dry_run: bool,
+    destinations: tuple[str, str] | None = None,
+    artifact_bucket: str | None = None,
 ) -> CampaignPublicationReport:
     verification, publications, destinations = _prepare_publications(
-        snapshot, namespace=namespace, reader=reader
+        snapshot,
+        namespace=namespace,
+        reader=reader,
+        destinations=destinations,
+        artifact_bucket=artifact_bucket,
     )
     result_dataset, index_dataset = destinations
     published: list[PublishedRun] = []
@@ -403,25 +448,35 @@ def _prepare_publications(
     *,
     namespace: str,
     reader: EvidenceReader,
+    destinations: tuple[str, str] | None = None,
+    artifact_bucket: str | None = None,
 ) -> tuple[
     ArtifactVerificationReport,
     list[ResultPublication],
     tuple[str, str],
 ]:
-    spec = load_experiment_bytes(
-        snapshot.request,
-        source=f"campaign {snapshot.lock.campaign_id} request",
-    )
-    if spec.remote is None or spec.remote.job.namespace != namespace:
-        raise ValueError("campaign request does not match the control namespace")
-    index_dataset = spec.publishing.index_dataset
-    if index_dataset is None:
-        raise ValueError("campaign result publication requires index_dataset")
+    if (destinations is None) != (artifact_bucket is None):
+        raise ValueError(
+            "publication destinations and artifact bucket must be overridden together"
+        )
+    if destinations is None:
+        spec = load_experiment_bytes(
+            snapshot.request,
+            source=f"campaign {snapshot.lock.campaign_id} request",
+        )
+        if spec.remote is None or spec.remote.job.namespace != namespace:
+            raise ValueError("campaign request does not match the control namespace")
+        index_dataset = spec.publishing.index_dataset
+        if index_dataset is None:
+            raise ValueError("campaign result publication requires index_dataset")
+        destinations = (spec.publishing.dataset, index_dataset)
+        artifact_bucket = spec.artifacts.bucket
+    assert artifact_bucket is not None
     verified: list[VerifiedRun] = []
     publications: list[ResultPublication] = []
     for run in snapshot.lock.runs:
         source = EvidenceSource(
-            bucket=spec.artifacts.bucket,
+            bucket=artifact_bucket,
             prefix=f"{snapshot.lock.artifact_prefix}/runs/{run.run_id}",
         )
         tables = build_result_tables(
@@ -453,8 +508,8 @@ def _prepare_publications(
         publications.append(build_result_publication(tables))
     report = ArtifactVerificationReport(
         campaign_id=snapshot.lock.campaign_id,
-        artifact_bucket=spec.artifacts.bucket,
+        artifact_bucket=artifact_bucket,
         control_commit=snapshot.control_commit,
         runs=verified,
     )
-    return report, publications, (spec.publishing.dataset, index_dataset)
+    return report, publications, destinations

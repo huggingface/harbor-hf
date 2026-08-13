@@ -636,6 +636,66 @@ def test_results_publish_uses_repository_creating_recovery_path(
     ]
 
 
+def test_results_publish_correction_uses_explicit_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    interactions: list[object] = []
+    correction = tmp_path / "correction.yaml"
+    correction.write_text(
+        "\n".join(
+            [
+                "schema_version: harbor-hf/publication-correction/v1",
+                "campaign_id: campaign-one",
+                f"source_manifest_digest: sha256:{'1' * 64}",
+                f"source_plan_digest: sha256:{'2' * 64}",
+                "result_dataset: org/results",
+                "result_dataset_visibility: private",
+                "index_dataset: org/index",
+                "index_dataset_visibility: private",
+            ]
+        )
+    )
+
+    class FakeStore:
+        def __init__(self, namespace: str) -> None:
+            assert namespace == "org"
+
+    class FakeAutomaticPublisher:
+        def __init__(self, **kwargs: object) -> None:
+            interactions.append(("repositories", kwargs["repositories"]))
+
+        def publish_correction(self, record: object) -> CampaignPublicationReport:
+            interactions.append(("publish_correction", record))
+            return CampaignPublicationReport(
+                campaign_id="campaign-one",
+                control_commit="c" * 40,
+                dry_run=False,
+                runs=[],
+            )
+
+    api = object()
+    monkeypatch.setattr("harbor_hf.cli.HubCampaignStore", FakeStore)
+    monkeypatch.setattr("harbor_hf.cli.HfApi", lambda: api)
+    monkeypatch.setattr("harbor_hf.cli.get_token", lambda: "test-token")
+    monkeypatch.setattr("harbor_hf.cli.HubClaimStore", lambda *_args: object())
+    monkeypatch.setattr("harbor_hf.cli.HubDatasetPublisher", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        "harbor_hf.cli.AutomaticCampaignPublisher", FakeAutomaticPublisher
+    )
+
+    result = runner.invoke(
+        app,
+        ["results", "publish-correction", str(correction), "--namespace", "org"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["campaign_id"] == "campaign-one"
+    assert interactions[0] == ("repositories", api)
+    assert isinstance(interactions[1], tuple)
+    assert interactions[1][0] == "publish_correction"
+
+
 def test_automation_install_dry_run_is_secret_safe(remote_manifest: Path) -> None:
     result = runner.invoke(
         app,

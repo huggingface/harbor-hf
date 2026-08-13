@@ -32,6 +32,31 @@ The qrlow benchmark will use a private result Dataset and a separate private qrl
 - This change will not rerun completed benchmark agents.
 - This change will not merge private qrlow publications into a public index.
 
+## Completed-campaign correction
+
+Some completed campaigns predate the required visibility fields. Their immutable
+requests must stay unchanged, and their accepted agents must not run again. A
+separate `harbor-hf/publication-correction/v1` record provides an explicit,
+artifact-only cutover:
+
+```yaml
+schema_version: harbor-hf/publication-correction/v1
+campaign_id: 20260813T051430Z-ce313eb9cb-08a5ffd196
+source_manifest_digest: sha256:6c61df50e1239efefde3089ab9019e4e55dc671fd7f129548a437e86fd1a9f39
+source_plan_digest: sha256:ce313eb9cbdc8caca8b76383f027b17327cb294168984b6ee0bf3376ec1c0dcd
+result_dataset: osolmaz/qrlow-evals-results
+result_dataset_visibility: private
+index_dataset: osolmaz/qrlow-evals-index
+index_dataset_visibility: private
+```
+
+Harbor HF checks both source digests against the immutable campaign lock. It
+accepts this record only when the source request has neither visibility field.
+It checks both destination repositories before reading evidence and uses the
+normal checksum-verifying, idempotent publisher. The record changes only the
+derived publication destination. It does not edit the campaign request, lock,
+evidence, or agent output.
+
 ## Implementation
 
 1. Add required `dataset_visibility` and `index_dataset_visibility` fields to `PublishingSpec`, each limited to `private` or `public`.
@@ -41,6 +66,7 @@ The qrlow benchmark will use a private result Dataset and a separate private qrl
 5. Update all checked-in manifests and examples to select visibility explicitly.
 6. Regenerate JSON Schemas and update the publication contract.
 7. Add tests for private creation, public creation, matching existing repositories, result mismatch, index mismatch, missing index visibility, redirects, retries, and immutable digest changes.
+8. Add the strict publication-correction record for completed pre-cutover campaigns and reject source digest, visibility, or current-manifest mismatches before evidence reads.
 
 ## Acceptance criteria
 

@@ -168,6 +168,7 @@ authorization for remote writes.
 ```bash
 uv run harbor-hf artifacts verify CAMPAIGN_ID --namespace NAMESPACE
 uv run harbor-hf results publish CAMPAIGN_ID --namespace NAMESPACE
+uv run harbor-hf results publish-correction CORRECTION.yaml --namespace NAMESPACE
 ```
 
 `artifacts verify` checks publishable run evidence against every declared

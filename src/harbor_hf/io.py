@@ -58,16 +58,21 @@ def load_experiment(path: Path) -> ExperimentSpec:
     return load_experiment_bytes(content, source=str(path))
 
 
-def load_experiment_bytes(content: bytes, *, source: str) -> ExperimentSpec:
-    """Validate an experiment manifest read from a remote control snapshot."""
+def load_manifest_object_bytes(content: bytes, *, source: str) -> dict[str, object]:
+    """Load one YAML object while rejecting duplicate or non-string keys."""
     try:
         raw = yaml.load(content, Loader=_UniqueKeyLoader)
     except (OSError, yaml.YAMLError) as error:
         raise ManifestError(f"cannot read {source}: {error}") from error
 
-    if not isinstance(raw, dict):
-        raise ManifestError(f"{source} must contain a YAML object")
+    if not isinstance(raw, dict) or not all(isinstance(key, str) for key in raw):
+        raise ManifestError(f"{source} must contain a YAML object with string keys")
+    return raw
 
+
+def load_experiment_bytes(content: bytes, *, source: str) -> ExperimentSpec:
+    """Validate an experiment manifest read from a remote control snapshot."""
+    raw = load_manifest_object_bytes(content, source=source)
     try:
         return ExperimentSpec.model_validate(raw)
     except ValidationError as error:

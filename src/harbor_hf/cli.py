@@ -111,6 +111,10 @@ from harbor_hf.profiling import (
     load_serving_profile,
     select_profile,
 )
+from harbor_hf.publication_correction import (
+    load_publication_correction_bytes,
+    publication_correction_digest,
+)
 from harbor_hf.reconciler import AdmissionLimits, ReconcileContext, plan_reconciliation
 from harbor_hf.recovery import project_recovery
 from harbor_hf.result_publisher import (
@@ -1113,6 +1117,41 @@ def results_publish(
                     ),
                     repositories=cast(DatasetRepositoryApi, api),
                 ).publish(campaign_id)
+    except _OPERATION_ERRORS as error:
+        _exit_operation(error)
+    _echo_json(result.model_dump(mode="json"))
+
+
+@results_app.command("publish-correction")
+def results_publish_correction(
+    correction: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    namespace: Annotated[str, typer.Option("--namespace")],
+    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
+) -> None:
+    """Publish frozen legacy evidence through one explicit correction record."""
+    del output_format
+    try:
+        record = load_publication_correction_bytes(
+            correction.read_bytes(), source=str(correction)
+        )
+        token = get_token()
+        if token is None:
+            raise ValueError("result publication requires HF authentication")
+        api = HfApi()
+        with tempfile.TemporaryDirectory(prefix="harbor-hf-evidence-") as cache:
+            result = AutomaticCampaignPublisher(
+                namespace=namespace,
+                store=HubCampaignStore(namespace),
+                reader=HubBucketEvidenceReader(Path(cache)),
+                publisher=HubDatasetPublisher(
+                    publisher_id=(
+                        f"cli-correction-{publication_correction_digest(record)[7:23]}"
+                    ),
+                    leases=HubClaimStore(namespace, token),
+                    api=cast(DatasetApi, api),
+                ),
+                repositories=cast(DatasetRepositoryApi, api),
+            ).publish_correction(record)
     except _OPERATION_ERRORS as error:
         _exit_operation(error)
     _echo_json(result.model_dump(mode="json"))
