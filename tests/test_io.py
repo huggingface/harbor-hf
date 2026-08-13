@@ -105,7 +105,28 @@ def test_publishing_datasets_must_be_distinct() -> None:
     ):
         PublishingSpec(
             dataset="org/results",
+            dataset_visibility="private",
             index_dataset="org/results",
+            index_dataset_visibility="private",
+            evaluation_id="evaluation-one",
+            role="final",
+        )
+
+
+def test_index_visibility_is_required_exactly_with_index_dataset() -> None:
+    with pytest.raises(ValueError, match="index_dataset_visibility is required"):
+        PublishingSpec(
+            dataset="org/results",
+            dataset_visibility="private",
+            index_dataset="org/index",
+            evaluation_id="evaluation-one",
+            role="final",
+        )
+    with pytest.raises(ValueError, match="index_dataset_visibility is required"):
+        PublishingSpec(
+            dataset="org/results",
+            dataset_visibility="private",
+            index_dataset_visibility="private",
             evaluation_id="evaluation-one",
             role="final",
         )
@@ -115,12 +136,14 @@ def test_component_publication_requires_exact_component_kind() -> None:
     with pytest.raises(ValueError, match="component_kind is required"):
         PublishingSpec(
             dataset="org/results",
+            dataset_visibility="private",
             evaluation_id="evaluation-one",
             role="component",
         )
     with pytest.raises(ValueError, match="component_kind is required"):
         PublishingSpec(
             dataset="org/results",
+            dataset_visibility="private",
             evaluation_id="evaluation-one",
             role="diagnostic",
             component_kind="base",

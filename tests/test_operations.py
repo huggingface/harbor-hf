@@ -931,6 +931,52 @@ def test_automatic_publisher_initializes_new_empty_public_repositories(
     assert reader.refresh_calls == 1
 
 
+def test_automatic_publisher_initializes_new_empty_private_repositories(
+    remote_spec: ExperimentSpec,
+) -> None:
+    interactions: list[object] = []
+    private_spec = remote_spec.model_copy(
+        update={
+            "publishing": remote_spec.publishing.model_copy(
+                update={
+                    "dataset_visibility": "private",
+                    "index_dataset_visibility": "private",
+                }
+            )
+        }
+    )
+    snapshot = _snapshot(private_spec)
+    source = _evidence(snapshot)
+    reader = MemoryEvidence(source.prefix, source.files, interactions=interactions)
+    publisher = FakePublisher(interactions=interactions)
+    repositories = MemoryRepositories(interactions)
+
+    report = AutomaticCampaignPublisher(
+        namespace="osolmaz",
+        store=MemoryStore(snapshot),
+        reader=reader,
+        publisher=publisher,
+        repositories=repositories,
+    ).publish(snapshot.lock.campaign_id)
+
+    assert report.runs[0].published
+    assert repositories.private == {
+        "example/shellbench-results": True,
+        "example/benchmark-run-index": True,
+    }
+    assert interactions[0] == (
+        "create_repo",
+        "example/shellbench-results",
+        {"repo_type": "dataset", "private": True, "exist_ok": True},
+    )
+    assert interactions[1] == (
+        "create_repo",
+        "example/benchmark-run-index",
+        {"repo_type": "dataset", "private": True, "exist_ok": True},
+    )
+    assert reader.refresh_calls == 1
+
+
 def test_automatic_publisher_adopts_initialized_public_repositories(
     remote_spec: ExperimentSpec,
 ) -> None:
@@ -973,7 +1019,7 @@ def test_automatic_publisher_adopts_initialized_public_repositories(
     "private_repository",
     ["example/shellbench-results", "example/benchmark-run-index"],
 )
-def test_automatic_publisher_rejects_existing_private_repository_before_evidence(
+def test_automatic_publisher_rejects_visibility_mismatch_before_evidence(
     remote_spec: ExperimentSpec,
     private_repository: str,
 ) -> None:
@@ -1000,7 +1046,10 @@ def test_automatic_publisher_rejects_existing_private_repository_before_evidence
 
     with pytest.raises(
         ValueError,
-        match=f"^Dataset repository {private_repository} must be public$",
+        match=(
+            f"^Dataset repository {private_repository} is private; "
+            "manifest requires public$"
+        ),
     ):
         AutomaticCampaignPublisher(
             namespace="osolmaz",
@@ -1036,6 +1085,60 @@ def test_automatic_publisher_rejects_existing_private_repository_before_evidence
     assert publisher.publications == []
 
 
+@pytest.mark.parametrize(
+    "public_repository",
+    ["example/shellbench-results", "example/benchmark-run-index"],
+)
+def test_automatic_publisher_rejects_public_repository_when_private_required(
+    remote_spec: ExperimentSpec,
+    public_repository: str,
+) -> None:
+    interactions: list[object] = []
+    private_spec = remote_spec.model_copy(
+        update={
+            "publishing": remote_spec.publishing.model_copy(
+                update={
+                    "dataset_visibility": "private",
+                    "index_dataset_visibility": "private",
+                }
+            )
+        }
+    )
+    snapshot = _snapshot(private_spec)
+    source = _evidence(snapshot)
+    reader = MemoryEvidence(source.prefix, source.files, interactions=interactions)
+    publisher = FakePublisher(interactions=interactions)
+    repositories = MemoryRepositories(
+        interactions,
+        existing={
+            "example/shellbench-results": (
+                public_repository != "example/shellbench-results"
+            ),
+            "example/benchmark-run-index": (
+                public_repository != "example/benchmark-run-index"
+            ),
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            f"^Dataset repository {public_repository} is public; "
+            "manifest requires private$"
+        ),
+    ):
+        AutomaticCampaignPublisher(
+            namespace="osolmaz",
+            store=MemoryStore(snapshot),
+            reader=reader,
+            publisher=publisher,
+            repositories=repositories,
+        ).publish(snapshot.lock.campaign_id)
+
+    assert reader.refresh_calls == 0
+    assert publisher.publications == []
+
+
 def test_automatic_publisher_rejects_missing_index_without_side_effects(
     remote_spec: ExperimentSpec,
 ) -> None:
@@ -1043,7 +1146,7 @@ def test_automatic_publisher_rejects_missing_index_without_side_effects(
     spec = remote_spec.model_copy(
         update={
             "publishing": remote_spec.publishing.model_copy(
-                update={"index_dataset": None}
+                update={"index_dataset": None, "index_dataset_visibility": None}
             )
         }
     )

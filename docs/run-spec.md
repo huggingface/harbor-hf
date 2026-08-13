@@ -51,7 +51,9 @@ artifacts:
   bucket: organization/benchmark-runs
 publishing:
   dataset: organization/terminal-bench-results
+  dataset_visibility: private
   index_dataset: organization/benchmark-run-index
+  index_dataset_visibility: private
   evaluation_id: example-evaluation
   role: final
 remote:
@@ -380,13 +382,20 @@ OpenClaw Codex, or Pi configuration in generic modules.
 ### Publishing
 
 `publishing.dataset` identifies the versioned, benchmark-specific publication.
-`index_dataset` identifies the global run catalog. Single-run planning can omit
-it, but campaign submission requires it because completed campaigns publish
-their normalized result and index atomically. `evaluation_id` groups every
-physical publication that belongs to one logical benchmark evaluation. `role`
-is required and is one of `final`, `component`, or `diagnostic`. A component
-also requires `component_kind: base` or `component_kind: correction`; other
-roles must omit it. Only final publications enter the primary results catalog.
+`dataset_visibility` is required and is `private` or `public`.
+`index_dataset` identifies the run catalog. Single-run planning can omit it, but
+campaign submission requires it because completed campaigns publish their
+normalized result and index atomically. `index_dataset_visibility` is required
+exactly when `index_dataset` is present. Harbor HF creates missing repositories
+with the requested visibility and checks existing repositories before it reads
+evidence or writes results. A mismatch stops publication; Harbor HF never
+changes repository visibility automatically. Private benchmark programs should
+use a dedicated private index instead of a shared public index. `evaluation_id`
+groups every physical publication that belongs to one logical benchmark
+evaluation. `role` is required and is one of `final`, `component`, or
+`diagnostic`. A component also requires `component_kind: base` or
+`component_kind: correction`; other roles must omit it. Only final publications
+enter the primary results catalog.
 
 ### Remote Execution
 

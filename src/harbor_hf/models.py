@@ -24,6 +24,7 @@ from harbor_hf.task_selection import task_matches_selector
 ProfileId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")]
 EvaluationId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")]
 PublicationRole = Literal["final", "component", "diagnostic"]
+PublicationVisibility = Literal["private", "public"]
 ComponentKind = Literal["base", "correction"]
 TaskName = Annotated[str, Field(min_length=1)]
 ContentDigest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
@@ -505,16 +506,23 @@ class ArtifactStoreSpec(StrictModel):
 
 class PublishingSpec(StrictModel):
     dataset: str = Field(min_length=1)
+    dataset_visibility: PublicationVisibility
     index_dataset: str | None = None
+    index_dataset_visibility: PublicationVisibility | None = None
     evaluation_id: EvaluationId
     role: PublicationRole
     component_kind: ComponentKind | None = None
 
     @model_validator(mode="after")
-    def datasets_are_distinct(self) -> PublishingSpec:
+    def datasets_are_consistent(self) -> PublishingSpec:
         if self.index_dataset is not None and self.index_dataset == self.dataset:
             raise ValueError(
                 "publishing.index_dataset must differ from publishing.dataset"
+            )
+        if (self.index_dataset is None) != (self.index_dataset_visibility is None):
+            raise ValueError(
+                "publishing.index_dataset_visibility is required exactly when "
+                "publishing.index_dataset is set"
             )
         if (self.role == "component") != (self.component_kind is not None):
             raise ValueError(

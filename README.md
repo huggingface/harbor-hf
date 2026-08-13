@@ -171,8 +171,11 @@ uv run harbor-hf results publish CAMPAIGN_ID --namespace NAMESPACE
 ```
 
 `artifacts verify` checks publishable run evidence against every declared
-checksum. `results publish` verifies evidence again and writes the normalized
-Parquet tables that the Results Space serves. `results catalog` records
+checksum. `results publish` verifies evidence again and writes normalized
+Parquet tables to result and index Datasets with the explicit `private` or
+`public` visibility locked by the manifest. Harbor HF fails when an existing
+repository has different visibility and never changes privacy automatically.
+`results catalog` records
 append-only promote or withdraw decisions for a publication in the primary
 catalog. The
 [result publication contract](docs/result-publication.md) freezes the table

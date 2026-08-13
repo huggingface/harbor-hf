@@ -24,7 +24,7 @@ def test_digest_is_stable() -> None:
 
     assert experiment_digest(spec) == experiment_digest(spec.model_copy(deep=True))
     assert experiment_digest(spec) == (
-        "sha256:e4e041c0a281516917ac2180fee84e2ce23feed730e459c28a9e0c6d1bff4199"
+        "sha256:fbd6b7b454368b44f8b7c4de05fa499a24c3fb476a7979df4dfa5045e2c4f231"
     )
 
 
@@ -35,7 +35,7 @@ def test_digest_preserves_legacy_empty_engine_secret_names() -> None:
         deployment.engine.secret_names = []
 
     assert experiment_digest(spec) == (
-        "sha256:f9b4baf6345b9abe06087922c50c59c53a6e935c1aee9048a9530a457aff435b"
+        "sha256:7cb73be1aa385646d944cf032aaabe0094e9f45aea29c9e14e560aa037be0f6c"
     )
     payload = spec.model_dump(mode="json", exclude_none=True)
     assert payload["matrix"]["deployments"][0]["engine"]["secret_names"] == []

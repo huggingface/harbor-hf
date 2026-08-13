@@ -148,24 +148,43 @@ class AutomaticCampaignPublisher:
         )
         if spec.publishing.index_dataset is None:
             raise ValueError("campaign result publication requires index_dataset")
-        repositories = (spec.publishing.dataset, spec.publishing.index_dataset)
-        for repository in repositories:
+        assert spec.publishing.index_dataset_visibility is not None
+        repositories = (
+            (spec.publishing.dataset, spec.publishing.dataset_visibility),
+            (
+                spec.publishing.index_dataset,
+                spec.publishing.index_dataset_visibility,
+            ),
+        )
+        for repository, visibility in repositories:
             self.repositories.create_repo(
                 repository,
                 repo_type="dataset",
-                private=False,
+                private=visibility == "private",
                 exist_ok=True,
             )
         repository_info = [
             self.repositories.repo_info(repository, repo_type="dataset")
-            for repository in repositories
+            for repository, _visibility in repositories
         ]
-        for repository, info in zip(repositories, repository_info, strict=True):
-            if getattr(info, "private", None) is not False:
-                raise ValueError(f"Dataset repository {repository} must be public")
-        for repository, info in zip(repositories, repository_info, strict=True):
+        for (repository, visibility), info in zip(
+            repositories, repository_info, strict=True
+        ):
+            observed_private = getattr(info, "private", None)
+            expected_private = visibility == "private"
+            if observed_private is not expected_private:
+                observed_visibility = (
+                    "private" if observed_private is True else "public"
+                )
+                raise ValueError(
+                    f"Dataset repository {repository} is {observed_visibility}; "
+                    f"manifest requires {visibility}"
+                )
+        for (repository, _visibility), info in zip(
+            repositories, repository_info, strict=True
+        ):
             if _commit_identity(info) is None:
-                _initialize_public_dataset_repository(repository, self.repositories)
+                _initialize_dataset_repository(repository, self.repositories)
         self.reader.refresh()
         return publish_campaign_results(
             snapshot,
@@ -176,9 +195,7 @@ class AutomaticCampaignPublisher:
         )
 
 
-def _initialize_public_dataset_repository(
-    repository: str, api: DatasetRepositoryApi
-) -> None:
+def _initialize_dataset_repository(repository: str, api: DatasetRepositoryApi) -> None:
     initialization_error: HfHubHTTPError | None = None
     try:
         api.create_commit(

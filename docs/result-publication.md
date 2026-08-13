@@ -5,6 +5,15 @@ derived indexes. Campaign reconciliation invokes publication automatically for
 a completed campaign; `harbor-hf results publish` exposes the same verified,
 idempotent path for explicit operation and recovery.
 
+Each manifest explicitly sets `dataset_visibility` and, when it names an index,
+`index_dataset_visibility` to `private` or `public`. These values are part of the
+immutable experiment definition and its digests. Harbor HF creates missing
+repositories with the requested visibility and checks existing repositories
+before reading evidence or writing results. It fails closed when the observed
+visibility differs and never changes repository privacy automatically. Private
+programs use a dedicated private index so no private publication enters a shared
+public catalog.
+
 ## Safety boundary
 
 A run is publishable only when its evidence prefix has `_SUCCESS`, has no other

@@ -241,7 +241,7 @@ def test_campaign_submit_rejects_missing_index_before_remote_mutation(
     spec = remote_spec.model_copy(
         update={
             "publishing": remote_spec.publishing.model_copy(
-                update={"index_dataset": None}
+                update={"index_dataset": None, "index_dataset_visibility": None}
             )
         }
     )

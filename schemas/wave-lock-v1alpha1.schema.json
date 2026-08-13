@@ -788,6 +788,19 @@
         "agent": {
           "$ref": "#/$defs/AgentProfile"
         },
+        "agent_setup_timeout_multiplier": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Setup Timeout Multiplier"
+        },
         "artifact_bucket": {
           "title": "Artifact Bucket",
           "type": "string"

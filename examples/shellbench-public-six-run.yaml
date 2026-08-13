@@ -95,6 +95,8 @@ artifacts:
     judge_max_calls_per_execution: 4
 publishing:
   dataset: example/shellbench-results
+  dataset_visibility: public
   index_dataset: example/benchmark-run-index
+  index_dataset_visibility: public
   evaluation_id: shellbench-qwen-hardware
   role: final
