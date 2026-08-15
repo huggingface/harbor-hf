@@ -1,5 +1,7 @@
 """Tests for the dedicated provider-agent sandbox user."""
 
+import stat
+import subprocess
 from unittest.mock import AsyncMock
 
 import pytest
@@ -27,7 +29,7 @@ async def test_agent_commands_run_as_dedicated_unprivileged_user(temp_dir) -> No
     assert "useradd" in setup.kwargs["command"]
     assert "chown -R harbor-agent:harbor-agent /app" in setup.kwargs["command"]
     assert "chown -R root:root /app/data" in setup.kwargs["command"]
-    assert "chmod -R a-w /app/data" in setup.kwargs["command"]
+    assert "chmod -R a+rX,a-w /app/data" in setup.kwargs["command"]
     assert "chown root:root /app" in setup.kwargs["command"]
     assert "chmod 1777 /app" in setup.kwargs["command"]
     for call in (first, second):
@@ -37,3 +39,24 @@ async def test_agent_commands_run_as_dedicated_unprivileged_user(temp_dir) -> No
         assert "NVM_DIR=/tmp/harbor-agent-home/.nvm" in call.kwargs["command"]
     assert first.kwargs["env"]["OPENAI_API_KEY"] == "scoped-agent-key"
     assert "scoped-agent-key" not in first.kwargs["command"]
+
+
+def test_protected_data_stays_readable_and_nonwritable(temp_dir) -> None:
+    data_dir = temp_dir / "data"
+    nested_dir = data_dir / "private"
+    nested_dir.mkdir(parents=True, mode=0o700)
+    regular_file = nested_dir / "record.txt"
+    regular_file.write_text("record")
+    regular_file.chmod(0o600)
+    executable_file = nested_dir / "tool.sh"
+    executable_file.write_text("#!/bin/sh\n")
+    executable_file.chmod(0o700)
+
+    subprocess.run(
+        ["chmod", "-R", "a+rX,a-w", str(data_dir)],
+        check=True,
+    )
+
+    assert stat.S_IMODE(nested_dir.stat().st_mode) == 0o555
+    assert stat.S_IMODE(regular_file.stat().st_mode) == 0o444
+    assert stat.S_IMODE(executable_file.stat().st_mode) == 0o555

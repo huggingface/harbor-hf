@@ -31,7 +31,7 @@ class IsolatedProviderAgent(BaseInstalledAgent):
                 f"/app /logs/agent {_AGENT_HOME}; "
                 "if [ -d /app/data ]; then "
                 "chown -R root:root /app/data; "
-                "chmod -R a-w /app/data; "
+                "chmod -R a+rX,a-w /app/data; "
                 "chown root:root /app; "
                 "chmod 1777 /app; "
                 "fi"
