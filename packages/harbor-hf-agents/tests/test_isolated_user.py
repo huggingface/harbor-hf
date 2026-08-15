@@ -26,6 +26,10 @@ async def test_agent_commands_run_as_dedicated_unprivileged_user(temp_dir) -> No
     assert setup.kwargs["user"] == "root"
     assert "useradd" in setup.kwargs["command"]
     assert "chown -R harbor-agent:harbor-agent /app" in setup.kwargs["command"]
+    assert "chown -R root:root /app/data" in setup.kwargs["command"]
+    assert "chmod -R a-w /app/data" in setup.kwargs["command"]
+    assert "chown root:root /app" in setup.kwargs["command"]
+    assert "chmod 1777 /app" in setup.kwargs["command"]
     for call in (first, second):
         assert call.kwargs["user"] == "root"
         assert "runuser -u harbor-agent" in call.kwargs["command"]

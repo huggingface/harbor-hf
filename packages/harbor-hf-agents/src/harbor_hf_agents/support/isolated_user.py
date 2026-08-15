@@ -28,7 +28,13 @@ class IsolatedProviderAgent(BaseInstalledAgent):
                 f"install -d -m 0750 -o {_AGENT_USER} -g {_AGENT_USER} "
                 f"{_AGENT_HOME} /logs/agent; "
                 f"chown -R {_AGENT_USER}:{_AGENT_USER} "
-                f"/app /logs/agent {_AGENT_HOME}"
+                f"/app /logs/agent {_AGENT_HOME}; "
+                "if [ -d /app/data ]; then "
+                "chown -R root:root /app/data; "
+                "chmod -R a-w /app/data; "
+                "chown root:root /app; "
+                "chmod 1777 /app; "
+                "fi"
             ),
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
