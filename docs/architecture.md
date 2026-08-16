@@ -11,6 +11,26 @@ The package must remain useful as an independent Harbor plugin and be shaped so
 that it could later move into a Harbor monorepo package without architectural
 changes.
 
+## Planned control service
+
+The current release stores live campaign events and claims in a private Hub
+Dataset. The [control service
+plan](2026-08-16-harbor-hf-control-service-plan.md) replaces that new-write path
+with one private control Space and immutable objects in the existing evidence
+Bucket. It also moves detailed rows and the global result catalog into one
+existing normalized results Dataset.
+
+This is a hard new-write switch with no dual-write mode. Historical Dataset
+commits and Bucket evidence remain immutable. Until implementation and remote
+recovery canaries pass, the rest of this document describes current production
+behavior.
+
+Hub resources are shared namespace infrastructure. A campaign, repair, profile,
+lease, status record, or result subset must not create its own repository,
+Bucket, Space, or schedule. New persistent resources require an explicit
+privacy, access, retention, or failure-domain reason that the canonical stores
+cannot meet.
+
 ## Components
 
 ```text
@@ -338,3 +358,8 @@ changing benchmark validity.
 - No secret values in manifests, logs, locks, or artifacts.
 - No state that exists only on the submitting machine.
 - No direct writes from trial workers to shared Dataset Git repositories.
+- No per-campaign, per-profile, per-repair, per-lease, per-status, or
+  per-result-subset Hub repository, Bucket, Space, or schedule.
+- No new persistent Hub resource without an inventory, an unmet privacy or
+  failure-domain requirement, a lifecycle and cost record, and explicit
+  approval.

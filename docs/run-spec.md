@@ -185,6 +185,13 @@ keep cells that match at least one rule, then `exclude` rules remove matching
 cells. Omitted dimensions in a rule are wildcards. Rules use exact profile IDs,
 reject unknown IDs, and may not remove every cell.
 
+The [control service plan](2026-08-16-harbor-hf-control-service-plan.md) will
+make these profiles reusable. Built-in profiles will live in the existing
+Harbor-HF source repo, namespace-specific profile objects will use the existing
+private evidence Bucket, and the resolved campaign lock will continue to inline
+every behavior-affecting field. No profile-specific Hub repository or Bucket is
+allowed.
+
 Remote model revisions must be full 40-character commit IDs, and serving images
 must use `@sha256:<64 hex>` content digests. `weights.format` describes the
 weight container, such as Safetensors or GGUF. Optional `weights.quantization`
@@ -380,6 +387,12 @@ OpenClaw Codex, or Pi configuration in generic modules.
 `artifacts.bucket` identifies private raw storage for complete run evidence.
 
 ### Publishing
+
+The current contract uses separate benchmark and index destinations. The
+[control service plan](2026-08-16-harbor-hf-control-service-plan.md) replaces
+that new-write shape in place with the namespace's existing normalized results
+Dataset. New campaigns will not create benchmark-specific result repositories.
+This section remains authoritative until that switch is implemented.
 
 `publishing.dataset` identifies the versioned, benchmark-specific publication.
 `dataset_visibility` is required and is `private` or `public`.

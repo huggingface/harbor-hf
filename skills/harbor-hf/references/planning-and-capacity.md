@@ -14,8 +14,8 @@ Collect these values before editing a manifest:
 - deployment kind, provider route or endpoint identity, and wire API;
 - agent name, custom import path when required, and exact revision;
 - judge provider, API URL, model, reasoning policy, and secret name;
-- private namespace, control Dataset, input Bucket, evidence Bucket, result
-  Dataset, and index Dataset;
+- private namespace and the existing configured control store, input staging,
+  evidence Bucket, normalized results Dataset, results Space, and backup Bucket;
 - controller image digest, worker commit, Harbor commit, and Sandbox flavor;
 - provider request concurrency and request interval, or selected endpoint
   serving profile;
@@ -27,6 +27,12 @@ Collect these values before editing a manifest:
 
 Missing policy choices should remain visible. Do not silently copy them from a
 campaign with a different model, runtime, agent, judge, or provider.
+
+Inventory the namespace before planning. Reuse existing Harbor-HF resources and
+separate data with stable prefixes. Do not create a repository, Bucket, Space,
+schedule, status store, lease store, or result Dataset for one campaign or
+profile. Follow `docs/2026-08-16-harbor-hf-control-service-plan.md` for the
+canonical target layout.
 
 ## Immutable identity review
 

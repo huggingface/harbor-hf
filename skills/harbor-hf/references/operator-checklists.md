@@ -28,6 +28,14 @@ inspecting the named artifact or command output.
 
 ### Storage and secrets
 
+- [ ] The namespace resource inventory was captured before mutation.
+- [ ] The campaign reuses the configured control store, input staging, evidence
+      Bucket, results Dataset, results Space, and backup Bucket.
+- [ ] The campaign creates no repository, Bucket, Space, schedule, status store,
+      lease store, or benchmark-specific result store.
+- [ ] Any proposed persistent resource has an approved privacy or
+      failure-domain justification, owner, cost, lifecycle, and removal
+      condition.
 - [ ] Control Dataset, input Bucket, evidence Bucket, and unpublished result
       stores are private.
 - [ ] Benchmark source models contain no secret names or values.

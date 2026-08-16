@@ -26,11 +26,15 @@ Check existing remote state before submission:
 
 ```bash
 hf jobs ps --all --namespace NAMESPACE --format json
+hf repos list --type dataset --format json
+hf repos list --type bucket --format json
+hf repos list --type space --format json
 ```
 
 Also inspect local launch records and the coordination Dataset. A repeated
 operator prompt must adopt an existing matching campaign instead of creating a
-second campaign.
+second campaign. The dry run must show no new persistent Hub resource unless a
+separate resource proposal has explicit approval.
 
 ## Campaign submission
 

@@ -5,6 +5,13 @@ derived indexes. Campaign reconciliation invokes publication automatically for
 a completed campaign; `harbor-hf results publish` exposes the same verified,
 idempotent path for explicit operation and recovery.
 
+The [control service plan](2026-08-16-harbor-hf-control-service-plan.md) will
+replace the two-Dataset new-write path with one existing normalized results
+Dataset per namespace. One commit will contain detailed rows, the publication
+receipt, and catalog projections. Historical benchmark-specific Datasets remain
+immutable. This document describes current production behavior until that
+switch is complete.
+
 Each manifest explicitly sets `dataset_visibility` and, when it names an index,
 `index_dataset_visibility` to `private` or `public`. These values are part of the
 immutable experiment definition and its digests. Harbor HF creates missing

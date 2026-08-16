@@ -1,8 +1,14 @@
 # Single-job campaign controller specification
 
-Status: proposed
+Status: current production design, planned for replacement
 
 This specification replaces the local reconciliation loop for Inference Provider campaigns with one detached Hugging Face controller Job per campaign. The Job runs the campaign from its immutable plan, executes bounded waves inside its own process, retries infrastructure failures, finalizes evidence, and publishes the campaign result.
+
+The [control service plan](2026-08-16-harbor-hf-control-service-plan.md) will
+replace this Job's live Git-backed ownership and finalization path with one
+private control Space and immutable Bucket records. This specification remains
+a description of current behavior until the new-write switch passes its launch,
+crash-recovery, repair, publication, and cleanup gates.
 
 A successful campaign normally uses one physical controller Job. An infrastructure recovery uses a new physical controller Job under the same logical campaign. Only one controller may own the campaign at a time.
 
