@@ -50,7 +50,7 @@ async function setup(writeMode: AppConfig["write_mode"] = "canary"): Promise<{
   runtimes.push(runtime);
   const app = await buildApp(runtime);
   await runtime.initialize();
-  runtime.reconciler.stop();
+  await runtime.reconciler.stop();
   return { runtime, app };
 }
 

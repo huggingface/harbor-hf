@@ -31,6 +31,12 @@ export interface ReconcilerOptions {
   batch_size: number;
 }
 
+const terminalJobStates = new Set(["STOPPED", "COMPLETED", "CANCELLED", "CANCELED"]);
+
+function jobStateIsTerminal(state: string | null): boolean {
+  return state !== null && terminalJobStates.has(state.toUpperCase());
+}
+
 const defaultOptions: ReconcilerOptions = {
   interval_ms: 2_000,
   observation_interval_ms: 5_000,
@@ -93,6 +99,7 @@ function profileStrings(
 export class Reconciler {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private currentRun: Promise<void> | null = null;
 
   constructor(
     private readonly service: ControlService,
@@ -104,28 +111,33 @@ export class Reconciler {
 
   start(signal?: AbortSignal): void {
     if (this.timer) return;
-    const run = async () => {
-      if (!this.running) {
-        this.running = true;
-        try {
-          await this.tick();
-        } finally {
+    const run = () => {
+      if (this.running) return;
+      this.running = true;
+      const operation = this.tick()
+        .then(
+          () => undefined,
+          () => undefined,
+        )
+        .finally(() => {
           this.running = false;
-        }
-      }
+          if (this.currentRun === operation) this.currentRun = null;
+        });
+      this.currentRun = operation;
     };
-    this.timer = setInterval(() => void run(), this.options.interval_ms);
-    void run();
-    signal?.addEventListener("abort", () => this.stop(), { once: true });
+    this.timer = setInterval(run, this.options.interval_ms);
+    run();
+    signal?.addEventListener("abort", () => void this.stop(), { once: true });
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.currentRun;
   }
 
   async tick(): Promise<number> {
-    let handled = 0;
+    let handled = await this.service.syncProjection();
     for (const { intent, receipt } of await this.projection.unadvancedActions(
       this.options.batch_size,
     )) {
@@ -185,12 +197,15 @@ export class Reconciler {
       case "job.observe":
         await this.handleJobObservation(intent, receipt);
         break;
+      case "job.cancel":
+        await this.continueCancellation(intent.campaign_id);
+        break;
       case "endpoint.resume":
       case "endpoint.pause":
         if (receipt.resource_id) await this.recordEndpoint(intent, receipt);
         break;
       case "campaign.cancel":
-        await this.cancelOpenTasks(intent.campaign_id, intent, receipt);
+        await this.continueCancellation(intent.campaign_id);
         break;
       case "publication.publish":
         break;
@@ -420,6 +435,89 @@ export class Reconciler {
       attempt.outcome === "infrastructure"
         ? "infrastructure retry budget exhausted"
         : "valid terminal worker outcome",
+    );
+  }
+
+  private async continueCancellation(campaignId: string): Promise<void> {
+    const actions = await this.projection.actions(10_000);
+    const launches = actions.filter(
+      (action) =>
+        action.campaign_id === campaignId &&
+        action.action_kind === "job.launch" &&
+        action.receipt_body !== null &&
+        action.resource_id !== null,
+    );
+    const active = new Map<
+      string,
+      { resource_id: string; launch_action_id: string; observed_at: string }
+    >();
+    for (const launch of launches) {
+      const resourceId = launch.resource_id;
+      if (!resourceId || active.has(resourceId)) continue;
+      const observations = actions.filter(
+        (action) =>
+          action.campaign_id === campaignId &&
+          action.target === resourceId &&
+          action.receipt_body !== null &&
+          ["job.observe", "job.cancel"].includes(action.action_kind),
+      );
+      if (observations.some((action) => jobStateIsTerminal(action.observed_state)))
+        continue;
+      const latest = observations[0];
+      const state = latest?.observed_state ?? launch.observed_state;
+      if (!jobStateIsTerminal(state)) {
+        active.set(resourceId, {
+          resource_id: resourceId,
+          launch_action_id: launch.action_id,
+          observed_at: latest?.created_at ?? launch.created_at,
+        });
+      }
+    }
+    if (active.size > 0) {
+      for (const job of active.values()) {
+        const cancellations = actions.filter(
+          (action) =>
+            action.campaign_id === campaignId &&
+            action.action_kind === "job.cancel" &&
+            action.target === job.resource_id,
+        );
+        if (cancellations.some((action) => action.receipt_body === null)) continue;
+        const generation =
+          cancellations.reduce(
+            (maximum, action) => Math.max(maximum, action.generation),
+            -1,
+          ) + 1;
+        if (generation > 1_000_000)
+          throw new PolicyError("Job cancellation action limit is exhausted");
+        await this.service.writeAction(
+          this.service.actionIntent(
+            campaignId,
+            "job.cancel",
+            job.resource_id,
+            generation,
+            {
+              resource_id: job.resource_id,
+              launch_action_id: job.launch_action_id,
+              not_before: new Date(
+                Date.parse(job.observed_at) + this.options.observation_interval_ms,
+              ).toISOString(),
+            },
+          ),
+        );
+      }
+      return;
+    }
+    const cancellation = actions.find(
+      (action) =>
+        action.campaign_id === campaignId &&
+        action.action_kind === "campaign.cancel" &&
+        action.receipt_body !== null,
+    );
+    if (!cancellation?.receipt_body) return;
+    await this.cancelOpenTasks(
+      campaignId,
+      JSON.parse(cancellation.intent_body) as ActionIntent,
+      JSON.parse(cancellation.receipt_body) as ActionReceipt,
     );
   }
 

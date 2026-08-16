@@ -1,6 +1,12 @@
 import type { ActionIntent } from "@harbor-hf/contracts";
 import type { ExternalActionPort, ExternalActionResult } from "@harbor-hf/control-core";
-import { getJob, listJobs, runJob, type SpaceHardwareFlavor } from "@huggingface/hub";
+import {
+  cancelJob as cancelHfJob,
+  getJob,
+  listJobs,
+  runJob,
+  type SpaceHardwareFlavor,
+} from "@huggingface/hub";
 
 interface AdapterConfig {
   namespace: string;
@@ -54,6 +60,12 @@ function cleanFailure(error: unknown): string {
   return "remote_dependency_error";
 }
 
+function jobStateIsTerminal(state: string): boolean {
+  return ["STOPPED", "COMPLETED", "CANCELLED", "CANCELED"].includes(
+    state.toUpperCase(),
+  );
+}
+
 function endpointStatus(raw: unknown): { state: string; ready_replicas: number } {
   if (!raw || typeof raw !== "object") return { state: "UNKNOWN", ready_replicas: 0 };
   const root = raw as Record<string, unknown>;
@@ -97,6 +109,8 @@ export class HuggingFaceActions implements ExternalActionPort {
           return await this.launchJob(intent);
         case "job.observe":
           return await this.observeJob(intent);
+        case "job.cancel":
+          return await this.cancelJob(intent);
         case "endpoint.pause":
           return await this.endpointMutation(intent, "pause");
         case "endpoint.resume":
@@ -189,6 +203,30 @@ export class HuggingFaceActions implements ExternalActionPort {
     });
     if (job.labels?.harbor_hf_action_id !== intent.payload.launch_action_id)
       throw new Error("observed Job action label does not match the launch intent");
+    return {
+      outcome: "completed",
+      observed_state: job.status.stage,
+      resource_id: job.id,
+    };
+  }
+
+  private async cancelJob(intent: ActionIntent): Promise<ExternalActionResult> {
+    const remoteId = stringValue(intent, "resource_id");
+    const options = {
+      namespace: this.config.namespace,
+      jobId: remoteId,
+      accessToken: this.config.accessToken,
+      ...(this.config.hubUrl ? { hubUrl: this.config.hubUrl } : {}),
+    };
+    let job: Awaited<ReturnType<typeof getJob>>;
+    try {
+      job = await cancelHfJob(options);
+    } catch (error) {
+      job = await getJob(options);
+      if (!jobStateIsTerminal(job.status.stage)) throw error;
+    }
+    if (job.labels?.harbor_hf_action_id !== intent.payload.launch_action_id)
+      throw new Error("cancelled Job action label does not match the launch intent");
     return {
       outcome: "completed",
       observed_state: job.status.stage,

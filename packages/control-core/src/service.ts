@@ -124,6 +124,15 @@ export class ControlService {
     return { ...result, key };
   }
 
+  async syncProjection(): Promise<number> {
+    const operation = this.appendQueue.then(() => this.projection.sync(this.store));
+    this.appendQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
   async submit(
     raw: unknown,
     idempotencyKey: string,

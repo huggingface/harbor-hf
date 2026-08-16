@@ -456,6 +456,7 @@
                 "campaign.admit",
                 "job.launch",
                 "job.observe",
+                "job.cancel",
                 "endpoint.resume",
                 "endpoint.pause",
                 "publication.publish",

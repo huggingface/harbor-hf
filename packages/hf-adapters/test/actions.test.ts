@@ -110,6 +110,44 @@ describe("HuggingFaceActions", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("cancels the exact Job bound to the launch action", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            type: "job",
+            id: "job-1",
+            createdAt: "2026-08-16T00:00:00Z",
+            flavor: "cpu-basic",
+            status: { stage: "CANCELED", failureCount: 0 },
+            labels: { harbor_hf_action_id: base.action_id },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new HuggingFaceActions({
+      namespace: "example",
+      accessToken: testToken,
+    });
+    await expect(
+      adapter.execute({
+        ...base,
+        action_kind: "job.cancel",
+        target: "job-1",
+        payload: {
+          resource_id: "job-1",
+          launch_action_id: base.action_id,
+        },
+      }),
+    ).resolves.toMatchObject({
+      outcome: "completed",
+      observed_state: "CANCELED",
+      resource_id: "job-1",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("requires an independently verified watchdog before endpoint resume", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

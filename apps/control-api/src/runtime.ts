@@ -95,7 +95,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     },
     async close() {
       abort.abort();
-      reconciler.stop();
+      await reconciler.stop();
       authStore.close();
       await projection.close();
     },

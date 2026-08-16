@@ -131,7 +131,7 @@ created_at: Timestamp
 actor: Actor
 action_id: Id
 campaign_id: Id
-action_kind: ("campaign.admit" | "job.launch" | "job.observe" | "endpoint.resume" | "endpoint.pause" | "publication.publish" | "campaign.cancel")
+action_kind: ("campaign.admit" | "job.launch" | "job.observe" | "job.cancel" | "endpoint.resume" | "endpoint.pause" | "publication.publish" | "campaign.cancel")
 generation: number
 target: string
 payload: ActionPayload

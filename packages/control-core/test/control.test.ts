@@ -1,5 +1,14 @@
-import type { ActionIntent, EndpointResource } from "@harbor-hf/contracts";
-import { controlRecordPath, sha256 } from "@harbor-hf/contracts";
+import type {
+  ActionIntent,
+  AttemptReceipt,
+  EndpointResource,
+} from "@harbor-hf/contracts";
+import {
+  canonicalJson,
+  controlRecordPath,
+  deterministicId,
+  sha256,
+} from "@harbor-hf/contracts";
 import { createTestControl } from "@harbor-hf/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NoopActions } from "@harbor-hf/hf-adapters";
@@ -152,6 +161,88 @@ describe("control service", () => {
     }
   });
 
+  it("discovers a durable worker receipt after a missed callback", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "missed-worker-callback-key",
+      operator,
+    );
+    const admissionRow = await control.projection.action(result.action_id);
+    if (!admissionRow) throw new Error("admission action is missing");
+    const admission = JSON.parse(admissionRow.intent_body) as ActionIntent;
+    const admissionReceipt = await control.service.receipt(admission, {
+      outcome: "completed",
+      observed_state: "admitted",
+    });
+    await control.service.markAdvanced(admission, admissionReceipt);
+    const launch = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "task-001",
+      0,
+      {
+        task_ids: ["task-001"],
+        max_infrastructure_attempts: 1,
+        success_without_worker_receipt: false,
+      },
+    );
+    await control.service.writeAction(launch);
+    const launchReceipt = await control.service.receipt(launch, {
+      outcome: "created",
+      observed_state: "RUNNING",
+      resource_id: "job-one",
+    });
+    await control.service.markAdvanced(launch, launchReceipt);
+    await control.service.writeAction(
+      control.service.actionIntent(result.campaign_id, "job.observe", "job-one", 0, {
+        ...launch.payload,
+        resource_id: "job-one",
+        launch_action_id: launch.action_id,
+        not_before: "2026-08-16T00:00:00.000Z",
+      }),
+    );
+    const attempt: AttemptReceipt = {
+      schema_version: "v1",
+      kind: "attempt.receipt",
+      record_id: deterministicId("attempt-receipt", "missed-callback-attempt"),
+      created_at: "2026-08-16T00:00:01.000Z",
+      actor: { subject: "trusted-worker", role: "service" },
+      campaign_id: result.campaign_id,
+      task_id: "task-001",
+      attempt_id: "missed-callback-attempt",
+      action_id: launch.action_id,
+      outcome: "complete",
+      replacement_eligible: false,
+      evidence_digest: sha256("missed-callback-evidence"),
+      evidence_path: "worker/missed-callback-evidence",
+      cost_microusd: 0,
+      metrics: { reward: 1 },
+    };
+    await control.store.create(
+      controlRecordPath(attempt),
+      new TextEncoder().encode(canonicalJson(attempt)),
+    );
+    expect(await control.projection.attemptById(attempt.attempt_id)).toBeNull();
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    await settle(reconciler);
+    expect(await control.projection.campaignAttempts(result.campaign_id)).toMatchObject(
+      [{ attempt_id: attempt.attempt_id, outcome: "complete" }],
+    );
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 1,
+      publication_status: "published",
+    });
+  });
+
   it("rebuilds the same projection from immutable objects", async () => {
     const control = await createTestControl();
     controls.push(control);
@@ -198,6 +289,71 @@ describe("control service", () => {
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       status: "completed",
       terminal_tasks: 1,
+      publication_status: "published",
+    });
+  });
+
+  it("cancels active remote Jobs before sealing a cancelled campaign", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "cancel-active-job-key",
+      operator,
+    );
+    let cancelled = false;
+    const observedKinds: string[] = [];
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        observedKinds.push(intent.action_kind);
+        if (intent.action_kind === "job.launch")
+          return {
+            outcome: "created",
+            observed_state: "RUNNING",
+            resource_id: "job-active-one",
+          };
+        if (intent.action_kind === "job.observe")
+          return {
+            outcome: "completed",
+            observed_state: cancelled ? "CANCELED" : "RUNNING",
+            resource_id: "job-active-one",
+          };
+        if (intent.action_kind === "job.cancel") {
+          cancelled = true;
+          return {
+            outcome: "completed",
+            observed_state: "CANCELED",
+            resource_id: "job-active-one",
+          };
+        }
+        return new NoopActions().execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    await reconciler.tick();
+    await reconciler.tick();
+    expect(observedKinds.filter((kind) => kind === "job.launch")).toHaveLength(1);
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "cancel", confirmed: true },
+      "cancel-active-job-action",
+      operator,
+    );
+    await settle(reconciler, 15);
+    expect(observedKinds).toContain("job.cancel");
+    expect(await control.projection.campaignAttempts(result.campaign_id)).toMatchObject(
+      [{ outcome: "cancelled", replacement_eligible: 0 }],
+    );
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 1,
+      pending_actions: 0,
       publication_status: "published",
     });
   });

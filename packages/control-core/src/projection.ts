@@ -457,6 +457,54 @@ export class Projection {
     }
   }
 
+  async sync(
+    store: ImmutableObjectStore,
+    prefix = "control/schema=v1",
+  ): Promise<number> {
+    try {
+      const entries = [...(await store.list(prefix))].sort((left, right) =>
+        left.key.localeCompare(right.key),
+      );
+      const seen = new Set<string>();
+      let ingested = 0;
+      for (const entry of entries) {
+        if (seen.has(entry.key))
+          throw new ProjectionIntegrityError(`duplicate object listing: ${entry.key}`);
+        seen.add(entry.key);
+        const projected = await this.objectDigest(entry.key);
+        if (projected) {
+          if (projected !== entry.digest)
+            throw new ProjectionIntegrityError(
+              `immutable object changed: ${entry.key}`,
+            );
+          continue;
+        }
+        const bytes = await store.read(entry.key);
+        const record = parseRecord(bytes, entry);
+        await this.apply(entry, record);
+        ingested += 1;
+      }
+      if (ingested > 0) await this.verifyInvariants();
+      this.state = {
+        ...this.state,
+        ready: true,
+        rebuilding: false,
+        object_count: this.state.object_count + ingested,
+        integrity_error: null,
+      };
+      return ingested;
+    } catch (error) {
+      this.state = {
+        ...this.state,
+        ready: false,
+        rebuilding: false,
+        integrity_error:
+          error instanceof Error ? error.message : "projection sync failed",
+      };
+      throw error;
+    }
+  }
+
   async ingest(
     key: string,
     digest: string,
@@ -1118,6 +1166,7 @@ export class Projection {
       .selectFrom("actions")
       .selectAll()
       .orderBy("created_at", "desc")
+      .orderBy("action_id", "desc")
       .limit(limit)
       .execute();
   }
@@ -1137,7 +1186,7 @@ export class Projection {
     return this.db
       .selectFrom("actions")
       .selectAll()
-      .where("action_kind", "in", ["job.launch", "job.observe"])
+      .where("action_kind", "in", ["job.launch", "job.observe", "job.cancel"])
       .orderBy("created_at", "desc")
       .limit(limit)
       .execute();
