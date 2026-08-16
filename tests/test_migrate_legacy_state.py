@@ -92,6 +92,11 @@ def run(source: Source, destination: Path) -> dict[str, object]:
     )
 
 
+def test_canonical_bytes_match_service_number_encoding() -> None:
+    assert canonical_bytes({"metric": 1e-7}) == b'{"metric":1e-7}\n'
+    assert canonical_bytes({"metric": -0.0}) == b'{"metric":0}\n'
+
+
 def test_migration_copies_verified_files_and_writes_control_record(
     tmp_path: Path,
 ) -> None:
@@ -231,6 +236,43 @@ def test_migration_promotes_explicit_canonical_control_records(
     promoted = destination / "control/schema=v1/campaigns/campaign-one/request.json"
     assert promoted.read_bytes() == candidate.read_bytes()
     assert result["promoted_count"] == 1
+
+
+def test_migration_promotes_service_canonical_numeric_metrics(
+    tmp_path: Path,
+) -> None:
+    source = build_source(tmp_path / "source")
+    attempt = {
+        "schema_version": "v1",
+        "kind": "attempt.receipt",
+        "record_id": "attempt-receipt-one",
+        "created_at": "2026-08-16T00:00:01Z",
+        "actor": {"subject": "migration", "role": "migration"},
+        "campaign_id": "campaign-one",
+        "task_id": "task-one",
+        "attempt_id": "attempt-one",
+        "action_id": "action-one",
+        "outcome": "complete",
+        "replacement_eligible": False,
+        "evidence_digest": f"sha256:{'a' * 64}",
+        "evidence_path": "evidence/test",
+        "cost_microusd": 0,
+        "metrics": {"tiny_metric": 1e-7},
+    }
+    candidate = source.root / (
+        "canonical/control/schema=v1/campaigns/campaign-one/tasks/"
+        "task-one/attempts/attempt-one/receipt.json"
+    )
+    candidate.parent.mkdir(parents=True)
+    candidate.write_bytes(canonical_bytes(attempt))
+    assert b'"tiny_metric":1e-7' in candidate.read_bytes()
+    destination = tmp_path / "bucket"
+
+    result = run(source, destination)
+
+    assert result["promoted_count"] == 1
+    promoted = destination / candidate.relative_to(source.root / "canonical")
+    assert promoted.read_bytes() == candidate.read_bytes()
 
 
 def test_migration_promotes_profile_objects_and_approved_aliases(

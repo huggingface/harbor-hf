@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
 import re
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
@@ -102,13 +104,43 @@ class Source:
     head: str
 
 
-def canonical_bytes(value: object) -> bytes:
-    return (
-        json.dumps(
-            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        ).encode()
-        + b"\n"
+def _service_canonical_bytes(values: list[object]) -> list[bytes]:
+    repository = Path(__file__).resolve().parents[2]
+    script = repository / "scripts" / "control-service" / "canonical-json.mjs"
+    if not script.is_file():
+        raise RuntimeError("service canonical JSON encoder is unavailable")
+    request = json.dumps(
+        {"values": values}, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+    ).encode()
+    completed = subprocess.run(
+        ["node", str(script)],
+        cwd=repository,
+        input=request,
+        capture_output=True,
+        check=False,
     )
+    if completed.returncode != 0:
+        raise RuntimeError("service canonical JSON encoder failed")
+    try:
+        encoded = json.loads(completed.stdout)
+        if not isinstance(encoded, list) or not all(
+            isinstance(item, str) for item in encoded
+        ):
+            raise ValueError
+        output = [base64.b64decode(item, validate=True) for item in encoded]
+    except (ValueError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            "service canonical JSON encoder returned invalid data"
+        ) from error
+    if len(output) != len(values):
+        raise RuntimeError(
+            "service canonical JSON encoder returned the wrong item count"
+        )
+    return output
+
+
+def canonical_bytes(value: object) -> bytes:
+    return _service_canonical_bytes([value])[0]
 
 
 def digest(data: bytes) -> str:
@@ -391,7 +423,7 @@ def _control_record_path(value: dict[str, object]) -> Path:
     return Path("control", "schema=v1", *(part.format_map(fields) for part in parts))
 
 
-def _validate_control_candidate(relative: Path, data: bytes) -> None:
+def _control_candidate_value(relative: Path, data: bytes) -> dict[str, object]:
     if relative.suffix != ".json":
         raise ValueError(f"canonical control object is not JSON: {relative}")
     try:
@@ -410,32 +442,11 @@ def _validate_control_candidate(relative: Path, data: bytes) -> None:
         raise ValueError(
             f"canonical control object violates the control schema: {relative}"
         )
-    if data != canonical_bytes(value):
-        raise ValueError(
-            f"canonical control object has non-canonical encoding: {relative}"
-        )
     if _control_record_path(value) != relative:
         raise ValueError(
             f"canonical control object path does not match its identity: {relative}"
         )
-
-
-def _validate_canonical_candidate(relative: Path, data: bytes) -> None:
-    parts = relative.parts
-    control_prefixes = {
-        ("control", "schema=v1", "campaigns"),
-        ("control", "schema=v1", "migrations"),
-        ("control", "schema=v1", "profiles"),
-    }
-    if parts[:3] in control_prefixes:
-        _validate_control_candidate(relative, data)
-        return
-    if parts[:2] == ("results", "schema=v1") and relative.suffix in {
-        ".json",
-        ".parquet",
-    }:
-        return
-    raise ValueError(f"canonical destination path is not allowed: {relative}")
+    return value
 
 
 def _canonical_writes(
@@ -444,19 +455,47 @@ def _canonical_writes(
     destination: Path,
 ) -> list[_PlannedWrite]:
     writes: list[_PlannedWrite] = []
+    controls: list[tuple[Path, bytes, dict[str, object]]] = []
+    control_prefixes = {
+        ("control", "schema=v1", "campaigns"),
+        ("control", "schema=v1", "migrations"),
+        ("control", "schema=v1", "profiles"),
+    }
     for source in ordered:
         for path in source_files[source.name]:
             relative = path.relative_to(source.root)
             if not relative.parts or relative.parts[0] != "canonical":
                 continue
             canonical_relative = Path(*relative.parts[1:])
-            _validate_canonical_candidate(canonical_relative, path.read_bytes())
+            data = path.read_bytes()
+            parts = canonical_relative.parts
+            if parts[:3] in control_prefixes:
+                controls.append(
+                    (
+                        canonical_relative,
+                        data,
+                        _control_candidate_value(canonical_relative, data),
+                    )
+                )
+            elif not (
+                parts[:2] == ("results", "schema=v1")
+                and canonical_relative.suffix in {".json", ".parquet"}
+            ):
+                raise ValueError(
+                    f"canonical destination path is not allowed: {canonical_relative}"
+                )
             writes.append(
                 _PlannedWrite(
                     path=destination / canonical_relative,
                     source=path,
                     promoted=True,
                 )
+            )
+    encoded_controls = _service_canonical_bytes([value for _, _, value in controls])
+    for (relative, data, _), expected in zip(controls, encoded_controls, strict=True):
+        if data != expected:
+            raise ValueError(
+                f"canonical control object has non-canonical encoding: {relative}"
             )
     return writes
 

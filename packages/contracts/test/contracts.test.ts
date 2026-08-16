@@ -23,6 +23,9 @@ describe("canonical contracts", () => {
     expect(deterministicId("action", "a", "b")).toBe(
       deterministicId("action", "a", "b"),
     );
+    expect(canonicalJson({ metric: 1e-7, negative_zero: -0 })).toBe(
+      '{"metric":1e-7,"negative_zero":0}\n',
+    );
   });
 
   it("validates scoped worker evidence manifests", () => {

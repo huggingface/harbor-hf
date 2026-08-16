@@ -144,6 +144,8 @@ is explicitly approved.
 
 Canonical JSON encoding, identifier derivation, digest rules, and immutable
 write behavior follow the [control service plan](2026-08-16-harbor-hf-control-service-plan.md).
+The TypeScript service and Python migration tool invoke the same dependency-free
+canonical JSON encoder, including ECMAScript number formatting.
 
 Startup replays durable profile objects and promotions before writes are
 allowed. The resolver overlays checked-in profiles with the latest approved
