@@ -1156,13 +1156,7 @@
           "minimum": 1,
           "maximum": 604800
         },
-        "requires_hf_token": {
-          "type": "boolean"
-        },
         "trusted_worker": {
-          "type": "boolean"
-        },
-        "mount_bucket": {
           "type": "boolean"
         }
       }
@@ -1333,13 +1327,7 @@
           "minimum": 0,
           "maximum": 1000000000000
         },
-        "requires_hf_token": {
-          "type": "boolean"
-        },
         "trusted_worker": {
-          "type": "boolean"
-        },
-        "mount_bucket": {
           "type": "boolean"
         },
         "resource_id": {

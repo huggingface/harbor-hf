@@ -1,5 +1,9 @@
 import type { ActionIntent } from "@harbor-hf/contracts";
-import type { ExternalActionPort, ExternalActionResult } from "@harbor-hf/control-core";
+import {
+  type ExternalActionPort,
+  type ExternalActionResult,
+  mintWorkerCapability,
+} from "@harbor-hf/control-core";
 import {
   cancelJob as cancelHfJob,
   getJob,
@@ -11,7 +15,6 @@ import {
 interface AdapterConfig {
   namespace: string;
   accessToken: string;
-  bucketId?: string;
   controlUrl?: string;
   hubUrl?: string;
   endpointsUrl?: string;
@@ -52,6 +55,8 @@ function stringValues(
     throw new Error(`action payload ${key} must be an array of strings`);
   return value;
 }
+
+class AmbiguousJobLaunchError extends Error {}
 
 function cleanFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : "remote action failed";
@@ -120,6 +125,7 @@ export class HuggingFaceActions implements ExternalActionPort {
           return { outcome: "completed", observed_state: "handled_locally" };
       }
     } catch (error) {
+      if (error instanceof AmbiguousJobLaunchError) throw error;
       return {
         outcome: "failed",
         observed_state: "ERROR",
@@ -148,44 +154,47 @@ export class HuggingFaceActions implements ExternalActionPort {
         resource_id: job.id,
       };
     }
-    const requiresToken = booleanValue(intent, "requires_hf_token");
-    if (requiresToken && !booleanValue(intent, "trusted_worker"))
-      throw new Error("HF_TOKEN may be passed only to a trusted worker profile");
-    const volumes =
-      this.config.bucketId && booleanValue(intent, "mount_bucket")
-        ? [
-            {
-              source: { type: "bucket" as const, name: this.config.bucketId },
-              mountPath: "/harbor-hf-bucket",
-              readOnly: false,
-            },
-          ]
-        : undefined;
-    const job = await runJob({
+    if (!booleanValue(intent, "trusted_worker"))
+      throw new Error("Job launch requires a trusted worker profile");
+    if (!this.config.controlUrl)
+      throw new Error("Job launch requires the control service URL");
+    const timeoutSeconds = numberValue(intent, "timeout_seconds");
+    const taskIds = stringValues(intent, "task_ids");
+    const capability = mintWorkerCapability(this.config.accessToken, {
       namespace: this.config.namespace,
-      accessToken: this.config.accessToken,
-      ...(this.config.hubUrl ? { hubUrl: this.config.hubUrl } : {}),
-      dockerImage: stringValue(intent, "job_image"),
-      command: stringValues(intent, "job_command"),
-      flavor: stringValue(intent, "hardware") as SpaceHardwareFlavor,
-      timeoutSeconds: numberValue(intent, "timeout_seconds"),
-      attempts: 1,
-      labels: {
-        harbor_hf_action_id: intent.action_id,
-        harbor_hf_campaign_id: intent.campaign_id,
-      },
-      environment: {
-        HARBOR_HF_CAMPAIGN_ID: intent.campaign_id,
-        HARBOR_HF_ACTION_ID: intent.action_id,
-        HARBOR_HF_TASK_IDS_JSON: JSON.stringify(stringValues(intent, "task_ids")),
-        ...(this.config.controlUrl
-          ? { HARBOR_HF_CONTROL_URL: this.config.controlUrl }
-          : {}),
-        ...(this.config.bucketId ? { HARBOR_HF_BUCKET_ID: this.config.bucketId } : {}),
-      },
-      ...(requiresToken ? { secrets: { HF_TOKEN: this.config.accessToken } } : {}),
-      ...(volumes ? { volumes } : {}),
+      campaign_id: intent.campaign_id,
+      action_id: intent.action_id,
+      task_ids: taskIds,
+      expires_at: Math.floor(Date.now() / 1000) + timeoutSeconds + 3_600,
     });
+    let job: Awaited<ReturnType<typeof runJob>>;
+    try {
+      job = await runJob({
+        namespace: this.config.namespace,
+        accessToken: this.config.accessToken,
+        ...(this.config.hubUrl ? { hubUrl: this.config.hubUrl } : {}),
+        dockerImage: stringValue(intent, "job_image"),
+        command: stringValues(intent, "job_command"),
+        flavor: stringValue(intent, "hardware") as SpaceHardwareFlavor,
+        timeoutSeconds,
+        attempts: 1,
+        labels: {
+          harbor_hf_action_id: intent.action_id,
+          harbor_hf_campaign_id: intent.campaign_id,
+        },
+        environment: {
+          HARBOR_HF_CAMPAIGN_ID: intent.campaign_id,
+          HARBOR_HF_ACTION_ID: intent.action_id,
+          HARBOR_HF_TASK_IDS_JSON: JSON.stringify(taskIds),
+          HARBOR_HF_CONTROL_URL: this.config.controlUrl,
+          HARBOR_HF_WORKER_CAPABILITY: capability,
+        },
+      });
+    } catch (error) {
+      throw new AmbiguousJobLaunchError("Job launch outcome is ambiguous", {
+        cause: error,
+      });
+    }
     return {
       outcome: "created",
       observed_state: job.status.stage,

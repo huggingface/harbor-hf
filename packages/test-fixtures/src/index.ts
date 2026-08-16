@@ -31,6 +31,7 @@ export function profile(
 export function smokeProfiles(
   taskCount = 1,
   maxInfrastructureAttempts = 1,
+  reservationMicrousd = 0,
 ): LoadedProfile[] {
   if (taskCount < 1) throw new Error("test campaign needs at least one task");
   const taskIds = Array.from(
@@ -65,13 +66,11 @@ export function smokeProfiles(
       job_command: ["true"],
       hardware: "cpu-basic",
       timeout_seconds: 300,
-      requires_hf_token: true,
       trusted_worker: true,
-      mount_bucket: true,
     }),
     profile("launch_policy", "control-smoke", {
       max_infrastructure_attempts: maxInfrastructureAttempts,
-      reservation_microusd: 0,
+      reservation_microusd: reservationMicrousd,
       success_without_worker_receipt: true,
       publication_role: "diagnostic",
     }),
@@ -91,13 +90,18 @@ export interface TestControl {
 export async function createTestControl(
   taskCount = 1,
   maxInfrastructureAttempts = 1,
+  reservationMicrousd = 0,
 ): Promise<TestControl> {
   const root = await mkdtemp(join(tmpdir(), "harbor-hf-control-test-"));
   const bucket = join(root, "bucket");
   await mkdir(bucket, { recursive: true });
   const store = new FilesystemObjectStore(bucket);
   const projection = await Projection.open(join(root, "projection.sqlite"));
-  const profiles = smokeProfiles(taskCount, maxInfrastructureAttempts);
+  const profiles = smokeProfiles(
+    taskCount,
+    maxInfrastructureAttempts,
+    reservationMicrousd,
+  );
   const service = new ControlService("test", store, projection, profiles);
   await projection.rebuild(store);
   await service.initialize(profiles);

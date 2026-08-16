@@ -18,6 +18,8 @@ import {
   PolicyError,
   ProfileResolutionError,
   type ControlEvent,
+  type WorkerCapability,
+  verifyWorkerCapability,
 } from "@harbor-hf/control-core";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
@@ -53,6 +55,7 @@ declare module "fastify" {
   interface FastifyRequest {
     actor?: AuthenticatedActor;
     authSession?: SessionRow;
+    workerCapability?: WorkerCapability;
   }
 }
 
@@ -62,8 +65,22 @@ function actor(request: FastifyRequest): AuthenticatedActor {
 }
 
 function domainActor(request: FastifyRequest): Actor {
+  if (request.workerCapability)
+    return {
+      subject: `worker:${request.workerCapability.action_id}`,
+      role: "service",
+    };
   const authenticated = actor(request);
   return { subject: authenticated.subject, role: authenticated.role };
+}
+
+function isWorkerCapabilityRoute(request: FastifyRequest): boolean {
+  const path = request.url.split("?", 1)[0] ?? request.url;
+  return (
+    (request.method === "GET" && /^\/api\/v1\/campaigns\/[^/]+\/lock$/.test(path)) ||
+    (request.method === "POST" &&
+      /^\/api\/v1\/campaigns\/[^/]+\/tasks\/[^/]+\/attempts$/.test(path))
+  );
 }
 
 function isMutation(request: FastifyRequest): boolean {
@@ -167,6 +184,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       level: runtime.config.node_env === "test" ? "silent" : "info",
       redact: [
         "req.headers.authorization",
+        "req.headers.x-harbor-hf-worker-capability",
         "req.headers.cookie",
         "res.headers.set-cookie",
         "*.HF_TOKEN",
@@ -218,7 +236,42 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.addHook("preHandler", async (request, reply) => {
     if (!request.url.startsWith("/api/v1") || request.url === "/api/v1/auth/session")
       return;
-    if (runtime.config.auth_mode === "development") {
+    const capabilityHeader = request.headers["x-harbor-hf-worker-capability"];
+    if (typeof capabilityHeader === "string") {
+      if (!isWorkerCapabilityRoute(request)) {
+        await reply.code(403).send({
+          error: {
+            code: "worker_scope_rejected",
+            message: "the worker capability cannot access this route",
+            request_id: request.id,
+          },
+        });
+        return;
+      }
+      const capability = runtime.config.hf_token
+        ? verifyWorkerCapability(
+            runtime.config.hf_token,
+            capabilityHeader,
+            runtime.config.namespace,
+          )
+        : null;
+      if (!capability) {
+        await reply.code(401).send({
+          error: {
+            code: "worker_capability_rejected",
+            message: "the worker capability is invalid or expired",
+            request_id: request.id,
+          },
+        });
+        return;
+      }
+      request.workerCapability = capability;
+      request.actor = {
+        subject: `worker:${capability.action_id}`,
+        role: "operator",
+        transport: "bearer",
+      };
+    } else if (runtime.config.auth_mode === "development") {
       request.actor = runtime.auth.developmentActor();
     } else {
       const authorization = request.headers.authorization;
@@ -483,13 +536,32 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         tags: ["campaigns"],
         response: {
           200: { type: "object", additionalProperties: true },
+          403: cleanSchema(schemas.apiError),
           404: cleanSchema(schemas.apiError),
         },
       },
     },
     async (request, reply) => {
       const { campaign_id } = request.params as { campaign_id: string };
+      if (
+        request.workerCapability &&
+        request.workerCapability.campaign_id !== campaign_id
+      )
+        return reply.code(403).send({
+          error: {
+            code: "worker_scope_rejected",
+            message: "the worker capability does not authorize this campaign",
+            request_id: request.id,
+          },
+        });
       const lock = await runtime.projection.campaignLock(campaign_id);
+      if (lock && request.workerCapability)
+        return {
+          ...lock,
+          tasks: lock.tasks.filter((task) =>
+            request.workerCapability?.task_ids.includes(task.task_id),
+          ),
+        };
       return (
         lock ??
         reply.code(404).send({
@@ -568,7 +640,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       schema: {
         tags: ["campaigns"],
         body: cleanSchema(schemas.attemptSubmission),
-        response: { 202: attemptAcceptedSchema },
+        response: {
+          202: attemptAcceptedSchema,
+          403: cleanSchema(schemas.apiError),
+        },
       },
     },
     async (request, reply) => {
@@ -579,6 +654,19 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         task_id: string;
       };
       const input = request.body as AttemptSubmissionV1;
+      if (
+        request.workerCapability &&
+        (request.workerCapability.campaign_id !== campaign_id ||
+          request.workerCapability.action_id !== input.action_id ||
+          !request.workerCapability.task_ids.includes(task_id))
+      )
+        return reply.code(403).send({
+          error: {
+            code: "worker_scope_rejected",
+            message: "the worker capability does not authorize this attempt",
+            request_id: request.id,
+          },
+        });
       const attemptId = deterministicId(
         "worker-attempt",
         campaign_id,

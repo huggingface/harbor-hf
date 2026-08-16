@@ -256,30 +256,12 @@ export class Reconciler {
           "number",
         ),
         reservation_microusd: reservation,
-        ...(deployment.requires_hf_token === undefined
-          ? {}
-          : {
-              requires_hf_token: profileScalar<boolean>(
-                deployment,
-                "requires_hf_token",
-                "boolean",
-              ),
-            }),
         ...(deployment.trusted_worker === undefined
           ? {}
           : {
               trusted_worker: profileScalar<boolean>(
                 deployment,
                 "trusted_worker",
-                "boolean",
-              ),
-            }),
-        ...(deployment.mount_bucket === undefined
-          ? {}
-          : {
-              mount_bucket: profileScalar<boolean>(
-                deployment,
-                "mount_bucket",
                 "boolean",
               ),
             }),
@@ -415,6 +397,25 @@ export class Reconciler {
         "number",
       );
       if (attempts.length < maxAttempts) {
+        const reservation = scalar<number>(
+          source.payload,
+          "reservation_microusd",
+          "number",
+        );
+        if (
+          !(await this.service.reserveReplacement(
+            attempt.campaign_id,
+            attempt.attempt_id,
+            attempt.created_at,
+            reservation,
+          ))
+        ) {
+          await this.service.selectTerminal(
+            attempt,
+            "replacement Job would exceed the campaign ceiling",
+          );
+          return;
+        }
         const retry = this.service.actionIntent(
           attempt.campaign_id,
           "job.launch",

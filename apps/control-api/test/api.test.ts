@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { canonicalJson } from "@harbor-hf/contracts";
+import { mintWorkerCapability } from "@harbor-hf/control-core";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { AuthStore, AuthenticationService } from "../src/auth.js";
@@ -73,6 +74,69 @@ describe("control API", () => {
     const ready = await app.inject({ method: "GET", url: "/health/ready" });
     expect(ready.statusCode).toBe(200);
     expect(ready.json()).toMatchObject({ status: "ready" });
+    await app.close();
+  });
+
+  it("limits worker capabilities to their campaign action routes", async () => {
+    const { runtime, app } = await setup();
+    const submission = await runtime.service.submit(
+      input,
+      "worker-capability-submission",
+      { subject: "operator", role: "operator" },
+    );
+    const lock = await runtime.projection.campaignLock(submission.campaign_id);
+    expect(lock).not.toBeNull();
+    const taskId = lock?.tasks[0]?.task_id;
+    expect(taskId).toBeDefined();
+    const token = mintWorkerCapability(runtime.config.hf_token ?? "", {
+      namespace: runtime.config.namespace,
+      campaign_id: submission.campaign_id,
+      action_id: "action-worker-capability",
+      task_ids: [taskId ?? "missing"],
+      expires_at: Math.floor(Date.now() / 1000) + 60,
+    });
+    const headers = { "x-harbor-hf-worker-capability": token };
+
+    const lockResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/${submission.campaign_id}/lock`,
+      headers,
+    });
+    expect(lockResponse.statusCode).toBe(200);
+    expect(lockResponse.json().tasks).toMatchObject([{ task_id: taskId }]);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/profiles", headers }))
+        .statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/campaigns/campaign-other/lock",
+          headers,
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/${submission.campaign_id}/tasks/${taskId}/attempts`,
+          headers: { ...headers, "idempotency-key": "worker-scope-attempt" },
+          payload: {
+            action_id: "action-not-authorized",
+            outcome: "complete",
+            replacement_eligible: false,
+            evidence_digest: `sha256:${"a".repeat(64)}`,
+            evidence_path: "worker/evidence",
+            cost_microusd: 0,
+            metrics: { reward: 1 },
+            completed_at: "2026-08-16T00:00:00Z",
+            confirmed: true,
+          },
+        })
+      ).statusCode,
+    ).toBe(403);
     await app.close();
   });
 

@@ -193,11 +193,13 @@ private Bucket record holds the operator access list. Other authenticated users
 have read-only access. Browser sessions and CSRF state remain disposable local
 state.
 
-When an HF Job needs direct Hub access, the Space may inject `HF_TOKEN` into the
-trusted outer Harbor-HF worker for that Job. The worker must not forward it into
-a Harbor Sandbox, benchmark agent, model server, manifest, log, lock, or
-evidence object. Campaign-specific provider credentials are not persistent
-control-Space secrets.
+The Space never injects `HF_TOKEN` into a Job and never gives a Job a writable
+mount of the canonical control Bucket. It derives a short-lived, signed worker
+capability for the exact campaign, launch action, and task set. The API accepts
+that capability only on the campaign-lock and attempt-receipt routes, and it
+records the worker as a service actor. A worker profile that requests the
+long-lived token or the canonical Bucket mount is rejected. Campaign-specific
+provider credentials are not persistent control-Space secrets.
 
 Do not mint another Harbor-HF credential for a migration, campaign, repair, or
 worker. Before revoking any old Harbor-HF credential, audit every consumer and

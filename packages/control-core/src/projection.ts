@@ -969,6 +969,16 @@ export class Projection {
     return row?.lock_body ? (JSON.parse(row.lock_body) as CampaignLock) : null;
   }
 
+  async budget(recordId: string): Promise<Selectable<BudgetRow> | null> {
+    return (
+      (await this.db
+        .selectFrom("budgets")
+        .selectAll()
+        .where("record_id", "=", recordId)
+        .executeTakeFirst()) ?? null
+    );
+  }
+
   async attemptById(attemptId: string): Promise<Selectable<AttemptRow> | null> {
     return (
       (await this.db

@@ -85,6 +85,7 @@ describe("control service", () => {
       harness: "control-smoke",
       inference_provider: "hf-cpu-smoke",
       publication_role: "diagnostic",
+      run_outcome: "complete",
       strict_pass_count: null,
     });
   });
@@ -118,11 +119,10 @@ describe("control service", () => {
       (action) => action.action_kind === "job.launch",
     );
     if (!initialLaunch) throw new Error("initial Job launch is missing");
-    expect(JSON.parse(initialLaunch.intent_body).payload).toMatchObject({
-      requires_hf_token: true,
-      trusted_worker: true,
-      mount_bucket: true,
-    });
+    const launchPayload = JSON.parse(initialLaunch.intent_body).payload;
+    expect(launchPayload).toMatchObject({ trusted_worker: true });
+    expect(launchPayload).not.toHaveProperty("requires_hf_token");
+    expect(launchPayload).not.toHaveProperty("mount_bucket");
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       status: "completed",
       terminal_tasks: 1,
@@ -396,6 +396,45 @@ describe("control service", () => {
       status: "completed",
       terminal_tasks: 1,
       publication_status: "published",
+    });
+  });
+
+  it("does not launch a replacement Job without another budget reservation", async () => {
+    const control = await createTestControl(1, 2, 6);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 10 },
+      "replacement-budget-key",
+      operator,
+    );
+    let launches = 0;
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        if (intent.action_kind !== "job.launch")
+          return new NoopActions().execute(intent);
+        launches += 1;
+        return {
+          outcome: "failed",
+          observed_state: "job-create-failed",
+          error_code: "jobs-api-unavailable",
+        };
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 12);
+
+    expect(launches).toBe(1);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      reserved_microusd: 6,
+      terminal_tasks: 1,
     });
   });
 

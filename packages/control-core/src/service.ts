@@ -70,6 +70,7 @@ export class ControlService {
   readonly resolver: ProfileResolver;
   private appendQueue: Promise<void> = Promise.resolve();
   private attemptQueue: Promise<void> = Promise.resolve();
+  private budgetQueue: Promise<void> = Promise.resolve();
   private submitQueue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -528,6 +529,76 @@ export class ControlService {
     await this.append(record);
   }
 
+  async reserveReplacement(
+    campaignId: string,
+    priorAttemptId: string,
+    priorAttemptCompletedAt: string,
+    amountMicrousd: number,
+  ): Promise<boolean> {
+    const operation = this.budgetQueue.then(() =>
+      this.reserveReplacementSerialized(
+        campaignId,
+        priorAttemptId,
+        priorAttemptCompletedAt,
+        amountMicrousd,
+      ),
+    );
+    this.budgetQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  private async reserveReplacementSerialized(
+    campaignId: string,
+    priorAttemptId: string,
+    priorAttemptCompletedAt: string,
+    amountMicrousd: number,
+  ): Promise<boolean> {
+    if (amountMicrousd <= 0) return true;
+    const recordId = deterministicId(
+      "budget",
+      campaignId,
+      "replacement",
+      priorAttemptId,
+    );
+    const existing = await this.projection.budget(recordId);
+    if (existing) {
+      if (
+        existing.campaign_id !== campaignId ||
+        existing.event_kind !== "reserve" ||
+        existing.amount_microusd !== amountMicrousd
+      )
+        throw new IdempotencyConflictError(
+          "replacement budget reservation conflicts with durable state",
+        );
+      return true;
+    }
+    const campaign = await this.projection.campaign(campaignId);
+    if (!campaign) throw new PolicyError("campaign does not exist");
+    if (
+      Math.max(
+        campaign.reserved_microusd + amountMicrousd,
+        campaign.observed_microusd,
+      ) > campaign.ceiling_microusd
+    )
+      return false;
+    const reservation: BudgetEvent = {
+      schema_version: "v1",
+      kind: "budget.event",
+      record_id: recordId,
+      created_at: priorAttemptCompletedAt,
+      actor: serviceActor(),
+      campaign_id: campaignId,
+      event_kind: "reserve",
+      amount_microusd: amountMicrousd,
+      reason: `replacement for ${priorAttemptId}`,
+    };
+    await this.append(reservation);
+    return true;
+  }
+
   async campaignAction(
     campaignId: string,
     raw: unknown,
@@ -549,6 +620,11 @@ export class ControlService {
     let kind: ActionIntent["action_kind"];
     let target = input.task_id ?? "campaign";
     let payload: ActionIntent["payload"];
+    let retryReservation: {
+      attemptId: string;
+      completedAt: string;
+      amountMicrousd: number;
+    } | null = null;
     if (input.action === "cancel") {
       kind = "campaign.cancel";
       payload = { task_id: input.task_id ?? null, reason: input.reason ?? null };
@@ -609,6 +685,11 @@ export class ControlService {
       const policy = this.resolvedProfile<LaunchPolicySpec>(lock, "launch_policy");
       if (task.attempts.length >= policy.max_infrastructure_attempts)
         throw new PolicyError("infrastructure retry budget is exhausted");
+      retryReservation = {
+        attemptId: priorAttempt.attempt_id,
+        completedAt: priorAttempt.created_at,
+        amountMicrousd: policy.reservation_microusd,
+      };
       kind = "job.launch";
       payload = {
         task_ids: [input.task_id],
@@ -619,19 +700,23 @@ export class ControlService {
         success_without_worker_receipt: policy.success_without_worker_receipt,
         max_infrastructure_attempts: policy.max_infrastructure_attempts,
         reservation_microusd: policy.reservation_microusd,
-        ...(deployment.requires_hf_token === undefined
-          ? {}
-          : { requires_hf_token: deployment.requires_hf_token }),
         ...(deployment.trusted_worker === undefined
           ? {}
           : { trusted_worker: deployment.trusted_worker }),
-        ...(deployment.mount_bucket === undefined
-          ? {}
-          : { mount_bucket: deployment.mount_bucket }),
         reason: input.reason ?? null,
         prior_attempt_id: priorAttempt.attempt_id,
       };
     }
+    if (
+      retryReservation &&
+      !(await this.reserveReplacement(
+        campaignId,
+        retryReservation.attemptId,
+        retryReservation.completedAt,
+        retryReservation.amountMicrousd,
+      ))
+    )
+      throw new PolicyError("replacement Job would exceed the campaign ceiling");
     const intent = this.actionIntent(
       campaignId,
       kind,

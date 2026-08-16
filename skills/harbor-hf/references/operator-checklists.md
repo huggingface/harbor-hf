@@ -81,8 +81,9 @@ inspecting the named artifact or command output.
       the required resource and action scopes. Its display name and local alias
       are not present in public artifacts.
 - [ ] No per-campaign, per-repair, per-worker, backup, or result-reader Harbor-HF
-      credential was created. A trusted outer worker receives `HF_TOKEN` only
-      when direct Hub access is required.
+      credential was created. Jobs never receive `HF_TOKEN` or a writable mount
+      of the canonical control Bucket. Each worker receives only its short-lived,
+      action-scoped capability.
 - [ ] Any redundant Harbor-HF credential has a private consumer audit and a
       canary using only the retained credential before revocation.
 - [ ] A configured named HF Job token still exists in Harbor HF's private local

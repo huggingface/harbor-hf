@@ -242,6 +242,12 @@ export class ResultPublisher {
         object_digests: objects.map((item) => item.digest),
       }),
     );
+    const terminalOutcomes = tasks.map((task) => task.terminal_outcome);
+    if (terminalOutcomes.some((outcome) => outcome === null))
+      throw new Error("publication contains a nonterminal task");
+    const uniqueOutcomes = new Set(terminalOutcomes as string[]);
+    const runOutcome =
+      uniqueOutcomes.size === 1 ? ([...uniqueOutcomes][0] ?? "unknown") : "mixed";
     const catalog: HarborHFResultCatalogV1 = {
       schema_version: "v1",
       kind: "result.catalog",
@@ -258,7 +264,7 @@ export class ResultPublisher {
           model: profileValue("model", "model_id"),
           harness: profileValue("harness", "agent"),
           inference_provider: profileValue("deployment", "inference_provider"),
-          run_outcome: campaign.status,
+          run_outcome: runOutcome,
           quality: tasks.every((task) => task.terminal_outcome === "complete")
             ? "clean"
             : "degraded",

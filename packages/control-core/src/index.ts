@@ -1,3 +1,4 @@
+export * from "./capability.js";
 export * from "./events.js";
 export * from "./profiles.js";
 export * from "./projection.js";

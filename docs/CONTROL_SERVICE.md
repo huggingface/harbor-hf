@@ -254,6 +254,12 @@ Security Policy, request body limits, response security headers, and log
 redaction. `HF_TOKEN`, OAuth tokens, provider credentials, private evidence,
 and unsanitized task data never enter browser responses or frontend assets.
 
+Jobs never receive `HF_TOKEN` or a writable mount of the canonical control
+Bucket. The service signs a short-lived capability for the exact campaign,
+launch action, and task set. That capability is accepted only by the worker
+campaign-lock and attempt-receipt routes, is redacted from logs, and cannot
+invoke operator or collection APIs.
+
 ## Local projection
 
 SQLite runs on the Space's local ephemeral filesystem. It is never opened on a

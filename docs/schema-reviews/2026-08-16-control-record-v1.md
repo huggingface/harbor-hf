@@ -6,10 +6,11 @@ This review covers [`control-record-v1.schema.json`](../../packages/contracts/sc
 
 ## Schemator result
 
-Schemator local review converged after one iteration. The initial and final
-graphs both contained 128 fields. It applied no changes. It also found no
-skipped or manual proposals and no consistency warnings. The graph diff was
-empty.
+A fresh bounded Schemator review covered all 122 fields after adding Job
+cancellation and removing worker access to the long-lived Hub token and
+canonical Bucket mount. It found no consistency warnings. Its first iteration
+suggested five renames and two structural changes. The review did not converge
+within that bounded iteration, so no generated change was applied directly.
 
 ## Manual decisions
 
@@ -22,5 +23,13 @@ The final product-semantics pass retained the following deliberate boundaries:
 - Action receipts have a separate action-advanced marker so a restart can recover a crash between the remote receipt and its deterministic domain transition.
 - Evidence, actor, digest, source revision, cost, terminal selection, endpoint cleanup, and publication provenance remain explicit.
 - Profiles embedded in campaign locks remain exact even if promoted aliases later change.
+- `ceiling_microusd` remains the established campaign-wide hard cap; it is not a generic cost estimate.
+- Deployment `route` remains the established closed selector used by both live and imported profiles.
+- `watchdog_verified` continues to name the independently verified cleanup watchdog required before endpoint resume.
+- `new_writes_enabled` continues to record whether writes were enabled after a historical migration cutover.
+- Benchmark task IDs and digests remain parallel closed arrays because immutable profile validation enforces equal non-zero length and campaign locks bind each pair into a task object.
+- Workers receive an expiring action-scoped capability. Deployment profiles and actions no longer contain fields that forward `HF_TOKEN` or mount the canonical Bucket.
 
-No schema reduction was applied.
+The only schema reduction in this pass removed those two unsafe worker-access
+fields. The other proposals would rename established public concepts or cause a
+large contract rewrite without reducing ambiguity.

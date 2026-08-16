@@ -602,6 +602,57 @@
               }
             }
           },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "API error v1",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "code",
+                        "message",
+                        "request_id"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]*$",
+                          "maxLength": 80
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "request_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        },
+                        "fields": {
+                          "type": "object",
+                          "maxProperties": 64,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "404": {
             "description": "Default Response",
             "content": {
@@ -1159,6 +1210,57 @@
                     },
                     "adopted": {
                       "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "API error v1",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "code",
+                        "message",
+                        "request_id"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]*$",
+                          "maxLength": 80
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "request_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        },
+                        "fields": {
+                          "type": "object",
+                          "maxProperties": 64,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        }
+                      }
                     }
                   }
                 }

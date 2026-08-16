@@ -53,7 +53,6 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     ? new HuggingFaceActions({
         namespace: config.namespace,
         accessToken: config.hf_token,
-        bucketId: config.bucket_id,
         controlUrl: config.public_origin,
       })
     : new NoopActions();

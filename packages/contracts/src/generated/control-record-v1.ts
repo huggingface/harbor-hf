@@ -305,9 +305,7 @@ job_image: string
 job_command: [string, ...(string)[]]
 hardware: string
 timeout_seconds: number
-requires_hf_token?: boolean
 trusted_worker?: boolean
-mount_bucket?: boolean
 }
 export interface ImportedDeploymentProfileSpec {
 route: "imported"
@@ -394,9 +392,7 @@ timeout_seconds?: number
 success_without_worker_receipt?: boolean
 max_infrastructure_attempts?: number
 reservation_microusd?: number
-requires_hf_token?: boolean
 trusted_worker?: boolean
-mount_bucket?: boolean
 resource_id?: string
 launch_action_id?: Id
 not_before?: Timestamp

@@ -464,6 +464,24 @@ export interface paths {
                     };
                 };
                 /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                request_id: string;
+                                fields?: {
+                                    [key: string]: string;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -720,6 +738,24 @@ export interface paths {
                             attempt_id: string;
                             status_url: string;
                             adopted: boolean;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                request_id: string;
+                                fields?: {
+                                    [key: string]: string;
+                                };
+                            };
                         };
                     };
                 };
