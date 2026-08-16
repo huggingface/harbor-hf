@@ -389,6 +389,10 @@ campaigns and publications stop using the coordination and result Datasets.
 Historical readers may retain exact old revisions for audit, but no runtime
 fallback reads or writes those stores.
 
+Keep exact retirement candidates and approvals alongside consumer findings and
+unique-object checks in a private operator inventory. Do not copy that inventory
+into public Git or GitHub metadata.
+
 ## Boundaries
 
 The control service does not:
