@@ -640,16 +640,28 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         task_id: string;
       };
       const detail = await runtime.projection.task(campaign_id, task_id);
-      return (
-        detail ??
-        reply.code(404).send({
+      if (!detail)
+        return reply.code(404).send({
           error: {
             code: "not_found",
             message: "task was not found",
             request_id: request.id,
           },
-        })
-      );
+        });
+      return {
+        task: detail.task,
+        attempts: detail.attempts.map((attempt) => ({
+          attempt_id: attempt.attempt_id,
+          action_id: attempt.action_id,
+          campaign_id: attempt.campaign_id,
+          task_id: attempt.task_id,
+          outcome: attempt.outcome,
+          replacement_eligible: attempt.replacement_eligible,
+          cost_microusd: attempt.cost_microusd,
+          metrics: attempt.metrics,
+          created_at: attempt.created_at,
+        })),
+      };
     },
   );
 

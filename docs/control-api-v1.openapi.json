@@ -908,8 +908,6 @@
                           "task_id",
                           "outcome",
                           "replacement_eligible",
-                          "evidence_digest",
-                          "evidence_path",
                           "cost_microusd",
                           "metrics",
                           "created_at"
@@ -932,12 +930,6 @@
                           },
                           "replacement_eligible": {
                             "type": "integer"
-                          },
-                          "evidence_digest": {
-                            "type": "string"
-                          },
-                          "evidence_path": {
-                            "type": "string"
                           },
                           "cost_microusd": {
                             "type": "integer"

@@ -598,8 +598,6 @@ export interface paths {
                                 task_id: string;
                                 outcome: string;
                                 replacement_eligible: number;
-                                evidence_digest: string;
-                                evidence_path: string;
                                 cost_microusd: number;
                                 metrics: {
                                     [key: string]: number;

@@ -30,6 +30,15 @@ export const keys = {
 };
 
 const poll = 10_000;
+
+export function collectionUrl(path: string, cursor?: string, limit?: number): string {
+  const parameters = new URLSearchParams();
+  if (cursor) parameters.set("cursor", cursor);
+  if (limit) parameters.set("limit", String(limit));
+  const query = parameters.toString();
+  return query ? `${path}?${query}` : path;
+}
+
 export const useSession = () =>
   useQuery({
     queryKey: keys.session,
@@ -43,10 +52,10 @@ export const useSystem = () =>
     queryFn: () => request<SystemResponse>("/api/v1/system"),
     refetchInterval: poll,
   });
-export const useCampaigns = () =>
+export const useCampaigns = (cursor?: string) =>
   useQuery({
-    queryKey: keys.campaigns,
-    queryFn: () => request<CampaignList>("/api/v1/campaigns"),
+    queryKey: [...keys.campaigns, cursor ?? null],
+    queryFn: () => request<CampaignList>(collectionUrl("/api/v1/campaigns", cursor)),
     refetchInterval: poll,
   });
 export const useCampaign = (id: string) =>
@@ -56,11 +65,13 @@ export const useCampaign = (id: string) =>
     refetchInterval: poll,
     enabled: Boolean(id),
   });
-export const useTasks = (id: string) =>
+export const useTasks = (id: string, cursor?: string) =>
   useQuery({
-    queryKey: keys.tasks(id),
+    queryKey: [...keys.tasks(id), cursor ?? null],
     queryFn: () =>
-      request<TaskList>(`/api/v1/campaigns/${encodeURIComponent(id)}/tasks`),
+      request<TaskList>(
+        collectionUrl(`/api/v1/campaigns/${encodeURIComponent(id)}/tasks`, cursor),
+      ),
     refetchInterval: poll,
     enabled: Boolean(id),
   });
@@ -74,33 +85,33 @@ export const useTask = (campaign: string, task: string) =>
     refetchInterval: poll,
     enabled: Boolean(campaign && task),
   });
-export const useJobs = () =>
+export const useJobs = (cursor?: string) =>
   useQuery({
-    queryKey: keys.jobs,
-    queryFn: () => request<JobList>("/api/v1/jobs"),
+    queryKey: [...keys.jobs, cursor ?? null],
+    queryFn: () => request<JobList>(collectionUrl("/api/v1/jobs", cursor)),
     refetchInterval: poll,
   });
-export const useEndpoints = () =>
+export const useEndpoints = (cursor?: string) =>
   useQuery({
-    queryKey: keys.endpoints,
-    queryFn: () => request<EndpointList>("/api/v1/endpoints"),
+    queryKey: [...keys.endpoints, cursor ?? null],
+    queryFn: () => request<EndpointList>(collectionUrl("/api/v1/endpoints", cursor)),
     refetchInterval: poll,
   });
-export const useProfiles = () =>
+export const useProfiles = (cursor?: string) =>
   useQuery({
-    queryKey: keys.profiles,
-    queryFn: () => request<ProfileList>("/api/v1/profiles"),
+    queryKey: [...keys.profiles, cursor ?? null],
+    queryFn: () => request<ProfileList>(collectionUrl("/api/v1/profiles", cursor)),
   });
-export const useResults = () =>
+export const useResults = (cursor?: string) =>
   useQuery({
-    queryKey: keys.results,
-    queryFn: () => request<ResultList>("/api/v1/results"),
+    queryKey: [...keys.results, cursor ?? null],
+    queryFn: () => request<ResultList>(collectionUrl("/api/v1/results", cursor)),
     refetchInterval: poll,
   });
-export const useAudit = () =>
+export const useAudit = (cursor?: string) =>
   useQuery({
-    queryKey: keys.audit,
-    queryFn: () => request<AuditResponse>("/api/v1/audit?limit=250"),
+    queryKey: [...keys.audit, cursor ?? null],
+    queryFn: () => request<AuditResponse>(collectionUrl("/api/v1/audit", cursor, 250)),
     refetchInterval: poll,
   });
 

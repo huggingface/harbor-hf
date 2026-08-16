@@ -25,8 +25,11 @@ RUN npm run generate \
 
 FROM node:22.22.0-bookworm-slim@sha256:7cc56ef285a8568121537d17b05e72128f01b89c54607b51acf084a50ef483f3 AS runtime
 
+ARG HARBOR_HF_SOURCE_REVISION=development
 ENV NODE_ENV=production \
-    HARBOR_HF_STORE_MODE=bucket
+    HARBOR_HF_STORE_MODE=bucket \
+    HARBOR_HF_SOURCE_REVISION=${HARBOR_HF_SOURCE_REVISION}
+LABEL org.opencontainers.image.revision=${HARBOR_HF_SOURCE_REVISION}
 WORKDIR /app
 
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./

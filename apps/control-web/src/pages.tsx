@@ -55,6 +55,71 @@ type ProfileRow = ProfileList["items"][number];
 type ResultRow = ResultList["items"][number];
 type AuditRow = AuditResponse["items"][number];
 
+function useCursorNavigation() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const cursor = searchParams.get("cursor") ?? undefined;
+  const history = searchParams.getAll("previous_cursor");
+  const next = (nextCursor: string) => {
+    const updated = new URLSearchParams(searchParams);
+    updated.append("previous_cursor", cursor ?? "");
+    updated.set("cursor", nextCursor);
+    setSearchParams(updated);
+  };
+  const previous = () => {
+    const updated = new URLSearchParams(searchParams);
+    const prior = updated.getAll("previous_cursor");
+    const previousCursor = prior.at(-1);
+    updated.delete("previous_cursor");
+    for (const value of prior.slice(0, -1)) updated.append("previous_cursor", value);
+    if (previousCursor) updated.set("cursor", previousCursor);
+    else updated.delete("cursor");
+    setSearchParams(updated);
+  };
+  const first = () => {
+    const updated = new URLSearchParams(searchParams);
+    updated.delete("cursor");
+    updated.delete("previous_cursor");
+    setSearchParams(updated);
+  };
+  return { cursor, history, next, previous, first };
+}
+
+function CursorPager({
+  navigation,
+  nextCursor,
+}: {
+  navigation: ReturnType<typeof useCursorNavigation>;
+  nextCursor: string | null | undefined;
+}) {
+  if (!navigation.cursor && !nextCursor) return null;
+  return (
+    <nav
+      aria-label="Collection pages"
+      className="mt-4 flex flex-wrap items-center justify-end gap-2"
+    >
+      <span className="mr-auto text-xs text-slate-500">
+        Page {navigation.history.length + 1}
+      </span>
+      <Button disabled={!navigation.cursor} variant="ghost" onClick={navigation.first}>
+        First
+      </Button>
+      <Button
+        disabled={!navigation.cursor}
+        variant="secondary"
+        onClick={navigation.previous}
+      >
+        Previous
+      </Button>
+      <Button
+        disabled={!nextCursor}
+        onClick={() => nextCursor && navigation.next(nextCursor)}
+      >
+        Next
+      </Button>
+    </nav>
+  );
+}
+
 const launchSchema = z.object({
   benchmark: z.string().min(3),
   model: z.string().min(3),
@@ -354,8 +419,9 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
 
 export function CampaignsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigation = useCursorNavigation();
   const [launching, setLaunching] = useState(false);
-  const query = useCampaigns();
+  const query = useCampaigns(navigation.cursor);
   const filter = searchParams.get("status") ?? "all";
   const items = (query.data?.items ?? []).filter(
     (item) => filter === "all" || item.status === filter,
@@ -442,11 +508,14 @@ export function CampaignsPage() {
       {query.isLoading ? (
         <Loading />
       ) : (
-        <DataTable
-          columns={columns}
-          data={items}
-          empty="No campaigns match this filter"
-        />
+        <>
+          <DataTable
+            columns={columns}
+            data={items}
+            empty="No campaigns match this filter"
+          />
+          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+        </>
       )}
     </>
   );
@@ -454,8 +523,9 @@ export function CampaignsPage() {
 
 export function CampaignPage() {
   const { campaignId = "" } = useParams();
+  const navigation = useCursorNavigation();
   const campaign = useCampaign(campaignId);
-  const tasks = useTasks(campaignId);
+  const tasks = useTasks(campaignId, navigation.cursor);
   const client = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelAcknowledged, setCancelAcknowledged] = useState(false);
@@ -634,6 +704,7 @@ export function CampaignPage() {
         data={tasks.data?.items ?? []}
         empty="No tasks are locked"
       />
+      <CursorPager navigation={navigation} nextCursor={tasks.data?.next_cursor} />
     </>
   );
 }
@@ -710,14 +781,6 @@ export function TaskPage() {
                   )}
                 </dd>
               </div>
-              <div className="sm:col-span-3">
-                <dt className="text-slate-500">Evidence</dt>
-                <dd className="break-all font-mono text-xs">
-                  {attempt.evidence_path}
-                  <br />
-                  {attempt.evidence_digest}
-                </dd>
-              </div>
             </dl>
           </Card>
         ))}
@@ -727,7 +790,8 @@ export function TaskPage() {
 }
 
 export function JobsPage() {
-  const query = useJobs();
+  const navigation = useCursorNavigation();
+  const query = useJobs(navigation.cursor);
   const columns: ColumnDef<JobRow>[] = [
     {
       accessorKey: "resource_id",
@@ -779,14 +843,18 @@ export function JobsPage() {
       {query.isLoading ? (
         <Loading />
       ) : (
-        <DataTable columns={columns} data={query.data?.items ?? []} />
+        <>
+          <DataTable columns={columns} data={query.data?.items ?? []} />
+          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+        </>
       )}
     </>
   );
 }
 
 export function EndpointsPage() {
-  const query = useEndpoints();
+  const navigation = useCursorNavigation();
+  const query = useEndpoints(navigation.cursor);
   const columns: ColumnDef<EndpointRow>[] = [
     {
       accessorKey: "endpoint_id",
@@ -847,14 +915,18 @@ export function EndpointsPage() {
       {query.isLoading ? (
         <Loading />
       ) : (
-        <DataTable columns={columns} data={query.data?.items ?? []} />
+        <>
+          <DataTable columns={columns} data={query.data?.items ?? []} />
+          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+        </>
       )}
     </>
   );
 }
 
 export function ResultsPage() {
-  const query = useResults();
+  const navigation = useCursorNavigation();
+  const query = useResults(navigation.cursor);
   const columns: ColumnDef<ResultRow>[] = [
     {
       accessorKey: "publication_id",
@@ -941,14 +1013,18 @@ export function ResultsPage() {
       {query.isLoading ? (
         <Loading />
       ) : (
-        <DataTable columns={columns} data={query.data?.items ?? []} />
+        <>
+          <DataTable columns={columns} data={query.data?.items ?? []} />
+          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+        </>
       )}
     </>
   );
 }
 
 export function ProfilesPage() {
-  const query = useProfiles();
+  const navigation = useCursorNavigation();
+  const query = useProfiles(navigation.cursor);
   const columns: ColumnDef<ProfileRow>[] = [
     {
       accessorKey: "name",
@@ -996,14 +1072,18 @@ export function ProfilesPage() {
       {query.isLoading ? (
         <Loading />
       ) : (
-        <DataTable columns={columns} data={query.data?.items ?? []} />
+        <>
+          <DataTable columns={columns} data={query.data?.items ?? []} />
+          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+        </>
       )}
     </>
   );
 }
 
 export function AuditPage() {
-  const query = useAudit();
+  const navigation = useCursorNavigation();
+  const query = useAudit(navigation.cursor);
   const columns: ColumnDef<AuditRow>[] = [
     {
       accessorKey: "occurred_at",
@@ -1043,7 +1123,10 @@ export function AuditPage() {
       {query.isLoading ? (
         <Loading />
       ) : (
-        <DataTable columns={columns} data={query.data?.items ?? []} />
+        <>
+          <DataTable columns={columns} data={query.data?.items ?? []} />
+          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+        </>
       )}
     </>
   );

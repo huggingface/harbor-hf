@@ -42,8 +42,21 @@ if (archive.status !== 0)
   throw new Error(`git archive failed: ${archive.stderr.trim()}`);
 await cp(`${output}/deploy/control-space/Dockerfile`, `${output}/Dockerfile`);
 await cp(`${output}/deploy/control-space/README.md`, `${output}/README.md`);
+const dockerfilePath = `${output}/Dockerfile`;
+const dockerfileSource = await readFile(dockerfilePath, "utf8");
+const revisionArgument = "ARG HARBOR_HF_SOURCE_REVISION=development";
+if (!dockerfileSource.includes(revisionArgument))
+  throw new Error("control Space Dockerfile has no source revision argument");
+await writeFile(
+  dockerfilePath,
+  dockerfileSource.replace(
+    revisionArgument,
+    `ARG HARBOR_HF_SOURCE_REVISION=${revision}`,
+  ),
+  "utf8",
+);
 const lock = await readFile(`${output}/package-lock.json`);
-const dockerfile = await readFile(`${output}/Dockerfile`);
+const dockerfile = await readFile(dockerfilePath);
 await writeFile(
   `${output}/RELEASE.json`,
   `${JSON.stringify({ schema_version: "v1", source_revision: revision, package_lock_digest: digest(lock), dockerfile_digest: digest(dockerfile) }, null, 2)}\n`,

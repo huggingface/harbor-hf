@@ -516,6 +516,14 @@ describe("control API", () => {
     });
     expect(duplicate.statusCode).toBe(202);
     expect(duplicate.json()).toMatchObject({ adopted: true });
+    const taskDetail = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task`,
+    });
+    expect(taskDetail.statusCode).toBe(200);
+    expect(taskDetail.json().attempts[0]).not.toHaveProperty("evidence_path");
+    expect(taskDetail.json().attempts[0]).not.toHaveProperty("evidence_digest");
+    expect(JSON.stringify(taskDetail.json())).not.toContain(manifestPath);
     const conflict = await app.inject({
       method: "POST",
       url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/attempts`,

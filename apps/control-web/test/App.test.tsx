@@ -88,6 +88,55 @@ describe("control web", () => {
     expect(confirm).toBeEnabled();
   });
 
+  it("keeps collection cursors in the URL and loads later pages", async () => {
+    class FakeEventSource {
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: (() => void) | null = null;
+      close() {}
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input);
+        if (path.includes("auth/session"))
+          return json({
+            authenticated: true,
+            actor: { subject: "operator", role: "operator", transport: "development" },
+          });
+        if (path.includes("/api/v1/campaigns")) {
+          requests.push(path);
+          const laterPage = path.includes("cursor=cursor-one");
+          return json({
+            items: [
+              {
+                campaign_id: laterPage ? "campaign-second" : "campaign-first",
+                status: "active",
+                terminal_tasks: 0,
+                total_tasks: 1,
+                observed_microusd: 0,
+                ceiling_microusd: 0,
+                created_at: "2026-08-16T00:00:00Z",
+              },
+            ],
+            next_cursor: laterPage ? null : "cursor-one",
+          });
+        }
+        throw new Error(`unexpected request: ${path}`);
+      }),
+    );
+    renderApp("/campaigns");
+    const user = userEvent.setup();
+
+    expect(await screen.findByText("campaign-first")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText("campaign-second")).toBeInTheDocument();
+    expect(requests.some((path) => path.includes("cursor=cursor-one"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
+  });
+
   it("renders operational overview from same-origin APIs", async () => {
     class FakeEventSource {
       onopen: (() => void) | null = null;
