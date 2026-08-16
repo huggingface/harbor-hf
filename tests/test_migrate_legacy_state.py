@@ -309,6 +309,31 @@ def test_migration_promotes_profile_objects_and_approved_aliases(
     assert promoted_alias.read_bytes() == promotion_path.read_bytes()
 
 
+def test_migration_promotes_operator_acl_records(tmp_path: Path) -> None:
+    source = build_source(tmp_path / "source")
+    acl = {
+        "schema_version": "v1",
+        "kind": "operator.acl",
+        "record_id": "operator-acl-one",
+        "created_at": "2026-08-16T00:00:00Z",
+        "actor": {"subject": "migration", "role": "migration"},
+        "operators": ["operator-one"],
+        "readers": ["reader-one"],
+    }
+    candidate = (
+        source.root / "canonical/control/schema=v1/operators/operator-acl-one.json"
+    )
+    candidate.parent.mkdir(parents=True)
+    candidate.write_bytes(canonical_bytes(acl))
+    destination = tmp_path / "bucket"
+
+    result = run(source, destination)
+
+    assert result["promoted_count"] == 1
+    promoted = destination / "control/schema=v1/operators/operator-acl-one.json"
+    assert promoted.read_bytes() == candidate.read_bytes()
+
+
 def test_migration_rejects_malformed_canonical_control_record(
     tmp_path: Path,
 ) -> None:

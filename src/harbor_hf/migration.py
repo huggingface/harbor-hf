@@ -32,6 +32,7 @@ _CONTROL_PATH_PARTS = {
         "{alias}",
         "{record_id}.json",
     ),
+    "operator.acl": ("operators", "{record_id}.json"),
     "campaign.request": ("campaigns", "{campaign_id}", "request.json"),
     "campaign.lock": ("campaigns", "{campaign_id}", "campaign.lock.json"),
     "action.intent": (
@@ -459,6 +460,7 @@ def _canonical_writes(
     control_prefixes = {
         ("control", "schema=v1", "campaigns"),
         ("control", "schema=v1", "migrations"),
+        ("control", "schema=v1", "operators"),
         ("control", "schema=v1", "profiles"),
     }
     for source in ordered:
