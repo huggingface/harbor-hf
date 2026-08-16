@@ -316,11 +316,10 @@ export class Reconciler {
     for (const taskId of tasks) {
       const task = await this.projection.task(intent.campaign_id, taskId);
       if (!task || task.task.terminal_outcome) continue;
-      const launchActionId = scalar<string>(
-        intent.payload,
-        "launch_action_id",
-        "string",
-      );
+      const launchActionId =
+        intent.action_kind === "job.launch"
+          ? intent.action_id
+          : scalar<string>(intent.payload, "launch_action_id", "string");
       const workerAttempt = known
         .filter(
           (attempt) =>
@@ -347,7 +346,7 @@ export class Reconciler {
         campaign_id: intent.campaign_id,
         task_id: taskId,
         attempt_id: attemptId,
-        action_id: scalar<string>(intent.payload, "launch_action_id", "string"),
+        action_id: launchActionId,
         outcome: fallback,
         replacement_eligible: fallback === "infrastructure",
         evidence_digest: sha256(JSON.stringify(evidence)),

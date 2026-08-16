@@ -162,6 +162,47 @@ describe("control service", () => {
     });
   });
 
+  it("turns failed Job launches into bounded infrastructure attempts", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "failed-job-launch-key",
+      operator,
+    );
+    let launches = 0;
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        if (intent.action_kind !== "job.launch")
+          return new NoopActions().execute(intent);
+        launches += 1;
+        return {
+          outcome: "failed",
+          observed_state: "job-create-failed",
+          error_code: "jobs-api-unavailable",
+        };
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    await settle(reconciler, 10);
+    expect(launches).toBe(1);
+    expect(await control.projection.unadvancedActions()).toHaveLength(0);
+    expect(await control.projection.campaignAttempts(result.campaign_id)).toMatchObject(
+      [{ outcome: "infrastructure", replacement_eligible: 1 }],
+    );
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 1,
+      publication_status: "published",
+    });
+  });
+
   it("retries endpoint cleanup until zero ready replicas before publication", async () => {
     const control = await createTestControl();
     controls.push(control);
