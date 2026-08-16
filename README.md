@@ -21,13 +21,16 @@ Three properties hold across every run:
   are redacted, validated, and archived to a private HF Bucket before a run can
   publish. Published tables always trace back to canonical evidence.
 
-## Browse Results
+## Control service and web application
 
-A deployment may serve sanitized results from a separate results Space during
-the control-service migration. The
-[control service plan](docs/2026-08-16-harbor-hf-control-service-plan.md) moves
-result storage into `<artifact-bucket>` and result views into the private control
-Space. The separate results Space is retired after that cutover.
+The approved [control service
+plan](docs/2026-08-16-harbor-hf-control-service-plan.md) moves campaign control,
+result storage, and result views into one private control Space and one private
+`<artifact-bucket>` Bucket. The [control service
+specification](docs/CONTROL_SERVICE.md) defines the TypeScript Fastify service,
+React application, immutable Bucket protocol, and disposable SQLite projection.
+The current coordination and results services remain authoritative until the
+replacement passes its recovery and migration gates.
 
 ## Setup
 
@@ -200,13 +203,14 @@ it `_SUCCESS` or `_FAILED` only after endpoint cleanup is verified.
 ## Architecture
 
 The [control service plan](docs/2026-08-16-harbor-hf-control-service-plan.md)
-defines the next control architecture. Its complete runtime inventory is one
-private control Space, one private `<artifact-bucket>` Bucket, and one persistent
-Space secret named `HF_TOKEN`. The secret contains an approved fine-grained
-service token; its display name remains private. Control state, profiles,
-evidence, normalized results, and the catalog share stable Bucket prefixes.
-Harbor-HF does not create or keep a second Space, Bucket, Dataset, backup store,
-or control credential.
+and [control service specification](docs/CONTROL_SERVICE.md) define the next
+control architecture. Its complete runtime inventory is one private control
+Space, one private `<artifact-bucket>` Bucket, and one operator-managed
+persistent Space secret named `HF_TOKEN`. One TypeScript process runs the
+Fastify API, reconciler, Server-Sent Events, disposable SQLite projection, and
+compiled React application. Control state, profiles, evidence, normalized
+results, and the catalog share stable Bucket prefixes. Harbor-HF does not create
+or keep a second Space, Bucket, Dataset, backup store, or control credential.
 
 The [architecture overview](docs/architecture.md) describes the current
 execution and storage boundaries. Benchmark tasks come from content-addressed Harbor

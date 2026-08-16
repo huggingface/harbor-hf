@@ -12,13 +12,14 @@ and a budget. It should not require a new manifest generator, a new Hub
 repository, a new Bucket, or manual recovery after completed model work.
 
 This plan replaces Harbor-HF's Git-backed live coordination with one private
-control Space, one private Bucket, and one persistent Space secret. The Bucket
-holds control state, evidence, profiles, normalized results, and the catalog.
+control Space, one private Bucket, and one operator-managed persistent Space
+secret. The Bucket holds control state, evidence, profiles, normalized results,
+and the catalog.
 Historical campaigns and publications remain immutable and readable.
 
-**Status.** Proposed. The current coordination Dataset and detached controller
-Job remain authoritative until this plan is implemented and the new-write
-cutover is complete.
+**Status.** Approved for implementation. The current coordination Dataset and
+detached controller Job remain authoritative until the implementation passes
+its production gates and the new-write cutover is complete.
 
 ## Decision
 
@@ -37,6 +38,13 @@ The same private Space serves the control API and authenticated results UI. Do
 not keep a second results Space, a result Dataset, or a backup Bucket in the
 steady-state Harbor-HF architecture.
 
+Implement the shared control authority in TypeScript. One Node.js process runs
+the Fastify API, background reconciler, local projection, Server-Sent Events,
+and compiled React application. Existing Python benchmark workers may remain as
+pinned remote Job artifacts, but Python must not retain a second shared control
+or reconciliation path. The [control service specification](CONTROL_SERVICE.md)
+defines the runtime and web application contract.
+
 ## Decision evidence
 
 The August 2026 four-model ShellBench campaign produced ten incident records.
@@ -53,6 +61,8 @@ The minimum worthwhile result is:
   manifest;
 - publication failure cannot change benchmark completion;
 - endpoints are paused after terminal work even when the control Space restarts;
+- one authenticated web application shows logical progress, physical retries,
+  cost, publication, cleanup, and endpoint safety without direct Bucket access;
 - routine campaigns create no Hub repositories, Buckets, Spaces, or schedules;
 - an operator is needed only for budget approval, provider substitution,
   credential exposure, deterministic shared defects, or unresolved provenance.
@@ -131,44 +141,38 @@ Preserve old locations and record them in the unified result catalog.
 
 ## Control Space
 
-The control Space runs a single Harbor-HF application process on an always-on
-CPU tier. Its responsibilities are:
+The control Space runs one Node.js process and one Fastify server on an
+always-on CPU tier. The process serves `/api/v1`, the Server-Sent Events stream,
+and the compiled React application. It also runs one bounded background
+reconciler and maintains one disposable local SQLite projection.
 
-- authenticate operators and accept campaign requests;
-- resolve approved profiles into a complete immutable campaign lock;
-- write the lock before remote work;
-- maintain the campaign and task state machines;
-- write action intents before external side effects;
-- launch or adopt HF Jobs by deterministic labels;
-- admit retries and repairs;
-- reserve and reconcile spend;
-- manage endpoint actions and the independent cleanup watchdog;
-- verify evidence and select terminal logical outcomes;
-- publish normalized results into the Bucket;
-- serve campaign status, result, and audit views.
+The process authenticates operators, resolves approved profiles, writes
+campaign locks, advances campaign and task state, launches or adopts remote
+resources, admits repairs, reserves spend, verifies cleanup, publishes results,
+and serves status and audit views. Every remote action follows the same
+intent-observe-receipt protocol.
 
-The Space exposes at least these API operations under the existing `v1`
-contract:
+The API provides campaign, task, Job, Endpoint, profile, result, audit, and
+system resources. Mutations require idempotency keys and return `202 Accepted`
+after their immutable intent is durable. The CLI becomes a thin client of this
+API and returns the campaign ID without retaining local control authority.
 
-```text
-POST /v1/campaigns
-GET  /v1/campaigns/{campaign_id}
-POST /v1/campaigns/{campaign_id}/cancel
-POST /v1/campaigns/{campaign_id}/retry
-POST /v1/campaigns/{campaign_id}/resume
-GET  /v1/profiles
-GET  /v1/profiles/{kind}/{id}
-```
+The web application uses React, Vite, strict TypeScript, Tailwind CSS,
+shadcn/ui, React Router, TanStack Query, and TanStack Table. It presents logical
+progress separately from physical retries, including budget, publication, and
+cleanup state. Browser types come from the API's OpenAPI document.
 
-The CLI becomes a client of this API. `campaign submit` returns the campaign ID
-as soon as the lock and initial action intent are durable. The Space continues
-after the local process exits.
+The Space stores no irreplaceable state on its local filesystem. Kysely and
+`better-sqlite3` maintain a query and scheduling projection. Startup may use a
+verified snapshot, then replays immutable Bucket objects before it accepts
+mutations. Liveness stays available during replay; readiness reports rebuilding.
 
-The Space stores no irreplaceable state on its local filesystem. Local SQLite
-contains a query and scheduling projection. Startup recreates that projection
-from Bucket objects before accepting writes. A periodic projection snapshot may
-speed startup, but every snapshot must be disposable and bound to the exact set
-of source object digests.
+Free `cpu-basic` hardware may sleep after 48 hours without visitors. Production
+therefore uses a paid CPU tier with sleep disabled. The lowest documented price
+at the time of this plan is about `$0.03` per hour, or `$21.90` for a 30-day
+month. The exact tier, current price, and monthly ceiling require approval before
+deployment. Development may remain on free CPU. An external keep-awake schedule
+is not allowed.
 
 A future move to multiple active control replicas would require a transactional
 shared database or another single-writer mechanism. Multi-replica control is
@@ -176,10 +180,18 @@ outside this plan because current campaign volume does not justify that cost.
 
 ## Credential model
 
-The control Space has exactly one persistent secret: `HF_TOKEN`. Its value is
-an approved fine-grained service token. Its display name and local alias remain
-private. The token has access only to the control Space, `<artifact-bucket>`, HF
-Jobs, managed Endpoints, and required Inference Provider calls.
+The control Space has exactly one operator-managed persistent secret:
+`HF_TOKEN`. Its value is an approved fine-grained service token. Its display
+name and local alias remain private. The token has access only to the control
+Space, `<artifact-bucket>`, HF Jobs, managed Endpoints, and required Inference
+Provider calls.
+
+The private Space also enables Hugging Face OAuth for verified user identity.
+Hugging Face injects the OAuth client configuration; those platform-managed
+values are not additional operator-managed service credentials. An immutable
+private Bucket record holds the operator access list. Other authenticated users
+have read-only access. Browser sessions and CSRF state remain disposable local
+state.
 
 When an HF Job needs direct Hub access, the Space may inject `HF_TOKEN` into the
 trusted outer Harbor-HF worker for that Job. The worker must not forward it into
@@ -488,19 +500,42 @@ coordination Dataset. Historical audit tools may continue to read it.
 
 ### Storage and projection
 
-- Implement `BucketControlStore` with immutable create, list, and digest checks.
-- Implement a local SQLite projection that rebuilds from Bucket objects.
+- Implement the immutable Bucket store behind a TypeScript adapter.
+- Validate durable records with versioned JSON Schema and Ajv.
+- Generate TypeScript record types from the schemas.
+- Implement the local projection with Kysely and `better-sqlite3`.
+- Rebuild the projection from Bucket objects when its schema or source digest
+  set changes.
 - Add property tests for replay order, duplicate objects, conflicting bytes,
   partial uploads, and stale snapshots.
 - Keep workers on disjoint attempt paths.
 
 ### Control Space
 
-- Add the private Docker Space entrypoint and authenticated API.
+- Create npm workspaces for `control-api`, `control-web`, contracts, control
+  logic, Hugging Face adapters, and test fixtures.
+- Add one Fastify process with an authenticated `/api/v1` REST API.
 - Add one background reconciler with bounded work cycles.
 - Implement action intents, remote adoption, and receipts.
-- Add health, readiness, and projection-rebuild status.
-- Keep the Space wrapper small and pin Harbor-HF by exact revision.
+- Add liveness, readiness, dependency, and projection-rebuild status.
+- Add Hugging Face OAuth, Bucket-backed operator authorization, opaque sessions,
+  and CSRF protection.
+- Use official Hugging Face JavaScript packages where they cover the required
+  operation and bounded typed adapters elsewhere.
+- Build and run one pinned multi-stage Node.js container as a non-root user.
+
+### Web application
+
+- Replace the current results application with `control-web` instead of adding
+  another frontend.
+- Add Tailwind CSS, shadcn/ui, React Router, TanStack Query, TanStack Table,
+  React Hook Form, Zod, and bounded charts.
+- Add overview, campaign, task, Job, Endpoint, result, profile, and audit routes.
+- Add logical progress, physical attempts, spend, publication, cleanup, and
+  endpoint safety views.
+- Generate the browser client from OpenAPI and reject stale generated output.
+- Add Server-Sent Events with durable cursors and a polling fallback.
+- Meet keyboard, focus, contrast, reduced-motion, and narrow-viewport gates.
 
 ### Profiles and submission
 
@@ -559,15 +594,23 @@ The implementation is ready only when all of these pass:
 - Secret scans find no token values, authorization headers, private capability
   URLs, or operator paths.
 - The namespace contains exactly one Harbor-HF Space and one Harbor-HF Bucket.
-- The control Space contains exactly one persistent secret named `HF_TOKEN`.
+- The control Space contains exactly one operator-managed persistent secret
+  named `HF_TOKEN`.
+- OAuth identity, read-only access, operator authorization, and CSRF rejection
+  pass hosted tests.
+- SSE reconnect resumes from a durable cursor, and polling works when streaming
+  is unavailable.
+- A clean local filesystem rebuilds the full projection and selects the same
+  next actions.
 - A clean launch creates no repository, Bucket, Space, Dataset, or schedule.
 - Historical campaign and publication checksums remain unchanged.
-- The local quality, mutation, schema, documentation, dependency, and Space
-  build gates pass.
+- The local quality, mutation, schema, documentation, dependency, browser, and
+  Space build gates pass.
 
 ## Verification
 
-Local checks:
+Keep the current Python checks while the CLI and remote workers remain. Once
+the TypeScript workspace exists, local checks include both stacks:
 
 ```bash
 uv run ruff check .
@@ -577,6 +620,14 @@ uv run pytest --cov=src/harbor_hf --cov-fail-under=85
 uv run python scripts/check_mutation.py --min-kill-rate 90
 uv run slophammer-py dry .
 uv run pip-audit
+npm ci
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run test:e2e
+npm run build
+npm audit
 npx -y @simpledoc/simpledoc check
 ```
 
@@ -611,6 +662,8 @@ This plan does not:
 - run inference locally;
 - rewrite historical Bucket objects or Dataset commits;
 - provide a second results service or a second Harbor-HF Bucket;
+- keep Python as a parallel shared control authority;
+- use PostgreSQL, Redis, Next.js, Gradio, WebSockets, or a second Node process;
 - create a general multi-cloud scheduler;
 - provide active-active control Space replicas;
 - consolidate independent non-Harbor-HF datasets without a separate audit.
@@ -621,9 +674,9 @@ The design assumes one active control writer per namespace. The Bucket is the
 permanent record, and temporary Space downtime is acceptable because Jobs keep
 running and endpoint watchdogs remain independent.
 
-Before implementation, confirm:
+Before production deployment, confirm:
 
-- the paid CPU tier and monthly ceiling for the always-on private Space;
+- the exact paid CPU tier, current hourly price, and approved monthly ceiling;
 - the exact scopes of the retained service token after deprecated resources are
   removed;
 - the Bucket listing and startup-rebuild target at the current object count;

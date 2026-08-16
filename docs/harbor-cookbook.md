@@ -7,8 +7,14 @@ the controllers, Harbor runs tasks in HF Sandboxes, Inference Endpoints or
 Inference Providers serve model requests, and an HF Bucket keeps canonical
 evidence.
 
-The optional result Space is a read-only view. It does not schedule work,
-decide whether work is complete, hold credentials, or replace the control
+This recipe describes the current production path. The approved [control
+service specification](CONTROL_SERVICE.md) replaces its control Dataset,
+normalized result Datasets, and separate result Space with one private
+TypeScript control Space and one private Bucket. Follow this recipe until the
+replacement passes its migration gates. Do not combine the two control paths.
+
+The optional current result Space is a read-only view. It does not schedule
+work, decide whether work is complete, hold credentials, or replace the control
 Dataset, artifact Bucket, or normalized result Datasets.
 
 > **Safety rule:** every endpoint-backed wave must finish with the Inference

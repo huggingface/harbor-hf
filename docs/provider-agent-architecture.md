@@ -22,6 +22,12 @@ paths.
 Historical campaigns remain readable through their immutable locks and evidence.
 They do not keep the superseded execution path alive for new work.
 
+The planned TypeScript control service does not move benchmark agents into the
+Space. This Python package remains a pinned remote Job dependency and writes
+only its assigned attempt evidence. Shared campaign decisions stay in the
+TypeScript service described by [the control service
+specification](CONTROL_SERVICE.md).
+
 ## Ownership
 
 ### Agent package

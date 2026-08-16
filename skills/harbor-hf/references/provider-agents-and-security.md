@@ -105,11 +105,14 @@ from `HARBOR_HF_JOB_TOKEN` or from a fine-grained token added with
 prompt and records approval to store it in Harbor HF's owner-only plaintext
 token file. Harbor HF config stores only the selected name.
 
-After cutover, the private control Space has one persistent secret named
-`HF_TOKEN`, containing the retained fine-grained service token. Keep the token's
-display name and local alias out of public artifacts. The Space may pass the
-value only to the trusted outer Harbor-HF worker. Never read the Hugging Face CLI
-token store or active login as an implicit remote secret.
+After cutover, the private control Space has one operator-managed persistent
+secret named `HF_TOKEN`, containing the retained fine-grained service token.
+Keep the token's display name and local alias out of public artifacts. The Space
+may pass the value only to the trusted outer Harbor-HF worker. Hugging Face
+OAuth identifies web users; its user tokens and browser sessions must never
+enter remote Jobs, benchmark agents, evidence, or `HF_TOKEN` handling. Never
+read the Hugging Face CLI token store or active login as an implicit remote
+secret.
 
 Reject a launch when it would forward `GITHUB_TOKEN`, `GH_TOKEN`, an SSH key,
 an SSH agent, a Git credential helper, or `gh auth token`. Do not treat a

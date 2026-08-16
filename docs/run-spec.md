@@ -1,8 +1,16 @@
 # Experiment Manifest
 
-This specification defines the initial portable experiment format consumed by
+This specification defines the current portable experiment format consumed by
 `harbor-hf`. An experiment is one YAML file with a required `Experiment`
 resource. The format is pre-release and identified as `harbor-hf/v1alpha1`.
+
+**Status.** Current production contract, planned for in-place replacement. The
+approved [control service specification](CONTROL_SERVICE.md) moves namespace
+resources, artifact destinations, publication destinations, and shared control
+policy into private service configuration and immutable profiles. The contracts
+stage will update this document with the exact request shape before the
+TypeScript service accepts production submissions. There will be no parallel
+legacy manifest mode.
 
 ## Minimal Shape
 
@@ -390,9 +398,11 @@ OpenClaw Codex, or Pi configuration in generic modules.
 
 The current contract uses separate benchmark and index destinations. The
 [control service plan](2026-08-16-harbor-hf-control-service-plan.md) replaces
-that new-write shape in place with the namespace's existing normalized results
-Dataset. New campaigns will not create benchmark-specific result repositories.
-This section remains authoritative until that switch is implemented.
+that new-write shape in place with immutable normalized rows and catalog objects
+under `results/schema=v1/` in the namespace's existing private
+`<artifact-bucket>` Bucket. New campaigns will not create result repositories
+or Datasets. This section remains authoritative until that switch is
+implemented.
 
 `publishing.dataset` identifies the versioned, benchmark-specific publication.
 `dataset_visibility` is required and is `private` or `public`.

@@ -13,7 +13,11 @@ token usage, and trial artifact inventory. Upstream Harbor remains unchanged.
 
 `harbor-hf` owns campaign and physical execution identity, Hugging Face
 infrastructure, immutable request storage, endpoint cleanup, infrastructure
-retries, policy checks, evidence publication, and normalized result rows.
+retries, policy checks, evidence publication, and normalized result rows. The
+planned TypeScript service owns shared campaign decisions. Pinned Python workers
+continue to call Harbor and write attempt evidence, but they do not become a
+second control authority. See the [control service
+specification](CONTROL_SERVICE.md).
 
 Application modules call `FilesystemHarborExecutionAdapter`. They do not render
 Harbor run flags or inspect Harbor result paths. All current Harbor-specific

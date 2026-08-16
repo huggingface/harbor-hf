@@ -14,17 +14,24 @@ changes.
 ## Planned control service
 
 The current release stores live campaign events and claims in a private Hub
-Dataset. The [control service
+Dataset. The approved [control service
 plan](2026-08-16-harbor-hf-control-service-plan.md) replaces that new-write path
 with one private control Space and immutable objects in the configured
-`<artifact-bucket>` Bucket. The same Bucket stores normalized result rows and
-the global catalog. The Space also serves authenticated result views. Real
-resource names remain in private deployment configuration.
+`<artifact-bucket>` Bucket. The [control service
+specification](CONTROL_SERVICE.md) defines the TypeScript runtime, REST API,
+reconciler, local projection, authentication, and React web application.
+
+One Node.js process runs Fastify, the background reconciler, a disposable local
+SQLite projection, Server-Sent Events, and compiled Vite assets. The web
+application uses React, Tailwind CSS, shadcn/ui, React Router, and TanStack
+Query. The Bucket stores control records, normalized result rows, and the global
+catalog. Real resource names remain in private deployment configuration.
 
 This is a hard new-write switch with no dual-write mode. Historical Dataset
-commits and Bucket evidence remain immutable. Until implementation and remote
-recovery canaries pass, the rest of this document describes current production
-behavior.
+commits and Bucket evidence remain immutable. Python may remain in pinned remote
+benchmark workers, but it does not remain as a parallel shared control path.
+Until implementation and remote recovery canaries pass, the current production
+behavior described below remains authoritative.
 
 Hub resources are shared namespace infrastructure. A campaign, repair, profile,
 lease, status record, or result subset must not create its own repository,
@@ -33,6 +40,32 @@ privacy, access, retention, or failure-domain reason that the canonical stores
 cannot meet.
 
 ## Components
+
+The target runtime has one service boundary:
+
+```text
+browser
+   |
+   v
+private control Space
+   |-- React web application
+   |-- TypeScript REST API and SSE
+   |-- reconciler
+   |-- disposable SQLite projection
+   |
+   +--> private Bucket
+   |      control records, profiles, evidence, results, catalog
+   |
+   +--> HF Jobs --> Harbor trials --> HF Sandboxes
+   |
+   +--> HF Endpoints and Inference Providers
+```
+
+The browser never reads the Bucket or receives service credentials. API
+mutations write immutable intent before the reconciler performs a remote side
+effect. SQLite may be deleted and rebuilt from Bucket records.
+
+The current production path remains in place until the replacement gates pass:
 
 ```text
 experiment.yaml
@@ -46,13 +79,13 @@ planner -> campaign lock -> provider controller Job
                           |
                     HF Endpoints
                                               |
-                                    private HF bucket
+                                    private HF Bucket
                                               |
-                                       publisher job
+                                       publisher Job
                                               |
                                    versioned HF Datasets
                                               |
-                                      leaderboard Space
+                                      results Space
 ```
 
 ### Deployment Strategy
@@ -365,6 +398,11 @@ changing benchmark validity.
 - No raw sessions in public Dataset repositories.
 - No secret values in manifests, logs, locks, or artifacts.
 - No state that exists only on the submitting machine.
+- No direct Bucket access or service credential in the browser.
+- No Python fallback for shared campaign control after the TypeScript service
+  becomes authoritative.
+- No PostgreSQL, Redis, Node cluster, separate frontend service, or keep-awake
+  schedule in the target runtime.
 - No direct writes from trial workers to shared Dataset Git repositories.
 - No per-campaign, per-profile, per-repair, per-lease, per-status, or
   per-result-subset Hub repository, Bucket, Space, or schedule.

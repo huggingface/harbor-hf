@@ -3,8 +3,10 @@
 Harbor HF publishes results derived from canonical private evidence. Before the
 control-service cutover, result Datasets and the read-only Space are rebuildable
 projections. After cutover, the private `<artifact-bucket>` Bucket holds
-evidence, normalized rows, and catalog objects. The control Space rebuilds and
-serves the result projection. Keep its deployed name in private configuration.
+evidence, normalized rows, and catalog objects. The TypeScript control service
+rebuilds a disposable SQLite projection and serves authenticated result views
+through the same React application used for campaign progress. The browser
+never reads the Bucket. Keep deployed names in private configuration.
 
 ## Evidence hierarchy
 

@@ -3,6 +3,37 @@
 Use these checklists as evidence gates. Mark an item complete only after
 inspecting the named artifact or command output.
 
+## Control service deployment checklist
+
+- [ ] The deployment follows `docs/CONTROL_SERVICE.md` at an exact source
+      revision.
+- [ ] One pinned multi-stage Node.js image builds the Fastify API and React
+      application from the root npm lockfile.
+- [ ] JSON Schema, generated TypeScript types, OpenAPI, and the browser client
+      are current.
+- [ ] The Space is private, Hugging Face OAuth is enabled, and the private
+      Bucket operator access list was verified.
+- [ ] Read-only users cannot mutate campaigns, and operator mutations require a
+      valid CSRF token plus an idempotency key.
+- [ ] The Space has exactly one operator-managed persistent secret named
+      `HF_TOKEN`; the browser and build layers cannot read it.
+- [ ] Production uses approved paid CPU hardware with sleep disabled. The
+      current hourly price and monthly ceiling are recorded.
+- [ ] No keep-awake schedule, second Space, Dataset, Bucket, database service,
+      or deployment credential was added.
+- [ ] An empty local filesystem rebuilds SQLite from Bucket records and produces
+      the expected replay cursor, campaign states, and next actions.
+- [ ] The API reports liveness during rebuild and refuses mutations until
+      readiness passes.
+- [ ] Server-Sent Events resume from a durable cursor, and the polling fallback
+      passes.
+- [ ] Overview, campaign, task, Job, Endpoint, result, profile, and audit routes
+      pass hosted Playwright tests.
+- [ ] A forced process exit around each remote action boundary creates no
+      duplicate logical work.
+- [ ] Every endpoint is paused with zero ready replicas after the deployment
+      canary.
+
 ## New campaign checklist
 
 ### Scope

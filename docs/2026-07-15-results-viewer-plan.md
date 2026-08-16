@@ -6,6 +6,10 @@ date: "2026-07-15"
 
 # Production Results Viewer Plan
 
+**Status.** Superseded for new implementation by the [Harbor-HF control service
+specification](CONTROL_SERVICE.md). This document remains the design record for
+the separate read-only results viewer and its historical release.
+
 ## Purpose
 
 Build a Harbor-compatible results website that is hosted as a Hugging Face

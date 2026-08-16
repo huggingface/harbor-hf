@@ -29,6 +29,13 @@ finding category and location, never the matched value.
 
 ## Development
 
+The existing CLI and workers use Python. The approved control service and web
+application use the TypeScript stack in
+[`docs/CONTROL_SERVICE.md`](docs/CONTROL_SERVICE.md). During implementation,
+keep both sets of checks green. The TypeScript workspace uses the current
+Node.js LTS release, npm workspaces, one root npm lockfile, strict TypeScript,
+Biome, Vitest and Playwright.
+
 Install the locked development environment:
 
 ```bash
@@ -49,6 +56,10 @@ uv run slophammer-py dry .
 uv run pip-audit
 uv run slophammer-py check . --baseline
 ```
+
+When the root TypeScript workspace lands, run its formatting, lint, type,
+test, browser, build and dependency checks from the repository root. Generated
+JSON Schema types, OpenAPI output, and the browser client must be current.
 
 The slower mutation suite is available as an explicit local command and a
 manually dispatched GitHub Actions workflow. It is not part of the pull-request

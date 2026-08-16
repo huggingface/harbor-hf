@@ -2,12 +2,14 @@
 
 **Status.** Current implementation record.
 
-The [control service plan](2026-08-16-harbor-hf-control-service-plan.md) is the
-canonical plan for replacing live Git-backed campaign coordination,
-consolidating profiles and result publication, and limiting each namespace to a
-small fixed set of Hub resources. This document records the architecture that
-is currently implemented and remains useful for its execution, evidence, and
-endpoint-safety milestones.
+The approved [control service
+plan](2026-08-16-harbor-hf-control-service-plan.md) is the canonical plan for
+replacing live Git-backed campaign coordination, consolidating profiles and
+result publication, and limiting each namespace to a small fixed set of Hub
+resources. The [control service specification](CONTROL_SERVICE.md) defines the
+TypeScript service and React application. This document records the architecture
+that is currently implemented and remains useful for its execution, evidence,
+and endpoint-safety milestones.
 
 ## Goal
 

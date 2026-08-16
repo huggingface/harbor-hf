@@ -24,9 +24,16 @@ backup store, or result service for one campaign or workflow. Any exception
 requires an inventory, a reason the two canonical resources cannot meet the
 requirement, lifecycle and cost records, and explicit operator approval. The
 target layout and new-write switch are specified in
-`docs/2026-08-16-harbor-hf-control-service-plan.md`.
+`docs/2026-08-16-harbor-hf-control-service-plan.md` and
+`docs/CONTROL_SERVICE.md`.
 
-The control Space has exactly one persistent secret named `HF_TOKEN`. Its value
+The planned shared control authority is one TypeScript Fastify process. It also
+serves the React, Tailwind CSS, and shadcn/ui operations console. Existing Python
+workers may produce assigned attempt evidence, but do not add a second Python
+reconciler, compatibility control path, or direct browser Bucket reader.
+
+The control Space has exactly one operator-managed persistent secret named
+`HF_TOKEN`. Its value
 is an approved fine-grained service token. Keep its display name and local alias
 private. Do not mint per-campaign, per-repair, per-worker, backup, or
 result-reader credentials. The Space may inject `HF_TOKEN` only into the trusted
@@ -38,9 +45,12 @@ retained credential before revoking any redundant Harbor-HF credential.
 
 Read the complete source document before acting in that area:
 
-- New campaign or live operation: `docs/harbor-cookbook.md`,
-  `docs/run-spec.md`, `docs/benchmark-sources.md`, and
+- New campaign or live operation before the service replacement:
+  `docs/harbor-cookbook.md`, `docs/run-spec.md`, `docs/benchmark-sources.md`, and
   `docs/single-job-campaign-controller.md`.
+- Control service, API, web application, projection, or migration:
+  `docs/CONTROL_SERVICE.md` and
+  `docs/2026-08-16-harbor-hf-control-service-plan.md`.
 - New deployment or concurrency change: `docs/deployment-profiling.md`.
 - Provider-backed agent: `docs/provider-agent-architecture.md` and
   `docs/harbor-integration-contract.md`.

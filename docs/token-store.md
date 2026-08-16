@@ -1,5 +1,10 @@
 # Local token store
 
+**Status.** Current CLI credential contract, retired from shared control after
+the TypeScript service replacement. The control Space uses its one
+operator-managed `HF_TOKEN` secret and must never copy values from this file.
+Historical CLI workflows may use the store until the new-write switch.
+
 Harbor HF keeps named remote Job tokens in one local INI file. Operators should
 manage this file through `harbor-hf auth` instead of editing it.
 

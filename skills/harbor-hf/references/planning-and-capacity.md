@@ -36,6 +36,13 @@ for one campaign or profile. Follow
 `docs/2026-08-16-harbor-hf-control-service-plan.md` for the canonical target
 layout.
 
+The production control Space uses paid CPU hardware with sleep disabled. Free
+`cpu-basic` may be used for development, but its inactivity sleep cannot protect
+long-running Jobs or endpoint cleanup. Record the current hourly price, monthly
+ceiling, service source revision, container base digests, npm lockfile digest,
+and Space revision before production admission. Do not create an external
+keep-awake schedule.
+
 ## Immutable identity review
 
 Inspect every behavior-affecting reference. Full campaigns require:

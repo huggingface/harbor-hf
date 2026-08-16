@@ -4,9 +4,12 @@
 
 This plan implements the provider-campaign contract in [the single-job campaign controller specification](single-job-campaign-controller.md) inside `huggingface/harbor-hf`, then adopts it in `shellbench-local`. It does not launch remote work or change the current campaigns.
 
-The [control service plan](2026-08-16-harbor-hf-control-service-plan.md) is the
-canonical plan for replacing detached controller ownership, live Git-backed
-claims, duplicated profiles, and split result publication.
+The approved [control service
+plan](2026-08-16-harbor-hf-control-service-plan.md) is the canonical plan for
+replacing detached controller ownership, live Git-backed claims, duplicated
+profiles, and split result publication. The [control service
+specification](CONTROL_SERVICE.md) defines the TypeScript API, reconciler,
+projection, authentication, and web application that replace this path.
 
 ## Outcome
 

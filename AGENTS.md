@@ -31,10 +31,20 @@
 
 ## Development
 
-- Use Python 3.12+, uv, Pydantic, Typer, Ruff, ty, and pytest.
+- Use Python 3.12+, uv, Pydantic, Typer, Ruff, ty, and pytest for the existing
+  CLI and remote workers.
+- Implement the new control service and web application in TypeScript as
+  specified in `docs/CONTROL_SERVICE.md`. Use the current Node.js LTS release,
+  npm workspaces, one root npm lockfile, Fastify, React, Vite, Tailwind CSS,
+  shadcn/ui, strict TypeScript, Biome, Vitest and Playwright.
+- Keep versioned JSON Schema authoritative for durable Bucket records. Generate
+  TypeScript types and the browser API client. Do not maintain handwritten
+  copies of portable contracts.
 - Run `uv run ruff check .`, `uv run ruff format --check .`,
   `uv run ty check`, and `uv run pytest --cov=src/harbor_hf --cov-fail-under=85`
-  before finishing code changes.
+  before finishing Python code changes.
+- Run the root npm formatting, lint, type, test, build, dependency and browser
+  checks before finishing TypeScript or web changes.
 - Run `uv run slophammer-py check .` after changing project structure or CI.
 - Run `uv run slophammer-py dry .` and
   `uv run python scripts/check_mutation.py --min-kill-rate 90` before finishing
@@ -58,16 +68,23 @@
   service, backup store, lease store, or status store. Any exception requires an
   inventory, a reason the two canonical resources cannot meet the requirement,
   lifecycle and cost records, and explicit approval.
-- The control Space has exactly one persistent secret named `HF_TOKEN`. Its
-  value is an approved fine-grained service token. Do not publish the token's
-  display name or local alias. Do not create a second Harbor-HF credential for a
-  migration, campaign, repair, worker, backup, or result reader.
+- The control Space has exactly one operator-managed persistent secret named
+  `HF_TOKEN`. Its value is an approved fine-grained service token. Do not
+  publish the token's display name or local alias. Do not create a second
+  Harbor-HF credential for a migration, campaign, repair, worker, backup, or
+  result reader.
 - Treat any other Harbor-HF service credential as a deprecation candidate. Do
   not revoke it until a private consumer audit and a canary using only the
   retained credential prove that control writes, evidence upload, endpoint
   cleanup, and publication still work.
-- Follow `docs/2026-08-16-harbor-hf-control-service-plan.md` when changing
-  campaign control, profiles, storage, recovery, or publication architecture.
+- Follow `docs/CONTROL_SERVICE.md` and
+  `docs/2026-08-16-harbor-hf-control-service-plan.md` when changing campaign
+  control, the web application, profiles, storage, recovery, or publication
+  architecture.
+- The TypeScript control service is the only planned shared control authority.
+  Python workers may write their assigned attempt and evidence records, but do
+  not add a Python control-service fallback, dual-write path, or second
+  reconciler.
 - Never pass a locally configured personal or broad account credential, including
   the output of `gh auth token`, to a Hugging Face Job, Sandbox, Endpoint, or
   other remote runtime. Never copy any credential between stores without the
