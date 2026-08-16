@@ -645,6 +645,33 @@ export class ControlService {
     if (!lock) throw new PolicyError("campaign lock does not exist");
     const generation =
       Number.parseInt(sha256(idempotencyKey).slice(-8), 16) % 1_000_001;
+    if (input.action === "retry_infrastructure" && input.task_id) {
+      const expectedActionId = deterministicId(
+        "action",
+        campaignId,
+        "job.launch",
+        input.task_id,
+        String(generation),
+      );
+      const existing = await this.projection.action(expectedActionId);
+      if (existing) {
+        const recorded = JSON.parse(existing.intent_body) as ActionIntent;
+        if (
+          recorded.action_kind !== "job.launch" ||
+          recorded.target !== input.task_id ||
+          recorded.payload.reason !== (input.reason ?? null)
+        )
+          throw new IdempotencyConflictError(
+            "idempotency key belongs to a different infrastructure retry",
+          );
+        return {
+          campaign_id: campaignId,
+          action_id: expectedActionId,
+          status_url: `/api/v1/campaigns/${campaignId}`,
+          adopted: true,
+        };
+      }
+    }
     let kind: ActionIntent["action_kind"];
     let target = input.task_id ?? "campaign";
     let payload: ActionIntent["payload"];

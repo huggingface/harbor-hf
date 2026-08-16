@@ -228,10 +228,20 @@ describe("control service", () => {
       new TextEncoder().encode(canonicalJson(attempt)),
     );
     expect(await control.projection.attemptById(attempt.attempt_id)).toBeNull();
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> =>
+        intent.action_kind === "job.observe"
+          ? {
+              outcome: "completed",
+              observed_state: "STOPPED",
+              resource_id: "job-one",
+            }
+          : new NoopActions().execute(intent),
+    };
     const reconciler = new Reconciler(
       control.service,
       control.projection,
-      new NoopActions(),
+      external,
       new ResultPublisher(control.store, control.projection, control.service),
       { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
     );
@@ -529,6 +539,139 @@ describe("control service", () => {
     });
   });
 
+  it("retries a failed Job observation without creating a replacement", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "transient-job-observation-key",
+      operator,
+    );
+    let creates = 0;
+    let observations = 0;
+    let remoteJobExists = false;
+    const external: ExternalActionPort = {
+      execute: async (
+        intent: ActionIntent,
+        context?: ExternalActionContext,
+      ): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.launch") {
+          if (context?.adoption_only) {
+            if (!remoteJobExists)
+              throw new ExternalActionNotFoundError("remote Job is not visible");
+            return {
+              outcome: "adopted",
+              observed_state: "RUNNING",
+              resource_id: "job-observation-retry",
+            };
+          }
+          creates += 1;
+          remoteJobExists = true;
+          return {
+            outcome: "created",
+            observed_state: "RUNNING",
+            resource_id: "job-observation-retry",
+          };
+        }
+        if (intent.action_kind === "job.observe") {
+          observations += 1;
+          return observations === 1
+            ? {
+                outcome: "failed",
+                observed_state: "ERROR",
+                error_code: "jobs-api-unavailable",
+              }
+            : {
+                outcome: "completed",
+                observed_state: "COMPLETED",
+                resource_id: "job-observation-retry",
+              };
+        }
+        return new NoopActions().execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        batch_size: 16,
+        dispatch_adoption_delay_ms: 0,
+      },
+    );
+
+    await settle(reconciler, 14);
+
+    expect(creates).toBe(1);
+    expect(observations).toBe(2);
+    expect(await control.projection.campaignAttempts(result.campaign_id)).toMatchObject(
+      [{ outcome: "complete" }],
+    );
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 1,
+    });
+  });
+
+  it("adopts a repeated infrastructure retry request", async () => {
+    const control = await createTestControl(1, 2);
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "retry-idempotency-campaign-key",
+      operator,
+    );
+    const launch = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "task-001",
+      0,
+      {
+        task_ids: ["task-001"],
+        max_infrastructure_attempts: 2,
+        reservation_microusd: 0,
+      },
+    );
+    await control.service.writeAction(launch);
+    await control.service.attempt({
+      campaign_id: result.campaign_id,
+      task_id: "task-001",
+      attempt_id: "attempt-retry-idempotency",
+      action_id: launch.action_id,
+      outcome: "infrastructure",
+      replacement_eligible: true,
+      evidence_digest: sha256("retry-idempotency-evidence"),
+      evidence_path: "control/retry-idempotency",
+      cost_microusd: 0,
+      metrics: {},
+      completed_at: "2026-08-16T00:00:01.000Z",
+    });
+    const action = {
+      action: "retry_infrastructure",
+      task_id: "task-001",
+      reason: "retry transient infrastructure",
+      confirmed: true,
+    } as const;
+
+    const first = await control.service.campaignAction(
+      result.campaign_id,
+      action,
+      "same-retry-idempotency-key",
+      operator,
+    );
+    const repeated = await control.service.campaignAction(
+      result.campaign_id,
+      action,
+      "same-retry-idempotency-key",
+      operator,
+    );
+
+    expect(repeated).toMatchObject({ action_id: first.action_id, adopted: true });
+  });
+
   it("does not launch a replacement Job without another budget reservation", async () => {
     const control = await createTestControl(1, 2, 6);
     controls.push(control);
@@ -649,7 +792,7 @@ describe("control service", () => {
           outcome: "completed",
           observed_state: "paused",
           resource_id: "endpoint-one",
-          ready_replicas: pauses === 1 ? 1 : 0,
+          ready_replicas: pauses === 1 ? null : pauses === 2 ? 1 : 0,
           active_hourly_cost_microusd: 100,
         };
       },
@@ -662,7 +805,7 @@ describe("control service", () => {
       { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
     );
     await settle(reconciler, 10);
-    expect(pauses).toBe(2);
+    expect(pauses).toBe(3);
     expect(await control.projection.endpoints()).toMatchObject([
       { endpoint_id: "endpoint-one", cleanup_verified: 1, ready_replicas: 0 },
     ]);

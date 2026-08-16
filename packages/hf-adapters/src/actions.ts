@@ -72,8 +72,12 @@ function jobStateIsTerminal(state: string): boolean {
   );
 }
 
-function endpointStatus(raw: unknown): { state: string; ready_replicas: number } {
-  if (!raw || typeof raw !== "object") return { state: "UNKNOWN", ready_replicas: 0 };
+function endpointStatus(raw: unknown): {
+  state: string;
+  ready_replicas: number | null;
+} {
+  if (!raw || typeof raw !== "object")
+    return { state: "UNKNOWN", ready_replicas: null };
   const root = raw as Record<string, unknown>;
   const status =
     root.status && typeof root.status === "object"
@@ -94,7 +98,7 @@ function endpointStatus(raw: unknown): { state: string; ready_replicas: number }
       ? replicas.ready
       : typeof status.readyReplica === "number"
         ? status.readyReplica
-        : 0;
+        : null;
   return { state, ready_replicas: ready };
 }
 
@@ -296,7 +300,9 @@ export class HuggingFaceActions implements ExternalActionPort {
       };
     }
     const raw = (await response.json()) as unknown;
-    const observed = endpointStatus(raw);
+    let observed = endpointStatus(raw);
+    if (observed.ready_replicas === null)
+      observed = endpointStatus(await this.getEndpoint(endpointId));
     return {
       outcome: "completed",
       observed_state: observed.state,

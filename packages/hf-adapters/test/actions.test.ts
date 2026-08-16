@@ -200,6 +200,40 @@ describe("HuggingFaceActions", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("observes replicas when a pause response omits their state", async () => {
+    let call = 0;
+    const fetchMock = vi.fn(async () => {
+      call += 1;
+      return new Response(
+        call === 1
+          ? JSON.stringify({ status: { state: "PAUSED" } })
+          : JSON.stringify({
+              status: { state: "PAUSED" },
+              replicas: { ready: 2 },
+            }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new HuggingFaceActions({
+      namespace: "example",
+      accessToken: testToken,
+      endpointsUrl: "https://endpoints.example/v2",
+    });
+
+    await expect(
+      adapter.execute({
+        ...base,
+        action_kind: "endpoint.pause",
+        payload: { endpoint_id: "endpoint-one" },
+      }),
+    ).resolves.toMatchObject({
+      outcome: "completed",
+      ready_replicas: 2,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("requires an independently verified watchdog before endpoint resume", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

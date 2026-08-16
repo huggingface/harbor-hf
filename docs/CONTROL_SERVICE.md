@@ -303,7 +303,10 @@ The reconciler uses `AbortController` for graceful shutdown. Shutdown stops new
 admissions, lets an in-flight Bucket write reach a safe boundary, closes SSE
 connections, and exits within the Space termination window. Remote Jobs keep
 running. After restart, the reconciler continues Job observation and repeats
-endpoint pause observations until zero ready replicas are recorded.
+endpoint pause observations until zero ready replicas are explicitly recorded.
+A failed or incomplete Job observation stays pending and cannot synthesize a
+terminal task outcome or authorize replacement work. A pause response that
+omits replica state is not treated as zero.
 
 The next action must be independent of Bucket listing order. Property tests
 shuffle records and inject process termination around each external call.

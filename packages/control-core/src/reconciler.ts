@@ -196,6 +196,21 @@ export class Reconciler {
       const launchResult = await this.executeJobLaunch(intent);
       if (!launchResult) return;
       result = launchResult;
+    } else if (intent.action_kind === "job.observe") {
+      const observation = await this.external.execute(intent);
+      if (observation.outcome === "failed") return;
+      result = observation;
+    } else if (
+      intent.action_kind === "endpoint.pause" ||
+      intent.action_kind === "endpoint.resume"
+    ) {
+      const observation = await this.external.execute(intent);
+      if (
+        observation.outcome === "failed" ||
+        typeof observation.ready_replicas !== "number"
+      )
+        return;
+      result = observation;
     } else {
       result = await this.external.execute(intent);
     }
@@ -259,7 +274,25 @@ export class Reconciler {
         break;
       case "endpoint.resume":
       case "endpoint.pause":
-        if (receipt.resource_id) await this.recordEndpoint(intent, receipt);
+        if (
+          receipt.outcome === "failed" ||
+          typeof receipt.ready_replicas !== "number"
+        ) {
+          await this.service.writeAction(
+            this.service.actionIntent(
+              intent.campaign_id,
+              intent.action_kind,
+              intent.target,
+              intent.generation + 1,
+              {
+                ...intent.payload,
+                not_before: new Date(
+                  Date.parse(receipt.created_at) + this.options.observation_interval_ms,
+                ).toISOString(),
+              },
+            ),
+          );
+        } else if (receipt.resource_id) await this.recordEndpoint(intent, receipt);
         break;
       case "campaign.cancel":
         await this.continueCancellation(intent.campaign_id);
@@ -354,6 +387,22 @@ export class Reconciler {
     intent: ActionIntent,
     receipt: ActionReceipt,
   ): Promise<void> {
+    if (receipt.outcome === "failed") {
+      const retry = this.service.actionIntent(
+        intent.campaign_id,
+        "job.observe",
+        intent.target,
+        intent.generation + 1,
+        {
+          ...intent.payload,
+          not_before: new Date(
+            Date.parse(receipt.created_at) + this.options.observation_interval_ms,
+          ).toISOString(),
+        },
+      );
+      await this.service.writeAction(retry);
+      return;
+    }
     const state = receipt.observed_state.toUpperCase();
     if (["RUNNING", "UPDATING", "PENDING"].includes(state)) {
       const next = this.service.actionIntent(
@@ -614,7 +663,9 @@ export class Reconciler {
   ): Promise<void> {
     if (!receipt.resource_id)
       throw new PolicyError("endpoint receipt has no remote identity");
-    const readyReplicas = receipt.ready_replicas ?? 0;
+    if (typeof receipt.ready_replicas !== "number")
+      throw new PolicyError("endpoint receipt has no replica observation");
+    const readyReplicas = receipt.ready_replicas;
     const desired = intent.action_kind === "endpoint.pause" ? "paused" : "running";
     const record: EndpointResource = {
       schema_version: "v1",

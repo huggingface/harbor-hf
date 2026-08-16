@@ -670,11 +670,18 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         task_id: string;
       };
       const input = request.body as AttemptSubmissionV1;
+      if (!request.workerCapability)
+        return reply.code(403).send({
+          error: {
+            code: "worker_capability_required",
+            message: "attempt receipts require a worker capability",
+            request_id: request.id,
+          },
+        });
       if (
-        request.workerCapability &&
-        (request.workerCapability.campaign_id !== campaign_id ||
-          request.workerCapability.action_id !== input.action_id ||
-          !request.workerCapability.task_ids.includes(task_id))
+        request.workerCapability.campaign_id !== campaign_id ||
+        request.workerCapability.action_id !== input.action_id ||
+        !request.workerCapability.task_ids.includes(task_id)
       )
         return reply.code(403).send({
           error: {

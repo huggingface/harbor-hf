@@ -222,6 +222,17 @@ describe("control API", () => {
       (action) => action.action_kind === "job.launch",
     );
     if (!launch) throw new Error("campaign admission did not create a Job launch");
+    const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
+      namespace: runtime.config.namespace,
+      campaign_id: campaignId,
+      action_id: launch.action_id,
+      task_ids: ["control-smoke-task"],
+      expires_at: Math.floor(Date.now() / 1000) + 60,
+    });
+    const workerHeaders = {
+      "idempotency-key": "worker-attempt-key",
+      "x-harbor-hf-worker-capability": capability,
+    };
     const payload = {
       action_id: launch.action_id,
       outcome: "complete",
@@ -233,10 +244,17 @@ describe("control API", () => {
       completed_at: "2026-08-16T00:00:00Z",
       confirmed: true,
     };
-    const first = await app.inject({
+    const missingCapability = await app.inject({
       method: "POST",
       url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/attempts`,
       headers: { "idempotency-key": "worker-attempt-key" },
+      payload,
+    });
+    expect(missingCapability.statusCode).toBe(403);
+    const first = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/attempts`,
+      headers: workerHeaders,
       payload,
     });
     expect(first.statusCode).toBe(202);
@@ -244,7 +262,7 @@ describe("control API", () => {
     const duplicate = await app.inject({
       method: "POST",
       url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/attempts`,
-      headers: { "idempotency-key": "worker-attempt-key" },
+      headers: workerHeaders,
       payload,
     });
     expect(duplicate.statusCode).toBe(202);
@@ -252,7 +270,7 @@ describe("control API", () => {
     const conflict = await app.inject({
       method: "POST",
       url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/attempts`,
-      headers: { "idempotency-key": "worker-attempt-key" },
+      headers: workerHeaders,
       payload: { ...payload, outcome: "semantic" },
     });
     expect(conflict.statusCode).toBe(409);
