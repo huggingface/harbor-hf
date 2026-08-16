@@ -29,17 +29,18 @@ finding category and location, never the matched value.
 
 ## Development
 
-The existing CLI and workers use Python. The approved control service and web
-application use the TypeScript stack in
-[`docs/CONTROL_SERVICE.md`](docs/CONTROL_SERVICE.md). During implementation,
-keep both sets of checks green. The TypeScript workspace uses the current
-Node.js LTS release, npm workspaces, one root npm lockfile, strict TypeScript,
-Biome, Vitest and Playwright.
+Benchmark workers and migration helpers use Python. The control API, shared
+control authority, and web application use the TypeScript stack in
+[`docs/CONTROL_SERVICE.md`](docs/CONTROL_SERVICE.md). Keep both sets of checks
+green. The TypeScript workspace uses Node.js 22.22.0, npm workspaces, one root
+npm lockfile and strict TypeScript. Biome handles formatting and linting.
+Vitest runs unit tests. Playwright runs browser tests.
 
 Install the locked development environment:
 
 ```bash
 uv sync --all-groups
+npm ci
 ```
 
 Before submitting a change, run:
@@ -50,15 +51,24 @@ uv run ruff check .
 uv run ruff format --check .
 uv run ty check
 uv run pytest --cov=src/harbor_hf --cov-fail-under=85
-(cd apps/results-web && npm ci && npm run build)
-docker build -f deploy/space/Dockerfile .
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run check:generated
+npm audit --audit-level=low
+npx playwright install chromium
+npm run test:e2e
+docker build --platform linux/amd64 -f deploy/control-space/Dockerfile .
 uv run slophammer-py dry .
 uv run pip-audit
 uv run slophammer-py check . --baseline
 ```
 
-When the root TypeScript workspace lands, run its formatting, lint, type,
-test, browser, build and dependency checks from the repository root. Generated
+Run TypeScript formatting and linting from the repository root. Run type and
+unit checks there too. Run the browser tests and build before checking
+dependencies. Generated
 JSON Schema types, OpenAPI output, and the browser client must be current.
 
 The slower mutation suite is available as an explicit local command and a

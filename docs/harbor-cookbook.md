@@ -1,106 +1,70 @@
 # Fully Hosted Harbor Evaluations on Hugging Face
 
 This recipe runs a reproducible Harbor campaign entirely on hosted Hugging Face
-infrastructure. A local operator plans and submits immutable work, but does not
-load a model, run inference, or execute a benchmark task locally. HF Jobs run
-the controllers, Harbor runs tasks in HF Sandboxes, Inference Endpoints or
-Inference Providers serve model requests, and an HF Bucket keeps canonical
-evidence.
+infrastructure. The operator submits profile aliases to one private control
+Space. HF Jobs and Harbor Sandboxes execute the benchmark, and one private
+Bucket stores immutable control records, evidence, results, and catalogs.
 
-This recipe describes the current production path. The approved [control
-service specification](CONTROL_SERVICE.md) replaces its control Dataset,
-normalized result Datasets, and separate result Space with one private
-TypeScript control Space and one private Bucket. Follow this recipe until the
-replacement passes its migration gates. Do not combine the two control paths.
-
-The optional current result Space is a read-only view. It does not schedule
-work, decide whether work is complete, hold credentials, or replace the control
-Dataset, artifact Bucket, or normalized result Datasets.
+The operator machine does not load the model, run inference, or execute a
+benchmark task.
 
 > **Safety rule:** every endpoint-backed wave must finish with the Inference
-> Endpoint reporting `paused` and `readyReplica=0`. This applies after success,
-> failure, timeout, cancellation, controller loss, and publication failure. A
-> terminal success marker is invalid until that state has been observed and
-> recorded.
+> Endpoint reporting `paused` and zero ready replicas. This applies after
+> success, failure, timeout, cancellation, control-process loss, and publication
+> failure. A campaign cannot complete while cleanup is unverified.
 
 ## Hosted architecture
 
 ```text
-operator CLI
-    |
-    | immutable request and parent-checked reservations
-    v
-private control Dataset <----- Hub webhook / scheduled CPU reconcile Job
-    |                                      |
-    | bounded action reservations          | stateless recovery
-    v                                      v
-HF wave-controller Job ------------> independent watchdog Job
-    |                                      |
-    |                                      +---- pause endpoint on owner loss
-    |
-    +---- endpoint path ----> Inference Endpoint ----+
-    |                                                |
-    +---- provider path ----> Inference Provider ----+--> Harbor HF Sandboxes
-                                                         |
-                                                         v
-private artifact Bucket (canonical checksummed evidence)
-    |
-    | serialized, verified publication
-    v
-normalized result Dataset ----> global index Dataset ----> read-only Space
+operator CLI or browser
+          |
+          v
+private control Space
+  Fastify API, reconciler, SQLite projection, React console
+          |
+          +----> private Bucket
+          |       control records, profiles, evidence, results, catalogs
+          |
+          +----> HF Jobs ----> Harbor HF Sandboxes
+          |
+          +----> Inference Providers or managed Endpoints
 ```
 
-The control Dataset stores small plans, leases, reservations, and events. The
-Bucket stores raw evidence under unique prefixes. Result and index Datasets are
-derived and rebuildable. The Space reads only those normalized Datasets at
-immutable revisions.
+The Bucket is permanent truth. SQLite is a disposable projection. Deleting the
+local database and replaying the Bucket must restore the same campaign state and
+next action.
 
-## 1. Prepare immutable inputs
+## 1. Prepare immutable profiles
 
-Start from [`examples/shellbench.yaml`](../examples/shellbench.yaml). Replace
-every placeholder with a durable reference:
+A launch resolves five profile kinds:
 
-- full source commits for Harbor and `harbor-hf`;
-- a full model commit;
-- digest-pinned serving and controller images;
-- a digest-pinned Harbor package, an anonymously readable commit-pinned public
-  Git source, or a local directory that resolves to an immutable private bundle,
-  together with the complete task-name-to-digest map;
-- exact agent package versions or source commits;
-- an endpoint deployment profile or an Inference Provider target;
-- private control, input, artifact, and unpublished result storage;
-- campaign, wave, shard, retry, concurrency, idle-time, duration, and spend
-  bounds.
+- benchmark source revision, exact task IDs, and input digests;
+- model ID and full revision;
+- harness name, version, configuration, prompt, tools, and skills;
+- deployment route, digest-pinned worker image, reviewed command, hardware,
+  timeout, and credential boundary;
+- launch policy, physical-attempt limit, reservation, and publication role.
 
-Record approved runtime secret *names* in the manifest, never secret values.
-Benchmark sources never declare a secret name. Public Git is anonymous; private
-or local files use the bundle flow in
-[`benchmark-sources.md`](benchmark-sources.md). Never pass `gh auth token`, a
-GitHub personal token, an SSH key, or a local Git credential helper to a remote
-runtime.
+Profiles are immutable Bucket records. A promotion maps a convenient alias to
+one exact profile ID. Imported profiles describe history but cannot authorize a
+new launch or retry.
 
-Give orchestration, execution, and publication separate purpose-scoped HF
-tokens where the Hub permission model permits it. For remote Jobs, run
-`harbor-hf auth add-job-token TOKEN_NAME`, or provide `HARBOR_HF_JOB_TOKEN` as
-an explicit process override. The add command reads the value through a hidden
-prompt and confirms its local storage and exact transfer to the remote
-`HF_TOKEN` Job secret. Harbor HF's private token file contains the value; its
-JSON config contains only the selected name. Copy no ambient local login into a
-remote secret. Do not put a token in a manifest, lock, event, log, Dataset row,
-Bucket object, test fixture, or result Space.
+Use one persistent Space secret named `HF_TOKEN`. Never record its value in a
+profile, campaign lock, action, log, Bucket object, fixture, or result. A trusted
+outer worker may receive it only when the deployment profile explicitly allows
+that boundary. A Harbor Sandbox, benchmark agent, model server, and browser may
+not receive it.
 
-Plan twice in clean checkouts when introducing a new benchmark or deployment:
+Inspect the ready service and aliases before spending:
 
 ```bash
-uv run harbor-hf validate campaign.yaml
-uv run harbor-hf campaign plan campaign.yaml --format json > campaign-plan.json
+export HARBOR_HF_CONTROL_URL=https://<control-space>.hf.space
+hf auth whoami
+uv run harbor-hf status
+uv run harbor-hf profiles
 ```
 
-Planning performs no inference and creates no remote compute. It may inspect an
-anonymous public Git source or build a local directory snapshot. Preserve the
-plan digest, source-lock digest, bundle content digest when applicable, run IDs,
-shard IDs, trial IDs, source commits, model revision, deployment digest, image
-digests, and resolved task digests from the output.
+Preserve the resolved profile IDs and campaign lock returned by the service.
 
 ## 2. Profile a new deployment
 
@@ -132,37 +96,37 @@ Do not create one endpoint-backed campaign per candidate.
 
 ## 3. Submit and reconcile
 
-Preview the control records before writing them:
+Inspect the ready control service and promoted profiles before submission:
 
 ```bash
-uv run harbor-hf campaign submit campaign.yaml --dry-run
-uv run harbor-hf campaign submit campaign.yaml
-uv run harbor-hf campaign status CAMPAIGN_ID --namespace NAMESPACE --format json
-uv run harbor-hf campaign reconcile CAMPAIGN_ID --namespace NAMESPACE --dry-run
+export HARBOR_HF_CONTROL_URL=https://<control-space>.hf.space
+uv run harbor-hf status
+uv run harbor-hf profiles
+uv run harbor-hf campaign submit \
+  --benchmark <benchmark-profile> \
+  --model <model-profile> \
+  --harness <harness-profile> \
+  --deployment <deployment-profile> \
+  --launch-policy <launch-policy-profile> \
+  --ceiling-microusd <approved-ceiling> \
+  --idempotency-key <stable-request-key> \
+  --yes
+uv run harbor-hf campaign status <campaign-id>
 ```
 
-Submission creates a new campaign even when the plan digest already exists. A
-reconciler pass rereads the immutable plan and append-only events, derives the
-current projection, reserves a bounded set of idempotent actions, performs
-them, records outcomes, and exits. A Hub webhook reduces latency; a scheduled
-CPU Job is the recovery path. Correctness does not depend on either retaining
-memory.
+The Space's single reconciler reads immutable Bucket records, derives the
+SQLite projection, reserves deterministic actions, performs remote side
+effects, and records receipts. SQLite is disposable. Restarting with an empty
+local filesystem must reconstruct the same state and next action.
 
-Each pending action also requires a distributed action lease before any remote
-side effect. Concurrent webhook and scheduled passes can see the same
-reservation, but only one can submit, cancel, provision, clean up, or publish.
-Abandoned leases expire after two hours; successful passes release them after
-recording the durable outcome.
-
-The submitted wave Job independently acquires a campaign-and-wave lease before
-starting any benchmark work and holds it through terminal Bucket publication.
-This closes the gap after an ambiguous Job submission: a duplicate Job exits
-before inference or evidence writes. The lease expires after the complete
-locked HF Job timeout if a Job is killed.
+The idempotency key is part of campaign identity. Repeating the same request as
+the same actor adopts the existing campaign. Deterministic action labels allow
+the reconciler to adopt a Job after an ambiguous submit response.
 
 Do not treat a timed-out create, resume, submit, cancel, or pause request as a
-confirmed failure. The next pass must inspect deterministic remote identities
-and adopt the observed resource or action before retrying.
+confirmed failure. Inspect or adopt the deterministic remote identity before
+retrying. Do not create a lease repository, status store, webhook service, or
+scheduled controller as a recovery path.
 
 ## 4A. Endpoint-backed execution path
 
@@ -193,18 +157,19 @@ pauses the endpoint; deletion is a separate, explicit retention action.
 If cleanup fails and the campaign enters `manual_intervention`, first verify
 that the owning controller and watchdog Jobs are terminal, pause the endpoint,
 and confirm `status.state=paused` with `readyReplica=0`. Release only the stale
-lease whose exact owner was verified, then record the recovery and resume
-reconciliation:
+resource whose exact owner was verified, then request cleanup through the
+control API:
 
 ```bash
-harbor-hf campaign resume CAMPAIGN_ID --namespace NAMESPACE \
-  --cleanup-verified --reason "stale watchdog lease released after verified pause"
-harbor-hf campaign reconcile CAMPAIGN_ID --namespace NAMESPACE --apply
+harbor-hf campaign pause-endpoint <campaign-id> \
+  --reason "verified terminal cleanup" \
+  --yes
+harbor-hf endpoints
 ```
 
-The cleanup acknowledgement is mandatory. `resume` refuses campaigns that are
-not stopped for manual intervention and preserves the recovery as an
-append-only control event.
+The pause action is immutable and idempotent. The campaign remains incomplete
+until an endpoint resource record reports zero ready replicas. Do not write a
+manual cleanup acknowledgement or bypass the observed-state check.
 
 ## 4B. Inference Provider execution path
 
@@ -252,7 +217,9 @@ on fields observed for both.
 Use projections instead of scraping worker logs:
 
 ```bash
-uv run harbor-hf campaign status CAMPAIGN_ID --namespace NAMESPACE --format json
+uv run harbor-hf campaign status <campaign-id>
+uv run harbor-hf jobs
+uv run harbor-hf endpoints
 ```
 
 Inspect queued, active, retrying, complete, invalid, failed, and cancelled
@@ -357,56 +324,47 @@ Every published score must be traceable through these fields:
 
 | Layer | Required provenance |
 | --- | --- |
-| Index row | publication, run and campaign IDs; result kind and outcome; result Dataset and exact revision; source checksum; control commit |
-| Run row | benchmark, observed model revision or `not_observed`, and agent revision; deployment identity; provider, region and hardware; source Bucket and prefix; run-lock checksum |
+| Catalog entry | publication, run and campaign IDs; outcome, quality, publication role, result path, source digest, and primary metric unit |
+| Run row | benchmark, observed model revision or `not_observed`, and agent revision; deployment identity; provider, region and hardware; source Bucket prefix; campaign-lock checksum |
 | Trial row | task digest, logical attempt, selected physical execution and verifier metric owner |
 | Execution row | physical attempt, runtime kind, remote Job identity when reported, timestamps, status and retry reason |
 | Metric row | stable metric ID, typed owner, name, value, unit and aggregation |
 | Artifact row | safe metadata path, media type, size and checksum; never raw evidence bytes |
 
 Audit or rebuild compares these derived rows with the canonical Bucket evidence.
-Deleting and rebuilding a result Dataset must produce equivalent normalized
-rows and stable publication paths.
+Deleting SQLite and replaying the Bucket must produce equivalent normalized rows
+and stable publication paths.
 
-## 8. Deploy the optional read-only Space
+## 8. Deploy the control Space
 
-The repository's Docker Space is staged from [`deploy/space/`](../deploy/space/)
-with `scripts/build_space_release.py`. Build `apps/results-web`, stage the
-release outside the checkout, and upload that directory to a separate HF Space
-repository. Creating that remote Space is an operator action; the campaign
-controller and result publisher must never create or mutate it.
+The pinned Docker release lives in
+[`deploy/control-space/`](../deploy/control-space/). Build the exact reviewed
+revision for `linux/amd64`, then deploy that source revision to the one private
+control Space. Do not create a separate results Space.
 
-Set only public environment variables:
+Set the documented non-secret environment, install one Space secret named
+`HF_TOKEN`, and enable Hugging Face OAuth. The browser uses same-origin API
+requests and never receives the Bucket token. Production uses always-on paid CPU
+because a sleeping reconciler cannot observe Jobs or verify endpoint cleanup.
 
-```text
-HARBOR_HF_INDEX_DATASET=organization/harbor-results-index
-HARBOR_HF_INDEX_REVISION=main
-HARBOR_HF_MAX_PUBLICATIONS=250
-HARBOR_HF_SPACE_TITLE=Harbor evaluation results
-```
-
-Do not configure a token. The Space forces anonymous Hub reads, resolves the
-configured index revision to an immutable commit on each refresh, and reads
-each result publication at the exact commit in its index row. It fails closed
-on a schema or provenance mismatch and stores no authoritative state.
-
-The Space exposes a versioned read-only API plus run, campaign, task,
-comparison, configuration, artifact-metadata, and provenance views. Stable
-routes can be shared without granting access to private canonical evidence.
+Run the inference-free smoke profile first. Then verify OAuth roles, CSRF,
+rebuild from an empty local filesystem, action adoption after a simulated
+process stop, SSE reconnect with polling fallback, publication retry, and
+endpoint pause recovery. Enable production writes only after those checks pass.
 
 ## Final operational checklist
 
 - The campaign plan and all behavior-affecting references are immutable.
 - No model or benchmark task ran on the operator machine.
-- The control Dataset, input stores, artifact Bucket, and unpublished results
+- The control Space, input stores, artifact Bucket, and unpublished results
   were private.
 - Every endpoint-backed wave has verified `state=paused` and
   `readyReplica=0`; provider-backed waves created no endpoint.
 - Artifact verification passed against canonical checksums and exact task
   digests.
-- Publication receipts, Dataset revisions, control commits, and evidence
+- Publication receipts, result object digests, control revisions, and evidence
   checksums are recorded.
 - Exhausted task failures are scored as zero and remain separately auditable.
 - Partial, composite, and manual results are labeled and excluded from the
   ordinary-complete cohort.
-- The result Space has no credentials and remains a replaceable read-only view.
+- The web console uses same-origin APIs and has no direct Bucket credential.

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harborframework.com/schemas/harbor-hf/campaign-action-v1.schema.json",
+  "title": "Campaign action v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action", "confirmed"],
+  "properties": {
+    "action": {
+      "enum": ["cancel", "retry_infrastructure", "publish", "pause_endpoint"]
+    },
+    "task_id": {
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "minLength": 3,
+      "maxLength": 160
+    },
+    "reason": { "type": ["string", "null"], "maxLength": 1000 },
+    "confirmed": { "type": "boolean" }
+  }
+}

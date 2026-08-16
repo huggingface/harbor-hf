@@ -1,0 +1,16 @@
+{
+  "schema_version": "v1",
+  "kind": "profile.object",
+  "record_id": "profile-7c99693126a1eec2f4ec760d",
+  "created_at": "2026-08-16T00:00:00.000Z",
+  "actor": {
+    "subject": "harbor-hf-source",
+    "role": "service"
+  },
+  "profile_kind": "model",
+  "name": "control-smoke",
+  "spec": {
+    "model_id": "control-smoke",
+    "revision": "sha256:e9c64eec862a5075b0485a28d14214ca88fb6b433bfaf2bc67ebb2f680911ca9"
+  }
+}

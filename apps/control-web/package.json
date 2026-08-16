@@ -1,0 +1,35 @@
+{
+  "name": "@harbor-hf/control-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@harbor-hf/contracts": "0.1.0",
+    "@hookform/resolvers": "5.2.2",
+    "@tailwindcss/vite": "4.2.1",
+    "@tanstack/react-query": "5.90.21",
+    "@tanstack/react-table": "8.21.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "0.563.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-hook-form": "7.71.1",
+    "react-router-dom": "7.18.2",
+    "tailwind-merge": "3.4.0",
+    "tailwindcss": "4.2.1",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "jsdom": "28.0.0",
+    "msw": "2.12.10"
+  }
+}

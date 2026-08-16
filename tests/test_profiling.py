@@ -11,9 +11,7 @@ from typing import Any, cast
 
 import httpx
 import pytest
-from typer.testing import CliRunner
 
-from harbor_hf.cli import app
 from harbor_hf.endpoints import bind_endpoint
 from harbor_hf.harbor_adapter.errors import HarborTrialFailure
 from harbor_hf.harbor_adapter.models import HarborCompatibilityTrial
@@ -62,8 +60,6 @@ from harbor_hf.provider_models import (
     ProviderTarget,
 )
 from harbor_hf.runs import build_run_lock
-
-runner = CliRunner()
 
 
 def test_profile_finalizer_records_special_nodes(tmp_path: Path) -> None:
@@ -1696,37 +1692,6 @@ def test_profile_worker_rebuilds_provider_cost_estimate(
 
     with pytest.raises(RuntimeError, match="rebuild observed"):
         run_profile_worker(plan_path, tmp_path / "output")
-
-
-def test_profile_plan_cli_writes_local_plan(
-    remote_manifest: Path, tmp_path: Path
-) -> None:
-    manifest = ExperimentSpec.model_validate_json(
-        json.dumps(__import__("yaml").safe_load(remote_manifest.read_text()))
-    )
-    manifest = profiled_spec(manifest)
-    source = tmp_path / "experiment.json"
-    source.write_text(manifest.model_dump_json(), encoding="utf-8")
-    output = tmp_path / "plan.json"
-
-    result = runner.invoke(
-        app,
-        [
-            "profile",
-            "plan",
-            str(source),
-            "--output",
-            str(output),
-            "--profile-id",
-            "profile-one",
-            "--max-spend-usd",
-            "10",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert output.is_file()
-    assert json.loads(result.stdout)["remote_work"] is False
 
 
 def _profile_test_deployment(

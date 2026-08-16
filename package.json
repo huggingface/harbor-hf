@@ -1,0 +1,43 @@
+{
+  "name": "harbor-hf-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run generate && tsc -b && npm run build -w @harbor-hf/control-web",
+    "bundle:space": "tsx scripts/control-service/bundle-space.ts",
+    "check:generated": "npm run generate && git diff --exit-code -- docs/control-api-v1.openapi.json apps/control-web/src/generated/api.ts packages/contracts/src/generated",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "generate": "npm run generate -w @harbor-hf/contracts && tsc -b packages/contracts packages/control-core packages/hf-adapters --force && npm run generate:openapi -w @harbor-hf/control-api",
+    "lint": "biome lint .",
+    "start": "node apps/control-api/dist/main.js",
+    "test": "vitest run",
+    "test:e2e": "playwright test -c apps/control-web/playwright.config.ts",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.8",
+    "@playwright/test": "1.58.2",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "24.10.9",
+    "@types/react": "19.2.13",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "esbuild": "0.28.2",
+    "json-schema-to-typescript": "15.0.4",
+    "openapi-typescript": "7.13.0",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.10"
+  }
+}

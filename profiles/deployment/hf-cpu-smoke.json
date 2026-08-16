@@ -1,0 +1,21 @@
+{
+  "schema_version": "v1",
+  "kind": "profile.object",
+  "record_id": "profile-8bb7d3b2f64c968871dd1312",
+  "created_at": "2026-08-16T00:00:00.000Z",
+  "actor": {
+    "subject": "harbor-hf-source",
+    "role": "service"
+  },
+  "profile_kind": "deployment",
+  "name": "hf-cpu-smoke",
+  "spec": {
+    "route": "hf_job",
+    "models": ["control-smoke"],
+    "harnesses": ["control-smoke"],
+    "job_image": "alpine:3.22.1@sha256:eafc1edb577d2e9b458664a15f23ea1c370214193226069eb22921169fc7e43f",
+    "job_command": ["/bin/sh", "-lc", "printf control-ok"],
+    "hardware": "cpu-basic",
+    "timeout_seconds": 300
+  }
+}

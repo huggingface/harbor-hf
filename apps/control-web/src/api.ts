@@ -1,0 +1,93 @@
+import type { paths } from "./generated/api";
+
+export type SessionResponse =
+  paths["/api/v1/auth/session"]["get"]["responses"][200]["content"]["application/json"];
+export type SystemResponse =
+  paths["/api/v1/system"]["get"]["responses"][200]["content"]["application/json"];
+export type CampaignList =
+  paths["/api/v1/campaigns"]["get"]["responses"][200]["content"]["application/json"];
+export type Campaign =
+  paths["/api/v1/campaigns/{campaign_id}"]["get"]["responses"][200]["content"]["application/json"];
+export type TaskList =
+  paths["/api/v1/campaigns/{campaign_id}/tasks"]["get"]["responses"][200]["content"]["application/json"];
+export type TaskDetail =
+  paths["/api/v1/campaigns/{campaign_id}/tasks/{task_id}"]["get"]["responses"][200]["content"]["application/json"];
+export type JobList =
+  paths["/api/v1/jobs"]["get"]["responses"][200]["content"]["application/json"];
+export type EndpointList =
+  paths["/api/v1/endpoints"]["get"]["responses"][200]["content"]["application/json"];
+export type ProfileList =
+  paths["/api/v1/profiles"]["get"]["responses"][200]["content"]["application/json"];
+export type ResultList =
+  paths["/api/v1/results"]["get"]["responses"][200]["content"]["application/json"];
+export type AuditResponse =
+  paths["/api/v1/audit"]["get"]["responses"][200]["content"]["application/json"];
+export type CampaignSubmission =
+  paths["/api/v1/campaigns"]["post"]["requestBody"]["content"]["application/json"];
+export type CampaignAction =
+  paths["/api/v1/campaigns/{campaign_id}/actions"]["post"]["requestBody"]["content"]["application/json"];
+export type Accepted =
+  paths["/api/v1/campaigns"]["post"]["responses"][202]["content"]["application/json"];
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+function cookie(name: string): string | null {
+  const prefix = `${encodeURIComponent(name)}=`;
+  for (const item of document.cookie.split(";")) {
+    const value = item.trim();
+    if (value.startsWith(prefix)) return decodeURIComponent(value.slice(prefix.length));
+  }
+  return null;
+}
+
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body) headers.set("Content-Type", "application/json");
+  const csrf = cookie("hhf_csrf");
+  if (csrf && init.method && !["GET", "HEAD"].includes(init.method))
+    headers.set("X-CSRF-Token", csrf);
+  const response = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as {
+      error?: { code?: string; message?: string };
+    } | null;
+    throw new ApiError(
+      response.status,
+      body?.error?.code ?? "request_failed",
+      body?.error?.message ?? `Request failed with ${response.status}`,
+    );
+  }
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
+}
+
+export async function submitCampaign(input: CampaignSubmission): Promise<Accepted> {
+  return request<Accepted>("/api/v1/campaigns", {
+    method: "POST",
+    headers: { "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function actOnCampaign(
+  campaignId: string,
+  input: CampaignAction,
+): Promise<Accepted> {
+  return request<Accepted>(
+    `/api/v1/campaigns/${encodeURIComponent(campaignId)}/actions`,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify(input),
+    },
+  );
+}

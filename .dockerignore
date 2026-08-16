@@ -1,0 +1,15 @@
+.git
+.venv
+**/.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/coverage
+**/test-results
+**/playwright-report
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

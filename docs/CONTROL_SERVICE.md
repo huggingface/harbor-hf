@@ -281,13 +281,20 @@ source digest set is verified.
 
 The reconciler runs in the Fastify process and executes bounded work cycles. It
 selects the next action from durable records, writes intent before the side
-effect, observes the remote system, and writes a receipt. A process exit between
-those steps is recovered by adopting the matching remote resource.
+effect, observes the remote system, writes a receipt, applies the domain
+transition, and writes an action-advanced marker. A receipt without that marker
+is replayed after restart. The transition is deterministic and idempotent, so a
+process exit between the receipt and its derived action cannot strand work.
+
+A process exit before the receipt is recovered by adopting the matching remote
+resource. Worker attempts remain bound to the exact launch action, and one
+physical action can produce no more than one attempt for the same logical task.
 
 The reconciler uses `AbortController` for graceful shutdown. Shutdown stops new
 admissions, lets an in-flight Bucket write reach a safe boundary, closes SSE
-connections, and exits within the Space termination window. Jobs and endpoint
-watchdogs continue independently.
+connections, and exits within the Space termination window. Remote Jobs keep
+running. After restart, the reconciler continues Job observation and repeats
+endpoint pause observations until zero ready replicas are recorded.
 
 The next action must be independent of Bucket listing order. Property tests
 shuffle records and inject process termination around each external call.

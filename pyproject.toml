@@ -7,7 +7,6 @@ license = "Apache-2.0"
 authors = [{ name = "Harbor-HF maintainers" }]
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.116.0",
   "filelock>=3.20.0",
   "huggingface-hub>=1.22.0",
   "httpx>=0.23.0",
@@ -15,7 +14,6 @@ dependencies = [
   "pyyaml>=6.0.2",
   "zstandard>=0.23.0",
   "typer>=0.16.0",
-  "uvicorn>=0.35.0",
   "pyarrow>=18.0.0",
 ]
 
@@ -40,10 +38,6 @@ dev = [
   "slophammer-py==0.4.0",
   "ty>=0.0.59",
 ]
-presentation = [
-  "pyarrow>=18,<26",
-]
-
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"
 testpaths = ["tests"]
@@ -77,6 +71,7 @@ also_copy = [
   "deploy",
   "docs",
   "schemas",
+  "scripts",
   "skills",
   "packages/harbor-hf-agents",
 ]

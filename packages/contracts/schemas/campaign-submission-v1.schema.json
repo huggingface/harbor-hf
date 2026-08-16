@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harborframework.com/schemas/harbor-hf/campaign-submission-v1.schema.json",
+  "title": "Campaign submission v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "benchmark",
+    "model",
+    "harness",
+    "launch_policy",
+    "ceiling_microusd",
+    "confirmed"
+  ],
+  "properties": {
+    "benchmark": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "model": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "harness": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "deployment": {
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "launch_policy": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "ceiling_microusd": { "type": "integer", "minimum": 0, "maximum": 1000000000000 },
+    "confirmed": { "type": "boolean" }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@harbor-hf/hf-adapters",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "dependencies": {
+    "@harbor-hf/contracts": "0.1.0",
+    "@harbor-hf/control-core": "0.1.0",
+    "@huggingface/hub": "2.15.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  }
+}

@@ -1,0 +1,1764 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Harbor-HF Control API",
+    "version": "1.0.0"
+  },
+  "components": {
+    "schemas": {}
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "in": "query",
+            "name": "return_to",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/auth/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "authenticated"
+                  ],
+                  "properties": {
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "login_url": {
+                      "type": "string"
+                    },
+                    "actor": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "subject",
+                        "role",
+                        "transport"
+                      ],
+                      "properties": {
+                        "subject": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string"
+                        },
+                        "transport": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "authenticated"
+                  ],
+                  "properties": {
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "login_url": {
+                      "type": "string"
+                    },
+                    "actor": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "subject",
+                        "role",
+                        "transport"
+                      ],
+                      "properties": {
+                        "subject": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string"
+                        },
+                        "transport": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "source_revision",
+                    "write_mode",
+                    "projection",
+                    "resource_contract"
+                  ],
+                  "properties": {
+                    "source_revision": {
+                      "type": "string"
+                    },
+                    "write_mode": {
+                      "type": "string"
+                    },
+                    "projection": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "resource_contract": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns": {
+      "get": {
+        "tags": [
+          "campaigns"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items",
+                    "next_cursor"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "campaign_id",
+                          "created_at",
+                          "status",
+                          "ceiling_microusd",
+                          "reserved_microusd",
+                          "observed_microusd",
+                          "total_tasks",
+                          "terminal_tasks",
+                          "pending_actions",
+                          "publication_status",
+                          "cleanup_pending"
+                        ],
+                        "properties": {
+                          "campaign_id": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "ceiling_microusd": {
+                            "type": "integer"
+                          },
+                          "reserved_microusd": {
+                            "type": "integer"
+                          },
+                          "observed_microusd": {
+                            "type": "integer"
+                          },
+                          "total_tasks": {
+                            "type": "integer"
+                          },
+                          "terminal_tasks": {
+                            "type": "integer"
+                          },
+                          "pending_actions": {
+                            "type": "integer"
+                          },
+                          "publication_status": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "cleanup_pending": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "next_cursor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "campaigns"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Campaign submission v1",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "benchmark",
+                  "model",
+                  "harness",
+                  "launch_policy",
+                  "ceiling_microusd",
+                  "confirmed"
+                ],
+                "properties": {
+                  "benchmark": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "model": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "harness": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "deployment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "launch_policy": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "ceiling_microusd": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000000000
+                  },
+                  "confirmed": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "campaign_id",
+                    "action_id",
+                    "status_url",
+                    "adopted"
+                  ],
+                  "properties": {
+                    "campaign_id": {
+                      "type": "string"
+                    },
+                    "action_id": {
+                      "type": "string"
+                    },
+                    "status_url": {
+                      "type": "string"
+                    },
+                    "adopted": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaign_id}": {
+      "get": {
+        "tags": [
+          "campaigns"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "campaign_id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "campaign_id",
+                    "created_at",
+                    "status",
+                    "ceiling_microusd",
+                    "reserved_microusd",
+                    "observed_microusd",
+                    "total_tasks",
+                    "terminal_tasks",
+                    "pending_actions",
+                    "publication_status",
+                    "cleanup_pending"
+                  ],
+                  "properties": {
+                    "campaign_id": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "ceiling_microusd": {
+                      "type": "integer"
+                    },
+                    "reserved_microusd": {
+                      "type": "integer"
+                    },
+                    "observed_microusd": {
+                      "type": "integer"
+                    },
+                    "total_tasks": {
+                      "type": "integer"
+                    },
+                    "terminal_tasks": {
+                      "type": "integer"
+                    },
+                    "pending_actions": {
+                      "type": "integer"
+                    },
+                    "publication_status": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cleanup_pending": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "API error v1",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "code",
+                        "message",
+                        "request_id"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]*$",
+                          "maxLength": 80
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "request_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        },
+                        "fields": {
+                          "type": "object",
+                          "maxProperties": 64,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaign_id}/lock": {
+      "get": {
+        "tags": [
+          "campaigns"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "campaign_id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "API error v1",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "code",
+                        "message",
+                        "request_id"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]*$",
+                          "maxLength": 80
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "request_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        },
+                        "fields": {
+                          "type": "object",
+                          "maxProperties": 64,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaign_id}/tasks": {
+      "get": {
+        "tags": [
+          "campaigns"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "campaign_id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "campaign_id",
+                          "task_id",
+                          "input_digest",
+                          "terminal_outcome",
+                          "selected_attempt_id"
+                        ],
+                        "properties": {
+                          "campaign_id": {
+                            "type": "string"
+                          },
+                          "task_id": {
+                            "type": "string"
+                          },
+                          "input_digest": {
+                            "type": "string"
+                          },
+                          "terminal_outcome": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "selected_attempt_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaign_id}/tasks/{task_id}": {
+      "get": {
+        "tags": [
+          "campaigns"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "campaign_id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "task_id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "task",
+                    "attempts"
+                  ],
+                  "properties": {
+                    "task": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "campaign_id",
+                        "task_id",
+                        "input_digest",
+                        "terminal_outcome",
+                        "selected_attempt_id"
+                      ],
+                      "properties": {
+                        "campaign_id": {
+                          "type": "string"
+                        },
+                        "task_id": {
+                          "type": "string"
+                        },
+                        "input_digest": {
+                          "type": "string"
+                        },
+                        "terminal_outcome": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "selected_attempt_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "attempts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "attempt_id",
+                          "action_id",
+                          "campaign_id",
+                          "task_id",
+                          "outcome",
+                          "replacement_eligible",
+                          "evidence_digest",
+                          "evidence_path",
+                          "cost_microusd",
+                          "metrics",
+                          "created_at"
+                        ],
+                        "properties": {
+                          "attempt_id": {
+                            "type": "string"
+                          },
+                          "action_id": {
+                            "type": "string"
+                          },
+                          "campaign_id": {
+                            "type": "string"
+                          },
+                          "task_id": {
+                            "type": "string"
+                          },
+                          "outcome": {
+                            "type": "string"
+                          },
+                          "replacement_eligible": {
+                            "type": "integer"
+                          },
+                          "evidence_digest": {
+                            "type": "string"
+                          },
+                          "evidence_path": {
+                            "type": "string"
+                          },
+                          "cost_microusd": {
+                            "type": "integer"
+                          },
+                          "metrics": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "number"
+                            }
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "API error v1",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "code",
+                        "message",
+                        "request_id"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]*$",
+                          "maxLength": 80
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "request_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        },
+                        "fields": {
+                          "type": "object",
+                          "maxProperties": 64,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaign_id}/actions": {
+      "post": {
+        "tags": [
+          "campaigns"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Campaign action v1",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "action",
+                  "confirmed"
+                ],
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "cancel",
+                      "retry_infrastructure",
+                      "publish",
+                      "pause_endpoint"
+                    ]
+                  },
+                  "task_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "minLength": 3,
+                    "maxLength": 160
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 1000
+                  },
+                  "confirmed": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "campaign_id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "campaign_id",
+                    "action_id",
+                    "status_url",
+                    "adopted"
+                  ],
+                  "properties": {
+                    "campaign_id": {
+                      "type": "string"
+                    },
+                    "action_id": {
+                      "type": "string"
+                    },
+                    "status_url": {
+                      "type": "string"
+                    },
+                    "adopted": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaign_id}/tasks/{task_id}/attempts": {
+      "post": {
+        "tags": [
+          "campaigns"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "AttemptSubmissionV1",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "action_id",
+                  "outcome",
+                  "replacement_eligible",
+                  "evidence_digest",
+                  "evidence_path",
+                  "cost_microusd",
+                  "metrics",
+                  "completed_at",
+                  "confirmed"
+                ],
+                "properties": {
+                  "outcome": {
+                    "enum": [
+                      "complete",
+                      "invalid",
+                      "infrastructure",
+                      "semantic",
+                      "refusal",
+                      "verifier",
+                      "agent",
+                      "benchmark_timeout",
+                      "cancelled",
+                      "policy"
+                    ]
+                  },
+                  "replacement_eligible": {
+                    "type": "boolean"
+                  },
+                  "evidence_digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  "evidence_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "cost_microusd": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000000000
+                  },
+                  "completed_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "confirmed": {
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "metrics": {
+                    "type": "object",
+                    "maxProperties": 64,
+                    "propertyNames": {
+                      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,79}$"
+                    },
+                    "additionalProperties": {
+                      "type": "number"
+                    }
+                  },
+                  "action_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "campaign_id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "task_id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "campaign_id",
+                    "task_id",
+                    "attempt_id",
+                    "status_url",
+                    "adopted"
+                  ],
+                  "properties": {
+                    "campaign_id": {
+                      "type": "string"
+                    },
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "attempt_id": {
+                      "type": "string"
+                    },
+                    "status_url": {
+                      "type": "string"
+                    },
+                    "adopted": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "action_id",
+                          "campaign_id",
+                          "action_kind",
+                          "generation",
+                          "target",
+                          "outcome",
+                          "observed_state",
+                          "resource_id",
+                          "created_at"
+                        ],
+                        "properties": {
+                          "action_id": {
+                            "type": "string"
+                          },
+                          "campaign_id": {
+                            "type": "string"
+                          },
+                          "action_kind": {
+                            "type": "string"
+                          },
+                          "generation": {
+                            "type": "integer"
+                          },
+                          "target": {
+                            "type": "string"
+                          },
+                          "outcome": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "observed_state": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "resource_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/endpoints": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "action_id",
+                          "campaign_id",
+                          "endpoint_id",
+                          "desired_state",
+                          "observed_state",
+                          "ready_replicas",
+                          "cleanup_verified",
+                          "active_hourly_cost_microusd",
+                          "created_at"
+                        ],
+                        "properties": {
+                          "action_id": {
+                            "type": "string"
+                          },
+                          "campaign_id": {
+                            "type": "string"
+                          },
+                          "endpoint_id": {
+                            "type": "string"
+                          },
+                          "desired_state": {
+                            "type": "string"
+                          },
+                          "observed_state": {
+                            "type": "string"
+                          },
+                          "ready_replicas": {
+                            "type": "integer"
+                          },
+                          "cleanup_verified": {
+                            "type": "integer"
+                          },
+                          "active_hourly_cost_microusd": {
+                            "type": "integer"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/profiles": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "profile_id",
+                          "profile_kind",
+                          "name",
+                          "source",
+                          "promotion_state",
+                          "alias",
+                          "created_at"
+                        ],
+                        "properties": {
+                          "profile_id": {
+                            "type": "string"
+                          },
+                          "profile_kind": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "promotion_state": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "alias": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/results": {
+      "get": {
+        "tags": [
+          "results"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "publication_id",
+                          "campaign_id",
+                          "status",
+                          "catalog_digest",
+                          "published_at"
+                        ],
+                        "properties": {
+                          "publication_id": {
+                            "type": "string"
+                          },
+                          "campaign_id": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "catalog_digest": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "published_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "run_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "benchmark": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "harness": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "inference_provider": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "run_outcome": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "quality": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "publication_role": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "task_count": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "scored_task_count": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "strict_pass_count": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "primary_metric": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "name",
+                                  "value",
+                                  "unit"
+                                ],
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "value": {
+                                    "type": "number"
+                                  },
+                                  "unit": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result_path": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items",
+                    "next_cursor"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "type",
+                          "occurred_at",
+                          "data"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "occurred_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "data": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    },
+                    "next_cursor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "system"
+    },
+    {
+      "name": "campaigns"
+    },
+    {
+      "name": "resources"
+    },
+    {
+      "name": "results"
+    },
+    {
+      "name": "audit"
+    },
+    {
+      "name": "auth"
+    }
+  ]
+}

@@ -15,6 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
       - run: python3 scripts/check_public_privacy.py .
         env:
           PUBLIC_PRIVACY_DENYLIST: ${{ secrets.PUBLIC_PRIVACY_DENYLIST }}
@@ -23,9 +27,17 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run ty check
       - run: uv run pytest --cov=src/harbor_hf --cov-fail-under=85
-      - run: npm ci && npm run build
-        working-directory: apps/results-web
-      - run: docker build -f deploy/space/Dockerfile .
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run check:generated
+      - run: npm audit --audit-level=low
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: docker build --platform linux/amd64 -f deploy/control-space/Dockerfile .
       - run: uv run slophammer-py dry .
       - run: uv run pip-audit
       - run: uv run slophammer-py check . --baseline

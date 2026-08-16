@@ -1,0 +1,248 @@
+import { describe, expect, it } from "vitest";
+import {
+  canonicalJson,
+  ContractValidationError,
+  controlRecordPath,
+  deterministicId,
+  sha256,
+  validateCampaignSubmission,
+  validateControlRecord,
+  validateResultCatalog,
+} from "../src/index.js";
+
+describe("canonical contracts", () => {
+  it("encodes objects deterministically", () => {
+    expect(canonicalJson({ z: 1, a: { y: true, b: null } })).toBe(
+      '{"a":{"b":null,"y":true},"z":1}\n',
+    );
+    expect(sha256(canonicalJson({ a: 1, b: 2 }))).toBe(
+      sha256(canonicalJson({ b: 2, a: 1 })),
+    );
+    expect(deterministicId("action", "a", "b")).toBe(
+      deterministicId("action", "a", "b"),
+    );
+  });
+
+  it("rejects unknown durable fields", () => {
+    expect(() =>
+      validateControlRecord({
+        schema_version: "v1",
+        kind: "operator.acl",
+        record_id: "acl-test",
+        created_at: "2026-08-16T00:00:00Z",
+        actor: { subject: "test", role: "operator" },
+        operators: ["test"],
+        readers: [],
+        surprise: true,
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
+  it("keeps profile and action payloads closed", () => {
+    const base = {
+      schema_version: "v1",
+      record_id: "profile-test",
+      created_at: "2026-08-16T00:00:00Z",
+      actor: { subject: "test", role: "service" },
+    };
+    expect(() =>
+      validateControlRecord({
+        ...base,
+        kind: "profile.object",
+        profile_kind: "deployment",
+        name: "test-deployment",
+        spec: {
+          route: "hf_job",
+          models: ["model-one"],
+          harnesses: ["harness-one"],
+          job_image: "worker:latest",
+          job_command: ["true"],
+          hardware: "cpu-basic",
+          timeout_seconds: 300,
+        },
+      }),
+    ).toThrow(ContractValidationError);
+    expect(() =>
+      validateControlRecord({
+        ...base,
+        kind: "action.intent",
+        record_id: "action-test",
+        action_id: "action-test",
+        campaign_id: "campaign-test",
+        action_kind: "job.launch",
+        generation: 0,
+        target: "campaign",
+        payload: { undocumented_provider_option: true },
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
+  it("accepts imported profiles and real benchmark identifiers", () => {
+    const profile = {
+      schema_version: "v1",
+      kind: "profile.object",
+      record_id: "profile-imported-history",
+      created_at: "2026-08-16T00:00:00Z",
+      actor: { subject: "migration", role: "migration" },
+      profile_kind: "deployment",
+      name: "imported-history",
+      spec: {
+        route: "imported",
+        models: ["model-one"],
+        harnesses: ["pi"],
+        source_campaign_ids: ["20260815T000000Z-source"],
+        source_revisions: ["revision-one"],
+      },
+    };
+    expect(validateControlRecord(profile)).toEqual(profile);
+    expect(
+      validateCampaignSubmission({
+        benchmark: "shellbench-structured",
+        model: "model-one",
+        harness: "pi",
+        launch_policy: "one-attempt",
+        ceiling_microusd: 0,
+        confirmed: true,
+      }),
+    ).toMatchObject({ harness: "pi" });
+    expect(
+      validateControlRecord({
+        schema_version: "v1",
+        kind: "campaign.lock",
+        record_id: "lock-real-task-id",
+        created_at: "2026-08-16T00:00:00Z",
+        actor: { subject: "migration", role: "migration" },
+        campaign_id: "campaign-real-task-id",
+        profiles: [
+          {
+            kind: "benchmark",
+            profile_id: `sha256:${"a".repeat(64)}`,
+            name: "shellbench-structured",
+            spec: {
+              benchmark: "shellbench-structured",
+              revision: "revision-one",
+              task_ids: ["003fed-walnut-frame-apology"],
+              task_digests: [`sha256:${"b".repeat(64)}`],
+            },
+          },
+          {
+            kind: "model",
+            profile_id: `sha256:${"c".repeat(64)}`,
+            name: "model-one",
+            spec: { model_id: "example/model", revision: "revision-one" },
+          },
+          {
+            kind: "harness",
+            profile_id: `sha256:${"d".repeat(64)}`,
+            name: "pi",
+            spec: { agent: "pi", revision: "0.84.2", required_evidence: [] },
+          },
+          {
+            kind: "deployment",
+            profile_id: `sha256:${"e".repeat(64)}`,
+            name: "imported-history",
+            spec: profile.spec,
+          },
+          {
+            kind: "launch_policy",
+            profile_id: `sha256:${"f".repeat(64)}`,
+            name: "one-attempt",
+            spec: {
+              max_infrastructure_attempts: 2,
+              reservation_microusd: 0,
+              success_without_worker_receipt: false,
+              publication_role: "final",
+            },
+          },
+        ],
+        tasks: [
+          {
+            task_id: "003fed-walnut-frame-apology",
+            input_digest: `sha256:${"b".repeat(64)}`,
+          },
+        ],
+        ceiling_microusd: 0,
+        source_revision: `sha256:${"0".repeat(64)}`,
+      }),
+    ).toMatchObject({ kind: "campaign.lock" });
+  });
+
+  it("validates result catalog entries", () => {
+    const catalog = {
+      schema_version: "v1",
+      kind: "result.catalog",
+      record_id: "catalog-test",
+      created_at: "2026-08-16T00:00:00Z",
+      source_digest: `sha256:${"a".repeat(64)}`,
+      entries: [
+        {
+          publication_id: "publication-test",
+          campaign_id: "campaign-test",
+          run_id: null,
+          published_at: "2026-08-16T00:00:00Z",
+          benchmark: "benchmark-test",
+          model: "model-test",
+          harness: "harness-test",
+          inference_provider: null,
+          run_outcome: "complete",
+          quality: "clean",
+          publication_role: "final",
+          task_count: 1,
+          scored_task_count: 1,
+          strict_pass_count: 1,
+          primary_metric: { name: "mean_reward", value: 1, unit: "score" },
+          result_path: "results/test.json",
+        },
+      ],
+    };
+    expect(validateResultCatalog(catalog)).toEqual(catalog);
+    expect(() =>
+      validateResultCatalog({
+        ...catalog,
+        entries: [{ ...catalog.entries[0], extra: 1 }],
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
+  it("derives stable Bucket paths", () => {
+    expect(
+      controlRecordPath({
+        kind: "action.intent",
+        record_id: "action-1",
+        campaign_id: "campaign-1",
+        action_id: "action-1",
+      }),
+    ).toBe("control/schema=v1/campaigns/campaign-1/actions/action-1/intent.json");
+    expect(
+      controlRecordPath({
+        kind: "action.advanced",
+        record_id: "advanced-1",
+        campaign_id: "campaign-1",
+        action_id: "action-1",
+      }),
+    ).toBe("control/schema=v1/campaigns/campaign-1/actions/action-1/zz-advanced.json");
+  });
+
+  it("validates campaign submission boundaries", () => {
+    expect(
+      validateCampaignSubmission({
+        benchmark: "control-smoke",
+        model: "control-smoke",
+        harness: "control-smoke",
+        launch_policy: "control-smoke",
+        ceiling_microusd: 0,
+        confirmed: true,
+      }),
+    ).toMatchObject({ confirmed: true });
+    expect(() =>
+      validateCampaignSubmission({
+        benchmark: "x",
+        model: "x",
+        harness: "x",
+        launch_policy: "x",
+        ceiling_microusd: -1,
+        confirmed: false,
+      }),
+    ).toThrow(ContractValidationError);
+  });
+});

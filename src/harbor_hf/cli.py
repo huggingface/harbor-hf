@@ -2,1430 +2,235 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
-import tempfile
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import Annotated, Literal, Never, cast
+from typing import Annotated, NoReturn
 from uuid import uuid4
 
+import httpx
 import typer
-from httpx import HTTPError
-from huggingface_hub import HfApi, get_token
-
-from harbor_hf import credentials
-from harbor_hf.automation import (
-    AutomationError,
-    AutomationRequest,
-    automation_plan,
-    install_automation,
-)
-from harbor_hf.benchmark_bundle import (
-    PreparedBenchmarkBundle,
-    benchmark_bundle_json_schema,
-)
-from harbor_hf.benchmark_source import (
-    resolve_benchmark_source,
-    resolved_experiment,
-    source_lock_bytes,
-    source_lock_digest,
-    source_lock_json_schema,
-)
-from harbor_hf.benchmark_staging import (
-    BenchmarkBundleReceipt,
-    benchmark_bundle_receipt,
-)
-from harbor_hf.bucket_evidence import (
-    BucketEvidenceError,
-    HubBucketEvidenceReader,
-    HubBucketEvidenceWriter,
-)
-from harbor_hf.campaign_apply import (
-    CampaignApplyError,
-    hugging_face_campaign_reconciler,
-)
-from harbor_hf.campaign_controller import (
-    CampaignControllerError,
-    run_campaign_controller,
-)
-from harbor_hf.campaign_finalizer import CampaignFinalizationError
-from harbor_hf.campaign_input import campaign_input_json_schema, write_campaign_input
-from harbor_hf.campaign_observer import CampaignObservationError
-from harbor_hf.campaign_watchdog import (
-    CampaignWatchdogError,
-    run_campaign_watchdog,
-)
-from harbor_hf.campaigns import (
-    CampaignLock,
-    build_campaign_lock,
-    build_campaign_plan,
-    campaign_json_schemas,
-    new_campaign_id,
-)
-from harbor_hf.catalog_cutover import (
-    CatalogCutoverError,
-    CatalogCutoverPlan,
-    CutoverDatasetApi,
-    HubCatalogCutover,
-)
-from harbor_hf.config import harbor_hf_config_json_schema
-from harbor_hf.control import (
-    CampaignConflict,
-    CampaignEvent,
-    CampaignSubmittedPayload,
-    ControlError,
-    HubCampaignStore,
-    new_event,
-)
-from harbor_hf.controller_status import (
-    ControllerStatusError,
-    HubControllerStateStore,
-    controller_json_schemas,
-)
-from harbor_hf.coordination import CoordinationError, HubClaimStore
-from harbor_hf.io import ManifestError, load_experiment
-from harbor_hf.models import BundleBenchmarkSource, ExperimentSpec
-from harbor_hf.operations import (
-    AutomaticCampaignPublisher,
-    DatasetRepositoryApi,
-    cancel_campaign,
-    publish_campaign_results,
-    resume_campaign,
-    retry_campaign_shard,
-    seal_partial_campaign_runs,
-    verify_campaign_artifacts,
-)
-from harbor_hf.planner import build_plan, experiment_digest
-from harbor_hf.process import ProcessError, SubprocessRunner
-from harbor_hf.profile_preflight import preflight_profile_plan
-from harbor_hf.profile_submission import (
-    ProfileSubmission,
-    build_profile_submit_command,
-    submit_profile,
-)
-from harbor_hf.profile_worker import ProfileWorkerError, run_profile_worker
-from harbor_hf.profile_worker_transport import ProfileTransportError
-from harbor_hf.profiling import (
-    ProfilePlan,
-    build_profile_plan,
-    load_serving_profile,
-    select_profile,
-)
-from harbor_hf.publication_correction import (
-    load_publication_correction_bytes,
-    publication_correction_digest,
-)
-from harbor_hf.reconciler import AdmissionLimits, ReconcileContext, plan_reconciliation
-from harbor_hf.recovery import project_recovery
-from harbor_hf.result_publisher import (
-    DatasetApi,
-    DatasetPublicationError,
-    HubDatasetPublisher,
-)
-from harbor_hf.results import CatalogDecision, ResultPublicationError
-from harbor_hf.runs import RunLock, build_run_lock
-from harbor_hf.submission import (
-    BucketApi,
-    CampaignControllerSubmission,
-    ControllerJobsApi,
-    Submission,
-    build_submit_campaign_controller_command,
-    build_submit_command,
-    campaign_job_secret_names,
-    ensure_private_coordination_repository,
-    ensure_private_job_input_bucket,
-    prepare_benchmark_bundle_input,
-    require_campaign_job_secret_sources,
-    require_private_bucket,
-    submit_campaign_controller,
-)
-from harbor_hf.submission import submit as submit_job
-from harbor_hf.trial_evidence import (
-    restore_workspace,
-    verify_trial_evidence,
-)
-from harbor_hf.wave_worker import run_standalone_wave_worker
-from harbor_hf.worker import WorkerError, run_endpoint_watchdog, run_worker
+from huggingface_hub import get_token
 
 app = typer.Typer(
     no_args_is_help=True,
-    help="Plan and run Harbor benchmarks on Hugging Face infrastructure.",
+    help="Operate Harbor-HF through the TypeScript control service.",
 )
-campaign_app = typer.Typer(no_args_is_help=True, help="Plan and run campaigns.")
-artifacts_app = typer.Typer(no_args_is_help=True, help="Inspect campaign evidence.")
-results_app = typer.Typer(no_args_is_help=True, help="Publish campaign results.")
-automation_app = typer.Typer(
-    no_args_is_help=True, help="Install campaign controller recovery automation."
-)
-profile_app = typer.Typer(no_args_is_help=True, help="Profile serving deployments.")
-auth_app = typer.Typer(
-    no_args_is_help=True, help="Store and select credentials for remote Jobs."
-)
+campaign_app = typer.Typer(no_args_is_help=True, help="Submit and inspect campaigns.")
 app.add_typer(campaign_app, name="campaign")
-app.add_typer(artifacts_app, name="artifacts")
-app.add_typer(results_app, name="results")
-app.add_typer(automation_app, name="automation")
-app.add_typer(profile_app, name="profile")
-app.add_typer(auth_app, name="auth")
-
-_OPERATION_ERRORS = (
-    HTTPError,
-    OSError,
-    ValueError,
-    AutomationError,
-    CampaignApplyError,
-    CampaignFinalizationError,
-    CampaignObservationError,
-    BucketEvidenceError,
-    ControlError,
-    CoordinationError,
-    DatasetPublicationError,
-    ResultPublicationError,
-    CatalogCutoverError,
-    ProfileWorkerError,
-    ProfileTransportError,
-    ProcessError,
-    CampaignControllerError,
-    CampaignWatchdogError,
-    ControllerStatusError,
-)
 
 
-def _echo_json(value: object) -> None:
+def _base_url() -> str:
+    value = os.environ.get("HARBOR_HF_CONTROL_URL", "").rstrip("/")
+    if not value:
+        raise typer.BadParameter(
+            "set HARBOR_HF_CONTROL_URL to the private control Space URL"
+        )
+    if not value.startswith("https://") and not value.startswith("http://127.0.0.1"):
+        raise typer.BadParameter("the control URL must use HTTPS")
+    return value
+
+
+def _headers(*, idempotency_key: str | None = None) -> dict[str, str]:
+    token = get_token()
+    if not token:
+        raise typer.BadParameter(
+            "log in with the Hugging Face CLI before using the control API"
+        )
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
+    return headers
+
+
+def _fail(message: str, code: int = 1) -> NoReturn:
+    typer.echo(json.dumps({"error": message}, sort_keys=True), err=True)
+    raise typer.Exit(code)
+
+
+def _request(
+    method: str,
+    path: str,
+    *,
+    payload: dict[str, object] | None = None,
+    idempotency_key: str | None = None,
+) -> object:
+    try:
+        response = httpx.request(
+            method,
+            f"{_base_url()}{path}",
+            headers=_headers(idempotency_key=idempotency_key),
+            json=payload,
+            timeout=30,
+            follow_redirects=False,
+        )
+    except (httpx.HTTPError, ValueError) as error:
+        _fail(f"control API request failed: {type(error).__name__}")
+    if response.status_code >= 400:
+        try:
+            body = response.json()
+            message = body.get("error", {}).get("message", "request rejected")
+        except (TypeError, ValueError):
+            message = "request rejected"
+        _fail(f"control API returned {response.status_code}: {message}")
+    if response.status_code == 204:
+        return {}
+    return response.json()
+
+
+def _echo(value: object) -> None:
     typer.echo(json.dumps(value, indent=2, sort_keys=True))
 
 
-def _exit_operation(error: Exception) -> Never:
-    typer.echo(f"Error: {error}", err=True)
-    raise typer.Exit(code=1) from error
+@app.command("status")
+def status() -> None:
+    """Show control-service readiness and write mode."""
+    _echo(_request("GET", "/api/v1/system"))
 
 
-def _load_or_exit(path: Path) -> ExperimentSpec:
-    try:
-        return load_experiment(path)
-    except ManifestError as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=2) from error
+@campaign_app.command("list")
+def campaign_list() -> None:
+    """List campaigns from the control service."""
+    _echo(_request("GET", "/api/v1/campaigns"))
 
 
-def _load_profile_plan(path: Path) -> ProfilePlan:
-    try:
-        return ProfilePlan.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=2) from error
-
-
-@auth_app.command("schema")
-def auth_schema(
-    output: Annotated[Path | None, typer.Option("--output", dir_okay=False)] = None,
-) -> None:
-    """Export the secret-free local config JSON Schema."""
-    rendered = (
-        json.dumps(harbor_hf_config_json_schema(), indent=2, sort_keys=True) + "\n"
-    )
-    if output is None:
-        typer.echo(rendered, nl=False)
-        return
-    output.write_text(rendered, encoding="utf-8")
-
-
-@auth_app.command("tokens")
-def auth_tokens() -> None:
-    """List Harbor HF token names without showing their values."""
-    try:
-        available = credentials.stored_job_hf_tokens()
-        status = credentials.job_hf_token_status()
-    except (OSError, ValueError) as error:
-        _exit_operation(error)
-    selected = status["selected_token_name"]
-    _echo_json(
-        {
-            "config_path": status["config_path"],
-            "token_store_path": status["token_store_path"],
-            "tokens": [
-                {"name": name, "selected": name == selected}
-                for name in sorted(available)
-            ],
-        }
-    )
-
-
-@auth_app.command("add-job-token")
-def auth_add_job_token(
-    token_name: Annotated[str, typer.Argument()],
-    force: Annotated[
-        bool,
-        typer.Option("--force", help="Replace an existing token with this name."),
-    ] = False,
-    yes: Annotated[
-        bool,
-        typer.Option(
-            "--yes",
-            help="Approve local storage and reuse as remote secret HF_TOKEN.",
-        ),
-    ] = False,
-) -> None:
-    """Store, verify, and select one fine-grained token."""
-    try:
-        available = credentials.stored_job_hf_tokens()
-        if token_name in available and not force:
-            raise ValueError(
-                f"Harbor HF token {token_name!r} is already saved; "
-                "pass --force to replace it"
-            )
-        if not yes:
-            typer.confirm(
-                f"Store token {token_name!r} in Harbor HF's local token store "
-                "and use it as secret HF_TOKEN on future Harbor HF Jobs?",
-                abort=True,
-            )
-        token = typer.prompt("Hugging Face token", hide_input=True)
-        _config, identity, store_path = credentials.add_job_hf_token(
-            token_name, token, replace=force
-        )
-        status = credentials.job_hf_token_status()
-    except (HTTPError, OSError, ValueError) as error:
-        _exit_operation(error)
-    _echo_json(
-        {
-            "config_path": status["config_path"],
-            "environment_override": status["environment_override"],
-            "owner": identity["owner"],
-            "role": identity["role"],
-            "selected_token_name": token_name,
-            "remote_job_secret_name": "HF_TOKEN",
-            "token_store_path": str(store_path),
-            "token_value_stored_in_config": False,
-            "token_value_stored_in_harbor_token_store": True,
-        }
-    )
-
-
-@auth_app.command("use-job-token")
-def auth_use_job_token(
-    token_name: Annotated[str, typer.Argument()],
-    yes: Annotated[
-        bool,
-        typer.Option(
-            "--yes",
-            help="Approve reuse as HF_TOKEN on future Harbor HF Jobs.",
-        ),
-    ] = False,
-) -> None:
-    """Select and verify a token already saved by Harbor HF."""
-    try:
-        available = credentials.stored_job_hf_tokens()
-        if token_name not in available:
-            raise ValueError(
-                f"Harbor HF token {token_name!r} is not saved; run "
-                "`harbor-hf auth add-job-token TOKEN_NAME`"
-            )
-        if not yes:
-            typer.confirm(
-                f"Use Harbor HF token {token_name!r} as secret HF_TOKEN on future "
-                "Harbor HF Jobs?",
-                abort=True,
-            )
-        _config, identity = credentials.select_job_hf_token(token_name)
-        status = credentials.job_hf_token_status()
-    except (HTTPError, OSError, ValueError) as error:
-        _exit_operation(error)
-    _echo_json(
-        {
-            "config_path": status["config_path"],
-            "environment_override": status["environment_override"],
-            "owner": identity["owner"],
-            "role": identity["role"],
-            "selected_token_name": token_name,
-            "remote_job_secret_name": "HF_TOKEN",
-            "token_store_path": status["token_store_path"],
-            "token_value_stored_in_config": False,
-            "token_value_stored_in_harbor_token_store": True,
-        }
-    )
-
-
-@auth_app.command("remove-job-token")
-def auth_remove_job_token(
-    token_name: Annotated[str, typer.Argument()],
-    yes: Annotated[
-        bool,
-        typer.Option("--yes", help="Confirm removal from the local token store."),
-    ] = False,
-) -> None:
-    """Remove one token and clear its selection if necessary."""
-    try:
-        if not yes:
-            typer.confirm(
-                f"Remove token {token_name!r} from Harbor HF's local token store?",
-                abort=True,
-            )
-        store_path, cleared_selection = credentials.remove_job_hf_token(token_name)
-        status = credentials.job_hf_token_status()
-    except (OSError, ValueError) as error:
-        _exit_operation(error)
-    _echo_json(
-        {
-            **status,
-            "cleared_selection": cleared_selection,
-            "removed_token_name": token_name,
-            "token_store_path": str(store_path),
-        }
-    )
-
-
-@auth_app.command("status")
-def auth_status() -> None:
-    """Show the selected token name and whether it is still available."""
-    try:
-        status = credentials.job_hf_token_status()
-    except (OSError, ValueError) as error:
-        _exit_operation(error)
-    _echo_json(status)
-
-
-@auth_app.command("clear-job-token")
-def auth_clear_job_token() -> None:
-    """Clear the selection without deleting the saved Harbor HF token."""
-    try:
-        credentials.clear_job_hf_token()
-        status = credentials.job_hf_token_status()
-    except (OSError, ValueError) as error:
-        _exit_operation(error)
-    _echo_json(status)
-
-
-@profile_app.command("plan")
-def profile_plan(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    output: Annotated[Path, typer.Option("--output", dir_okay=False)],
-    profile_id: Annotated[str, typer.Option("--profile-id")],
-    max_spend_usd: Annotated[str, typer.Option("--max-spend-usd")],
-    estimated_profile_cost_usd: Annotated[
-        str | None, typer.Option("--estimated-profile-cost-usd")
-    ] = None,
-    timeout_seconds: Annotated[int, typer.Option("--timeout-seconds", min=1)] = 3600,
-    concurrency: Annotated[
-        list[int] | None, typer.Option("--concurrency", min=1)
-    ] = None,
-) -> None:
-    """Resolve one deterministic serving profile without remote work."""
-    try:
-        resolved = build_profile_plan(
-            _load_or_exit(manifest),
-            profile_id=profile_id,
-            candidate_concurrency=concurrency or [1, 2, 4, 8, 16, 32, 64],
-            max_spend_usd=max_spend_usd,
-            profile_timeout_seconds=timeout_seconds,
-            estimated_profile_cost_usd=estimated_profile_cost_usd,
-        )
-        output.write_text(
-            json.dumps(resolved.model_dump(mode="json"), indent=2, sort_keys=True)
-            + "\n",
-            encoding="utf-8",
-        )
-    except (OSError, ValueError) as error:
-        _exit_operation(error)
-    _echo_json(
-        {
-            "profile_id": resolved.profile_id,
-            "plan_sha256": resolved.plan_sha256,
-            "output": str(output),
-            "remote_work": False,
-        }
-    )
-
-
-@profile_app.command("preflight")
-def profile_preflight(
-    plan: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-) -> None:
-    """Verify quota, price, routing, revision, and private storage."""
-    try:
-        report = preflight_profile_plan(_load_profile_plan(plan))
-    except (HTTPError, OSError, ValueError) as error:
-        _exit_operation(error)
-    _echo_json(report.model_dump(mode="json"))
-
-
-@profile_app.command("run")
-def profile_run(
-    plan: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-) -> None:
-    """Submit a remote-only serving profile Job."""
-    resolved = _load_profile_plan(plan)
-    try:
-        if dry_run:
-            command = build_profile_submit_command(
-                resolved,
-                input_dir="hf://buckets/NAMESPACE/jobs-artifacts/DRY-RUN",
-                bucket=resolved.artifacts.bucket,
-            )
-            result = ProfileSubmission(
-                profile_id=resolved.profile_id,
-                artifact_prefix=resolved.artifacts.prefix,
-                job_id=None,
-                command=command,
-            )
-        else:
-            preflight_profile_plan(resolved)
-            result = submit_profile(resolved)
-    except (HTTPError, OSError, ProcessError, ValueError) as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@profile_app.command("select")
-def profile_select(
-    profile: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    output: Annotated[Path, typer.Option("--output", dir_okay=False)],
-) -> None:
-    """Validate immutable point evidence and select the winning concurrency."""
-    try:
-        selected = select_profile(load_serving_profile(profile))
-        output.write_text(
-            json.dumps(selected.model_dump(mode="json"), indent=2, sort_keys=True)
-            + "\n",
-            encoding="utf-8",
-        )
-    except (OSError, ValueError) as error:
-        _exit_operation(error)
-    assert selected.selection is not None
-    _echo_json(selected.selection.model_dump(mode="json"))
-
-
-@app.command()
-def validate(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-) -> None:
-    """Validate an experiment manifest."""
-    spec = _load_or_exit(manifest)
-    plan = build_plan(spec)
-    typer.echo(f"Valid {spec.kind}: {spec.metadata.name} ({plan.spec_digest})")
-
-
-@app.command()
-def plan(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-) -> None:
-    """Resolve an experiment matrix without creating remote resources."""
-    experiment_plan = build_plan(_load_or_exit(manifest))
-    typer.echo(json.dumps(experiment_plan.model_dump(mode="json"), indent=2))
-
-
-@campaign_app.command("plan")
-def campaign_plan(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    output_format: Annotated[
-        Literal["json", "text"], typer.Option("--format")
-    ] = "text",
-) -> None:
-    """Resolve an immutable campaign without creating remote resources."""
-    try:
-        spec = _load_or_exit(manifest)
-        with tempfile.TemporaryDirectory(prefix="harbor-hf-source-plan-") as name:
-            source = resolve_benchmark_source(spec, manifest, Path(name))
-            resolved = build_campaign_plan(spec, source_lock=source.lock)
-    except ValueError as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=2) from error
-    if output_format == "json":
-        typer.echo(
-            json.dumps(resolved.model_dump(mode="json"), indent=2, sort_keys=True)
-        )
-        return
-    typer.echo(f"Campaign plan: {resolved.experiment}")
-    typer.echo(f"Plan digest: {resolved.plan_digest}")
-    typer.echo(f"Source lock digest: {source_lock_digest(resolved.source_lock)}")
-    typer.echo(f"Source type: {resolved.source_lock.source.type}")
-    if source.bundle is not None:
-        namespace = (
-            spec.remote.job.namespace if spec.remote is not None else "NAMESPACE"
-        )
-        bundle = benchmark_bundle_receipt(source.bundle, namespace, "planned")
-        typer.echo(f"Source content digest: {bundle.content_digest}")
-        typer.echo(f"Bundle files: {bundle.file_count}")
-        typer.echo(f"Bundle bytes: {bundle.total_bytes}")
-        typer.echo(f"Bundle destination: {bundle.uri}")
-        typer.echo("Existing remote bundle inspected: no")
-    typer.echo(f"Runs: {resolved.run_count}")
-    typer.echo(f"Shards: {resolved.shard_count}")
-    typer.echo(f"Trials: {resolved.trial_count}")
-
-
-@campaign_app.command("schema")
-def campaign_schema(
-    output: Annotated[Path | None, typer.Option("--output", dir_okay=False)] = None,
-) -> None:
-    """Export the campaign plan and lock JSON Schemas."""
-    schemas = {
-        **campaign_json_schemas(),
-        "campaign_input": campaign_input_json_schema(),
-        "benchmark_source_lock": source_lock_json_schema(),
-        "benchmark_bundle": benchmark_bundle_json_schema(),
-        **controller_json_schemas(),
-    }
-    rendered = json.dumps(schemas, indent=2, sort_keys=True) + "\n"
-    if output is None:
-        typer.echo(rendered, nl=False)
-        return
-    output.write_text(rendered, encoding="utf-8")
+@campaign_app.command("status")
+def campaign_status(campaign_id: Annotated[str, typer.Argument()]) -> None:
+    """Show one campaign."""
+    _echo(_request("GET", f"/api/v1/campaigns/{campaign_id}"))
 
 
 @campaign_app.command("submit")
 def campaign_submit(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    campaign_id: Annotated[str | None, typer.Option("--campaign-id")] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    benchmark: Annotated[str, typer.Option("--benchmark")],
+    model: Annotated[str, typer.Option("--model")],
+    harness: Annotated[str, typer.Option("--harness")],
+    ceiling_microusd: Annotated[int, typer.Option("--ceiling-microusd", min=0)],
+    deployment: Annotated[str | None, typer.Option("--deployment")] = None,
+    launch_policy: Annotated[str, typer.Option("--launch-policy")] = "default",
+    idempotency_key: Annotated[str | None, typer.Option("--idempotency-key")] = None,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", help="Confirm the resolved launch and cost ceiling."),
+    ] = False,
 ) -> None:
-    """Create an immutable campaign and launch its provider controller."""
-    spec = _load_or_exit(manifest)
-    try:
-        if spec.remote is None:
-            raise ValueError("campaign submission requires a remote configuration")
-        if spec.publishing.index_dataset is None:
-            raise ValueError("campaign submission requires publishing.index_dataset")
-        with tempfile.TemporaryDirectory(prefix="harbor-hf-source-submit-") as name:
-            source = resolve_benchmark_source(spec, manifest, Path(name))
-            resolved = build_campaign_plan(spec, source_lock=source.lock)
-            resolved_id = campaign_id or new_campaign_id(resolved)
-            lock = build_campaign_lock(resolved, resolved_id)
-            submitted = new_event(
-                subject_type="campaign",
-                subject_id=resolved_id,
-                kind="campaign.submitted",
-                producer="cli",
-                payload=CampaignSubmittedPayload(plan_digest=resolved.plan_digest),
-            )
-            request = manifest.read_bytes()
-            result = _submit_campaign(
-                spec,
-                lock,
-                request,
-                submitted,
-                bundle=source.bundle,
-                dry_run=dry_run,
-            )
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result)
+    """Submit profile references and return the durable campaign ID."""
+    if not yes:
+        typer.confirm(
+            f"Launch {benchmark} with {model} through {harness}, "
+            f"with a ceiling of {ceiling_microusd} micro-USD?",
+            abort=True,
+        )
+    key = idempotency_key or str(uuid4())
+    if not idempotency_key:
+        typer.echo(json.dumps({"idempotency_key": key}), err=True)
+    payload: dict[str, object] = {
+        "benchmark": benchmark,
+        "model": model,
+        "harness": harness,
+        "deployment": deployment,
+        "launch_policy": launch_policy,
+        "ceiling_microusd": ceiling_microusd,
+        "confirmed": True,
+    }
+    _echo(_request("POST", "/api/v1/campaigns", payload=payload, idempotency_key=key))
 
 
-def _submit_campaign(
-    spec: ExperimentSpec,
-    lock: CampaignLock,
-    request: bytes,
-    submitted: CampaignEvent,
+def _campaign_action(
+    campaign_id: str,
+    action: str,
     *,
-    dry_run: bool,
-    bundle: PreparedBenchmarkBundle | None = None,
-) -> dict[str, object]:
-    if spec.remote is None:
-        raise ValueError("campaign submission requires remote execution")
-    if dry_run:
-        return _campaign_submission_dry_run(spec, lock, request, bundle)
-
-    if lock.controller_policy is not None:
-        require_campaign_job_secret_sources(spec)
-    token, api, bundle_receipt = _prepare_campaign_source(spec, lock, bundle)
-    _create_or_adopt_campaign(spec, lock, request, submitted)
-    if lock.controller_policy is None:
-        return {
-            "campaign_id": lock.campaign_id,
-            "plan_digest": lock.plan_digest,
-            "artifact_prefix": lock.artifact_prefix,
-            "source_lock_digest": source_lock_digest(lock.source_lock),
-            "bundle": (
-                bundle_receipt.model_dump(mode="json")
-                if bundle_receipt is not None
-                else None
-            ),
-            "stored": True,
-        }
-    return _launch_campaign_controller(spec, lock, request, token, api, bundle_receipt)
-
-
-def _launch_campaign_controller(
-    spec: ExperimentSpec,
-    lock: CampaignLock,
-    request: bytes,
-    token: str | None,
-    api: HfApi | None,
-    bundle_receipt: BenchmarkBundleReceipt | None,
-) -> dict[str, object]:
-    assert spec.remote is not None
-    selected_token = token or get_token()
-    if selected_token is None:
-        raise ValueError("campaign controller submission requires HF authentication")
-    selected_api = api or HfApi(token=selected_token)
-    result = submit_campaign_controller(
-        lock,
-        spec,
-        request=request,
-        bucket=spec.artifacts.bucket,
-        runner=SubprocessRunner(),
-        bucket_api=cast(BucketApi, selected_api),
-        jobs_api=cast(ControllerJobsApi, selected_api),
-        state_store=HubControllerStateStore(
-            spec.remote.job.namespace,
-            selected_token,
-        ),
-        bundle=None,
-    )
-    if bundle_receipt is not None:
-        result = result.model_copy(update={"bundle": bundle_receipt})
-    return result.model_dump(mode="json")
-
-
-def _prepare_campaign_source(
-    spec: ExperimentSpec,
-    lock: CampaignLock,
-    bundle: PreparedBenchmarkBundle | None,
-) -> tuple[str | None, HfApi | None, BenchmarkBundleReceipt | None]:
-    assert spec.remote is not None
-    if not isinstance(lock.source_lock.source, BundleBenchmarkSource):
-        ensure_private_coordination_repository(spec.remote.job.namespace)
-        return None, None, None
-    token = get_token()
-    if token is None:
-        raise ValueError("benchmark bundle staging requires HF authentication")
-    api = HfApi(token=token)
-    bucket_api = cast(BucketApi, api)
-    ensure_private_coordination_repository(spec.remote.job.namespace, api=bucket_api)
-    input_bucket = ensure_private_job_input_bucket(
-        spec.remote.job.namespace, api=bucket_api
-    )
-    require_private_bucket(spec.artifacts.bucket, api=bucket_api)
-    receipt = prepare_benchmark_bundle_input(
-        lock.source_lock.source,
-        bundle=bundle,
-        namespace=spec.remote.job.namespace,
-        bucket=input_bucket,
-        api=bucket_api,
-    )
-    return token, api, receipt
-
-
-def _create_or_adopt_campaign(
-    spec: ExperimentSpec,
-    lock: CampaignLock,
-    request: bytes,
-    submitted: CampaignEvent,
+    task_id: str | None = None,
+    reason: str | None = None,
+    yes: bool,
 ) -> None:
-    assert spec.remote is not None
-    store = HubCampaignStore(spec.remote.job.namespace)
-    try:
-        store.create_campaign(lock, request, submitted)
-    except CampaignConflict:
-        observed_lock, observed_events = store.load_campaign(lock.campaign_id)
-        if (
-            observed_lock != lock
-            or store.load_request(lock.campaign_id) != request
-            or submitted not in observed_events
-        ):
-            raise
-
-
-def _campaign_submission_dry_run(
-    spec: ExperimentSpec,
-    lock: CampaignLock,
-    request: bytes,
-    bundle: PreparedBenchmarkBundle | None,
-) -> dict[str, object]:
-    if spec.remote is None:
-        raise ValueError("campaign submission requires remote execution")
-    if lock.controller_policy is None:
-        return {
-            "campaign_id": lock.campaign_id,
-            "plan_digest": lock.plan_digest,
-            "artifact_prefix": lock.artifact_prefix,
-            "source_lock": lock.source_lock.model_dump(mode="json"),
-            "source_lock_digest": source_lock_digest(lock.source_lock),
-            "secret_names": campaign_job_secret_names(spec),
-            "bundle": (
-                benchmark_bundle_receipt(
-                    bundle, spec.remote.job.namespace, "planned"
-                ).model_dump(mode="json")
-                if bundle is not None
-                else None
-            ),
-            "stored": False,
-        }
-    with tempfile.TemporaryDirectory(prefix="harbor-hf-campaign-dry-run-") as name:
-        input_manifest = write_campaign_input(Path(name), request=request, lock=lock)
-    command = build_submit_campaign_controller_command(
-        lock,
-        spec,
-        input_dir="hf://buckets/DRY_RUN/content-addressed-input",
-        bucket=spec.artifacts.bucket,
-        attempt=1,
-    )
-    return CampaignControllerSubmission(
-        campaign_id=lock.campaign_id,
-        plan_digest=lock.plan_digest,
-        input_digest=input_manifest.input_digest,
-        input_uri="hf://buckets/DRY_RUN/content-addressed-input",
-        job_id=None,
-        attempt=1,
-        launch_receipt=f"campaigns/{lock.campaign_id}/controller-attempts/1.json",
-        source_lock=lock.source_lock,
-        source_lock_digest=source_lock_digest(lock.source_lock),
-        secret_names=campaign_job_secret_names(spec),
-        bundle=(
-            benchmark_bundle_receipt(bundle, spec.remote.job.namespace, "planned")
-            if bundle is not None
-            else None
-        ),
-        command=command,
-    ).model_dump(mode="json")
-
-
-@campaign_app.command("status")
-def campaign_status(
-    campaign_id: Annotated[str, typer.Argument()],
-    namespace: Annotated[str, typer.Option("--namespace")],
-) -> None:
-    """Read the durable projection of one campaign."""
-    try:
-        lock, events = HubCampaignStore(namespace).load_campaign(campaign_id)
-        projection = project_recovery(lock, events)
-        controller = None
-        if lock.controller_policy is not None:
-            token = get_token()
-            if token is None:
-                raise ValueError(
-                    "campaign controller status requires HF authentication"
-                )
-            controller = HubControllerStateStore(namespace, token).read_status(
-                campaign_id
-            )
-    except (
-        HTTPError,
-        OSError,
-        ValueError,
-        ControlError,
-        ControllerStatusError,
-    ) as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=1) from error
-    payload = projection.model_dump(mode="json")
-    payload["status"] = projection.status
-    payload["controller"] = (
-        controller.model_dump(mode="json") if controller is not None else None
-    )
-    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
-
-
-@campaign_app.command("reconcile")
-def campaign_reconcile(
-    campaign_id: Annotated[str, typer.Argument()],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    apply: Annotated[bool, typer.Option("--apply")] = False,
-) -> None:
-    """Plan the next idempotent campaign actions."""
-    if dry_run == apply:
-        typer.echo("Error: choose exactly one of --dry-run or --apply", err=True)
-        raise typer.Exit(code=2)
-    try:
-        if apply:
-            lock, _events = HubCampaignStore(namespace).load_campaign(campaign_id)
-            if _is_provider_campaign(lock):
-                raise ValueError(
-                    "provider campaigns are applied only by their owning controller"
-                )
-            with hugging_face_campaign_reconciler(namespace) as reconciler:
-                result = reconciler.apply_campaign(campaign_id)
-        else:
-            lock, events = HubCampaignStore(namespace).load_campaign(campaign_id)
-            _projection, result = plan_reconciliation(lock, events)
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@campaign_app.command("reconcile-all")
-def campaign_reconcile_all(
-    namespace: Annotated[str, typer.Option("--namespace")],
-    apply: Annotated[bool, typer.Option("--apply")] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    campaign_ids: Annotated[list[str] | None, typer.Option("--campaign-id")] = None,
-    provider_active_waves: Annotated[
-        int | None, typer.Option("--provider-active-waves", min=1)
-    ] = None,
-) -> None:
-    """Reconcile every campaign in the namespace once."""
-    if dry_run == apply:
-        typer.echo("Error: choose exactly one of --dry-run or --apply", err=True)
-        raise typer.Exit(code=2)
-    context = ReconcileContext(
-        limits=AdmissionLimits(
-            provider_active_waves=(
-                provider_active_waves
-                if provider_active_waves is not None
-                else AdmissionLimits().provider_active_waves
-            )
+    if not yes:
+        typer.confirm(f"Apply {action} to {campaign_id}?", abort=True)
+    key = str(uuid4())
+    typer.echo(json.dumps({"idempotency_key": key}), err=True)
+    _echo(
+        _request(
+            "POST",
+            f"/api/v1/campaigns/{campaign_id}/actions",
+            payload={
+                "action": action,
+                "task_id": task_id,
+                "reason": reason,
+                "confirmed": True,
+            },
+            idempotency_key=key,
         )
     )
-    try:
-        if apply:
-            store = HubCampaignStore(namespace)
-            selected_ids = campaign_ids or store.list_campaigns()
-            if any(
-                _is_provider_campaign(store.load_campaign(campaign_id)[0])
-                for campaign_id in selected_ids
-            ):
-                raise ValueError(
-                    "provider campaigns are applied only by their owning controllers"
-                )
-            with hugging_face_campaign_reconciler(namespace, store=store) as reconciler:
-                results = reconciler.apply_all(
-                    context=context,
-                    campaign_ids=selected_ids,
-                )
-        else:
-            store = HubCampaignStore(namespace)
-            results = [
-                plan_reconciliation(*store.load_campaign(campaign_id), context=context)[
-                    1
-                ]
-                for campaign_id in (
-                    list(dict.fromkeys(campaign_ids))
-                    if campaign_ids is not None
-                    else store.list_campaigns()
-                )
-            ]
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json([result.model_dump(mode="json") for result in results])
-
-
-@campaign_app.command("watchdog")
-def campaign_watchdog(
-    namespace: Annotated[str, typer.Option("--namespace")],
-    campaign_ids: Annotated[list[str], typer.Option("--campaign-id")],
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-) -> None:
-    """Recover approved campaigns whose controller Job ended unexpectedly."""
-    try:
-        if not campaign_ids:
-            raise ValueError("campaign watchdog requires at least one campaign ID")
-        token = get_token()
-        if token is None:
-            raise ValueError("campaign watchdog requires HF authentication")
-        api = HfApi(token=token)
-        store = HubCampaignStore(namespace)
-        state_store = HubControllerStateStore(namespace, token)
-        results = [
-            run_campaign_watchdog(
-                campaign_id,
-                store=store,
-                state_store=state_store,
-                jobs_api=cast(ControllerJobsApi, api),
-                runner=SubprocessRunner(),
-                dry_run=dry_run,
-            )
-            for campaign_id in dict.fromkeys(campaign_ids)
-        ]
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json([result.model_dump(mode="json") for result in results])
-
-
-def _is_provider_campaign(lock: CampaignLock) -> bool:
-    return any(run.provider is not None for run in lock.runs)
 
 
 @campaign_app.command("cancel")
 def campaign_cancel(
     campaign_id: Annotated[str, typer.Argument()],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    reason: Annotated[str, typer.Option("--reason")] = "operator request",
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
+    reason: Annotated[str | None, typer.Option("--reason")] = None,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
 ) -> None:
-    """Record one durable campaign cancellation request."""
-    del output_format
-    try:
-        result = cancel_campaign(
-            HubCampaignStore(namespace),
-            campaign_id,
-            reason=reason,
-            dry_run=dry_run,
-        )
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
+    """Cancel open logical tasks without deleting evidence."""
+    _campaign_action(campaign_id, "cancel", reason=reason, yes=yes)
 
 
-@campaign_app.command("retry")
-def campaign_retry(
+@campaign_app.command("retry-infrastructure")
+def campaign_retry_infrastructure(
     campaign_id: Annotated[str, typer.Argument()],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    shard_id: Annotated[str, typer.Option("--shard")],
-    reason: Annotated[str, typer.Option("--reason")] = "operator retry request",
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
+    task_id: Annotated[str, typer.Option("--task")],
+    reason: Annotated[str | None, typer.Option("--reason")] = None,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
 ) -> None:
-    """Request an immediate retry for retryable trials in one shard."""
-    del output_format
-    try:
-        result = retry_campaign_shard(
-            HubCampaignStore(namespace),
-            campaign_id,
-            shard_id=shard_id,
-            reason=reason,
-            dry_run=dry_run,
-        )
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@campaign_app.command("seal")
-def campaign_seal(
-    campaign_id: Annotated[str, typer.Argument()],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
-) -> None:
-    """Seal failed retries in a drained partial campaign as zero-score outcomes."""
-    del output_format
-    try:
-        snapshot = HubCampaignStore(namespace).load_snapshot(campaign_id)
-        with tempfile.TemporaryDirectory(prefix="harbor-hf-evidence-") as cache:
-            result = seal_partial_campaign_runs(
-                snapshot,
-                namespace=namespace,
-                reader=HubBucketEvidenceReader(Path(cache)),
-                writer=None if dry_run else HubBucketEvidenceWriter(),
-                dry_run=dry_run,
-            )
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@campaign_app.command("resume")
-def campaign_resume(
-    campaign_id: Annotated[str, typer.Argument()],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    cleanup_verified: Annotated[bool, typer.Option("--cleanup-verified")] = False,
-    reason: Annotated[str, typer.Option("--reason")] = "operator verified cleanup",
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
-) -> None:
-    """Resume a campaign after manually verifying failed cleanup."""
-    del output_format
-    try:
-        result = resume_campaign(
-            HubCampaignStore(namespace),
-            campaign_id,
-            reason=reason,
-            cleanup_verified=cleanup_verified,
-            dry_run=dry_run,
-        )
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@artifacts_app.command("verify-trial")
-def artifacts_verify_trial(
-    trial_root: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
-    deep: Annotated[bool, typer.Option("--deep")] = False,
-) -> None:
-    """Validate one local trial evidence bundle and its file digests."""
-    try:
-        manifest = verify_trial_evidence(trial_root, deep=deep)
-    except (OSError, ValueError, RuntimeError) as error:
-        _exit_operation(error)
-    _echo_json(manifest.model_dump(mode="json"))
-
-
-@artifacts_app.command("restore-trial")
-def artifacts_restore_trial(
-    trial_root: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
-    destination: Annotated[Path, typer.Argument()],
-) -> None:
-    """Deep-validate and restore a frozen trial workspace."""
-    try:
-        manifest = verify_trial_evidence(trial_root, deep=True)
-        restore_workspace(trial_root, manifest.workspace, destination)
-    except (OSError, ValueError, RuntimeError) as error:
-        _exit_operation(error)
-    _echo_json({"destination": str(destination), "status": "restored"})
-
-
-@artifacts_app.command("verify")
-def artifacts_verify(
-    campaign_id: Annotated[str, typer.Argument()],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
-) -> None:
-    """Verify publishable run evidence and every declared checksum."""
-    del output_format
-    try:
-        store = HubCampaignStore(namespace)
-        snapshot = store.load_snapshot(campaign_id)
-        with tempfile.TemporaryDirectory(prefix="harbor-hf-evidence-") as cache:
-            reader = HubBucketEvidenceReader(Path(cache))
-            result = verify_campaign_artifacts(
-                snapshot, namespace=namespace, reader=reader
-            )
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@results_app.command("publish")
-def results_publish(
-    campaign_id: Annotated[str, typer.Argument()],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
-) -> None:
-    """Verify and publish normalized campaign result tables."""
-    del output_format
-    try:
-        store = HubCampaignStore(namespace)
-        api = HfApi()
-        with tempfile.TemporaryDirectory(prefix="harbor-hf-evidence-") as cache:
-            reader = HubBucketEvidenceReader(Path(cache))
-            if dry_run:
-                result = publish_campaign_results(
-                    store.load_snapshot(campaign_id),
-                    namespace=namespace,
-                    reader=reader,
-                    publisher=None,
-                    dry_run=True,
-                )
-            else:
-                token = get_token()
-                if token is None:
-                    raise ValueError("result publication requires HF authentication")
-                result = AutomaticCampaignPublisher(
-                    namespace=namespace,
-                    store=store,
-                    reader=reader,
-                    publisher=HubDatasetPublisher(
-                        publisher_id=f"cli-{campaign_id}",
-                        leases=HubClaimStore(namespace, token),
-                        api=cast(DatasetApi, api),
-                    ),
-                    repositories=cast(DatasetRepositoryApi, api),
-                ).publish(campaign_id)
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@results_app.command("publish-correction")
-def results_publish_correction(
-    correction: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
-) -> None:
-    """Publish frozen legacy evidence through one explicit correction record."""
-    del output_format
-    try:
-        record = load_publication_correction_bytes(
-            correction.read_bytes(), source=str(correction)
-        )
-        token = get_token()
-        if token is None:
-            raise ValueError("result publication requires HF authentication")
-        api = HfApi()
-        with tempfile.TemporaryDirectory(prefix="harbor-hf-evidence-") as cache:
-            result = AutomaticCampaignPublisher(
-                namespace=namespace,
-                store=HubCampaignStore(namespace),
-                reader=HubBucketEvidenceReader(Path(cache)),
-                publisher=HubDatasetPublisher(
-                    publisher_id=(
-                        f"cli-correction-{publication_correction_digest(record)[7:23]}"
-                    ),
-                    leases=HubClaimStore(namespace, token),
-                    api=cast(DatasetApi, api),
-                ),
-                repositories=cast(DatasetRepositoryApi, api),
-            ).publish_correction(record)
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@results_app.command("catalog")
-def results_catalog(
-    publication_id: Annotated[str, typer.Argument()],
-    action: Annotated[Literal["promote", "withdraw"], typer.Option("--action")],
-    reason: Annotated[str, typer.Option("--reason")],
-    actor: Annotated[str, typer.Option("--actor")],
-    index_dataset: Annotated[str, typer.Option("--index-dataset")],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
-) -> None:
-    """Record an append-only primary catalog decision."""
-    del output_format
-    try:
-        token = get_token()
-        if token is None:
-            raise ValueError("catalog decisions require HF authentication")
-        decision = CatalogDecision(
-            decision_id=f"decision-{uuid4().hex}",
-            publication_id=publication_id,
-            action=action,
-            actor=actor,
-            reason=reason,
-            created_at=datetime.now(UTC),
-        )
-        result = HubDatasetPublisher(
-            publisher_id=f"cli-{decision.decision_id}",
-            leases=HubClaimStore(namespace, token),
-            api=cast(DatasetApi, HfApi()),
-        ).decide_catalog(decision, index_dataset=index_dataset)
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@results_app.command("cutover-catalog")
-def results_cutover_catalog(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    namespace: Annotated[str, typer.Option("--namespace")],
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
-) -> None:
-    """Apply an explicit, parent-checked V1 catalog cutover."""
-    del output_format
-    try:
-        plan = CatalogCutoverPlan.model_validate_json(
-            manifest.read_text(encoding="utf-8")
-        )
-        token = get_token()
-        if token is None:
-            raise ValueError("catalog cutover requires HF authentication")
-        result = HubCatalogCutover(
-            publisher_id=f"cli-{plan.cutover_id}",
-            leases=HubClaimStore(namespace, token),
-            api=cast(CutoverDatasetApi, HfApi()),
-        ).apply(plan)
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@automation_app.command("install")
-def automation_install(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    schedule: Annotated[str, typer.Option("--schedule")],
-    namespace: Annotated[str | None, typer.Option("--namespace")] = None,
-    campaign_ids: Annotated[list[str] | None, typer.Option("--campaign-id")] = None,
-    suspended: Annotated[bool, typer.Option("--suspended")] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    output_format: Annotated[Literal["json"], typer.Option("--format")] = "json",
-) -> None:
-    """Install or adopt the managed schedule and control webhook."""
-    del output_format
-    spec = _load_or_exit(manifest)
-    try:
-        if spec.remote is None:
-            raise ValueError("automation installation requires remote configuration")
-        request = AutomationRequest(
-            namespace=namespace or spec.remote.job.namespace,
-            schedule=schedule,
-            remote=spec.remote,
-            secret_names=[],
-            campaign_ids=campaign_ids or [],
-            suspended=suspended,
-        )
-        if dry_run:
-            payload = {
-                **automation_plan(request).model_dump(mode="json"),
-                "installed": False,
-                "dry_run": True,
-            }
-        else:
-            token = os.environ.get("HARBOR_HF_JOB_TOKEN", "")
-            if not token:
-                raise ValueError("automation installation requires HARBOR_HF_JOB_TOKEN")
-            installation = install_automation(request, token=token)
-            payload = {
-                **installation.model_dump(mode="json"),
-                "installed": True,
-                "dry_run": False,
-            }
-    except _OPERATION_ERRORS as error:
-        _exit_operation(error)
-    _echo_json(payload)
-
-
-@app.command()
-def submit(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    model: Annotated[str | None, typer.Option("--model")] = None,
-    deployment: Annotated[str | None, typer.Option("--deployment")] = None,
-    agent: Annotated[str | None, typer.Option("--agent")] = None,
-    run_id: Annotated[str | None, typer.Option("--run-id")] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-) -> None:
-    """Submit one resolved matrix cell to a remote Hugging Face Job."""
-    spec = _load_or_exit(manifest)
-    try:
-        with tempfile.TemporaryDirectory(prefix="harbor-hf-") as staging_name:
-            root = Path(staging_name)
-            source = resolve_benchmark_source(spec, manifest, root / "source")
-            resolved_spec = resolved_experiment(spec, source.lock)
-            lock = build_run_lock(
-                resolved_spec,
-                model_id=model,
-                deployment_id=deployment,
-                agent_id=agent,
-                run_id=run_id,
-                manifest_digest=experiment_digest(spec),
-            )
-            staging = root / "input"
-            staging.mkdir()
-            shutil.copyfile(manifest, staging / "manifest.yaml")
-            (staging / "source.lock.json").write_bytes(source_lock_bytes(source.lock))
-            _write_lock(staging / "run.lock.json", lock)
-            if dry_run:
-                command = build_submit_command(
-                    lock, input_dir=staging, bucket=resolved_spec.artifacts.bucket
-                )
-                result = Submission(
-                    run_id=lock.run_id,
-                    artifact_prefix=lock.artifact_prefix,
-                    job_id=None,
-                    source_lock_digest=source_lock_digest(source.lock),
-                    bundle=(
-                        benchmark_bundle_receipt(
-                            source.bundle,
-                            resolved_spec.remote.job.namespace,
-                            "planned",
-                        )
-                        if source.bundle is not None
-                        and resolved_spec.remote is not None
-                        else None
-                    ),
-                    command=command,
-                )
-            else:
-                result = submit_job(
-                    lock,
-                    input_dir=staging,
-                    bucket=resolved_spec.artifacts.bucket,
-                    runner=SubprocessRunner(),
-                    source_lock=source.lock,
-                    bundle=source.bundle,
-                )
-    except (HTTPError, ProcessError, ValueError) as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=2 if dry_run else 1) from error
-    typer.echo(json.dumps(result.model_dump(mode="json"), indent=2))
-
-
-@app.command(hidden=True)
-def worker(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    lock: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    output_root: Annotated[Path, typer.Option("--output-root", file_okay=False)],
-) -> None:
-    """Run one benchmark cell from inside a Hugging Face Job."""
-    try:
-        destination = run_worker(manifest, lock, output_root)
-    except (OSError, ValueError, WorkerError) as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=1) from error
-    typer.echo(str(destination))
-
-
-@app.command("campaign-controller", hidden=True)
-def campaign_controller(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    campaign_lock: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    attempt: Annotated[int, typer.Option("--attempt", min=1)],
-    output_root: Annotated[Path, typer.Option("--output-root", file_okay=False)],
-    prior_job_terminal: Annotated[bool, typer.Option("--prior-job-terminal")] = False,
-) -> None:
-    """Run one provider campaign inside a detached controller Job."""
-    try:
-        result = run_campaign_controller(
-            manifest,
-            campaign_lock,
-            output_root,
-            attempt=attempt,
-            prior_job_terminal=prior_job_terminal,
-        )
-    except (OSError, ValueError, CampaignControllerError) as error:
-        _exit_operation(error)
-    _echo_json(result.model_dump(mode="json"))
-
-
-@app.command("wave-worker", hidden=True)
-def wave_worker(
-    manifest: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    campaign_lock: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    wave_lock: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    output_root: Annotated[Path, typer.Option("--output-root", file_okay=False)],
-) -> None:
-    """Run one bounded deployment wave from inside a Hugging Face Job."""
-    try:
-        destination = run_standalone_wave_worker(
-            manifest,
-            campaign_lock,
-            wave_lock,
-            output_root,
-        )
-    except (OSError, ValueError, WorkerError) as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=1) from error
-    typer.echo(str(destination))
-
-
-@app.command("profile-worker", hidden=True)
-def profile_worker(
-    plan: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
-    output_root: Annotated[Path, typer.Option("--output-root", file_okay=False)],
-) -> None:
-    """Run one serving profile from inside a Hugging Face Job."""
-    try:
-        destination = run_profile_worker(plan, output_root)
-    except (OSError, ValueError, ProfileWorkerError, ProfileTransportError) as error:
-        _exit_operation(error)
-    typer.echo(str(destination))
-
-
-@app.command(hidden=True)
-def watchdog(
-    controller_job_id: Annotated[str, typer.Option("--controller-job-id")],
-    controller_namespace: Annotated[str, typer.Option("--controller-namespace")],
-    endpoint_name: Annotated[str, typer.Option("--endpoint-name")],
-    endpoint_namespace: Annotated[str, typer.Option("--endpoint-namespace")],
-    run_id: Annotated[str, typer.Option("--run-id")],
-    token_secret_name: Annotated[str, typer.Option("--token-secret-name")],
-    timeout_seconds: Annotated[int, typer.Option("--timeout-seconds", min=1)],
-) -> None:
-    """Pause an endpoint after its controller Job exits or times out."""
-    try:
-        snapshot = run_endpoint_watchdog(
-            controller_job_id=controller_job_id,
-            controller_namespace=controller_namespace,
-            endpoint_name=endpoint_name,
-            endpoint_namespace=endpoint_namespace,
-            run_id=run_id,
-            token_secret_name=token_secret_name,
-            timeout_seconds=timeout_seconds,
-        )
-    except (OSError, ValueError, WorkerError) as error:
-        typer.echo(f"Error: {error}", err=True)
-        raise typer.Exit(code=1) from error
-    typer.echo(json.dumps(snapshot, indent=2, sort_keys=True))
-
-
-def _write_lock(path: Path, lock: RunLock) -> None:
-    path.write_text(
-        json.dumps(lock.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",  # pragma: no mutate
+    """Request a bounded infrastructure-only replacement."""
+    _campaign_action(
+        campaign_id,
+        "retry_infrastructure",
+        task_id=task_id,
+        reason=reason,
+        yes=yes,
     )
+
+
+@campaign_app.command("pause-endpoint")
+def campaign_pause_endpoint(
+    campaign_id: Annotated[str, typer.Argument()],
+    reason: Annotated[str | None, typer.Option("--reason")] = None,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    """Pause the campaign's one active managed endpoint."""
+    _campaign_action(
+        campaign_id,
+        "pause_endpoint",
+        reason=reason,
+        yes=yes,
+    )
+
+
+@app.command("jobs")
+def jobs() -> None:
+    """List projected HF Job actions."""
+    _echo(_request("GET", "/api/v1/jobs"))
+
+
+@app.command("endpoints")
+def endpoints() -> None:
+    """List managed endpoint state and cleanup status."""
+    _echo(_request("GET", "/api/v1/endpoints"))
+
+
+@app.command("profiles")
+def profiles() -> None:
+    """List resolved immutable profiles."""
+    _echo(_request("GET", "/api/v1/profiles"))
+
+
+@app.command("results")
+def results() -> None:
+    """List immutable result publications."""
+    _echo(_request("GET", "/api/v1/results"))
+
+
+@app.command("audit")
+def audit() -> None:
+    """List recent immutable control records."""
+    _echo(_request("GET", "/api/v1/audit"))
+
+
+if __name__ == "__main__":
+    app()

@@ -1,12 +1,11 @@
 # Evidence and publication
 
-Harbor HF publishes results derived from canonical private evidence. Before the
-control-service cutover, result Datasets and the read-only Space are rebuildable
-projections. After cutover, the private `<artifact-bucket>` Bucket holds
-evidence, normalized rows, and catalog objects. The TypeScript control service
-rebuilds a disposable SQLite projection and serves authenticated result views
-through the same React application used for campaign progress. The browser
-never reads the Bucket. Keep deployed names in private configuration.
+Harbor HF publishes results derived from canonical private evidence. The
+private `<artifact-bucket>` Bucket holds evidence, normalized rows, and catalog
+objects. The TypeScript control service rebuilds a disposable SQLite projection
+and serves authenticated result views through the same React application used
+for campaign progress. The browser never reads the Bucket. Keep deployed names
+in private configuration.
 
 ## Evidence hierarchy
 
@@ -201,49 +200,36 @@ runs publish only the revision verified from endpoint configuration.
 
 ## Publication
 
-Preview publication:
+Publication is a separate deterministic action after every logical task is
+sealed, all physical actions have receipts, and endpoint cleanup is verified.
+The reconciler writes immutable Parquet tables, catalog objects, and a
+publication receipt. A publication failure does not reopen benchmark work.
+
+Inspect the projected publications with:
 
 ```bash
-uv run harbor-hf results publish CAMPAIGN_ID \
-  --namespace NAMESPACE \
-  --dry-run \
-  --format json
+uv run harbor-hf results
+uv run harbor-hf audit
 ```
-
-Inspect result kind and outcome together with destination Datasets, row counts,
-source Bucket and checksums plus expected index changes. Apply by removing `--dry-run` after
-artifact verification and operator authorization.
 
 Record:
 
-- publication ID;
-- result Dataset and exact commit;
-- index Dataset and exact commit;
-- source campaign and run plus the Bucket prefix;
-- source checksum and control revision;
-- row counts by table;
-- publication receipt and checksum;
-- result kind and cohort eligibility.
+- publication ID and campaign ID
+- immutable paths and SHA-256 digests for every result object
+- source campaign, selected attempts, and Bucket evidence paths
+- full model, benchmark, harness, and deployment provenance
+- row counts for each normalized table
+- result outcome, quality, publication role, and metric unit
+- publication receipt and catalog digest
 
-A repeated matching publication should adopt the existing receipt rather than
-duplicate rows.
+A repeated matching publication adopts the existing objects and receipt. It
+does not duplicate rows or execute a task.
 
 ## Catalog decisions
 
-Promotion and withdrawal are append-only catalog decisions. They require
-explicit authorization, actor, and reason:
-
-```bash
-uv run harbor-hf results catalog PUBLICATION_ID \
-  --action promote \
-  --reason 'REASON' \
-  --actor ACTOR \
-  --index-dataset DATASET \
-  --namespace NAMESPACE
-```
-
-Use `--action withdraw` to remove a publication from active comparison views.
-Withdrawal does not delete private evidence. Keep evidence while any result,
+Profile promotions and result corrections are immutable records with an actor,
+reason, evidence, and source digest. A withdrawal changes comparison
+eligibility without deleting private evidence. Keep evidence while any result,
 correction, audit, or recovery record refers to it.
 
 ## Public boundary
@@ -253,20 +239,20 @@ including private relative path, media type, size, and digest. They must not
 contain raw sessions, trajectories, workspaces, task bodies, prompts, judge
 responses, scorecards, manifests, logs, or archives.
 
-The Results Space reads exact immutable Dataset revisions from the index. It has
-no credential and owns no authoritative state.
+The React console reads validated catalogs through same-origin APIs. It has no
+direct Bucket credential and owns no authoritative state.
 
 ## Publication report
 
 A final report should state:
 
-- campaign result class and completeness;
-- logical and physical execution counts;
-- score calculation and denominator;
-- failures and infrastructure retries by category;
-- artifact verification and deep-validation results;
-- secret-scan file count, byte count, detector set, and zero-finding status;
-- provider or endpoint identity limits;
-- publication and Dataset revisions;
-- catalog action;
-- remaining retention and audit obligations.
+- campaign result class and completeness
+- logical and physical execution counts
+- score calculation and denominator
+- failures and infrastructure retries by category
+- artifact verification and deep-validation results
+- secret-scan file count, byte count, detector set, and zero-finding status
+- provider or endpoint identity limits
+- publication object digests and control revision
+- catalog role or correction action
+- remaining retention and audit obligations

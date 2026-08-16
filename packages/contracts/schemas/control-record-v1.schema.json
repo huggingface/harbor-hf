@@ -1,0 +1,1699 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harborframework.com/schemas/harbor-hf/control-record-v1.schema.json",
+  "title": "Harbor-HF control record v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ProfileObject"
+    },
+    {
+      "$ref": "#/$defs/ProfilePromotion"
+    },
+    {
+      "$ref": "#/$defs/OperatorAcl"
+    },
+    {
+      "$ref": "#/$defs/CampaignRequest"
+    },
+    {
+      "$ref": "#/$defs/CampaignLock"
+    },
+    {
+      "$ref": "#/$defs/ActionIntent"
+    },
+    {
+      "$ref": "#/$defs/ActionReceipt"
+    },
+    {
+      "$ref": "#/$defs/ActionAdvanced"
+    },
+    {
+      "$ref": "#/$defs/AttemptReceipt"
+    },
+    {
+      "$ref": "#/$defs/TerminalSelection"
+    },
+    {
+      "$ref": "#/$defs/BudgetEvent"
+    },
+    {
+      "$ref": "#/$defs/EndpointResource"
+    },
+    {
+      "$ref": "#/$defs/PublicationReceipt"
+    },
+    {
+      "$ref": "#/$defs/MigrationRecord"
+    }
+  ],
+  "$defs": {
+    "Id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "Digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "Actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "role"],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "role": {
+          "enum": ["operator", "reader", "service", "migration"]
+        }
+      }
+    },
+    "TaskLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "input_digest"],
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "input_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      }
+    },
+    "ProfileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "alias"],
+      "properties": {
+        "kind": {
+          "enum": ["benchmark", "model", "harness", "deployment", "launch_policy"]
+        },
+        "alias": {
+          "$ref": "#/$defs/Id"
+        }
+      }
+    },
+    "ResolvedProfile": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ResolvedBenchmarkProfile"
+        },
+        {
+          "$ref": "#/$defs/ResolvedModelProfile"
+        },
+        {
+          "$ref": "#/$defs/ResolvedHarnessProfile"
+        },
+        {
+          "$ref": "#/$defs/ResolvedDeploymentProfile"
+        },
+        {
+          "$ref": "#/$defs/ResolvedLaunchPolicyProfile"
+        }
+      ]
+    },
+    "Base": {
+      "type": "object",
+      "required": ["schema_version", "kind", "record_id", "created_at", "actor"],
+      "properties": {
+        "schema_version": {
+          "const": "v1"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "record_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "created_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        }
+      }
+    },
+    "ProfileObject": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/BenchmarkProfileObject"
+        },
+        {
+          "$ref": "#/$defs/ModelProfileObject"
+        },
+        {
+          "$ref": "#/$defs/HarnessProfileObject"
+        },
+        {
+          "$ref": "#/$defs/DeploymentProfileObject"
+        },
+        {
+          "$ref": "#/$defs/LaunchPolicyProfileObject"
+        }
+      ]
+    },
+    "ProfilePromotion": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "alias",
+            "profile_id",
+            "promotion_state",
+            "reason",
+            "evidence"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.promotion"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "enum": ["benchmark", "model", "harness", "deployment", "launch_policy"]
+            },
+            "alias": {
+              "$ref": "#/$defs/Id"
+            },
+            "profile_id": {
+              "$ref": "#/$defs/Digest"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "evidence": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/Digest"
+              }
+            },
+            "promotion_state": {
+              "enum": ["candidate", "recommended", "approved"]
+            }
+          }
+        }
+      ]
+    },
+    "OperatorAcl": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "operators",
+            "readers"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "operator.acl"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "operators": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "readers": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 512,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            }
+          }
+        }
+      ]
+    },
+    "CampaignRequest": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "idempotency_key_digest",
+            "profiles",
+            "ceiling_microusd"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "campaign.request"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "idempotency_key_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "profiles": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/ProfileRef"
+              }
+            },
+            "ceiling_microusd": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            }
+          }
+        }
+      ]
+    },
+    "CampaignLock": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "profiles",
+            "tasks",
+            "ceiling_microusd",
+            "source_revision"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "campaign.lock"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "profiles": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/ResolvedProfile"
+              }
+            },
+            "tasks": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100000,
+              "items": {
+                "$ref": "#/$defs/TaskLock"
+              }
+            },
+            "ceiling_microusd": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            },
+            "source_revision": {
+              "$ref": "#/$defs/Digest"
+            }
+          }
+        }
+      ]
+    },
+    "ActionIntent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "action_id",
+            "campaign_id",
+            "action_kind",
+            "generation",
+            "target",
+            "payload"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "action.intent"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "action_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "action_kind": {
+              "enum": [
+                "campaign.admit",
+                "job.launch",
+                "job.observe",
+                "endpoint.resume",
+                "endpoint.pause",
+                "publication.publish",
+                "campaign.cancel"
+              ]
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "target": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "payload": {
+              "$ref": "#/$defs/ActionPayload"
+            }
+          }
+        }
+      ]
+    },
+    "ActionReceipt": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "action_id",
+            "campaign_id",
+            "outcome",
+            "observed_state"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "action.receipt"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "action_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "outcome": {
+              "enum": ["adopted", "created", "completed", "failed"]
+            },
+            "observed_state": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "error_code": {
+              "type": ["string", "null"],
+              "maxLength": 160
+            },
+            "resource_id": {
+              "type": ["string", "null"],
+              "maxLength": 512
+            },
+            "ready_replicas": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "active_hourly_cost_microusd": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 1000000000000
+            },
+            "cost_microusd": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 1000000000000
+            }
+          }
+        }
+      ]
+    },
+    "ActionAdvanced": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "action_id",
+            "campaign_id"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "action.advanced"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "action_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            }
+          }
+        }
+      ]
+    },
+    "AttemptReceipt": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "task_id",
+            "attempt_id",
+            "action_id",
+            "outcome",
+            "replacement_eligible",
+            "evidence_digest",
+            "evidence_path",
+            "cost_microusd",
+            "metrics"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "attempt.receipt"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "task_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "attempt_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "outcome": {
+              "enum": [
+                "complete",
+                "invalid",
+                "infrastructure",
+                "semantic",
+                "refusal",
+                "verifier",
+                "agent",
+                "benchmark_timeout",
+                "cancelled",
+                "policy"
+              ]
+            },
+            "evidence_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "evidence_path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "cost_microusd": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            },
+            "replacement_eligible": {
+              "type": "boolean"
+            },
+            "metrics": {
+              "type": "object",
+              "maxProperties": 64,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,79}$"
+              },
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "action_id": {
+              "$ref": "#/$defs/Id"
+            }
+          }
+        }
+      ]
+    },
+    "TerminalSelection": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "task_id",
+            "attempt_id",
+            "outcome",
+            "reason"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "terminal.selection"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "task_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "attempt_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "outcome": {
+              "enum": [
+                "complete",
+                "invalid",
+                "infrastructure",
+                "semantic",
+                "refusal",
+                "verifier",
+                "agent",
+                "benchmark_timeout",
+                "cancelled",
+                "policy"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          }
+        }
+      ]
+    },
+    "BudgetEvent": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "event_kind",
+            "amount_microusd"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "budget.event"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "event_kind": {
+              "enum": ["ceiling", "reserve", "reconcile", "release"]
+            },
+            "amount_microusd": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            }
+          }
+        }
+      ]
+    },
+    "EndpointResource": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "action_id",
+            "endpoint_id",
+            "desired_state",
+            "observed_state",
+            "ready_replicas",
+            "cleanup_verified",
+            "active_hourly_cost_microusd"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "endpoint.resource"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "action_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "endpoint_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "desired_state": {
+              "enum": ["running", "paused", "deleted"]
+            },
+            "observed_state": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "ready_replicas": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "cleanup_verified": {
+              "type": "boolean"
+            },
+            "active_hourly_cost_microusd": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            }
+          }
+        }
+      ]
+    },
+    "PublicationReceipt": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "publication_id",
+            "publication_state",
+            "object_digests",
+            "catalog_digest"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "publication.receipt"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "publication_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "object_digests": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 32,
+              "items": {
+                "$ref": "#/$defs/Digest"
+              }
+            },
+            "catalog_digest": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Digest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error_code": {
+              "type": ["string", "null"],
+              "maxLength": 160
+            },
+            "publication_state": {
+              "enum": ["published", "failed"]
+            }
+          }
+        }
+      ]
+    },
+    "MigrationRecord": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "source_revisions",
+            "import_digest",
+            "new_writes_enabled",
+            "source_writes_disabled"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "migration.record"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "new_writes_enabled": {
+              "type": "boolean"
+            },
+            "source_revisions": {
+              "type": "object",
+              "maxProperties": 32,
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "import_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "source_writes_disabled": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "BenchmarkProfileSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["benchmark", "revision", "task_ids", "task_digests"],
+      "properties": {
+        "benchmark": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "task_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "task_digests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100000,
+          "items": {
+            "$ref": "#/$defs/Digest"
+          }
+        }
+      }
+    },
+    "ModelProfileSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id", "revision"],
+      "properties": {
+        "model_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      }
+    },
+    "HarnessProfileSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "revision", "required_evidence"],
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/Id"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "required_evidence": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        }
+      }
+    },
+    "DeploymentProfileSpec": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/HFJobDeploymentProfileSpec"
+        },
+        {
+          "$ref": "#/$defs/ImportedDeploymentProfileSpec"
+        }
+      ]
+    },
+    "HFJobDeploymentProfileSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route",
+        "models",
+        "harnesses",
+        "job_image",
+        "job_command",
+        "hardware",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "route": {
+          "const": "hf_job"
+        },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "harnesses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "job_image": {
+          "type": "string",
+          "pattern": "^.+@sha256:[0-9a-f]{64}$",
+          "maxLength": 1024
+        },
+        "job_command": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "hardware": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "requires_hf_token": {
+          "type": "boolean"
+        },
+        "trusted_worker": {
+          "type": "boolean"
+        },
+        "mount_bucket": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ImportedDeploymentProfileSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route",
+        "models",
+        "harnesses",
+        "source_campaign_ids",
+        "source_revisions"
+      ],
+      "properties": {
+        "route": {
+          "const": "imported"
+        },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "harnesses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "source_campaign_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 160
+          }
+        },
+        "source_revisions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 7,
+            "maxLength": 160
+          }
+        }
+      }
+    },
+    "LaunchPolicySpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_infrastructure_attempts",
+        "reservation_microusd",
+        "success_without_worker_receipt",
+        "publication_role"
+      ],
+      "properties": {
+        "max_infrastructure_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "reservation_microusd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "success_without_worker_receipt": {
+          "type": "boolean"
+        },
+        "publication_role": {
+          "enum": ["final", "component", "diagnostic"]
+        }
+      }
+    },
+    "ProfileSpec": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/BenchmarkProfileSpec"
+        },
+        {
+          "$ref": "#/$defs/ModelProfileSpec"
+        },
+        {
+          "$ref": "#/$defs/HarnessProfileSpec"
+        },
+        {
+          "$ref": "#/$defs/DeploymentProfileSpec"
+        },
+        {
+          "$ref": "#/$defs/LaunchPolicySpec"
+        }
+      ]
+    },
+    "ActionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_ids": {
+          "type": "array",
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "task_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "maxLength": 1000
+        },
+        "job_image": {
+          "type": "string",
+          "pattern": "^.+@sha256:[0-9a-f]{64}$",
+          "maxLength": 1024
+        },
+        "job_command": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "hardware": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "success_without_worker_receipt": {
+          "type": "boolean"
+        },
+        "max_infrastructure_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "reservation_microusd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "requires_hf_token": {
+          "type": "boolean"
+        },
+        "trusted_worker": {
+          "type": "boolean"
+        },
+        "mount_bucket": {
+          "type": "boolean"
+        },
+        "resource_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "launch_action_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "not_before": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "prior_attempt_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "endpoint_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "watchdog_verified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ResolvedBenchmarkProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "profile_id", "name", "spec"],
+      "properties": {
+        "kind": {
+          "const": "benchmark"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "spec": {
+          "$ref": "#/$defs/BenchmarkProfileSpec"
+        }
+      }
+    },
+    "BenchmarkProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "benchmark"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/BenchmarkProfileSpec"
+            }
+          }
+        }
+      ]
+    },
+    "ResolvedModelProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "profile_id", "name", "spec"],
+      "properties": {
+        "kind": {
+          "const": "model"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "spec": {
+          "$ref": "#/$defs/ModelProfileSpec"
+        }
+      }
+    },
+    "ModelProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "model"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/ModelProfileSpec"
+            }
+          }
+        }
+      ]
+    },
+    "ResolvedHarnessProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "profile_id", "name", "spec"],
+      "properties": {
+        "kind": {
+          "const": "harness"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "spec": {
+          "$ref": "#/$defs/HarnessProfileSpec"
+        }
+      }
+    },
+    "HarnessProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "harness"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/HarnessProfileSpec"
+            }
+          }
+        }
+      ]
+    },
+    "ResolvedDeploymentProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "profile_id", "name", "spec"],
+      "properties": {
+        "kind": {
+          "const": "deployment"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "spec": {
+          "$ref": "#/$defs/DeploymentProfileSpec"
+        }
+      }
+    },
+    "DeploymentProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "deployment"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/DeploymentProfileSpec"
+            }
+          }
+        }
+      ]
+    },
+    "ResolvedLaunchPolicyProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "profile_id", "name", "spec"],
+      "properties": {
+        "kind": {
+          "const": "launch_policy"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "spec": {
+          "$ref": "#/$defs/LaunchPolicySpec"
+        }
+      }
+    },
+    "LaunchPolicyProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "launch_policy"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/LaunchPolicySpec"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

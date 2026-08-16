@@ -1,0 +1,777 @@
+import { existsSync } from "node:fs";
+import type {
+  Actor,
+  AttemptSubmissionV1,
+  CampaignSubmissionV1,
+  HarborHFResultCatalogV1,
+} from "@harbor-hf/contracts";
+import {
+  deterministicId,
+  schemas,
+  sha256,
+  validateResultCatalog,
+} from "@harbor-hf/contracts";
+import {
+  ConfirmationRequiredError,
+  ControlNotReadyError,
+  IdempotencyConflictError,
+  PolicyError,
+  type ControlEvent,
+} from "@harbor-hf/control-core";
+import cookie from "@fastify/cookie";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
+import swagger from "@fastify/swagger";
+import Fastify, {
+  LogController,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from "fastify";
+import {
+  acceptedSchema,
+  actionSchema,
+  attemptAcceptedSchema,
+  auditSchema,
+  campaignListSchema,
+  campaignViewSchema,
+  endpointSchema,
+  itemList,
+  profileSchema,
+  publicationSchema,
+  sessionSchema,
+  systemSchema,
+  taskDetailSchema,
+  taskSchema,
+} from "./api-schemas.js";
+import type { AuthenticatedActor, SessionRow } from "./auth.js";
+import type { Runtime } from "./runtime.js";
+
+declare module "fastify" {
+  interface FastifyRequest {
+    actor?: AuthenticatedActor;
+    authSession?: SessionRow;
+  }
+}
+
+function actor(request: FastifyRequest): AuthenticatedActor {
+  if (!request.actor) throw new Error("authenticated actor is missing");
+  return request.actor;
+}
+
+function domainActor(request: FastifyRequest): Actor {
+  const authenticated = actor(request);
+  return { subject: authenticated.subject, role: authenticated.role };
+}
+
+function isMutation(request: FastifyRequest): boolean {
+  return !["GET", "HEAD", "OPTIONS"].includes(request.method);
+}
+
+function idempotencyKey(request: FastifyRequest): string {
+  const value = request.headers["idempotency-key"];
+  if (typeof value !== "string" || value.length < 8 || value.length > 256)
+    throw new IdempotencyConflictError(
+      "Idempotency-Key must contain 8 to 256 characters",
+    );
+  return value;
+}
+
+function cursorOffset(cursor: string | undefined): number {
+  if (!cursor) return 0;
+  const text = Buffer.from(cursor, "base64url").toString("utf8");
+  if (!/^\d+$/.test(text)) throw new PolicyError("cursor is invalid");
+  return Number(text);
+}
+
+function nextCursor(offset: number, count: number, limit: number): string | null {
+  return count < limit
+    ? null
+    : Buffer.from(String(offset + count)).toString("base64url");
+}
+
+function cleanSchema(value: object): object {
+  const clone = structuredClone(value) as Record<string, unknown>;
+  delete clone.$schema;
+  delete clone.$id;
+  return clone;
+}
+
+function sendEvent(reply: FastifyReply, event: ControlEvent): void {
+  reply.raw.write(`id: ${event.id}\ndata: ${JSON.stringify(event)}\n\n`);
+}
+
+async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]> {
+  const publications = await runtime.projection.publications();
+  const byId = new Map<string, Record<string, unknown>>(
+    publications.map((publication) => [
+      publication.publication_id,
+      {
+        publication_id: publication.publication_id,
+        campaign_id: publication.campaign_id,
+        status: publication.status,
+        catalog_digest: publication.catalog_digest,
+        published_at: publication.created_at,
+      },
+    ]),
+  );
+  const catalogs = await runtime.store.list("results/schema=v1/catalog");
+  for (const object of catalogs) {
+    if (!object.key.endsWith(".json")) continue;
+    const parsed = JSON.parse(
+      new TextDecoder().decode(await runtime.store.read(object.key)),
+    );
+    const catalog = validateResultCatalog<HarborHFResultCatalogV1>(parsed);
+    for (const entry of catalog.entries) {
+      byId.set(entry.publication_id, {
+        ...entry,
+        status: "published",
+        catalog_digest: object.digest,
+      });
+    }
+  }
+  return [...byId.values()].sort((left, right) =>
+    String(right.published_at).localeCompare(String(left.published_at)),
+  );
+}
+
+function canarySubmission(body: unknown): boolean {
+  if (!body || typeof body !== "object") return false;
+  const input = body as Partial<CampaignSubmissionV1>;
+  return (
+    input.benchmark === "control-smoke" &&
+    input.model === "control-smoke" &&
+    input.harness === "control-smoke" &&
+    input.launch_policy === "control-smoke" &&
+    (input.deployment === undefined ||
+      input.deployment === null ||
+      input.deployment === "hf-cpu-smoke")
+  );
+}
+
+export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
+  const app = Fastify({
+    ajv: {
+      customOptions: {
+        allErrors: true,
+        allowUnionTypes: true,
+        removeAdditional: false,
+      },
+    },
+    bodyLimit: 1024 * 1024,
+    logController: new LogController({ disableRequestLogging: true }),
+    genReqId: () => crypto.randomUUID(),
+    logger: {
+      level: runtime.config.node_env === "test" ? "silent" : "info",
+      redact: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "res.headers.set-cookie",
+        "*.HF_TOKEN",
+        "*.access_token",
+        "*.client_secret",
+      ],
+    },
+    trustProxy: true,
+  });
+  await app.register(cookie);
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  });
+  await app.register(rateLimit, { max: 240, timeWindow: "1 minute" });
+  await app.register(swagger, {
+    openapi: {
+      info: { title: "Harbor-HF Control API", version: "1.0.0" },
+      servers: [{ url: "/" }],
+      tags: ["system", "campaigns", "resources", "results", "audit", "auth"].map(
+        (name) => ({ name }),
+      ),
+    },
+  });
+
+  app.addHook("onRequest", async (request, reply) => {
+    const origin = request.headers.origin;
+    if (origin && origin !== runtime.config.public_origin) {
+      await reply.code(403).send({
+        error: {
+          code: "origin_rejected",
+          message: "cross-origin requests are not allowed",
+          request_id: request.id,
+        },
+      });
+    }
+  });
+
+  app.addHook("preHandler", async (request, reply) => {
+    if (!request.url.startsWith("/api/v1") || request.url === "/api/v1/auth/session")
+      return;
+    if (runtime.config.auth_mode === "development") {
+      request.actor = runtime.auth.developmentActor();
+    } else {
+      const authorization = request.headers.authorization;
+      if (authorization?.startsWith("Bearer ")) {
+        request.actor = await runtime.auth.bearerActor(
+          authorization.slice("Bearer ".length),
+        );
+      } else {
+        const sessionId = request.cookies.hhf_session;
+        const authenticated = sessionId
+          ? await runtime.auth.sessionActor(sessionId)
+          : null;
+        if (authenticated) {
+          request.actor = authenticated.actor;
+          request.authSession = authenticated.session;
+        }
+      }
+    }
+    if (!request.actor) {
+      await reply.code(401).send({
+        error: {
+          code: "authentication_required",
+          message: "authentication is required",
+          request_id: request.id,
+        },
+      });
+      return;
+    }
+    if (isMutation(request)) {
+      if (request.actor.role !== "operator") {
+        await reply.code(403).send({
+          error: {
+            code: "operator_required",
+            message: "operator access is required",
+            request_id: request.id,
+          },
+        });
+        return;
+      }
+      if (
+        request.actor.transport === "session" &&
+        (!request.authSession ||
+          !runtime.auth.csrfValid(
+            request.authSession,
+            request.headers["x-csrf-token"] as string | undefined,
+          ))
+      ) {
+        await reply.code(403).send({
+          error: {
+            code: "csrf_rejected",
+            message: "the CSRF token is missing or invalid",
+            request_id: request.id,
+          },
+        });
+      }
+    }
+  });
+
+  app.get("/health/live", { schema: { tags: ["system"] } }, async () => ({
+    status: "live",
+  }));
+  app.get(
+    "/health/ready",
+    { schema: { tags: ["system"] } },
+    async (_request, reply) => {
+      const state = runtime.projection.system();
+      const dependencies = {
+        projection: state.ready,
+        object_store:
+          runtime.config.store_mode === "bucket"
+            ? Boolean(runtime.config.hf_token)
+            : existsSync(runtime.config.bucket_root),
+        hf_token:
+          runtime.config.write_mode === "disabled" || Boolean(runtime.config.hf_token),
+      };
+      const ready = Object.values(dependencies).every(Boolean);
+      return reply.code(ready ? 200 : 503).send({
+        status: ready ? "ready" : "rebuilding",
+        dependencies,
+        projection: state,
+      });
+    },
+  );
+
+  app.get(
+    "/auth/login",
+    {
+      schema: {
+        tags: ["auth"],
+        querystring: {
+          type: "object",
+          properties: { return_to: { type: "string", maxLength: 500 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const query = request.query as { return_to?: string };
+      const login = await runtime.auth.login(query.return_to ?? "/");
+      reply.setCookie("hhf_oauth_flow", login.flow_id, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/auth/callback",
+        maxAge: 600,
+      });
+      return reply.redirect(login.url.toString());
+    },
+  );
+
+  app.get("/auth/callback", { schema: { tags: ["auth"] } }, async (request, reply) => {
+    const flowId = request.cookies.hhf_oauth_flow;
+    if (!flowId)
+      return reply.code(400).send({
+        error: {
+          code: "oauth_flow_missing",
+          message: "OAuth flow cookie is missing",
+          request_id: request.id,
+        },
+      });
+    const callback = await runtime.auth.callback(
+      flowId,
+      new URL(request.url, runtime.config.public_origin),
+    );
+    reply.clearCookie("hhf_oauth_flow", { path: "/auth/callback" });
+    reply.setCookie("hhf_session", callback.session_id, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "strict",
+      path: "/",
+      expires: new Date(callback.expires_at),
+    });
+    reply.setCookie("hhf_csrf", callback.csrf, {
+      httpOnly: false,
+      secure: true,
+      sameSite: "strict",
+      path: "/",
+      expires: new Date(callback.expires_at),
+    });
+    return reply.redirect(callback.return_to);
+  });
+
+  app.post("/auth/logout", { schema: { tags: ["auth"] } }, async (request, reply) => {
+    const sessionId = request.cookies.hhf_session;
+    if (sessionId) runtime.auth.store.deleteSession(sessionId);
+    reply.clearCookie("hhf_session", { path: "/" });
+    reply.clearCookie("hhf_csrf", { path: "/" });
+    return reply.code(204).send();
+  });
+
+  app.get(
+    "/api/v1/auth/session",
+    {
+      schema: { tags: ["auth"], response: { 200: sessionSchema, 401: sessionSchema } },
+    },
+    async (request, reply) => {
+      if (runtime.config.auth_mode === "development")
+        return { authenticated: true, actor: runtime.auth.developmentActor() };
+      const sessionId = request.cookies.hhf_session;
+      const authenticated = sessionId
+        ? await runtime.auth.sessionActor(sessionId)
+        : null;
+      if (!authenticated)
+        return reply.code(401).send({ authenticated: false, login_url: "/auth/login" });
+      return { authenticated: true, actor: authenticated.actor };
+    },
+  );
+
+  app.get(
+    "/api/v1/system",
+    { schema: { tags: ["system"], response: { 200: systemSchema } } },
+    async () => ({
+      source_revision: runtime.config.source_revision,
+      write_mode: runtime.config.write_mode,
+      projection: runtime.projection.system(),
+      resource_contract: { spaces: 1, buckets: 1, operator_secrets: 1 },
+    }),
+  );
+
+  app.get(
+    "/api/v1/campaigns",
+    {
+      schema: {
+        tags: ["campaigns"],
+        querystring: {
+          type: "object",
+          properties: {
+            cursor: { type: "string", maxLength: 128 },
+            limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+          },
+        },
+        response: { 200: campaignListSchema },
+      },
+    },
+    async (request) => {
+      const query = request.query as { cursor?: string; limit?: number };
+      const limit = query.limit ?? 50;
+      const offset = cursorOffset(query.cursor);
+      const items = await runtime.projection.campaigns(limit, offset);
+      return { items, next_cursor: nextCursor(offset, items.length, limit) };
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns",
+    {
+      schema: {
+        tags: ["campaigns"],
+        body: cleanSchema(schemas.campaignSubmission),
+        response: { 202: acceptedSchema },
+      },
+    },
+    async (request, reply) => {
+      if (runtime.config.write_mode === "disabled")
+        throw new ControlNotReadyError("campaign writes are disabled before cutover");
+      if (runtime.config.write_mode === "canary" && !canarySubmission(request.body))
+        throw new PolicyError(
+          "canary mode accepts only the built-in control smoke profile",
+        );
+      const result = await runtime.service.submit(
+        request.body,
+        idempotencyKey(request),
+        domainActor(request),
+      );
+      reply.header("Location", result.status_url);
+      return reply.code(202).send(result);
+    },
+  );
+
+  app.get(
+    "/api/v1/campaigns/:campaign_id",
+    {
+      schema: {
+        tags: ["campaigns"],
+        params: {
+          type: "object",
+          required: ["campaign_id"],
+          properties: { campaign_id: { type: "string" } },
+        },
+        response: { 200: campaignViewSchema, 404: cleanSchema(schemas.apiError) },
+      },
+    },
+    async (request, reply) => {
+      const { campaign_id } = request.params as { campaign_id: string };
+      const campaign = await runtime.projection.campaign(campaign_id);
+      return (
+        campaign ??
+        reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "campaign was not found",
+            request_id: request.id,
+          },
+        })
+      );
+    },
+  );
+
+  app.get(
+    "/api/v1/campaigns/:campaign_id/lock",
+    {
+      schema: {
+        tags: ["campaigns"],
+        response: {
+          200: { type: "object", additionalProperties: true },
+          404: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { campaign_id } = request.params as { campaign_id: string };
+      const lock = await runtime.projection.campaignLock(campaign_id);
+      return (
+        lock ??
+        reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "campaign lock was not found",
+            request_id: request.id,
+          },
+        })
+      );
+    },
+  );
+
+  app.get(
+    "/api/v1/campaigns/:campaign_id/tasks",
+    { schema: { tags: ["campaigns"], response: { 200: itemList(taskSchema) } } },
+    async (request) => {
+      const { campaign_id } = request.params as { campaign_id: string };
+      return { items: await runtime.projection.tasks(campaign_id) };
+    },
+  );
+
+  app.get(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id",
+    {
+      schema: {
+        tags: ["campaigns"],
+        response: { 200: taskDetailSchema, 404: cleanSchema(schemas.apiError) },
+      },
+    },
+    async (request, reply) => {
+      const { campaign_id, task_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+      };
+      const detail = await runtime.projection.task(campaign_id, task_id);
+      return (
+        detail ??
+        reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "task was not found",
+            request_id: request.id,
+          },
+        })
+      );
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns/:campaign_id/actions",
+    {
+      schema: {
+        tags: ["campaigns"],
+        body: cleanSchema(schemas.campaignAction),
+        response: { 202: acceptedSchema },
+      },
+    },
+    async (request, reply) => {
+      if (runtime.config.write_mode === "disabled")
+        throw new ControlNotReadyError("campaign writes are disabled before cutover");
+      const { campaign_id } = request.params as { campaign_id: string };
+      const result = await runtime.service.campaignAction(
+        campaign_id,
+        request.body,
+        idempotencyKey(request),
+        domainActor(request),
+      );
+      return reply.code(202).send(result);
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id/attempts",
+    {
+      schema: {
+        tags: ["campaigns"],
+        body: cleanSchema(schemas.attemptSubmission),
+        response: { 202: attemptAcceptedSchema },
+      },
+    },
+    async (request, reply) => {
+      if (runtime.config.write_mode === "disabled")
+        throw new ControlNotReadyError("campaign writes are disabled before cutover");
+      const { campaign_id, task_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+      };
+      const input = request.body as AttemptSubmissionV1;
+      const attemptId = deterministicId(
+        "worker-attempt",
+        campaign_id,
+        task_id,
+        sha256(idempotencyKey(request)),
+      );
+      const result = await runtime.service.attemptWithStatus(
+        {
+          campaign_id,
+          task_id,
+          attempt_id: attemptId,
+          action_id: input.action_id,
+          outcome: input.outcome,
+          replacement_eligible: input.replacement_eligible,
+          evidence_digest: input.evidence_digest,
+          evidence_path: input.evidence_path,
+          cost_microusd: input.cost_microusd,
+          metrics: input.metrics,
+          completed_at: input.completed_at,
+        },
+        domainActor(request),
+      );
+      return reply.code(202).send({
+        campaign_id,
+        task_id,
+        attempt_id: attemptId,
+        status_url: `/api/v1/campaigns/${campaign_id}/tasks/${task_id}`,
+        adopted: result.adopted,
+      });
+    },
+  );
+
+  app.get(
+    "/api/v1/jobs",
+    { schema: { tags: ["resources"], response: { 200: itemList(actionSchema) } } },
+    async () => ({ items: await runtime.projection.jobs() }),
+  );
+  app.get(
+    "/api/v1/endpoints",
+    { schema: { tags: ["resources"], response: { 200: itemList(endpointSchema) } } },
+    async () => ({ items: await runtime.projection.endpoints() }),
+  );
+  app.get(
+    "/api/v1/profiles",
+    { schema: { tags: ["resources"], response: { 200: itemList(profileSchema) } } },
+    async () => ({ items: await runtime.projection.profiles() }),
+  );
+  app.get(
+    "/api/v1/results",
+    { schema: { tags: ["results"], response: { 200: itemList(publicationSchema) } } },
+    async () => ({ items: await resultItems(runtime) }),
+  );
+  app.get(
+    "/api/v1/audit",
+    {
+      schema: {
+        tags: ["audit"],
+        querystring: {
+          type: "object",
+          properties: {
+            cursor: { type: "string", maxLength: 1024 },
+            limit: { type: "integer", minimum: 1, maximum: 500, default: 100 },
+          },
+        },
+        response: { 200: auditSchema },
+      },
+    },
+    async (request) => {
+      const query = request.query as { cursor?: string; limit?: number };
+      const items = await runtime.projection.audit(
+        query.cursor ?? null,
+        query.limit ?? 100,
+      );
+      return { items, next_cursor: items.at(-1)?.id ?? null };
+    },
+  );
+
+  app.get(
+    "/api/v1/events",
+    {
+      schema: {
+        tags: ["audit"],
+        querystring: {
+          type: "object",
+          properties: { cursor: { type: "string", maxLength: 1024 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const query = request.query as { cursor?: string };
+      const cursor =
+        (request.headers["last-event-id"] as string | undefined) ??
+        query.cursor ??
+        null;
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      const seen = new Set<string>();
+      const buffered: ControlEvent[] = [];
+      let replaying = true;
+      const unsubscribe = runtime.service.events.subscribe((event) => {
+        if (replaying) buffered.push(event);
+        else if (!seen.has(event.id)) {
+          seen.add(event.id);
+          sendEvent(reply, event);
+        }
+      });
+      let replayCursor = cursor;
+      for (;;) {
+        const page = await runtime.projection.audit(replayCursor, 500);
+        for (const event of page) {
+          seen.add(event.id);
+          sendEvent(reply, event);
+        }
+        if (page.length < 500) break;
+        replayCursor = page.at(-1)?.id ?? replayCursor;
+      }
+      replaying = false;
+      for (const event of buffered) {
+        if (!seen.has(event.id)) {
+          seen.add(event.id);
+          sendEvent(reply, event);
+        }
+      }
+      const heartbeat = setInterval(() => reply.raw.write(": heartbeat\n\n"), 15_000);
+      request.raw.on("close", () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
+    },
+  );
+
+  app.setErrorHandler(async (error, request, reply) => {
+    let status = 500;
+    let code = "internal_error";
+    let message = "the request could not be completed";
+    if (error instanceof ConfirmationRequiredError) {
+      status = 400;
+      code = "confirmation_required";
+      message = error.message;
+    } else if (error instanceof IdempotencyConflictError) {
+      status = 409;
+      code = "idempotency_conflict";
+      message = error.message;
+    } else if (error instanceof ControlNotReadyError) {
+      status = 503;
+      code = "control_not_ready";
+      message = error.message;
+    } else if (error instanceof PolicyError) {
+      status = 422;
+      code = "policy_rejected";
+      message = error.message;
+    } else if (
+      typeof error === "object" &&
+      error !== null &&
+      "validation" in error &&
+      error.validation
+    ) {
+      status = 400;
+      code = "invalid_request";
+      message = "request validation failed";
+    }
+    request.log.error(
+      { err: { name: error instanceof Error ? error.name : "Error", message: code } },
+      "request failed",
+    );
+    await reply.code(status).send({ error: { code, message, request_id: request.id } });
+  });
+
+  if (existsSync(runtime.config.web_root)) {
+    await app.register(fastifyStatic, {
+      root: runtime.config.web_root,
+      prefix: "/",
+      wildcard: false,
+    });
+    app.setNotFoundHandler(async (request, reply) => {
+      if (
+        request.url.startsWith("/api/") ||
+        request.url.startsWith("/health/") ||
+        request.url.startsWith("/auth/")
+      )
+        return reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "route was not found",
+            request_id: request.id,
+          },
+        });
+      return reply.sendFile("index.html");
+    });
+  }
+  return app;
+}
