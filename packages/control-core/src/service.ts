@@ -85,6 +85,7 @@ export class ControlService {
   private appendQueue: Promise<void> = Promise.resolve();
   private attemptQueue: Promise<void> = Promise.resolve();
   private budgetQueue: Promise<void> = Promise.resolve();
+  private retryAdmissionQueue: Promise<void> = Promise.resolve();
   private submitQueue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -698,10 +699,18 @@ export class ControlService {
       campaign_id: campaignId,
       event_kind: "reserve",
       amount_microusd: amountMicrousd,
-      reason: `replacement for ${priorAttemptId}`,
     };
     await this.append(reservation);
     return true;
+  }
+
+  async withInfrastructureRetryAdmission<T>(operation: () => Promise<T>): Promise<T> {
+    const queued = this.retryAdmissionQueue.then(operation);
+    this.retryAdmissionQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
   }
 
   async campaignAction(
@@ -716,6 +725,19 @@ export class ControlService {
       throw new ConfirmationRequiredError(
         "campaign action requires explicit confirmation",
       );
+    const operation = () =>
+      this.campaignActionValidated(campaignId, input, idempotencyKey, actor);
+    return input.action === "retry_infrastructure"
+      ? this.withInfrastructureRetryAdmission(operation)
+      : operation();
+  }
+
+  private async campaignActionValidated(
+    campaignId: string,
+    input: CampaignActionV1,
+    idempotencyKey: string,
+    actor: Actor,
+  ): Promise<SubmissionResult> {
     const campaign = await this.projection.campaign(campaignId);
     if (!campaign) throw new PolicyError("campaign does not exist");
     const lock = await this.projection.campaignLock(campaignId);
@@ -800,12 +822,10 @@ export class ControlService {
         throw new PolicyError(
           "infrastructure retry requires an eligible infrastructure failure",
         );
-      const existingRetry = (await this.projection.actions(10_000)).some((action) => {
-        if (action.campaign_id !== campaignId || action.action_kind !== "job.launch")
-          return false;
-        const intent = JSON.parse(action.intent_body) as ActionIntent;
-        return intent.payload.prior_attempt_id === priorAttempt.attempt_id;
-      });
+      const existingRetry = await this.projection.retryActionForAttempt(
+        campaignId,
+        priorAttempt.attempt_id,
+      );
       if (existingRetry)
         throw new PolicyError("infrastructure retry is already recorded");
       const deployment = this.resolvedProfile<DeploymentProfileSpec>(

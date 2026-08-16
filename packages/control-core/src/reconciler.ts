@@ -491,55 +491,64 @@ export class Reconciler {
     source: ActionIntent,
   ): Promise<void> {
     if (attempt.outcome === "infrastructure" && attempt.replacement_eligible) {
-      const attempts = (
-        await this.projection.campaignAttempts(attempt.campaign_id)
-      ).filter((item) => item.task_id === attempt.task_id);
-      const maxAttempts = scalar<number>(
-        source.payload,
-        "max_infrastructure_attempts",
-        "number",
-      );
-      if (attempts.length < maxAttempts) {
-        const reservation = scalar<number>(
-          source.payload,
-          "reservation_microusd",
-          "number",
-        );
+      await this.service.withInfrastructureRetryAdmission(async () => {
         if (
-          !(await this.service.reserveReplacement(
+          await this.projection.retryActionForAttempt(
             attempt.campaign_id,
             attempt.attempt_id,
-            attempt.created_at,
-            reservation,
-          ))
-        ) {
-          await this.service.selectTerminal(
-            attempt,
-            "replacement Job would exceed the campaign ceiling",
+          )
+        )
+          return;
+        const attempts = (
+          await this.projection.campaignAttempts(attempt.campaign_id)
+        ).filter((item) => item.task_id === attempt.task_id);
+        const maxAttempts = scalar<number>(
+          source.payload,
+          "max_infrastructure_attempts",
+          "number",
+        );
+        if (attempts.length < maxAttempts) {
+          const reservation = scalar<number>(
+            source.payload,
+            "reservation_microusd",
+            "number",
           );
+          if (
+            !(await this.service.reserveReplacement(
+              attempt.campaign_id,
+              attempt.attempt_id,
+              attempt.created_at,
+              reservation,
+            ))
+          ) {
+            await this.service.selectTerminal(
+              attempt,
+              "replacement Job would exceed the campaign ceiling",
+            );
+            return;
+          }
+          const retry = this.service.actionIntent(
+            attempt.campaign_id,
+            "job.launch",
+            attempt.task_id,
+            attempts.length,
+            {
+              ...source.payload,
+              task_ids: [attempt.task_id],
+              prior_attempt_id: attempt.attempt_id,
+            },
+          );
+          await this.service.writeAction(retry);
           return;
         }
-        const retry = this.service.actionIntent(
-          attempt.campaign_id,
-          "job.launch",
-          attempt.task_id,
-          attempts.length,
-          {
-            ...source.payload,
-            task_ids: [attempt.task_id],
-            prior_attempt_id: attempt.attempt_id,
-          },
+        await this.service.selectTerminal(
+          attempt,
+          "infrastructure retry budget exhausted",
         );
-        await this.service.writeAction(retry);
-        return;
-      }
+      });
+      return;
     }
-    await this.service.selectTerminal(
-      attempt,
-      attempt.outcome === "infrastructure"
-        ? "infrastructure retry budget exhausted"
-        : "valid terminal worker outcome",
-    );
+    await this.service.selectTerminal(attempt, "valid terminal worker outcome");
   }
 
   private async continueCancellation(campaignId: string): Promise<void> {

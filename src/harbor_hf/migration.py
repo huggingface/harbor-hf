@@ -311,23 +311,47 @@ def _write_count(path: Path, data: bytes) -> tuple[int, int]:
     return (1, 0) if create_immutable(path, data) else (0, 1)
 
 
-def _copy_sources(
-    ordered: list[Source],
-    source_files: dict[str, list[Path]],
-    prefix: Path,
-) -> tuple[int, int]:
+@dataclass(frozen=True)
+class _PlannedWrite:
+    path: Path
+    source: Path | None = None
+    data: bytes | None = None
+    promoted: bool = False
+
+    def read_bytes(self) -> bytes:
+        if self.data is not None:
+            return self.data
+        if self.source is None:
+            raise RuntimeError("planned write has neither source nor data")
+        return self.source.read_bytes()
+
+
+def _preflight_writes(writes: list[_PlannedWrite]) -> None:
+    unique: dict[Path, _PlannedWrite] = {}
+    for item in writes:
+        existing = unique.get(item.path)
+        if existing is not None:
+            if existing.read_bytes() != item.read_bytes():
+                raise ValueError(f"immutable planned destination conflict: {item.path}")
+            continue
+        unique[item.path] = item
+    for item in unique.values():
+        if not item.path.exists():
+            continue
+        if not item.path.is_file() or item.path.read_bytes() != item.read_bytes():
+            raise ValueError(f"immutable destination conflict: {item.path}")
+
+
+def _execute_writes(writes: list[_PlannedWrite]) -> tuple[int, int, int]:
     created = 0
     adopted = 0
-    for source in ordered:
-        for path in source_files[source.name]:
-            relative = path.relative_to(source.root)
-            result = _write_count(
-                prefix / f"source={source.name}" / relative,
-                path.read_bytes(),
-            )
-            created += result[0]
-            adopted += result[1]
-    return created, adopted
+    promoted = 0
+    for item in writes:
+        result = _write_count(item.path, item.read_bytes())
+        created += result[0]
+        adopted += result[1]
+        promoted += int(item.promoted)
+    return created, adopted, promoted
 
 
 @lru_cache(maxsize=1)
@@ -414,35 +438,35 @@ def _validate_canonical_candidate(relative: Path, data: bytes) -> None:
     raise ValueError(f"canonical destination path is not allowed: {relative}")
 
 
-def _promote_canonical(
+def _canonical_writes(
     ordered: list[Source],
     source_files: dict[str, list[Path]],
     destination: Path,
-) -> tuple[int, int, int]:
-    created = 0
-    adopted = 0
-    promoted = 0
+) -> list[_PlannedWrite]:
+    writes: list[_PlannedWrite] = []
     for source in ordered:
         for path in source_files[source.name]:
             relative = path.relative_to(source.root)
             if not relative.parts or relative.parts[0] != "canonical":
                 continue
             canonical_relative = Path(*relative.parts[1:])
-            data = path.read_bytes()
-            _validate_canonical_candidate(canonical_relative, data)
-            result = _write_count(destination / canonical_relative, data)
-            created += result[0]
-            adopted += result[1]
-            promoted += 1
-    return created, adopted, promoted
+            _validate_canonical_candidate(canonical_relative, path.read_bytes())
+            writes.append(
+                _PlannedWrite(
+                    path=destination / canonical_relative,
+                    source=path,
+                    promoted=True,
+                )
+            )
+    return writes
 
 
-def _write_catalog(
+def _catalog_write(
     destination: Path,
     catalog: dict[str, object] | None,
-) -> tuple[int, int]:
+) -> _PlannedWrite | None:
     if catalog is None:
-        return 0, 0
+        return None
     catalog_path = (
         destination
         / "results"
@@ -451,7 +475,7 @@ def _write_catalog(
         / "imports"
         / f"{catalog['record_id']}.json"
     )
-    return _write_count(catalog_path, canonical_bytes(catalog))
+    return _PlannedWrite(path=catalog_path, data=canonical_bytes(catalog))
 
 
 def _migration_record(
@@ -513,22 +537,12 @@ def migrate(
     manifest_data = canonical_bytes(manifest)
     manifest_digest = digest(manifest_data)
     prefix = destination / "imports" / "schema=v1" / f"migration={migration_id}"
-    created, adopted = _copy_sources(ordered, source_files, prefix)
-    promoted_result = _promote_canonical(ordered, source_files, destination)
-    created += promoted_result[0]
-    adopted += promoted_result[1]
-    result = _write_count(prefix / "manifest.json", manifest_data)
-    created += result[0]
-    adopted += result[1]
     catalog = build_result_catalog(
         ordered,
         migration_id,
         created_at,
         manifest_digest,
     )
-    result = _write_catalog(destination, catalog)
-    created += result[0]
-    adopted += result[1]
     record_id, record = _migration_record(
         ordered=ordered,
         manifest_digest=manifest_digest,
@@ -540,15 +554,30 @@ def migrate(
     record_path = (
         destination / "control" / "schema=v1" / "migrations" / f"{record_id}.json"
     )
-    result = _write_count(record_path, canonical_bytes(record))
-    created += result[0]
-    adopted += result[1]
+    writes: list[_PlannedWrite] = []
+    for source in ordered:
+        for path in source_files[source.name]:
+            relative = path.relative_to(source.root)
+            writes.append(
+                _PlannedWrite(
+                    path=prefix / f"source={source.name}" / relative,
+                    source=path,
+                )
+            )
+    writes.extend(_canonical_writes(ordered, source_files, destination))
+    writes.append(_PlannedWrite(path=prefix / "manifest.json", data=manifest_data))
+    catalog_write = _catalog_write(destination, catalog)
+    if catalog_write is not None:
+        writes.append(catalog_write)
+    writes.append(_PlannedWrite(path=record_path, data=canonical_bytes(record)))
+    _preflight_writes(writes)
+    created, adopted, promoted = _execute_writes(writes)
     return {
         "migration_id": migration_id,
         "record_id": record_id,
         "import_digest": manifest_digest,
         "file_count": len(inventory),
-        "promoted_count": promoted_result[2],
+        "promoted_count": promoted,
         "created": created,
         "adopted": adopted,
     }

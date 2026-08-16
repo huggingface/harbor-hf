@@ -287,8 +287,17 @@ def test_migration_rejects_malformed_canonical_control_record(
         )
     )
 
+    destination = tmp_path / "bucket"
     with pytest.raises(ValueError, match="violates the control schema"):
-        run(source, tmp_path / "bucket")
+        run(source, destination)
+
+    assert not destination.exists()
+    candidate.write_bytes(canonical_bytes(canonical_campaign_request()))
+    result = run(source, destination)
+    assert result["promoted_count"] == 1
+    assert (
+        destination / "control/schema=v1/campaigns/campaign-one/request.json"
+    ).read_bytes() == candidate.read_bytes()
 
 
 def test_migration_rejects_noncanonical_control_encoding(tmp_path: Path) -> None:
@@ -316,6 +325,41 @@ def test_migration_rejects_canonical_paths_outside_control_and_results(
 
     with pytest.raises(ValueError, match="destination path is not allowed"):
         run(source, tmp_path / "bucket")
+
+
+def test_migration_preflights_canonical_destination_conflicts(
+    tmp_path: Path,
+) -> None:
+    source = build_source(tmp_path / "source")
+    candidate = (
+        source.root / "canonical/control/schema=v1/campaigns/campaign-one/request.json"
+    )
+    candidate.parent.mkdir(parents=True)
+    candidate.write_bytes(canonical_bytes(canonical_campaign_request()))
+    destination = tmp_path / "bucket"
+    promoted = destination / "control/schema=v1/campaigns/campaign-one/request.json"
+    promoted.parent.mkdir(parents=True)
+    promoted.write_bytes(b"existing-conflict")
+
+    with pytest.raises(ValueError, match="immutable destination conflict"):
+        run(source, destination)
+
+    assert promoted.read_bytes() == b"existing-conflict"
+    assert not (destination / "imports").exists()
+    assert not (destination / "control/schema=v1/migrations").exists()
+
+
+def test_migration_preflights_invalid_result_projection(tmp_path: Path) -> None:
+    source = build_source(tmp_path / "source")
+    projection = source.root / "projections/schema=v1/publication-one.json"
+    projection.parent.mkdir(parents=True)
+    projection.write_text(json.dumps({"tables": {}}), encoding="utf-8")
+    destination = tmp_path / "bucket"
+
+    with pytest.raises(ValueError, match="result projection has no runs table"):
+        run(source, destination)
+
+    assert not destination.exists()
 
 
 def test_migration_rejects_bad_publication_checksum_before_copying(

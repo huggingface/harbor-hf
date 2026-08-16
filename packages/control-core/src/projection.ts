@@ -1291,6 +1291,25 @@ export class Projection {
       .execute();
   }
 
+  async retryActionForAttempt(
+    campaignId: string,
+    priorAttemptId: string,
+  ): Promise<Selectable<ActionRow> | null> {
+    return (
+      (await this.db
+        .selectFrom("actions")
+        .selectAll()
+        .where("campaign_id", "=", campaignId)
+        .where("action_kind", "=", "job.launch")
+        .where(
+          sql<boolean>`json_extract(intent_body, '$.payload.prior_attempt_id') = ${priorAttemptId}`,
+        )
+        .orderBy("created_at")
+        .orderBy("action_id")
+        .executeTakeFirst()) ?? null
+    );
+  }
+
   async hasCampaignAction(campaignId: string, actionKind: string): Promise<boolean> {
     const row = await this.db
       .selectFrom("actions")

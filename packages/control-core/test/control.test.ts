@@ -730,6 +730,79 @@ describe("control service", () => {
     expect(repeated).toMatchObject({ action_id: first.action_id, adopted: true });
   });
 
+  it("serializes concurrent infrastructure retry admissions", async () => {
+    const control = await createTestControl(1, 2, 6);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 12 },
+      "concurrent-retry-campaign-key",
+      operator,
+    );
+    const launch = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "task-001",
+      0,
+      {
+        task_ids: ["task-001"],
+        max_infrastructure_attempts: 2,
+        reservation_microusd: 6,
+      },
+    );
+    await control.service.writeAction(launch);
+    const retryEvidence = await putEvidenceReference(
+      control,
+      "concurrent-retry-evidence",
+    );
+    await control.service.attempt({
+      campaign_id: result.campaign_id,
+      task_id: "task-001",
+      attempt_id: "attempt-concurrent-retry",
+      action_id: launch.action_id,
+      outcome: "infrastructure",
+      replacement_eligible: true,
+      ...retryEvidence,
+      cost_microusd: 0,
+      metrics: {},
+      completed_at: "2026-08-16T00:00:01.000Z",
+    });
+    const action = {
+      action: "retry_infrastructure",
+      task_id: "task-001",
+      reason: "retry transient infrastructure",
+      confirmed: true,
+    } as const;
+
+    const requests = await Promise.allSettled([
+      control.service.campaignAction(
+        result.campaign_id,
+        action,
+        "concurrent-retry-key-one",
+        operator,
+      ),
+      control.service.campaignAction(
+        result.campaign_id,
+        action,
+        "concurrent-retry-key-two",
+        operator,
+      ),
+    ]);
+
+    expect(requests.filter((request) => request.status === "fulfilled")).toHaveLength(
+      1,
+    );
+    expect(requests.filter((request) => request.status === "rejected")).toHaveLength(1);
+    const retries = (await control.projection.actions(10_000)).filter((row) => {
+      if (row.action_kind !== "job.launch") return false;
+      const intent = JSON.parse(row.intent_body) as ActionIntent;
+      return intent.payload.prior_attempt_id === "attempt-concurrent-retry";
+    });
+    expect(retries).toHaveLength(1);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      reserved_microusd: 6,
+    });
+  });
+
   it("does not launch a replacement Job without another budget reservation", async () => {
     const control = await createTestControl(1, 2, 6);
     controls.push(control);
