@@ -205,7 +205,9 @@ coordination with one private control Space and the existing evidence Bucket,
 while consolidating new result publication into one existing Dataset. It also
 sets a permanent resource rule: campaigns, repairs, profiles, leases, status
 records, and result subsets must reuse canonical Hub resources instead of
-creating new repositories or Buckets.
+creating new repositories or Buckets. Normal control uses one retained existing
+Hugging Face service credential. Redundant service credentials are retired only
+after a consumer audit and a canary using the retained credential.
 
 The [architecture overview](docs/architecture.md) describes the current
 execution and storage boundaries. Benchmark tasks come from content-addressed Harbor

@@ -31,6 +31,15 @@
   or prefix.
 - Keep the backup Bucket separate from the primary evidence Bucket. Reusing
   resources does not permit weakening the backup failure boundary.
+- Configure one active long-lived Hugging Face service credential for normal
+  Harbor-HF control. Reuse the approved existing credential instead of minting
+  another credential for a migration, campaign, repair, or worker.
+- Keep external provider keys separate. Keep a backup-only credential separate
+  when the backup failure boundary requires it.
+- Treat any other Harbor-HF service credential as a deprecation candidate. Do
+  not revoke it until a private consumer audit and a retained-credential canary
+  prove that control writes, evidence upload, endpoint cleanup, and publication
+  still work.
 - Follow `docs/2026-08-16-harbor-hf-control-service-plan.md` when changing
   campaign control, profiles, storage, recovery, or publication architecture.
 - Never pass a locally configured personal or broad account credential, including

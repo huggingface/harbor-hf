@@ -25,6 +25,16 @@ and may create only missing resources from the approved canonical inventory.
 The target resource layout and new-write switch are
 specified in `docs/2026-08-16-harbor-hf-control-service-plan.md`.
 
+Use one active long-lived Hugging Face service credential for normal Harbor-HF
+control. Reuse the approved existing credential under one stable secret name;
+do not mint per-campaign, per-repair, or per-worker credentials. The control
+Space may inject that credential only into the trusted outer worker of a Job.
+Never forward it into a Harbor Sandbox, benchmark agent, model server, or
+evidence. External provider keys stay separate. A backup-only credential stays
+separate when required by the backup failure boundary. Audit consumers and run
+a retained-credential canary before revoking any redundant Harbor-HF service
+credential.
+
 ## Source documents
 
 Read the complete source document before acting in that area:

@@ -278,6 +278,14 @@ secret values from both file contents and path components before checksums or
 archives are created. File content is scanned and rewritten in bounded chunks,
 and symbolic links are rejected before evidence traversal.
 
+The planned control service uses one active long-lived Hugging Face service
+credential per namespace. It reuses the existing approved credential and keeps
+the value in the private control Space. A trusted outer worker may receive it
+for direct Hub access, but a Harbor Sandbox or benchmark agent may not. External
+provider keys remain separate. Any redundant Harbor-HF service credential is
+revoked only after a private consumer audit and a canary using the retained
+credential.
+
 ### Canonical Configuration Artifacts
 
 Each run preserves four separate configuration records:

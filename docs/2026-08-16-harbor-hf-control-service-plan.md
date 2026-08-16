@@ -180,6 +180,38 @@ A future move to multiple active control replicas would require a transactional
 shared database or another single-writer mechanism. Multi-replica control is
 outside this plan because current campaign volume does not justify that cost.
 
+## Credential model
+
+A namespace has one active long-lived Hugging Face service credential for normal
+Harbor-HF control. Reuse the existing approved fine-grained credential under one
+stable Space secret name. Do not mint another credential for the migration, a
+campaign, a repair, or each worker.
+
+The control Space stores the credential value. When an HF Job needs direct Hub
+access, the Space may inject the same credential into the trusted outer
+Harbor-HF worker for that Job. The worker must not forward it into a Harbor
+Sandbox, benchmark agent, model server, manifest, log, lock, or evidence object.
+Use the narrowest resource and action scopes that still cover the canonical
+Bucket, results Dataset, Jobs, and managed Endpoints.
+
+External provider API keys remain separate because they belong to different
+security domains. A backup-only credential also remains separate when required
+to preserve the backup failure boundary. Neither is a second Harbor-HF control
+identity.
+
+Only one service credential is configured as active during normal operation.
+Any other existing Harbor-HF service credential is a deprecation candidate, not
+an automatic deletion target. Before revocation, record its masked identity and
+scopes in the private credential inventory, audit every consumer, run a canary
+with only the retained credential configured, and verify control writes, Job
+evidence upload, endpoint cleanup, and result publication. Then remove the
+redundant credential from normal configuration and revoke it. Never record its
+value in the repository, Bucket, Dataset, logs, or chat.
+
+A planned credential rotation may use a short, explicitly approved overlap.
+That exception ends as soon as the replacement canary passes. It must not become
+a permanent active and standby pair.
+
 ## Bucket layout
 
 The existing private Bucket gains a control prefix while keeping canonical run
@@ -595,7 +627,8 @@ running and endpoint watchdogs remain independent.
 Before implementation, confirm:
 
 - the paid CPU tier and monthly ceiling for the always-on private Space;
-- the exact private Space authentication and workload-token scopes;
+- the exact scopes of the retained existing service credential and the stable
+  Space secret name that references it;
 - the Bucket listing and startup-rebuild target at the current object count;
 - whether to keep the `benchmark-run-index` name after it becomes the unified
   results Dataset;

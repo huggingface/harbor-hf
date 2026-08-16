@@ -44,6 +44,15 @@ inspecting the named artifact or command output.
 - [ ] Manifest and plan contain only explicitly approved runtime secret names.
 - [ ] Every runtime credential is purpose-scoped and approved for its exact
       source and destination; the submitter can load it without printing it.
+- [ ] Exactly one retained Hugging Face service credential is configured as the
+      active Harbor-HF control identity.
+- [ ] No per-campaign, per-repair, or per-worker Hugging Face credential was
+      created. A trusted outer worker receives the retained credential only
+      when direct Hub access is required.
+- [ ] External provider keys remain separate. A backup-only credential remains
+      separate when required by the backup failure boundary.
+- [ ] Any redundant Harbor-HF service credential has a private consumer audit
+      and retained-credential canary before revocation.
 - [ ] A configured named HF Job token still exists in Harbor HF's private local
       token store, is fine-grained, and its value is absent from Harbor HF JSON
       config and command output.
