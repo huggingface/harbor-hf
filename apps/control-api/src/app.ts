@@ -107,11 +107,28 @@ function cursorOffset(cursor: string | undefined): number {
   return Number(text);
 }
 
-function nextCursor(offset: number, count: number, limit: number): string | null {
-  return count < limit
-    ? null
-    : Buffer.from(String(offset + count)).toString("base64url");
+function offsetPage<T>(
+  values: T[],
+  offset: number,
+  limit: number,
+): { items: T[]; next_cursor: string | null } {
+  const items = values.slice(0, limit);
+  return {
+    items,
+    next_cursor:
+      values.length > limit
+        ? Buffer.from(String(offset + items.length)).toString("base64url")
+        : null,
+  };
 }
+
+const paginationQuerySchema = {
+  type: "object",
+  properties: {
+    cursor: { type: "string", maxLength: 128 },
+    limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+  },
+} as const;
 
 function cleanSchema(value: object): object {
   const clone = structuredClone(value) as Record<string, unknown>;
@@ -153,9 +170,12 @@ async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]>
       });
     }
   }
-  return [...byId.values()].sort((left, right) =>
-    String(right.published_at).localeCompare(String(left.published_at)),
-  );
+  return [...byId.values()].sort((left, right) => {
+    const byTime = String(right.published_at).localeCompare(String(left.published_at));
+    return (
+      byTime || String(right.publication_id).localeCompare(String(left.publication_id))
+    );
+  });
 }
 
 function canarySubmission(body: unknown): boolean {
@@ -471,13 +491,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     {
       schema: {
         tags: ["campaigns"],
-        querystring: {
-          type: "object",
-          properties: {
-            cursor: { type: "string", maxLength: 128 },
-            limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
-          },
-        },
+        querystring: paginationQuerySchema,
         response: { 200: campaignListSchema },
       },
     },
@@ -485,8 +499,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       const query = request.query as { cursor?: string; limit?: number };
       const limit = query.limit ?? 50;
       const offset = cursorOffset(query.cursor);
-      const items = await runtime.projection.campaigns(limit, offset);
-      return { items, next_cursor: nextCursor(offset, items.length, limit) };
+      const items = await runtime.projection.campaigns(limit + 1, offset);
+      return offsetPage(items, offset, limit);
     },
   );
 
@@ -593,10 +607,20 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.get(
     "/api/v1/campaigns/:campaign_id/tasks",
-    { schema: { tags: ["campaigns"], response: { 200: itemList(taskSchema) } } },
+    {
+      schema: {
+        tags: ["campaigns"],
+        querystring: paginationQuerySchema,
+        response: { 200: itemList(taskSchema) },
+      },
+    },
     async (request) => {
       const { campaign_id } = request.params as { campaign_id: string };
-      return { items: await runtime.projection.tasks(campaign_id) };
+      const query = request.query as { cursor?: string; limit?: number };
+      const limit = query.limit ?? 50;
+      const offset = cursorOffset(query.cursor);
+      const items = await runtime.projection.tasks(campaign_id, limit + 1, offset);
+      return offsetPage(items, offset, limit);
     },
   );
 
@@ -724,23 +748,71 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.get(
     "/api/v1/jobs",
-    { schema: { tags: ["resources"], response: { 200: itemList(actionSchema) } } },
-    async () => ({ items: await runtime.projection.jobs() }),
+    {
+      schema: {
+        tags: ["resources"],
+        querystring: paginationQuerySchema,
+        response: { 200: itemList(actionSchema) },
+      },
+    },
+    async (request) => {
+      const query = request.query as { cursor?: string; limit?: number };
+      const limit = query.limit ?? 50;
+      const offset = cursorOffset(query.cursor);
+      const items = await runtime.projection.jobs(limit + 1, offset);
+      return offsetPage(items, offset, limit);
+    },
   );
   app.get(
     "/api/v1/endpoints",
-    { schema: { tags: ["resources"], response: { 200: itemList(endpointSchema) } } },
-    async () => ({ items: await runtime.projection.endpoints() }),
+    {
+      schema: {
+        tags: ["resources"],
+        querystring: paginationQuerySchema,
+        response: { 200: itemList(endpointSchema) },
+      },
+    },
+    async (request) => {
+      const query = request.query as { cursor?: string; limit?: number };
+      const limit = query.limit ?? 50;
+      const offset = cursorOffset(query.cursor);
+      const items = await runtime.projection.endpoints(limit + 1, offset);
+      return offsetPage(items, offset, limit);
+    },
   );
   app.get(
     "/api/v1/profiles",
-    { schema: { tags: ["resources"], response: { 200: itemList(profileSchema) } } },
-    async () => ({ items: await runtime.projection.profiles() }),
+    {
+      schema: {
+        tags: ["resources"],
+        querystring: paginationQuerySchema,
+        response: { 200: itemList(profileSchema) },
+      },
+    },
+    async (request) => {
+      const query = request.query as { cursor?: string; limit?: number };
+      const limit = query.limit ?? 50;
+      const offset = cursorOffset(query.cursor);
+      const items = await runtime.projection.profiles(limit + 1, offset);
+      return offsetPage(items, offset, limit);
+    },
   );
   app.get(
     "/api/v1/results",
-    { schema: { tags: ["results"], response: { 200: itemList(publicationSchema) } } },
-    async () => ({ items: await resultItems(runtime) }),
+    {
+      schema: {
+        tags: ["results"],
+        querystring: paginationQuerySchema,
+        response: { 200: itemList(publicationSchema) },
+      },
+    },
+    async (request) => {
+      const query = request.query as { cursor?: string; limit?: number };
+      const limit = query.limit ?? 50;
+      const offset = cursorOffset(query.cursor);
+      const items = (await resultItems(runtime)).slice(offset, offset + limit + 1);
+      return offsetPage(items, offset, limit);
+    },
   );
   app.get(
     "/api/v1/audit",
@@ -759,11 +831,13 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     },
     async (request) => {
       const query = request.query as { cursor?: string; limit?: number };
-      const items = await runtime.projection.audit(
-        query.cursor ?? null,
-        query.limit ?? 100,
-      );
-      return { items, next_cursor: items.at(-1)?.id ?? null };
+      const limit = query.limit ?? 100;
+      const items = await runtime.projection.audit(query.cursor ?? null, limit + 1);
+      const page = items.slice(0, limit);
+      return {
+        items: page,
+        next_cursor: items.length > limit ? (page.at(-1)?.id ?? null) : null,
+      };
     },
   );
 

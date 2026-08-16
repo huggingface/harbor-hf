@@ -1096,6 +1096,7 @@ export class Projection {
       .selectFrom("campaigns")
       .selectAll()
       .orderBy("created_at", "desc")
+      .orderBy("campaign_id", "desc")
       .limit(limit)
       .offset(offset)
       .execute();
@@ -1198,13 +1199,19 @@ export class Projection {
     };
   }
 
-  async tasks(campaignId: string): Promise<Selectable<TaskRow>[]> {
-    return this.db
+  async tasks(
+    campaignId: string,
+    limit?: number,
+    offset = 0,
+  ): Promise<Selectable<TaskRow>[]> {
+    const query = this.db
       .selectFrom("tasks")
       .selectAll()
       .where("campaign_id", "=", campaignId)
-      .orderBy("task_id")
-      .execute();
+      .orderBy("task_id");
+    return limit === undefined
+      ? query.execute()
+      : query.limit(limit).offset(offset).execute();
   }
 
   async task(
@@ -1258,17 +1265,19 @@ export class Projection {
     return Boolean(row);
   }
 
-  async jobs(limit = 100): Promise<Selectable<ActionRow>[]> {
+  async jobs(limit = 100, offset = 0): Promise<Selectable<ActionRow>[]> {
     return this.db
       .selectFrom("actions")
       .selectAll()
       .where("action_kind", "in", ["job.launch", "job.observe", "job.cancel"])
       .orderBy("created_at", "desc")
+      .orderBy("action_id", "desc")
       .limit(limit)
+      .offset(offset)
       .execute();
   }
 
-  async endpoints(limit = 100): Promise<Selectable<EndpointRow>[]> {
+  async endpoints(limit = 100, offset = 0): Promise<Selectable<EndpointRow>[]> {
     const rows = await this.db
       .selectFrom("endpoints")
       .selectAll()
@@ -1279,19 +1288,27 @@ export class Projection {
     for (const row of rows) {
       if (!latest.has(row.endpoint_id)) latest.set(row.endpoint_id, row);
     }
-    return [...latest.values()].slice(0, limit);
+    return [...latest.values()].slice(offset, offset + limit);
   }
 
-  async publications(limit = 100): Promise<Selectable<PublicationRow>[]> {
-    return this.db
+  async publications(
+    limit?: number,
+    offset = 0,
+  ): Promise<Selectable<PublicationRow>[]> {
+    const query = this.db
       .selectFrom("publications")
       .selectAll()
       .orderBy("created_at", "desc")
-      .limit(limit)
-      .execute();
+      .orderBy("publication_id", "desc");
+    return limit === undefined
+      ? query.execute()
+      : query.limit(limit).offset(offset).execute();
   }
 
-  async profiles(): Promise<
+  async profiles(
+    limit = 100,
+    offset = 0,
+  ): Promise<
     Array<
       Selectable<ProfileRow> & { promotion_state: string | null; alias: string | null }
     >
@@ -1301,6 +1318,9 @@ export class Projection {
       .selectAll()
       .orderBy("profile_kind")
       .orderBy("name")
+      .orderBy("profile_id")
+      .limit(limit)
+      .offset(offset)
       .execute();
     return Promise.all(
       rows.map(async (row) => {

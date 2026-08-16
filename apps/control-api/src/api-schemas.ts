@@ -257,8 +257,11 @@ export const itemList = (item: object) =>
   ({
     type: "object",
     additionalProperties: false,
-    required: ["items"],
-    properties: { items: { type: "array", items: item } },
+    required: ["items", "next_cursor"],
+    properties: {
+      items: { type: "array", items: item },
+      next_cursor: nullableString,
+    },
   }) as const;
 
 export const sessionSchema = {

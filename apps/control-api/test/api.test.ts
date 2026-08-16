@@ -78,6 +78,45 @@ describe("control API", () => {
     await app.close();
   });
 
+  it("paginates every collection response", async () => {
+    const { runtime, app } = await setup();
+    const campaign = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "pagination-campaign-key" },
+      payload: input,
+    });
+    const campaignId = campaign.json().campaign_id as string;
+    await runtime.reconciler.tick();
+    const urls = [
+      "/api/v1/campaigns?limit=1",
+      `/api/v1/campaigns/${campaignId}/tasks?limit=1`,
+      "/api/v1/jobs?limit=1",
+      "/api/v1/endpoints?limit=1",
+      "/api/v1/profiles?limit=1",
+      "/api/v1/results?limit=1",
+      "/api/v1/audit?limit=1",
+    ];
+    for (const url of urls) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toHaveProperty("items");
+      expect(response.json()).toHaveProperty("next_cursor");
+    }
+    const firstProfiles = await app.inject({
+      method: "GET",
+      url: "/api/v1/profiles?limit=1",
+    });
+    const firstProfile = firstProfiles.json().items[0].profile_id as string;
+    const cursor = firstProfiles.json().next_cursor as string;
+    const secondProfiles = await app.inject({
+      method: "GET",
+      url: `/api/v1/profiles?limit=1&cursor=${encodeURIComponent(cursor)}`,
+    });
+    expect(secondProfiles.json().items[0].profile_id).not.toBe(firstProfile);
+    await app.close();
+  });
+
   it("limits worker capabilities to their campaign action routes", async () => {
     const { runtime, app } = await setup();
     const submission = await runtime.service.submit(

@@ -103,8 +103,8 @@ def campaign_submit(
     model: Annotated[str, typer.Option("--model")],
     harness: Annotated[str, typer.Option("--harness")],
     ceiling_microusd: Annotated[int, typer.Option("--ceiling-microusd", min=0)],
+    launch_policy: Annotated[str, typer.Option("--launch-policy")],
     deployment: Annotated[str | None, typer.Option("--deployment")] = None,
-    launch_policy: Annotated[str, typer.Option("--launch-policy")] = "default",
     idempotency_key: Annotated[str | None, typer.Option("--idempotency-key")] = None,
     yes: Annotated[
         bool,

@@ -518,7 +518,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                };
                 header?: never;
                 path: {
                     campaign_id: string;
@@ -541,6 +544,7 @@ export interface paths {
                                 terminal_outcome: string | null;
                                 selected_attempt_id: string | null;
                             }[];
+                            next_cursor: string | null;
                         };
                     };
                 };
@@ -776,7 +780,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -802,6 +809,7 @@ export interface paths {
                                 /** Format: date-time */
                                 created_at: string;
                             }[];
+                            next_cursor: string | null;
                         };
                     };
                 };
@@ -824,7 +832,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -850,6 +861,7 @@ export interface paths {
                                 /** Format: date-time */
                                 created_at: string;
                             }[];
+                            next_cursor: string | null;
                         };
                     };
                 };
@@ -872,7 +884,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -896,6 +911,7 @@ export interface paths {
                                 /** Format: date-time */
                                 created_at: string;
                             }[];
+                            next_cursor: string | null;
                         };
                     };
                 };
@@ -918,7 +934,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -957,6 +976,7 @@ export interface paths {
                                 } | null;
                                 result_path?: string | null;
                             }[];
+                            next_cursor: string | null;
                         };
                     };
                 };
