@@ -17,6 +17,19 @@ from jsonschema.protocols import Validator
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _CONTROL_PATH_PARTS = {
+    "profile.object": (
+        "profiles",
+        "objects",
+        "{profile_kind}",
+        "{record_id}.json",
+    ),
+    "profile.promotion": (
+        "profiles",
+        "promotions",
+        "{profile_kind}",
+        "{alias}",
+        "{record_id}.json",
+    ),
     "campaign.request": ("campaigns", "{campaign_id}", "request.json"),
     "campaign.lock": ("campaigns", "{campaign_id}", "campaign.lock.json"),
     "action.intent": (
@@ -347,6 +360,8 @@ def _control_record_path(value: dict[str, object]) -> Path:
             "task_id",
             "attempt_id",
             "publication_id",
+            "profile_kind",
+            "alias",
         )
     }
     return Path("control", "schema=v1", *(part.format_map(fields) for part in parts))
@@ -386,6 +401,7 @@ def _validate_canonical_candidate(relative: Path, data: bytes) -> None:
     control_prefixes = {
         ("control", "schema=v1", "campaigns"),
         ("control", "schema=v1", "migrations"),
+        ("control", "schema=v1", "profiles"),
     }
     if parts[:3] in control_prefixes:
         _validate_control_candidate(relative, data)

@@ -1,7 +1,14 @@
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { canonicalJson, sha256, workerEvidenceObjectPath } from "@harbor-hf/contracts";
+import type { ProfileObject, ProfilePromotion } from "@harbor-hf/contracts";
+import {
+  canonicalJson,
+  controlRecordPath,
+  deterministicId,
+  sha256,
+  workerEvidenceObjectPath,
+} from "@harbor-hf/contracts";
 import { mintWorkerCapability } from "@harbor-hf/control-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
@@ -19,7 +26,10 @@ afterEach(async () => {
   );
 });
 
-async function setup(writeMode: AppConfig["write_mode"] = "canary"): Promise<{
+async function setup(
+  writeMode: AppConfig["write_mode"] = "canary",
+  seed?: (runtime: Runtime) => Promise<void>,
+): Promise<{
   runtime: Runtime;
   app: Awaited<ReturnType<typeof buildApp>>;
 }> {
@@ -49,6 +59,7 @@ async function setup(writeMode: AppConfig["write_mode"] = "canary"): Promise<{
     bootstrap_operator_subjects: [],
   };
   const runtime = await createRuntime(config);
+  if (seed) await seed(runtime);
   runtimes.push(runtime);
   const app = await buildApp(runtime);
   await runtime.initialize();
@@ -75,6 +86,124 @@ describe("control API", () => {
     const ready = await app.inject({ method: "GET", url: "/health/ready" });
     expect(ready.statusCode).toBe(200);
     expect(ready.json()).toMatchObject({ status: "ready" });
+    await app.close();
+  });
+
+  it("loads approved durable profile aliases and ignores recommendations", async () => {
+    const spec = {
+      model_id: "example/durable-model",
+      revision: sha256("durable-model-revision"),
+    };
+    const profile: ProfileObject = {
+      schema_version: "v1",
+      kind: "profile.object",
+      record_id: deterministicId(
+        "profile",
+        "model",
+        "durable-model",
+        sha256(canonicalJson(spec)),
+      ),
+      created_at: "2026-08-16T00:00:00.000Z",
+      actor: { subject: "profile-import", role: "migration" },
+      profile_kind: "model",
+      name: "durable-model",
+      spec,
+    };
+    const profileId = sha256(canonicalJson(profile));
+    const promotion = (
+      alias: string,
+      state: ProfilePromotion["promotion_state"],
+      createdAt: string,
+      targetProfileId = profileId,
+    ): ProfilePromotion => ({
+      schema_version: "v1",
+      kind: "profile.promotion",
+      record_id: deterministicId("promotion", "model", alias, targetProfileId, state),
+      created_at: createdAt,
+      actor: { subject: "profile-operator", role: "operator" },
+      profile_kind: "model",
+      alias,
+      profile_id: targetProfileId,
+      promotion_state: state,
+      reason: `${state} after profile review`,
+      evidence: [sha256(`${alias}-canary-evidence`)],
+    });
+    const approved = promotion("control-smoke", "approved", "2026-08-16T00:00:01.000Z");
+    const recommended = promotion(
+      "recommended-only",
+      "recommended",
+      "2026-08-16T00:00:02.000Z",
+    );
+    const { runtime, app } = await setup("canary", async (seedRuntime) => {
+      for (const record of [profile, approved, recommended])
+        await seedRuntime.store.create(
+          controlRecordPath(record),
+          new TextEncoder().encode(canonicalJson(record)),
+        );
+    });
+
+    expect(runtime.service.resolver.get("model", "control-smoke").profile_id).toBe(
+      profileId,
+    );
+    expect(() => runtime.service.resolver.get("model", "recommended-only")).toThrow(
+      "unknown model profile",
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "durable-profile-campaign-key" },
+      payload: input,
+    });
+    expect(response.statusCode).toBe(202);
+    const lock = await runtime.projection.campaignLock(
+      response.json().campaign_id as string,
+    );
+    const lockedModel = lock?.profiles.find((item) => item.kind === "model");
+    expect(lockedModel).toMatchObject({
+      name: "control-smoke",
+      profile_id: profileId,
+    });
+    const replacementSpec = {
+      model_id: "example/replacement-model",
+      revision: sha256("replacement-model-revision"),
+    };
+    const replacementProfile: ProfileObject = {
+      ...profile,
+      record_id: deterministicId(
+        "profile",
+        "model",
+        "replacement-model",
+        sha256(canonicalJson(replacementSpec)),
+      ),
+      created_at: "2026-08-16T00:00:03.000Z",
+      name: "replacement-model",
+      spec: replacementSpec,
+    };
+    const replacementProfileId = sha256(canonicalJson(replacementProfile));
+    const movedAlias = promotion(
+      "control-smoke",
+      "approved",
+      "2026-08-16T00:00:04.000Z",
+      replacementProfileId,
+    );
+    await runtime.service.append(replacementProfile);
+    await runtime.service.append(movedAlias);
+    expect(runtime.service.resolver.get("model", "control-smoke").profile_id).toBe(
+      replacementProfileId,
+    );
+    const repeated = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "durable-profile-campaign-key" },
+      payload: input,
+    });
+    expect(repeated.statusCode).toBe(202);
+    expect(repeated.json()).toMatchObject({ adopted: true });
+    expect(
+      (
+        await runtime.projection.campaignLock(repeated.json().campaign_id as string)
+      )?.profiles.find((item) => item.kind === "model")?.profile_id,
+    ).toBe(profileId);
     await app.close();
   });
 

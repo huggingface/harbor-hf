@@ -22,6 +22,7 @@ import Database from "better-sqlite3";
 import { Kysely, type Selectable, SqliteDialect, sql } from "kysely";
 import { verifyEvidenceReference, verifyWorkerEvidence } from "./evidence.js";
 import { decodeEventCursor, eventCursor, type ControlEvent } from "./events.js";
+import type { PromotedProfile } from "./profiles.js";
 import type { ImmutableObjectStore, ObjectEntry } from "./store.js";
 
 interface ObjectRow {
@@ -910,6 +911,29 @@ export class Projection {
   }
 
   private async verifyInvariants(): Promise<void> {
+    const profileRows = await this.db
+      .selectFrom("profiles")
+      .select(["profile_id", "profile_kind"])
+      .execute();
+    const profileKinds = new Map(
+      profileRows.map((profile) => [profile.profile_id, profile.profile_kind]),
+    );
+    const promotionRows = await this.db
+      .selectFrom("promotions")
+      .select(["record_id", "profile_id", "profile_kind"])
+      .execute();
+    for (const promotion of promotionRows) {
+      const profileKind = profileKinds.get(promotion.profile_id);
+      if (!profileKind)
+        throw new ProjectionIntegrityError(
+          `promotion references missing profile: ${promotion.record_id}`,
+        );
+      if (profileKind !== promotion.profile_kind)
+        throw new ProjectionIntegrityError(
+          `promotion profile kind mismatch: ${promotion.record_id}`,
+        );
+    }
+
     const campaignRows = await this.db
       .selectFrom("campaigns")
       .select(["campaign_id", "ceiling_microusd"])
@@ -1316,6 +1340,56 @@ export class Projection {
     return limit === undefined
       ? query.execute()
       : query.limit(limit).offset(offset).execute();
+  }
+
+  async approvedProfileAliases(): Promise<PromotedProfile[]> {
+    const promotions = await this.db
+      .selectFrom("promotions")
+      .selectAll()
+      .where("state", "=", "approved")
+      .orderBy("created_at")
+      .orderBy("record_id")
+      .execute();
+    const latest = new Map<string, Selectable<PromotionRow>>();
+    for (const promotion of promotions)
+      latest.set(`${promotion.profile_kind}:${promotion.alias}`, promotion);
+
+    const output: PromotedProfile[] = [];
+    for (const key of [...latest.keys()].sort()) {
+      const promotion = latest.get(key) as Selectable<PromotionRow>;
+      const profileRow = await this.db
+        .selectFrom("profiles")
+        .selectAll()
+        .where("profile_id", "=", promotion.profile_id)
+        .executeTakeFirst();
+      const objectRow = await this.db
+        .selectFrom("objects")
+        .select("body")
+        .where("digest", "=", promotion.profile_id)
+        .where("kind", "=", "profile.object")
+        .executeTakeFirst();
+      if (!profileRow || !objectRow)
+        throw new ProjectionIntegrityError(
+          `approved promotion references missing profile: ${promotion.record_id}`,
+        );
+      const profile = validateControlRecord<ProfileObject>(JSON.parse(objectRow.body));
+      if (
+        profile.kind !== "profile.object" ||
+        profile.profile_kind !== promotion.profile_kind ||
+        profile.profile_kind !== profileRow.profile_kind ||
+        profile.name !== profileRow.name ||
+        sha256(canonicalJson(profile)) !== promotion.profile_id
+      )
+        throw new ProjectionIntegrityError(
+          `approved promotion profile identity mismatch: ${promotion.record_id}`,
+        );
+      output.push({
+        alias: promotion.alias,
+        profile,
+        profile_id: promotion.profile_id,
+      });
+    }
+    return output;
   }
 
   async profiles(

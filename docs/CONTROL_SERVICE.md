@@ -145,6 +145,13 @@ is explicitly approved.
 Canonical JSON encoding, identifier derivation, digest rules, and immutable
 write behavior follow the [control service plan](2026-08-16-harbor-hf-control-service-plan.md).
 
+Startup replays durable profile objects and promotions before writes are
+allowed. The resolver overlays checked-in profiles with the latest approved
+promotion for each kind and alias. Candidate and recommended records remain
+visible but cannot authorize a campaign. A campaign lock retains the selected
+alias, immutable profile digest, and complete spec even when that alias later
+moves. Canonical migration preserves profile objects and promotion records.
+
 ## HTTP API
 
 The service exposes these route groups:

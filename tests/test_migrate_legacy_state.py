@@ -48,6 +48,38 @@ def canonical_campaign_request() -> dict[str, object]:
     }
 
 
+def canonical_model_profile() -> dict[str, object]:
+    return {
+        "schema_version": "v1",
+        "kind": "profile.object",
+        "record_id": "profile-model-one",
+        "created_at": "2026-08-16T00:00:00Z",
+        "actor": {"subject": "migration", "role": "migration"},
+        "profile_kind": "model",
+        "name": "model-one",
+        "spec": {
+            "model_id": "example/model-one",
+            "revision": f"sha256:{'b' * 64}",
+        },
+    }
+
+
+def canonical_model_promotion(profile_id: str) -> dict[str, object]:
+    return {
+        "schema_version": "v1",
+        "kind": "profile.promotion",
+        "record_id": "promotion-model-one",
+        "created_at": "2026-08-16T00:00:01Z",
+        "actor": {"subject": "operator", "role": "operator"},
+        "profile_kind": "model",
+        "alias": "production-model",
+        "profile_id": profile_id,
+        "promotion_state": "approved",
+        "reason": "approved after the recorded canary",
+        "evidence": [],
+    }
+
+
 def run(source: Source, destination: Path) -> dict[str, object]:
     return migrate(
         sources=[source],
@@ -199,6 +231,40 @@ def test_migration_promotes_explicit_canonical_control_records(
     promoted = destination / "control/schema=v1/campaigns/campaign-one/request.json"
     assert promoted.read_bytes() == candidate.read_bytes()
     assert result["promoted_count"] == 1
+
+
+def test_migration_promotes_profile_objects_and_approved_aliases(
+    tmp_path: Path,
+) -> None:
+    source = build_source(tmp_path / "source")
+    profile = canonical_model_profile()
+    profile_id = digest(canonical_bytes(profile))
+    promotion = canonical_model_promotion(profile_id)
+    profile_path = (
+        source.root
+        / "canonical/control/schema=v1/profiles/objects/model/profile-model-one.json"
+    )
+    promotion_path = source.root / (
+        "canonical/control/schema=v1/profiles/promotions/model/"
+        "production-model/promotion-model-one.json"
+    )
+    profile_path.parent.mkdir(parents=True)
+    promotion_path.parent.mkdir(parents=True)
+    profile_path.write_bytes(canonical_bytes(profile))
+    promotion_path.write_bytes(canonical_bytes(promotion))
+    destination = tmp_path / "bucket"
+
+    result = run(source, destination)
+
+    assert result["promoted_count"] == 2
+    assert (
+        destination / "control/schema=v1/profiles/objects/model/profile-model-one.json"
+    ).read_bytes() == profile_path.read_bytes()
+    promoted_alias = destination / (
+        "control/schema=v1/profiles/promotions/model/"
+        "production-model/promotion-model-one.json"
+    )
+    assert promoted_alias.read_bytes() == promotion_path.read_bytes()
 
 
 def test_migration_rejects_malformed_canonical_control_record(

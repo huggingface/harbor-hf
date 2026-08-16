@@ -13,6 +13,10 @@ export interface LoadedProfile {
   profile_id: string;
 }
 
+export interface PromotedProfile extends LoadedProfile {
+  alias: string;
+}
+
 async function jsonFiles(directory: string): Promise<string[]> {
   const files: string[] = [];
   const handle = await opendir(directory);
@@ -54,20 +58,44 @@ function scalarArray(spec: ProfileObject["spec"], key: string): string[] {
   return value;
 }
 
+function profileKey(kind: ProfileObject["profile_kind"], alias: string): string {
+  return `${kind}:${alias}`;
+}
+
+function indexProfiles<T extends LoadedProfile>(
+  profiles: readonly T[],
+  alias: (profile: T) => string,
+): Map<string, LoadedProfile> {
+  const output = new Map<string, LoadedProfile>();
+  for (const item of profiles) {
+    const key = profileKey(item.profile.profile_kind, alias(item));
+    const existing = output.get(key);
+    if (existing && existing.profile_id !== item.profile_id)
+      throw new ProfileResolutionError(`conflicting profile alias: ${key}`);
+    output.set(key, item);
+  }
+  return output;
+}
+
 export class ProfileResolver {
-  private readonly profiles: Map<string, LoadedProfile>;
+  private readonly builtInProfiles: Map<string, LoadedProfile>;
+  private promotedProfiles = new Map<string, LoadedProfile>();
 
   constructor(profiles: readonly LoadedProfile[]) {
-    this.profiles = new Map(
-      profiles.map((item) => [
-        `${item.profile.profile_kind}:${item.profile.name}`,
-        item,
-      ]),
-    );
+    this.builtInProfiles = indexProfiles(profiles, (item) => item.profile.name);
+  }
+
+  replacePromotedProfiles(profiles: readonly PromotedProfile[]): void {
+    this.promotedProfiles = indexProfiles(profiles, (item) => item.alias);
+  }
+
+  private availableProfiles(): Map<string, LoadedProfile> {
+    return new Map([...this.builtInProfiles, ...this.promotedProfiles]);
   }
 
   get(kind: ProfileObject["profile_kind"], name: string): LoadedProfile {
-    const profile = this.profiles.get(`${kind}:${name}`);
+    const key = profileKey(kind, name);
+    const profile = this.promotedProfiles.get(key) ?? this.builtInProfiles.get(key);
     if (!profile) throw new ProfileResolutionError(`unknown ${kind} profile: ${name}`);
     return profile;
   }
@@ -78,19 +106,21 @@ export class ProfileResolver {
     requested?: string | null,
   ): LoadedProfile {
     if (requested) return this.get("deployment", requested);
-    const candidates = [...this.profiles.values()].filter((item) => {
-      if (item.profile.profile_kind !== "deployment") return false;
-      return (
+    const candidates = new Map<string, LoadedProfile>();
+    for (const item of this.availableProfiles().values()) {
+      if (item.profile.profile_kind !== "deployment") continue;
+      if (
         scalarArray(item.profile.spec, "models").includes(model) &&
         scalarArray(item.profile.spec, "harnesses").includes(harness)
-      );
-    });
-    if (candidates.length !== 1) {
+      )
+        candidates.set(item.profile_id, item);
+    }
+    if (candidates.size !== 1) {
       throw new ProfileResolutionError(
-        `expected one compatible deployment, found ${candidates.length}`,
+        `expected one compatible deployment, found ${candidates.size}`,
       );
     }
-    return candidates[0] as LoadedProfile;
+    return [...candidates.values()][0] as LoadedProfile;
   }
 
   resolve(input: {
@@ -100,14 +130,19 @@ export class ProfileResolver {
     deployment?: string | null;
     launch_policy: string;
   }): ResolvedProfile[] {
-    const selected = [
-      this.get("benchmark", input.benchmark),
-      this.get("model", input.model),
-      this.get("harness", input.harness),
-      this.selectDeployment(input.model, input.harness, input.deployment),
-      this.get("launch_policy", input.launch_policy),
+    const deploymentProfile = this.selectDeployment(
+      input.model,
+      input.harness,
+      input.deployment,
+    );
+    const selected: Array<[LoadedProfile, string]> = [
+      [this.get("benchmark", input.benchmark), input.benchmark],
+      [this.get("model", input.model), input.model],
+      [this.get("harness", input.harness), input.harness],
+      [deploymentProfile, input.deployment ?? deploymentProfile.profile.name],
+      [this.get("launch_policy", input.launch_policy), input.launch_policy],
     ];
-    const deployment = selected[3] as LoadedProfile;
+    const deployment = selected[3]?.[0] as LoadedProfile;
     if (
       !scalarArray(deployment.profile.spec, "models").includes(input.model) ||
       !scalarArray(deployment.profile.spec, "harnesses").includes(input.harness)
@@ -117,11 +152,11 @@ export class ProfileResolver {
       );
     }
     return selected.map(
-      (item) =>
+      ([item, alias]) =>
         ({
           kind: item.profile.profile_kind,
           profile_id: item.profile_id,
-          name: item.profile.name,
+          name: alias,
           spec: item.profile.spec,
         }) as ResolvedProfile,
     );
@@ -142,9 +177,11 @@ export class ProfileResolver {
   }
 
   sourceRevision(): string {
-    return sha256(
-      canonicalJson([...this.profiles.values()].map((item) => item.profile_id).sort()),
+    const aliases: Array<[string, string]> = [...this.availableProfiles()].map(
+      ([alias, item]) => [alias, item.profile_id],
     );
+    aliases.sort((left, right) => left[0].localeCompare(right[0]));
+    return sha256(canonicalJson(aliases));
   }
 }
 

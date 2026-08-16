@@ -100,6 +100,13 @@ export class ControlService {
 
   async initialize(builtInProfiles: readonly LoadedProfile[]): Promise<void> {
     for (const item of builtInProfiles) await this.append(item.profile);
+    await this.refreshProfileResolver();
+  }
+
+  async refreshProfileResolver(): Promise<void> {
+    this.resolver.replacePromotedProfiles(
+      await this.projection.approvedProfileAliases(),
+    );
   }
 
   private assertReady(): void {
@@ -149,12 +156,18 @@ export class ControlService {
         occurred_at: record.created_at,
         data: { key, digest: result.digest, record_id: record.record_id },
       });
+      if (record.kind === "profile.object" || record.kind === "profile.promotion")
+        await this.refreshProfileResolver();
     }
     return { ...result, key };
   }
 
   async syncProjection(): Promise<number> {
-    const operation = this.appendQueue.then(() => this.projection.sync(this.store));
+    const operation = this.appendQueue.then(async () => {
+      const ingested = await this.projection.sync(this.store);
+      if (ingested > 0) await this.refreshProfileResolver();
+      return ingested;
+    });
     this.appendQueue = operation.then(
       () => undefined,
       () => undefined,
@@ -289,15 +302,16 @@ export class ControlService {
     const selected = Object.fromEntries(
       request.profiles.map((profile) => [profile.kind, profile.alias]),
     );
-    const deployment =
-      input.deployment ??
-      this.resolver.selectDeployment(input.model, input.harness).profile.name;
+    const deploymentMatches =
+      input.deployment === null ||
+      input.deployment === undefined ||
+      selected.deployment === input.deployment;
     const matches =
       request.actor.subject === actor.subject &&
       selected.benchmark === input.benchmark &&
       selected.model === input.model &&
       selected.harness === input.harness &&
-      selected.deployment === deployment &&
+      deploymentMatches &&
       selected.launch_policy === input.launch_policy &&
       request.ceiling_microusd === input.ceiling_microusd;
     if (!matches)
@@ -313,14 +327,15 @@ export class ControlService {
     const selected = Object.fromEntries(
       lock.profiles.map((profile) => [profile.kind, profile.name]),
     );
-    const deployment =
-      input.deployment ??
-      this.resolver.selectDeployment(input.model, input.harness).profile.name;
+    const deploymentMatches =
+      input.deployment === null ||
+      input.deployment === undefined ||
+      selected.deployment === input.deployment;
     const matches =
       selected.benchmark === input.benchmark &&
       selected.model === input.model &&
       selected.harness === input.harness &&
-      selected.deployment === deployment &&
+      deploymentMatches &&
       selected.launch_policy === input.launch_policy &&
       lock.ceiling_microusd === input.ceiling_microusd;
     if (!matches)
