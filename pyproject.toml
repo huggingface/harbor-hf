@@ -15,6 +15,7 @@ dependencies = [
   "zstandard>=0.23.0",
   "typer>=0.16.0",
   "pyarrow>=18.0.0",
+  "jsonschema>=4.25,<5",
 ]
 
 [project.urls]

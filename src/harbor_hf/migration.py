@@ -7,11 +7,79 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.protocols import Validator
+
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_CONTROL_PATH_PARTS = {
+    "campaign.request": ("campaigns", "{campaign_id}", "request.json"),
+    "campaign.lock": ("campaigns", "{campaign_id}", "campaign.lock.json"),
+    "action.intent": (
+        "campaigns",
+        "{campaign_id}",
+        "actions",
+        "{action_id}",
+        "intent.json",
+    ),
+    "action.dispatch": (
+        "campaigns",
+        "{campaign_id}",
+        "actions",
+        "{action_id}",
+        "q-dispatch.json",
+    ),
+    "action.receipt": (
+        "campaigns",
+        "{campaign_id}",
+        "actions",
+        "{action_id}",
+        "receipt.json",
+    ),
+    "action.advanced": (
+        "campaigns",
+        "{campaign_id}",
+        "actions",
+        "{action_id}",
+        "zz-advanced.json",
+    ),
+    "attempt.receipt": (
+        "campaigns",
+        "{campaign_id}",
+        "tasks",
+        "{task_id}",
+        "attempts",
+        "{attempt_id}",
+        "receipt.json",
+    ),
+    "terminal.selection": (
+        "campaigns",
+        "{campaign_id}",
+        "tasks",
+        "{task_id}",
+        "terminal",
+        "{record_id}.json",
+    ),
+    "budget.event": ("campaigns", "{campaign_id}", "budgets", "{record_id}.json"),
+    "endpoint.resource": (
+        "campaigns",
+        "{campaign_id}",
+        "resources",
+        "endpoints",
+        "{action_id}.json",
+    ),
+    "publication.receipt": (
+        "campaigns",
+        "{campaign_id}",
+        "publications",
+        "{publication_id}.json",
+    ),
+    "migration.record": ("migrations", "{record_id}.json"),
+}
 
 
 @dataclass(frozen=True)
@@ -249,23 +317,78 @@ def _copy_sources(
     return created, adopted
 
 
+@lru_cache(maxsize=1)
+def _control_validator() -> Validator:
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "packages"
+        / "contracts"
+        / "schemas"
+        / "control-record-v1.schema.json"
+    )
+    if not schema_path.is_file():
+        raise RuntimeError("control record schema is unavailable")
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+def _control_record_path(value: dict[str, object]) -> Path:
+    kind = str(value.get("kind", ""))
+    parts = _CONTROL_PATH_PARTS.get(kind)
+    if parts is None:
+        raise ValueError("canonical control object kind is not promotable")
+    fields = {
+        name: str(value.get(name, ""))
+        for name in (
+            "record_id",
+            "campaign_id",
+            "action_id",
+            "task_id",
+            "attempt_id",
+            "publication_id",
+        )
+    }
+    return Path("control", "schema=v1", *(part.format_map(fields) for part in parts))
+
+
+def _validate_control_candidate(relative: Path, data: bytes) -> None:
+    if relative.suffix != ".json":
+        raise ValueError(f"canonical control object is not JSON: {relative}")
+    try:
+        value = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(
+            f"canonical control object is malformed: {relative}"
+        ) from error
+    if not isinstance(value, dict):
+        raise ValueError(f"canonical control object is malformed: {relative}")
+    errors = sorted(
+        _control_validator().iter_errors(value),
+        key=lambda error: tuple(str(item) for item in error.absolute_path),
+    )
+    if errors:
+        raise ValueError(
+            f"canonical control object violates the control schema: {relative}"
+        )
+    if data != canonical_bytes(value):
+        raise ValueError(
+            f"canonical control object has non-canonical encoding: {relative}"
+        )
+    if _control_record_path(value) != relative:
+        raise ValueError(
+            f"canonical control object path does not match its identity: {relative}"
+        )
+
+
 def _validate_canonical_candidate(relative: Path, data: bytes) -> None:
     parts = relative.parts
-    if parts[:3] == ("control", "schema=v1", "campaigns") or parts[:3] == (
-        "control",
-        "schema=v1",
-        "migrations",
-    ):
-        if relative.suffix != ".json":
-            raise ValueError(f"canonical control object is not JSON: {relative}")
-        value = json.loads(data)
-        if not isinstance(value, dict) or value.get("schema_version") != "v1":
-            raise ValueError(f"canonical control object is malformed: {relative}")
-        for key in ("kind", "record_id", "created_at", "actor"):
-            if key not in value:
-                raise ValueError(
-                    f"canonical control object is missing {key}: {relative}"
-                )
+    control_prefixes = {
+        ("control", "schema=v1", "campaigns"),
+        ("control", "schema=v1", "migrations"),
+    }
+    if parts[:3] in control_prefixes:
+        _validate_control_candidate(relative, data)
         return
     if parts[:2] == ("results", "schema=v1") and relative.suffix in {
         ".json",

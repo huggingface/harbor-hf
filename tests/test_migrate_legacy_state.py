@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from harbor_hf.migration import Source, digest, migrate
+from harbor_hf.migration import Source, canonical_bytes, digest, migrate
 
 
 def build_source(root: Path, *, valid: bool = True) -> Source:
@@ -26,6 +26,26 @@ def build_source(root: Path, *, valid: bool = True) -> Source:
         encoding="utf-8",
     )
     return Source("results", root, "source-head-one")
+
+
+def canonical_campaign_request() -> dict[str, object]:
+    return {
+        "schema_version": "v1",
+        "kind": "campaign.request",
+        "record_id": "request-one",
+        "created_at": "2026-08-16T00:00:00Z",
+        "actor": {"subject": "migration", "role": "migration"},
+        "campaign_id": "campaign-one",
+        "idempotency_key_digest": f"sha256:{'a' * 64}",
+        "profiles": [
+            {"kind": "benchmark", "alias": "benchmark-one"},
+            {"kind": "model", "alias": "model-one"},
+            {"kind": "harness", "alias": "harness-one"},
+            {"kind": "deployment", "alias": "deployment-one"},
+            {"kind": "launch_policy", "alias": "policy-one"},
+        ],
+        "ceiling_microusd": 0,
+    }
 
 
 def run(source: Source, destination: Path) -> dict[str, object]:
@@ -171,18 +191,7 @@ def test_migration_promotes_explicit_canonical_control_records(
         source.root / "canonical/control/schema=v1/campaigns/campaign-one/request.json"
     )
     candidate.parent.mkdir(parents=True)
-    candidate.write_text(
-        json.dumps(
-            {
-                "schema_version": "v1",
-                "kind": "campaign.request",
-                "record_id": "request-one",
-                "created_at": "2026-08-16T00:00:00Z",
-                "actor": {"subject": "migration", "role": "migration"},
-            }
-        ),
-        encoding="utf-8",
-    )
+    candidate.write_bytes(canonical_bytes(canonical_campaign_request()))
     destination = tmp_path / "bucket"
 
     result = run(source, destination)
@@ -190,6 +199,45 @@ def test_migration_promotes_explicit_canonical_control_records(
     promoted = destination / "control/schema=v1/campaigns/campaign-one/request.json"
     assert promoted.read_bytes() == candidate.read_bytes()
     assert result["promoted_count"] == 1
+
+
+def test_migration_rejects_malformed_canonical_control_record(
+    tmp_path: Path,
+) -> None:
+    source = build_source(tmp_path / "source")
+    candidate = (
+        source.root / "canonical/control/schema=v1/campaigns/campaign-one/request.json"
+    )
+    candidate.parent.mkdir(parents=True)
+    candidate.write_bytes(
+        canonical_bytes(
+            {
+                "schema_version": "v1",
+                "kind": "campaign.request",
+                "record_id": "request-one",
+                "created_at": "2026-08-16T00:00:00Z",
+                "actor": {"subject": "migration", "role": "migration"},
+            }
+        )
+    )
+
+    with pytest.raises(ValueError, match="violates the control schema"):
+        run(source, tmp_path / "bucket")
+
+
+def test_migration_rejects_noncanonical_control_encoding(tmp_path: Path) -> None:
+    source = build_source(tmp_path / "source")
+    candidate = (
+        source.root / "canonical/control/schema=v1/campaigns/campaign-one/request.json"
+    )
+    candidate.parent.mkdir(parents=True)
+    candidate.write_text(
+        json.dumps(canonical_campaign_request(), indent=2),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="non-canonical encoding"):
+        run(source, tmp_path / "bucket")
 
 
 def test_migration_rejects_canonical_paths_outside_control_and_results(
