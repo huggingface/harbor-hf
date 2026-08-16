@@ -1,6 +1,6 @@
 /* Generated from JSON Schema. Do not edit. */
 
-export type HarborHFControlRecordV1 = (ProfileObject | ProfilePromotion | OperatorAcl | CampaignRequest | CampaignLock | ActionIntent | ActionReceipt | ActionAdvanced | AttemptReceipt | TerminalSelection | BudgetEvent | EndpointResource | PublicationReceipt | MigrationRecord)
+export type HarborHFControlRecordV1 = (ProfileObject | ProfilePromotion | OperatorAcl | CampaignRequest | CampaignLock | ActionIntent | ActionDispatch | ActionReceipt | ActionAdvanced | AttemptReceipt | TerminalSelection | BudgetEvent | EndpointResource | PublicationReceipt | MigrationRecord)
 export type ProfileObject = (BenchmarkProfileObject | ModelProfileObject | HarnessProfileObject | DeploymentProfileObject | LaunchPolicyProfileObject)
 export type BenchmarkProfileObject = (Base & {
 schema_version: "v1"
@@ -135,6 +135,17 @@ action_kind: ("campaign.admit" | "job.launch" | "job.observe" | "job.cancel" | "
 generation: number
 target: string
 payload: ActionPayload
+})
+export type ActionDispatch = (Base & {
+schema_version: "v1"
+kind: "action.dispatch"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+action_id: Id
+campaign_id: Id
+operation: "create"
+adoption_not_before: Timestamp
 })
 export type ActionReceipt = (Base & {
 schema_version: "v1"

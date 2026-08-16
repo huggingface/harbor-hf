@@ -30,6 +30,8 @@ export function controlRecordPath(record: RecordIdentity): string {
       return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/campaign.lock.json`;
     case "action.intent":
       return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/actions/${required(record.action_id, "action_id")}/intent.json`;
+    case "action.dispatch":
+      return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/actions/${required(record.action_id, "action_id")}/q-dispatch.json`;
     case "action.receipt":
       return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/actions/${required(record.action_id, "action_id")}/receipt.json`;
     case "action.advanced":

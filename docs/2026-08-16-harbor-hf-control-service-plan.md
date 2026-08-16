@@ -326,14 +326,19 @@ No Hub resource is created during submission.
 Every HF Job or Endpoint mutation uses a deterministic action ID derived from
 the locked campaign, action kind, target, and generation.
 
-The Space writes `intent.json` before calling the external API. The HF Job or
-Endpoint action carries the same ID in labels or managed metadata. The Space
-writes `receipt.json` after it observes the remote identity and state.
+The Space writes `intent.json` before calling the external API. Before the first
+Job create request, it also writes an immutable action-dispatch fence. The HF
+Job or Endpoint action carries the same action ID in labels or managed metadata.
+The Space writes `receipt.json` after it observes the remote identity and state.
 
 Recovery handles each crash window:
 
-- An intent with no visible remote action remains pending until the API's
-  visibility delay has passed, then may be issued once.
+- A Job launch first performs an adoption-only lookup. When no match exists, the
+  control service writes the dispatch fence before issuing the one allowed
+  create request.
+- Once the fence exists, the action waits through the visibility delay and stays
+  adoption-only. A lost response or process exit can never issue a second Job
+  create for the same action.
 - An intent with a matching Job or endpoint is adopted without another create
   or launch.
 - A receipt with a mismatched remote identity stops the campaign.

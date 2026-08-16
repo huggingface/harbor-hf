@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { canonicalJson } from "@harbor-hf/contracts";
 import { mintWorkerCapability } from "@harbor-hf/control-core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { AuthStore, AuthenticationService } from "../src/auth.js";
 import type { AppConfig } from "../src/config.js";
@@ -12,6 +12,7 @@ import { createRuntime, type Runtime } from "../src/runtime.js";
 const roots: string[] = [];
 const runtimes: Runtime[] = [];
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
@@ -137,6 +138,27 @@ describe("control API", () => {
         })
       ).statusCode,
     ).toBe(403);
+    await app.close();
+  });
+
+  it("returns 401 for an invalid bearer credential", async () => {
+    const { runtime, app } = await setup();
+    runtime.config.auth_mode = "oauth";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("unauthorized", { status: 401 })),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/system",
+      headers: { authorization: "Bearer invalid-test-credential" },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      error: { code: "invalid_bearer_credential" },
+    });
     await app.close();
   });
 

@@ -17,6 +17,8 @@ import {
 
 export type AuthRole = "operator" | "reader";
 
+export class InvalidBearerCredentialError extends Error {}
+
 export interface AuthenticatedActor extends Actor {
   role: AuthRole;
   transport: "session" | "bearer" | "development";
@@ -245,7 +247,8 @@ export class AuthenticationService {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(10_000),
       });
-      if (!response.ok) throw new Error("bearer token identity is invalid");
+      if (!response.ok)
+        throw new InvalidBearerCredentialError("bearer token identity is invalid");
       const body = (await response.json()) as Record<string, unknown>;
       subject =
         typeof body.id === "string"
@@ -253,7 +256,10 @@ export class AuthenticationService {
           : typeof body.name === "string"
             ? body.name
             : null;
-      if (!subject) throw new Error("bearer token identity has no stable subject");
+      if (!subject)
+        throw new InvalidBearerCredentialError(
+          "bearer token identity has no stable subject",
+        );
       this.bearerCache.set(key, { subject, expires_at: Date.now() + 300_000 });
     }
     return { subject, role: await this.role(subject), transport: "bearer" };

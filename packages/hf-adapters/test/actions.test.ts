@@ -119,12 +119,12 @@ describe("HuggingFaceActions", () => {
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
         call += 1;
-        if (call === 1 && !init?.method)
+        if ((call === 1 || call === 2) && !init?.method)
           return new Response("[]", {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
-        if (call === 2 && init?.method) throw new TypeError("network disconnected");
+        if (call === 3 && init?.method) throw new TypeError("network disconnected");
         return new Response(
           JSON.stringify([
             {
@@ -147,14 +147,19 @@ describe("HuggingFaceActions", () => {
       controlUrl: "https://control.example",
     });
 
+    await expect(adapter.execute(base, { adoption_only: true })).rejects.toThrow(
+      "no Job has the deterministic action label",
+    );
     await expect(adapter.execute(base)).rejects.toThrow(
       "Job launch outcome is ambiguous",
     );
-    await expect(adapter.execute(base)).resolves.toMatchObject({
-      outcome: "adopted",
-      resource_id: "job-adopted-after-disconnect",
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await expect(adapter.execute(base, { adoption_only: true })).resolves.toMatchObject(
+      {
+        outcome: "adopted",
+        resource_id: "job-adopted-after-disconnect",
+      },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("cancels the exact Job bound to the launch action", async () => {

@@ -1,5 +1,6 @@
 import type {
   ActionAdvanced,
+  ActionDispatch,
   ActionIntent,
   ActionReceipt,
   Actor,
@@ -356,6 +357,33 @@ export class ControlService {
         throw new PolicyError(`terminal task cannot receive action: ${taskId}`);
     }
     await this.append(intent);
+  }
+
+  async dispatchAction(
+    intent: ActionIntent,
+    adoptionNotBefore: string,
+  ): Promise<{ record: ActionDispatch; created: boolean }> {
+    if (intent.action_kind !== "job.launch")
+      throw new PolicyError("only Job launches use create dispatch fences");
+    const existing = await this.projection.actionDispatch(intent.action_id);
+    if (existing)
+      return {
+        record: JSON.parse(existing.body) as ActionDispatch,
+        created: false,
+      };
+    const record: ActionDispatch = {
+      schema_version: "v1",
+      kind: "action.dispatch",
+      record_id: deterministicId("action-dispatch", intent.action_id),
+      created_at: this.clock.now().toISOString(),
+      actor: serviceActor(),
+      action_id: intent.action_id,
+      campaign_id: intent.campaign_id,
+      operation: "create",
+      adoption_not_before: adoptionNotBefore,
+    };
+    const result = await this.append(record);
+    return { record, created: result.created };
   }
 
   async receipt(

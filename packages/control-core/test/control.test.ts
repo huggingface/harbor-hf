@@ -16,6 +16,9 @@ import { Projection } from "../src/projection.js";
 import { ResultPublisher } from "../src/publication.js";
 import type { AttemptInput } from "../src/service.js";
 import {
+  AmbiguousExternalActionError,
+  type ExternalActionContext,
+  ExternalActionNotFoundError,
   Reconciler,
   type ExternalActionPort,
   type ExternalActionResult,
@@ -358,6 +361,63 @@ describe("control service", () => {
     });
   });
 
+  it("does not cancel a remote Job that is already in ERROR", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "cancel-error-job-submission",
+      operator,
+    );
+    const observedKinds: string[] = [];
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        observedKinds.push(intent.action_kind);
+        if (intent.action_kind === "job.launch")
+          return {
+            outcome: "created",
+            observed_state: "ERROR",
+            resource_id: "job-error-terminal",
+          };
+        if (intent.action_kind === "job.observe")
+          return {
+            outcome: "completed",
+            observed_state: "ERROR",
+            resource_id: "job-error-terminal",
+          };
+        return new NoopActions().execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        batch_size: 16,
+        dispatch_adoption_delay_ms: 0,
+      },
+    );
+    await reconciler.tick();
+    await reconciler.tick();
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "cancel", reason: "operator cancellation", confirmed: true },
+      "cancel-error-job-action",
+      operator,
+    );
+
+    await settle(reconciler, 12);
+
+    expect(observedKinds).not.toContain("job.cancel");
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 1,
+    });
+  });
+
   it("turns failed Job launches into bounded infrastructure attempts", async () => {
     const control = await createTestControl();
     controls.push(control);
@@ -396,6 +456,76 @@ describe("control service", () => {
       status: "completed",
       terminal_tasks: 1,
       publication_status: "published",
+    });
+  });
+
+  it("fences an ambiguous Job create before retrying label adoption", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "ambiguous-job-dispatch-key",
+      operator,
+    );
+    let creates = 0;
+    let adoptionChecks = 0;
+    let remoteJobExists = false;
+    const external: ExternalActionPort = {
+      execute: async (
+        intent: ActionIntent,
+        context?: ExternalActionContext,
+      ): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.launch") {
+          if (context?.adoption_only) {
+            adoptionChecks += 1;
+            if (!remoteJobExists)
+              throw new ExternalActionNotFoundError("remote Job is not visible");
+            return {
+              outcome: "adopted",
+              observed_state: "RUNNING",
+              resource_id: "job-ambiguous-one",
+            };
+          }
+          creates += 1;
+          remoteJobExists = true;
+          throw new AmbiguousExternalActionError("create response disconnected");
+        }
+        if (intent.action_kind === "job.observe")
+          return {
+            outcome: "completed",
+            observed_state: "COMPLETED",
+            resource_id: "job-ambiguous-one",
+          };
+        return new NoopActions().execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        batch_size: 16,
+        dispatch_adoption_delay_ms: 0,
+      },
+    );
+
+    await settle(reconciler, 12);
+
+    const launch = (await control.projection.actions(100)).find(
+      (action) => action.action_kind === "job.launch",
+    );
+    expect(launch).toBeDefined();
+    expect(creates).toBe(1);
+    expect(adoptionChecks).toBeGreaterThanOrEqual(2);
+    expect(
+      launch ? await control.projection.actionDispatch(launch.action_id) : null,
+    ).not.toBeNull();
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 1,
     });
   });
 

@@ -267,18 +267,18 @@ Bucket mount. The database enables foreign keys and write-ahead logging.
 
 Startup follows this sequence:
 
-1. Start the HTTP server in rebuilding mode.
+1. Initialize OAuth and local disposable state without listening for traffic.
 2. Load the newest valid projection snapshot when one exists.
 3. Verify the snapshot's source object digests.
 4. Replay later immutable records in deterministic order.
 5. Compare the projection with control invariants.
-6. Mark control readiness and allow mutations.
+6. Listen only after readiness succeeds, then start reconciliation.
 
-Liveness remains healthy while rebuilding. Readiness reports rebuilding and
-mutation routes return `503 Service Unavailable` until replay finishes. A
-projection schema mismatch discards the database and triggers a full rebuild.
-In-place projection migrations are unnecessary because the database is
-disposable.
+An initialization failure closes local resources and exits nonzero so the
+platform can restart the process. It cannot leave a live but permanently
+unready server behind. A projection schema mismatch discards the database and
+triggers a full rebuild. In-place projection migrations are unnecessary because
+the database is disposable.
 
 Snapshots may improve startup time. They cannot authorize paid work until their
 source digest set is verified.
@@ -292,9 +292,12 @@ transition, and writes an action-advanced marker. A receipt without that marker
 is replayed after restart. The transition is deterministic and idempotent, so a
 process exit between the receipt and its derived action cannot strand work.
 
-A process exit before the receipt is recovered by adopting the matching remote
-resource. Worker attempts remain bound to the exact launch action, and one
-physical action can produce no more than one attempt for the same logical task.
+Before the first remote Job create call, the reconciler writes an immutable
+action-dispatch fence. If the create response is lost or the process exits, the
+same action becomes adoption-only after a bounded delay. It can discover the
+matching deterministic Job label but cannot issue a second create request.
+Worker attempts remain bound to the exact launch action, and one physical
+action can produce no more than one attempt for the same logical task.
 
 The reconciler uses `AbortController` for graceful shutdown. Shutdown stops new
 admissions, lets an in-flight Bucket write reach a safe boundary, closes SSE

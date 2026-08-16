@@ -22,6 +22,9 @@
       "$ref": "#/$defs/ActionIntent"
     },
     {
+      "$ref": "#/$defs/ActionDispatch"
+    },
+    {
       "$ref": "#/$defs/ActionReceipt"
     },
     {
@@ -475,6 +478,57 @@
             },
             "payload": {
               "$ref": "#/$defs/ActionPayload"
+            }
+          }
+        }
+      ]
+    },
+    "ActionDispatch": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "action_id",
+            "campaign_id",
+            "operation",
+            "adoption_not_before"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "action.dispatch"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "action_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "operation": {
+              "const": "create"
+            },
+            "adoption_not_before": {
+              "$ref": "#/$defs/Timestamp"
             }
           }
         }

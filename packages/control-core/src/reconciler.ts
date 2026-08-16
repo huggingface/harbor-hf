@@ -21,17 +21,34 @@ export interface ExternalActionResult {
   cost_microusd?: number | null;
 }
 
+export interface ExternalActionContext {
+  adoption_only?: boolean;
+}
+
+export class ExternalActionNotFoundError extends Error {}
+export class AmbiguousExternalActionError extends Error {}
+
 export interface ExternalActionPort {
-  execute(intent: ActionIntent): Promise<ExternalActionResult>;
+  execute(
+    intent: ActionIntent,
+    context?: ExternalActionContext,
+  ): Promise<ExternalActionResult>;
 }
 
 export interface ReconcilerOptions {
   interval_ms: number;
   observation_interval_ms: number;
   batch_size: number;
+  dispatch_adoption_delay_ms?: number;
 }
 
-const terminalJobStates = new Set(["STOPPED", "COMPLETED", "CANCELLED", "CANCELED"]);
+const terminalJobStates = new Set([
+  "STOPPED",
+  "COMPLETED",
+  "CANCELLED",
+  "CANCELED",
+  "ERROR",
+]);
 
 function jobStateIsTerminal(state: string | null): boolean {
   return state !== null && terminalJobStates.has(state.toUpperCase());
@@ -175,12 +192,52 @@ export class Reconciler {
       (await this.allActionTasksTerminal(intent))
     ) {
       result = { outcome: "completed", observed_state: "suppressed-terminal" };
+    } else if (intent.action_kind === "job.launch") {
+      const launchResult = await this.executeJobLaunch(intent);
+      if (!launchResult) return;
+      result = launchResult;
     } else {
       result = await this.external.execute(intent);
     }
     const receipt = await this.service.receipt(intent, result);
     await this.advance(intent, receipt);
     await this.service.markAdvanced(intent, receipt);
+  }
+
+  private async executeJobLaunch(
+    intent: ActionIntent,
+  ): Promise<ExternalActionResult | null> {
+    const dispatch = await this.projection.actionDispatch(intent.action_id);
+    if (dispatch) {
+      if (Date.parse(dispatch.adoption_not_before) > Date.now()) return null;
+      try {
+        return await this.external.execute(intent, { adoption_only: true });
+      } catch (error) {
+        if (
+          error instanceof ExternalActionNotFoundError ||
+          error instanceof AmbiguousExternalActionError
+        )
+          return null;
+        throw error;
+      }
+    }
+    try {
+      return await this.external.execute(intent, { adoption_only: true });
+    } catch (error) {
+      if (error instanceof AmbiguousExternalActionError) return null;
+      if (!(error instanceof ExternalActionNotFoundError)) throw error;
+    }
+    const adoptionNotBefore = new Date(
+      Date.now() + (this.options.dispatch_adoption_delay_ms ?? 60_000),
+    ).toISOString();
+    const fence = await this.service.dispatchAction(intent, adoptionNotBefore);
+    if (!fence.created) return null;
+    try {
+      return await this.external.execute(intent);
+    } catch (error) {
+      if (error instanceof AmbiguousExternalActionError) return null;
+      throw error;
+    }
   }
 
   private async advance(intent: ActionIntent, receipt: ActionReceipt): Promise<void> {

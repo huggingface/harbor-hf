@@ -2,6 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
   ActionAdvanced,
+  ActionDispatch,
   ActionIntent,
   ActionReceipt,
   AttemptReceipt,
@@ -51,6 +52,15 @@ interface ActionRow {
   observed_state: string | null;
   resource_id: string | null;
   created_at: string;
+}
+
+interface DispatchRow {
+  action_id: string;
+  campaign_id: string;
+  operation: string;
+  adoption_not_before: string;
+  created_at: string;
+  body: string;
 }
 
 interface AdvancementRow {
@@ -147,6 +157,7 @@ interface DatabaseSchema {
   objects: ObjectRow;
   campaigns: CampaignRow;
   actions: ActionRow;
+  dispatches: DispatchRow;
   advancements: AdvancementRow;
   tasks: TaskRow;
   attempts: AttemptRow;
@@ -285,6 +296,16 @@ export class Projection {
       .addColumn("created_at", "text", (column) => column.notNull())
       .execute();
     await this.db.schema
+      .createTable("dispatches")
+      .ifNotExists()
+      .addColumn("action_id", "text", (column) => column.primaryKey())
+      .addColumn("campaign_id", "text", (column) => column.notNull())
+      .addColumn("operation", "text", (column) => column.notNull())
+      .addColumn("adoption_not_before", "text", (column) => column.notNull())
+      .addColumn("created_at", "text", (column) => column.notNull())
+      .addColumn("body", "text", (column) => column.notNull())
+      .execute();
+    await this.db.schema
       .createTable("advancements")
       .ifNotExists()
       .addColumn("action_id", "text", (column) => column.primaryKey())
@@ -408,6 +429,7 @@ export class Projection {
       "attempts",
       "tasks",
       "advancements",
+      "dispatches",
       "actions",
       "campaigns",
       "objects",
@@ -541,6 +563,9 @@ export class Projection {
       case "action.intent":
         await this.applyActionIntent(record);
         break;
+      case "action.dispatch":
+        await this.applyActionDispatch(record);
+        break;
       case "action.receipt":
         await this.applyActionReceipt(record);
         break;
@@ -646,6 +671,37 @@ export class Projection {
         observed_state: null,
         resource_id: null,
         created_at: record.created_at,
+      })
+      .execute();
+  }
+
+  private async applyActionDispatch(record: ActionDispatch): Promise<void> {
+    const action = await this.db
+      .selectFrom("actions")
+      .select(["campaign_id", "receipt_body"])
+      .where("action_id", "=", record.action_id)
+      .executeTakeFirst();
+    if (!action)
+      throw new ProjectionIntegrityError(
+        `dispatch has no action intent: ${record.action_id}`,
+      );
+    if (action.campaign_id !== record.campaign_id)
+      throw new ProjectionIntegrityError(
+        `dispatch campaign mismatch: ${record.action_id}`,
+      );
+    if (action.receipt_body)
+      throw new ProjectionIntegrityError(
+        `dispatch was recorded after action completion: ${record.action_id}`,
+      );
+    await this.db
+      .insertInto("dispatches")
+      .values({
+        action_id: record.action_id,
+        campaign_id: record.campaign_id,
+        operation: record.operation,
+        adoption_not_before: record.adoption_not_before,
+        created_at: record.created_at,
+        body: body(record),
       })
       .execute();
   }
@@ -939,6 +995,16 @@ export class Projection {
       intent: JSON.parse(row.intent_body) as ActionIntent,
       receipt: JSON.parse(row.receipt_body as string) as ActionReceipt,
     }));
+  }
+
+  async actionDispatch(actionId: string): Promise<Selectable<DispatchRow> | null> {
+    return (
+      (await this.db
+        .selectFrom("dispatches")
+        .selectAll()
+        .where("action_id", "=", actionId)
+        .executeTakeFirst()) ?? null
+    );
   }
 
   async action(actionId: string): Promise<Selectable<ActionRow> | null> {

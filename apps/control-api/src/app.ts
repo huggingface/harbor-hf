@@ -48,7 +48,11 @@ import {
   taskDetailSchema,
   taskSchema,
 } from "./api-schemas.js";
-import type { AuthenticatedActor, SessionRow } from "./auth.js";
+import {
+  type AuthenticatedActor,
+  InvalidBearerCredentialError,
+  type SessionRow,
+} from "./auth.js";
 import type { Runtime } from "./runtime.js";
 
 declare module "fastify" {
@@ -276,9 +280,21 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     } else {
       const authorization = request.headers.authorization;
       if (authorization?.startsWith("Bearer ")) {
-        request.actor = await runtime.auth.bearerActor(
-          authorization.slice("Bearer ".length),
-        );
+        try {
+          request.actor = await runtime.auth.bearerActor(
+            authorization.slice("Bearer ".length),
+          );
+        } catch (error) {
+          if (!(error instanceof InvalidBearerCredentialError)) throw error;
+          await reply.code(401).send({
+            error: {
+              code: "invalid_bearer_credential",
+              message: "the bearer credential is invalid or expired",
+              request_id: request.id,
+            },
+          });
+          return;
+        }
       } else {
         const sessionId = request.cookies.hhf_session;
         const authenticated = sessionId

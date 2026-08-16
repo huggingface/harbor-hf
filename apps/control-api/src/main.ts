@@ -18,15 +18,20 @@ async function shutdown(signal: string): Promise<void> {
 process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
-await app.listen({ host: "0.0.0.0", port: config.port });
-runtime.initialize().catch((error: unknown) => {
+try {
+  await runtime.initialize();
+  await app.listen({ host: "0.0.0.0", port: config.port });
+  runtime.start();
+} catch (error) {
   app.log.error(
     {
       err:
         error instanceof Error
           ? { name: error.name, message: error.message }
-          : { name: "Error", message: "initialization failed" },
+          : { name: "Error", message: "startup failed" },
     },
-    "control initialization failed",
+    "control startup failed",
   );
-});
+  await Promise.allSettled([app.close(), runtime.close()]);
+  process.exitCode = 1;
+}

@@ -38,6 +38,23 @@ describe("canonical contracts", () => {
     ).toThrow(ContractValidationError);
   });
 
+  it("validates the immutable Job create dispatch fence", () => {
+    const record = validateControlRecord({
+      schema_version: "v1",
+      kind: "action.dispatch",
+      record_id: "action-dispatch-test",
+      created_at: "2026-08-16T00:00:00Z",
+      actor: { subject: "control", role: "service" },
+      action_id: "action-test",
+      campaign_id: "campaign-test",
+      operation: "create",
+      adoption_not_before: "2026-08-16T00:01:00Z",
+    });
+    expect(controlRecordPath(record)).toBe(
+      "control/schema=v1/campaigns/campaign-test/actions/action-test/q-dispatch.json",
+    );
+  });
+
   it("keeps profile and action payloads closed", () => {
     const base = {
       schema_version: "v1",

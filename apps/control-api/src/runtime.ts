@@ -26,6 +26,7 @@ export interface Runtime {
   auth: AuthenticationService;
   reconciler: Reconciler;
   initialize(): Promise<void>;
+  start(): void;
   close(): Promise<void>;
 }
 
@@ -90,6 +91,8 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
         };
         await service.append(acl);
       }
+    },
+    start() {
       if (config.write_mode !== "disabled") reconciler.start(abort.signal);
     },
     async close() {

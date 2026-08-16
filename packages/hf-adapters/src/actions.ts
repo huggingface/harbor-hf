@@ -1,5 +1,8 @@
 import type { ActionIntent } from "@harbor-hf/contracts";
 import {
+  AmbiguousExternalActionError,
+  type ExternalActionContext,
+  ExternalActionNotFoundError,
   type ExternalActionPort,
   type ExternalActionResult,
   mintWorkerCapability,
@@ -56,8 +59,6 @@ function stringValues(
   return value;
 }
 
-class AmbiguousJobLaunchError extends Error {}
-
 function cleanFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : "remote action failed";
   if (/token|authorization|cookie|secret/i.test(message))
@@ -66,7 +67,7 @@ function cleanFailure(error: unknown): string {
 }
 
 function jobStateIsTerminal(state: string): boolean {
-  return ["STOPPED", "COMPLETED", "CANCELLED", "CANCELED"].includes(
+  return ["STOPPED", "COMPLETED", "CANCELLED", "CANCELED", "ERROR"].includes(
     state.toUpperCase(),
   );
 }
@@ -105,13 +106,16 @@ export class HuggingFaceActions implements ExternalActionPort {
       config.endpointsUrl ?? "https://api.endpoints.huggingface.cloud/v2";
   }
 
-  async execute(intent: ActionIntent): Promise<ExternalActionResult> {
+  async execute(
+    intent: ActionIntent,
+    context?: ExternalActionContext,
+  ): Promise<ExternalActionResult> {
     try {
       switch (intent.action_kind) {
         case "campaign.admit":
           return { outcome: "completed", observed_state: "admitted" };
         case "job.launch":
-          return await this.launchJob(intent);
+          return await this.launchJob(intent, context);
         case "job.observe":
           return await this.observeJob(intent);
         case "job.cancel":
@@ -125,7 +129,15 @@ export class HuggingFaceActions implements ExternalActionPort {
           return { outcome: "completed", observed_state: "handled_locally" };
       }
     } catch (error) {
-      if (error instanceof AmbiguousJobLaunchError) throw error;
+      if (
+        error instanceof AmbiguousExternalActionError ||
+        error instanceof ExternalActionNotFoundError
+      )
+        throw error;
+      if (intent.action_kind === "job.launch" && context?.adoption_only)
+        throw new AmbiguousExternalActionError("Job adoption check failed", {
+          cause: error,
+        });
       return {
         outcome: "failed",
         observed_state: "ERROR",
@@ -134,7 +146,10 @@ export class HuggingFaceActions implements ExternalActionPort {
     }
   }
 
-  private async launchJob(intent: ActionIntent): Promise<ExternalActionResult> {
+  private async launchJob(
+    intent: ActionIntent,
+    context?: ExternalActionContext,
+  ): Promise<ExternalActionResult> {
     const jobs = await listJobs({
       namespace: this.config.namespace,
       accessToken: this.config.accessToken,
@@ -154,6 +169,10 @@ export class HuggingFaceActions implements ExternalActionPort {
         resource_id: job.id,
       };
     }
+    if (context?.adoption_only)
+      throw new ExternalActionNotFoundError(
+        "no Job has the deterministic action label",
+      );
     if (!booleanValue(intent, "trusted_worker"))
       throw new Error("Job launch requires a trusted worker profile");
     if (!this.config.controlUrl)
@@ -191,7 +210,7 @@ export class HuggingFaceActions implements ExternalActionPort {
         },
       });
     } catch (error) {
-      throw new AmbiguousJobLaunchError("Job launch outcome is ambiguous", {
+      throw new AmbiguousExternalActionError("Job launch outcome is ambiguous", {
         cause: error,
       });
     }
