@@ -6,13 +6,18 @@ This review covers [`control-record-v1.schema.json`](../../packages/contracts/sc
 
 ## Schemator result
 
-A fresh bounded Schemator review covered all 122 fields after adding Job
-cancellation and removing worker access to the long-lived Hub token and
-canonical Bucket mount. It found no consistency warnings. Its first iteration
+The bounded Schemator review covered the control schema after Job cancellation
+was added and worker access to the long-lived Hub token and canonical Bucket
+mount was removed. It found no consistency warnings. Its first iteration
 suggested five renames and two structural changes. The review did not converge
 within that bounded iteration, so no generated change was applied directly.
-The final extraction contains 124 fields after the later addition of the two
-explicit action-dispatch fence fields.
+
+Later recovery and evidence work added manually reviewed fields and record kinds,
+including action-dispatch fences, action-advanced markers, worker evidence
+references, and a worker-receipt grace deadline. Generated TypeScript and API
+types, canonical-byte tests, replay tests, and JSON Schema validation cover the
+current schema. The earlier field count and convergence statement no longer
+describe the current revision and are intentionally not carried forward.
 
 ## Manual decisions
 
@@ -22,6 +27,7 @@ The final product-semantics pass retained the following deliberate boundaries:
 - Imported deployment profiles describe historical work and cannot authorize a new launch or retry.
 - Real task IDs may begin with digits, and two-character harness names such as `pi` are valid.
 - Worker attempts remain bound to the exact durable action that authorized the physical work.
+- `worker_receipt_deadline` records the bounded grace period after a terminal Job observation so a late immutable worker receipt is checked before a fallback attempt is selected.
 - Action receipts have a separate action-advanced marker so a restart can recover a crash between the remote receipt and its deterministic domain transition.
 - Job launches have a pre-create action-dispatch fence so a lost response or process exit can only trigger delayed label adoption, never a second create request for the same action.
 - Evidence, actor, digest, source revision, cost, terminal selection, endpoint cleanup, and publication provenance remain explicit.

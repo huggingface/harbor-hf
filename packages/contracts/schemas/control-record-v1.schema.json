@@ -1396,6 +1396,9 @@
         "not_before": {
           "$ref": "#/$defs/Timestamp"
         },
+        "worker_receipt_deadline": {
+          "$ref": "#/$defs/Timestamp"
+        },
         "prior_attempt_id": {
           "$ref": "#/$defs/Id"
         },

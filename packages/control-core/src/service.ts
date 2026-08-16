@@ -83,7 +83,6 @@ function serviceActor(): Actor {
 export class ControlService {
   readonly resolver: ProfileResolver;
   private appendQueue: Promise<void> = Promise.resolve();
-  private attemptQueue: Promise<void> = Promise.resolve();
   private budgetQueue: Promise<void> = Promise.resolve();
   private retryAdmissionQueue: Promise<void> = Promise.resolve();
   private submitQueue: Promise<void> = Promise.resolve();
@@ -536,10 +535,8 @@ export class ControlService {
     input: AttemptInput,
     actor: Actor,
   ): Promise<{ receipt: AttemptReceipt; adopted: boolean }> {
-    const operation = this.attemptQueue.then(() =>
-      this.attemptSerialized(input, actor),
-    );
-    this.attemptQueue = operation.then(
+    const operation = this.budgetQueue.then(() => this.attemptSerialized(input, actor));
+    this.budgetQueue = operation.then(
       () => undefined,
       () => undefined,
     );
@@ -683,13 +680,33 @@ export class ControlService {
     }
     const campaign = await this.projection.campaign(campaignId);
     if (!campaign) throw new PolicyError("campaign does not exist");
-    if (
-      Math.max(
-        campaign.reserved_microusd + amountMicrousd,
-        campaign.observed_microusd,
-      ) > campaign.ceiling_microusd
-    )
-      return false;
+    const committedMicrousd = Math.max(
+      campaign.reserved_microusd,
+      campaign.observed_microusd,
+    );
+    if (committedMicrousd + amountMicrousd > campaign.ceiling_microusd) return false;
+    const observedOverage = Math.max(
+      0,
+      campaign.observed_microusd - campaign.reserved_microusd,
+    );
+    if (observedOverage > 0) {
+      const catchUp: BudgetEvent = {
+        schema_version: "v1",
+        kind: "budget.event",
+        record_id: deterministicId(
+          "budget",
+          campaignId,
+          "observed-overage",
+          priorAttemptId,
+        ),
+        created_at: priorAttemptCompletedAt,
+        actor: serviceActor(),
+        campaign_id: campaignId,
+        event_kind: "reserve",
+        amount_microusd: observedOverage,
+      };
+      await this.append(catchUp);
+    }
     const reservation: BudgetEvent = {
       schema_version: "v1",
       kind: "budget.event",

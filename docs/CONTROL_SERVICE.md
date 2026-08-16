@@ -329,8 +329,14 @@ connections, and exits within the Space termination window. Remote Jobs keep
 running. After restart, the reconciler continues Job observation and repeats
 endpoint pause observations until zero ready replicas are explicitly recorded.
 A failed or incomplete Job observation stays pending and cannot synthesize a
-terminal task outcome or authorize replacement work. A pause response that
-omits replica state is not treated as zero.
+terminal task outcome or authorize replacement work. When a terminal Job still
+has no required worker receipt, the reconciler performs a fresh Bucket sync and
+writes a delayed observation with a durable worker-receipt deadline. It selects
+a fallback only after the configured bounded grace period. Replacement
+admission is serialized across operator and reconciler paths, and a new
+reservation is checked against the greater of durable reservations and observed
+spend. Any observed overage is durably caught up before the replacement intent
+is written. A pause response that omits replica state is not treated as zero.
 
 The next action must be independent of Bucket listing order. Property tests
 shuffle records and inject process termination around each external call.

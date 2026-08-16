@@ -770,6 +770,107 @@ describe("control service", () => {
     });
   });
 
+  it("waits for a late worker receipt before selecting a fallback", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-16T00:00:00.000Z"));
+    try {
+      const control = await createTestControl(1, 1, 0, false);
+      controls.push(control);
+      const result = await control.service.submit(
+        submission,
+        "late-worker-receipt-key",
+        operator,
+      );
+      let remoteJobExists = false;
+      const external: ExternalActionPort = {
+        execute: async (
+          intent: ActionIntent,
+          context?: ExternalActionContext,
+        ): Promise<ExternalActionResult> => {
+          if (intent.action_kind === "job.launch") {
+            if (context?.adoption_only) {
+              if (!remoteJobExists)
+                throw new ExternalActionNotFoundError("remote Job is not visible");
+              return {
+                outcome: "adopted",
+                observed_state: "RUNNING",
+                resource_id: "job-late-worker-receipt",
+              };
+            }
+            remoteJobExists = true;
+            return {
+              outcome: "created",
+              observed_state: "RUNNING",
+              resource_id: "job-late-worker-receipt",
+            };
+          }
+          if (intent.action_kind === "job.observe")
+            return {
+              outcome: "completed",
+              observed_state: "COMPLETED",
+              resource_id: "job-late-worker-receipt",
+            };
+          return new NoopActions().execute(intent);
+        },
+      };
+      const reconciler = new Reconciler(
+        control.service,
+        control.projection,
+        external,
+        new ResultPublisher(control.store, control.projection, control.service),
+        {
+          interval_ms: 100,
+          observation_interval_ms: 0,
+          worker_receipt_grace_ms: 60_000,
+          batch_size: 16,
+          dispatch_adoption_delay_ms: 0,
+        },
+      );
+
+      await settle(reconciler, 4);
+
+      expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+        terminal_tasks: 0,
+      });
+      const launch = (
+        await control.projection.campaignActions(result.campaign_id)
+      ).find((action) => action.action_kind === "job.launch");
+      expect(launch).toBeDefined();
+      const evidence = await putEvidenceReference(control, "late-worker-evidence");
+      await control.service.attempt({
+        campaign_id: result.campaign_id,
+        task_id: "task-001",
+        attempt_id: "attempt-late-worker-receipt",
+        action_id: launch?.action_id ?? "missing-launch",
+        outcome: "complete",
+        replacement_eligible: false,
+        ...evidence,
+        cost_microusd: 0,
+        metrics: { reward: 1 },
+        completed_at: "2026-08-16T00:00:30.000Z",
+      });
+      vi.setSystemTime(new Date("2026-08-16T00:01:00.000Z"));
+      await settle(reconciler, 6);
+
+      const attempts = await control.projection.campaignAttempts(result.campaign_id);
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]).toMatchObject({
+        attempt_id: "attempt-late-worker-receipt",
+        outcome: "complete",
+      });
+      expect(
+        (await control.projection.task(result.campaign_id, "task-001"))?.task
+          .selected_attempt_id,
+      ).toBe("attempt-late-worker-receipt");
+      expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+        status: "completed",
+        terminal_tasks: 1,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("adopts a repeated infrastructure retry request", async () => {
     const control = await createTestControl(1, 2);
     controls.push(control);
@@ -899,6 +1000,113 @@ describe("control service", () => {
     expect(retries).toHaveLength(1);
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       reserved_microusd: 6,
+    });
+  });
+
+  it("includes observed overage when admitting a replacement", async () => {
+    const control = await createTestControl(1, 2, 50);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 100 },
+      "observed-overage-campaign-key",
+      operator,
+    );
+    await control.service.append({
+      schema_version: "v1",
+      kind: "budget.event",
+      record_id: deterministicId("budget", result.campaign_id, "reserve", "initial"),
+      created_at: "2026-08-16T00:00:00.000Z",
+      actor: { subject: "harbor-hf-control", role: "service" },
+      campaign_id: result.campaign_id,
+      event_kind: "reserve",
+      amount_microusd: 50,
+    });
+    const launch = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "task-001",
+      0,
+      {
+        task_ids: ["task-001"],
+        max_infrastructure_attempts: 2,
+        reservation_microusd: 50,
+      },
+    );
+    await control.service.writeAction(launch);
+    const evidence = await putEvidenceReference(control, "observed-overage-evidence");
+    await control.service.attempt({
+      campaign_id: result.campaign_id,
+      task_id: "task-001",
+      attempt_id: "attempt-observed-overage",
+      action_id: launch.action_id,
+      outcome: "infrastructure",
+      replacement_eligible: true,
+      ...evidence,
+      cost_microusd: 60,
+      metrics: {},
+      completed_at: "2026-08-16T00:00:01.000Z",
+    });
+
+    await expect(
+      control.service.campaignAction(
+        result.campaign_id,
+        {
+          action: "retry_infrastructure",
+          task_id: "task-001",
+          reason: "retry transient infrastructure",
+          confirmed: true,
+        },
+        "observed-overage-retry-key",
+        operator,
+      ),
+    ).rejects.toThrow("replacement Job would exceed the campaign ceiling");
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      reserved_microusd: 50,
+      observed_microusd: 60,
+    });
+    expect(
+      await control.projection.retryActionForAttempt(
+        result.campaign_id,
+        "attempt-observed-overage",
+      ),
+    ).toBeNull();
+  });
+
+  it("durably catches up an observed overage before reserving", async () => {
+    const control = await createTestControl(1, 2, 50);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 120 },
+      "observed-catch-up-campaign-key",
+      operator,
+    );
+    for (const [eventKind, amount] of [
+      ["reserve", 50],
+      ["reconcile", 60],
+    ] as const) {
+      await control.service.append({
+        schema_version: "v1",
+        kind: "budget.event",
+        record_id: deterministicId("budget", result.campaign_id, eventKind, "initial"),
+        created_at: "2026-08-16T00:00:00.000Z",
+        actor: { subject: "harbor-hf-control", role: "service" },
+        campaign_id: result.campaign_id,
+        event_kind: eventKind,
+        amount_microusd: amount,
+      });
+    }
+
+    expect(
+      await control.service.reserveReplacement(
+        result.campaign_id,
+        "attempt-observed-catch-up",
+        "2026-08-16T00:00:01.000Z",
+        50,
+      ),
+    ).toBe(true);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      reserved_microusd: 110,
+      observed_microusd: 60,
     });
   });
 

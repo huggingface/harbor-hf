@@ -55,6 +55,7 @@ async function setup(
     hf_token: "test-token-not-a-real-credential",
     reconcile_interval_ms: 60_000,
     observe_interval_ms: 0,
+    worker_receipt_grace_ms: 0,
     source_revision: "test-revision",
     bootstrap_operator_subjects: [],
   };

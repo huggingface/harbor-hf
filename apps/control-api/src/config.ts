@@ -33,6 +33,12 @@ const schema = z.object({
     .min(100)
     .max(300000)
     .default(5000),
+  HARBOR_HF_WORKER_RECEIPT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(300000)
+    .default(60000),
   HARBOR_HF_SOURCE_REVISION: z.string().min(7).max(160).default("development"),
   HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS: z.string().default(""),
 });
@@ -62,6 +68,7 @@ export interface AppConfig {
   hf_token: string | null;
   reconcile_interval_ms: number;
   observe_interval_ms: number;
+  worker_receipt_grace_ms: number;
   source_revision: string;
   bootstrap_operator_subjects: string[];
 }
@@ -121,6 +128,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     hf_token: parsed.HF_TOKEN ?? null,
     reconcile_interval_ms: parsed.HARBOR_HF_RECONCILE_INTERVAL_MS,
     observe_interval_ms: parsed.HARBOR_HF_OBSERVE_INTERVAL_MS,
+    worker_receipt_grace_ms: parsed.HARBOR_HF_WORKER_RECEIPT_GRACE_MS,
     source_revision: parsed.HARBOR_HF_SOURCE_REVISION,
     bootstrap_operator_subjects: parsed.HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS.split(",")
       .map((item) => item.trim())

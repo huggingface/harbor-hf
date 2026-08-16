@@ -29,6 +29,7 @@ const config: AppConfig = {
   hf_token: null,
   reconcile_interval_ms: 1000,
   observe_interval_ms: 1000,
+  worker_receipt_grace_ms: 0,
   source_revision: "development",
   bootstrap_operator_subjects: [],
 };

@@ -407,6 +407,7 @@ trusted_worker?: boolean
 resource_id?: string
 launch_action_id?: Id
 not_before?: Timestamp
+worker_receipt_deadline?: Timestamp
 prior_attempt_id?: Id
 endpoint_id?: string
 watchdog_verified?: boolean

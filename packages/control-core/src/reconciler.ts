@@ -45,6 +45,7 @@ export interface ReconcilerOptions {
   observation_interval_ms: number;
   batch_size: number;
   dispatch_adoption_delay_ms?: number;
+  worker_receipt_grace_ms?: number;
 }
 
 const terminalJobStates = new Set([
@@ -62,6 +63,7 @@ function jobStateIsTerminal(state: string | null): boolean {
 const defaultOptions: ReconcilerOptions = {
   interval_ms: 2_000,
   observation_interval_ms: 5_000,
+  worker_receipt_grace_ms: 60_000,
   batch_size: 16,
 };
 
@@ -448,6 +450,37 @@ export class Reconciler {
         "success_without_worker_receipt",
         "boolean",
       );
+      const workerAttemptsPresent = await this.allWorkerAttemptsPresent(intent);
+      const graceMs = this.options.worker_receipt_grace_ms ?? 0;
+      const deadline = intent.payload.worker_receipt_deadline;
+      const cancelling = await this.projection.hasCampaignAction(
+        intent.campaign_id,
+        "campaign.cancel",
+      );
+      if (
+        !successful &&
+        !workerAttemptsPresent &&
+        !cancelling &&
+        typeof deadline !== "string" &&
+        graceMs > 0
+      ) {
+        const workerReceiptDeadline = new Date(
+          Date.parse(receipt.created_at) + graceMs,
+        ).toISOString();
+        const next = this.service.actionIntent(
+          intent.campaign_id,
+          "job.observe",
+          intent.target,
+          intent.generation + 1,
+          {
+            ...intent.payload,
+            not_before: workerReceiptDeadline,
+            worker_receipt_deadline: workerReceiptDeadline,
+          },
+        );
+        await this.service.writeAction(next);
+        return;
+      }
       await this.completeTasksFromJob(
         intent,
         receipt,
@@ -456,6 +489,18 @@ export class Reconciler {
       return;
     }
     await this.completeTasksFromJob(intent, receipt, "infrastructure");
+  }
+
+  private async allWorkerAttemptsPresent(intent: ActionIntent): Promise<boolean> {
+    await this.service.syncProjection();
+    const taskIds = stringArray(intent.payload, "task_ids");
+    const launchActionId = scalar<string>(intent.payload, "launch_action_id", "string");
+    const attempts = await this.projection.campaignAttempts(intent.campaign_id);
+    return taskIds.every((taskId) =>
+      attempts.some(
+        (attempt) => attempt.task_id === taskId && attempt.action_id === launchActionId,
+      ),
+    );
   }
 
   private async completeTasksFromJob(

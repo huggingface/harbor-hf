@@ -61,6 +61,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
   const reconciler = new Reconciler(service, projection, external, publisher, {
     interval_ms: config.reconcile_interval_ms,
     observation_interval_ms: config.observe_interval_ms,
+    worker_receipt_grace_ms: config.worker_receipt_grace_ms,
     batch_size: 16,
   });
   const abort = new AbortController();
