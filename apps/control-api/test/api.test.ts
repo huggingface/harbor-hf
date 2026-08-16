@@ -12,7 +12,7 @@ import {
 import { mintWorkerCapability } from "@harbor-hf/control-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
-import { AuthStore, AuthenticationService } from "../src/auth.js";
+import { AuthStore, AuthenticationService, safeReturnPath } from "../src/auth.js";
 import type { AppConfig } from "../src/config.js";
 import { createRuntime, type Runtime } from "../src/runtime.js";
 
@@ -606,6 +606,16 @@ describe("control API", () => {
 });
 
 describe("authentication state", () => {
+  it("keeps post-login redirects on the callback origin", () => {
+    const callback = "https://control.example/auth/callback";
+    expect(safeReturnPath("/campaigns?state=active#latest", callback)).toBe(
+      "/campaigns?state=active#latest",
+    );
+    expect(safeReturnPath("/\\evil.example", callback)).toBe("/");
+    expect(safeReturnPath("//evil.example", callback)).toBe("/");
+    expect(safeReturnPath("https://evil.example", callback)).toBe("/");
+  });
+
   it("stores opaque sessions and rejects the wrong CSRF token", async () => {
     const root = await mkdtemp(join(tmpdir(), "hhf-auth-"));
     roots.push(root);

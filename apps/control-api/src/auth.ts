@@ -148,6 +148,26 @@ interface OAuthConfig {
   session_ttl_seconds: number;
 }
 
+export function safeReturnPath(returnTo: string, callbackUrl: string): string {
+  if (
+    !returnTo.startsWith("/") ||
+    returnTo.includes("\\") ||
+    [...returnTo].some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint <= 0x1f || codePoint === 0x7f;
+    })
+  )
+    return "/";
+  try {
+    const origin = new URL(callbackUrl).origin;
+    const resolved = new URL(returnTo, origin);
+    if (resolved.origin !== origin) return "/";
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    return "/";
+  }
+}
+
 export class AuthenticationService {
   private oidc: Configuration | null = null;
   private readonly bearerCache = new Map<
@@ -175,8 +195,7 @@ export class AuthenticationService {
 
   async login(returnTo: string): Promise<{ flow_id: string; url: URL }> {
     if (!this.oidc || !this.oauth) throw new Error("OAuth is not configured");
-    const safeReturn =
-      returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/";
+    const safeReturn = safeReturnPath(returnTo, this.oauth.callback_url);
     const flow = this.store.createFlow(safeReturn);
     const challenge = await calculatePKCECodeChallenge(flow.verifier);
     const url = buildAuthorizationUrl(this.oidc, {
