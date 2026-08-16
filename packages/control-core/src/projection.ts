@@ -1291,6 +1291,16 @@ export class Projection {
       .execute();
   }
 
+  async campaignActions(campaignId: string): Promise<Selectable<ActionRow>[]> {
+    return this.db
+      .selectFrom("actions")
+      .selectAll()
+      .where("campaign_id", "=", campaignId)
+      .orderBy("created_at", "desc")
+      .orderBy("action_id", "desc")
+      .execute();
+  }
+
   async retryActionForAttempt(
     campaignId: string,
     priorAttemptId: string,

@@ -594,6 +594,105 @@ describe("control service", () => {
     });
   });
 
+  it("adopts and cancels a fenced Job before sealing cancellation", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "ambiguous-cancellation-key",
+      operator,
+    );
+    let creates = 0;
+    let remoteJobExists = false;
+    let adoptionVisible = false;
+    let cancelled = false;
+    const external: ExternalActionPort = {
+      execute: async (
+        intent: ActionIntent,
+        context?: ExternalActionContext,
+      ): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.launch") {
+          if (context?.adoption_only) {
+            if (!remoteJobExists)
+              throw new ExternalActionNotFoundError("remote Job is not visible");
+            if (!adoptionVisible)
+              throw new AmbiguousExternalActionError(
+                "remote Job lookup is inconclusive",
+              );
+            return {
+              outcome: "adopted",
+              observed_state: "RUNNING",
+              resource_id: "job-ambiguous-cancellation",
+            };
+          }
+          creates += 1;
+          remoteJobExists = true;
+          throw new AmbiguousExternalActionError("create response disconnected");
+        }
+        if (intent.action_kind === "job.cancel") {
+          cancelled = true;
+          remoteJobExists = false;
+          return {
+            outcome: "completed",
+            observed_state: "STOPPED",
+            resource_id: "job-ambiguous-cancellation",
+          };
+        }
+        if (intent.action_kind === "job.observe")
+          return {
+            outcome: "completed",
+            observed_state: cancelled ? "STOPPED" : "RUNNING",
+            resource_id: "job-ambiguous-cancellation",
+          };
+        return new NoopActions().execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        batch_size: 16,
+        dispatch_adoption_delay_ms: 0,
+      },
+    );
+    await reconciler.tick();
+    await reconciler.tick();
+    const launch = (await control.projection.campaignActions(result.campaign_id)).find(
+      (action) => action.action_kind === "job.launch",
+    );
+    expect(launch?.receipt_body).toBeNull();
+    expect(
+      launch ? await control.projection.actionDispatch(launch.action_id) : null,
+    ).not.toBeNull();
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "cancel", reason: "operator cancellation", confirmed: true },
+      "ambiguous-cancellation-action",
+      operator,
+    );
+
+    await settle(reconciler, 3);
+
+    expect(cancelled).toBe(false);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      terminal_tasks: 0,
+    });
+    adoptionVisible = true;
+    await settle(reconciler, 12);
+
+    expect(creates).toBe(1);
+    expect(cancelled).toBe(true);
+    expect(remoteJobExists).toBe(false);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 1,
+    });
+  });
+
   it("retries a failed Job observation without creating a replacement", async () => {
     const control = await createTestControl();
     controls.push(control);

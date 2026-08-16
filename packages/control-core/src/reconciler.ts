@@ -192,20 +192,30 @@ export class Reconciler {
       };
     } else if (intent.action_kind === "campaign.cancel") {
       result = { outcome: "completed", observed_state: "cancelled" };
-    } else if (
-      intent.action_kind === "job.launch" &&
-      (await this.projection.hasCampaignAction(intent.campaign_id, "campaign.cancel"))
-    ) {
-      result = { outcome: "completed", observed_state: "suppressed-cancelled" };
-    } else if (
-      intent.action_kind === "job.launch" &&
-      (await this.allActionTasksTerminal(intent))
-    ) {
-      result = { outcome: "completed", observed_state: "suppressed-terminal" };
     } else if (intent.action_kind === "job.launch") {
-      const launchResult = await this.executeJobLaunch(intent);
-      if (!launchResult) return;
-      result = launchResult;
+      const cancelled = await this.projection.hasCampaignAction(
+        intent.campaign_id,
+        "campaign.cancel",
+      );
+      const terminal = await this.allActionTasksTerminal(intent);
+      const suppression: "cancelled" | "terminal" | null = cancelled
+        ? "cancelled"
+        : terminal
+          ? "terminal"
+          : null;
+      const dispatch = suppression
+        ? await this.projection.actionDispatch(intent.action_id)
+        : null;
+      if (suppression && !dispatch) {
+        result = {
+          outcome: "completed",
+          observed_state: `suppressed-${suppression}`,
+        };
+      } else {
+        const launchResult = await this.executeJobLaunch(intent, suppression);
+        if (!launchResult) return;
+        result = launchResult;
+      }
     } else if (intent.action_kind === "job.observe") {
       const observation = await this.external.execute(intent);
       if (observation.outcome === "failed") return;
@@ -231,6 +241,7 @@ export class Reconciler {
 
   private async executeJobLaunch(
     intent: ActionIntent,
+    suppression: "cancelled" | "terminal" | null = null,
   ): Promise<ExternalActionResult | null> {
     const dispatch = await this.projection.actionDispatch(intent.action_id);
     if (dispatch) {
@@ -238,11 +249,15 @@ export class Reconciler {
       try {
         return await this.external.execute(intent, { adoption_only: true });
       } catch (error) {
-        if (
-          error instanceof ExternalActionNotFoundError ||
-          error instanceof AmbiguousExternalActionError
-        )
-          return null;
+        if (error instanceof ExternalActionNotFoundError) {
+          return suppression
+            ? {
+                outcome: "completed",
+                observed_state: `suppressed-${suppression}-not-found`,
+              }
+            : null;
+        }
+        if (error instanceof AmbiguousExternalActionError) return null;
         throw error;
       }
     }
@@ -310,6 +325,11 @@ export class Reconciler {
       case "publication.publish":
         break;
     }
+    if (
+      !["campaign.cancel", "job.cancel"].includes(intent.action_kind) &&
+      (await this.projection.hasCampaignAction(intent.campaign_id, "campaign.cancel"))
+    )
+      await this.continueCancellation(intent.campaign_id);
     await this.maybePublish(intent.campaign_id);
   }
 
@@ -552,10 +572,15 @@ export class Reconciler {
   }
 
   private async continueCancellation(campaignId: string): Promise<void> {
-    const actions = await this.projection.actions(10_000);
+    const actions = await this.projection.campaignActions(campaignId);
+    const unresolvedLaunches = actions.filter(
+      (action) => action.action_kind === "job.launch" && action.receipt_body === null,
+    );
+    for (const launch of unresolvedLaunches) {
+      if (await this.projection.actionDispatch(launch.action_id)) return;
+    }
     const launches = actions.filter(
       (action) =>
-        action.campaign_id === campaignId &&
         action.action_kind === "job.launch" &&
         action.receipt_body !== null &&
         action.resource_id !== null,
@@ -569,7 +594,6 @@ export class Reconciler {
       if (!resourceId || active.has(resourceId)) continue;
       const observations = actions.filter(
         (action) =>
-          action.campaign_id === campaignId &&
           action.target === resourceId &&
           action.receipt_body !== null &&
           ["job.observe", "job.cancel"].includes(action.action_kind),
@@ -590,9 +614,7 @@ export class Reconciler {
       for (const job of active.values()) {
         const cancellations = actions.filter(
           (action) =>
-            action.campaign_id === campaignId &&
-            action.action_kind === "job.cancel" &&
-            action.target === job.resource_id,
+            action.action_kind === "job.cancel" && action.target === job.resource_id,
         );
         if (cancellations.some((action) => action.receipt_body === null)) continue;
         const generation =
@@ -622,9 +644,7 @@ export class Reconciler {
     }
     const cancellation = actions.find(
       (action) =>
-        action.campaign_id === campaignId &&
-        action.action_kind === "campaign.cancel" &&
-        action.receipt_body !== null,
+        action.action_kind === "campaign.cancel" && action.receipt_body !== null,
     );
     if (!cancellation?.receipt_body) return;
     await this.cancelOpenTasks(
