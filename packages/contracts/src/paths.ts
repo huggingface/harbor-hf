@@ -10,9 +10,29 @@ export interface RecordIdentity {
   publication_id?: string;
 }
 
+const idPattern = /^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
+const digestPattern = /^sha256:[a-f0-9]{64}$/;
+
 function required(value: string | undefined, field: string): string {
   if (!value) throw new Error(`${field} is required for this record path`);
   return value;
+}
+
+export function workerEvidenceObjectPath(
+  campaignId: string,
+  actionId: string,
+  taskId: string,
+  digest: string,
+): string {
+  for (const [name, value] of [
+    ["campaign_id", campaignId],
+    ["action_id", actionId],
+    ["task_id", taskId],
+  ] as const) {
+    if (!idPattern.test(value)) throw new Error(`${name} is not a safe identifier`);
+  }
+  if (!digestPattern.test(digest)) throw new Error("digest is invalid");
+  return `evidence/schema=v1/campaigns/${campaignId}/actions/${actionId}/tasks/${taskId}/objects/${digest.slice("sha256:".length)}`;
 }
 
 export function controlRecordPath(record: RecordIdentity): string {

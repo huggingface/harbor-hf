@@ -95,7 +95,7 @@ uv run harbor-hf results
 uv run harbor-hf audit
 ```
 
-A Job log or remote terminal state is not authoritative. The Bucket must contain the selected attempt receipt with its terminal selection, recorded cost, and evidence digest.
+A Job log or remote terminal state is not authoritative. The Bucket must contain the selected attempt receipt with its terminal selection, recorded cost, and evidence digest. Before posting that receipt, a worker uses its short-lived capability to upload content-addressed evidence chunks and a canonical manifest. The control service verifies the manifest and every chunk during acceptance and replay. Jobs never receive `HF_TOKEN` or a writable canonical Bucket mount.
 
 Do not run benchmark tasks, model servers, or provider agents on the operator machine.
 

@@ -53,7 +53,7 @@ export class HuggingFaceBucketStore implements ImmutableObjectStore {
     if (!blob)
       throw Object.assign(new Error(`object not found: ${key}`), { code: "ENOENT" });
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    this.cache.set(key, bytes);
+    if (!key.startsWith("evidence/")) this.cache.set(key, bytes);
     return Uint8Array.from(bytes);
   }
 

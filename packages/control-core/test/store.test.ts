@@ -32,6 +32,27 @@ describe("FilesystemObjectStore", () => {
     ]);
   });
 
+  it("does not replace an object during concurrent conflicting creates", async () => {
+    const root = await mkdtemp(join(tmpdir(), "hhf-store-"));
+    roots.push(root);
+    const store = new FilesystemObjectStore(root);
+    const one = new TextEncoder().encode("one");
+    const two = new TextEncoder().encode("two");
+
+    const results = await Promise.allSettled([
+      store.create("control/schema=v1/race.json", one),
+      store.create("control/schema=v1/race.json", two),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected).toMatchObject({ reason: expect.any(ImmutableConflictError) });
+    const stored = new TextDecoder().decode(
+      await store.read("control/schema=v1/race.json"),
+    );
+    expect(["one", "two"]).toContain(stored);
+  });
+
   it("rejects path traversal", async () => {
     const root = await mkdtemp(join(tmpdir(), "hhf-store-"));
     roots.push(root);

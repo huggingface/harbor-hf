@@ -40,6 +40,8 @@ import {
   campaignListSchema,
   campaignViewSchema,
   endpointSchema,
+  evidenceAcceptedSchema,
+  evidenceUploadSchema,
   itemList,
   profileSchema,
   publicationSchema,
@@ -677,12 +679,18 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.post(
     "/api/v1/campaigns/:campaign_id/tasks/:task_id/attempts",
     {
+      bodyLimit: 16 * 1024 * 1024,
       schema: {
         tags: ["campaigns"],
-        body: cleanSchema(schemas.attemptSubmission),
+        body: {
+          oneOf: [cleanSchema(schemas.attemptSubmission), evidenceUploadSchema],
+        },
         response: {
+          200: evidenceAcceptedSchema,
+          201: evidenceAcceptedSchema,
           202: attemptAcceptedSchema,
           403: cleanSchema(schemas.apiError),
+          422: cleanSchema(schemas.apiError),
         },
       },
     },
@@ -693,12 +701,20 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         campaign_id: string;
         task_id: string;
       };
-      const input = request.body as AttemptSubmissionV1;
+      const requestKey = idempotencyKey(request);
+      const input = request.body as
+        | AttemptSubmissionV1
+        | {
+            operation: "upload_evidence";
+            action_id: string;
+            digest: string;
+            content_base64: string;
+          };
       if (!request.workerCapability)
         return reply.code(403).send({
           error: {
             code: "worker_capability_required",
-            message: "attempt receipts require a worker capability",
+            message: "worker submissions require a worker capability",
             request_id: request.id,
           },
         });
@@ -710,15 +726,28 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         return reply.code(403).send({
           error: {
             code: "worker_scope_rejected",
-            message: "the worker capability does not authorize this attempt",
+            message: "the worker capability does not authorize this submission",
             request_id: request.id,
           },
         });
+      if ("operation" in input) {
+        const bytes = Buffer.from(input.content_base64, "base64");
+        if (bytes.toString("base64") !== input.content_base64)
+          throw new PolicyError("evidence content must use canonical base64");
+        const result = await runtime.service.uploadEvidenceObject(
+          campaign_id,
+          input.action_id,
+          task_id,
+          input.digest,
+          bytes,
+        );
+        return reply.code(result.created ? 201 : 200).send(result);
+      }
       const attemptId = deterministicId(
         "worker-attempt",
         campaign_id,
         task_id,
-        sha256(idempotencyKey(request)),
+        sha256(requestKey),
       );
       const result = await runtime.service.attemptWithStatus(
         {

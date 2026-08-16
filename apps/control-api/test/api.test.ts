@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { canonicalJson } from "@harbor-hf/contracts";
+import { canonicalJson, sha256, workerEvidenceObjectPath } from "@harbor-hf/contracts";
 import { mintWorkerCapability } from "@harbor-hf/control-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
@@ -268,16 +268,96 @@ describe("control API", () => {
       task_ids: ["control-smoke-task"],
       expires_at: Math.floor(Date.now() / 1000) + 60,
     });
-    const workerHeaders = {
-      "idempotency-key": "worker-attempt-key",
+    const capabilityHeaders = {
       "x-harbor-hf-worker-capability": capability,
     };
+    const workerHeaders = {
+      ...capabilityHeaders,
+      "idempotency-key": "worker-attempt-key",
+    };
+    const chunk = Buffer.from("worker evidence chunk", "utf8");
+    const chunkDigest = sha256(chunk);
+    const chunkPath = workerEvidenceObjectPath(
+      campaignId,
+      launch.action_id,
+      "control-smoke-task",
+      chunkDigest,
+    );
+    const evidenceUrl = `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/attempts`;
+    const evidencePayload = {
+      operation: "upload_evidence",
+      action_id: launch.action_id,
+      digest: chunkDigest,
+      content_base64: chunk.toString("base64"),
+    };
+    const missingEvidenceCapability = await app.inject({
+      method: "POST",
+      url: evidenceUrl,
+      headers: { "idempotency-key": "evidence-missing-capability-key" },
+      payload: evidencePayload,
+    });
+    expect(missingEvidenceCapability.statusCode).toBe(403);
+    const wrongEvidenceAction = await app.inject({
+      method: "POST",
+      url: evidenceUrl,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "evidence-wrong-action-key",
+      },
+      payload: { ...evidencePayload, action_id: "wrong-action" },
+    });
+    expect(wrongEvidenceAction.statusCode).toBe(403);
+    const wrongEvidenceDigest = await app.inject({
+      method: "POST",
+      url: evidenceUrl,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "evidence-wrong-digest-key",
+      },
+      payload: { ...evidencePayload, digest: `sha256:${"0".repeat(64)}` },
+    });
+    expect(wrongEvidenceDigest.statusCode).toBe(422);
+    const chunkUpload = await app.inject({
+      method: "POST",
+      url: evidenceUrl,
+      headers: { ...capabilityHeaders, "idempotency-key": "evidence-chunk-key" },
+      payload: evidencePayload,
+    });
+    expect(chunkUpload.statusCode).toBe(201);
+    const manifest = {
+      schema_version: "v1",
+      kind: "worker.evidence.manifest",
+      campaign_id: campaignId,
+      action_id: launch.action_id,
+      task_id: "control-smoke-task",
+      objects: [{ path: chunkPath, digest: chunkDigest, size: chunk.byteLength }],
+    };
+    const manifestBytes = Buffer.from(canonicalJson(manifest), "utf8");
+    const manifestDigest = sha256(manifestBytes);
+    const manifestPath = workerEvidenceObjectPath(
+      campaignId,
+      launch.action_id,
+      "control-smoke-task",
+      manifestDigest,
+    );
+    const manifestUpload = await app.inject({
+      method: "POST",
+      url: evidenceUrl,
+      headers: { ...capabilityHeaders, "idempotency-key": "evidence-manifest-key" },
+      payload: {
+        operation: "upload_evidence",
+        action_id: launch.action_id,
+        digest: manifestDigest,
+        content_base64: manifestBytes.toString("base64"),
+      },
+    });
+    expect(manifestUpload.statusCode).toBe(201);
     const payload = {
       action_id: launch.action_id,
       outcome: "complete",
       replacement_eligible: false,
-      evidence_digest: `sha256:${"b".repeat(64)}`,
-      evidence_path: `campaigns/${campaignId}/evidence/task-one`,
+      evidence_digest: manifestDigest,
+      evidence_path: manifestPath,
       cost_microusd: 0,
       metrics: { reward: 1 },
       completed_at: "2026-08-16T00:00:00Z",

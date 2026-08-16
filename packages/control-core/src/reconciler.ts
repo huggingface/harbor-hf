@@ -6,7 +6,12 @@ import type {
   CampaignLock,
   EndpointResource,
 } from "@harbor-hf/contracts";
-import { deterministicId, sha256 } from "@harbor-hf/contracts";
+import {
+  canonicalJson,
+  controlRecordPath,
+  deterministicId,
+  sha256,
+} from "@harbor-hf/contracts";
 import type { ResultPublisher } from "./publication.js";
 import type { Projection } from "./projection.js";
 import { PolicyError, type ControlService } from "./service.js";
@@ -464,11 +469,6 @@ export class Reconciler {
         taskId,
         intent.action_id,
       );
-      const evidence = {
-        action_id: intent.action_id,
-        resource_id: receipt.resource_id ?? null,
-        state: receipt.observed_state,
-      };
       const attempt = await this.service.attempt({
         campaign_id: intent.campaign_id,
         task_id: taskId,
@@ -476,8 +476,8 @@ export class Reconciler {
         action_id: launchActionId,
         outcome: fallback,
         replacement_eligible: fallback === "infrastructure",
-        evidence_digest: sha256(JSON.stringify(evidence)),
-        evidence_path: `control/actions/${intent.action_id}`,
+        evidence_digest: sha256(canonicalJson(receipt)),
+        evidence_path: controlRecordPath(receipt),
         cost_microusd: receipt.cost_microusd ?? 0,
         metrics: {},
         completed_at: receipt.created_at,
@@ -644,8 +644,8 @@ export class Reconciler {
         action_id: intent.action_id,
         outcome: "cancelled",
         replacement_eligible: false,
-        evidence_digest: sha256(intent.action_id),
-        evidence_path: `control/actions/${intent.action_id}`,
+        evidence_digest: sha256(canonicalJson(receipt)),
+        evidence_path: controlRecordPath(receipt),
         cost_microusd: 0,
         metrics: {},
         completed_at: receipt.created_at,

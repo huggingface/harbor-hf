@@ -20,6 +20,7 @@ import type {
 import { canonicalJson, sha256, validateControlRecord } from "@harbor-hf/contracts";
 import Database from "better-sqlite3";
 import { Kysely, type Selectable, SqliteDialect, sql } from "kysely";
+import { verifyEvidenceReference, verifyWorkerEvidence } from "./evidence.js";
 import { decodeEventCursor, eventCursor, type ControlEvent } from "./events.js";
 import type { ImmutableObjectStore, ObjectEntry } from "./store.js";
 
@@ -196,6 +197,16 @@ export class ProjectionIntegrityError extends Error {}
 
 function body(value: unknown): string {
   return canonicalJson(value).trimEnd();
+}
+
+async function verifyAttemptEvidence(
+  store: ImmutableObjectStore,
+  record: HarborHFControlRecordV1,
+): Promise<void> {
+  if (record.kind !== "attempt.receipt" || record.actor.role === "migration") return;
+  if (record.actor.subject === "harbor-hf-control")
+    await verifyEvidenceReference(store, record.evidence_path, record.evidence_digest);
+  else await verifyWorkerEvidence(store, record);
 }
 
 function parseRecord(bytes: Uint8Array, entry: ObjectEntry): HarborHFControlRecordV1 {
@@ -456,6 +467,7 @@ export class Projection {
       for (const entry of entries) {
         const bytes = await store.read(entry.key);
         const record = parseRecord(bytes, entry);
+        await verifyAttemptEvidence(store, record);
         await this.apply(entry, record);
       }
       await this.verifyInvariants();
@@ -503,6 +515,7 @@ export class Projection {
         }
         const bytes = await store.read(entry.key);
         const record = parseRecord(bytes, entry);
+        await verifyAttemptEvidence(store, record);
         await this.apply(entry, record);
         ingested += 1;
       }

@@ -360,14 +360,17 @@ For each physical attempt, the worker:
 1. verifies the exact input bundle;
 2. runs Harbor;
 3. freezes and validates the workspace;
-4. uploads evidence and checksums;
-5. verifies that the uploaded evidence is complete;
-6. writes the physical attempt receipt last;
-7. reports the receipt identity to the control Space when it is reachable.
+4. uses an upload operation on the scoped attempt-receipt route for
+   content-addressed evidence chunks;
+5. uploads a canonical manifest with each chunk path, digest, and size through
+   the same route;
+6. posts the physical attempt receipt last through that route.
 
-The Space verifies the receipt before selecting a logical terminal outcome. A
-missing callback is harmless because reconciliation discovers the Bucket
-receipt.
+The Space verifies the manifest and every immutable chunk before it stores the
+receipt or selects a logical terminal outcome. A lost response is harmless: the
+worker retries the deterministic request, and reconciliation discovers a
+receipt that the API committed before a response was interrupted. The worker
+never receives `HF_TOKEN` or a writable canonical Bucket mount.
 
 Completed, invalid, semantic, refusal, verifier, agent, and benchmark-timeout
 outcomes are terminal according to the locked policy. Only a proven retryable

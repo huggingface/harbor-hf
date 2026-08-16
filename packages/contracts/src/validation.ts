@@ -16,6 +16,7 @@ export const schemas = {
   campaignSubmission: load("campaign-submission-v1.schema.json"),
   controlRecord: load("control-record-v1.schema.json"),
   resultCatalog: load("result-catalog-v1.schema.json"),
+  workerEvidenceManifest: load("worker-evidence-manifest-v1.schema.json"),
 } as const;
 
 const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true, strict: true });
@@ -30,6 +31,7 @@ const validators = {
   campaignSubmission: ajv.compile(schemas.campaignSubmission),
   controlRecord: ajv.compile(schemas.controlRecord),
   resultCatalog: ajv.compile(schemas.resultCatalog),
+  workerEvidenceManifest: ajv.compile(schemas.workerEvidenceManifest),
 } as const;
 
 export class ContractValidationError extends Error {
@@ -67,4 +69,12 @@ export function validateCampaignAction<T>(value: unknown): T {
 
 export function validateResultCatalog<T>(value: unknown): T {
   return validate<T>(validators.resultCatalog, value, "result catalog");
+}
+
+export function validateWorkerEvidenceManifest<T>(value: unknown): T {
+  return validate<T>(
+    validators.workerEvidenceManifest,
+    value,
+    "worker evidence manifest",
+  );
 }

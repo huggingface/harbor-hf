@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, mkdir, open, opendir, readFile, rename, rm } from "node:fs/promises";
+import { access, link, mkdir, open, opendir, readFile, rm } from "node:fs/promises";
 import { dirname, join, normalize, relative, resolve, sep } from "node:path";
 import { canonicalJson, sha256 } from "@harbor-hf/contracts";
 
@@ -96,7 +96,9 @@ export class FilesystemObjectStore implements ImmutableObjectStore {
       if (error instanceof ImmutableConflictError) throw error;
     }
 
-    const temporary = `${path}.tmp-${process.pid}-${crypto.randomUUID()}`;
+    const temporaryRoot = join(this.root, ".tmp");
+    await mkdir(temporaryRoot, { recursive: true });
+    const temporary = join(temporaryRoot, `${process.pid}-${crypto.randomUUID()}`);
     const handle = await open(temporary, "wx", 0o600);
     try {
       await handle.writeFile(bytes);
@@ -105,7 +107,7 @@ export class FilesystemObjectStore implements ImmutableObjectStore {
       await handle.close();
     }
     try {
-      await rename(temporary, path);
+      await link(temporary, path);
     } catch (error) {
       await rm(temporary, { force: true });
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
@@ -113,6 +115,7 @@ export class FilesystemObjectStore implements ImmutableObjectStore {
       if (sha256(existing) !== digest) throw new ImmutableConflictError(key);
       return { created: false, digest };
     }
+    await rm(temporary, { force: true });
     return { created: true, digest };
   }
 }

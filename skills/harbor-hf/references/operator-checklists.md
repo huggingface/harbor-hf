@@ -31,6 +31,12 @@ inspecting the named artifact or command output.
       pass hosted Playwright tests.
 - [ ] A forced process exit around each remote action boundary creates no
       duplicate logical work.
+- [ ] Jobs receive neither `HF_TOKEN` nor a writable canonical Bucket mount.
+      Their signed capabilities authorize only the locked campaign, launch
+      action, task set, and expiration.
+- [ ] A worker uploads content-addressed evidence chunks and a canonical
+      manifest before its attempt receipt. Missing, changed, cross-scope, or
+      incomplete evidence is rejected during both receipt acceptance and replay.
 - [ ] Every endpoint is paused with zero ready replicas after the deployment
       canary.
 

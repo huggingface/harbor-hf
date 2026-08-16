@@ -8,6 +8,8 @@ import {
   validateCampaignSubmission,
   validateControlRecord,
   validateResultCatalog,
+  validateWorkerEvidenceManifest,
+  workerEvidenceObjectPath,
 } from "../src/index.js";
 
 describe("canonical contracts", () => {
@@ -21,6 +23,28 @@ describe("canonical contracts", () => {
     expect(deterministicId("action", "a", "b")).toBe(
       deterministicId("action", "a", "b"),
     );
+  });
+
+  it("validates scoped worker evidence manifests", () => {
+    const digest = `sha256:${"a".repeat(64)}`;
+    const path = workerEvidenceObjectPath(
+      "campaign-test",
+      "action-test",
+      "task-test",
+      digest,
+    );
+    const manifest = {
+      schema_version: "v1",
+      kind: "worker.evidence.manifest",
+      campaign_id: "campaign-test",
+      action_id: "action-test",
+      task_id: "task-test",
+      objects: [{ path, digest, size: 42 }],
+    };
+    expect(validateWorkerEvidenceManifest(manifest)).toEqual(manifest);
+    expect(() =>
+      validateWorkerEvidenceManifest({ ...manifest, undocumented: true }),
+    ).toThrow(ContractValidationError);
   });
 
   it("rejects unknown durable fields", () => {

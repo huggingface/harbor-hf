@@ -158,6 +158,7 @@ POST /api/v1/campaigns
 GET  /api/v1/campaigns/{campaign_id}
 GET  /api/v1/campaigns/{campaign_id}/tasks
 GET  /api/v1/campaigns/{campaign_id}/tasks/{task_id}
+POST /api/v1/campaigns/{campaign_id}/tasks/{task_id}/attempts
 POST /api/v1/campaigns/{campaign_id}/actions
 GET  /api/v1/jobs
 GET  /api/v1/endpoints
@@ -179,6 +180,20 @@ A local SQLite write cannot authorize or acknowledge a remote side effect.
 Errors use one JSON envelope with a stable code, human-readable message,
 request ID, and optional field errors. Raw provider bodies and dependency error
 strings never cross the API boundary.
+
+Workers receive a short-lived signed capability, not `HF_TOKEN` or a writable
+Bucket mount. The capability is scoped to one namespace, campaign, launch
+action, task set, and expiration. It authorizes only the campaign-lock and
+attempt-receipt routes.
+
+Evidence upload is resumable and content addressed. A worker uses an upload
+operation on the attempt-receipt route for bounded base64 chunks, then uploads
+a canonical `worker.evidence.manifest` object that lists every chunk path,
+digest, and size.
+The attempt receipt points to that manifest. The control service checks the
+manifest scope and verifies every listed immutable object before accepting the
+receipt. Replay performs the same check for a worker receipt discovered directly
+in the Bucket, so a caller-supplied path or digest is never evidence by itself.
 
 ## Live progress
 

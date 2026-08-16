@@ -25,7 +25,13 @@ import {
   validateCampaignAction,
   validateCampaignSubmission,
   validateControlRecord,
+  workerEvidenceObjectPath,
 } from "@harbor-hf/contracts";
+import {
+  EvidenceIntegrityError,
+  verifyEvidenceReference,
+  verifyWorkerEvidence,
+} from "./evidence.js";
 import { EventBus, eventCursor } from "./events.js";
 import { type LoadedProfile, ProfileResolver, profileSpec } from "./profiles.js";
 import type { Projection } from "./projection.js";
@@ -49,6 +55,13 @@ export interface AttemptInput {
   cost_microusd: number;
   metrics: Record<string, number>;
   completed_at: string;
+}
+
+export interface EvidenceUploadResult {
+  path: string;
+  digest: string;
+  size: number;
+  created: boolean;
 }
 
 export interface SubmissionResult {
@@ -109,6 +122,20 @@ export class ControlService {
     record: T,
   ): Promise<{ created: boolean; key: string; digest: string }> {
     validateControlRecord<T>(record);
+    if (record.kind === "attempt.receipt" && record.actor.role !== "migration") {
+      try {
+        if (record.actor.subject === "harbor-hf-control")
+          await verifyEvidenceReference(
+            this.store,
+            record.evidence_path,
+            record.evidence_digest,
+          );
+        else await verifyWorkerEvidence(this.store, record);
+      } catch (error) {
+        if (!(error instanceof EvidenceIntegrityError)) throw error;
+        throw new PolicyError("attempt evidence verification failed");
+      }
+    }
     const key = controlRecordPath(record);
     const result = await createJson(this.store, key, record);
     const projected = await this.projection.objectDigest(key);
@@ -438,6 +465,41 @@ export class ControlService {
     };
     await this.append(record);
     return record;
+  }
+
+  async uploadEvidenceObject(
+    campaignId: string,
+    actionId: string,
+    taskId: string,
+    expectedDigest: string,
+    bytes: Uint8Array,
+  ): Promise<EvidenceUploadResult> {
+    const action = await this.projection.action(actionId);
+    if (
+      !action ||
+      action.campaign_id !== campaignId ||
+      action.action_kind !== "job.launch"
+    )
+      throw new PolicyError("evidence upload has no eligible Job launch");
+    const intent = JSON.parse(action.intent_body) as ActionIntent;
+    if (
+      !Array.isArray(intent.payload.task_ids) ||
+      !intent.payload.task_ids.includes(taskId)
+    )
+      throw new PolicyError("evidence upload task is outside the Job launch");
+    if (!(await this.projection.task(campaignId, taskId)))
+      throw new PolicyError("evidence upload task does not exist");
+    const observedDigest = sha256(bytes);
+    if (observedDigest !== expectedDigest)
+      throw new PolicyError("evidence upload digest does not match its content");
+    const path = workerEvidenceObjectPath(campaignId, actionId, taskId, observedDigest);
+    const result = await this.store.create(path, bytes);
+    return {
+      path,
+      digest: observedDigest,
+      size: bytes.byteLength,
+      created: result.created,
+    };
   }
 
   async attempt(

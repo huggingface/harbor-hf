@@ -726,10 +726,44 @@ export interface paths {
                             [key: string]: number;
                         };
                         action_id: string;
+                    } | {
+                        /** @enum {unknown} */
+                        operation: "upload_evidence";
+                        action_id: string;
+                        digest: string;
+                        content_base64: string;
                     };
                 };
             };
             responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            path: string;
+                            digest: string;
+                            size: number;
+                            created: boolean;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            path: string;
+                            digest: string;
+                            size: number;
+                            created: boolean;
+                        };
+                    };
+                };
                 /** @description Default Response */
                 202: {
                     headers: {
@@ -747,6 +781,24 @@ export interface paths {
                 };
                 /** @description Default Response */
                 403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                request_id: string;
+                                fields?: {
+                                    [key: string]: string;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };

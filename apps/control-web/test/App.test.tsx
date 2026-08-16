@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../src/App";
@@ -38,6 +39,53 @@ describe("control web", () => {
     expect(
       await screen.findByRole("link", { name: /sign in with hugging face/i }),
     ).toHaveAttribute("href", "/auth/login");
+  });
+
+  it("requires a separate acknowledgement before campaign cancellation", async () => {
+    class FakeEventSource {
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: (() => void) | null = null;
+      close() {}
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input);
+        if (path.includes("auth/session"))
+          return json({
+            authenticated: true,
+            actor: { subject: "operator", role: "operator", transport: "development" },
+          });
+        if (path.endsWith("/api/v1/campaigns/campaign-1"))
+          return json({
+            campaign_id: "campaign-1",
+            status: "active",
+            publication_status: null,
+            total_tasks: 3,
+            terminal_tasks: 1,
+            pending_actions: 1,
+            observed_microusd: 1000000,
+            reserved_microusd: 2000000,
+            ceiling_microusd: 3000000,
+            cleanup_pending: true,
+          });
+        if (path.includes("/api/v1/campaigns/campaign-1/tasks"))
+          return json({ items: [], next_cursor: null });
+        throw new Error(`unexpected request: ${path}`);
+      }),
+    );
+    renderApp("/campaigns/campaign-1");
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /cancel campaign/i }));
+    expect(screen.getByRole("dialog", { name: /cancel campaign/i })).toBeVisible();
+    expect(screen.getByText(/2 open logical tasks/i)).toBeInTheDocument();
+    const confirm = screen.getByRole("button", { name: /confirm cancellation/i });
+    expect(confirm).toBeDisabled();
+    await user.click(screen.getByRole("checkbox"));
+    expect(confirm).toBeEnabled();
   });
 
   it("renders operational overview from same-origin APIs", async () => {

@@ -57,6 +57,35 @@ export const acceptedSchema = {
   },
 } as const;
 
+export const evidenceUploadSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["operation", "action_id", "digest", "content_base64"],
+  properties: {
+    operation: { const: "upload_evidence" },
+    action_id: { type: "string", pattern: "^[a-z0-9][a-z0-9._-]{1,159}$" },
+    digest: { type: "string", pattern: "^sha256:[a-f0-9]{64}$" },
+    content_base64: {
+      type: "string",
+      minLength: 1,
+      maxLength: 12000000,
+      pattern: "^[A-Za-z0-9+/]*={0,2}$",
+    },
+  },
+} as const;
+
+export const evidenceAcceptedSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["path", "digest", "size", "created"],
+  properties: {
+    path: { type: "string" },
+    digest: { type: "string" },
+    size: integer,
+    created: { type: "boolean" },
+  },
+} as const;
+
 export const attemptAcceptedSchema = {
   type: "object",
   additionalProperties: false,

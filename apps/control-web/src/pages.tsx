@@ -457,6 +457,12 @@ export function CampaignPage() {
   const campaign = useCampaign(campaignId);
   const tasks = useTasks(campaignId);
   const client = useQueryClient();
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelAcknowledged, setCancelAcknowledged] = useState(false);
+  const closeCancel = () => {
+    setCancelOpen(false);
+    setCancelAcknowledged(false);
+  };
   const cancel = useMutation({
     mutationFn: () =>
       actOnCampaign(campaignId, {
@@ -465,7 +471,10 @@ export function CampaignPage() {
         reason: "operator cancellation",
         confirmed: true,
       } as CampaignAction),
-    onSuccess: () => client.invalidateQueries({ queryKey: keys.campaign(campaignId) }),
+    onSuccess: () => {
+      closeCancel();
+      return client.invalidateQueries({ queryKey: keys.campaign(campaignId) });
+    },
   });
   if (campaign.isLoading || tasks.isLoading) return <Loading />;
   if (!campaign.data) return <Empty>Campaign not found</Empty>;
@@ -521,7 +530,7 @@ export function CampaignPage() {
             <Button
               variant="destructive"
               disabled={cancel.isPending}
-              onClick={() => cancel.mutate()}
+              onClick={() => setCancelOpen(true)}
             >
               <PauseCircle size={16} />
               Cancel campaign
@@ -529,6 +538,65 @@ export function CampaignPage() {
           ) : undefined
         }
       />
+      {cancelOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+          <Card
+            className="w-full max-w-lg border-rose-500/40"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-campaign-title"
+            aria-describedby="cancel-campaign-effect"
+          >
+            <h2 id="cancel-campaign-title" className="text-lg font-semibold text-white">
+              Cancel campaign?
+            </h2>
+            <p className="mt-2 text-sm text-slate-300">
+              Target <span className="font-mono">{shortId(campaignId)}</span> has{" "}
+              {item.total_tasks - item.terminal_tasks} open logical tasks.
+            </p>
+            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-slate-500">Observed</dt>
+                <dd>{formatMoney(item.observed_microusd)}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Reserved</dt>
+                <dd>{formatMoney(item.reserved_microusd)}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Ceiling</dt>
+                <dd>{formatMoney(item.ceiling_microusd)}</dd>
+              </div>
+            </dl>
+            <p id="cancel-campaign-effect" className="mt-4 text-sm text-slate-300">
+              This stops or observes active remote Jobs, prevents queued launches, and
+              seals open tasks as cancelled. Evidence is retained, and publication still
+              waits for endpoint cleanup.
+            </p>
+            <label className="mt-4 flex items-start gap-3 text-sm text-slate-200">
+              <input
+                className="mt-1 h-4 w-4 accent-rose-500"
+                type="checkbox"
+                checked={cancelAcknowledged}
+                onChange={(event) => setCancelAcknowledged(event.target.checked)}
+              />
+              I understand this cancellation cannot reopen sealed logical tasks.
+            </label>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button variant="ghost" onClick={closeCancel} disabled={cancel.isPending}>
+                Keep running
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={!cancelAcknowledged || cancel.isPending}
+                onClick={() => cancel.mutate()}
+              >
+                {cancel.isPending ? "Cancelling…" : "Confirm cancellation"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Status"

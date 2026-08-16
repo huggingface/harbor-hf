@@ -8,6 +8,7 @@ import {
   controlRecordPath,
   deterministicId,
   sha256,
+  workerEvidenceObjectPath,
 } from "@harbor-hf/contracts";
 import { createTestControl } from "@harbor-hf/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -43,6 +44,48 @@ const operator = { subject: "operator-1", role: "operator" as const };
 
 async function settle(reconciler: Reconciler, rounds = 8): Promise<void> {
   for (let index = 0; index < rounds; index += 1) await reconciler.tick();
+}
+
+async function putEvidenceReference(
+  control: TestControl,
+  label: string,
+): Promise<{ evidence_digest: string; evidence_path: string }> {
+  const bytes = new TextEncoder().encode(label);
+  const digest = sha256(bytes);
+  const path = `evidence/test/${digest.slice("sha256:".length)}`;
+  await control.store.create(path, bytes);
+  return { evidence_digest: digest, evidence_path: path };
+}
+
+async function putWorkerEvidence(
+  control: TestControl,
+  campaignId: string,
+  actionId: string,
+  taskId: string,
+  label: string,
+): Promise<{ evidence_digest: string; evidence_path: string }> {
+  const chunk = new TextEncoder().encode(label);
+  const chunkDigest = sha256(chunk);
+  const chunkPath = workerEvidenceObjectPath(campaignId, actionId, taskId, chunkDigest);
+  await control.store.create(chunkPath, chunk);
+  const manifest = {
+    schema_version: "v1",
+    kind: "worker.evidence.manifest",
+    campaign_id: campaignId,
+    action_id: actionId,
+    task_id: taskId,
+    objects: [{ path: chunkPath, digest: chunkDigest, size: chunk.byteLength }],
+  };
+  const manifestBytes = new TextEncoder().encode(canonicalJson(manifest));
+  const manifestDigest = sha256(manifestBytes);
+  const manifestPath = workerEvidenceObjectPath(
+    campaignId,
+    actionId,
+    taskId,
+    manifestDigest,
+  );
+  await control.store.create(manifestPath, manifestBytes);
+  return { evidence_digest: manifestDigest, evidence_path: manifestPath };
 }
 
 describe("control service", () => {
@@ -206,6 +249,13 @@ describe("control service", () => {
         not_before: "2026-08-16T00:00:00.000Z",
       }),
     );
+    const evidence = await putWorkerEvidence(
+      control,
+      result.campaign_id,
+      launch.action_id,
+      "task-001",
+      "missed-callback-evidence",
+    );
     const attempt: AttemptReceipt = {
       schema_version: "v1",
       kind: "attempt.receipt",
@@ -218,8 +268,7 @@ describe("control service", () => {
       action_id: launch.action_id,
       outcome: "complete",
       replacement_eligible: false,
-      evidence_digest: sha256("missed-callback-evidence"),
-      evidence_path: "worker/missed-callback-evidence",
+      ...evidence,
       cost_microusd: 0,
       metrics: { reward: 1 },
     };
@@ -642,6 +691,10 @@ describe("control service", () => {
       },
     );
     await control.service.writeAction(launch);
+    const retryEvidence = await putEvidenceReference(
+      control,
+      "retry-idempotency-evidence",
+    );
     await control.service.attempt({
       campaign_id: result.campaign_id,
       task_id: "task-001",
@@ -649,8 +702,7 @@ describe("control service", () => {
       action_id: launch.action_id,
       outcome: "infrastructure",
       replacement_eligible: true,
-      evidence_digest: sha256("retry-idempotency-evidence"),
-      evidence_path: "control/retry-idempotency",
+      ...retryEvidence,
       cost_microusd: 0,
       metrics: {},
       completed_at: "2026-08-16T00:00:01.000Z",
@@ -733,6 +785,10 @@ describe("control service", () => {
       { task_ids: ["task-001"] },
     );
     await control.service.writeAction(launch);
+    const endpointEvidence = await putEvidenceReference(
+      control,
+      "endpoint-cleanup-evidence",
+    );
     const attempt = await control.service.attempt({
       campaign_id: result.campaign_id,
       task_id: "task-001",
@@ -740,8 +796,7 @@ describe("control service", () => {
       action_id: launch.action_id,
       outcome: "complete",
       replacement_eligible: false,
-      evidence_digest: sha256("endpoint-cleanup-evidence"),
-      evidence_path: "endpoint/evidence",
+      ...endpointEvidence,
       cost_microusd: 0,
       metrics: { reward: 1 },
       completed_at: "2026-08-16T00:00:01.000Z",
@@ -822,6 +877,90 @@ describe("control service", () => {
     });
   });
 
+  it("rejects a worker attempt without verified evidence", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "missing-worker-evidence-key",
+      operator,
+    );
+    const launch = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "task-001",
+      0,
+      { task_ids: ["task-001"] },
+    );
+    await control.service.writeAction(launch);
+
+    await expect(
+      control.service.attempt(
+        {
+          campaign_id: result.campaign_id,
+          task_id: "task-001",
+          attempt_id: "worker-attempt-missing-evidence",
+          action_id: launch.action_id,
+          outcome: "complete",
+          replacement_eligible: false,
+          evidence_digest: sha256("missing-worker-evidence"),
+          evidence_path: "worker/missing-evidence",
+          cost_microusd: 0,
+          metrics: { reward: 1 },
+          completed_at: "2026-08-16T00:00:01.000Z",
+        },
+        { subject: "trusted-worker", role: "service" },
+      ),
+    ).rejects.toThrow("attempt evidence verification failed");
+    expect(
+      await control.projection.attemptById("worker-attempt-missing-evidence"),
+    ).toBeNull();
+  });
+
+  it("rejects an unverified worker receipt discovered directly in the store", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "direct-missing-evidence-key",
+      operator,
+    );
+    const launch = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "task-001",
+      0,
+      { task_ids: ["task-001"] },
+    );
+    await control.service.writeAction(launch);
+    const attempt: AttemptReceipt = {
+      schema_version: "v1",
+      kind: "attempt.receipt",
+      record_id: deterministicId("attempt-receipt", "direct-worker-attempt"),
+      created_at: "2026-08-16T00:00:01.000Z",
+      actor: { subject: "trusted-worker", role: "service" },
+      campaign_id: result.campaign_id,
+      task_id: "task-001",
+      attempt_id: "direct-worker-attempt",
+      action_id: launch.action_id,
+      outcome: "complete",
+      replacement_eligible: false,
+      evidence_digest: sha256("missing-direct-evidence"),
+      evidence_path: "worker/missing-direct-evidence",
+      cost_microusd: 0,
+      metrics: { reward: 1 },
+    };
+    await control.store.create(
+      controlRecordPath(attempt),
+      new TextEncoder().encode(canonicalJson(attempt)),
+    );
+
+    await expect(control.projection.sync(control.store)).rejects.toThrow(
+      "worker evidence path is outside its scope",
+    );
+    expect(control.projection.system().ready).toBe(false);
+  });
+
   it("rejects multiple worker attempts for one action and task", async () => {
     const control = await createTestControl();
     controls.push(control);
@@ -838,6 +977,20 @@ describe("control service", () => {
       { task_ids: ["task-001"] },
     );
     await control.service.writeAction(launch);
+    const firstEvidence = await putWorkerEvidence(
+      control,
+      result.campaign_id,
+      launch.action_id,
+      "task-001",
+      "worker-evidence-one",
+    );
+    const secondEvidence = await putWorkerEvidence(
+      control,
+      result.campaign_id,
+      launch.action_id,
+      "task-001",
+      "worker-evidence-two",
+    );
     const attempt = {
       campaign_id: result.campaign_id,
       task_id: "task-001",
@@ -845,8 +998,7 @@ describe("control service", () => {
       action_id: launch.action_id,
       outcome: "complete" as const,
       replacement_eligible: false,
-      evidence_digest: sha256("worker-evidence-one"),
-      evidence_path: "worker/evidence-one",
+      ...firstEvidence,
       cost_microusd: 0,
       metrics: { reward: 1 },
       completed_at: "2026-08-16T00:00:01.000Z",
@@ -860,8 +1012,7 @@ describe("control service", () => {
         {
           ...attempt,
           attempt_id: "worker-attempt-two",
-          evidence_digest: sha256("worker-evidence-two"),
-          evidence_path: "worker/evidence-two",
+          ...secondEvidence,
         },
         { subject: "trusted-worker", role: "service" },
       ),
@@ -945,6 +1096,10 @@ describe("control service", () => {
       observed_state: "imported",
     });
     await control.service.markAdvanced(launch, launchReceipt);
+    const publicationEvidence = await putEvidenceReference(
+      control,
+      "publication-recovery-evidence",
+    );
     const attempt = await control.service.attempt({
       campaign_id: result.campaign_id,
       task_id: "task-001",
@@ -952,8 +1107,7 @@ describe("control service", () => {
       action_id: launch.action_id,
       outcome: "complete",
       replacement_eligible: false,
-      evidence_digest: sha256("publication-recovery-evidence"),
-      evidence_path: "recovery/evidence",
+      ...publicationEvidence,
       cost_microusd: 0,
       metrics: { reward: 1 },
       completed_at: "2026-08-16T00:00:01.000Z",
@@ -1040,6 +1194,7 @@ describe("control service", () => {
     if (!parentLaunch) throw new Error("parent Job launch is missing");
     for (let index = 1; index <= 88; index += 1) {
       const taskId = `task-${String(index).padStart(3, "0")}`;
+      const evidence = await putEvidenceReference(control, taskId);
       const attempt: AttemptInput = {
         campaign_id: result.campaign_id,
         task_id: taskId,
@@ -1047,8 +1202,7 @@ describe("control service", () => {
         action_id: parentLaunch.action_id,
         outcome: "complete",
         replacement_eligible: false,
-        evidence_digest: sha256(taskId),
-        evidence_path: `campaigns/${result.campaign_id}/${taskId}`,
+        ...evidence,
         cost_microusd: 0,
         metrics: { reward: 1 },
         completed_at: `2026-08-16T00:00:00.${String(index).padStart(3, "0")}Z`,
