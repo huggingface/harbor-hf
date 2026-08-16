@@ -390,7 +390,7 @@ def test_endpoint_command_aligns_openclaw_model_with_llama_cpp_alias(
     deployment = deployment.model_copy(
         update={
             "endpoint": EndpointRef(
-                namespace="osolmaz",
+                namespace="example-org",
                 name="llama-endpoint",
                 served_model_name="/repository",
             ),

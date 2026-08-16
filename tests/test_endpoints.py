@@ -56,7 +56,7 @@ def _desired(remote_spec: ExperimentSpec) -> DesiredEndpoint:
         }
     )
     return build_desired_endpoint(
-        namespace="osolmaz",
+        namespace="example-org",
         campaign_id="campaign-one",
         model=remote_spec.matrix.models[0],
         deployment=deployment,
@@ -229,16 +229,16 @@ def test_identity_changes_by_campaign_namespace_and_deployment(
         remote_spec.matrix.models[0], remote_spec.matrix.deployments[0]
     )
     first = managed_endpoint_identity(
-        namespace="osolmaz", campaign_id="one", deployment_digest=digest
+        namespace="example-org", campaign_id="one", deployment_digest=digest
     )
 
     assert first == managed_endpoint_identity(
-        namespace="osolmaz", campaign_id="one", deployment_digest=digest
+        namespace="example-org", campaign_id="one", deployment_digest=digest
     )
     assert (
         first.name
         != managed_endpoint_identity(
-            namespace="osolmaz", campaign_id="two", deployment_digest=digest
+            namespace="example-org", campaign_id="two", deployment_digest=digest
         ).name
     )
     assert (
@@ -257,12 +257,12 @@ def test_managed_identity_has_stable_golden_value(
     )
 
     identity = managed_endpoint_identity(
-        namespace="osolmaz",
+        namespace="example-org",
         campaign_id="campaign-one",
         deployment_digest=digest,
     )
 
-    assert identity.name == "harbor-hf-1b6bb067d5c61cbac7d4970caea72b95d95e57ac"
+    assert identity.name == "harbor-hf-a749d72f7a10956af064d48d3860ee1e23f70293"
     assert identity.tags == [
         "harbor-hf-campaign-27f8a68166e2255551573839",
         "harbor-hf-deployment-44eb3bf9ec103630645e99e0",
@@ -279,7 +279,7 @@ def test_rejects_unknown_endpoint_parameters(remote_spec: ExperimentSpec) -> Non
 
     with pytest.raises(ValidationError, match="unreported_provider_control"):
         build_desired_endpoint(
-            namespace="osolmaz",
+            namespace="example-org",
             campaign_id="campaign-one",
             model=remote_spec.matrix.models[0],
             deployment=deployment,
@@ -293,7 +293,7 @@ def test_rejects_noncomposite_provider_region(remote_spec: ExperimentSpec) -> No
 
     with pytest.raises(ValueError, match="vendor-region"):
         build_desired_endpoint(
-            namespace="osolmaz",
+            namespace="example-org",
             campaign_id="campaign-one",
             model=remote_spec.matrix.models[0],
             deployment=deployment,

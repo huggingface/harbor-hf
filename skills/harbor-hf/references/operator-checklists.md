@@ -30,7 +30,8 @@ inspecting the named artifact or command output.
 
 - [ ] The namespace resource inventory was captured before mutation.
 - [ ] The namespace has one private control Space and one private
-      `benchmark-runs` Bucket.
+      `<artifact-bucket>` Bucket; their deployed names remain in private
+      configuration.
 - [ ] The campaign creates no repository, Bucket, Space, Dataset, schedule,
       status store, lease store, backup store, or result service.
 - [ ] Any proposed persistent resource has an approved privacy or
@@ -45,13 +46,14 @@ inspecting the named artifact or command output.
 - [ ] Every runtime credential is purpose-scoped and approved for its exact
       source and destination; the submitter can load it without printing it.
 - [ ] The control Space has exactly one persistent secret named `HF_TOKEN`.
-- [ ] `HF_TOKEN` contains the fine-grained token with display name
-      `harbor-hf-jobs` and has only the required resource and action scopes.
+- [ ] `HF_TOKEN` contains the retained fine-grained service token and has only
+      the required resource and action scopes. Its display name and local alias
+      are not present in public artifacts.
 - [ ] No per-campaign, per-repair, per-worker, backup, or result-reader Harbor-HF
       credential was created. A trusted outer worker receives `HF_TOKEN` only
       when direct Hub access is required.
 - [ ] Any redundant Harbor-HF credential has a private consumer audit and a
-      canary using only `harbor-hf-jobs` before revocation.
+      canary using only the retained credential before revocation.
 - [ ] A configured named HF Job token still exists in Harbor HF's private local
       token store, is fine-grained, and its value is absent from Harbor HF JSON
       config and command output.

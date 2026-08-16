@@ -15,6 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
+      - run: python3 scripts/check_public_privacy.py .
+        env:
+          PUBLIC_PRIVACY_DENYLIST: ${{ secrets.PUBLIC_PRIVACY_DENYLIST }}
       - run: uv sync --all-groups --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .

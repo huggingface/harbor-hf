@@ -16,8 +16,9 @@ implemented.
 
 Treat Hub resources as shared infrastructure. The complete steady-state
 Harbor-HF runtime inventory is one private control Space and one private
-`benchmark-runs` Bucket. Store control state, profiles, evidence, reassessments,
-normalized results, and the catalog under stable Bucket prefixes. Never create
+`<artifact-bucket>` Bucket. Store control state, profiles, evidence,
+reassessments, normalized results, and the catalog under stable Bucket prefixes.
+Resolve real deployment names only in private configuration. Never create
 a repository, Bucket, Space, Dataset, schedule, status store, lease store,
 backup store, or result service for one campaign or workflow. Any exception
 requires an inventory, a reason the two canonical resources cannot meet the
@@ -26,12 +27,12 @@ target layout and new-write switch are specified in
 `docs/2026-08-16-harbor-hf-control-service-plan.md`.
 
 The control Space has exactly one persistent secret named `HF_TOKEN`. Its value
-is the existing fine-grained token with display name `harbor-hf-jobs`. Do not
-mint per-campaign, per-repair, per-worker, backup, or result-reader credentials.
-The Space may inject `HF_TOKEN` only into the trusted outer worker of a Job.
-Never forward it into a Harbor Sandbox, benchmark agent, model server, or
-evidence. Audit consumers and run a canary using only `harbor-hf-jobs` before
-revoking any redundant Harbor-HF credential.
+is an approved fine-grained service token. Keep its display name and local alias
+private. Do not mint per-campaign, per-repair, per-worker, backup, or
+result-reader credentials. The Space may inject `HF_TOKEN` only into the trusted
+outer worker of a Job. Never forward it into a Harbor Sandbox, benchmark agent,
+model server, or evidence. Audit consumers and run a canary using only the
+retained credential before revoking any redundant Harbor-HF credential.
 
 ## Source documents
 
@@ -76,7 +77,9 @@ Keep these rules in force throughout the session:
 - Pin every executable source and model reference. Pin tasks and images as well
   as agents and workers.
 - Keep the current control Dataset and unpublished resources private before
-  cutover. After cutover, keep the control Space and `benchmark-runs` private.
+  cutover. After cutover, keep the control Space and `<artifact-bucket>` private.
+- When the current repository is public, use placeholders for every operator
+  identity, private resource name, credential alias, and local path.
 - Inventory existing Hub resources before any remote mutation. A campaign must
   not create its own repository, Bucket, Space, Dataset, schedule, status store,
   lease store, backup store, or result service.

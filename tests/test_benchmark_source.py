@@ -134,8 +134,8 @@ def test_source_lock_is_canonical_and_supports_package_git_and_bundle(
     assert (
         bundle_prefix(bundle.content_digest) == "benchmark-bundles/sha256/" + "2" * 64
     )
-    assert bundle_uri("osolmaz", bundle.content_digest) == (
-        "hf://buckets/osolmaz/jobs-artifacts/benchmark-bundles/sha256/" + "2" * 64
+    assert bundle_uri("example-org", bundle.content_digest) == (
+        "hf://buckets/example-org/jobs-artifacts/benchmark-bundles/sha256/" + "2" * 64
     )
 
     path = tmp_path / "source.lock.json"

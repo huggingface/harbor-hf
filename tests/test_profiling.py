@@ -899,7 +899,7 @@ def test_serving_profile_binding_fails_closed_on_concurrency(
     binding = ServingProfileBinding(
         profile_id=resolved.profile_id,
         profile_sha256="sha256:" + "9" * 64,
-        artifact_uri="hf://buckets/osolmaz/benchmark-runs/serving-profiles/profile-one/profile.json",
+        artifact_uri="hf://buckets/example-org/benchmark-runs/serving-profiles/profile-one/profile.json",
         concurrency=2,
         **resolved.identity.model_dump(mode="python"),
     )
@@ -920,7 +920,7 @@ def test_serving_profile_binding_fails_closed_on_workload_identity(
     binding = ServingProfileBinding(
         profile_id=resolved.profile_id,
         profile_sha256="sha256:" + "9" * 64,
-        artifact_uri="hf://buckets/osolmaz/benchmark-runs/serving-profiles/profile-one/profile.json",
+        artifact_uri="hf://buckets/example-org/benchmark-runs/serving-profiles/profile-one/profile.json",
         concurrency=spec.execution.concurrent_trials,
         **resolved.identity.model_dump(mode="python"),
     )
@@ -992,7 +992,7 @@ def test_managed_endpoint_binding_preserves_profile_identity(
         profile_id=resolved.profile_id,
         profile_sha256="sha256:" + "9" * 64,
         artifact_uri=(
-            "hf://buckets/osolmaz/benchmark-runs/serving-profiles/"
+            "hf://buckets/example-org/benchmark-runs/serving-profiles/"
             "profile-one/profile.json"
         ),
         concurrency=1,
@@ -1012,7 +1012,7 @@ def test_managed_endpoint_binding_preserves_profile_identity(
         profiled,
         deployment_id=deployment.id,
         endpoint=EndpointRef(
-            namespace="osolmaz",
+            namespace="example-org",
             name="managed-profile-endpoint",
             served_model_name="/repository",
         ),
@@ -1023,7 +1023,7 @@ def test_managed_endpoint_binding_preserves_profile_identity(
 
 def test_profile_submit_command_is_remote_only(remote_spec: ExperimentSpec) -> None:
     command = build_profile_submit_command(
-        plan(remote_spec), input_dir="hf://buckets/input", bucket="osolmaz/results"
+        plan(remote_spec), input_dir="hf://buckets/input", bucket="example-org/results"
     )
 
     assert command[:3] == ["hf", "jobs", "run"]
@@ -1060,7 +1060,7 @@ def test_provider_profile_submit_command_exposes_recorder(
             profile_timeout_seconds=3600,
         ),
         input_dir="hf://buckets/input",
-        bucket="osolmaz/results",
+        bucket="example-org/results",
     )
 
     expose = command.index("--expose")
@@ -1078,7 +1078,7 @@ def test_judged_profile_submit_command_exposes_judge_recorder(
     spec = ExperimentSpec.model_validate(raw)
 
     command = build_profile_submit_command(
-        plan(spec), input_dir="hf://buckets/input", bucket="osolmaz/results"
+        plan(spec), input_dir="hf://buckets/input", bucket="example-org/results"
     )
 
     exposed = [
@@ -1262,7 +1262,7 @@ def test_profile_without_endpoint_gets_deterministic_managed_binding(
     assert bound.endpoint is not None
     assert bound.endpoint.name == desired.identity.name
     command = build_profile_submit_command(
-        resolved, input_dir="hf://buckets/input", bucket="osolmaz/results"
+        resolved, input_dir="hf://buckets/input", bucket="example-org/results"
     )
     assert "harbor-hf-endpoint=" in " ".join(command)
 
@@ -1285,7 +1285,7 @@ def test_profile_submission_initializes_coordination_storage(
     )
     monkeypatch.setattr(
         "harbor_hf.profile_submission.ensure_private_job_input_bucket",
-        lambda *_args, **_kwargs: calls.append("input") or "osolmaz/jobs-artifacts",
+        lambda *_args, **_kwargs: calls.append("input") or "example-org/jobs-artifacts",
     )
     monkeypatch.setattr(
         "harbor_hf.profile_submission.require_private_bucket",
@@ -1293,7 +1293,7 @@ def test_profile_submission_initializes_coordination_storage(
     )
     monkeypatch.setattr(
         "harbor_hf.profile_submission.stage_job_input",
-        lambda *_args, **_kwargs: "hf://buckets/osolmaz/jobs-artifacts/input",
+        lambda *_args, **_kwargs: "hf://buckets/example-org/jobs-artifacts/input",
     )
 
     submission = submit_profile(

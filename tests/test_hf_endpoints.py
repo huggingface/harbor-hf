@@ -76,7 +76,7 @@ def _desired(remote_spec: ExperimentSpec) -> DesiredEndpoint:
         }
     )
     return build_desired_endpoint(
-        namespace="osolmaz",
+        namespace="example-org",
         campaign_id="campaign-one",
         model=remote_spec.matrix.models[0],
         deployment=deployment,
@@ -191,7 +191,7 @@ def test_create_maps_every_effective_field_and_resolves_secrets(
         "path": "/models/qwen",
         "cache_http_responses": True,
         "tags": desired.configuration.tags,
-        "namespace": "osolmaz",
+        "namespace": "example-org",
         "token": False,
     }
     assert "value-for-HF_TOKEN" not in snapshot.model_dump_json()
@@ -238,7 +238,7 @@ def test_inspect_validates_and_normalizes_sanitized_contract(
         (
             "inspect",
             desired.identity.name,
-            {"namespace": "osolmaz", "token": None},
+            {"namespace": "example-org", "token": None},
         )
     ]
 
@@ -277,12 +277,12 @@ def test_pause_and_delete_use_only_exact_identity(
         (
             "pause",
             desired.identity.name,
-            {"namespace": "osolmaz", "token": False},
+            {"namespace": "example-org", "token": False},
         ),
         (
             "delete",
             desired.identity.name,
-            {"namespace": "osolmaz", "token": False},
+            {"namespace": "example-org", "token": False},
         ),
     ]
 
@@ -308,7 +308,7 @@ def test_inspect_forwards_an_explicit_false_token(
         (
             "inspect",
             desired.identity.name,
-            {"namespace": "osolmaz", "token": False},
+            {"namespace": "example-org", "token": False},
         )
     ]
 

@@ -20,13 +20,13 @@ class MemoryBucketApi:
         self.batches: list[list[str]] = []
 
     def bucket_info(self, bucket_id: str) -> object:
-        assert bucket_id == "osolmaz/jobs-artifacts"
+        assert bucket_id == "example-org/jobs-artifacts"
         return SimpleNamespace(private=True)
 
     def list_bucket_tree(
         self, bucket_id: str, prefix: str, **kwargs: object
     ) -> Iterable[object]:
-        assert bucket_id == "osolmaz/jobs-artifacts"
+        assert bucket_id == "example-org/jobs-artifacts"
         assert kwargs == {"recursive": True}
         return [
             SimpleNamespace(path=path)
@@ -37,7 +37,7 @@ class MemoryBucketApi:
     def get_bucket_paths_info(
         self, bucket_id: str, paths: Iterable[str], **kwargs: object
     ) -> Iterable[object]:
-        assert bucket_id == "osolmaz/jobs-artifacts"
+        assert bucket_id == "example-org/jobs-artifacts"
         assert kwargs == {}
         return [SimpleNamespace(path=path) for path in paths if path in self.files]
 
@@ -47,7 +47,7 @@ class MemoryBucketApi:
         files: list[tuple[str | object, str | Path]],
         **kwargs: object,
     ) -> None:
-        assert bucket_id == "osolmaz/jobs-artifacts"
+        assert bucket_id == "example-org/jobs-artifacts"
         assert kwargs == {"raise_on_missing_files": True}
         for source, destination in files:
             assert isinstance(source, str)
@@ -64,7 +64,7 @@ class MemoryBucketApi:
         add: list[tuple[str | Path | bytes, str]],
         **kwargs: object,
     ) -> object:
-        assert bucket_id == "osolmaz/jobs-artifacts"
+        assert bucket_id == "example-org/jobs-artifacts"
         assert kwargs == {}
         self.batches.append([destination for _source, destination in add])
         for source, destination in add:
@@ -90,14 +90,14 @@ def test_bundle_staging_rejects_a_public_bucket(tmp_path: Path) -> None:
 
     class PublicBucketApi(MemoryBucketApi):
         def bucket_info(self, bucket_id: str) -> object:
-            assert bucket_id == "osolmaz/jobs-artifacts"
+            assert bucket_id == "example-org/jobs-artifacts"
             return SimpleNamespace(private=False)
 
     with pytest.raises(ValueError, match="must be private"):
         stage_benchmark_bundle(
             bundle,
-            namespace="osolmaz",
-            bucket="osolmaz/jobs-artifacts",
+            namespace="example-org",
+            bucket="example-org/jobs-artifacts",
             api=PublicBucketApi(),
         )
 
@@ -108,8 +108,8 @@ def test_bundle_upload_is_payload_first_and_manifest_last(tmp_path: Path) -> Non
 
     receipt = stage_benchmark_bundle(
         bundle,
-        namespace="osolmaz",
-        bucket="osolmaz/jobs-artifacts",
+        namespace="example-org",
+        bucket="example-org/jobs-artifacts",
         api=api,
     )
 
@@ -121,8 +121,8 @@ def test_bundle_upload_is_payload_first_and_manifest_last(tmp_path: Path) -> Non
     verified = verify_staged_benchmark_bundle(
         content_digest=bundle.manifest.content_digest,
         manifest_sha256=bundle.manifest_sha256,
-        namespace="osolmaz",
-        bucket="osolmaz/jobs-artifacts",
+        namespace="example-org",
+        bucket="example-org/jobs-artifacts",
         api=api,
     )
     assert verified.action == "reused"
@@ -135,16 +135,16 @@ def test_complete_bundle_is_verified_and_reused_without_upload(tmp_path: Path) -
     api = MemoryBucketApi()
     stage_benchmark_bundle(
         bundle,
-        namespace="osolmaz",
-        bucket="osolmaz/jobs-artifacts",
+        namespace="example-org",
+        bucket="example-org/jobs-artifacts",
         api=api,
     )
     api.batches.clear()
 
     receipt = stage_benchmark_bundle(
         bundle,
-        namespace="osolmaz",
-        bucket="osolmaz/jobs-artifacts",
+        namespace="example-org",
+        bucket="example-org/jobs-artifacts",
         api=api,
     )
 
@@ -160,8 +160,8 @@ def test_matching_incomplete_payload_is_repaired_manifest_last(tmp_path: Path) -
 
     receipt = stage_benchmark_bundle(
         bundle,
-        namespace="osolmaz",
-        bucket="osolmaz/jobs-artifacts",
+        namespace="example-org",
+        bucket="example-org/jobs-artifacts",
         api=api,
     )
 
@@ -179,8 +179,8 @@ def test_bundle_prefix_rejects_unexpected_objects(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unexpected objects"):
         stage_benchmark_bundle(
             bundle,
-            namespace="osolmaz",
-            bucket="osolmaz/jobs-artifacts",
+            namespace="example-org",
+            bucket="example-org/jobs-artifacts",
             api=api,
         )
 
@@ -194,8 +194,8 @@ def test_incomplete_or_conflicting_remote_bundle_fails_closed(tmp_path: Path) ->
     with pytest.raises(ValueError, match="manifest has no payload"):
         stage_benchmark_bundle(
             bundle,
-            namespace="osolmaz",
-            bucket="osolmaz/jobs-artifacts",
+            namespace="example-org",
+            bucket="example-org/jobs-artifacts",
             api=missing_payload,
         )
 
@@ -204,8 +204,8 @@ def test_incomplete_or_conflicting_remote_bundle_fails_closed(tmp_path: Path) ->
     with pytest.raises(ValueError, match="byte count changed"):
         stage_benchmark_bundle(
             bundle,
-            namespace="osolmaz",
-            bucket="osolmaz/jobs-artifacts",
+            namespace="example-org",
+            bucket="example-org/jobs-artifacts",
             api=conflicting_payload,
         )
     assert conflicting_payload.batches == []
@@ -216,8 +216,8 @@ def test_verification_rejects_a_changed_manifest_digest(tmp_path: Path) -> None:
     api = MemoryBucketApi()
     stage_benchmark_bundle(
         bundle,
-        namespace="osolmaz",
-        bucket="osolmaz/jobs-artifacts",
+        namespace="example-org",
+        bucket="example-org/jobs-artifacts",
         api=api,
     )
 
@@ -225,7 +225,7 @@ def test_verification_rejects_a_changed_manifest_digest(tmp_path: Path) -> None:
         verify_staged_benchmark_bundle(
             content_digest=bundle.manifest.content_digest,
             manifest_sha256="0" * 64,
-            namespace="osolmaz",
-            bucket="osolmaz/jobs-artifacts",
+            namespace="example-org",
+            bucket="example-org/jobs-artifacts",
             api=api,
         )

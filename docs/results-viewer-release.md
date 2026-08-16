@@ -20,12 +20,12 @@ passed after cutover at desktop and mobile viewport sizes.
 
 ## Pre-Cutover Release
 
-- Space: <https://huggingface.co/spaces/osolmaz/harbor-results>
+- Space: `<namespace>/<legacy-results-space>`
 - Runtime: public Docker Space on `cpu-basic`
 - Source revision: `c5fef6b0c025f90098a40c7fe1c337716a473a1d`
 - Space revision: `4facb5778f1239fe9578d1eff36d09255df4a36e`
 - Credentials: none
-- Index Dataset: `osolmaz/benchmark-run-index`
+- Index Dataset: `<namespace>/<legacy-index-dataset>`
 - Catalog revision: `d2708c4b379f1886d53409c09dcb771538fbaf09`
 - ShellBench result revision: `3ca396225803d5ce65dcf58ad41d7e0f719b3d0d`
 - Smoke result revision: `05720340ef06c19f035bd7a71e46cdf67d93a975`
@@ -35,7 +35,7 @@ physical executions, verifier metrics, serving configuration, immutable model
 and agent revisions, hardware metadata, safe artifact metadata, and checksummed
 provenance. Run scores are `100%`, `50%`, `50%`, `50%`, `33.3%`, and `0%`.
 
-The complete evidence remains in the private `osolmaz/benchmark-runs` Bucket:
+The complete evidence remains in the private `<namespace>/<artifact-bucket>` Bucket:
 2,691 files and 49,281,998 bytes at deployment time. The Space has no token and
 cannot read that Bucket. Raw task bodies, sessions, trajectories, logs, and
 artifact bytes were not copied into the public datasets or Space repository.

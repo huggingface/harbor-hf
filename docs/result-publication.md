@@ -7,8 +7,9 @@ idempotent path for explicit operation and recovery.
 
 The [control service plan](2026-08-16-harbor-hf-control-service-plan.md) will
 replace the Dataset new-write path with immutable normalized rows, publication
-receipts, and catalog objects under `results/schema=v1/` in the existing
-`benchmark-runs` Bucket. The private control Space serves the resulting views.
+receipts, and catalog objects under `results/schema=v1/` in the configured
+`<artifact-bucket>` Bucket. The private control Space serves the resulting
+views. Real deployment identifiers remain in private configuration.
 Historical result Datasets remain immutable. This document describes current
 production behavior until that switch is complete.
 
@@ -31,9 +32,9 @@ schema_version: harbor-hf/publication-correction/v1
 campaign_id: 20260813T051430Z-ce313eb9cb-08a5ffd196
 source_manifest_digest: sha256:6c61df50e1239efefde3089ab9019e4e55dc671fd7f129548a437e86fd1a9f39
 source_plan_digest: sha256:ce313eb9cbdc8caca8b76383f027b17327cb294168984b6ee0bf3376ec1c0dcd
-result_dataset: osolmaz/qrlow-evals-results
+result_dataset: example-org/example-results
 result_dataset_visibility: private
-index_dataset: osolmaz/qrlow-evals-index
+index_dataset: example-org/example-index
 index_dataset_visibility: private
 ```
 
@@ -41,7 +42,7 @@ Run:
 
 ```bash
 harbor-hf results publish-correction CORRECTION.yaml \
-  --namespace osolmaz
+  --namespace example-org
 ```
 
 The command accepts only a source request without visibility fields. It checks

@@ -167,7 +167,7 @@ def test_build_submit_command_contains_only_secret_name(
     lock = build_run_lock(remote_spec, run_id="run-1")
 
     command = build_submit_command(
-        lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
+        lock, input_dir=tmp_path, bucket="example-org/benchmark-runs"
     )
 
     assert command[:22] == [
@@ -176,7 +176,7 @@ def test_build_submit_command_contains_only_secret_name(
         "run",
         "--detach",
         "--namespace",
-        "osolmaz",
+        "example-org",
         "--flavor",
         "cpu-basic",
         "--timeout",
@@ -190,7 +190,7 @@ def test_build_submit_command_contains_only_secret_name(
         "--volume",
         f"{tmp_path}:/input:ro",
         "--volume",
-        "hf://buckets/osolmaz/benchmark-runs:/output:rw",
+        "hf://buckets/example-org/benchmark-runs:/output:rw",
         "--",
         "ghcr.io/astral-sh/uv@sha256:" + "0" * 64,
     ]
@@ -230,11 +230,11 @@ def test_bundle_submit_mounts_the_managed_prefix_without_git_secrets(
     lock = build_run_lock(spec, run_id="bundle-run")
 
     command = build_submit_command(
-        lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
+        lock, input_dir=tmp_path, bucket="example-org/benchmark-runs"
     )
 
     assert (
-        "hf://buckets/osolmaz/jobs-artifacts/benchmark-bundles/sha256/"
+        "hf://buckets/example-org/jobs-artifacts/benchmark-bundles/sha256/"
         + "8" * 64
         + ":/benchmark-source:ro"
     ) in command
@@ -255,7 +255,9 @@ def test_direct_submit_rejects_judge_required_run(
     )
     lock = build_run_lock(spec)
     with pytest.raises(ValueError, match="must use campaign execution"):
-        build_submit_command(lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs")
+        build_submit_command(
+            lock, input_dir=tmp_path, bucket="example-org/benchmark-runs"
+        )
 
 
 def test_judged_wave_exposes_recorder_port(
@@ -269,7 +271,7 @@ def test_judged_wave_exposes_recorder_port(
         update={"benchmark": remote_spec.benchmark.model_copy(update={"judge": judge})}
     )
     command = build_submit_wave_command(
-        _wave_lock(spec), input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
+        _wave_lock(spec), input_dir=tmp_path, bucket="example-org/benchmark-runs"
     )
     expose = command.index("--expose")
     assert command[expose : expose + 2] == ["--expose", "8001"]
@@ -281,10 +283,11 @@ def test_build_submit_wave_command_targets_hidden_worker(
     lock = _wave_lock(remote_spec)
 
     command = build_submit_wave_command(
-        lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
+        lock, input_dir=tmp_path, bucket="example-org/benchmark-runs"
     )
 
     job = lock.remote.job
+    endpoint_label = endpoint_lease_label_for("example-org", "qwen-endpoint")
     assert command[:22] == [
         "hf",
         "jobs",
@@ -301,11 +304,11 @@ def test_build_submit_wave_command_targets_hidden_worker(
         "--label",
         f"harbor-hf-wave={lock.wave_id}",
         "--label",
-        f"harbor-hf-endpoint={endpoint_lease_label_for('osolmaz', 'qwen-endpoint')}",
+        f"harbor-hf-endpoint={endpoint_label}",
         "--volume",
         f"{tmp_path}:/input:ro",
         "--volume",
-        "hf://buckets/osolmaz/benchmark-runs:/output:rw",
+        "hf://buckets/example-org/benchmark-runs:/output:rw",
         "--",
         job.image,
     ]
@@ -398,7 +401,7 @@ def test_provider_wave_submission_is_rejected_before_creating_a_child_job(
 
     with pytest.raises(ValueError, match="owning campaign controller"):
         build_submit_wave_command(
-            lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
+            lock, input_dir=tmp_path, bucket="example-org/benchmark-runs"
         )
 
 
@@ -420,16 +423,16 @@ def test_submit_wave_parses_job_id_and_checks_private_stores(
 
     assert result.wave_id == lock.wave_id
     assert result.job_id == "0123456789abcdef01234567"
-    assert api.inspected == ["osolmaz/jobs-artifacts", "example/benchmark-runs"]
+    assert api.inspected == ["example-org/jobs-artifacts", "example/benchmark-runs"]
     assert len(api.bucket_batches) == 1
     input_bucket, additions, kwargs = api.bucket_batches[0]
-    assert input_bucket == "osolmaz/jobs-artifacts"
+    assert input_bucket == "example-org/jobs-artifacts"
     assert kwargs == {}
     assert additions[0][0] == b"kind: Experiment\n"
     assert additions[0][1].endswith("/manifest.yaml")
     assert runner.command is not None
     assert any(
-        value.startswith("hf://buckets/osolmaz/jobs-artifacts/job-inputs/")
+        value.startswith("hf://buckets/example-org/jobs-artifacts/job-inputs/")
         and value.endswith(":/input:ro")
         for value in runner.command
     )
@@ -453,7 +456,7 @@ def test_endpoint_lease_label_is_stable_and_bounded(
 ) -> None:
     label = endpoint_lease_label(build_run_lock(remote_spec))
 
-    assert label == "d026b68a5286b3887f1e9ea13d304aed"
+    assert label == "a1750de84d2a4270eba446cbe83d6c05"
     assert len(label) == 32
 
 
@@ -497,7 +500,7 @@ def test_submit_rejects_a_source_lock_that_does_not_match_the_run(
         submit(
             build_run_lock(remote_spec),
             input_dir=tmp_path,
-            bucket="osolmaz/benchmark-runs",
+            bucket="example-org/benchmark-runs",
             runner=runner,
             source_lock=source_lock,
             bucket_api=FakeBucketApi(),
@@ -516,7 +519,7 @@ def test_submit_parses_job_id(remote_spec: ExperimentSpec, tmp_path: Path) -> No
     result = submit(
         lock,
         input_dir=tmp_path,
-        bucket="osolmaz/benchmark-runs",
+        bucket="example-org/benchmark-runs",
         runner=runner,
         source_lock=source_lock,
         bucket_api=bucket_api,
@@ -525,15 +528,15 @@ def test_submit_parses_job_id(remote_spec: ExperimentSpec, tmp_path: Path) -> No
     assert result.job_id == "0123456789abcdef01234567"
     assert runner.command is not None
     assert bucket_api.created == [
-        ("osolmaz/jobs-artifacts", {"private": True, "exist_ok": True})
+        ("example-org/jobs-artifacts", {"private": True, "exist_ok": True})
     ]
     assert bucket_api.inspected == [
-        "osolmaz/jobs-artifacts",
-        "osolmaz/benchmark-runs",
+        "example-org/jobs-artifacts",
+        "example-org/benchmark-runs",
     ]
     assert bucket_api.created_repositories == [
         (
-            "osolmaz/harbor-hf-coordination",
+            "example-org/harbor-hf-coordination",
             {"repo_type": "dataset", "private": True, "exist_ok": True},
         )
     ]
@@ -553,7 +556,7 @@ def test_submit_builds_default_bucket_api(
     result = submit(
         build_run_lock(remote_spec),
         input_dir=tmp_path,
-        bucket="osolmaz/benchmark-runs",
+        bucket="example-org/benchmark-runs",
         runner=runner,
         source_lock=source_lock,
     )
@@ -561,13 +564,13 @@ def test_submit_builds_default_bucket_api(
     assert result.job_id == "0123456789abcdef01234567"
     assert runner.command is not None
     assert any(
-        value.startswith("hf://buckets/osolmaz/jobs-artifacts/job-inputs/")
+        value.startswith("hf://buckets/example-org/jobs-artifacts/job-inputs/")
         and value.endswith(":/input:ro")
         for value in runner.command
     )
     assert api.inspected == [
-        "osolmaz/jobs-artifacts",
-        "osolmaz/benchmark-runs",
+        "example-org/jobs-artifacts",
+        "example-org/benchmark-runs",
     ]
 
 
@@ -584,7 +587,7 @@ def test_submit_rejects_missing_job_id(
         submit(
             lock,
             input_dir=tmp_path,
-            bucket="osolmaz/benchmark-runs",
+            bucket="example-org/benchmark-runs",
             runner=FakeRunner("submitted"),
             source_lock=source_lock,
             bucket_api=FakeBucketApi(),
@@ -603,7 +606,7 @@ def test_submit_does_not_extract_job_id_from_longer_hex_digest(
         submit(
             lock,
             input_dir=tmp_path,
-            bucket="osolmaz/benchmark-runs",
+            bucket="example-org/benchmark-runs",
             runner=FakeRunner(f"revision {digest}"),
             source_lock=source_lock,
             bucket_api=FakeBucketApi(),
@@ -620,23 +623,26 @@ def test_stage_job_input_is_content_addressed_and_rejects_empty_directory(
 
     first = stage_job_input(
         tmp_path,
-        bucket="osolmaz/jobs-artifacts",
+        bucket="example-org/jobs-artifacts",
         identity="wave-one",
         api=api,
     )
     second = stage_job_input(
         tmp_path,
-        bucket="osolmaz/jobs-artifacts",
+        bucket="example-org/jobs-artifacts",
         identity="wave-one",
         api=api,
     )
 
     assert first == second
-    assert first.startswith("hf://buckets/osolmaz/jobs-artifacts/job-inputs/wave-one/")
+    assert first.startswith(
+        "hf://buckets/example-org/jobs-artifacts/job-inputs/wave-one/"
+    )
     assert api.bucket_batches[0] == api.bucket_batches[1]
     assert [path for _content, path in api.bucket_batches[0][1]] == [
-        first.removeprefix("hf://buckets/osolmaz/jobs-artifacts/") + "/manifest.yaml",
-        first.removeprefix("hf://buckets/osolmaz/jobs-artifacts/")
+        first.removeprefix("hf://buckets/example-org/jobs-artifacts/")
+        + "/manifest.yaml",
+        first.removeprefix("hf://buckets/example-org/jobs-artifacts/")
         + "/nested/lock.json",
     ]
 
@@ -647,7 +653,7 @@ def test_stage_job_input_is_content_addressed_and_rejects_empty_directory(
     ):
         stage_job_input(
             empty,
-            bucket="osolmaz/jobs-artifacts",
+            bucket="example-org/jobs-artifacts",
             identity="wave-empty",
             api=api,
         )
@@ -656,12 +662,12 @@ def test_stage_job_input_is_content_addressed_and_rejects_empty_directory(
 def test_submit_ensures_private_coordination_repository() -> None:
     api = FakeBucketApi()
 
-    assert ensure_private_coordination_repository("osolmaz", api=api) == (
-        "osolmaz/harbor-hf-coordination"
+    assert ensure_private_coordination_repository("example-org", api=api) == (
+        "example-org/harbor-hf-coordination"
     )
     assert api.created_repositories == [
         (
-            "osolmaz/harbor-hf-coordination",
+            "example-org/harbor-hf-coordination",
             {"repo_type": "dataset", "private": True, "exist_ok": True},
         )
     ]
@@ -670,12 +676,12 @@ def test_submit_ensures_private_coordination_repository() -> None:
 def test_submit_initializes_empty_coordination_repository() -> None:
     api = FakeBucketApi(repository_sha=None)
 
-    ensure_private_coordination_repository("osolmaz", api=api)
+    ensure_private_coordination_repository("example-org", api=api)
 
     assert api.repository_sha == "2" * 40
     assert len(api.repository_commits) == 1
     repository, operations, kwargs = api.repository_commits[0]
-    assert repository == "osolmaz/harbor-hf-coordination"
+    assert repository == "example-org/harbor-hf-coordination"
     assert kwargs == {
         "commit_message": "chore: initialize coordination repository",
         "repo_type": "dataset",
@@ -687,7 +693,7 @@ def test_submit_initializes_empty_coordination_repository() -> None:
     assert operation.path_in_repo == ".harbor-hf-initialized"
     assert operation.path_or_fileobj == b"harbor-hf coordination repository\n"
     assert api.inspected_repositories[-1] == (
-        "osolmaz/harbor-hf-coordination",
+        "example-org/harbor-hf-coordination",
         {"repo_type": "dataset", "revision": "main"},
     )
 
@@ -706,7 +712,7 @@ def test_submit_accepts_concurrent_coordination_initialization() -> None:
 
     api = ConcurrentApi(repository_sha=None)
 
-    ensure_private_coordination_repository("osolmaz", api=api)
+    ensure_private_coordination_repository("example-org", api=api)
 
     assert api.repository_sha == "3" * 40
 
@@ -724,7 +730,7 @@ def test_submit_rejects_failed_coordination_initialization() -> None:
 
     with pytest.raises(HfHubHTTPError, match="initialization failed"):
         ensure_private_coordination_repository(
-            "osolmaz", api=FailingApi(repository_sha=None)
+            "example-org", api=FailingApi(repository_sha=None)
         )
 
 
@@ -737,7 +743,7 @@ def test_submit_rejects_initialization_without_commit_identity() -> None:
 
     with pytest.raises(ValueError, match="has no commit identity"):
         ensure_private_coordination_repository(
-            "osolmaz", api=MissingCommitApi(repository_sha=None)
+            "example-org", api=MissingCommitApi(repository_sha=None)
         )
 
 
@@ -747,8 +753,8 @@ def test_submit_builds_default_authenticated_coordination_api(
     api = FakeBucketApi()
     monkeypatch.setattr("huggingface_hub.HfApi", lambda: api)
 
-    assert ensure_private_coordination_repository("osolmaz") == (
-        "osolmaz/harbor-hf-coordination"
+    assert ensure_private_coordination_repository("example-org") == (
+        "example-org/harbor-hf-coordination"
     )
     assert len(api.created_repositories) == 1
 
@@ -756,59 +762,59 @@ def test_submit_builds_default_authenticated_coordination_api(
 def test_submit_ensures_private_job_input_bucket() -> None:
     api = FakeBucketApi()
 
-    assert ensure_private_job_input_bucket("osolmaz", api=api) == (
-        "osolmaz/jobs-artifacts"
+    assert ensure_private_job_input_bucket("example-org", api=api) == (
+        "example-org/jobs-artifacts"
     )
     assert api.created == [
-        ("osolmaz/jobs-artifacts", {"private": True, "exist_ok": True})
+        ("example-org/jobs-artifacts", {"private": True, "exist_ok": True})
     ]
 
 
 @pytest.mark.parametrize(
     "value",
     [
-        "osolmaz/benchmark-runs",
-        "buckets/osolmaz/benchmark-runs",
-        "hf://buckets/osolmaz/benchmark-runs",
+        "example-org/benchmark-runs",
+        "buckets/example-org/benchmark-runs",
+        "hf://buckets/example-org/benchmark-runs",
     ],
 )
 def test_bucket_id_normalizes_supported_references(value: str) -> None:
-    assert bucket_id(value) == "osolmaz/benchmark-runs"
+    assert bucket_id(value) == "example-org/benchmark-runs"
 
 
 def test_require_private_artifact_bucket_returns_normalized_id() -> None:
     api = FakeBucketApi()
 
     assert (
-        require_private_bucket("buckets/osolmaz/benchmark-runs", api=api)
-        == "osolmaz/benchmark-runs"
+        require_private_bucket("buckets/example-org/benchmark-runs", api=api)
+        == "example-org/benchmark-runs"
     )
-    assert api.inspected == ["osolmaz/benchmark-runs"]
+    assert api.inspected == ["example-org/benchmark-runs"]
 
 
 def test_submit_rejects_public_coordination_repository() -> None:
     with pytest.raises(ValueError, match="must be private"):
         ensure_private_coordination_repository(
-            "osolmaz", api=FakeBucketApi(repository_private=False)
+            "example-org", api=FakeBucketApi(repository_private=False)
         )
 
 
 def test_submit_rejects_public_job_input_bucket() -> None:
     with pytest.raises(ValueError, match="must be private"):
-        ensure_private_job_input_bucket("osolmaz", api=FakeBucketApi(private=False))
+        ensure_private_job_input_bucket("example-org", api=FakeBucketApi(private=False))
 
 
 def test_submit_rejects_public_artifact_bucket() -> None:
     api = FakeBucketApi(
         privacy={
-            "osolmaz/benchmark-runs": False,
+            "example-org/benchmark-runs": False,
         }
     )
 
     with pytest.raises(
-        ValueError, match="^artifact bucket osolmaz/benchmark-runs must be private$"
+        ValueError, match="^artifact bucket example-org/benchmark-runs must be private$"
     ):
-        require_private_bucket("hf://buckets/osolmaz/benchmark-runs", api=api)
+        require_private_bucket("hf://buckets/example-org/benchmark-runs", api=api)
 
 
 def test_source_and_bucket_normalization() -> None:
@@ -854,7 +860,7 @@ def test_locked_source_command_passes_arguments_after_shell_script(
         "git_home=$(mktemp -d)\n"
         'HOME="$git_home" XDG_CONFIG_HOME="$git_home" '
         "git -c credential.helper= clone --filter=blob:none --no-checkout "
-        'https://github.com/osolmaz/harbor-hf "$repo_dir"\n'
+        'https://github.com/example-org/harbor-hf "$repo_dir"\n'
         'HOME="$git_home" XDG_CONFIG_HOME="$git_home" '
         'git -C "$repo_dir" -c credential.helper= fetch --depth 1 origin '
         "1234567890abcdef1234567890abcdef12345678\n"

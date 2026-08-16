@@ -1,6 +1,6 @@
 ---
 title: "Provider evidence recorder plan"
-author: "Onur Solmaz <2453968+osolmaz@users.noreply.github.com>"
+author: "Harbor-HF maintainers"
 date: "2026-07-16"
 ---
 

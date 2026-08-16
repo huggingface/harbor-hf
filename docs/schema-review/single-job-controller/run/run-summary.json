@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "source": "/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
+  "source": "/home/user/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json",
   "stableIteration": 4,
   "stable": false,
   "finalGraph": "graph.final.json",

@@ -1,6 +1,6 @@
 # Schemator Data Model Review
 
-Source: `/home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json`
+Source: `/home/user/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json`
 
 ## Summary
 

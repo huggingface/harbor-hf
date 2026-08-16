@@ -1,6 +1,6 @@
 ---
 title: Harbor-HF Control Service Plan
-author: Onur Solmaz <2453968+osolmaz@users.noreply.github.com>
+author: Harbor-HF maintainers
 date: 2026-08-16
 tags: [harbor, hugging-face, campaigns, control, storage]
 ---
@@ -27,11 +27,11 @@ the only normal writer of shared campaign decisions. It exposes the control API,
 runs reconciliation, launches and adopts HF Jobs, manages endpoints, and
 finalizes publication.
 
-Use the existing private `benchmark-runs` Bucket as the permanent record for
+Use the existing private `<artifact-bucket>` Bucket as the permanent record for
 control objects, profiles, evidence, actions, receipts, normalized results, and
-the global catalog. Use local SQLite in the Space only as a fast projection
-that can be deleted and rebuilt from the Bucket. Do not place a SQLite database
-file on a Bucket mount.
+the global catalog. Resolve its deployed name only in private configuration.
+Use local SQLite in the Space only as a fast projection that can be deleted and
+rebuilt from the Bucket. Do not place a SQLite database file on a Bucket mount.
 
 The same private Space serves the control API and authenticated results UI. Do
 not keep a second results Space, a result Dataset, or a backup Bucket in the
@@ -91,13 +91,13 @@ A namespace should have this fixed Harbor-HF resource set:
 | Resource | Purpose | New-write status |
 |---|---|---|
 | `huggingface/harbor-hf` | Source, schemas, built-in profiles, and Space code | Keep outside the runtime resource count |
-| `<namespace>/harbor-hf-control` private Space | Control API, reconciler, and authenticated results UI | Create once |
-| `<namespace>/benchmark-runs` private Bucket | Control objects, profiles, evidence, receipts, normalized results, and catalog | Reuse |
+| `<namespace>/<control-space>` private Space | Control API, reconciler, and authenticated results UI | Create once |
+| `<namespace>/<artifact-bucket>` private Bucket | Control objects, profiles, evidence, receipts, normalized results, and catalog | Reuse |
 
-The `osolmaz` deployment uses `osolmaz/harbor-hf-control` and
-`osolmaz/benchmark-runs`. Those are the complete Harbor-HF runtime resource
-inventory. HF-managed Job staging is shared platform infrastructure and is not a
-Harbor-HF runtime resource.
+Resolve both deployed names in private configuration. Do not record a real
+namespace or private resource name in this public repository. These two
+resources are the complete Harbor-HF runtime inventory. HF-managed Job staging
+is shared platform infrastructure and is not a Harbor-HF runtime resource.
 
 Runtime code must not create a repository, Bucket, Space, or scheduled Job for
 a campaign, repair, profile, lease, status record, result subset, or temporary
@@ -113,19 +113,18 @@ recorded revisions and paths.
 
 | Existing resource | Disposition |
 |---|---|
-| `<namespace>/harbor-hf-coordination` Dataset | Freeze after active campaigns finish; retain for historical audit |
-| `<namespace>/shellbench-results` Dataset | Freeze after every retained publication is represented in the Bucket catalog |
-| `<namespace>/harbor-hf-smoke-results` Dataset | Freeze as historical smoke evidence |
-| `<namespace>/shellbench-job-status` Dataset | Freeze as historical detached-Job control evidence |
-| `<namespace>/benchmark-run-index` Dataset | Copy verified normalized rows and catalog records into the Bucket, then freeze |
-| `<namespace>/harbor-results` Space | Retire after the control Space serves the verified results UI |
-| `<namespace>/harbor-hf-leases` Bucket | Remove only after an explicit empty-resource audit and approval |
-| `<namespace>/benchmark-run-reassessments` Bucket | Freeze; write new reassessments under `benchmark-runs` |
-| `<namespace>/benchmark-run-backups` Bucket | Verify unique objects, copy any required records into `benchmark-runs`, then retire |
+| `<namespace>/<legacy-coordination-dataset>` | Freeze after active campaigns finish; retain for historical audit |
+| `<namespace>/<legacy-results-dataset>` | Freeze after every retained publication is represented in the Bucket catalog |
+| `<namespace>/<legacy-smoke-dataset>` | Freeze as historical smoke evidence |
+| `<namespace>/<legacy-status-dataset>` | Freeze as historical detached-Job control evidence |
+| `<namespace>/<legacy-index-dataset>` | Copy verified normalized rows and catalog records into the Bucket, then freeze |
+| `<namespace>/<legacy-results-space>` | Retire after the control Space serves the verified results UI |
+| `<namespace>/<legacy-lease-bucket>` | Remove only after an explicit empty-resource audit and approval |
+| `<namespace>/<legacy-reassessment-bucket>` | Freeze; write new reassessments under `<artifact-bucket>` |
+| `<namespace>/<legacy-backup-bucket>` | Verify unique objects, copy any required records into `<artifact-bucket>`, then retire |
 
-Independent datasets such as `almanbench-results`, `qrlow-evals-results`, and
-`aacr-bench-harbor` are outside this change. They need their own ownership,
-visibility, and reader audit before any consolidation decision.
+Independent project datasets are outside this change. They need their own
+ownership, visibility, and reader audit before any consolidation decision.
 
 Do not copy historical evidence merely to make the new layout look uniform.
 Preserve old locations and record them in the unified result catalog.
@@ -178,10 +177,9 @@ outside this plan because current campaign volume does not justify that cost.
 ## Credential model
 
 The control Space has exactly one persistent secret: `HF_TOKEN`. Its value is
-the existing fine-grained token whose Hugging Face display name is
-`harbor-hf-jobs`. The token has access only to the control Space, the
-`benchmark-runs` Bucket, HF Jobs, managed Endpoints, and required Inference
-Provider calls.
+an approved fine-grained service token. Its display name and local alias remain
+private. The token has access only to the control Space, `<artifact-bucket>`, HF
+Jobs, managed Endpoints, and required Inference Provider calls.
 
 When an HF Job needs direct Hub access, the Space may inject `HF_TOKEN` into the
 trusted outer Harbor-HF worker for that Job. The worker must not forward it into
@@ -191,8 +189,9 @@ control-Space secrets.
 
 Do not mint another Harbor-HF credential for a migration, campaign, repair, or
 worker. Before revoking any old Harbor-HF credential, audit every consumer and
-run a canary with only `harbor-hf-jobs` configured. Never record the token value
-in the repository, Bucket, Dataset, logs, or chat.
+run a canary with only the retained credential configured. Never record the
+token value, display name, or local alias in the repository, Bucket, Dataset,
+logs, or chat.
 
 A planned credential rotation may use a short, explicitly approved overlap.
 That exception ends as soon as the replacement canary passes. It must not become
@@ -397,8 +396,8 @@ hardware type, method, or reuse assumption stops automatic continuation.
 
 ## Result publication
 
-New publications use immutable objects under `results/schema=v1/` in the
-`benchmark-runs` Bucket. The Space builds its local query projection from those
+New publications use immutable objects under `results/schema=v1/` in
+`<artifact-bucket>`. The Space builds its local query projection from those
 objects and serves authenticated result views itself.
 
 One publication object set contains:
@@ -467,7 +466,7 @@ At the boundary:
 3. Start the control Space write API.
 4. Route all new `v1` campaign requests through the Space.
 5. Stop creating or writing result Datasets.
-6. Publish new normalized results and catalog records to `benchmark-runs`.
+6. Publish new normalized results and catalog records to `<artifact-bucket>`.
 7. Route result views through the control Space.
 8. Suspend obsolete recovery schedules.
 9. Mark historical resources read-only in the resource inventory.
@@ -625,7 +624,8 @@ running and endpoint watchdogs remain independent.
 Before implementation, confirm:
 
 - the paid CPU tier and monthly ceiling for the always-on private Space;
-- the exact scopes of `harbor-hf-jobs` after deprecated resources are removed;
+- the exact scopes of the retained service token after deprecated resources are
+  removed;
 - the Bucket listing and startup-rebuild target at the current object count;
 - the retention period for obsolete claims, status records, and reassessment
   objects;

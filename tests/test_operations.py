@@ -827,10 +827,12 @@ def test_verifies_and_publishes_campaign_evidence(
     snapshot = _snapshot(remote_spec)
     evidence = _evidence(snapshot)
 
-    verified = verify_campaign_artifacts(snapshot, namespace="osolmaz", reader=evidence)
+    verified = verify_campaign_artifacts(
+        snapshot, namespace="example-org", reader=evidence
+    )
     dry_run = publish_campaign_results(
         snapshot,
-        namespace="osolmaz",
+        namespace="example-org",
         reader=evidence,
         publisher=None,
         dry_run=True,
@@ -838,7 +840,7 @@ def test_verifies_and_publishes_campaign_evidence(
     publisher = FakePublisher()
     published = publish_campaign_results(
         snapshot,
-        namespace="osolmaz",
+        namespace="example-org",
         reader=evidence,
         publisher=publisher,
         dry_run=False,
@@ -866,7 +868,7 @@ def test_verification_rejects_tampered_bucket_evidence(
     evidence.files["run.lock.json"] = b"tampered"
 
     with pytest.raises(ResultPublicationError, match="checksum mismatch"):
-        verify_campaign_artifacts(snapshot, namespace="osolmaz", reader=evidence)
+        verify_campaign_artifacts(snapshot, namespace="example-org", reader=evidence)
 
 
 def test_automatic_publisher_initializes_new_empty_public_repositories(
@@ -884,7 +886,7 @@ def test_automatic_publisher_initializes_new_empty_public_repositories(
     repositories = MemoryRepositories(interactions)
 
     report = AutomaticCampaignPublisher(
-        namespace="osolmaz",
+        namespace="example-org",
         store=MemoryStore(snapshot),
         reader=reader,
         publisher=publisher,
@@ -988,7 +990,7 @@ def test_automatic_publisher_initializes_new_empty_private_repositories(
     repositories = MemoryRepositories(interactions)
 
     report = AutomaticCampaignPublisher(
-        namespace="osolmaz",
+        namespace="example-org",
         store=MemoryStore(snapshot),
         reader=reader,
         publisher=publisher,
@@ -1034,7 +1036,7 @@ def test_automatic_publisher_adopts_initialized_public_repositories(
     )
 
     report = AutomaticCampaignPublisher(
-        namespace="osolmaz",
+        namespace="example-org",
         store=MemoryStore(snapshot),
         reader=reader,
         publisher=publisher,
@@ -1088,7 +1090,7 @@ def test_automatic_publisher_rejects_visibility_mismatch_before_evidence(
         ),
     ):
         AutomaticCampaignPublisher(
-            namespace="osolmaz",
+            namespace="example-org",
             store=MemoryStore(snapshot),
             reader=reader,
             publisher=publisher,
@@ -1164,7 +1166,7 @@ def test_automatic_publisher_rejects_public_repository_when_private_required(
         ),
     ):
         AutomaticCampaignPublisher(
-            namespace="osolmaz",
+            namespace="example-org",
             store=MemoryStore(snapshot),
             reader=reader,
             publisher=publisher,
@@ -1196,7 +1198,7 @@ def test_automatic_publisher_rejects_missing_index_without_side_effects(
 
     with pytest.raises(ValueError) as captured:
         AutomaticCampaignPublisher(
-            namespace="osolmaz",
+            namespace="example-org",
             store=MemoryStore(snapshot),
             reader=reader,
             publisher=FakePublisher(interactions=interactions),
@@ -1220,7 +1222,7 @@ def test_automatic_publisher_correction_publishes_legacy_evidence_privately(
     correction = _publication_correction(snapshot)
 
     report = AutomaticCampaignPublisher(
-        namespace="osolmaz",
+        namespace="example-org",
         store=MemoryStore(snapshot),
         reader=reader,
         publisher=publisher,
@@ -1265,7 +1267,7 @@ def test_automatic_publisher_correction_rejects_source_mismatch_before_writes(
 
     with pytest.raises(ValueError, match=message):
         AutomaticCampaignPublisher(
-            namespace="osolmaz",
+            namespace="example-org",
             store=MemoryStore(snapshot),
             reader=MemoryEvidence(source.prefix, source.files),
             publisher=FakePublisher(),
@@ -1284,7 +1286,7 @@ def test_automatic_publisher_correction_rejects_current_request(
 
     with pytest.raises(ValueError, match="only for requests without visibility"):
         AutomaticCampaignPublisher(
-            namespace="osolmaz",
+            namespace="example-org",
             store=MemoryStore(snapshot),
             reader=MemoryEvidence(source.prefix, source.files),
             publisher=FakePublisher(),
@@ -1318,7 +1320,7 @@ def test_automatic_publisher_correction_rejects_visibility_mismatch_before_evide
         ),
     ):
         AutomaticCampaignPublisher(
-            namespace="osolmaz",
+            namespace="example-org",
             store=MemoryStore(snapshot),
             reader=reader,
             publisher=FakePublisher(interactions=interactions),
@@ -1352,7 +1354,7 @@ def test_automatic_publisher_reports_campaign_identity_for_invalid_request(
 
     with pytest.raises(ManifestError) as captured:
         AutomaticCampaignPublisher(
-            namespace="osolmaz",
+            namespace="example-org",
             store=MemoryStore(snapshot),
             reader=reader,
             publisher=FakePublisher(interactions=interactions),

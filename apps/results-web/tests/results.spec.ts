@@ -20,7 +20,7 @@ test("opens a stable run route with provenance", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Source runs" })).toBeVisible();
   await expect(page.getByText("2 publications")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Provenance" })).toBeVisible();
-  await expect(page.getByText("osolmaz/benchmark-run-index")).toBeVisible();
+  await expect(page.getByText("example-org/benchmark-run-index")).toBeVisible();
   await expect(page.getByText("Public metadata only")).toBeVisible();
 });
 

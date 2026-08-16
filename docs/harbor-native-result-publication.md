@@ -33,9 +33,9 @@ authoritative benchmark-result contract.
    never becomes an authority or a publication dependency.
 6. Harbor Hub upload is an optional sink, not a required backend or source of
    truth.
-7. This repository is owned by `osolmaz`, so publication changes cut over in
-   place. The canonical contract remains `v1`; no parallel `v2`, fallback
-   reader, dual writer, or permanent legacy path survives the cutover.
+7. Publication changes use a hard cutover in place. The canonical contract
+   remains `v1`; no parallel `v2`, fallback reader, dual writer, or permanent
+   legacy path survives the cutover.
 
 ## Cutover Policy
 

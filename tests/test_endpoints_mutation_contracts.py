@@ -198,7 +198,7 @@ def test_build_desired_endpoint_applies_documented_defaults(
     deployment = deployment.model_copy(update={"parameters": {}})
 
     desired = build_desired_endpoint(
-        namespace="osolmaz",
+        namespace="example-org",
         campaign_id="campaign-one",
         model=remote_spec.matrix.models[0],
         deployment=deployment,

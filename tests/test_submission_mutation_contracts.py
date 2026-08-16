@@ -26,11 +26,11 @@ def test_stage_job_input_produces_golden_content_address(tmp_path: Path) -> None
     (tmp_path / "nested" / "lock.json").write_bytes(b"lock")
 
     uri = stage_job_input(
-        tmp_path, bucket="osolmaz/jobs-artifacts", identity="wave-x", api=api
+        tmp_path, bucket="example-org/jobs-artifacts", identity="wave-x", api=api
     )
 
     assert uri == (
-        "hf://buckets/osolmaz/jobs-artifacts/job-inputs/wave-x/"
+        "hf://buckets/example-org/jobs-artifacts/job-inputs/wave-x/"
         "c474db8895ff4fc78f149eed68c32242f38dc8c6aa269ecf46069517e2a0b7a7"
     )
 
@@ -48,7 +48,7 @@ def test_stage_job_input_digest_is_sensitive_to_names_and_content(
         (directory / file_name).write_bytes(content)
         uris.append(
             stage_job_input(
-                directory, bucket="osolmaz/jobs-artifacts", identity="i", api=api
+                directory, bucket="example-org/jobs-artifacts", identity="i", api=api
             )
         )
 
@@ -67,7 +67,7 @@ def test_submit_stages_input_under_run_identity(
     result = submit(
         lock,
         input_dir=tmp_path,
-        bucket="osolmaz/benchmark-runs",
+        bucket="example-org/benchmark-runs",
         runner=runner,
         source_lock=source_lock,
         bucket_api=api,
@@ -105,7 +105,7 @@ def test_provider_wave_submission_rejection_is_golden(
 
     with pytest.raises(ValueError) as caught:
         build_submit_wave_command(
-            lock, input_dir=tmp_path, bucket="osolmaz/benchmark-runs"
+            lock, input_dir=tmp_path, bucket="example-org/benchmark-runs"
         )
 
     assert str(caught.value) == (
@@ -119,17 +119,17 @@ def test_coordination_repository_requires_strictly_private_flag() -> None:
             return SimpleNamespace(private=None, sha="1" * 40)
 
     with pytest.raises(ValueError) as caught:
-        ensure_private_coordination_repository("osolmaz", api=UnknownPrivacyApi())
+        ensure_private_coordination_repository("example-org", api=UnknownPrivacyApi())
 
     assert str(caught.value) == (
-        "coordination repository osolmaz/harbor-hf-coordination must be private"
+        "coordination repository example-org/harbor-hf-coordination must be private"
     )
 
 
 def test_empty_string_commit_sha_triggers_initialization() -> None:
     api = FakeBucketApi(repository_sha="")
 
-    ensure_private_coordination_repository("osolmaz", api=api)
+    ensure_private_coordination_repository("example-org", api=api)
 
     assert len(api.repository_commits) == 1
     assert api.repository_sha == "2" * 40

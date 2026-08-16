@@ -150,7 +150,7 @@ The remote baseline is campaign
 Its evidence is stored under:
 
 ```text
-hf://buckets/osolmaz/benchmark-runs/campaigns/
+hf://buckets/example-org/benchmark-runs/campaigns/
 20260714T072108Z-7a2b167238-2bbc0a89fe
 ```
 

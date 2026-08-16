@@ -29,7 +29,7 @@ class FakeApi:
         self.webhooks: list[SimpleNamespace | WebhookInfo] = []
 
     def list_scheduled_jobs(self, **kwargs: object) -> list[object]:
-        assert kwargs == {"namespace": "osolmaz"}
+        assert kwargs == {"namespace": "example-org"}
         return cast(list[object], self.scheduled_jobs)
 
     def create_scheduled_job(self, **kwargs: object) -> object:
@@ -72,7 +72,7 @@ class FakeApi:
 def _request(spec: ExperimentSpec) -> AutomationRequest:
     assert spec.remote is not None
     return AutomationRequest(
-        namespace="osolmaz",
+        namespace="example-org",
         schedule="*/10 * * * *",
         remote=spec.remote,
         campaign_ids=["campaign-one"],
@@ -94,7 +94,7 @@ def _provider_webhook(request: AutomationRequest) -> WebhookInfo:
         watched=[
             WebhookWatchedItem(
                 type="dataset",
-                name="osolmaz/harbor-hf-coordination",
+                name="example-org/harbor-hf-coordination",
             )
         ],
         domains=["repo"],
@@ -115,7 +115,7 @@ def test_builds_digest_pinned_scheduled_controller_watchdog(
         "campaign",
         "watchdog",
         "--namespace",
-        "osolmaz",
+        "example-org",
         "--campaign-id",
         "campaign-one",
     ]
@@ -160,7 +160,7 @@ def test_installs_serial_schedule_and_dataset_webhook(
     assert result.model_dump() == {
         "scheduled_job_id": "scheduled-1",
         "webhook_id": "webhook-1",
-        "control_repository": "osolmaz/harbor-hf-coordination",
+        "control_repository": "example-org/harbor-hf-coordination",
         "scheduled_job_created": True,
         "webhook_created": True,
     }
@@ -168,11 +168,11 @@ def test_installs_serial_schedule_and_dataset_webhook(
     assert set(cast(dict[str, str], api.job["secrets"])) == {"HF_TOKEN"}
     assert api.job["labels"] == {
         "harbor-hf-role": "campaign-controller-watchdog",
-        "harbor-hf-namespace": "osolmaz",
+        "harbor-hf-namespace": "example-org",
     }
     assert api.webhook == {
         "job_id": "scheduled-1",
-        "watched": [{"type": "dataset", "name": "osolmaz/harbor-hf-coordination"}],
+        "watched": [{"type": "dataset", "name": "example-org/harbor-hf-coordination"}],
         "domains": ["repo"],
     }
 
@@ -242,7 +242,7 @@ def test_install_creates_supported_webhook_from_real_api_contract(
     assert result.webhook_created is True
     assert api.webhook == {
         "job_id": "scheduled-1",
-        "watched": [{"type": "dataset", "name": "osolmaz/harbor-hf-coordination"}],
+        "watched": [{"type": "dataset", "name": "example-org/harbor-hf-coordination"}],
         "domains": ["repo"],
     }
 
@@ -311,14 +311,14 @@ def test_automation_plan_exposes_the_complete_installation_contract(
     )
 
     assert automation_plan(request).model_dump() == {
-        "namespace": "osolmaz",
+        "namespace": "example-org",
         "schedule": "17 */3 * * *",
         "suspended": True,
         "image": "ghcr.io/astral-sh/uv@sha256:" + "0" * 64,
         "command": scheduled_controller_watchdog_command(request),
         "secret_names": ["HF_TOKEN"],
         "campaign_ids": ["campaign-one"],
-        "control_repository": "osolmaz/harbor-hf-coordination",
+        "control_repository": "example-org/harbor-hf-coordination",
     }
 
 
@@ -411,7 +411,7 @@ def test_every_managed_schedule_field_participates_in_drift_detection(
         lambda webhook: setattr(
             webhook,
             "watched",
-            [SimpleNamespace(type="model", name="osolmaz/harbor-hf-coordination")],
+            [SimpleNamespace(type="model", name="example-org/harbor-hf-coordination")],
         ),
         lambda webhook: setattr(webhook, "domains", ["discussions"]),
         lambda webhook: setattr(webhook, "disabled", 0),
@@ -499,7 +499,7 @@ def test_unmanaged_provider_resources_are_ignored(
             job=SimpleNamespace(
                 labels={
                     "harbor-hf-role": "other-role",
-                    "harbor-hf-namespace": "osolmaz",
+                    "harbor-hf-namespace": "example-org",
                 }
             )
         ),
@@ -509,7 +509,7 @@ def test_unmanaged_provider_resources_are_ignored(
 
     assert result.scheduled_job_created is True
     assert result.webhook_created is True
-    assert api.job["namespace"] == "osolmaz"
+    assert api.job["namespace"] == "example-org"
     assert api.job["secrets"] == {"HF_TOKEN": "test-only"}
     assert api.webhook["job_id"] == "scheduled-1"
 
@@ -582,12 +582,16 @@ def test_webhook_matching_handles_sparse_provider_objects_as_contract_data(
         SimpleNamespace(watched=[SimpleNamespace()]),
         SimpleNamespace(
             watched=[
-                SimpleNamespace(type="dataset", name="osolmaz/harbor-hf-coordination")
+                SimpleNamespace(
+                    type="dataset", name="example-org/harbor-hf-coordination"
+                )
             ]
         ),
         SimpleNamespace(
             watched=[
-                SimpleNamespace(type="dataset", name="osolmaz/harbor-hf-coordination")
+                SimpleNamespace(
+                    type="dataset", name="example-org/harbor-hf-coordination"
+                )
             ],
             domains=["repo"],
         ),
@@ -615,7 +619,7 @@ def test_scheduled_spec_matching_treats_a_missing_command_as_drift(
         docker_image=request.remote.job.image,
         labels={
             "harbor-hf-role": "campaign-controller-watchdog",
-            "harbor-hf-namespace": "osolmaz",
+            "harbor-hf-namespace": "example-org",
         },
     )
 

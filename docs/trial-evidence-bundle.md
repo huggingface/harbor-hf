@@ -937,7 +937,7 @@ policy under `artifacts` for remote benchmark runs:
 
 ```yaml
 artifacts:
-  bucket: osolmaz/benchmark-runs
+  bucket: example-org/benchmark-runs
   trial_evidence:
     workspace_root: /app
     workspace_max_nodes: 100000

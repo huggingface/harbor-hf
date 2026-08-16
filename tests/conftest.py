@@ -167,7 +167,7 @@ def remote_spec() -> ExperimentSpec:
     deployment = spec.matrix.deployments[0].model_copy(
         update={
             "endpoint": EndpointRef(
-                namespace="osolmaz",
+                namespace="example-org",
                 name="qwen-endpoint",
                 served_model_name="/repository",
             )
@@ -194,11 +194,11 @@ def remote_spec() -> ExperimentSpec:
             "remote": RemoteExecutionSpec.model_validate(
                 {
                     "job": {
-                        "namespace": "osolmaz",
+                        "namespace": "example-org",
                         "image": "ghcr.io/astral-sh/uv@sha256:" + "0" * 64,
                     },
                     "worker": {
-                        "repository": "osolmaz/harbor-hf",
+                        "repository": "example-org/harbor-hf",
                         "revision": "1234567890abcdef1234567890abcdef12345678",
                     },
                     "harbor": {

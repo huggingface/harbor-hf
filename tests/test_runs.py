@@ -22,11 +22,11 @@ def test_build_run_lock_resolves_one_cell(remote_spec: ExperimentSpec) -> None:
     lock = build_run_lock(remote_spec, clock=lambda: NOW)
     assert isinstance(lock.deployment, DeploymentProfile)
 
-    assert lock.run_id == "20260713T010203Z-4d82d848a5"
+    assert lock.run_id == "20260713T010203Z-64380307c2"
     assert lock.benchmark_dataset == "harbor/terminal-bench@2.0"
     assert lock.benchmark_dataset_digest == "sha256:" + "1" * 64
     assert lock.spec_digest == (
-        "sha256:40bcd9ace673a2c6ff4d8b70971b0d43873f124f3348618df9ab3abfd9af5ceb"
+        "sha256:262c0ed2f2071c061018e685d9d3018be89b92858a776d5f0cdbcae35d35d823"
     )
     assert lock.evaluation_id == "shellbench-qwen-hardware"
     assert lock.publication_role == "final"

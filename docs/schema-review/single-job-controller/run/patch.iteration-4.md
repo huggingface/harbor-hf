@@ -1,6 +1,6 @@
 # Schemator Simplification Patch Plan
 
-Source: /home/onur/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json
+Source: /home/user/repos/harbor-hf/schemas/campaign-plan-v1alpha1.schema.json
 
 This is a source-editing plan, not an auto-applied patch. Apply these changes to the schema source, then rerun `schemator run`.
 

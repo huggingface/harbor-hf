@@ -65,7 +65,7 @@ remote:
     revision: 0123456789abcdef0123456789abcdef01234567
   harbor:
     source:
-      repository: osolmaz/harbor
+      repository: example-org/harbor
       revision: bd9e606dcb99eb49de70bd741fd846cae5c7ebd1
 ```
 

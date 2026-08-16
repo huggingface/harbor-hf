@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Run reproducible Harbor benchmarks on Hugging Face infrastructure."
 readme = "README.md"
 license = "Apache-2.0"
-authors = [{ name = "Onur Solmaz" }]
+authors = [{ name = "Harbor-HF maintainers" }]
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.116.0",

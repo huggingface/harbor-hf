@@ -103,7 +103,7 @@ execution:
 
 remote:
   job:
-    namespace: osolmaz
+    namespace: example-org
     image: ghcr.io/example/controller@sha256:0000000000000000000000000000000000000000000000000000000000000000
     flavor: cpu-upgrade
     timeout_seconds: 85800

@@ -16,9 +16,10 @@ changes.
 The current release stores live campaign events and claims in a private Hub
 Dataset. The [control service
 plan](2026-08-16-harbor-hf-control-service-plan.md) replaces that new-write path
-with one private control Space and immutable objects in the existing
-`benchmark-runs` Bucket. The same Bucket stores normalized result rows and the
-global catalog. The Space also serves authenticated result views.
+with one private control Space and immutable objects in the configured
+`<artifact-bucket>` Bucket. The same Bucket stores normalized result rows and
+the global catalog. The Space also serves authenticated result views. Real
+resource names remain in private deployment configuration.
 
 This is a hard new-write switch with no dual-write mode. Historical Dataset
 commits and Bucket evidence remain immutable. Until implementation and remote
@@ -279,11 +280,11 @@ archives are created. File content is scanned and rewritten in bounded chunks,
 and symbolic links are rejected before evidence traversal.
 
 The planned control service has one persistent Space secret named `HF_TOKEN`.
-It contains the existing fine-grained token with display name
-`harbor-hf-jobs`. A trusted outer worker may receive it for direct Hub access,
-but a Harbor Sandbox or benchmark agent may not. Any redundant Harbor-HF
+It contains an approved fine-grained service token. The token's display name and
+local alias remain private. A trusted outer worker may receive it for direct Hub
+access, but a Harbor Sandbox or benchmark agent may not. Any redundant Harbor-HF
 service credential is revoked only after a private consumer audit and a canary
-using only `harbor-hf-jobs`.
+using only the retained credential.
 
 ### Canonical Configuration Artifacts
 

@@ -386,7 +386,7 @@ def test_submit_preflight_value_error_is_a_known_failure(
 
     with pytest.raises(
         ActionExecutionError,
-        match="^Job input bucket osolmaz/jobs-artifacts must be private$",
+        match="^Job input bucket example-org/jobs-artifacts must be private$",
     ):
         adapter.submit(wave, request=request, campaign=lock)
 

@@ -1,8 +1,8 @@
 {
   "schema_version": "harbor-hf/catalog-cutover/v1",
   "cutover_id": "primary-catalog-20260717",
-  "result_dataset": "osolmaz/shellbench-results",
-  "index_dataset": "osolmaz/benchmark-run-index",
+  "result_dataset": "example-org/example-results",
+  "index_dataset": "example-org/example-index",
   "source_catalog_revision": "0faf2230fb14f26fb1b0717a5ba07c6cb6147456",
   "source_catalog_path": "data/catalog/schema=v1/windows/2048.parquet",
   "expected_result_head": "98f681bd1240b8c1f4e8680452574da0a8c621de",

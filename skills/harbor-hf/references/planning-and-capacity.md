@@ -14,8 +14,9 @@ Collect these values before editing a manifest:
 - deployment kind, provider route or endpoint identity, and wire API;
 - agent name, custom import path when required, and exact revision;
 - judge provider, API URL, model, reasoning policy, and secret name;
-- private namespace, the canonical control Space and `benchmark-runs` Bucket,
-  and the `HF_TOKEN` secret name;
+- private namespace, the configured `<control-space>` and `<artifact-bucket>`,
+  and the `HF_TOKEN` secret key; keep deployed identifiers in private operator
+  state;
 - controller image digest, worker commit, Harbor commit, and Sandbox flavor;
 - provider request concurrency and request interval, or selected endpoint
   serving profile;

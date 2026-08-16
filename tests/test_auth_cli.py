@@ -24,7 +24,7 @@ def _set_auth_paths(
 
 
 def _verified_identity(_token: str) -> dict[str, str]:
-    return {"owner": "osolmaz", "role": "fineGrained"}
+    return {"owner": "example-org", "role": "fineGrained"}
 
 
 def test_auth_schema_writes_checked_in_contract(tmp_path: Path) -> None:
@@ -85,7 +85,7 @@ def test_auth_add_job_token_uses_hidden_input_and_selects_it(
     assert payload == {
         "config_path": str(config_path),
         "environment_override": True,
-        "owner": "osolmaz",
+        "owner": "example-org",
         "remote_job_secret_name": "HF_TOKEN",
         "role": "fineGrained",
         "selected_token_name": "campaign",

@@ -862,7 +862,7 @@ def test_cleanup_waits_for_terminal_job_and_recovers_on_later_pass(
         ("cleanup-wave", "ambiguous"),
     ]
     cleanup_id = nonterminal.applied[1].action_id
-    assert jobs.cancellations == [("abcdef012345abcdef012345", "osolmaz")]
+    assert jobs.cancellations == [("abcdef012345abcdef012345", "example-org")]
     assert not any(
         event.kind == "wave.closed" and event.subject_id == submit.wave_id
         for event in store.events
@@ -1330,7 +1330,7 @@ def test_apply_context_limits_pending_actions_before_side_effects(
 
     assert len(result.applied) == 1
     assert result.applied[0].kind == "cancel-wave"
-    assert jobs.cancellations == [("abcdef012345abcdef012345", "osolmaz")]
+    assert jobs.cancellations == [("abcdef012345abcdef012345", "example-org")]
 
 
 def test_apply_rejects_an_action_that_changed_after_controller_admission(
@@ -1740,7 +1740,7 @@ def test_provider_wave_uses_provider_identity_without_endpoint_side_effects(
     ]
     assert jobs.find_calls == [
         {
-            "namespace": "osolmaz",
+            "namespace": "example-org",
             "wave_id": result.plan.actions[0].wave_id,
             "endpoint_label": expected_label,
             "target_label_key": "harbor-hf-provider",
@@ -1867,13 +1867,13 @@ def test_provider_wave_adoption_and_cancellation_use_the_same_identity(
     }
     assert cancel_jobs.find_calls == [
         {
-            "namespace": "osolmaz",
+            "namespace": "example-org",
             "wave_id": action.wave_id,
             "endpoint_label": expected_label,
             "target_label_key": "harbor-hf-provider",
         }
     ]
-    assert cancel_jobs.cancellations == [("abcdef012345abcdef012345", "osolmaz")]
+    assert cancel_jobs.cancellations == [("abcdef012345abcdef012345", "example-org")]
 
 
 def test_provider_reserved_submission_is_superseded_after_cancellation(
@@ -1971,7 +1971,7 @@ def test_provider_wave_cancellation_cleanup_closes_wave_without_endpoints(
         ("cleanup-wave", "succeeded"),
     ]
     assert result.applied[1].remote_id == action.wave_id
-    assert jobs.cancellations == [("abcdef012345abcdef012345", "osolmaz")]
+    assert jobs.cancellations == [("abcdef012345abcdef012345", "example-org")]
     assert endpoints.inspect_calls == []
     assert endpoints.create_calls == []
     assert endpoints.pause_calls == []
@@ -2019,7 +2019,7 @@ def test_cancelled_unobserved_endpoint_wave_is_durably_closed(
         ("cancel-wave", "succeeded"),
         ("cleanup-wave", "succeeded"),
     ]
-    assert jobs.cancellations == [("abcdef012345abcdef012345", "osolmaz")]
+    assert jobs.cancellations == [("abcdef012345abcdef012345", "example-org")]
     assert len(endpoints.pause_calls) == 1
     assert endpoints.active is False
     closed = [event for event in store.events if event.kind == "wave.closed"]
@@ -2536,7 +2536,7 @@ class FakeBucketApi:
         add: list[tuple[str | Path | bytes, str]],
         **kwargs: object,
     ) -> object:
-        assert bucket_id == "osolmaz/jobs-artifacts"
+        assert bucket_id == "example-org/jobs-artifacts"
         assert kwargs == {}
         for content, path in add:
             assert isinstance(content, bytes)
@@ -2596,7 +2596,7 @@ def test_hugging_face_reconciler_factory_wires_exact_shared_adapters(
     )
 
     reconciler = campaign_apply_module.hugging_face_campaign_reconciler(
-        "osolmaz",
+        "example-org",
         store=store,
         jobs_api=jobs_api,
         bucket_api=bucket_api,
@@ -2624,7 +2624,7 @@ def test_hugging_face_reconciler_factory_wires_exact_shared_adapters(
     assert writer.api is evidence_api
     automatic = cast(AutomaticCampaignPublisher, reconciler.result_publisher)
     assert automatic is not None
-    assert automatic.namespace == "osolmaz"
+    assert automatic.namespace == "example-org"
     assert automatic.store is store
     assert automatic.reader is reader
     assert automatic.repositories is evidence_api
@@ -2632,11 +2632,11 @@ def test_hugging_face_reconciler_factory_wires_exact_shared_adapters(
     leases = cast(HubClaimStore, publisher.leases)
     assert publisher.publisher_id == "reconciler-" + "f" * 32
     assert publisher.api is evidence_api
-    assert leases.repository == "osolmaz/harbor-hf-coordination"
+    assert leases.repository == "example-org/harbor-hf-coordination"
     assert leases.token == token
     assert leases.api is evidence_api
     action_claims = cast(HubClaimStore, reconciler.action_claims)
-    assert action_claims.repository == "osolmaz/harbor-hf-coordination"
+    assert action_claims.repository == "example-org/harbor-hf-coordination"
     reconciler.close()
     reconciler.close()
 
@@ -2649,7 +2649,7 @@ def test_hugging_face_reconciler_factory_requires_hf_token(
     monkeypatch.setattr(huggingface_hub, "get_token", lambda: None)
 
     with pytest.raises(CampaignApplyError, match="HF token is required"):
-        campaign_apply_module.hugging_face_campaign_reconciler("osolmaz")
+        campaign_apply_module.hugging_face_campaign_reconciler("example-org")
 
 
 def test_hf_wave_adapter_submits_staged_locks_through_submission_module(
@@ -2678,7 +2678,7 @@ def test_hf_wave_adapter_submits_staged_locks_through_submission_module(
     assert json.loads(staged["campaign.lock.json"]) == lock.model_dump(mode="json")
     assert json.loads(staged["wave.lock.json"]) == wave.model_dump(mode="json")
     volume = next(value for value in runner.command if value.endswith(":/input:ro"))
-    assert volume.startswith("hf://buckets/osolmaz/jobs-artifacts/job-inputs/")
+    assert volume.startswith("hf://buckets/example-org/jobs-artifacts/job-inputs/")
 
 
 def test_hf_wave_adapter_adopts_only_exact_labels() -> None:

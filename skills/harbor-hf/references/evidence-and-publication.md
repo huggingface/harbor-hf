@@ -2,9 +2,9 @@
 
 Harbor HF publishes results derived from canonical private evidence. Before the
 control-service cutover, result Datasets and the read-only Space are rebuildable
-projections. After cutover, the private `benchmark-runs` Bucket holds evidence,
-normalized rows, and catalog objects. The control Space rebuilds and serves the
-result projection.
+projections. After cutover, the private `<artifact-bucket>` Bucket holds
+evidence, normalized rows, and catalog objects. The control Space rebuilds and
+serves the result projection. Keep its deployed name in private configuration.
 
 ## Evidence hierarchy
 

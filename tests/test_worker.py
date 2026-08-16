@@ -843,9 +843,9 @@ def test_launch_watchdog_uses_independent_hf_job(
         "timeout": 11400,
         "labels": {
             "harbor-hf-watchdog": "watchdog-run",
-            "harbor-hf-endpoint": "d026b68a5286b3887f1e9ea13d304aed",
+            "harbor-hf-endpoint": "a1750de84d2a4270eba446cbe83d6c05",
         },
-        "namespace": "osolmaz",
+        "namespace": "example-org",
     }
     command = cast(list[str], calls[0]["command"])
     assert command[3:] == [
@@ -855,11 +855,11 @@ def test_launch_watchdog_uses_independent_hf_job(
         "--controller-job-id",
         "controller-job",
         "--controller-namespace",
-        "osolmaz",
+        "example-org",
         "--endpoint-name",
         "qwen-endpoint",
         "--endpoint-namespace",
-        "osolmaz",
+        "example-org",
         "--run-id",
         "watchdog-run",
         "--token-secret-name",
@@ -936,7 +936,7 @@ def test_launch_watchdog_does_not_cancel_after_failed_handshake(
     with pytest.raises(WorkerError, match="exited before readiness: ERROR"):
         launch_cleanup_watchdog(lock, endpoint, "secret")
 
-    assert inspections == [{"job_id": "watchdog-job", "namespace": "osolmaz"}]
+    assert inspections == [{"job_id": "watchdog-job", "namespace": "example-org"}]
 
 
 @pytest.mark.parametrize(
@@ -1012,7 +1012,7 @@ def test_launch_watchdog_waits_on_the_submitting_client_with_exact_identity(
     observed = launch_cleanup_watchdog_for(remote, endpoint, "owner-one", "secret")
 
     assert observed == "watchdog-job"
-    assert waits == [(clients[0], "watchdog-job", "osolmaz", 300)]
+    assert waits == [(clients[0], "watchdog-job", "example-org", 300)]
 
 
 def test_wait_watchdog_ready_polls_until_handshake() -> None:
@@ -1773,7 +1773,7 @@ def test_controller_environment_records_only_reproducibility_fields(
     result = controller_environment(lock)
 
     assert result["job_id"] == "job-123"
-    assert result["namespace"] == "osolmaz"
+    assert result["namespace"] == "example-org"
     assert result["requested_flavor"] == "cpu-basic"
     assert result["reported_accelerator"] == "none"
     assert result["reported_cpu_cores"] == "2"
@@ -3344,7 +3344,7 @@ def test_worker_publishes_success_after_cleanup(
     runtime = json.loads((root / "runtime-environment.json").read_text())
     assert set(runtime) == {"controller", "endpoint"}
     assert runtime["endpoint"] == {"probes": {"health": {"http_status": 200}}}
-    assert runtime["controller"]["namespace"] == "osolmaz"
+    assert runtime["controller"]["namespace"] == "example-org"
     assert runtime["controller"]["requested_flavor"] == "cpu-basic"
     assert sorted(path.name for path in root.iterdir()) == [
         "_SUCCESS",
@@ -3439,7 +3439,7 @@ def test_worker_publishes_success_after_cleanup(
             operation,
             "qwen-endpoint",
             "--namespace",
-            "osolmaz",
+            "example-org",
             "--format",
             "json",
         ]
