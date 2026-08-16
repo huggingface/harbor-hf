@@ -1,5 +1,5 @@
 import type { ActionIntent, EndpointResource } from "@harbor-hf/contracts";
-import { sha256 } from "@harbor-hf/contracts";
+import { controlRecordPath, sha256 } from "@harbor-hf/contracts";
 import { createTestControl } from "@harbor-hf/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NoopActions } from "@harbor-hf/hf-adapters";
@@ -105,11 +105,51 @@ describe("control service", () => {
     );
     await settle(reconciler);
     expect(await control.projection.unadvancedActions()).toHaveLength(0);
+    const initialLaunch = (await control.projection.actions(100)).find(
+      (action) => action.action_kind === "job.launch",
+    );
+    if (!initialLaunch) throw new Error("initial Job launch is missing");
+    expect(JSON.parse(initialLaunch.intent_body).payload).toMatchObject({
+      requires_hf_token: true,
+      trusted_worker: true,
+      mount_bucket: true,
+    });
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       status: "completed",
       terminal_tasks: 1,
       publication_status: "published",
     });
+  });
+
+  it("repairs deterministic submission records after partial writes", async () => {
+    const source = await createTestControl();
+    controls.push(source);
+    const key = "partial-submission-key";
+    const submitted = await source.service.submit(submission, key, operator);
+    const request = await source.projection.campaignRequest(submitted.campaign_id);
+    const lock = await source.projection.campaignLock(submitted.campaign_id);
+    if (!request || !lock) throw new Error("source submission records are missing");
+
+    for (const partial of [request, lock]) {
+      const control = await createTestControl();
+      controls.push(control);
+      await control.service.append(partial);
+      const path = controlRecordPath(partial);
+      const before = await control.projection.objectDigest(path);
+      const recovered = await control.service.submit(submission, key, operator);
+      expect(recovered).toMatchObject({
+        campaign_id: submitted.campaign_id,
+        adopted: true,
+      });
+      expect(await control.projection.objectDigest(path)).toBe(before);
+      expect(
+        await control.projection.campaignRequest(submitted.campaign_id),
+      ).not.toBeNull();
+      expect(
+        await control.projection.campaignLock(submitted.campaign_id),
+      ).not.toBeNull();
+      expect(await control.projection.action(recovered.action_id)).not.toBeNull();
+    }
   });
 
   it("rebuilds the same projection from immutable objects", async () => {
@@ -264,6 +304,16 @@ describe("control service", () => {
       active_hourly_cost_microusd: 100,
     } satisfies EndpointResource);
     await control.service.markAdvanced(resume, resumeReceipt);
+    await expect(
+      control.service.campaignAction(
+        result.campaign_id,
+        { action: "publish", confirmed: true },
+        "unsafe-manual-publication",
+        operator,
+      ),
+    ).rejects.toThrow(
+      "campaign cannot publish while actions or endpoint cleanup are pending",
+    );
     let pauses = 0;
     const external: ExternalActionPort = {
       execute: async (intent): Promise<ExternalActionResult> => {

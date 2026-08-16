@@ -65,6 +65,9 @@ export function smokeProfiles(
       job_command: ["true"],
       hardware: "cpu-basic",
       timeout_seconds: 300,
+      requires_hf_token: true,
+      trusted_worker: true,
+      mount_bucket: true,
     }),
     profile("launch_policy", "control-smoke", {
       max_infrastructure_attempts: maxInfrastructureAttempts,

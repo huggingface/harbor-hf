@@ -17,7 +17,7 @@ afterEach(async () => {
   );
 });
 
-async function setup(): Promise<{
+async function setup(writeMode: AppConfig["write_mode"] = "canary"): Promise<{
   runtime: Runtime;
   app: Awaited<ReturnType<typeof buildApp>>;
 }> {
@@ -37,7 +37,7 @@ async function setup(): Promise<{
     profiles_root: resolve("profiles"),
     web_root: join(root, "web"),
     auth_mode: "development",
-    write_mode: "canary",
+    write_mode: writeMode,
     public_origin: "http://127.0.0.1:7860",
     oauth: null,
     hf_token: "test-token-not-a-real-credential",
@@ -170,6 +170,21 @@ describe("control API", () => {
       payload: { ...payload, outcome: "semantic" },
     });
     expect(conflict.statusCode).toBe(409);
+    await app.close();
+  });
+
+  it("returns a client error for an unknown profile alias", async () => {
+    const { app } = await setup("enabled");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "unknown-profile-key" },
+      payload: { ...input, model: "unknown-model" },
+    });
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({
+      error: { code: "profile_resolution_failed" },
+    });
     await app.close();
   });
 

@@ -903,6 +903,15 @@ export class Projection {
     );
   }
 
+  async campaignRequest(campaignId: string): Promise<CampaignRequest | null> {
+    const row = await this.db
+      .selectFrom("campaigns")
+      .select("request_body")
+      .where("campaign_id", "=", campaignId)
+      .executeTakeFirst();
+    return row?.request_body ? (JSON.parse(row.request_body) as CampaignRequest) : null;
+  }
+
   async campaignLock(campaignId: string): Promise<CampaignLock | null> {
     const row = await this.db
       .selectFrom("campaigns")

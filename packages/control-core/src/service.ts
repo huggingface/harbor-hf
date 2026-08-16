@@ -166,56 +166,57 @@ export class ControlService {
       "campaign",
       "0",
     );
-    const existing = await this.projection.campaignLock(campaignId);
-    if (existing) {
-      this.assertMatchingSubmission(existing, input);
-      return {
-        campaign_id: campaignId,
-        action_id: actionId,
-        status_url: `/api/v1/campaigns/${campaignId}`,
-        adopted: true,
-      };
-    }
+    const existingRequest = await this.projection.campaignRequest(campaignId);
+    const existingLock = await this.projection.campaignLock(campaignId);
+    if (existingRequest) this.assertMatchingRequest(existingRequest, input, actor);
+    if (existingLock) this.assertMatchingSubmission(existingLock, input);
 
-    const profiles = this.resolver.resolve(input);
+    const profiles = existingLock?.profiles ?? this.resolver.resolve(input);
     const deployment = profileSpec<DeploymentProfileSpec>(profiles, "deployment");
     if (deployment.route !== "hf_job")
       throw new PolicyError("imported deployment profiles cannot launch campaigns");
-    const tasks = this.resolver.tasks(input.benchmark);
-    const timestamp = this.clock.now().toISOString();
+    const timestamp =
+      existingLock?.created_at ??
+      existingRequest?.created_at ??
+      this.clock.now().toISOString();
+    const recordActor = existingLock?.actor ?? existingRequest?.actor ?? actor;
     const refs = profiles.map((profile) => ({
       kind: profile.kind,
       alias: profile.name,
     }));
-    const request: CampaignRequest = {
-      schema_version: "v1",
-      kind: "campaign.request",
-      record_id: deterministicId("request", campaignId),
-      created_at: timestamp,
-      actor,
-      campaign_id: campaignId,
-      idempotency_key_digest: keyDigest,
-      profiles: refs as CampaignRequest["profiles"],
-      ceiling_microusd: input.ceiling_microusd,
-    };
-    const lock: CampaignLock = {
-      schema_version: "v1",
-      kind: "campaign.lock",
-      record_id: deterministicId("lock", campaignId),
-      created_at: timestamp,
-      actor,
-      campaign_id: campaignId,
-      profiles: profiles as CampaignLock["profiles"],
-      tasks: tasks as CampaignLock["tasks"],
-      ceiling_microusd: input.ceiling_microusd,
-      source_revision: this.resolver.sourceRevision(),
-    };
+    const request: CampaignRequest =
+      existingRequest ??
+      ({
+        schema_version: "v1",
+        kind: "campaign.request",
+        record_id: deterministicId("request", campaignId),
+        created_at: timestamp,
+        actor: recordActor,
+        campaign_id: campaignId,
+        idempotency_key_digest: keyDigest,
+        profiles: refs as CampaignRequest["profiles"],
+        ceiling_microusd: input.ceiling_microusd,
+      } satisfies CampaignRequest);
+    const lock: CampaignLock =
+      existingLock ??
+      ({
+        schema_version: "v1",
+        kind: "campaign.lock",
+        record_id: deterministicId("lock", campaignId),
+        created_at: timestamp,
+        actor: recordActor,
+        campaign_id: campaignId,
+        profiles: profiles as CampaignLock["profiles"],
+        tasks: this.resolver.tasks(input.benchmark) as CampaignLock["tasks"],
+        ceiling_microusd: input.ceiling_microusd,
+        source_revision: this.resolver.sourceRevision(),
+      } satisfies CampaignLock);
     const budget: BudgetEvent = {
       schema_version: "v1",
       kind: "budget.event",
       record_id: deterministicId("budget", campaignId, "ceiling"),
       created_at: timestamp,
-      actor,
+      actor: recordActor,
       campaign_id: campaignId,
       event_kind: "ceiling",
       amount_microusd: input.ceiling_microusd,
@@ -226,20 +227,45 @@ export class ControlService {
       "campaign",
       0,
       {},
-      actor,
+      recordActor,
       timestamp,
     );
 
-    await this.append(request);
     await this.append(lock);
+    await this.append(request);
     await this.append(budget);
     await this.append(intent);
     return {
       campaign_id: campaignId,
       action_id: actionId,
       status_url: `/api/v1/campaigns/${campaignId}`,
-      adopted: false,
+      adopted: Boolean(existingRequest || existingLock),
     };
+  }
+
+  private assertMatchingRequest(
+    request: CampaignRequest,
+    input: CampaignSubmissionV1,
+    actor: Actor,
+  ): void {
+    const selected = Object.fromEntries(
+      request.profiles.map((profile) => [profile.kind, profile.alias]),
+    );
+    const deployment =
+      input.deployment ??
+      this.resolver.selectDeployment(input.model, input.harness).profile.name;
+    const matches =
+      request.actor.subject === actor.subject &&
+      selected.benchmark === input.benchmark &&
+      selected.model === input.model &&
+      selected.harness === input.harness &&
+      selected.deployment === deployment &&
+      selected.launch_policy === input.launch_policy &&
+      request.ceiling_microusd === input.ceiling_microusd;
+    if (!matches)
+      throw new IdempotencyConflictError(
+        "idempotency key already belongs to a different campaign request",
+      );
   }
 
   private assertMatchingSubmission(
@@ -520,6 +546,12 @@ export class ControlService {
     } else if (input.action === "publish") {
       if (campaign.terminal_tasks !== campaign.total_tasks)
         throw new PolicyError("campaign cannot publish before every task is terminal");
+      if (campaign.pending_actions > 0 || campaign.cleanup_pending)
+        throw new PolicyError(
+          "campaign cannot publish while actions or endpoint cleanup are pending",
+        );
+      if (await this.projection.campaignPublication(campaignId))
+        throw new PolicyError("campaign is already published");
       kind = "publication.publish";
       target = "results";
       payload = {};

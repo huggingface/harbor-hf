@@ -16,6 +16,7 @@ import {
   ControlNotReadyError,
   IdempotencyConflictError,
   PolicyError,
+  ProfileResolutionError,
   type ControlEvent,
 } from "@harbor-hf/control-core";
 import cookie from "@fastify/cookie";
@@ -729,6 +730,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     } else if (error instanceof ControlNotReadyError) {
       status = 503;
       code = "control_not_ready";
+      message = error.message;
+    } else if (error instanceof ProfileResolutionError) {
+      status = 422;
+      code = "profile_resolution_failed";
       message = error.message;
     } else if (error instanceof PolicyError) {
       status = 422;

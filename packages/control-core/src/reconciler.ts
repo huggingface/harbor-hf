@@ -241,6 +241,33 @@ export class Reconciler {
           "number",
         ),
         reservation_microusd: reservation,
+        ...(deployment.requires_hf_token === undefined
+          ? {}
+          : {
+              requires_hf_token: profileScalar<boolean>(
+                deployment,
+                "requires_hf_token",
+                "boolean",
+              ),
+            }),
+        ...(deployment.trusted_worker === undefined
+          ? {}
+          : {
+              trusted_worker: profileScalar<boolean>(
+                deployment,
+                "trusted_worker",
+                "boolean",
+              ),
+            }),
+        ...(deployment.mount_bucket === undefined
+          ? {}
+          : {
+              mount_bucket: profileScalar<boolean>(
+                deployment,
+                "mount_bucket",
+                "boolean",
+              ),
+            }),
       },
     );
     await this.service.writeAction(intent);
