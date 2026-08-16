@@ -136,6 +136,21 @@ describe("control service", () => {
     });
   });
 
+  it("rejects a campaign ceiling below its launch reservation", async () => {
+    const control = await createTestControl(1, 1, 50);
+    controls.push(control);
+
+    await expect(
+      control.service.submit(
+        { ...submission, ceiling_microusd: 49 },
+        "infeasible-reservation-key",
+        operator,
+      ),
+    ).rejects.toThrow("launch reservation exceeds the campaign ceiling");
+    expect(await control.projection.campaigns()).toEqual([]);
+    expect(await control.projection.pendingActions()).toEqual([]);
+  });
+
   it("recovers action advancement after a receipt-only crash", async () => {
     const control = await createTestControl();
     controls.push(control);

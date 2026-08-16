@@ -341,8 +341,7 @@ export class Reconciler {
     const deployment = profile(lock, "deployment");
     const policy = profile(lock, "launch_policy");
     const reservation = profileScalar<number>(policy, "reservation_microusd", "number");
-    if (reservation > lock.ceiling_microusd)
-      throw new PolicyError("launch reservation exceeds the campaign ceiling");
+    if (reservation > lock.ceiling_microusd) return;
     if (reservation > 0) {
       const budget: BudgetEvent = {
         schema_version: "v1",

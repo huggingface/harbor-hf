@@ -226,6 +226,9 @@ export class ControlService {
     const deployment = profileSpec<DeploymentProfileSpec>(profiles, "deployment");
     if (deployment.route !== "hf_job")
       throw new PolicyError("imported deployment profiles cannot launch campaigns");
+    const launchPolicy = profileSpec<LaunchPolicySpec>(profiles, "launch_policy");
+    if (launchPolicy.reservation_microusd > input.ceiling_microusd)
+      throw new PolicyError("launch reservation exceeds the campaign ceiling");
     const timestamp =
       existingLock?.created_at ??
       existingRequest?.created_at ??
