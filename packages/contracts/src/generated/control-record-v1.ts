@@ -316,7 +316,7 @@ job_image: string
 job_command: [string, ...(string)[]]
 hardware: string
 timeout_seconds: number
-trusted_worker?: boolean
+trusted_worker: boolean
 }
 export interface ImportedDeploymentProfileSpec {
 route: "imported"

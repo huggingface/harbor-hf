@@ -20,7 +20,21 @@ def response(status: int, body: dict[str, object]) -> httpx.Response:
 
 def configure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HARBOR_HF_CONTROL_URL", "https://control.example")
-    monkeypatch.setattr("harbor_hf.cli.get_token", lambda: "test-token")
+    monkeypatch.setenv("HARBOR_HF_CONTROL_BEARER_TOKEN", "test-token")
+
+
+def test_cli_does_not_forward_the_local_hugging_face_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HARBOR_HF_CONTROL_URL", "https://control.example")
+    monkeypatch.setenv("HF_TOKEN", "local-token-must-not-be-forwarded")
+    monkeypatch.delenv("HARBOR_HF_CONTROL_BEARER_TOKEN", raising=False)
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code != 0
+    assert "purpose-scoped control credential" in result.output
+    assert "local-token-must-not-be-forwarded" not in result.output
 
 
 def test_status_reads_control_api(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -150,7 +164,7 @@ def test_cli_reports_safe_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cli_rejects_insecure_remote_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HARBOR_HF_CONTROL_URL", "http://control.example")
-    monkeypatch.setattr("harbor_hf.cli.get_token", lambda: "test-token")
+    monkeypatch.setenv("HARBOR_HF_CONTROL_BEARER_TOKEN", "test-token")
 
     result = runner.invoke(app, ["status"])
 

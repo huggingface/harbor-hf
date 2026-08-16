@@ -7,7 +7,6 @@ from uuid import uuid4
 
 import httpx
 import typer
-from huggingface_hub import get_token
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -29,10 +28,11 @@ def _base_url() -> str:
 
 
 def _headers(*, idempotency_key: str | None = None) -> dict[str, str]:
-    token = get_token()
+    token = os.environ.get("HARBOR_HF_CONTROL_BEARER_TOKEN", "").strip()
     if not token:
         raise typer.BadParameter(
-            "log in with the Hugging Face CLI before using the control API"
+            "set HARBOR_HF_CONTROL_BEARER_TOKEN to an explicitly approved, "
+            "purpose-scoped control credential"
         )
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     if idempotency_key:

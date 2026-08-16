@@ -189,6 +189,11 @@ export class Reconciler {
       result = { outcome: "completed", observed_state: "cancelled" };
     } else if (
       intent.action_kind === "job.launch" &&
+      (await this.projection.hasCampaignAction(intent.campaign_id, "campaign.cancel"))
+    ) {
+      result = { outcome: "completed", observed_state: "suppressed-cancelled" };
+    } else if (
+      intent.action_kind === "job.launch" &&
       (await this.allActionTasksTerminal(intent))
     ) {
       result = { outcome: "completed", observed_state: "suppressed-terminal" };
@@ -261,7 +266,7 @@ export class Reconciler {
         await this.admit(intent, receipt);
         break;
       case "job.launch":
-        if (receipt.observed_state === "suppressed-terminal") break;
+        if (receipt.observed_state.startsWith("suppressed-")) break;
         if (receipt.outcome === "failed")
           await this.completeTasksFromJob(intent, receipt, "infrastructure");
         else await this.observeJob(intent, receipt);
@@ -346,15 +351,7 @@ export class Reconciler {
           "number",
         ),
         reservation_microusd: reservation,
-        ...(deployment.trusted_worker === undefined
-          ? {}
-          : {
-              trusted_worker: profileScalar<boolean>(
-                deployment,
-                "trusted_worker",
-                "boolean",
-              ),
-            }),
+        trusted_worker: profileScalar<boolean>(deployment, "trusted_worker", "boolean"),
       },
     );
     await this.service.writeAction(intent);

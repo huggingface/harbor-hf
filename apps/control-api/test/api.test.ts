@@ -274,6 +274,13 @@ describe("control API", () => {
       payload: { ...payload, outcome: "semantic" },
     });
     expect(conflict.statusCode).toBe(409);
+    const audit = await app.inject({ method: "GET", url: "/api/v1/audit" });
+    const attemptEvent = audit
+      .json()
+      .items.find((event: { type: string }) => event.type === "attempt.receipt");
+    expect(attemptEvent.data.record_id).toMatch(/^attempt-receipt-/);
+    expect(attemptEvent.data).not.toHaveProperty("record");
+    expect(JSON.stringify(attemptEvent)).not.toContain(payload.evidence_path);
     await app.close();
   });
 

@@ -279,12 +279,6 @@ describe("control service", () => {
       "cancel-before-launch-key",
       operator,
     );
-    await control.service.campaignAction(
-      result.campaign_id,
-      { action: "cancel", confirmed: true },
-      "cancel-action-key",
-      operator,
-    );
     const execute = vi.fn(async (intent: ActionIntent) =>
       new NoopActions().execute(intent),
     );
@@ -294,6 +288,18 @@ describe("control service", () => {
       { execute },
       new ResultPublisher(control.store, control.projection, control.service),
       { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    await reconciler.tick();
+    expect(
+      (await control.projection.actions()).some(
+        (action) => action.action_kind === "job.launch",
+      ),
+    ).toBe(true);
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "cancel", confirmed: true },
+      "cancel-action-key",
+      operator,
     );
     await settle(reconciler);
     expect(

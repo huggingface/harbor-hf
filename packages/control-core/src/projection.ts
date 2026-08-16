@@ -1355,7 +1355,6 @@ export class Projection {
         key: row.key,
         digest: row.digest,
         record_id: row.record_id,
-        record: JSON.parse(row.body) as object,
       },
     }));
   }

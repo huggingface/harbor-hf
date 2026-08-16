@@ -253,6 +253,8 @@ The service does not enable cross-origin API access. It sets a strict Content
 Security Policy, request body limits, response security headers, and log
 redaction. `HF_TOKEN`, OAuth tokens, provider credentials, private evidence,
 and unsanitized task data never enter browser responses or frontend assets.
+Audit and SSE envelopes contain only event type, cursor, immutable key, digest,
+and record ID. They never embed the raw durable record.
 
 Jobs never receive `HF_TOKEN` or a writable mount of the canonical control
 Bucket. The service signs a short-lived capability for the exact campaign,

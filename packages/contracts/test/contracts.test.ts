@@ -82,6 +82,23 @@ describe("canonical contracts", () => {
     expect(() =>
       validateControlRecord({
         ...base,
+        kind: "profile.object",
+        profile_kind: "deployment",
+        name: "untrusted-deployment",
+        spec: {
+          route: "hf_job",
+          models: ["model-one"],
+          harnesses: ["harness-one"],
+          job_image: `worker@sha256:${"a".repeat(64)}`,
+          job_command: ["true"],
+          hardware: "cpu-basic",
+          timeout_seconds: 300,
+        },
+      }),
+    ).toThrow(ContractValidationError);
+    expect(() =>
+      validateControlRecord({
+        ...base,
         kind: "action.intent",
         record_id: "action-test",
         action_id: "action-test",

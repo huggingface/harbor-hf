@@ -1162,7 +1162,8 @@
         "job_image",
         "job_command",
         "hardware",
-        "timeout_seconds"
+        "timeout_seconds",
+        "trusted_worker"
       ],
       "properties": {
         "route": {

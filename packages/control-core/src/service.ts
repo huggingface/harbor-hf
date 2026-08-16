@@ -755,9 +755,7 @@ export class ControlService {
         success_without_worker_receipt: policy.success_without_worker_receipt,
         max_infrastructure_attempts: policy.max_infrastructure_attempts,
         reservation_microusd: policy.reservation_microusd,
-        ...(deployment.trusted_worker === undefined
-          ? {}
-          : { trusted_worker: deployment.trusted_worker }),
+        trusted_worker: deployment.trusted_worker,
         reason: input.reason ?? null,
         prior_attempt_id: priorAttempt.attempt_id,
       };

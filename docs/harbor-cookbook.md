@@ -50,16 +50,20 @@ one exact profile ID. Imported profiles describe history but cannot authorize a
 new launch or retry.
 
 Use one persistent Space secret named `HF_TOKEN`. Never record its value in a
-profile, campaign lock, action, log, Bucket object, fixture, or result. A trusted
-outer worker may receive it only when the deployment profile explicitly allows
-that boundary. A Harbor Sandbox, benchmark agent, model server, and browser may
-not receive it.
+profile, campaign lock, action, log, Bucket object, fixture, result, or Job. A
+worker receives only its short-lived action-scoped capability. A Harbor
+Sandbox, benchmark agent, model server, browser, and remote Job may not receive
+the persistent Space credential.
 
-Inspect the ready service and aliases before spending:
+The CLI never reads or forwards the active local Hugging Face CLI credential.
+Before using it, explicitly approve a purpose-scoped control bearer credential
+for the local process and the private control Space, then provide it through
+`HARBOR_HF_CONTROL_BEARER_TOKEN` without printing it or storing it in the
+repository. Inspect the ready service and aliases before spending:
 
 ```bash
 export HARBOR_HF_CONTROL_URL=https://<control-space>.hf.space
-hf auth whoami
+export HARBOR_HF_CONTROL_BEARER_TOKEN=<approved-scoped-control-token>
 uv run harbor-hf status
 uv run harbor-hf profiles
 ```
