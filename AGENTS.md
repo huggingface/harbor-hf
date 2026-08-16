@@ -19,27 +19,22 @@
   same rule. Reuse the canonical configured resources.
 - Never create a repository, Bucket, Space, or schedule for one campaign,
   repair, profile, lease, status record, result subset, or temporary workflow.
-- Before adding a persistent Hub resource, inventory the namespace and prove
-  that the existing private evidence Bucket, normalized results Dataset,
-  control Space, results Space, source repository, or backup Bucket cannot meet
-  the privacy, access, retention, or failure-domain requirement. Record the
-  owner and lifecycle. Record the cost and removal condition, then obtain
-  explicit approval.
-- Keep control objects and profiles under clear prefixes in the existing
-  private evidence Bucket. Keep evidence and receipts there as well, including
-  reassessments. Do not create a new Bucket to avoid designing a clear schema
-  or prefix.
-- Keep the backup Bucket separate from the primary evidence Bucket. Reusing
-  resources does not permit weakening the backup failure boundary.
-- Configure one active long-lived Hugging Face service credential for normal
-  Harbor-HF control. Reuse the approved existing credential instead of minting
-  another credential for a migration, campaign, repair, or worker.
-- Keep external provider keys separate. Keep a backup-only credential separate
-  when the backup failure boundary requires it.
+- The complete steady-state Harbor-HF runtime inventory is one private control
+  Space and one private `benchmark-runs` Bucket. Store control objects,
+  profiles, evidence, receipts, reassessments, normalized results, and the
+  result catalog under stable prefixes in that Bucket.
+- Do not add another Harbor-HF repository, Bucket, Space, Dataset, result
+  service, backup store, lease store, or status store. Any exception requires an
+  inventory, a reason the two canonical resources cannot meet the requirement,
+  lifecycle and cost records, and explicit approval.
+- The control Space has exactly one persistent secret named `HF_TOKEN`. Its
+  value is the existing fine-grained token with display name `harbor-hf-jobs`.
+  Do not create a second Harbor-HF credential for a migration, campaign, repair,
+  worker, backup, or result reader.
 - Treat any other Harbor-HF service credential as a deprecation candidate. Do
-  not revoke it until a private consumer audit and a retained-credential canary
-  prove that control writes, evidence upload, endpoint cleanup, and publication
-  still work.
+  not revoke it until a private consumer audit and a canary using only
+  `harbor-hf-jobs` prove that control writes, evidence upload, endpoint cleanup,
+  and publication still work.
 - Follow `docs/2026-08-16-harbor-hf-control-service-plan.md` when changing
   campaign control, profiles, storage, recovery, or publication architecture.
 - Never pass a locally configured personal or broad account credential, including

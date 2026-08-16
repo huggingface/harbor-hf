@@ -14,26 +14,24 @@ replaceable workers. Read campaign state from the coordination Dataset and
 canonical evidence from the private Bucket until the control-service plan is
 implemented.
 
-Treat Hub resources as shared infrastructure. Reuse the namespace's configured
-control store, evidence Bucket, results Dataset, results Space, and backup
-Bucket. Never create a repository, Bucket, Space, or schedule for one campaign,
-repair, profile, lease, status file, result subset, or temporary workflow. A new
-persistent resource requires a namespace inventory, a privacy or failure-domain
-reason that existing resources cannot satisfy, a lifecycle and cost record, and
-explicit operator approval. Namespace bootstrap is a separate operator action
-and may create only missing resources from the approved canonical inventory.
-The target resource layout and new-write switch are
-specified in `docs/2026-08-16-harbor-hf-control-service-plan.md`.
+Treat Hub resources as shared infrastructure. The complete steady-state
+Harbor-HF runtime inventory is one private control Space and one private
+`benchmark-runs` Bucket. Store control state, profiles, evidence, reassessments,
+normalized results, and the catalog under stable Bucket prefixes. Never create
+a repository, Bucket, Space, Dataset, schedule, status store, lease store,
+backup store, or result service for one campaign or workflow. Any exception
+requires an inventory, a reason the two canonical resources cannot meet the
+requirement, lifecycle and cost records, and explicit operator approval. The
+target layout and new-write switch are specified in
+`docs/2026-08-16-harbor-hf-control-service-plan.md`.
 
-Use one active long-lived Hugging Face service credential for normal Harbor-HF
-control. Reuse the approved existing credential under one stable secret name;
-do not mint per-campaign, per-repair, or per-worker credentials. The control
-Space may inject that credential only into the trusted outer worker of a Job.
+The control Space has exactly one persistent secret named `HF_TOKEN`. Its value
+is the existing fine-grained token with display name `harbor-hf-jobs`. Do not
+mint per-campaign, per-repair, per-worker, backup, or result-reader credentials.
+The Space may inject `HF_TOKEN` only into the trusted outer worker of a Job.
 Never forward it into a Harbor Sandbox, benchmark agent, model server, or
-evidence. External provider keys stay separate. A backup-only credential stays
-separate when required by the backup failure boundary. Audit consumers and run
-a retained-credential canary before revoking any redundant Harbor-HF service
-credential.
+evidence. Audit consumers and run a canary using only `harbor-hf-jobs` before
+revoking any redundant Harbor-HF credential.
 
 ## Source documents
 
@@ -77,11 +75,11 @@ Keep these rules in force throughout the session:
 - Run models and benchmark tasks only on remote Hugging Face infrastructure.
 - Pin every executable source and model reference. Pin tasks and images as well
   as agents and workers.
-- Keep the control Dataset, input Bucket, evidence Bucket, and unpublished
-  results private.
-- Inventory existing Hub resources before any remote mutation. Reuse canonical
-  stores and prefixes. A campaign must not create its own repository, Bucket,
-  Space, schedule, status store, lease store, or result Dataset.
+- Keep the current control Dataset and unpublished resources private before
+  cutover. After cutover, keep the control Space and `benchmark-runs` private.
+- Inventory existing Hub resources before any remote mutation. A campaign must
+  not create its own repository, Bucket, Space, Dataset, schedule, status store,
+  lease store, backup store, or result service.
 - Serialize campaign control mutations. A provider controller runs one internal
   wave at a time; trial requests may overlap only within locked provider limits.
 - Treat `execution.concurrent_trials` and provider request concurrency as

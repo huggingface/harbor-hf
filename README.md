@@ -24,10 +24,10 @@ Three properties hold across every run:
 ## Browse Results
 
 The public [Harbor Results Space](https://huggingface.co/spaces/osolmaz/harbor-results)
-compares final benchmark evaluations and exposes stable campaign, run, trial,
-and execution URLs. It serves only sanitized normalized tables and artifact
-metadata; complete sessions and canonical evidence stay in the private HF
-Bucket.
+serves current production results during the control-service migration. The
+[control service plan](docs/2026-08-16-harbor-hf-control-service-plan.md) moves
+result storage into `benchmark-runs` and result views into the private control
+Space. The public results Space is retired after that cutover.
 
 ## Setup
 
@@ -200,14 +200,12 @@ it `_SUCCESS` or `_FAILED` only after endpoint cleanup is verified.
 ## Architecture
 
 The [control service plan](docs/2026-08-16-harbor-hf-control-service-plan.md)
-defines the next control architecture. It will replace live Git-backed
-coordination with one private control Space and the existing evidence Bucket,
-while consolidating new result publication into one existing Dataset. It also
-sets a permanent resource rule: campaigns, repairs, profiles, leases, status
-records, and result subsets must reuse canonical Hub resources instead of
-creating new repositories or Buckets. Normal control uses one retained existing
-Hugging Face service credential. Redundant service credentials are retired only
-after a consumer audit and a canary using the retained credential.
+defines the next control architecture. Its complete runtime inventory is one
+private control Space, one private `benchmark-runs` Bucket, and one persistent
+Space secret named `HF_TOKEN`. The secret contains the existing fine-grained
+`harbor-hf-jobs` token. Control state, profiles, evidence, normalized results,
+and the catalog share stable Bucket prefixes. Harbor-HF does not create or keep
+a second Space, Bucket, Dataset, backup store, or control credential.
 
 The [architecture overview](docs/architecture.md) describes the current
 execution and storage boundaries. Benchmark tasks come from content-addressed Harbor

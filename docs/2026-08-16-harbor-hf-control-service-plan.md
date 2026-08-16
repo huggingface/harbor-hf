@@ -12,9 +12,9 @@ and a budget. It should not require a new manifest generator, a new Hub
 repository, a new Bucket, or manual recovery after completed model work.
 
 This plan replaces Harbor-HF's Git-backed live coordination with one private
-control Space and the existing private evidence Bucket. It also consolidates
-new result publication into one existing Dataset per namespace. Historical
-campaigns and publications remain immutable and readable.
+control Space, one private Bucket, and one persistent Space secret. The Bucket
+holds control state, evidence, profiles, normalized results, and the catalog.
+Historical campaigns and publications remain immutable and readable.
 
 **Status.** Proposed. The current coordination Dataset and detached controller
 Job remain authoritative until this plan is implemented and the new-write
@@ -28,17 +28,14 @@ runs reconciliation, launches and adopts HF Jobs, manages endpoints, and
 finalizes publication.
 
 Use the existing private `benchmark-runs` Bucket as the permanent record for
-control objects, profiles, evidence, actions, and receipts. Use local SQLite in
-the Space only as a fast projection that can be deleted and rebuilt from the
-Bucket. Do not place a SQLite database file on a Bucket mount.
+control objects, profiles, evidence, actions, receipts, normalized results, and
+the global catalog. Use local SQLite in the Space only as a fast projection
+that can be deleted and rebuilt from the Bucket. Do not place a SQLite database
+file on a Bucket mount.
 
-Reuse the existing `benchmark-run-index` Dataset as the one normalized result
-store for new publications. It will contain detailed publication tables and the
-global catalog in one commit. The existing Harbor Results Space will read that
-Dataset.
-
-Keep the separate backup Bucket. A backup in the primary Bucket would share the
-same failure domain and would not be a useful backup.
+The same private Space serves the control API and authenticated results UI. Do
+not keep a second results Space, a result Dataset, or a backup Bucket in the
+steady-state Harbor-HF architecture.
 
 ## Decision evidence
 
@@ -93,18 +90,14 @@ A namespace should have this fixed Harbor-HF resource set:
 
 | Resource | Purpose | New-write status |
 |---|---|---|
-| `huggingface/harbor-hf` | Source, schemas, built-in profiles, and Space code | Keep |
-| `<namespace>/harbor-hf-control` private Space | Control API and reconciler | Create once |
-| `<namespace>/benchmark-runs` private Bucket | Control objects, profiles, evidence, and receipts | Reuse |
-| `<namespace>/benchmark-run-index` private Dataset | Normalized result tables and catalog | Reuse and expand |
-| `<namespace>/harbor-results` Space | Sanitized result presentation | Keep |
-| `<namespace>/benchmark-run-backups` private Bucket | Independent evidence backups | Keep separate |
-| `<namespace>/jobs-artifacts` Bucket | HF-managed Job input staging | Leave platform-managed |
+| `huggingface/harbor-hf` | Source, schemas, built-in profiles, and Space code | Keep outside the runtime resource count |
+| `<namespace>/harbor-hf-control` private Space | Control API, reconciler, and authenticated results UI | Create once |
+| `<namespace>/benchmark-runs` private Bucket | Control objects, profiles, evidence, receipts, normalized results, and catalog | Reuse |
 
-The private control Space is the only planned persistent Hub resource that does
-not already exist in the current `osolmaz` deployment. It cannot be combined
-with the public Harbor Results Space because the control API holds private
-campaign state and can spend compute.
+The `osolmaz` deployment uses `osolmaz/harbor-hf-control` and
+`osolmaz/benchmark-runs`. Those are the complete Harbor-HF runtime resource
+inventory. HF-managed Job staging is shared platform infrastructure and is not a
+Harbor-HF runtime resource.
 
 Runtime code must not create a repository, Bucket, Space, or scheduled Job for
 a campaign, repair, profile, lease, status record, result subset, or temporary
@@ -121,12 +114,14 @@ recorded revisions and paths.
 | Existing resource | Disposition |
 |---|---|
 | `<namespace>/harbor-hf-coordination` Dataset | Freeze after active campaigns finish; retain for historical audit |
-| `<namespace>/shellbench-results` Dataset | Freeze after the unified catalog references every retained publication at its exact historical revision |
+| `<namespace>/shellbench-results` Dataset | Freeze after every retained publication is represented in the Bucket catalog |
 | `<namespace>/harbor-hf-smoke-results` Dataset | Freeze as historical smoke evidence |
 | `<namespace>/shellbench-job-status` Dataset | Freeze as historical detached-Job control evidence |
-| `<namespace>/harbor-hf-leases` Bucket | Keep unused during migration; remove only after an explicit empty-resource audit and approval |
+| `<namespace>/benchmark-run-index` Dataset | Copy verified normalized rows and catalog records into the Bucket, then freeze |
+| `<namespace>/harbor-results` Space | Retire after the control Space serves the verified results UI |
+| `<namespace>/harbor-hf-leases` Bucket | Remove only after an explicit empty-resource audit and approval |
 | `<namespace>/benchmark-run-reassessments` Bucket | Freeze; write new reassessments under `benchmark-runs` |
-| `<namespace>/benchmark-run-backups` Bucket | Keep as the separate backup destination |
+| `<namespace>/benchmark-run-backups` Bucket | Verify unique objects, copy any required records into `benchmark-runs`, then retire |
 
 Independent datasets such as `almanbench-results`, `qrlow-evals-results`, and
 `aacr-bench-harbor` are outside this change. They need their own ownership,
@@ -150,8 +145,8 @@ CPU tier. Its responsibilities are:
 - reserve and reconcile spend;
 - manage endpoint actions and the independent cleanup watchdog;
 - verify evidence and select terminal logical outcomes;
-- publish normalized results;
-- serve campaign status and audit views.
+- publish normalized results into the Bucket;
+- serve campaign status, result, and audit views.
 
 The Space exposes at least these API operations under the existing `v1`
 contract:
@@ -182,31 +177,22 @@ outside this plan because current campaign volume does not justify that cost.
 
 ## Credential model
 
-A namespace has one active long-lived Hugging Face service credential for normal
-Harbor-HF control. Reuse the existing approved fine-grained credential under one
-stable Space secret name. Do not mint another credential for the migration, a
-campaign, a repair, or each worker.
+The control Space has exactly one persistent secret: `HF_TOKEN`. Its value is
+the existing fine-grained token whose Hugging Face display name is
+`harbor-hf-jobs`. The token has access only to the control Space, the
+`benchmark-runs` Bucket, HF Jobs, managed Endpoints, and required Inference
+Provider calls.
 
-The control Space stores the credential value. When an HF Job needs direct Hub
-access, the Space may inject the same credential into the trusted outer
-Harbor-HF worker for that Job. The worker must not forward it into a Harbor
-Sandbox, benchmark agent, model server, manifest, log, lock, or evidence object.
-Use the narrowest resource and action scopes that still cover the canonical
-Bucket, results Dataset, Jobs, and managed Endpoints.
+When an HF Job needs direct Hub access, the Space may inject `HF_TOKEN` into the
+trusted outer Harbor-HF worker for that Job. The worker must not forward it into
+a Harbor Sandbox, benchmark agent, model server, manifest, log, lock, or
+evidence object. Campaign-specific provider credentials are not persistent
+control-Space secrets.
 
-External provider API keys remain separate because they belong to different
-security domains. A backup-only credential also remains separate when required
-to preserve the backup failure boundary. Neither is a second Harbor-HF control
-identity.
-
-Only one service credential is configured as active during normal operation.
-Any other existing Harbor-HF service credential is a deprecation candidate, not
-an automatic deletion target. Before revocation, record its masked identity and
-scopes in the private credential inventory, audit every consumer, run a canary
-with only the retained credential configured, and verify control writes, Job
-evidence upload, endpoint cleanup, and result publication. Then remove the
-redundant credential from normal configuration and revoke it. Never record its
-value in the repository, Bucket, Dataset, logs, or chat.
+Do not mint another Harbor-HF credential for a migration, campaign, repair, or
+worker. Before revoking any old Harbor-HF credential, audit every consumer and
+run a canary with only `harbor-hf-jobs` configured. Never record the token value
+in the repository, Bucket, Dataset, logs, or chat.
 
 A planned credential rotation may use a short, explicitly approved overlap.
 That exception ends as soon as the replacement canary passes. It must not become
@@ -233,6 +219,14 @@ control/schema=v1/
     budgets/<event-id>.json
     publications/<publication-id>.json
     snapshots/<snapshot-digest>.json
+results/schema=v1/
+  publications/<publication-id>/receipt.json
+  rows/runs/<digest>.parquet
+  rows/trials/<digest>.parquet
+  rows/executions/<digest>.parquet
+  rows/metrics/<digest>.parquet
+  rows/artifacts/<digest>.parquet
+  catalog/<window>/<digest>.parquet
 campaigns/<campaign-id>/
   runs/<run-id>/
     ... canonical evidence ...
@@ -247,7 +241,8 @@ existing key with different bytes is an integrity failure.
 The control Space writes campaign locks, shared actions, terminal selections,
 budget decisions, and publication receipts. Workers write only to their own
 physical attempt and evidence paths. Workers never edit a campaign summary,
-logical task terminal record, profile alias, or result Dataset.
+logical task terminal record, profile alias, result projection, or catalog
+record.
 
 The Space may cache Bucket listings, but it must confirm source digests before a
 cached view can authorize paid work.
@@ -402,11 +397,11 @@ hardware type, method, or reuse assumption stops automatic continuation.
 
 ## Result publication
 
-New publications use one normalized results Dataset per namespace. The existing
-`benchmark-run-index` Dataset becomes that store and stops pointing at a second
-benchmark-specific Dataset.
+New publications use immutable objects under `results/schema=v1/` in the
+`benchmark-runs` Bucket. The Space builds its local query projection from those
+objects and serves authenticated result views itself.
 
-One parent-checked publication commit contains:
+One publication object set contains:
 
 - normalized run rows;
 - trial rows;
@@ -416,17 +411,17 @@ One parent-checked publication commit contains:
 - the immutable publication receipt;
 - primary and audit catalog projections.
 
-The private evidence Bucket remains canonical. The Dataset remains a sanitized,
-queryable projection. The Harbor Results Space serves public views without
-exposing private sessions or task data.
+The Bucket remains canonical for both evidence and sanitized result rows. The
+Space keeps a disposable local query projection and never treats SQLite as
+permanent state.
 
 Publication runs after campaign completion and may retry independently. A
 publication conflict cannot reopen a task, launch a model request, or change the
 campaign's terminal state. Existing matching bytes are adopted.
 
 Historical result Datasets remain immutable. Their exact revisions and source
-checksums stay in catalog records even after new publication moves to the
-unified Dataset.
+checksums stay in Bucket catalog records after new publication moves to the
+Bucket-only path.
 
 ## State model
 
@@ -459,9 +454,9 @@ Cutover prerequisites are:
 - no active Harbor-HF scheduled recovery Jobs;
 - all managed endpoints paused with zero ready replicas;
 - the control Space deployed at an exact source revision;
-- the Bucket object schema and result Dataset schema verified;
+- the Bucket control and result object schemas verified;
 - every active publication inventoried;
-- a complete backup and restore test;
+- a full projection rebuild from Bucket objects;
 - launch, crash, repair, publication, and cleanup canaries passed;
 - the operator has approved the paid always-on Space and any remote canary cost.
 
@@ -471,10 +466,11 @@ At the boundary:
 2. Freeze its exact head in the migration record.
 3. Start the control Space write API.
 4. Route all new `v1` campaign requests through the Space.
-5. Stop creating benchmark-specific result Datasets.
-6. Publish new normalized results to the unified Dataset.
-7. Suspend obsolete recovery schedules.
-8. Mark historical resources read-only in the resource inventory.
+5. Stop creating or writing result Datasets.
+6. Publish new normalized results and catalog records to `benchmark-runs`.
+7. Route result views through the control Space.
+8. Suspend obsolete recovery schedules.
+9. Mark historical resources read-only in the resource inventory.
 
 There is no dual-write period. New campaign code does not read the old
 coordination Dataset. Historical audit tools may continue to read it.
@@ -526,10 +522,11 @@ coordination Dataset. Historical audit tools may continue to read it.
 
 ### Results
 
-- Extend the existing index Dataset schema to hold detailed normalized tables.
-- Make one commit publish detail rows, receipts, and catalog projections.
-- Update the Harbor Results Space to read the unified layout.
-- Inventory and freeze historical result Datasets after verification.
+- Define immutable Bucket schemas for normalized rows and catalog projections.
+- Publish detail rows, receipts, and catalog objects as one idempotent action.
+- Add result queries and authenticated views to the control Space.
+- Inventory and freeze historical result Datasets and the old results Space
+  after verification.
 
 ### New-write switch
 
@@ -562,8 +559,9 @@ The implementation is ready only when all of these pass:
   approved cumulative ceiling.
 - Secret scans find no token values, authorization headers, private capability
   URLs, or operator paths.
-- A clean namespace launch creates no repository, Bucket, Space, or schedule
-  beyond the approved canonical inventory.
+- The namespace contains exactly one Harbor-HF Space and one Harbor-HF Bucket.
+- The control Space contains exactly one persistent secret named `HF_TOKEN`.
+- A clean launch creates no repository, Bucket, Space, Dataset, or schedule.
 - Historical campaign and publication checksums remain unchanged.
 - The local quality, mutation, schema, documentation, dependency, and Space
   build gates pass.
@@ -613,7 +611,7 @@ This plan does not:
 - change benchmark tasks, verifier semantics, or scoring;
 - run inference locally;
 - rewrite historical Bucket objects or Dataset commits;
-- combine the primary evidence Bucket with its backup;
+- provide a second results service or a second Harbor-HF Bucket;
 - create a general multi-cloud scheduler;
 - provide active-active control Space replicas;
 - consolidate independent non-Harbor-HF datasets without a separate audit.
@@ -627,14 +625,11 @@ running and endpoint watchdogs remain independent.
 Before implementation, confirm:
 
 - the paid CPU tier and monthly ceiling for the always-on private Space;
-- the exact scopes of the retained existing service credential and the stable
-  Space secret name that references it;
+- the exact scopes of `harbor-hf-jobs` after deprecated resources are removed;
 - the Bucket listing and startup-rebuild target at the current object count;
-- whether to keep the `benchmark-run-index` name after it becomes the unified
-  results Dataset;
 - the retention period for obsolete claims, status records, and reassessment
   objects;
 - the review and approval policy for namespace-specific profile promotion.
 
 These questions may change deployment details. They do not change the one-Space,
-one-primary-Bucket, one-results-Dataset design.
+one-Bucket, one-`HF_TOKEN` design.

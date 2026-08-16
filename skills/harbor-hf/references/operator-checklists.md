@@ -29,10 +29,10 @@ inspecting the named artifact or command output.
 ### Storage and secrets
 
 - [ ] The namespace resource inventory was captured before mutation.
-- [ ] The campaign reuses the configured control store, input staging, evidence
-      Bucket, results Dataset, results Space, and backup Bucket.
-- [ ] The campaign creates no repository, Bucket, Space, schedule, status store,
-      lease store, or benchmark-specific result store.
+- [ ] The namespace has one private control Space and one private
+      `benchmark-runs` Bucket.
+- [ ] The campaign creates no repository, Bucket, Space, Dataset, schedule,
+      status store, lease store, backup store, or result service.
 - [ ] Any proposed persistent resource has an approved privacy or
       failure-domain justification, owner, cost, lifecycle, and removal
       condition.
@@ -44,15 +44,14 @@ inspecting the named artifact or command output.
 - [ ] Manifest and plan contain only explicitly approved runtime secret names.
 - [ ] Every runtime credential is purpose-scoped and approved for its exact
       source and destination; the submitter can load it without printing it.
-- [ ] Exactly one retained Hugging Face service credential is configured as the
-      active Harbor-HF control identity.
-- [ ] No per-campaign, per-repair, or per-worker Hugging Face credential was
-      created. A trusted outer worker receives the retained credential only
+- [ ] The control Space has exactly one persistent secret named `HF_TOKEN`.
+- [ ] `HF_TOKEN` contains the fine-grained token with display name
+      `harbor-hf-jobs` and has only the required resource and action scopes.
+- [ ] No per-campaign, per-repair, per-worker, backup, or result-reader Harbor-HF
+      credential was created. A trusted outer worker receives `HF_TOKEN` only
       when direct Hub access is required.
-- [ ] External provider keys remain separate. A backup-only credential remains
-      separate when required by the backup failure boundary.
-- [ ] Any redundant Harbor-HF service credential has a private consumer audit
-      and retained-credential canary before revocation.
+- [ ] Any redundant Harbor-HF credential has a private consumer audit and a
+      canary using only `harbor-hf-jobs` before revocation.
 - [ ] A configured named HF Job token still exists in Harbor HF's private local
       token store, is fine-grained, and its value is absent from Harbor HF JSON
       config and command output.

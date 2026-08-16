@@ -6,11 +6,11 @@ a completed campaign; `harbor-hf results publish` exposes the same verified,
 idempotent path for explicit operation and recovery.
 
 The [control service plan](2026-08-16-harbor-hf-control-service-plan.md) will
-replace the two-Dataset new-write path with one existing normalized results
-Dataset per namespace. One commit will contain detailed rows, the publication
-receipt, and catalog projections. Historical benchmark-specific Datasets remain
-immutable. This document describes current production behavior until that
-switch is complete.
+replace the Dataset new-write path with immutable normalized rows, publication
+receipts, and catalog objects under `results/schema=v1/` in the existing
+`benchmark-runs` Bucket. The private control Space serves the resulting views.
+Historical result Datasets remain immutable. This document describes current
+production behavior until that switch is complete.
 
 Each manifest explicitly sets `dataset_visibility` and, when it names an index,
 `index_dataset_visibility` to `private` or `public`. These values are part of the

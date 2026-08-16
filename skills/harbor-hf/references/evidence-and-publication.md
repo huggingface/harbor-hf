@@ -1,8 +1,10 @@
 # Evidence and publication
 
-Harbor HF publishes results derived from canonical private evidence. The private
-Bucket is authoritative. Result Datasets and the read-only Space are rebuildable
-projections.
+Harbor HF publishes results derived from canonical private evidence. Before the
+control-service cutover, result Datasets and the read-only Space are rebuildable
+projections. After cutover, the private `benchmark-runs` Bucket holds evidence,
+normalized rows, and catalog objects. The control Space rebuilds and serves the
+result projection.
 
 ## Evidence hierarchy
 

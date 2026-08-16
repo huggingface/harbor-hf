@@ -16,9 +16,9 @@ changes.
 The current release stores live campaign events and claims in a private Hub
 Dataset. The [control service
 plan](2026-08-16-harbor-hf-control-service-plan.md) replaces that new-write path
-with one private control Space and immutable objects in the existing evidence
-Bucket. It also moves detailed rows and the global result catalog into one
-existing normalized results Dataset.
+with one private control Space and immutable objects in the existing
+`benchmark-runs` Bucket. The same Bucket stores normalized result rows and the
+global catalog. The Space also serves authenticated result views.
 
 This is a hard new-write switch with no dual-write mode. Historical Dataset
 commits and Bucket evidence remain immutable. Until implementation and remote
@@ -278,13 +278,12 @@ secret values from both file contents and path components before checksums or
 archives are created. File content is scanned and rewritten in bounded chunks,
 and symbolic links are rejected before evidence traversal.
 
-The planned control service uses one active long-lived Hugging Face service
-credential per namespace. It reuses the existing approved credential and keeps
-the value in the private control Space. A trusted outer worker may receive it
-for direct Hub access, but a Harbor Sandbox or benchmark agent may not. External
-provider keys remain separate. Any redundant Harbor-HF service credential is
-revoked only after a private consumer audit and a canary using the retained
-credential.
+The planned control service has one persistent Space secret named `HF_TOKEN`.
+It contains the existing fine-grained token with display name
+`harbor-hf-jobs`. A trusted outer worker may receive it for direct Hub access,
+but a Harbor Sandbox or benchmark agent may not. Any redundant Harbor-HF
+service credential is revoked only after a private consumer audit and a canary
+using only `harbor-hf-jobs`.
 
 ### Canonical Configuration Artifacts
 
