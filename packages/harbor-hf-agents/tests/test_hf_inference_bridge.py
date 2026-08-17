@@ -27,6 +27,14 @@ def test_embedded_bridge_avoids_python_312_only_typing_symbols() -> None:
     assert "@override" not in source
 
 
+def test_embedded_bridge_allows_bounded_streaming_overhead() -> None:
+    source = inspect.getsource(_run_hf_inference_bridge)
+
+    assert "max_output_tokens * 1024" in source
+    assert "64 * 1024 * 1024" in source
+    assert "inference bridge response limit exceeded" in source
+
+
 def test_embedded_bridge_runs_without_module_globals() -> None:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -282,6 +290,8 @@ async def test_bridge_is_stopped_when_isolation_check_fails() -> None:
     assert len(agent.calls) == 2
     assert "kill" in agent.calls[1][1]
     assert "harbor-hf-inference-bridge.pid" in agent.calls[1][1]
+    assert "harbor-hf-inference-bridge.log" in agent.calls[1][1]
+    assert "/logs/agent/hf-inference-bridge.log" in agent.calls[1][1]
 
 
 @pytest.mark.asyncio

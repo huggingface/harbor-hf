@@ -42,7 +42,7 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
     max_concurrency = int(os.environ["HARBOR_HF_INFERENCE_MAX_CONCURRENCY"])
     timeout_seconds = int(os.environ["HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"])
     max_output_tokens = int(os.environ["HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"])
-    max_response_bytes = min(64 * 1024 * 1024, 1024 * 1024 + max_output_tokens * 32)
+    max_response_bytes = min(64 * 1024 * 1024, 1024 * 1024 + max_output_tokens * 1024)
     local_api_key = "harbor-local-inference-bridge"
     base_path = upstream.path.rstrip("/")
     admission = threading.BoundedSemaphore(max_concurrency)
@@ -133,6 +133,7 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
                     while chunk := response.read(64 * 1024):
                         response_size += len(chunk)
                         if response_size > max_response_bytes:
+                            os.write(2, b"inference bridge response limit exceeded\n")
                             break
                         self.wfile.write(chunk)
                         self.wfile.flush()
@@ -324,6 +325,10 @@ async def stop_hf_inference_bridge(
             "if [ -f /tmp/harbor-hf-inference-bridge.pid ]; then "
             "pid=$(cat /tmp/harbor-hf-inference-bridge.pid); "
             'kill "$pid" 2>/dev/null || true; '
-            "rm -f /tmp/harbor-hf-inference-bridge.pid; fi"
+            "rm -f /tmp/harbor-hf-inference-bridge.pid; fi; "
+            "if [ -f /tmp/harbor-hf-inference-bridge.log ]; then "
+            "install -m 0640 -o root -g harbor-agent "
+            "/tmp/harbor-hf-inference-bridge.log "
+            "/logs/agent/hf-inference-bridge.log; fi"
         ),
     )
