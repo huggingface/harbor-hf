@@ -449,6 +449,36 @@ describe("control API", () => {
     await app.close();
   });
 
+  it("limits unique bearer identity lookups before external requests", async () => {
+    const { runtime, app } = await setup();
+    runtime.config.auth_mode = "oauth";
+    const fetchIdentity = vi.fn(
+      async () => new Response("unauthorized", { status: 401 }),
+    );
+    vi.stubGlobal("fetch", fetchIdentity);
+
+    for (let index = 0; index < 20; index += 1) {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/system",
+        headers: { authorization: `Bearer invalid-unique-${index}` },
+      });
+      expect(response.statusCode).toBe(401);
+    }
+    const limited = await app.inject({
+      method: "GET",
+      url: "/api/v1/system",
+      headers: { authorization: "Bearer invalid-unique-limited" },
+    });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers["retry-after"]).toBe("60");
+    expect(limited.json()).toMatchObject({
+      error: { code: "rate_limit_exceeded" },
+    });
+    expect(fetchIdentity).toHaveBeenCalledTimes(20);
+    await app.close();
+  });
+
   it("accepts an ACL-listed bearer identity", async () => {
     const acl: OperatorAcl = {
       schema_version: "v1",

@@ -268,7 +268,8 @@ Hugging Face OAuth provides verified user identities. The service stores
 operators and readers in an immutable private Bucket access-list record. A
 verified identity that is absent from both lists receives no control access.
 The bearer transport verifies identity with Hugging Face and applies the same
-access list. Failed bearer checks are cached briefly and within a fixed bound.
+access list. Failed checks are cached briefly, and new identity lookups have
+per-client and global limits before any external request.
 
 OAuth uses authorization code flow with PKCE and state validation. Browser
 sessions are opaque random identifiers stored in the disposable local database.

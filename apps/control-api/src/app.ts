@@ -52,6 +52,7 @@ import {
 } from "./api-schemas.js";
 import {
   type AuthenticatedActor,
+  BearerRateLimitError,
   InvalidBearerCredentialError,
   type SessionRow,
   UnauthorizedSubjectError,
@@ -306,8 +307,22 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         try {
           request.actor = await runtime.auth.bearerActor(
             authorization.slice("Bearer ".length),
+            request.ip,
           );
         } catch (error) {
+          if (error instanceof BearerRateLimitError) {
+            await reply
+              .header("Retry-After", "60")
+              .code(429)
+              .send({
+                error: {
+                  code: "rate_limit_exceeded",
+                  message: "bearer identity lookup rate limit exceeded",
+                  request_id: request.id,
+                },
+              });
+            return;
+          }
           if (!(error instanceof InvalidBearerCredentialError)) throw error;
           await reply.code(401).send({
             error: {

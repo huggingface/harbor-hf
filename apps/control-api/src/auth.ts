@@ -17,6 +17,7 @@ import {
 
 export type AuthRole = "operator" | "reader";
 
+export class BearerRateLimitError extends Error {}
 export class InvalidBearerCredentialError extends Error {}
 export class UnauthorizedSubjectError extends Error {}
 
@@ -50,6 +51,30 @@ function digestBytes(value: string): Buffer {
 
 function randomToken(bytes = 32): string {
   return randomBytes(bytes).toString("base64url");
+}
+
+class BearerLookupLimiter {
+  private windowStartedAt = Date.now();
+  private total = 0;
+  private readonly clients = new Map<string, number>();
+
+  allow(client: string, now = Date.now()): boolean {
+    if (now - this.windowStartedAt >= 60_000) {
+      this.windowStartedAt = now;
+      this.total = 0;
+      this.clients.clear();
+    }
+    const clientCount = this.clients.get(client) ?? 0;
+    if (
+      this.total >= 120 ||
+      clientCount >= 20 ||
+      (!this.clients.has(client) && this.clients.size >= 4096)
+    )
+      return false;
+    this.total += 1;
+    this.clients.set(client, clientCount + 1);
+    return true;
+  }
 }
 
 export class AuthStore {
@@ -200,6 +225,7 @@ export class AuthenticationService {
     string,
     { subject: string | null; expires_at: number }
   >();
+  private readonly bearerLookupLimiter = new BearerLookupLimiter();
 
   constructor(
     readonly mode: "oauth" | "development",
@@ -289,7 +315,7 @@ export class AuthenticationService {
     };
   }
 
-  async bearerActor(token: string): Promise<AuthenticatedActor> {
+  async bearerActor(token: string, client: string): Promise<AuthenticatedActor> {
     const key = digest(token);
     const cached = this.bearerCache.get(key);
     let subject: string | null | undefined =
@@ -297,6 +323,8 @@ export class AuthenticationService {
     if (subject === null)
       throw new InvalidBearerCredentialError("bearer token identity is invalid");
     if (subject === undefined) {
+      if (!this.bearerLookupLimiter.allow(client))
+        throw new BearerRateLimitError("bearer identity lookup rate exceeded");
       const response = await fetch("https://huggingface.co/api/whoami-v2", {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(10_000),
