@@ -1,13 +1,23 @@
 from __future__ import annotations
 
+import inspect
 from types import SimpleNamespace
 
 import pytest
 
 from harbor_hf_agents.support.hf_inference_bridge import (
+    _run_hf_inference_bridge,
     is_hf_inference_url,
     prepare_hf_inference_bridge,
 )
+
+
+def test_embedded_bridge_avoids_python_312_only_typing_symbols() -> None:
+    source = inspect.getsource(_run_hf_inference_bridge)
+
+    assert "from typing import override" not in source
+    assert "@override" not in source
+
 
 _LIMITS = {
     "max_requests": "256",

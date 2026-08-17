@@ -28,7 +28,6 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
     import os
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from typing import override
     from urllib.parse import urlsplit
 
     upstream = urlsplit(os.environ["HARBOR_HF_INFERENCE_UPSTREAM"])
@@ -153,7 +152,6 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
             finally:
                 admission.release()
 
-        @override
         def log_message(self, format: str, *args: object) -> None:
             del format, args
 
