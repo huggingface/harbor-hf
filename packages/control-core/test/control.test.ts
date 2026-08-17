@@ -785,6 +785,64 @@ describe("control service", () => {
     });
   });
 
+  it("keeps observing a Job while Hugging Face reports SCHEDULING", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "scheduling-job-observation-key",
+      operator,
+    );
+    let observations = 0;
+    const external: ExternalActionPort = {
+      execute: async (intent: ActionIntent): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.launch")
+          return {
+            outcome: "created",
+            observed_state: "SCHEDULING",
+            resource_id: "job-scheduling",
+          };
+        if (intent.action_kind === "job.observe") {
+          observations += 1;
+          return {
+            outcome: "completed",
+            observed_state:
+              observations === 1
+                ? "SCHEDULING"
+                : observations === 2
+                  ? "RUNNING"
+                  : "COMPLETED",
+            resource_id: "job-scheduling",
+          };
+        }
+        return new NoopActions().execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        batch_size: 16,
+        dispatch_adoption_delay_ms: 0,
+      },
+    );
+
+    await settle(reconciler, 14);
+
+    expect(observations).toBe(3);
+    expect(await control.projection.campaignAttempts(result.campaign_id)).toMatchObject(
+      [{ outcome: "complete" }],
+    );
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 1,
+    });
+  });
+
   it("waits for a late worker receipt before selecting a fallback", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-16T00:00:00.000Z"));

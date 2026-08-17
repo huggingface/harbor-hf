@@ -340,7 +340,9 @@ source digest set is verified.
 The reconciler runs in the Fastify process and executes bounded work cycles. It
 selects the next action from durable records, writes intent before the side
 effect, observes the remote system, writes a receipt, applies the domain
-transition, and writes an action-advanced marker. A receipt without that marker
+transition, and writes an action-advanced marker. Only documented terminal Job
+states can end an attempt. Scheduling, pending, running, updating, and unknown
+future states remain under observation. A receipt without that marker
 is replayed after restart. The transition is deterministic and idempotent, so a
 process exit between the receipt and its derived action cannot strand work.
 

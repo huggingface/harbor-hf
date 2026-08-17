@@ -427,7 +427,7 @@ export class Reconciler {
       return;
     }
     const state = receipt.observed_state.toUpperCase();
-    if (["RUNNING", "UPDATING", "PENDING"].includes(state)) {
+    if (!jobStateIsTerminal(state)) {
       const next = this.service.actionIntent(
         intent.campaign_id,
         "job.observe",
