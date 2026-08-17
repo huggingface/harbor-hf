@@ -94,6 +94,9 @@
 - Avoid `Any`; validate untrusted provider data at the adapter boundary.
 - Use Conventional Commits.
 - Apply the Slophammer standards configured for this repository.
+- Before starting implementation or an external mutation, read and follow
+  `skills/project-authorization/SKILL.md`. Verify that the requested scope is
+  approved in the repository-indexed project file before continuing.
 - Before planning, launching, monitoring, reconciling, recovering, verifying,
   or publishing a Harbor HF campaign, read and follow
   `skills/harbor-hf/SKILL.md`.
