@@ -404,7 +404,7 @@ describe("control API", () => {
         method: "GET",
         url: "/health/live",
         headers: {
-          "x-forwarded-for": `203.0.113.${(index % 250) + 1}, 198.51.100.10`,
+          "x-forwarded-for": `203.0.113.${(index % 250) + 1}`,
         },
       });
       expect(response.statusCode).toBe(200);
@@ -412,7 +412,7 @@ describe("control API", () => {
     const limited = await app.inject({
       method: "GET",
       url: "/health/live",
-      headers: { "x-forwarded-for": "192.0.2.99, 198.51.100.10" },
+      headers: { "x-forwarded-for": "192.0.2.99" },
     });
     expect(limited.statusCode).toBe(429);
     await app.close();

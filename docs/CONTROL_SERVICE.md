@@ -284,8 +284,10 @@ logical task count, cost ceiling, and effect. The verified OAuth actor is stored
 in the action intent.
 
 The service does not enable cross-origin API access. It sets a strict Content
-Security Policy, request body limits, response security headers, trusted-proxy
-bounds, and per-client request limits. Authentication runs before request-body
+Security Policy, request body limits, response security headers, and request
+limits. Forwarded client IP headers are not trusted for these limits because the
+hosting proxy may pass caller-supplied values. Authentication runs before
+request-body
 parsing, so an anonymous caller cannot force the service to parse a large worker
 submission. Public health responses contain only `live`, `ready`, or
 `rebuilding` state.

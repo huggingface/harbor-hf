@@ -220,7 +220,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         "*.client_secret",
       ],
     },
-    trustProxy: 1,
+    trustProxy: false,
   });
   await app.register(cookie);
   await app.register(helmet, {
