@@ -11,6 +11,7 @@ default_branch: main
 
 Status: approved
 Approved at: 2026-08-17T06:48:55Z
+Amended at: 2026-08-17T09:13:49Z
 
 ### Scope
 
@@ -20,6 +21,8 @@ Approved at: 2026-08-17T06:48:55Z
 - Run the hosted no-inference recovery and cutover canaries, plus only bounded paid canaries required by the approved plan.
 - Promote the verified historical migration and enable production writes only after every required gate passes.
 - Audit legacy consumers and unique objects before proposing any resource retirement.
+- Make the existing control Space publicly reachable only after adding and verifying application-layer protection for operator, browser, and worker routes.
+- Admit workers with short-lived, signed, campaign-scoped capabilities instead of a persistent Hugging Face credential.
 
 ### Limits
 
@@ -30,6 +33,9 @@ Approved at: 2026-08-17T06:48:55Z
 - Do not rerun valid logical tasks or use inference during migration and publication recovery.
 - Keep credential values, private resource identifiers, operator paths, and private topology out of Git and browsers. Do not expose them in logs or worker environments.
 - Do not delete or retire a legacy resource without its completed private audit and a separate explicit approval for that resource.
+- Anonymous callers may reach only bounded public surfaces such as static application assets, login initiation, OAuth return handling, and health checks. Control data and operator mutations remain deny-by-default.
+- Add bounded request-body and anonymous request-rate controls before changing Space visibility. If hosted denial, capability, or abuse-control verification fails, restore private visibility, disable writes, and stop.
+- Keep the existing single-secret rule. Workers must not receive `HF_TOKEN` or another persistent Hugging Face credential.
 
 ## Approval history
 
@@ -37,3 +43,4 @@ Approved at: 2026-08-17T06:48:55Z
 
 - Approved the current scope and limits before the remaining project work starts.
 - Directed the project to keep one authorization file indexed by canonical repository slug and to record approvals here.
+- At 2026-08-17T09:13:49Z, approved protected public ingress for the existing control Space so workers can use short-lived capabilities without receiving a persistent Hugging Face credential.
