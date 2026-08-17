@@ -19,7 +19,7 @@ COPY profiles profiles
 COPY docs docs
 RUN npm run generate \
     && npm run typecheck \
-    && npm test \
+    && npm test -- --maxWorkers=1 --no-file-parallelism --testTimeout=30000 \
     && npm run build -w @harbor-hf/control-web \
     && npm prune --omit=dev --workspaces
 
