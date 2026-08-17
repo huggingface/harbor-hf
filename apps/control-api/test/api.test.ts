@@ -398,7 +398,7 @@ describe("control API", () => {
   });
 
   it("does not trust caller-supplied forwarded-for hops for rate limits", async () => {
-    const { app } = await setup();
+    const { runtime, app } = await setup();
     for (let index = 0; index < 120; index += 1) {
       const response = await app.inject({
         method: "GET",
@@ -415,6 +415,25 @@ describe("control API", () => {
       headers: { "x-forwarded-for": "192.0.2.99" },
     });
     expect(limited.statusCode).toBe(429);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/system" })).statusCode,
+    ).toBe(200);
+    const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
+      namespace: runtime.config.namespace,
+      campaign_id: "campaign-rate-limit",
+      action_id: "action-rate-limit",
+      task_ids: ["task-rate-limit"],
+      expires_at: Math.floor(Date.now() / 1000) + 60,
+    });
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/campaigns/campaign-rate-limit/lock",
+          headers: { "x-harbor-hf-worker-capability": capability },
+        })
+      ).statusCode,
+    ).toBe(404);
     await app.close();
   });
 
@@ -457,7 +476,7 @@ describe("control API", () => {
     );
     vi.stubGlobal("fetch", fetchIdentity);
 
-    for (let index = 0; index < 20; index += 1) {
+    for (let index = 0; index < 120; index += 1) {
       const response = await app.inject({
         method: "GET",
         url: "/api/v1/system",
@@ -475,7 +494,7 @@ describe("control API", () => {
     expect(limited.json()).toMatchObject({
       error: { code: "rate_limit_exceeded" },
     });
-    expect(fetchIdentity).toHaveBeenCalledTimes(20);
+    expect(fetchIdentity).toHaveBeenCalledTimes(120);
     await app.close();
   });
 

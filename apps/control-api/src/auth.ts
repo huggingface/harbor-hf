@@ -315,7 +315,7 @@ export class AuthenticationService {
     };
   }
 
-  async bearerActor(token: string, client: string): Promise<AuthenticatedActor> {
+  async bearerActor(token: string): Promise<AuthenticatedActor> {
     const key = digest(token);
     const cached = this.bearerCache.get(key);
     let subject: string | null | undefined =
@@ -323,7 +323,7 @@ export class AuthenticationService {
     if (subject === null)
       throw new InvalidBearerCredentialError("bearer token identity is invalid");
     if (subject === undefined) {
-      if (!this.bearerLookupLimiter.allow(client))
+      if (!this.bearerLookupLimiter.allow(key))
         throw new BearerRateLimitError("bearer identity lookup rate exceeded");
       const response = await fetch("https://huggingface.co/api/whoami-v2", {
         headers: { Authorization: `Bearer ${token}` },

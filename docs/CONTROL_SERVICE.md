@@ -285,10 +285,12 @@ in the action intent.
 
 The service does not enable cross-origin API access. It sets a strict Content
 Security Policy, request body limits, response security headers, and request
-limits. Forwarded client IP headers are not trusted for these limits because the
-hosting proxy may pass caller-supplied values. Authentication runs before
-request-body
-parsing, so an anonymous caller cannot force the service to parse a large worker
+limits. Forwarded client IP headers are not trusted because the hosting proxy
+may pass caller-supplied values. Limits use hashes of capabilities, bearer
+credentials, sessions, or OAuth flows. Anonymous limits are separate for health,
+authentication, API, and static routes, so exhausting one does not block an
+authorized worker or operator. Authentication runs before request-body parsing,
+so an anonymous caller cannot force the service to parse a large worker
 submission. Public health responses contain only `live`, `ready`, or
 `rebuilding` state.
 

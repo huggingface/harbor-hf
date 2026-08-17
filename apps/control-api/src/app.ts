@@ -95,6 +95,23 @@ function isMutation(request: FastifyRequest): boolean {
   return !["GET", "HEAD", "OPTIONS"].includes(request.method);
 }
 
+function requestRateLimitKey(request: FastifyRequest): string {
+  const capability = request.headers["x-harbor-hf-worker-capability"];
+  if (typeof capability === "string") return `capability:${sha256(capability)}`;
+  const authorization = request.headers.authorization;
+  if (authorization?.startsWith("Bearer "))
+    return `bearer:${sha256(authorization.slice("Bearer ".length))}`;
+  const session = request.cookies?.hhf_session;
+  if (session) return `session:${sha256(session)}`;
+  const flow = request.cookies?.hhf_oauth_flow;
+  if (flow) return `oauth-flow:${sha256(flow)}`;
+  const path = request.url.split("?", 1)[0] ?? request.url;
+  if (path.startsWith("/health/")) return "anonymous:health";
+  if (path.startsWith("/auth/")) return "anonymous:auth";
+  if (path.startsWith("/api/")) return "anonymous:api";
+  return "anonymous:static";
+}
+
 function idempotencyKey(request: FastifyRequest): string {
   const value = request.headers["idempotency-key"];
   if (typeof value !== "string" || value.length < 8 || value.length > 256)
@@ -237,7 +254,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     },
     crossOriginEmbedderPolicy: false,
   });
-  await app.register(rateLimit, { max: 240, timeWindow: "1 minute" });
+  await app.register(rateLimit, {
+    max: 240,
+    timeWindow: "1 minute",
+    keyGenerator: requestRateLimitKey,
+  });
   await app.register(swagger, {
     openapi: {
       info: { title: "Harbor-HF Control API", version: "1.0.0" },
@@ -307,7 +328,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         try {
           request.actor = await runtime.auth.bearerActor(
             authorization.slice("Bearer ".length),
-            request.ip,
           );
         } catch (error) {
           if (error instanceof BearerRateLimitError) {
