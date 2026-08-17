@@ -73,6 +73,20 @@ export interface AppConfig {
   bootstrap_operator_subjects: string[];
 }
 
+function normalizePublicOrigin(value: string): string {
+  const url = new URL(value);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  )
+    throw new Error("public origin must contain only an HTTP or HTTPS origin");
+  return url.origin;
+}
+
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = schema.parse(environment);
   if (parsed.NODE_ENV === "production" && parsed.HARBOR_HF_AUTH_MODE !== "oauth") {
@@ -87,11 +101,12 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
   if (parsed.HARBOR_HF_WRITE_MODE !== "disabled" && !parsed.HF_TOKEN) {
     throw new Error("write-enabled service requires HF_TOKEN");
   }
-  const publicOrigin =
+  const publicOrigin = normalizePublicOrigin(
     parsed.HARBOR_HF_PUBLIC_ORIGIN ??
-    (parsed.SPACE_HOST
-      ? `https://${parsed.SPACE_HOST}`
-      : `http://127.0.0.1:${parsed.PORT}`);
+      (parsed.SPACE_HOST
+        ? `https://${parsed.SPACE_HOST}`
+        : `http://127.0.0.1:${parsed.PORT}`),
+  );
   let oauth: AppConfig["oauth"] = null;
   if (parsed.HARBOR_HF_AUTH_MODE === "oauth") {
     if (
