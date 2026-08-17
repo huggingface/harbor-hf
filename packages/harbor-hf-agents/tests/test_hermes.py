@@ -145,14 +145,14 @@ class TestHermesRunCommands:
             HermesAgent._build_config_yaml(
                 "routed-model",
                 custom_base_url="http://127.0.0.1:18080/v1",
-                custom_api_key="harbor-local-ingress-bridge",
+                custom_api_key="harbor-local-inference-bridge",
             )
         )
         assert config["model"] == {
             "default": "routed-model",
             "provider": "custom",
             "base_url": "http://127.0.0.1:18080/v1",
-            "api_key": "harbor-local-ingress-bridge",
+            "api_key": "harbor-local-inference-bridge",
         }
         assert "provider" not in config
 
@@ -200,14 +200,18 @@ class TestHermesRunCommands:
         assert "--yes --redact" in cleanup
 
     @pytest.mark.asyncio
-    async def test_hf_jobs_ingress_is_hidden_from_hermes(self, temp_dir, monkeypatch):
+    async def test_hf_inference_is_hidden_from_hermes(self, temp_dir, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "scoped-route-capability")
         monkeypatch.setenv(
             "OPENAI_BASE_URL",
             "https://abc123--8000.hf.jobs/scopes/opaque/v1",
         )
-        monkeypatch.setenv("HF_TOKEN", "private-hf-token")
+        monkeypatch.setenv("HF_INFERENCE_TOKEN", "private-hf-token")
+        monkeypatch.setenv("HARBOR_HF_INFERENCE_MAX_REQUESTS", "64")
+        monkeypatch.setenv("HARBOR_HF_INFERENCE_MAX_CONCURRENCY", "4")
+        monkeypatch.setenv("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS", "600")
+        monkeypatch.setenv("HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS", "32768")
         agent = HermesAgent(logs_dir=temp_dir, model_name="openai/routed-model")
         mock_env = AsyncMock()
         mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
@@ -216,12 +220,13 @@ class TestHermesRunCommands:
 
         run_call = self._get_run_call(mock_env.exec.call_args_list)
         assert run_call.kwargs["env"]["OPENAI_API_KEY"] == (
-            "harbor-local-ingress-bridge"
+            "harbor-local-inference-bridge"
         )
         assert run_call.kwargs["env"]["OPENAI_BASE_URL"] == (
             "http://127.0.0.1:18080/v1"
         )
         assert "HF_TOKEN" not in run_call.kwargs["env"]
+        assert "HF_INFERENCE_TOKEN" not in run_call.kwargs["env"]
         assert "runuser -u harbor-agent" in run_call.kwargs["command"]
         assert "--provider custom" in run_call.kwargs["command"]
         assert "--model routed-model" in run_call.kwargs["command"]
@@ -235,14 +240,17 @@ class TestHermesRunCommands:
         root_calls = [
             call
             for call in mock_env.exec.call_args_list
-            if "/tmp/harbor-hf-ingress-bridge.pid" in call.kwargs["command"]
+            if "/tmp/harbor-hf-inference-bridge.pid" in call.kwargs["command"]
             and "runuser" not in call.kwargs["command"]
         ]
         start = next(
             call for call in root_calls if "nohup python3" in call.kwargs["command"]
         )
         stop = root_calls[-1]
-        assert start.kwargs["env"]["HARBOR_HF_INGRESS_TOKEN"] == "private-hf-token"
+        assert start.kwargs["env"]["HARBOR_HF_INFERENCE_TOKEN"] == "private-hf-token"
+        assert start.kwargs["env"]["HARBOR_HF_INFERENCE_ALLOWED_MODEL"] == (
+            "routed-model"
+        )
         assert "private-hf-token" not in start.kwargs["command"]
         assert "kill" in stop.kwargs["command"]
 

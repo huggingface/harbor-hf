@@ -123,6 +123,34 @@ describe("canonical contracts", () => {
         },
       }),
     ).toThrow(ContractValidationError);
+    const inferenceDeployment = {
+      ...base,
+      kind: "profile.object",
+      profile_kind: "deployment",
+      name: "inference-deployment",
+      spec: {
+        route: "hf_job",
+        models: ["model-one"],
+        harnesses: ["harness-one"],
+        job_image: `worker@sha256:${"a".repeat(64)}`,
+        job_command: ["true"],
+        hardware: "cpu-basic",
+        timeout_seconds: 300,
+        trusted_worker: true,
+        inference_token: "required",
+        inference_max_requests: 64,
+        inference_max_concurrency: 4,
+        inference_timeout_seconds: 600,
+        inference_max_output_tokens: 32768,
+      },
+    };
+    expect(validateControlRecord(inferenceDeployment)).toEqual(inferenceDeployment);
+    expect(() =>
+      validateControlRecord({
+        ...inferenceDeployment,
+        spec: { ...inferenceDeployment.spec, inference_token: "optional" },
+      }),
+    ).toThrow(ContractValidationError);
     expect(() =>
       validateControlRecord({
         ...base,

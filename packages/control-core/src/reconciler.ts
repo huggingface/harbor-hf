@@ -120,6 +120,15 @@ function profileStrings(
   return value as [string, ...string[]];
 }
 
+function profileInferenceToken(
+  spec: Record<string, unknown>,
+): "forbidden" | "required" {
+  const value = spec.inference_token ?? "forbidden";
+  if (value !== "forbidden" && value !== "required")
+    throw new PolicyError("profile inference_token is invalid");
+  return value;
+}
+
 export class Reconciler {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
@@ -355,6 +364,32 @@ export class Reconciler {
       };
       await this.service.append(budget);
     }
+    const inferenceToken = profileInferenceToken(deployment);
+    const inferenceLimits =
+      inferenceToken === "required"
+        ? {
+            inference_max_requests: profileScalar<number>(
+              deployment,
+              "inference_max_requests",
+              "number",
+            ),
+            inference_max_concurrency: profileScalar<number>(
+              deployment,
+              "inference_max_concurrency",
+              "number",
+            ),
+            inference_timeout_seconds: profileScalar<number>(
+              deployment,
+              "inference_timeout_seconds",
+              "number",
+            ),
+            inference_max_output_tokens: profileScalar<number>(
+              deployment,
+              "inference_max_output_tokens",
+              "number",
+            ),
+          }
+        : {};
     const intent = this.service.actionIntent(
       campaignId,
       "job.launch",
@@ -378,6 +413,8 @@ export class Reconciler {
         ),
         reservation_microusd: reservation,
         trusted_worker: profileScalar<boolean>(deployment, "trusted_worker", "boolean"),
+        inference_token: inferenceToken,
+        ...inferenceLimits,
       },
     );
     await this.service.writeAction(intent);

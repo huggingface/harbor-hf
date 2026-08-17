@@ -46,6 +46,35 @@ name: Id
 spec: DeploymentProfileSpec
 })
 export type DeploymentProfileSpec = (HFJobDeploymentProfileSpec | ImportedDeploymentProfileSpec)
+export type HFJobDeploymentProfileSpec = ({
+[k: string]: any
+} & {
+route: "hf_job"
+/**
+ * @minItems 1
+ * @maxItems 256
+ */
+models: [Id, ...(Id)[]]
+/**
+ * @minItems 1
+ * @maxItems 256
+ */
+harnesses: [Id, ...(Id)[]]
+job_image: string
+/**
+ * @minItems 1
+ * @maxItems 128
+ */
+job_command: [string, ...(string)[]]
+hardware: string
+timeout_seconds: number
+trusted_worker: boolean
+inference_token?: ("forbidden" | "required")
+inference_max_requests?: number
+inference_max_concurrency?: number
+inference_timeout_seconds?: number
+inference_max_output_tokens?: number
+})
 export type LaunchPolicyProfileObject = (Base & {
 schema_version: "v1"
 kind: "profile.object"
@@ -296,28 +325,6 @@ revision: string
  */
 required_evidence: Id[]
 }
-export interface HFJobDeploymentProfileSpec {
-route: "hf_job"
-/**
- * @minItems 1
- * @maxItems 256
- */
-models: [Id, ...(Id)[]]
-/**
- * @minItems 1
- * @maxItems 256
- */
-harnesses: [Id, ...(Id)[]]
-job_image: string
-/**
- * @minItems 1
- * @maxItems 128
- */
-job_command: [string, ...(string)[]]
-hardware: string
-timeout_seconds: number
-trusted_worker: boolean
-}
 export interface ImportedDeploymentProfileSpec {
 route: "imported"
 /**
@@ -404,6 +411,11 @@ success_without_worker_receipt?: boolean
 max_infrastructure_attempts?: number
 reservation_microusd?: number
 trusted_worker?: boolean
+inference_token?: ("forbidden" | "required")
+inference_max_requests?: number
+inference_max_concurrency?: number
+inference_timeout_seconds?: number
+inference_max_output_tokens?: number
 resource_id?: string
 launch_action_id?: Id
 not_before?: Timestamp

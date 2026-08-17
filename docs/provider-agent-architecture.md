@@ -64,7 +64,7 @@ harbor-hf/
         session.py
         trajectory.py
       support/
-        hf_jobs_ingress.py
+        hf_inference_bridge.py
         redaction.py
 ```
 

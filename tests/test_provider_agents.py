@@ -137,7 +137,7 @@ def test_registry_rejects_missing_and_unknown_agent_parameters() -> None:
 def _write_evidence(root: Path) -> None:
     agent_root = root / "agent"
     agent_root.mkdir(parents=True)
-    (agent_root / "hf-jobs-ingress-isolation.json").write_text(
+    (agent_root / "hf-inference-isolation.json").write_text(
         json.dumps(
             {
                 "agent_uid": 1000,
@@ -177,7 +177,7 @@ def test_provider_evidence_requires_locked_identity_and_uid_isolation(
         expected_model_name="example/model:together",
     )
 
-    isolation = tmp_path / "agent" / "hf-jobs-ingress-isolation.json"
+    isolation = tmp_path / "agent" / "hf-inference-isolation.json"
     isolation.write_text(
         json.dumps(
             {

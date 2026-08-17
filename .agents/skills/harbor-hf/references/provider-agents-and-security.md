@@ -54,18 +54,21 @@ in provider evidence, including sampling and reasoning controls.
 
 ## Credential isolation
 
-The trusted recorder holds the real upstream credential and one trial-scoped
-capability. Private HF Job ingress may require another credential. Neither value
-may enter the benchmark agent.
+The trusted worker receives the dedicated `HF_INFERENCE_TOKEN` and one
+trial-scoped capability. The control credential `HF_TOKEN` never enters the
+worker. The worker passes the inference credential only to the root-owned
+bridge; neither credential may enter the benchmark agent.
 
 The custom agent starts a root-owned loopback bridge through Harbor's public
 root-execution API. The bridge:
 
 - binds to `127.0.0.1`;
-- accepts only the registry-selected API path;
-- injects private ingress authorization upstream;
+- accepts only the registry-selected API path and locked model;
+- connects only to approved Hugging Face Router, Endpoint, or Job ingress hosts;
+- injects the inference-only authorization upstream;
 - strips client authorization;
-- rejects unexpected methods and paths as well as oversized requests;
+- rejects unexpected methods, paths, models, output-token limits, oversized
+  requests, excess requests, and excess concurrency;
 - logs no request or response bodies and no headers;
 - terminates after the trial.
 
@@ -77,8 +80,9 @@ A paid canary must prove:
 
 - bridge UID differs from agent UID;
 - the agent cannot read `/proc/<bridge-pid>/environ`;
-- agent environment lacks `HF_TOKEN`, provider keys, judge keys, private ingress
-  authorization, route capability, and scoped upstream URL;
+- agent environment lacks `HF_TOKEN`, `HF_INFERENCE_TOKEN`, provider keys, judge
+  keys, private ingress authorization, route capability, and scoped upstream
+  URL;
 - bridge binds only to loopback;
 - only the selected API path succeeds;
 - route revocation occurs before success publication.
@@ -105,14 +109,16 @@ from `HARBOR_HF_JOB_TOKEN` or from a fine-grained token added with
 prompt and records approval to store it in Harbor HF's owner-only plaintext
 token file. Harbor HF config stores only the selected name.
 
-After cutover, the application-protected control Space has one operator-managed
-persistent secret named `HF_TOKEN`, containing the retained fine-grained service
-token. Keep the token's display name and local alias out of public artifacts.
-The Space must not pass the value to a Job or worker. Hugging Face
-OAuth identifies web users; its user tokens and browser sessions must never
-enter remote Jobs, benchmark agents, evidence, or `HF_TOKEN` handling. Never
-read the Hugging Face CLI token store or active login as an implicit remote
-secret.
+After cutover, the application-protected control Space has two
+operator-managed persistent secrets. `HF_TOKEN` contains the retained
+fine-grained control credential. The Space must not pass it to a Job or worker.
+`HF_INFERENCE_TOKEN` contains the separate inference-only credential and may be
+passed only to a reviewed worker whose immutable deployment profile requires
+it. Keep credential display names and local aliases out of public artifacts.
+Hugging Face OAuth identifies web users; its user tokens and browser sessions
+must never enter remote Jobs, benchmark agents, evidence, or service-credential
+handling. Never read the Hugging Face CLI token store or active login as an
+implicit remote secret.
 
 Reject a launch when it would forward `GITHUB_TOKEN`, `GH_TOKEN`, an SSH key,
 an SSH agent, a Git credential helper, or `gh auth token`. Do not treat a

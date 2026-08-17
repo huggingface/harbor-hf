@@ -22,6 +22,27 @@ describe("control API configuration", () => {
     expect(config.oauth?.callback_url).toBe("https://control.example/auth/callback");
   });
 
+  it("loads a distinct worker inference credential without exposing it elsewhere", () => {
+    const config = loadConfig({
+      ...environment,
+      HF_TOKEN: "control-test-credential",
+      HF_INFERENCE_TOKEN: "inference-test-credential",
+    });
+
+    expect(config.hf_token).toBe("control-test-credential");
+    expect(config.hf_inference_token).toBe("inference-test-credential");
+  });
+
+  it("rejects reuse of the control credential for inference", () => {
+    expect(() =>
+      loadConfig({
+        ...environment,
+        HF_TOKEN: "shared-test-credential",
+        HF_INFERENCE_TOKEN: "shared-test-credential",
+      }),
+    ).toThrow("control and inference credentials must be distinct");
+  });
+
   it.each([
     "https://control.example/base",
     "https://control.example/?query=value",

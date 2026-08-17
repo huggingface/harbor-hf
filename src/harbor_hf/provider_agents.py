@@ -157,7 +157,7 @@ def validate_provider_agent_evidence(
     expected_agent_version: str,
     expected_model_name: str,
 ) -> None:
-    _validate_ingress_isolation(root / "agent" / "hf-jobs-ingress-isolation.json")
+    _validate_ingress_isolation(root / "agent" / "hf-inference-isolation.json")
     trajectory_path = root / "agent" / "trajectory.json"
     try:
         trajectory = json.loads(trajectory_path.read_text(encoding="utf-8"))

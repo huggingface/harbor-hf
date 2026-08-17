@@ -11,6 +11,7 @@ import {
   ResultPublisher,
 } from "@harbor-hf/control-core";
 import {
+  attestInferenceToken,
   HuggingFaceActions,
   HuggingFaceBucketStore,
   NoopActions,
@@ -54,6 +55,9 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     ? new HuggingFaceActions({
         namespace: config.namespace,
         accessToken: config.hf_token,
+        ...(config.hf_inference_token
+          ? { inferenceToken: config.hf_inference_token }
+          : {}),
         controlUrl: config.public_origin,
       })
     : new NoopActions();
@@ -73,6 +77,8 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     auth,
     reconciler,
     async initialize() {
+      if (config.hf_inference_token)
+        await attestInferenceToken({ accessToken: config.hf_inference_token });
       await auth.initialize();
       await projection.rebuild(store);
       await service.initialize(profiles);

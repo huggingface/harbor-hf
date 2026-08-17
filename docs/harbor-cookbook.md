@@ -42,18 +42,22 @@ A launch resolves five profile kinds:
 - model ID and full revision;
 - harness name, version, configuration, prompt, tools, and skills;
 - deployment route, digest-pinned worker image, reviewed command, hardware,
-  timeout, and credential boundary;
+  timeout, credential boundary, and inference request, concurrency, timeout, and
+  output-token limits;
 - launch policy, physical-attempt limit, reservation, and publication role.
 
 Profiles are immutable Bucket records. A promotion maps a convenient alias to
 one exact profile ID. Imported profiles describe history but cannot authorize a
 new launch or retry.
 
-Use one persistent Space secret named `HF_TOKEN`. Never record its value in a
-profile, campaign lock, action, log, Bucket object, fixture, result, or Job. A
-worker receives only its short-lived action-scoped capability. A Harbor
-Sandbox, benchmark agent, model server, browser, and remote Job may not receive
-the persistent Space credential.
+Use two persistent Space secrets. `HF_TOKEN` is the control credential and must
+never enter a Job. `HF_INFERENCE_TOKEN` is distinct and inference-only. A locked
+deployment marks it `required` or `forbidden`; only a required, reviewed worker
+receives it. Never record either value in a profile, campaign lock, action, log,
+Bucket object, fixture, or result. The worker receives its short-lived
+control capability separately and confines the inference credential to the
+root-owned bridge. A benchmark agent, browser, and model server may not receive
+either credential.
 
 The CLI never reads or forwards the active local Hugging Face CLI credential.
 Before using it, explicitly approve a purpose-scoped control bearer credential

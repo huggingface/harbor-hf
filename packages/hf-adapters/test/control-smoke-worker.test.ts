@@ -185,20 +185,27 @@ describe("control smoke worker", () => {
     }
   });
 
-  it("refuses a persistent control credential", async () => {
-    const profile = JSON.parse(
-      await readFile(resolve("profiles/deployment/hf-cpu-smoke.json"), "utf8"),
-    ) as { spec: { job_command: string[] } };
-    const result = await childResult(profile.spec.job_command, {
-      HF_TOKEN: "forbidden-test-value",
-      HARBOR_HF_CAMPAIGN_ID: "campaign-control-smoke",
-      HARBOR_HF_ACTION_ID: "action-control-smoke",
-      HARBOR_HF_TASK_IDS_JSON: JSON.stringify(["control-smoke-task"]),
-      HARBOR_HF_CONTROL_URL: "https://control.example",
-      HARBOR_HF_WORKER_CAPABILITY: "test-worker-capability",
-    });
-    expect(result).toEqual({ code: 1, stdout: "", stderr: "control-smoke-failed\n" });
-  });
+  it.each(["HF_TOKEN", "HF_INFERENCE_TOKEN"])(
+    "refuses the %s credential in a no-inference worker",
+    async (credentialName) => {
+      const profile = JSON.parse(
+        await readFile(resolve("profiles/deployment/hf-cpu-smoke.json"), "utf8"),
+      ) as { spec: { job_command: string[] } };
+      const result = await childResult(profile.spec.job_command, {
+        [credentialName]: "forbidden-test-value",
+        HARBOR_HF_CAMPAIGN_ID: "campaign-control-smoke",
+        HARBOR_HF_ACTION_ID: "action-control-smoke",
+        HARBOR_HF_TASK_IDS_JSON: JSON.stringify(["control-smoke-task"]),
+        HARBOR_HF_CONTROL_URL: "https://control.example",
+        HARBOR_HF_WORKER_CAPABILITY: "test-worker-capability",
+      });
+      expect(result).toEqual({
+        code: 1,
+        stdout: "",
+        stderr: "control-smoke-failed\n",
+      });
+    },
+  );
 
   it("requires a worker receipt for control smoke success", async () => {
     const profile = JSON.parse(

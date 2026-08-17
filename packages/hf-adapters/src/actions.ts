@@ -18,6 +18,7 @@ import {
 interface AdapterConfig {
   namespace: string;
   accessToken: string;
+  inferenceToken?: string;
   controlUrl?: string;
   hubUrl?: string;
   endpointsUrl?: string;
@@ -57,6 +58,31 @@ function stringValues(
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string"))
     throw new Error(`action payload ${key} must be an array of strings`);
   return value;
+}
+
+function inferenceTokenPolicy(intent: ActionIntent): "forbidden" | "required" {
+  const value = intent.payload.inference_token ?? "forbidden";
+  if (value !== "forbidden" && value !== "required")
+    throw new Error("action payload inference_token is invalid");
+  return value;
+}
+
+function verifyJobSecretNames(
+  intent: ActionIntent,
+  secretNames: string[] | undefined,
+): void {
+  const policy = inferenceTokenPolicy(intent);
+  if (!secretNames) {
+    if (policy === "required")
+      throw new Error("required Job inference credential is not attested");
+    return;
+  }
+  const expected = policy === "required" ? ["HF_INFERENCE_TOKEN"] : [];
+  if (
+    secretNames.length !== expected.length ||
+    !secretNames.every((name, index) => name === expected[index])
+  )
+    throw new Error("Job secret names do not match the locked deployment");
 }
 
 function cleanFailure(error: unknown): string {
@@ -106,6 +132,8 @@ export class HuggingFaceActions implements ExternalActionPort {
   private readonly endpointsUrl: string;
 
   constructor(private readonly config: AdapterConfig) {
+    if (config.inferenceToken && config.inferenceToken === config.accessToken)
+      throw new Error("control and inference credentials must be distinct");
     this.endpointsUrl =
       config.endpointsUrl ?? "https://api.endpoints.huggingface.cloud/v2";
   }
@@ -154,6 +182,26 @@ export class HuggingFaceActions implements ExternalActionPort {
     intent: ActionIntent,
     context?: ExternalActionContext,
   ): Promise<ExternalActionResult> {
+    const tokenPolicy = inferenceTokenPolicy(intent);
+    if (tokenPolicy === "required" && !this.config.inferenceToken)
+      throw new Error("required worker inference credential is unavailable");
+    const inferenceEnvironment =
+      tokenPolicy === "required"
+        ? {
+            HARBOR_HF_INFERENCE_MAX_REQUESTS: String(
+              numberValue(intent, "inference_max_requests"),
+            ),
+            HARBOR_HF_INFERENCE_MAX_CONCURRENCY: String(
+              numberValue(intent, "inference_max_concurrency"),
+            ),
+            HARBOR_HF_INFERENCE_TIMEOUT_SECONDS: String(
+              numberValue(intent, "inference_timeout_seconds"),
+            ),
+            HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS: String(
+              numberValue(intent, "inference_max_output_tokens"),
+            ),
+          }
+        : {};
     const jobs = await listJobs({
       namespace: this.config.namespace,
       accessToken: this.config.accessToken,
@@ -167,6 +215,7 @@ export class HuggingFaceActions implements ExternalActionPort {
     if (matches.length === 1) {
       const job = matches[0];
       if (!job) throw new Error("matching Job disappeared");
+      verifyJobSecretNames(intent, job.secrets);
       return {
         outcome: "adopted",
         observed_state: job.status.stage,
@@ -211,8 +260,13 @@ export class HuggingFaceActions implements ExternalActionPort {
           HARBOR_HF_TASK_IDS_JSON: JSON.stringify(taskIds),
           HARBOR_HF_CONTROL_URL: this.config.controlUrl,
           HARBOR_HF_WORKER_CAPABILITY: capability,
+          ...inferenceEnvironment,
         },
+        ...(tokenPolicy === "required"
+          ? { secrets: { HF_INFERENCE_TOKEN: this.config.inferenceToken as string } }
+          : {}),
       });
+      verifyJobSecretNames(intent, job.secrets);
     } catch (error) {
       throw new AmbiguousExternalActionError("Job launch outcome is ambiguous", {
         cause: error,
@@ -233,6 +287,7 @@ export class HuggingFaceActions implements ExternalActionPort {
       accessToken: this.config.accessToken,
       ...(this.config.hubUrl ? { hubUrl: this.config.hubUrl } : {}),
     });
+    verifyJobSecretNames(intent, job.secrets);
     if (job.labels?.harbor_hf_action_id !== intent.payload.launch_action_id)
       throw new Error("observed Job action label does not match the launch intent");
     return {

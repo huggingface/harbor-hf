@@ -15,8 +15,9 @@ inspecting the named artifact or command output.
       Bucket operator access list was verified.
 - [ ] Read-only users cannot mutate campaigns, and operator mutations require a
       valid CSRF token plus an idempotency key.
-- [ ] The Space has exactly one operator-managed persistent secret named
-      `HF_TOKEN`; the browser and build layers cannot read it.
+- [ ] The Space has exactly two operator-managed persistent secrets:
+      `HF_TOKEN` for control and `HF_INFERENCE_TOKEN` for reviewed workers. The
+      values are distinct, and the browser and build layers cannot read either.
 - [ ] Production uses approved paid CPU hardware with sleep disabled. The
       current hourly price and monthly ceiling are recorded.
 - [ ] No keep-awake schedule, second Space, Dataset, Bucket, database service,
@@ -31,9 +32,11 @@ inspecting the named artifact or command output.
       pass hosted Playwright tests.
 - [ ] A forced process exit around each remote action boundary creates no
       duplicate logical work.
-- [ ] Jobs receive neither `HF_TOKEN` nor a writable canonical Bucket mount.
-      Their signed capabilities authorize only the locked campaign, launch
-      action, task set, and expiration.
+- [ ] Jobs never receive `HF_TOKEN` or a writable canonical Bucket mount. A
+      locked deployment marked `required` receives only `HF_INFERENCE_TOKEN`; a
+      deployment marked `forbidden` receives no operator-managed secret. Signed
+      capabilities authorize only the campaign, launch action, task set, and
+      expiration.
 - [ ] A worker uploads content-addressed evidence chunks and a canonical
       manifest before its attempt receipt. Missing, changed, cross-scope, or
       incomplete evidence is rejected during both receipt acceptance and replay.
@@ -82,7 +85,8 @@ inspecting the named artifact or command output.
 - [ ] Manifest and plan contain only explicitly approved runtime secret names.
 - [ ] Every runtime credential is purpose-scoped and approved for its exact
       source and destination; the submitter can load it without printing it.
-- [ ] The control Space has exactly one persistent secret named `HF_TOKEN`.
+- [ ] The control Space has exactly two persistent secrets named `HF_TOKEN`
+      and `HF_INFERENCE_TOKEN`; they have the approved distinct scopes.
 - [ ] `HF_TOKEN` contains the retained fine-grained service token and has only
       the required resource and action scopes. Its display name and local alias
       are not present in public artifacts.

@@ -25,9 +25,9 @@ from harbor.models.trajectories import (
 from harbor.models.trial.paths import EnvironmentPaths
 from harbor.utils.trajectory_utils import format_trajectory_json
 
-from harbor_hf_agents.support.hf_jobs_ingress import (
-    prepare_hf_jobs_ingress_bridge,
-    stop_hf_jobs_ingress_bridge,
+from harbor_hf_agents.support.hf_inference_bridge import (
+    prepare_hf_inference_bridge,
+    stop_hf_inference_bridge,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
 
@@ -1111,7 +1111,7 @@ class OpenClawAgent(IsolatedProviderAgent):
         if not self.model_name or "/" not in self.model_name:
             raise ValueError("Model name must be in the format provider/model_name")
 
-        provider, _ = self.model_name.split("/", 1)
+        provider, model = self.model_name.split("/", 1)
         self._validate_provider(provider)
 
         env: dict[str, str] = {}
@@ -1130,20 +1130,25 @@ class OpenClawAgent(IsolatedProviderAgent):
                 self.logger.debug("Missing optional env key for OpenClaw run: %s", key)
 
         prefix = self._provider_env_prefix(provider)
-        bridged = await prepare_hf_jobs_ingress_bridge(
+        bridged = await prepare_hf_inference_bridge(
             self,
             environment,
             env,
             base_url_key=f"{prefix}_BASE_URL",
             api_key_key=f"{prefix}_API_KEY",
-            ingress_token=self._get_env("HF_TOKEN"),
+            inference_token=self._get_env("HF_INFERENCE_TOKEN"),
             api=self._PROVIDER_API,
+            allowed_model=model,
+            max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
+            max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
+            timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
+            max_output_tokens=self._get_env("HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"),
         )
         try:
             await self._run_prepared(instruction, environment, context, env)
         finally:
             if bridged:
-                await stop_hf_jobs_ingress_bridge(self, environment)
+                await stop_hf_inference_bridge(self, environment)
 
     async def _run_prepared(
         self,

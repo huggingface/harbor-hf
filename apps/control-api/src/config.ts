@@ -21,6 +21,7 @@ const schema = z.object({
   OAUTH_SCOPES: z.string().min(1).default("openid profile"),
   OPENID_PROVIDER_URL: z.string().url().optional(),
   HF_TOKEN: z.string().min(8).optional(),
+  HF_INFERENCE_TOKEN: z.string().min(8).optional(),
   HARBOR_HF_RECONCILE_INTERVAL_MS: z.coerce
     .number()
     .int()
@@ -66,6 +67,7 @@ export interface AppConfig {
     session_ttl_seconds: number;
   } | null;
   hf_token: string | null;
+  hf_inference_token: string | null;
   reconcile_interval_ms: number;
   observe_interval_ms: number;
   worker_receipt_grace_ms: number;
@@ -100,6 +102,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
   }
   if (parsed.HARBOR_HF_WRITE_MODE !== "disabled" && !parsed.HF_TOKEN) {
     throw new Error("write-enabled service requires HF_TOKEN");
+  }
+  if (
+    parsed.HF_TOKEN &&
+    parsed.HF_INFERENCE_TOKEN &&
+    parsed.HF_TOKEN === parsed.HF_INFERENCE_TOKEN
+  ) {
+    throw new Error("control and inference credentials must be distinct");
   }
   const publicOrigin = normalizePublicOrigin(
     parsed.HARBOR_HF_PUBLIC_ORIGIN ??
@@ -141,6 +150,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     public_origin: publicOrigin,
     oauth,
     hf_token: parsed.HF_TOKEN ?? null,
+    hf_inference_token: parsed.HF_INFERENCE_TOKEN ?? null,
     reconcile_interval_ms: parsed.HARBOR_HF_RECONCILE_INTERVAL_MS,
     observe_interval_ms: parsed.HARBOR_HF_OBSERVE_INTERVAL_MS,
     worker_receipt_grace_ms: parsed.HARBOR_HF_WORKER_RECEIPT_GRACE_MS,

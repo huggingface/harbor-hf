@@ -1213,8 +1213,57 @@
         },
         "trusted_worker": {
           "type": "boolean"
+        },
+        "inference_token": {
+          "enum": ["forbidden", "required"]
+        },
+        "inference_max_requests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "inference_max_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "inference_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "inference_max_output_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["inference_token"],
+            "properties": {
+              "inference_token": {
+                "const": "required"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "inference_max_requests",
+              "inference_max_concurrency",
+              "inference_timeout_seconds",
+              "inference_max_output_tokens"
+            ],
+            "properties": {
+              "inference_max_requests": {},
+              "inference_max_concurrency": {},
+              "inference_timeout_seconds": {},
+              "inference_max_output_tokens": {}
+            }
+          }
+        }
+      ]
     },
     "ImportedDeploymentProfileSpec": {
       "type": "object",
@@ -1384,6 +1433,29 @@
         },
         "trusted_worker": {
           "type": "boolean"
+        },
+        "inference_token": {
+          "enum": ["forbidden", "required"]
+        },
+        "inference_max_requests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "inference_max_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "inference_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "inference_max_output_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
         },
         "resource_id": {
           "type": "string",

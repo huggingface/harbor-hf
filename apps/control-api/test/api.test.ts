@@ -57,6 +57,7 @@ async function setup(
     public_origin: "http://127.0.0.1:7860",
     oauth: null,
     hf_token: "test-token-not-a-real-credential",
+    hf_inference_token: null,
     reconcile_interval_ms: 60_000,
     observe_interval_ms: 0,
     worker_receipt_grace_ms: 0,

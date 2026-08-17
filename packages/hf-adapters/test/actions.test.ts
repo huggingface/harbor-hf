@@ -2,7 +2,8 @@ import type { ActionIntent } from "@harbor-hf/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HuggingFaceActions } from "../src/actions.js";
 
-const testToken = ["hf", "not-a-real-credential"].join("_");
+const testToken = ["hf", "not-a-real-control-credential"].join("_");
+const testInferenceToken = ["hf", "not-a-real-inference-credential"].join("_");
 
 const base: ActionIntent = {
   schema_version: "v1",
@@ -61,6 +62,17 @@ describe("HuggingFaceActions", () => {
     expect((firstCall?.[1] as RequestInit | undefined)?.method).toBeUndefined();
   });
 
+  it("rejects reuse of the control credential as a worker inference credential", () => {
+    expect(
+      () =>
+        new HuggingFaceActions({
+          namespace: "example",
+          accessToken: testToken,
+          inferenceToken: testToken,
+        }),
+    ).toThrow("control and inference credentials must be distinct");
+  });
+
   it("creates one labelled Job when no matching action exists", async () => {
     const fetchMock = vi.fn(
       async (_url: string | URL | Request, init?: RequestInit) => {
@@ -112,6 +124,97 @@ describe("HuggingFaceActions", () => {
       resource_id: "job-2",
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("injects only the dedicated inference credential when the profile requires it", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        if (!init?.method)
+          return new Response("[]", {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        const request = JSON.parse(String(init.body)) as {
+          environment: Record<string, string>;
+          secrets?: Record<string, string>;
+          labels: Record<string, string>;
+        };
+        expect(request.environment).not.toHaveProperty("HF_TOKEN");
+        expect(request.environment).not.toHaveProperty("HF_INFERENCE_TOKEN");
+        expect(request.environment).toMatchObject({
+          HARBOR_HF_INFERENCE_MAX_REQUESTS: "64",
+          HARBOR_HF_INFERENCE_MAX_CONCURRENCY: "4",
+          HARBOR_HF_INFERENCE_TIMEOUT_SECONDS: "600",
+          HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS: "32768",
+        });
+        expect(request.secrets).toEqual({
+          HF_INFERENCE_TOKEN: testInferenceToken,
+        });
+        return new Response(
+          JSON.stringify({
+            type: "job",
+            id: "job-inference",
+            createdAt: "2026-08-16T00:00:00Z",
+            flavor: "cpu-basic",
+            status: { stage: "RUNNING", failureCount: 0 },
+            labels: request.labels,
+            secrets: ["HF_INFERENCE_TOKEN"],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new HuggingFaceActions({
+      namespace: "example",
+      accessToken: testToken,
+      inferenceToken: testInferenceToken,
+      controlUrl: "https://control.example",
+    });
+
+    await expect(
+      adapter.execute({
+        ...base,
+        action_id: "action-test-inference",
+        payload: {
+          ...base.payload,
+          inference_token: "required",
+          inference_max_requests: 64,
+          inference_max_concurrency: 4,
+          inference_timeout_seconds: 600,
+          inference_max_output_tokens: 32768,
+        },
+      }),
+    ).resolves.toMatchObject({ outcome: "created", resource_id: "job-inference" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails closed before a remote lookup when a required inference credential is absent", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new HuggingFaceActions({
+      namespace: "example",
+      accessToken: testToken,
+      controlUrl: "https://control.example",
+    });
+
+    await expect(
+      adapter.execute({
+        ...base,
+        payload: {
+          ...base.payload,
+          inference_token: "required",
+          inference_max_requests: 64,
+          inference_max_concurrency: 4,
+          inference_timeout_seconds: 600,
+          inference_max_output_tokens: 32768,
+        },
+      }),
+    ).resolves.toMatchObject({
+      outcome: "failed",
+      error_code: "remote_dependency_error",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("keeps an ambiguous Job launch pending until it can adopt the action label", async () => {

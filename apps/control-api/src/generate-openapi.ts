@@ -27,6 +27,7 @@ const config: AppConfig = {
   public_origin: "http://127.0.0.1:7860",
   oauth: null,
   hf_token: null,
+  hf_inference_token: null,
   reconcile_interval_ms: 1000,
   observe_interval_ms: 1000,
   worker_receipt_grace_ms: 0,

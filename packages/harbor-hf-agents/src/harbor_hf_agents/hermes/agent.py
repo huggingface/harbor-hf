@@ -23,9 +23,9 @@ from harbor.models.trajectories import (
 from harbor.utils.trajectory_utils import format_trajectory_json
 from pydantic import BaseModel, ConfigDict, Field
 
-from harbor_hf_agents.support.hf_jobs_ingress import (
-    prepare_hf_jobs_ingress_bridge,
-    stop_hf_jobs_ingress_bridge,
+from harbor_hf_agents.support.hf_inference_bridge import (
+    prepare_hf_inference_bridge,
+    stop_hf_inference_bridge,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
 
@@ -585,14 +585,21 @@ class HermesAgent(IsolatedProviderAgent):
 
         bridged = False
         if use_native and provider == "openai" and "OPENAI_BASE_URL" in env:
-            bridged = await prepare_hf_jobs_ingress_bridge(
+            bridged = await prepare_hf_inference_bridge(
                 self,
                 environment,
                 env,
                 base_url_key="OPENAI_BASE_URL",
                 api_key_key="OPENAI_API_KEY",
-                ingress_token=self._get_env("HF_TOKEN"),
+                inference_token=self._get_env("HF_INFERENCE_TOKEN"),
                 api="chat-completions",
+                allowed_model=model,
+                max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
+                max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
+                timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
+                max_output_tokens=self._get_env(
+                    "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"
+                ),
             )
 
         if bridged:
@@ -667,4 +674,4 @@ class HermesAgent(IsolatedProviderAgent):
                 )
             finally:
                 if bridged:
-                    await stop_hf_jobs_ingress_bridge(self, environment)
+                    await stop_hf_inference_bridge(self, environment)

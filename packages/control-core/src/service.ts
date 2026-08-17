@@ -873,6 +873,15 @@ export class ControlService {
         max_infrastructure_attempts: policy.max_infrastructure_attempts,
         reservation_microusd: policy.reservation_microusd,
         trusted_worker: deployment.trusted_worker,
+        inference_token: deployment.inference_token ?? "forbidden",
+        ...(deployment.inference_token === "required"
+          ? {
+              inference_max_requests: deployment.inference_max_requests,
+              inference_max_concurrency: deployment.inference_max_concurrency,
+              inference_timeout_seconds: deployment.inference_timeout_seconds,
+              inference_max_output_tokens: deployment.inference_max_output_tokens,
+            }
+          : {}),
         reason: input.reason ?? null,
         prior_attempt_id: priorAttempt.attempt_id,
       };

@@ -2,7 +2,8 @@
 
 This specification defines the private Harbor-HF control service and its web
 application. The service runs in one Docker Space, stores durable records in one
-private Bucket, and uses one persistent Space secret named `HF_TOKEN`.
+private Bucket, and uses two persistent Space secrets: `HF_TOKEN` for control
+operations and `HF_INFERENCE_TOKEN` for reviewed benchmark workers.
 
 The service is approved for implementation. It is not approved for production
 traffic until the recovery, security, reliability, cost and migration gates in the
@@ -17,9 +18,12 @@ A deployed namespace has two Harbor-HF runtime resources:
 | `<namespace>/<control-space>` | Private Docker Space that runs the API, reconciler, local projection, and web application. |
 | `<namespace>/<artifact-bucket>` | Private Bucket that stores immutable control records, profiles, evidence, normalized results, and catalog objects. |
 
-`HF_TOKEN` is the only persistent secret configured by the operator in the
-Space. Hugging Face may inject OAuth client configuration when built-in OAuth
-is enabled. Those platform-managed values are not additional operator-managed
+`HF_TOKEN` and `HF_INFERENCE_TOKEN` are the only persistent secrets configured
+by the operator in the Space. The credentials must be distinct. The control
+service uses `HF_TOKEN` for Bucket and lifecycle operations and passes only
+`HF_INFERENCE_TOKEN` to deployment profiles that explicitly require inference.
+Hugging Face may inject OAuth client configuration when built-in OAuth is
+enabled. Those platform-managed values are not additional operator-managed
 service credentials.
 
 The service must not create another repository, Space, Bucket, Dataset,
@@ -190,10 +194,19 @@ Errors use one JSON envelope with a stable code, human-readable message,
 request ID, and optional field errors. Raw provider bodies and dependency error
 strings never cross the API boundary.
 
-Workers receive a short-lived signed capability, not `HF_TOKEN` or a writable
-Bucket mount. The capability is scoped to one namespace, campaign, launch
-action, task set, and expiration. It authorizes only the campaign-lock and
-attempt-receipt routes.
+Workers receive a short-lived signed control capability and never receive
+`HF_TOKEN` or a writable Bucket mount. Deployment profiles declare the worker
+inference credential `required` or `forbidden`. A required profile receives only
+`HF_INFERENCE_TOKEN` as an encrypted Job secret; a forbidden profile receives no
+operator-managed secret. The capability is scoped to one namespace, campaign,
+launch action, task set, and expiration. It authorizes only the campaign-lock
+and attempt-receipt routes.
+
+An inference-required deployment also locks maximum requests, concurrency,
+upstream timeout, and output tokens. The service supplies those non-secret
+limits to the worker. The root-owned bridge accepts only the selected Chat
+Completions or Responses path, the locked model, approved Hugging Face hosts,
+and requests within those limits.
 
 Evidence upload is resumable and content addressed. A worker uses an upload
 operation on the attempt-receipt route for bounded base64 chunks, then uploads
@@ -295,19 +308,22 @@ so an anonymous caller cannot force the service to parse a large worker
 submission. Public health responses contain only `live`, `ready`, or
 `rebuilding` state.
 
-`HF_TOKEN`, OAuth tokens, provider credentials, private evidence, and
-unsanitized task data never enter browser responses or frontend assets. Audit
+`HF_TOKEN`, `HF_INFERENCE_TOKEN`, OAuth tokens, provider credentials, private
+evidence, and unsanitized task data never enter browser responses or frontend
+assets. Audit
 and SSE envelopes contain only event type, cursor, immutable key, digest, and
 record ID. They never embed the raw durable record.
 
 Jobs never receive `HF_TOKEN` or a writable mount of the canonical control
-Bucket. The service signs a short-lived capability for the exact campaign,
-launch action, and task set. That capability is accepted only by the worker
-campaign-lock and attempt-receipt routes, is redacted from logs, and cannot
-invoke operator or collection APIs.
+Bucket. An inference-required deployment receives `HF_INFERENCE_TOKEN` as its
+only operator-managed Job secret. The service signs a short-lived capability
+for the exact campaign, launch action, and task set. That capability is accepted
+only by the worker campaign-lock and attempt-receipt routes, is redacted from
+logs, and cannot invoke operator or collection APIs.
 
 The built-in control smoke Job runs a reviewed inline script in a digest-pinned
-official Node.js image. It refuses persistent control credentials, reads its
+official Node.js image. Its deployment forbids inference, so it refuses both
+operator-managed credentials, reads its
 campaign lock, uploads canonical evidence, and submits one task receipt through
 its scoped capability. Control smoke success requires that worker receipt, so a
 completed Job cannot hide a broken callback path.
@@ -387,9 +403,9 @@ server and does not run a second Node process. Vite assets use content hashes
 and immutable cache headers. The HTML entry point uses a short or no-cache
 policy.
 
-`HF_TOKEN` is available only at runtime. Docker build steps never mount or copy
-it. Deployment records the source commit, lockfile digest, base image digests,
-and resulting Space revision.
+`HF_TOKEN` and `HF_INFERENCE_TOKEN` are available only at runtime. Docker build
+steps never mount or copy them. Deployment records the source commit, lockfile
+digest, base image digests, and resulting Space revision.
 
 ## Availability and hardware
 

@@ -39,8 +39,12 @@ function sleep(milliseconds) {
 }
 
 async function main() {
-  if (process.env.HF_TOKEN || process.env.HARBOR_HF_BUCKET_ID)
-    throw new Error("persistent control credentials are forbidden in workers");
+  if (
+    process.env.HF_TOKEN ||
+    process.env.HF_INFERENCE_TOKEN ||
+    process.env.HARBOR_HF_BUCKET_ID
+  )
+    throw new Error("control smoke credentials are forbidden in workers");
   const campaignId = requiredEnvironment("HARBOR_HF_CAMPAIGN_ID");
   const actionId = requiredEnvironment("HARBOR_HF_ACTION_ID");
   const capability = requiredEnvironment("HARBOR_HF_WORKER_CAPABILITY");

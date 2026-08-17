@@ -181,11 +181,12 @@ outside this plan because current campaign volume does not justify that cost.
 
 ## Credential model
 
-The control Space has exactly one operator-managed persistent secret:
-`HF_TOKEN`. Its value is an approved fine-grained service token. Its display
-name and local alias remain private. The token has access only to the control
-Space, `<artifact-bucket>`, HF Jobs, managed Endpoints, and required Inference
-Provider calls.
+The control Space has exactly two operator-managed persistent secrets.
+`HF_TOKEN` is the approved fine-grained control credential for the control
+Space, `<artifact-bucket>`, HF Jobs, and managed Endpoints.
+`HF_INFERENCE_TOKEN` is a distinct inference-only credential for serverless and
+Endpoint inference calls. Credential display names and local aliases remain
+private.
 
 The control Space also enables Hugging Face OAuth for verified user identity.
 Hugging Face injects the OAuth client configuration; those platform-managed
@@ -198,19 +199,22 @@ The Space never injects `HF_TOKEN` into a Job and never gives a Job a writable
 mount of the canonical control Bucket. It derives a short-lived, signed worker
 capability for the exact campaign, launch action, and task set. The API accepts
 that capability only on the campaign-lock and attempt-receipt routes, and it
-records the worker as a service actor. A worker profile that requests the
-long-lived token or the canonical Bucket mount is rejected. Campaign-specific
-provider credentials are not persistent control-Space secrets.
+records the worker as a service actor. A locked deployment marks inference as
+`required` or `forbidden`. Only a required, reviewed worker receives
+`HF_INFERENCE_TOKEN`; a forbidden deployment receives no operator-managed
+secret. Campaign-specific provider credentials are not persistent control-Space
+secrets.
 
 Do not mint another Harbor-HF credential for a migration, campaign, repair, or
-worker. Before revoking any old Harbor-HF credential, audit every consumer and
-run a canary with only the retained credential configured. Never record the
-token value, display name, or local alias in the repository, Bucket, Dataset,
-logs, or chat.
+worker. Before revoking a control credential, audit every consumer and run a
+canary with only the retained credential configured. Never record a credential
+value, display name, or local alias in the repository, Bucket, Dataset, logs, or
+chat.
 
-A planned credential rotation may use a short, explicitly approved overlap.
-That exception ends as soon as the replacement canary passes. It must not become
-a permanent active and standby pair.
+Inference-credential rotation may use a short, explicitly approved overlap.
+Create the replacement for new Jobs, wait until Jobs using the prior value are
+terminal, and then revoke the prior value. The overlap must not become a
+permanent active and standby pair.
 
 ## Bucket layout
 
@@ -605,8 +609,8 @@ The implementation is ready only when all of these pass:
 - Secret scans find no token values, authorization headers, private capability
   URLs, or operator paths.
 - The namespace contains exactly one Harbor-HF Space and one Harbor-HF Bucket.
-- The control Space contains exactly one operator-managed persistent secret
-  named `HF_TOKEN`.
+- The control Space contains exactly two operator-managed persistent secrets:
+  `HF_TOKEN` and `HF_INFERENCE_TOKEN`; their scopes and values are distinct.
 - OAuth identity, read-only access, operator authorization, and CSRF rejection
   pass hosted tests.
 - SSE reconnect resumes from a durable cursor, and polling works when streaming

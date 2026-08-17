@@ -11,7 +11,7 @@ The steady-state service has two persistent resources: one publicly reachable, a
 
 Do not create a campaign-specific repository, Space, Bucket, Dataset, schedule, lease store, status store, backup store, or result service. A new persistent resource needs an explicit failure-domain or access reason and operator approval.
 
-The control Space has one operator-managed persistent secret named `HF_TOKEN`. Keep its value, display name, and local alias private. Never forward it to a Job, Harbor Sandbox, benchmark agent, model server, browser, log, action payload, or evidence object. Workers receive only a short-lived signed capability scoped to their campaign, launch action, and tasks, and they never receive a writable mount of the canonical control Bucket.
+The control Space has two operator-managed persistent secrets. `HF_TOKEN` is the control credential; keep it private and never forward it to a Job, Harbor Sandbox, benchmark agent, model server, browser, log, action payload, or evidence object. `HF_INFERENCE_TOKEN` is a separate inference-only credential. Pass it only to a reviewed worker whose locked deployment profile marks inference as required, then isolate it in the root-owned inference bridge. Workers also receive a short-lived signed capability scoped to their campaign, launch action, and tasks, and they never receive a writable mount of the canonical control Bucket.
 
 ## Read before operating
 

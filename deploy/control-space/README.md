@@ -13,6 +13,7 @@ This private Docker Space runs the Harbor-HF control API and web application.
 The release is generated from an exact reviewed Harbor-HF source revision.
 
 The Space reads and creates immutable objects in the canonical private Bucket
-through the Hugging Face API. Operators configure one persistent secret named
-`HF_TOKEN`. Deployment-specific resource identifiers and OAuth bootstrap
+through the Hugging Face API. Operators configure two persistent secrets:
+`HF_TOKEN` for control operations and `HF_INFERENCE_TOKEN` for reviewed
+benchmark workers. Deployment-specific resource identifiers and OAuth bootstrap
 subjects remain private Space variables.

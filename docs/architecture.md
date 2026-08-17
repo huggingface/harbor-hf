@@ -312,12 +312,13 @@ secret values from both file contents and path components before checksums or
 archives are created. File content is scanned and rewritten in bounded chunks,
 and symbolic links are rejected before evidence traversal.
 
-The planned control service has one persistent Space secret named `HF_TOKEN`.
-It contains an approved fine-grained service token. The token's display name and
-local alias remain private. A trusted outer worker may receive it for direct Hub
-access, but a Harbor Sandbox or benchmark agent may not. Any redundant Harbor-HF
-service credential is revoked only after a private consumer audit and a canary
-using only the retained credential.
+The control service has two persistent Space secrets. `HF_TOKEN` is the
+fine-grained control credential and never enters a worker. `HF_INFERENCE_TOKEN`
+is a distinct inference-only credential passed only to a reviewed outer worker
+whose locked deployment profile requires it. The worker confines it to the
+root-owned inference bridge; a benchmark agent may not receive either
+credential. Credential display names and local aliases remain private. Rotate
+the inference credential only after every Job using the prior value is terminal.
 
 ### Canonical Configuration Artifacts
 

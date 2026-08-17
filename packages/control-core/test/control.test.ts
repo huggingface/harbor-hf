@@ -181,13 +181,41 @@ describe("control service", () => {
     );
     if (!initialLaunch) throw new Error("initial Job launch is missing");
     const launchPayload = JSON.parse(initialLaunch.intent_body).payload;
-    expect(launchPayload).toMatchObject({ trusted_worker: true });
+    expect(launchPayload).toMatchObject({
+      trusted_worker: true,
+      inference_token: "forbidden",
+    });
     expect(launchPayload).not.toHaveProperty("requires_hf_token");
     expect(launchPayload).not.toHaveProperty("mount_bucket");
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       status: "completed",
       terminal_tasks: 1,
       publication_status: "published",
+    });
+  });
+
+  it("copies locked inference limits into the worker launch", async () => {
+    const control = await createTestControl(1, 1, 0, true, "required");
+    controls.push(control);
+    await control.service.submit(submission, "inference-worker-launch-key", operator);
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    await settle(reconciler);
+    const launch = (await control.projection.actions(100)).find(
+      (action) => action.action_kind === "job.launch",
+    );
+    if (!launch) throw new Error("inference Job launch is missing");
+    expect(JSON.parse(launch.intent_body).payload).toMatchObject({
+      inference_token: "required",
+      inference_max_requests: 64,
+      inference_max_concurrency: 4,
+      inference_timeout_seconds: 600,
+      inference_max_output_tokens: 32768,
     });
   });
 

@@ -10,9 +10,9 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
 from harbor_hf_agents.openclaw.agent import OpenClawAgent
-from harbor_hf_agents.support.hf_jobs_ingress import (
-    prepare_hf_jobs_ingress_bridge,
-    stop_hf_jobs_ingress_bridge,
+from harbor_hf_agents.support.hf_inference_bridge import (
+    prepare_hf_inference_bridge,
+    stop_hf_inference_bridge,
 )
 
 _DEFAULT_CODEX_PLUGIN_VERSION = "2026.7.1-1"
@@ -400,20 +400,28 @@ class OpenClawCodexAgent(OpenClawAgent):
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
+        if not self.model_name or "/" not in self.model_name:
+            raise ValueError("Model name must be in the format provider/model_name")
+        model = self.model_name.split("/", 1)[1]
         env = {
             key: value
             for key in self._provider_env_keys(self._model_provider() or "")
             if (value := self._get_env(key))
         }
         env["OPENCLAW_AGENT_ID"] = self._resolved_openclaw_agent_id()
-        bridged = await prepare_hf_jobs_ingress_bridge(
+        bridged = await prepare_hf_inference_bridge(
             self,
             environment,
             env,
             base_url_key="OPENAI_BASE_URL",
             api_key_key="OPENAI_API_KEY",
-            ingress_token=self._get_env("HF_TOKEN"),
+            inference_token=self._get_env("HF_INFERENCE_TOKEN"),
             api="responses",
+            allowed_model=model,
+            max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
+            max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
+            timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
+            max_output_tokens=self._get_env("HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"),
         )
         try:
             await self.exec_as_agent(
@@ -448,4 +456,4 @@ class OpenClawCodexAgent(OpenClawAgent):
                 )
             finally:
                 if bridged:
-                    await stop_hf_jobs_ingress_bridge(self, environment)
+                    await stop_hf_inference_bridge(self, environment)
