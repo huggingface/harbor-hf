@@ -445,6 +445,31 @@ describe("control API", () => {
     await app.close();
   });
 
+  it("limits rejected cross-origin requests before returning the error", async () => {
+    const { app } = await setup();
+    for (let index = 0; index < 240; index += 1) {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/system",
+        headers: { origin: `https://outside-${index}.example` },
+      });
+      expect(response.statusCode).toBe(403);
+    }
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/system",
+          headers: { origin: "https://outside-limited.example" },
+        })
+      ).statusCode,
+    ).toBe(429);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/system" })).statusCode,
+    ).toBe(200);
+    await app.close();
+  });
+
   it("keeps unverified capabilities in the shared anonymous API limit", async () => {
     const { runtime, app } = await setup();
     for (let index = 0; index < 240; index += 1) {
@@ -482,6 +507,50 @@ describe("control API", () => {
         })
       ).statusCode,
     ).toBe(404);
+    await app.close();
+  });
+
+  it("isolates a verified session from anonymous session-check limits", async () => {
+    const acl: OperatorAcl = {
+      schema_version: "v1",
+      kind: "operator.acl",
+      record_id: "operator-acl-session-limit",
+      created_at: "2026-08-16T00:00:00Z",
+      actor: { subject: "test", role: "service" },
+      operators: ["operator"],
+      readers: [],
+    };
+    const { runtime, app } = await setup("canary", async (seededRuntime) => {
+      await seededRuntime.service.append(acl);
+    });
+    runtime.config.auth_mode = "oauth";
+    for (let index = 0; index < 120; index += 1) {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/session",
+      });
+      expect(response.statusCode).toBe(401);
+    }
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/auth/session",
+        })
+      ).statusCode,
+    ).toBe(429);
+
+    const session = runtime.auth.store.createSession("operator", 60);
+    const authenticated = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/session",
+      headers: { cookie: `hhf_session=${session.id}` },
+    });
+    expect(authenticated.statusCode).toBe(200);
+    expect(authenticated.json()).toMatchObject({
+      authenticated: true,
+      actor: { subject: "operator", role: "operator" },
+    });
     await app.close();
   });
 

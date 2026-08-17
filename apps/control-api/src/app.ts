@@ -111,6 +111,16 @@ class RequestLimiter {
   }
 }
 
+function anonymousRequestLimit(path: string): readonly [string, number] {
+  if (path.startsWith("/health/")) return ["anonymous:health", 120];
+  if (path === "/auth/login") return ["anonymous:login", 20];
+  if (path === "/auth/callback") return ["anonymous:callback", 30];
+  if (path === "/auth/logout") return ["anonymous:logout", 30];
+  if (path === "/api/v1/auth/session") return ["anonymous:auth-session", 120];
+  if (path.startsWith("/api/")) return ["anonymous:api", 240];
+  return ["anonymous:static", 600];
+}
+
 async function admitRequest(
   limiter: RequestLimiter,
   key: string,
@@ -288,6 +298,9 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.addHook("onRequest", async (request, reply) => {
     const origin = request.headers.origin;
     if (origin && origin !== runtime.config.public_origin) {
+      const path = request.url.split("?", 1)[0] ?? request.url;
+      const [key, maximum] = anonymousRequestLimit(path);
+      if (!(await admitRequest(requestLimiter, key, maximum, request, reply))) return;
       await reply.code(403).send({
         error: {
           code: "origin_rejected",
@@ -300,24 +313,53 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.addHook("onRequest", async (request, reply) => {
     const path = request.url.split("?", 1)[0] ?? request.url;
-    if (path.startsWith("/api/v1") && path !== "/api/v1/auth/session") return;
-    const [key, maximum] = path.startsWith("/health/")
-      ? ["anonymous:health", 120]
-      : path === "/auth/login"
-        ? ["anonymous:login", 20]
-        : path === "/auth/callback"
-          ? ["anonymous:callback", 30]
-          : path === "/auth/logout"
-            ? ["anonymous:logout", 30]
-            : path === "/api/v1/auth/session"
-              ? ["anonymous:auth-session", 120]
-              : ["anonymous:static", 600];
+    if (path.startsWith("/api/v1")) return;
+    const [key, maximum] = anonymousRequestLimit(path);
     await admitRequest(requestLimiter, key, maximum, request, reply);
   });
 
   app.addHook("onRequest", async (request, reply) => {
-    if (!request.url.startsWith("/api/v1") || request.url === "/api/v1/auth/session")
+    const path = request.url.split("?", 1)[0] ?? request.url;
+    if (!path.startsWith("/api/v1")) return;
+    if (path === "/api/v1/auth/session") {
+      if (runtime.config.auth_mode === "development") {
+        await admitRequest(
+          requestLimiter,
+          "development:operator",
+          1000,
+          request,
+          reply,
+        );
+        return;
+      }
+      const sessionId = request.cookies.hhf_session;
+      const authenticated = sessionId
+        ? await runtime.auth.sessionActor(sessionId)
+        : null;
+      if (!authenticated) {
+        await admitRequest(
+          requestLimiter,
+          "anonymous:auth-session",
+          120,
+          request,
+          reply,
+        );
+        return;
+      }
+      if (
+        !(await admitRequest(
+          requestLimiter,
+          `session:${sha256(authenticated.session.id)}`,
+          600,
+          request,
+          reply,
+        ))
+      )
+        return;
+      request.actor = authenticated.actor;
+      request.authSession = authenticated.session;
       return;
+    }
     const capabilityHeader = request.headers["x-harbor-hf-worker-capability"];
     if (typeof capabilityHeader === "string") {
       if (!isWorkerCapabilityRoute(request)) {
@@ -603,9 +645,12 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       if (runtime.config.auth_mode === "development")
         return { authenticated: true, actor: runtime.auth.developmentActor() };
       const sessionId = request.cookies.hhf_session;
-      const authenticated = sessionId
-        ? await runtime.auth.sessionActor(sessionId)
-        : null;
+      const authenticated =
+        request.actor && request.authSession
+          ? { actor: request.actor, session: request.authSession }
+          : sessionId
+            ? await runtime.auth.sessionActor(sessionId)
+            : null;
       if (!authenticated)
         return reply.code(401).send({ authenticated: false, login_url: "/auth/login" });
       return { authenticated: true, actor: authenticated.actor };
