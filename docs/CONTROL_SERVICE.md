@@ -259,14 +259,23 @@ never the only signal.
 
 ## Authentication and authorization
 
-The Space remains private and uses Hugging Face OAuth to obtain a verified user
-identity. The service stores an operator access list as an immutable private
-Bucket record. Authenticated users outside that list receive read-only access.
+The Space is publicly reachable so Jobs can present short-lived worker
+capabilities without receiving a Hugging Face credential. Anonymous callers can
+reach static application assets, login and callback routes, and minimal health
+checks. Control data and mutations remain protected by the application.
+
+Hugging Face OAuth provides verified user identities. The service stores
+operators and readers in an immutable private Bucket access-list record. A
+verified identity that is absent from both lists receives no control access.
+The bearer transport verifies identity with Hugging Face and applies the same
+access list. Failed bearer checks are cached briefly and within a fixed bound.
 
 OAuth uses authorization code flow with PKCE and state validation. Browser
 sessions are opaque random identifiers stored in the disposable local database.
 The session cookie is `Secure`, `HttpOnly`, and same-site. A restart may end
-browser sessions because they are not durable control state.
+browser sessions because they are not durable control state. Expired and excess
+login flows and sessions are removed so anonymous login traffic cannot grow the
+database without a bound.
 
 Mutations require a session-bound CSRF token. Paid launches and destructive
 actions require an explicit confirmation screen that shows the resolved target,
@@ -274,11 +283,16 @@ logical task count, cost ceiling, and effect. The verified OAuth actor is stored
 in the action intent.
 
 The service does not enable cross-origin API access. It sets a strict Content
-Security Policy, request body limits, response security headers, and log
-redaction. `HF_TOKEN`, OAuth tokens, provider credentials, private evidence,
-and unsanitized task data never enter browser responses or frontend assets.
-Audit and SSE envelopes contain only event type, cursor, immutable key, digest,
-and record ID. They never embed the raw durable record.
+Security Policy, request body limits, response security headers, trusted-proxy
+bounds, and per-client request limits. Authentication runs before request-body
+parsing, so an anonymous caller cannot force the service to parse a large worker
+submission. Public health responses contain only `live`, `ready`, or
+`rebuilding` state.
+
+`HF_TOKEN`, OAuth tokens, provider credentials, private evidence, and
+unsanitized task data never enter browser responses or frontend assets. Audit
+and SSE envelopes contain only event type, cursor, immutable key, digest, and
+record ID. They never embed the raw durable record.
 
 Jobs never receive `HF_TOKEN` or a writable mount of the canonical control
 Bucket. The service signs a short-lived capability for the exact campaign,
@@ -426,7 +440,7 @@ Acceptance requires these failure tests:
 ## Deployment and replacement
 
 The public Harbor-HF repository remains the source of truth. A release command
-publishes an exact reviewed source revision to the private Space. Operators do
+publishes an exact reviewed source revision to the application-protected Space. Operators do
 not edit the Space repository by hand. Deployment must not require another
 long-lived credential in CI.
 

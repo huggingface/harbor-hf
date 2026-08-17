@@ -3,7 +3,7 @@
 **Status.** Historical release record. The separate results service remains
 readable during migration, but the approved [control service
 specification](CONTROL_SERVICE.md) replaces it with authenticated result views
-inside the private control Space. The revisions below remain immutable audit
+inside the application-protected control Space. The revisions below remain immutable audit
 references.
 
 ## Canonical V1 Cutover

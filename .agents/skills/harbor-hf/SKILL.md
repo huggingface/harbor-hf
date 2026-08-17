@@ -7,7 +7,7 @@ description: "Plan and profile Harbor benchmark campaigns, then launch and monit
 
 Use this skill for Harbor benchmark work on Hugging Face Jobs, Inference Providers, and Inference Endpoints.
 
-The steady-state service has two private resources: one control Space and one `<artifact-bucket>` Bucket. The Space runs the TypeScript API, reconciler, disposable SQLite projection, and React console. The Bucket stores immutable control records, profiles, evidence, normalized results, and catalogs.
+The steady-state service has two persistent resources: one publicly reachable, application-protected control Space and one private `<artifact-bucket>` Bucket. The Space runs the TypeScript API, reconciler, disposable SQLite projection, and React console. The Bucket stores immutable control records, profiles, evidence, normalized results, and catalogs. Anonymous callers can reach only bounded static, login, callback, and health surfaces. Control access requires an access-listed identity or a short-lived worker capability.
 
 Do not create a campaign-specific repository, Space, Bucket, Dataset, schedule, lease store, status store, backup store, or result service. A new persistent resource needs an explicit failure-domain or access reason and operator approval.
 

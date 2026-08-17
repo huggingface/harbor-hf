@@ -1,8 +1,8 @@
 # Fully Hosted Harbor Evaluations on Hugging Face
 
 This recipe runs a reproducible Harbor campaign entirely on hosted Hugging Face
-infrastructure. The operator submits profile aliases to one private control
-Space. HF Jobs and Harbor Sandboxes execute the benchmark, and one private
+infrastructure. The operator submits profile aliases to one publicly reachable,
+application-protected control Space. HF Jobs and Harbor Sandboxes execute the benchmark, and one private
 Bucket stores immutable control records, evidence, results, and catalogs.
 
 The operator machine does not load the model, run inference, or execute a
@@ -19,7 +19,7 @@ benchmark task.
 operator CLI or browser
           |
           v
-private control Space
+protected public control Space
   Fastify API, reconciler, SQLite projection, React console
           |
           +----> private Bucket
@@ -57,7 +57,7 @@ the persistent Space credential.
 
 The CLI never reads or forwards the active local Hugging Face CLI credential.
 Before using it, explicitly approve a purpose-scoped control bearer credential
-for the local process and the private control Space, then provide it through
+for the local process and the control Space, then provide it through
 `HARBOR_HF_CONTROL_BEARER_TOKEN` without printing it or storing it in the
 repository. Inspect the ready service and aliases before spending:
 

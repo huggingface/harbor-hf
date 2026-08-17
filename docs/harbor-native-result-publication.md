@@ -12,7 +12,7 @@ backed by verified native evidence.
 The approved [control service specification](CONTROL_SERVICE.md) keeps the
 Harbor-native evidence boundary and replaces the Dataset and separate Results
 Space projection with immutable Bucket rows and authenticated views in the
-private TypeScript control Space. This document remains the current publication
+application-protected TypeScript control Space. This document remains the current publication
 record until that replacement ships.
 
 ## Purpose

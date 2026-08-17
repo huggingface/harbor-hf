@@ -16,7 +16,7 @@ changes.
 The current release stores live campaign events and claims in a private Hub
 Dataset. The approved [control service
 plan](2026-08-16-harbor-hf-control-service-plan.md) replaces that new-write path
-with one private control Space and immutable objects in the configured
+with one publicly reachable, application-protected control Space and immutable objects in the configured
 `<artifact-bucket>` Bucket. The [control service
 specification](CONTROL_SERVICE.md) defines the TypeScript runtime, REST API,
 reconciler, local projection, authentication, and React web application.
@@ -47,7 +47,7 @@ The target runtime has one service boundary:
 browser
    |
    v
-private control Space
+protected public control Space
    |-- React web application
    |-- TypeScript REST API and SSE
    |-- reconciler

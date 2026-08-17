@@ -11,9 +11,9 @@ Launching a supported benchmark should require a benchmark, a model, a harness,
 and a budget. It should not require a new manifest generator, a new Hub
 repository, a new Bucket, or manual recovery after completed model work.
 
-This plan replaces Harbor-HF's Git-backed live coordination with one private
-control Space, one private Bucket, and one operator-managed persistent Space
-secret. The Bucket holds control state, evidence, profiles, normalized results,
+This plan replaces Harbor-HF's Git-backed live coordination with one publicly
+reachable, application-protected control Space, one private Bucket, and one
+operator-managed persistent Space secret. The Bucket holds control state, evidence, profiles, normalized results,
 and the catalog.
 Historical campaigns and publications remain immutable and readable.
 
@@ -23,8 +23,9 @@ its production gates and the new-write cutover is complete.
 
 ## Decision
 
-Build one private, always-on Docker Space per Harbor-HF namespace. The Space is
-the only normal writer of shared campaign decisions. It exposes the control API,
+Build one publicly reachable, application-protected, always-on Docker Space per
+Harbor-HF namespace. The Space is the only normal writer of shared campaign
+decisions. It exposes the control API,
 runs reconciliation, launches and adopts HF Jobs, manages endpoints, and
 finalizes publication.
 
@@ -34,7 +35,7 @@ the global catalog. Resolve its deployed name only in private configuration.
 Use local SQLite in the Space only as a fast projection that can be deleted and
 rebuilt from the Bucket. Do not place a SQLite database file on a Bucket mount.
 
-The same private Space serves the control API and authenticated results UI. Do
+The same control Space serves the protected control API and results UI. Do
 not keep a second results Space, a result Dataset, or a backup Bucket in the
 steady-state Harbor-HF architecture.
 
@@ -101,7 +102,7 @@ A namespace should have this fixed Harbor-HF resource set:
 | Resource | Purpose | New-write status |
 |---|---|---|
 | `huggingface/harbor-hf` | Source, schemas, built-in profiles, and Space code | Keep outside the runtime resource count |
-| `<namespace>/<control-space>` private Space | Control API, reconciler, and authenticated results UI | Create once |
+| `<namespace>/<control-space>` protected public Space | Control API, reconciler, and authenticated results UI | Create once |
 | `<namespace>/<artifact-bucket>` private Bucket | Control objects, profiles, evidence, receipts, normalized results, and catalog | Reuse |
 
 Resolve both deployed names in private configuration. Do not record a real
@@ -186,11 +187,11 @@ name and local alias remain private. The token has access only to the control
 Space, `<artifact-bucket>`, HF Jobs, managed Endpoints, and required Inference
 Provider calls.
 
-The private Space also enables Hugging Face OAuth for verified user identity.
+The control Space also enables Hugging Face OAuth for verified user identity.
 Hugging Face injects the OAuth client configuration; those platform-managed
 values are not additional operator-managed service credentials. An immutable
-private Bucket record holds the operator access list. Other authenticated users
-have read-only access. Browser sessions and CSRF state remain disposable local
+private Bucket record holds the operator and reader access lists. Verified
+users outside both lists have no control access. Browser sessions and CSRF state remain disposable local
 state.
 
 The Space never injects `HF_TOKEN` into a Job and never gives a Job a writable

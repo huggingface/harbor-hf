@@ -4,7 +4,7 @@
 
 `harbor-hf` is a Harbor control plane for running benchmark campaigns on Hugging Face infrastructure. It submits pinned work to HF Jobs, tracks retries and Endpoints, preserves evidence in an HF Bucket, and publishes queryable results without running the benchmark on your machine.
 
-A hosted installation uses two private resources: one control Space and one Bucket. The Space serves the API and web console while its single control process reconciles immutable records stored in the Bucket.
+A hosted installation uses two persistent resources: one publicly reachable, application-protected control Space and one private Bucket. The Space serves the API and web console while its single control process reconciles immutable records stored in the Bucket.
 
 ## Install the CLI
 

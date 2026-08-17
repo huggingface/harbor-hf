@@ -54,6 +54,7 @@ import {
   type AuthenticatedActor,
   InvalidBearerCredentialError,
   type SessionRow,
+  UnauthorizedSubjectError,
 } from "./auth.js";
 import type { Runtime } from "./runtime.js";
 
@@ -218,7 +219,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         "*.client_secret",
       ],
     },
-    trustProxy: true,
+    trustProxy: 1,
   });
   await app.register(cookie);
   await app.register(helmet, {
@@ -259,7 +260,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     }
   });
 
-  app.addHook("preHandler", async (request, reply) => {
+  app.addHook("onRequest", async (request, reply) => {
     if (!request.url.startsWith("/api/v1") || request.url === "/api/v1/auth/session")
       return;
     const capabilityHeader = request.headers["x-harbor-hf-worker-capability"];
@@ -368,12 +369,20 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     }
   });
 
-  app.get("/health/live", { schema: { tags: ["system"] } }, async () => ({
-    status: "live",
-  }));
+  app.get(
+    "/health/live",
+    {
+      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
+      schema: { tags: ["system"] },
+    },
+    async () => ({ status: "live" }),
+  );
   app.get(
     "/health/ready",
-    { schema: { tags: ["system"] } },
+    {
+      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
+      schema: { tags: ["system"] },
+    },
     async (_request, reply) => {
       const state = runtime.projection.system();
       const dependencies = {
@@ -386,17 +395,16 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           runtime.config.write_mode === "disabled" || Boolean(runtime.config.hf_token),
       };
       const ready = Object.values(dependencies).every(Boolean);
-      return reply.code(ready ? 200 : 503).send({
-        status: ready ? "ready" : "rebuilding",
-        dependencies,
-        projection: state,
-      });
+      return reply
+        .code(ready ? 200 : 503)
+        .send({ status: ready ? "ready" : "rebuilding" });
     },
   );
 
   app.get(
     "/auth/login",
     {
+      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
       schema: {
         tags: ["auth"],
         querystring: {
@@ -419,49 +427,64 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     },
   );
 
-  app.get("/auth/callback", { schema: { tags: ["auth"] } }, async (request, reply) => {
-    const flowId = request.cookies.hhf_oauth_flow;
-    if (!flowId)
-      return reply.code(400).send({
-        error: {
-          code: "oauth_flow_missing",
-          message: "OAuth flow cookie is missing",
-          request_id: request.id,
-        },
+  app.get(
+    "/auth/callback",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+      schema: { tags: ["auth"] },
+    },
+    async (request, reply) => {
+      const flowId = request.cookies.hhf_oauth_flow;
+      if (!flowId)
+        return reply.code(400).send({
+          error: {
+            code: "oauth_flow_missing",
+            message: "OAuth flow cookie is missing",
+            request_id: request.id,
+          },
+        });
+      const callback = await runtime.auth.callback(
+        flowId,
+        new URL(request.url, runtime.config.public_origin),
+      );
+      reply.clearCookie("hhf_oauth_flow", { path: "/auth/callback" });
+      reply.setCookie("hhf_session", callback.session_id, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+        path: "/",
+        expires: new Date(callback.expires_at),
       });
-    const callback = await runtime.auth.callback(
-      flowId,
-      new URL(request.url, runtime.config.public_origin),
-    );
-    reply.clearCookie("hhf_oauth_flow", { path: "/auth/callback" });
-    reply.setCookie("hhf_session", callback.session_id, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "strict",
-      path: "/",
-      expires: new Date(callback.expires_at),
-    });
-    reply.setCookie("hhf_csrf", callback.csrf, {
-      httpOnly: false,
-      secure: true,
-      sameSite: "strict",
-      path: "/",
-      expires: new Date(callback.expires_at),
-    });
-    return reply.redirect(callback.return_to);
-  });
+      reply.setCookie("hhf_csrf", callback.csrf, {
+        httpOnly: false,
+        secure: true,
+        sameSite: "strict",
+        path: "/",
+        expires: new Date(callback.expires_at),
+      });
+      return reply.redirect(callback.return_to);
+    },
+  );
 
-  app.post("/auth/logout", { schema: { tags: ["auth"] } }, async (request, reply) => {
-    const sessionId = request.cookies.hhf_session;
-    if (sessionId) runtime.auth.store.deleteSession(sessionId);
-    reply.clearCookie("hhf_session", { path: "/" });
-    reply.clearCookie("hhf_csrf", { path: "/" });
-    return reply.code(204).send();
-  });
+  app.post(
+    "/auth/logout",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+      schema: { tags: ["auth"] },
+    },
+    async (request, reply) => {
+      const sessionId = request.cookies.hhf_session;
+      if (sessionId) runtime.auth.store.deleteSession(sessionId);
+      reply.clearCookie("hhf_session", { path: "/" });
+      reply.clearCookie("hhf_csrf", { path: "/" });
+      return reply.code(204).send();
+    },
+  );
 
   app.get(
     "/api/v1/auth/session",
     {
+      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
       schema: { tags: ["auth"], response: { 200: sessionSchema, 401: sessionSchema } },
     },
     async (request, reply) => {
@@ -965,6 +988,28 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       status = 422;
       code = "policy_rejected";
       message = error.message;
+    } else if (error instanceof UnauthorizedSubjectError) {
+      status = 403;
+      code = "access_denied";
+      message = "this identity is not authorized";
+    } else if (
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      error.statusCode === 413
+    ) {
+      status = 413;
+      code = "request_too_large";
+      message = "request body exceeds the route limit";
+    } else if (
+      typeof error === "object" &&
+      error !== null &&
+      "statusCode" in error &&
+      error.statusCode === 429
+    ) {
+      status = 429;
+      code = "rate_limit_exceeded";
+      message = "request rate limit exceeded";
     } else if (
       typeof error === "object" &&
       error !== null &&

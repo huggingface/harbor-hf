@@ -1,7 +1,11 @@
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { ProfileObject, ProfilePromotion } from "@harbor-hf/contracts";
+import type {
+  OperatorAcl,
+  ProfileObject,
+  ProfilePromotion,
+} from "@harbor-hf/contracts";
 import {
   canonicalJson,
   controlRecordPath,
@@ -86,7 +90,7 @@ describe("control API", () => {
     );
     const ready = await app.inject({ method: "GET", url: "/health/ready" });
     expect(ready.statusCode).toBe(200);
-    expect(ready.json()).toMatchObject({ status: "ready" });
+    expect(ready.json()).toEqual({ status: "ready" });
     await app.close();
   });
 
@@ -310,13 +314,117 @@ describe("control API", () => {
     await app.close();
   });
 
-  it("returns 401 for an invalid bearer credential", async () => {
+  it("keeps protected public ingress deny-by-default", async () => {
     const { runtime, app } = await setup();
     runtime.config.auth_mode = "oauth";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("unauthorized", { status: 401 })),
+    const before = runtime.projection.system().object_count;
+
+    const live = await app.inject({ method: "GET", url: "/health/live" });
+    expect(live.statusCode).toBe(200);
+    expect(live.json()).toEqual({ status: "live" });
+    expect(live.headers["x-content-type-options"]).toBe("nosniff");
+    expect(live.headers["content-security-policy"]).toContain("default-src 'self'");
+    expect((await app.inject({ method: "GET", url: "/health/ready" })).json()).toEqual({
+      status: "ready",
+    });
+
+    for (const url of [
+      "/api/v1/system",
+      "/api/v1/campaigns",
+      "/api/v1/jobs",
+      "/api/v1/endpoints",
+      "/api/v1/results",
+      "/api/v1/profiles",
+      "/api/v1/audit",
+      "/api/v1/events",
+    ]) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode, url).toBe(401);
+      expect(response.json()).toMatchObject({
+        error: { code: "authentication_required" },
+      });
+    }
+    const session = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/session",
+    });
+    expect(session.statusCode).toBe(401);
+    expect(session.json()).toEqual({
+      authenticated: false,
+      login_url: "/auth/login",
+    });
+    const mutation = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "anonymous-mutation" },
+      payload: input,
+    });
+    expect(mutation.statusCode).toBe(401);
+    expect(runtime.projection.system().object_count).toBe(before);
+
+    const oversized = `{"padding":"${"x".repeat(2 * 1024 * 1024)}"}`;
+    const anonymousOversized = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": "anonymous-oversized",
+      },
+      payload: oversized,
+    });
+    expect(anonymousOversized.statusCode).toBe(401);
+    runtime.config.auth_mode = "development";
+    const authenticatedOversized = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": "authenticated-oversized",
+      },
+      payload: oversized,
+    });
+    expect(authenticatedOversized.statusCode).toBe(413);
+
+    const crossOrigin = await app.inject({
+      method: "GET",
+      url: "/health/live",
+      headers: { origin: "https://outside.example" },
+    });
+    expect(crossOrigin.statusCode).toBe(403);
+    expect(crossOrigin.json()).toMatchObject({
+      error: { code: "origin_rejected" },
+    });
+    await app.close();
+  });
+
+  it("does not trust caller-supplied forwarded-for hops for rate limits", async () => {
+    const { app } = await setup();
+    for (let index = 0; index < 120; index += 1) {
+      const response = await app.inject({
+        method: "GET",
+        url: "/health/live",
+        headers: {
+          "x-forwarded-for": `203.0.113.${(index % 250) + 1}, 198.51.100.10`,
+        },
+      });
+      expect(response.statusCode).toBe(200);
+    }
+    const limited = await app.inject({
+      method: "GET",
+      url: "/health/live",
+      headers: { "x-forwarded-for": "192.0.2.99, 198.51.100.10" },
+    });
+    expect(limited.statusCode).toBe(429);
+    await app.close();
+  });
+
+  it("rejects and negatively caches invalid bearer credentials", async () => {
+    const { runtime, app } = await setup();
+    runtime.config.auth_mode = "oauth";
+    const fetchIdentity = vi.fn(
+      async () => new Response("unauthorized", { status: 401 }),
     );
+    vi.stubGlobal("fetch", fetchIdentity);
 
     const response = await app.inject({
       method: "GET",
@@ -328,6 +436,52 @@ describe("control API", () => {
     expect(response.json()).toMatchObject({
       error: { code: "invalid_bearer_credential" },
     });
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/system",
+          headers: { authorization: "Bearer invalid-test-credential" },
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(fetchIdentity).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("accepts an ACL-listed bearer identity", async () => {
+    const acl: OperatorAcl = {
+      schema_version: "v1",
+      kind: "operator.acl",
+      record_id: "operator-acl-service-bearer",
+      created_at: "2026-08-16T00:00:00Z",
+      actor: { subject: "test", role: "service" },
+      operators: ["operator"],
+      readers: [],
+    };
+    const { runtime, app } = await setup("canary", async (seededRuntime) => {
+      await seededRuntime.service.append(acl);
+    });
+    runtime.config.auth_mode = "oauth";
+    const fetchIdentity = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: "operator" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchIdentity);
+
+    const headers = {
+      authorization: "Bearer test-token-not-a-real-credential",
+    };
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/system", headers })).statusCode,
+    ).toBe(200);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/system", headers })).statusCode,
+    ).toBe(200);
+    expect(fetchIdentity).toHaveBeenCalledTimes(1);
     await app.close();
   });
 
@@ -654,6 +808,10 @@ describe("authentication state", () => {
     }));
     expect(await auth.role("operator")).toBe("operator");
     expect(await auth.role("reader")).toBe("reader");
+    expect(await auth.role("unlisted")).toBeNull();
+    const unlisted = store.createSession("unlisted", 60);
+    expect(await auth.sessionActor(unlisted.id)).toBeNull();
+    expect(store.session(unlisted.id)).toBeNull();
     store.close();
   });
 });

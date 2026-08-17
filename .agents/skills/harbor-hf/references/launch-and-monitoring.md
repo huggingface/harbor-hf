@@ -1,6 +1,6 @@
 # Launch and monitoring
 
-Use the private control Space for new Harbor-HF campaigns. The control API and immutable Bucket records are authoritative. HF Job logs are diagnostic and do not define campaign completion.
+Use the application-protected control Space for new Harbor-HF campaigns. The control API and immutable Bucket records are authoritative. HF Job logs are diagnostic and do not define campaign completion.
 
 ## Pre-submission checks
 

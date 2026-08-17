@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Actor, OperatorAcl } from "@harbor-hf/contracts";
@@ -18,6 +18,7 @@ import {
 export type AuthRole = "operator" | "reader";
 
 export class InvalidBearerCredentialError extends Error {}
+export class UnauthorizedSubjectError extends Error {}
 
 export interface AuthenticatedActor extends Actor {
   role: AuthRole;
@@ -41,6 +42,10 @@ interface FlowRow {
 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function digestBytes(value: string): Buffer {
+  return createHash("sha256").update(value).digest();
 }
 
 function randomToken(bytes = 32): string {
@@ -74,18 +79,27 @@ export class AuthStore {
   }
 
   createFlow(returnTo: string, ttlSeconds = 600): FlowRow {
+    const now = Date.now();
     const flow = {
       id: randomToken(),
       state: randomState(),
       verifier: randomPKCECodeVerifier(),
       return_to: returnTo,
-      expires_at: Date.now() + ttlSeconds * 1000,
+      expires_at: now + ttlSeconds * 1000,
     };
-    this.database
-      .prepare(
-        "INSERT INTO oauth_flows (id, state, verifier, return_to, expires_at) VALUES (?, ?, ?, ?, ?)",
-      )
-      .run(flow.id, flow.state, flow.verifier, flow.return_to, flow.expires_at);
+    this.database.transaction(() => {
+      this.database.prepare("DELETE FROM oauth_flows WHERE expires_at < ?").run(now);
+      this.database
+        .prepare(
+          "INSERT INTO oauth_flows (id, state, verifier, return_to, expires_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run(flow.id, flow.state, flow.verifier, flow.return_to, flow.expires_at);
+      this.database
+        .prepare(
+          "DELETE FROM oauth_flows WHERE id IN (SELECT id FROM oauth_flows ORDER BY expires_at DESC, id DESC LIMIT -1 OFFSET 4096)",
+        )
+        .run();
+    })();
     return flow;
   }
 
@@ -106,12 +120,21 @@ export class AuthStore {
   ): { id: string; csrf: string; expires_at: number } {
     const id = randomToken();
     const csrf = randomToken();
-    const expiresAt = Date.now() + ttlSeconds * 1000;
-    this.database
-      .prepare(
-        "INSERT INTO sessions (id, subject, csrf_digest, expires_at) VALUES (?, ?, ?, ?)",
-      )
-      .run(id, subject, digest(csrf), expiresAt);
+    const now = Date.now();
+    const expiresAt = now + ttlSeconds * 1000;
+    this.database.transaction(() => {
+      this.database.prepare("DELETE FROM sessions WHERE expires_at < ?").run(now);
+      this.database
+        .prepare(
+          "INSERT INTO sessions (id, subject, csrf_digest, expires_at) VALUES (?, ?, ?, ?)",
+        )
+        .run(id, subject, digest(csrf), expiresAt);
+      this.database
+        .prepare(
+          "DELETE FROM sessions WHERE id IN (SELECT id FROM sessions ORDER BY expires_at DESC, id DESC LIMIT -1 OFFSET 4096)",
+        )
+        .run();
+    })();
     return { id, csrf, expires_at: expiresAt };
   }
 
@@ -127,7 +150,10 @@ export class AuthStore {
   }
 
   verifyCsrf(session: SessionRow, token: string): boolean {
-    return token.length > 20 && digest(token) === session.csrf_digest;
+    return (
+      token.length > 20 &&
+      timingSafeEqual(digestBytes(token), Buffer.from(session.csrf_digest, "hex"))
+    );
   }
 
   deleteSession(id: string): void {
@@ -172,7 +198,7 @@ export class AuthenticationService {
   private oidc: Configuration | null = null;
   private readonly bearerCache = new Map<
     string,
-    { subject: string; expires_at: number }
+    { subject: string | null; expires_at: number }
   >();
 
   constructor(
@@ -232,6 +258,8 @@ export class AuthenticationService {
       tokens.claims()?.sub ?? skipSubjectCheck,
     );
     if (!user.sub) throw new Error("OAuth user info has no stable subject");
+    if (!(await this.role(user.sub)))
+      throw new UnauthorizedSubjectError("OAuth identity is not authorized");
     const session = this.store.createSession(user.sub, this.oauth.session_ttl_seconds);
     return {
       session_id: session.id,
@@ -246,10 +274,15 @@ export class AuthenticationService {
   ): Promise<{ actor: AuthenticatedActor; session: SessionRow } | null> {
     const session = this.store.session(sessionId);
     if (!session) return null;
+    const role = await this.role(session.subject);
+    if (!role) {
+      this.store.deleteSession(session.id);
+      return null;
+    }
     return {
       actor: {
         subject: session.subject,
-        role: await this.role(session.subject),
+        role,
         transport: "session",
       },
       session,
@@ -259,15 +292,19 @@ export class AuthenticationService {
   async bearerActor(token: string): Promise<AuthenticatedActor> {
     const key = digest(token);
     const cached = this.bearerCache.get(key);
-    let subject =
-      cached?.expires_at && cached.expires_at > Date.now() ? cached.subject : null;
-    if (!subject) {
+    let subject: string | null | undefined =
+      cached?.expires_at && cached.expires_at > Date.now() ? cached.subject : undefined;
+    if (subject === null)
+      throw new InvalidBearerCredentialError("bearer token identity is invalid");
+    if (subject === undefined) {
       const response = await fetch("https://huggingface.co/api/whoami-v2", {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(10_000),
       });
-      if (!response.ok)
+      if (!response.ok) {
+        this.rememberBearer(key, null, 60_000);
         throw new InvalidBearerCredentialError("bearer token identity is invalid");
+      }
       const body = (await response.json()) as Record<string, unknown>;
       subject =
         typeof body.id === "string"
@@ -275,13 +312,33 @@ export class AuthenticationService {
           : typeof body.name === "string"
             ? body.name
             : null;
-      if (!subject)
+      if (!subject) {
+        this.rememberBearer(key, null, 60_000);
         throw new InvalidBearerCredentialError(
           "bearer token identity has no stable subject",
         );
-      this.bearerCache.set(key, { subject, expires_at: Date.now() + 300_000 });
+      }
+      this.rememberBearer(key, subject, 300_000);
     }
-    return { subject, role: await this.role(subject), transport: "bearer" };
+    const role = await this.role(subject);
+    if (!role)
+      throw new InvalidBearerCredentialError("bearer identity is not authorized");
+    return { subject, role, transport: "bearer" };
+  }
+
+  private rememberBearer(
+    key: string,
+    subject: string | null,
+    ttlMilliseconds: number,
+  ): void {
+    if (!this.bearerCache.has(key) && this.bearerCache.size >= 4096) {
+      const oldest = this.bearerCache.keys().next().value;
+      if (oldest) this.bearerCache.delete(oldest);
+    }
+    this.bearerCache.set(key, {
+      subject,
+      expires_at: Date.now() + ttlMilliseconds,
+    });
   }
 
   developmentActor(): AuthenticatedActor {
@@ -292,10 +349,11 @@ export class AuthenticationService {
     };
   }
 
-  async role(subject: string): Promise<AuthRole> {
+  async role(subject: string): Promise<AuthRole | null> {
     const acl = await this.acl();
     if (acl?.operators.includes(subject)) return "operator";
-    return "reader";
+    if (acl?.readers.includes(subject)) return "reader";
+    return null;
   }
 
   csrfValid(session: SessionRow, token: string | undefined): boolean {

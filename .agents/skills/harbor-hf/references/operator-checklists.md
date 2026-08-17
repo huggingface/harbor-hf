@@ -66,16 +66,16 @@ inspecting the named artifact or command output.
 ### Storage and secrets
 
 - [ ] The namespace resource inventory was captured before mutation.
-- [ ] The namespace has one private control Space and one private
-      `<artifact-bucket>` Bucket; their deployed names remain in private
-      configuration.
+- [ ] The namespace has one publicly reachable, application-protected control
+      Space and one private `<artifact-bucket>` Bucket; their deployed names
+      remain in private configuration.
 - [ ] The campaign creates no repository, Bucket, Space, Dataset, schedule,
       status store, lease store, backup store, or result service.
 - [ ] Any proposed persistent resource has an approved privacy or
       failure-domain justification, owner, cost, lifecycle, and removal
       condition.
 - [ ] Control Dataset, input Bucket, evidence Bucket, and unpublished result
-      stores are private.
+      stores are private. Anonymous Space routes cannot read them.
 - [ ] Benchmark source models contain no secret names or values.
 - [ ] No Git credential, SSH key, SSH agent, or credential helper is forwarded
       to remote infrastructure.
