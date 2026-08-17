@@ -397,14 +397,17 @@ describe("control API", () => {
     await app.close();
   });
 
-  it("does not trust caller-supplied forwarded-for hops for rate limits", async () => {
+  it("does not trust unverified identity or forwarded headers for limits", async () => {
     const { runtime, app } = await setup();
     for (let index = 0; index < 120; index += 1) {
       const response = await app.inject({
         method: "GET",
         url: "/health/live",
         headers: {
+          authorization: `Bearer unverified-${index}`,
+          cookie: `hhf_session=unverified-${index}`,
           "x-forwarded-for": `203.0.113.${(index % 250) + 1}`,
+          "x-harbor-hf-worker-capability": `unverified-${index}`,
         },
       });
       expect(response.statusCode).toBe(200);
@@ -412,7 +415,12 @@ describe("control API", () => {
     const limited = await app.inject({
       method: "GET",
       url: "/health/live",
-      headers: { "x-forwarded-for": "192.0.2.99" },
+      headers: {
+        authorization: "Bearer unverified-limited",
+        cookie: "hhf_session=unverified-limited",
+        "x-forwarded-for": "192.0.2.99",
+        "x-harbor-hf-worker-capability": "unverified-limited",
+      },
     });
     expect(limited.statusCode).toBe(429);
     expect(
@@ -430,6 +438,46 @@ describe("control API", () => {
         await app.inject({
           method: "GET",
           url: "/api/v1/campaigns/campaign-rate-limit/lock",
+          headers: { "x-harbor-hf-worker-capability": capability },
+        })
+      ).statusCode,
+    ).toBe(404);
+    await app.close();
+  });
+
+  it("keeps unverified capabilities in the shared anonymous API limit", async () => {
+    const { runtime, app } = await setup();
+    for (let index = 0; index < 240; index += 1) {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/system",
+        headers: {
+          "x-harbor-hf-worker-capability": `unverified-${index}`,
+        },
+      });
+      expect(response.statusCode).toBe(403);
+    }
+    const limited = await app.inject({
+      method: "GET",
+      url: "/api/v1/system",
+      headers: {
+        "x-harbor-hf-worker-capability": "unverified-limited",
+      },
+    });
+    expect(limited.statusCode).toBe(429);
+
+    const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
+      namespace: runtime.config.namespace,
+      campaign_id: "campaign-verified-limit",
+      action_id: "action-verified-limit",
+      task_ids: ["task-verified-limit"],
+      expires_at: Math.floor(Date.now() / 1000) + 60,
+    });
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/campaigns/campaign-verified-limit/lock",
           headers: { "x-harbor-hf-worker-capability": capability },
         })
       ).statusCode,

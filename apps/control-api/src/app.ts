@@ -23,7 +23,6 @@ import {
 } from "@harbor-hf/control-core";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
-import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import Fastify, {
@@ -95,21 +94,42 @@ function isMutation(request: FastifyRequest): boolean {
   return !["GET", "HEAD", "OPTIONS"].includes(request.method);
 }
 
-function requestRateLimitKey(request: FastifyRequest): string {
-  const capability = request.headers["x-harbor-hf-worker-capability"];
-  if (typeof capability === "string") return `capability:${sha256(capability)}`;
-  const authorization = request.headers.authorization;
-  if (authorization?.startsWith("Bearer "))
-    return `bearer:${sha256(authorization.slice("Bearer ".length))}`;
-  const session = request.cookies?.hhf_session;
-  if (session) return `session:${sha256(session)}`;
-  const flow = request.cookies?.hhf_oauth_flow;
-  if (flow) return `oauth-flow:${sha256(flow)}`;
-  const path = request.url.split("?", 1)[0] ?? request.url;
-  if (path.startsWith("/health/")) return "anonymous:health";
-  if (path.startsWith("/auth/")) return "anonymous:auth";
-  if (path.startsWith("/api/")) return "anonymous:api";
-  return "anonymous:static";
+class RequestLimiter {
+  private windowStartedAt = Date.now();
+  private readonly counts = new Map<string, number>();
+
+  allow(key: string, maximum: number, now = Date.now()): boolean {
+    if (now - this.windowStartedAt >= 60_000) {
+      this.windowStartedAt = now;
+      this.counts.clear();
+    }
+    const count = this.counts.get(key) ?? 0;
+    if (count >= maximum) return false;
+    if (!this.counts.has(key) && this.counts.size >= 4096) return false;
+    this.counts.set(key, count + 1);
+    return true;
+  }
+}
+
+async function admitRequest(
+  limiter: RequestLimiter,
+  key: string,
+  maximum: number,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<boolean> {
+  if (limiter.allow(key, maximum)) return true;
+  await reply
+    .header("Retry-After", "60")
+    .code(429)
+    .send({
+      error: {
+        code: "rate_limit_exceeded",
+        message: "request rate limit exceeded",
+        request_id: request.id,
+      },
+    });
+  return false;
 }
 
 function idempotencyKey(request: FastifyRequest): string {
@@ -239,6 +259,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     },
     trustProxy: false,
   });
+  const requestLimiter = new RequestLimiter();
   await app.register(cookie);
   await app.register(helmet, {
     contentSecurityPolicy: {
@@ -253,11 +274,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       },
     },
     crossOriginEmbedderPolicy: false,
-  });
-  await app.register(rateLimit, {
-    max: 240,
-    timeWindow: "1 minute",
-    keyGenerator: requestRateLimitKey,
   });
   await app.register(swagger, {
     openapi: {
@@ -283,11 +299,30 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   });
 
   app.addHook("onRequest", async (request, reply) => {
+    const path = request.url.split("?", 1)[0] ?? request.url;
+    if (path.startsWith("/api/v1") && path !== "/api/v1/auth/session") return;
+    const [key, maximum] = path.startsWith("/health/")
+      ? ["anonymous:health", 120]
+      : path === "/auth/login"
+        ? ["anonymous:login", 20]
+        : path === "/auth/callback"
+          ? ["anonymous:callback", 30]
+          : path === "/auth/logout"
+            ? ["anonymous:logout", 30]
+            : path === "/api/v1/auth/session"
+              ? ["anonymous:auth-session", 120]
+              : ["anonymous:static", 600];
+    await admitRequest(requestLimiter, key, maximum, request, reply);
+  });
+
+  app.addHook("onRequest", async (request, reply) => {
     if (!request.url.startsWith("/api/v1") || request.url === "/api/v1/auth/session")
       return;
     const capabilityHeader = request.headers["x-harbor-hf-worker-capability"];
     if (typeof capabilityHeader === "string") {
       if (!isWorkerCapabilityRoute(request)) {
+        if (!(await admitRequest(requestLimiter, "anonymous:api", 240, request, reply)))
+          return;
         await reply.code(403).send({
           error: {
             code: "worker_scope_rejected",
@@ -305,6 +340,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           )
         : null;
       if (!capability) {
+        if (!(await admitRequest(requestLimiter, "anonymous:api", 240, request, reply)))
+          return;
         await reply.code(401).send({
           error: {
             code: "worker_capability_rejected",
@@ -314,6 +351,16 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         });
         return;
       }
+      if (
+        !(await admitRequest(
+          requestLimiter,
+          `worker:${sha256(capability.action_id)}`,
+          2000,
+          request,
+          reply,
+        ))
+      )
+        return;
       request.workerCapability = capability;
       request.actor = {
         subject: `worker:${capability.action_id}`,
@@ -321,6 +368,16 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         transport: "bearer",
       };
     } else if (runtime.config.auth_mode === "development") {
+      if (
+        !(await admitRequest(
+          requestLimiter,
+          "development:operator",
+          1000,
+          request,
+          reply,
+        ))
+      )
+        return;
       request.actor = runtime.auth.developmentActor();
     } else {
       const authorization = request.headers.authorization;
@@ -344,6 +401,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
             return;
           }
           if (!(error instanceof InvalidBearerCredentialError)) throw error;
+          if (
+            !(await admitRequest(requestLimiter, "anonymous:api", 240, request, reply))
+          )
+            return;
           await reply.code(401).send({
             error: {
               code: "invalid_bearer_credential",
@@ -353,18 +414,40 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           });
           return;
         }
+        if (
+          !(await admitRequest(
+            requestLimiter,
+            `actor:${sha256(request.actor.subject)}`,
+            600,
+            request,
+            reply,
+          ))
+        )
+          return;
       } else {
         const sessionId = request.cookies.hhf_session;
         const authenticated = sessionId
           ? await runtime.auth.sessionActor(sessionId)
           : null;
         if (authenticated) {
+          if (
+            !(await admitRequest(
+              requestLimiter,
+              `session:${sha256(authenticated.session.id)}`,
+              600,
+              request,
+              reply,
+            ))
+          )
+            return;
           request.actor = authenticated.actor;
           request.authSession = authenticated.session;
         }
       }
     }
     if (!request.actor) {
+      if (!(await admitRequest(requestLimiter, "anonymous:api", 240, request, reply)))
+        return;
       await reply.code(401).send({
         error: {
           code: "authentication_required",
@@ -407,7 +490,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.get(
     "/health/live",
     {
-      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
       schema: { tags: ["system"] },
     },
     async () => ({ status: "live" }),
@@ -415,7 +497,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.get(
     "/health/ready",
     {
-      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
       schema: { tags: ["system"] },
     },
     async (_request, reply) => {
@@ -439,7 +520,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.get(
     "/auth/login",
     {
-      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
       schema: {
         tags: ["auth"],
         querystring: {
@@ -465,7 +545,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.get(
     "/auth/callback",
     {
-      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
       schema: { tags: ["auth"] },
     },
     async (request, reply) => {
@@ -504,7 +583,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.post(
     "/auth/logout",
     {
-      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
       schema: { tags: ["auth"] },
     },
     async (request, reply) => {
@@ -519,7 +597,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.get(
     "/api/v1/auth/session",
     {
-      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
       schema: { tags: ["auth"], response: { 200: sessionSchema, 401: sessionSchema } },
     },
     async (request, reply) => {

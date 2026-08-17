@@ -286,8 +286,9 @@ in the action intent.
 The service does not enable cross-origin API access. It sets a strict Content
 Security Policy, request body limits, response security headers, and request
 limits. Forwarded client IP headers are not trusted because the hosting proxy
-may pass caller-supplied values. Limits use hashes of capabilities, bearer
-credentials, sessions, or OAuth flows. Anonymous limits are separate for health,
+may pass caller-supplied values. Unverified credentials stay in shared
+anonymous route limits. After authentication, limits use hashes of verified
+worker actions, actors, or sessions. Anonymous limits are separate for health,
 authentication, API, and static routes, so exhausting one does not block an
 authorized worker or operator. Authentication runs before request-body parsing,
 so an anonymous caller cannot force the service to parse a large worker
