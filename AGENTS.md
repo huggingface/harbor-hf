@@ -99,4 +99,4 @@
   scope is approved in the repository-indexed project file before continuing.
 - Before planning, launching, monitoring, reconciling, recovering, verifying,
   or publishing a Harbor HF campaign, read and follow
-  `skills/harbor-hf/SKILL.md`.
+  `.agents/skills/harbor-hf/SKILL.md`.

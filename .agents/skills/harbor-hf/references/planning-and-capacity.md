@@ -163,7 +163,7 @@ Generate a current plan and run:
 ```bash
 uv run harbor-hf validate MANIFEST
 uv run harbor-hf campaign plan MANIFEST --format json > PLAN.json
-uv run python skills/harbor-hf/scripts/check_wave_budget.py \
+uv run python .agents/skills/harbor-hf/scripts/check_wave_budget.py \
   --manifest MANIFEST \
   --plan PLAN.json \
   --planning-trial-seconds 480 \

@@ -9,7 +9,7 @@ from typing import cast
 import yaml
 
 ROOT = Path(__file__).parents[1]
-SKILL_ROOT = ROOT / "skills" / "harbor-hf"
+SKILL_ROOT = ROOT / ".agents" / "skills" / "harbor-hf"
 SCRIPT = SKILL_ROOT / "scripts" / "check_wave_budget.py"
 
 

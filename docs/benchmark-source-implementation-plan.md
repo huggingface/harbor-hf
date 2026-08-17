@@ -224,7 +224,7 @@ Update:
 - `docs/harbor-cookbook.md`
 - `docs/single-job-campaign-controller.md`
 - `docs/harbor-integration-contract.md`
-- `skills/harbor-hf/`
+- `.agents/skills/harbor-hf/`
 - examples and ShellBench launch generators
 
 `validate` reports the requested source type and path errors. `campaign plan` reports the resolved source type, content digest, entry count, total bytes, and whether an existing remote bundle was inspected. It creates no remote resource.

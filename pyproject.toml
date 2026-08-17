@@ -73,6 +73,6 @@ also_copy = [
   "docs",
   "schemas",
   "scripts",
-  "skills",
+  ".agents/skills",
   "packages/harbor-hf-agents",
 ]
