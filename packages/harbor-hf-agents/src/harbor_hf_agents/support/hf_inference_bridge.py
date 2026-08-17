@@ -43,6 +43,7 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
     timeout_seconds = int(os.environ["HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"])
     max_output_tokens = int(os.environ["HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"])
     max_response_bytes = min(64 * 1024 * 1024, 1024 * 1024 + max_output_tokens * 32)
+    local_api_key = "harbor-local-inference-bridge"
     base_path = upstream.path.rstrip("/")
     admission = threading.BoundedSemaphore(max_concurrency)
     counter_lock = threading.Lock()
@@ -56,7 +57,7 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
             if self.path != allowed_path:
                 self.send_error(404)
                 return
-            if self.headers.get("Authorization") != f"Bearer {_LOCAL_API_KEY}":
+            if self.headers.get("Authorization") != f"Bearer {local_api_key}":
                 self.send_error(401)
                 return
             if not admission.acquire(blocking=False):

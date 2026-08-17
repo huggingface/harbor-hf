@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 import inspect
+import os
+import socket
+import subprocess
+import sys
+import textwrap
+import time
+import urllib.error
+import urllib.request
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +25,57 @@ def test_embedded_bridge_avoids_python_312_only_typing_symbols() -> None:
 
     assert "from typing import override" not in source
     assert "@override" not in source
+
+
+def test_embedded_bridge_runs_without_module_globals() -> None:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    script = textwrap.dedent(inspect.getsource(_run_hf_inference_bridge))
+    script += "\n_run_hf_inference_bridge()\n"
+    env = {
+        **os.environ,
+        "HARBOR_HF_INFERENCE_UPSTREAM": "https://router.huggingface.co",
+        "HARBOR_HF_INFERENCE_TOKEN": "test-token",
+        "HARBOR_HF_INFERENCE_LOCAL_PORT": str(port),
+        "HARBOR_HF_INFERENCE_ALLOWED_PATH": "/v1/chat/completions",
+        "HARBOR_HF_INFERENCE_ALLOWED_MODEL": "locked-model",
+        "HARBOR_HF_INFERENCE_MAX_REQUESTS": "1",
+        "HARBOR_HF_INFERENCE_MAX_CONCURRENCY": "1",
+        "HARBOR_HF_INFERENCE_TIMEOUT_SECONDS": "10",
+        "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS": "64",
+    }
+    process = subprocess.Popen(
+        [sys.executable, "-c", script],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/v1/chat/completions",
+        data=b"{}",
+        headers={"Authorization": "Bearer wrong-key"},
+        method="POST",
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                urllib.request.urlopen(request, timeout=0.5)  # noqa: S310
+            except urllib.error.HTTPError as error:
+                assert error.code == 401
+                break
+            except urllib.error.URLError:
+                if process.poll() is not None or time.monotonic() >= deadline:
+                    stdout, stderr = process.communicate(timeout=1)
+                    pytest.fail(f"bridge did not start: {stdout=} {stderr=}")
+                time.sleep(0.05)
+            else:
+                pytest.fail("bridge accepted an invalid local API key")
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
 
 
 _LIMITS = {
