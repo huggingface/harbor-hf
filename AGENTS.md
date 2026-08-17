@@ -68,11 +68,13 @@
   service, backup store, lease store, or status store. Any exception requires an
   inventory, a reason the two canonical resources cannot meet the requirement,
   lifecycle and cost records, and explicit approval.
-- The control Space has exactly one operator-managed persistent secret named
-  `HF_TOKEN`. Its value is an approved fine-grained service token. Do not
-  publish the token's display name or local alias. Do not create a second
-  Harbor-HF credential for a migration, campaign, repair, worker, backup, or
-  result reader.
+- The control Space has exactly two operator-managed persistent secrets.
+  `HF_TOKEN` is the approved fine-grained control credential and must never
+  leave the control Space. `HF_INFERENCE_TOKEN` is the separate inference-only
+  credential and may be passed only to reviewed workers whose immutable
+  deployment profile requires it. Do not publish either token's display name or
+  local alias. Do not create another Harbor-HF credential for a migration,
+  campaign, repair, worker, backup, or result reader.
 - Treat any other Harbor-HF service credential as a deprecation candidate. Do
   not revoke it until a private consumer audit and a canary using only the
   retained credential prove that control writes, evidence upload, endpoint

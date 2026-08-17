@@ -15,7 +15,7 @@ test("shows the operational overview on desktop and mobile", async ({ page }) =>
         source_revision: "test-revision",
         write_mode: "canary",
         projection: { ready: true, object_count: 12 },
-        resource_contract: { spaces: 1, buckets: 1, operator_secrets: 1 },
+        resource_contract: { spaces: 1, buckets: 1, operator_secrets: 2 },
       },
     }),
   );

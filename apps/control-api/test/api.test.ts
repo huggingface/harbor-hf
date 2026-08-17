@@ -315,6 +315,18 @@ describe("control API", () => {
     await app.close();
   });
 
+  it("reports the two-secret resource contract", async () => {
+    const { app } = await setup();
+    const response = await app.inject({ method: "GET", url: "/api/v1/system" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().resource_contract).toEqual({
+      spaces: 1,
+      buckets: 1,
+      operator_secrets: 2,
+    });
+    await app.close();
+  });
+
   it("keeps protected public ingress deny-by-default", async () => {
     const { runtime, app } = await setup();
     runtime.config.auth_mode = "oauth";

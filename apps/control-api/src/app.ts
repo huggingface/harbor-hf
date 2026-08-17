@@ -664,7 +664,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       source_revision: runtime.config.source_revision,
       write_mode: runtime.config.write_mode,
       projection: runtime.projection.system(),
-      resource_contract: { spaces: 1, buckets: 1, operator_secrets: 1 },
+      resource_contract: { spaces: 1, buckets: 1, operator_secrets: 2 },
     }),
   );
 

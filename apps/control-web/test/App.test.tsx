@@ -163,7 +163,7 @@ describe("control web", () => {
             source_revision: "revision",
             write_mode: "canary",
             projection: { ready: true, object_count: 4 },
-            resource_contract: { spaces: 1, buckets: 1, operator_secrets: 1 },
+            resource_contract: { spaces: 1, buckets: 1, operator_secrets: 2 },
           });
         if (path.includes("/campaigns")) return json({ items: [], next_cursor: null });
         if (path.includes("/endpoints")) return json({ items: [] });
