@@ -9,49 +9,53 @@ default_branch: main
 
 ## Current authorization
 
-Status: pending
+Status: approved
 Approved at: 2026-08-17T06:48:55Z
 Amended at: 2026-08-17T09:13:49Z
+Inference-token amendment approved at: 2026-08-17T15:37:46Z
 Pending amendment at: 2026-08-17T13:30:03Z
 
 ### Scope
 
 - Add the project-authorization skill and this repository-indexed project file through the normal contribution workflow.
 - Finish deployment and hard cutover of the hosted TypeScript control service described by the approved control-service plan.
-- Install the retained purpose-scoped service credential as the control Space's only operator-managed `HF_TOKEN` secret.
+- Install the retained purpose-scoped service credential as the control Space's `HF_TOKEN` control secret.
 - Run the hosted no-inference recovery and cutover canaries, plus only bounded paid canaries required by the approved plan.
 - Promote the verified historical migration and enable production writes only after every required gate passes.
 - Audit legacy consumers and unique objects before proposing any resource retirement.
 - Make the existing control Space publicly reachable only after adding and verifying application-layer protection for operator, browser, and worker routes.
-- Admit workers with short-lived, signed, campaign-scoped capabilities instead of a persistent Hugging Face credential.
+- Admit workers with short-lived, signed, campaign-scoped control capabilities.
+- Install a separate, regularly rotated, inference-only Hugging Face credential in the existing control Space and pass it only to reviewed benchmark workers as `HF_INFERENCE_TOKEN`.
 
 ### Limits
 
 - Deploy an exact merged source revision with writes disabled first.
 - Use `cpu-upgrade` at USD 0.03 per active hour for the always-on control service.
 - Keep total project spend within USD 300. This includes campaign, recovery, provider and endpoint costs plus the control service.
-- Do not create another persistent Space, Bucket, repository, Dataset, schedule, credential, lease store, status store, backup store, or result store.
+- Do not create another persistent Space, Bucket, repository, Dataset, schedule, credential beyond the approved inference credential, lease store, status store, backup store, or result store.
 - Do not rerun valid logical tasks or use inference during migration and publication recovery.
-- Keep credential values, private resource identifiers, operator paths, and private topology out of Git and browsers. Do not expose them in logs or worker environments.
+- Keep credential values, private resource identifiers, operator paths, and private topology out of Git and browsers. Do not expose credentials in logs or evidence; the approved inference credential may appear only in the trusted worker or root-owned inference bridge environment.
 - Do not delete or retire a legacy resource without its completed private audit and a separate explicit approval for that resource.
 - Anonymous callers may reach only bounded public surfaces such as static application assets, login initiation, OAuth return handling, and health checks. Control data and operator mutations remain deny-by-default.
 - Add bounded request-body and anonymous request-rate controls before changing Space visibility. If hosted denial, capability, or abuse-control verification fails, restore private visibility, disable writes, and stop.
-- Keep the existing single-secret rule. Workers must not receive `HF_TOKEN` or another persistent Hugging Face credential.
+- Keep exactly two operator-managed Space secrets: the control credential `HF_TOKEN` and the inference-only `HF_INFERENCE_TOKEN`.
+- Workers must never receive `HF_TOKEN`. They may receive only `HF_INFERENCE_TOKEN`, whose permissions are limited to serverless and Endpoint inference calls.
+- Pin each worker image and command, enforce the locked model, route, token, request, concurrency, timeout, and cost limits in the worker bridge, and rotate the inference credential regularly. Revoke the prior credential only after every Job using it is terminal.
 
 ### Pending amendment
 
-The protected callback and migration gates passed, but real Harbor benchmark workers also need model inference and Hugging Face sandbox lifecycle access. Those workers cannot receive the persistent service credential.
+The protected callback and migration gates passed. The inference path is now authorized through the dedicated rotating worker credential above, but real Harbor benchmark workers still need Hugging Face sandbox lifecycle access.
 
 Pending scope:
 
-- Extend signed worker capabilities to exact model-inference and Hugging Face sandbox or Job lifecycle operations performed by the control Space on the worker's behalf.
+- Extend signed worker capabilities to exact Hugging Face sandbox or Job lifecycle operations performed by the control Space on the worker's behalf.
 - Migrate the remaining active ShellBench result catalog needed for parity before replacing the legacy results viewer.
 
 Pending limits:
 
-- Bind every proxied operation to the immutable campaign lock, launch action, task set, model or endpoint, expiration, and approved budget.
-- Record immutable provider, cost, routing, and lifecycle evidence. Do not build a general Hugging Face API proxy.
-- Keep `HF_TOKEN` in the control Space. Do not add a credential, persistent resource, writable worker mount, or browser-visible private reference.
+- Bind every proxied lifecycle operation to the immutable campaign lock, launch action, task set, expiration, and approved budget.
+- Record immutable cost and lifecycle evidence. Do not build a general Hugging Face API proxy.
+- Keep `HF_TOKEN` in the control Space. Do not pass it to a worker or add another persistent resource, writable worker mount, or browser-visible private reference.
 - Keep production writes disabled and use free development hardware until local security tests and bounded hosted canaries pass.
 - Do not retire the legacy results viewer or stores until catalog parity is verified. No deletion is authorized.
 
@@ -62,4 +66,5 @@ Pending limits:
 - Approved the current scope and limits before the remaining project work starts.
 - Directed the project to keep one authorization file indexed by canonical repository slug and to record approvals here.
 - At 2026-08-17T09:13:49Z, approved protected public ingress for the existing control Space so workers can use short-lived capabilities without receiving a persistent Hugging Face credential.
-- At 2026-08-17T13:30:03Z, requested an additional decision on capability-scoped inference and sandbox lifecycle operations plus the remaining legacy result-catalog migration. This amendment is pending.
+- At 2026-08-17T13:30:03Z, requested an additional decision on capability-scoped inference and sandbox lifecycle operations plus the remaining legacy result-catalog migration.
+- At 2026-08-17T15:37:46Z, approved replacing the proposed inference gateway with a separate inference-only credential passed to reviewed workers and rotated regularly. The broader control credential remains confined to the control Space. Sandbox lifecycle operations and remaining result-catalog migration remain pending.
