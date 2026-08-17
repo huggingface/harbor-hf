@@ -9,9 +9,10 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: pending
 Approved at: 2026-08-17T06:48:55Z
 Amended at: 2026-08-17T09:13:49Z
+Pending amendment at: 2026-08-17T13:30:03Z
 
 ### Scope
 
@@ -37,6 +38,23 @@ Amended at: 2026-08-17T09:13:49Z
 - Add bounded request-body and anonymous request-rate controls before changing Space visibility. If hosted denial, capability, or abuse-control verification fails, restore private visibility, disable writes, and stop.
 - Keep the existing single-secret rule. Workers must not receive `HF_TOKEN` or another persistent Hugging Face credential.
 
+### Pending amendment
+
+The protected callback and migration gates passed, but real Harbor benchmark workers also need model inference and Hugging Face sandbox lifecycle access. Those workers cannot receive the persistent service credential.
+
+Pending scope:
+
+- Extend signed worker capabilities to exact model-inference and Hugging Face sandbox or Job lifecycle operations performed by the control Space on the worker's behalf.
+- Migrate the remaining active ShellBench result catalog needed for parity before replacing the legacy results viewer.
+
+Pending limits:
+
+- Bind every proxied operation to the immutable campaign lock, launch action, task set, model or endpoint, expiration, and approved budget.
+- Record immutable provider, cost, routing, and lifecycle evidence. Do not build a general Hugging Face API proxy.
+- Keep `HF_TOKEN` in the control Space. Do not add a credential, persistent resource, writable worker mount, or browser-visible private reference.
+- Keep production writes disabled and use free development hardware until local security tests and bounded hosted canaries pass.
+- Do not retire the legacy results viewer or stores until catalog parity is verified. No deletion is authorized.
+
 ## Approval history
 
 ### 2026-08-17
@@ -44,3 +62,4 @@ Amended at: 2026-08-17T09:13:49Z
 - Approved the current scope and limits before the remaining project work starts.
 - Directed the project to keep one authorization file indexed by canonical repository slug and to record approvals here.
 - At 2026-08-17T09:13:49Z, approved protected public ingress for the existing control Space so workers can use short-lived capabilities without receiving a persistent Hugging Face credential.
+- At 2026-08-17T13:30:03Z, requested an additional decision on capability-scoped inference and sandbox lifecycle operations plus the remaining legacy result-catalog migration. This amendment is pending.
