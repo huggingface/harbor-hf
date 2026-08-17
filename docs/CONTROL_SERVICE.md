@@ -306,6 +306,12 @@ launch action, and task set. That capability is accepted only by the worker
 campaign-lock and attempt-receipt routes, is redacted from logs, and cannot
 invoke operator or collection APIs.
 
+The built-in control smoke Job runs a reviewed inline script in a digest-pinned
+official Node.js image. It refuses persistent control credentials, reads its
+campaign lock, uploads canonical evidence, and submits one task receipt through
+its scoped capability. Control smoke success requires that worker receipt, so a
+completed Job cannot hide a broken callback path.
+
 ## Local projection
 
 SQLite runs on the Space's local ephemeral filesystem. It is never opened on a
