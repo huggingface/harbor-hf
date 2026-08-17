@@ -13,6 +13,7 @@ Status: approved
 Approved at: 2026-08-17T06:48:55Z
 Amended at: 2026-08-17T09:13:49Z
 Inference-token amendment approved at: 2026-08-17T15:37:46Z
+Sandbox-lifecycle amendment approved at: 2026-08-17T18:39:15Z
 Pending amendment at: 2026-08-17T13:30:03Z
 
 ### Scope
@@ -26,6 +27,8 @@ Pending amendment at: 2026-08-17T13:30:03Z
 - Make the existing control Space publicly reachable only after adding and verifying application-layer protection for operator, browser, and worker routes.
 - Admit workers with short-lived, signed, campaign-scoped control capabilities.
 - Install a separate, regularly rotated, inference-only Hugging Face credential in the existing control Space and pass it only to reviewed benchmark workers as `HF_INFERENCE_TOKEN`.
+- Extend signed worker capabilities to exact Hugging Face Sandbox lifecycle operations performed by the control Space for an immutable campaign task.
+- Prepare and run the requested Terminal-Bench 3 campaign for the locked model in low adaptive-thinking mode after the bounded paid canary and launch-review gates pass.
 
 ### Limits
 
@@ -41,21 +44,20 @@ Pending amendment at: 2026-08-17T13:30:03Z
 - Keep exactly two operator-managed Space secrets: the control credential `HF_TOKEN` and the inference-only `HF_INFERENCE_TOKEN`.
 - Workers must never receive `HF_TOKEN`. They may receive only `HF_INFERENCE_TOKEN`, whose permissions are limited to serverless and Endpoint inference calls.
 - Pin each worker image and command, enforce the locked model, route, token, request, concurrency, timeout, and cost limits in the worker bridge, and rotate the inference credential regularly. Revoke the prior credential only after every Job using it is terminal.
+- Bind every Sandbox operation to the immutable campaign lock, launch action, task, expiration, approved image, hardware, paths, transfer limits, timeouts, and budget. Record fenced lifecycle receipts and do not expose a general Hugging Face API proxy.
+- Keep `HF_TOKEN` in the control Space. Never pass it to a worker or Sandbox. The control Space may derive and use a per-Sandbox credential only inside its trusted process while handling an authorized lifecycle operation.
+- Keep the first Terminal-Bench canary below USD 5. Treat the full campaign as substantial paid compute: measure throughput and cost first, preserve durable partial evidence, prove pause and resume, and obtain explicit approval for the exact trial count, concurrency, hardware, and hard cost ceiling before launch.
 
 ### Pending amendment
 
-The protected callback and migration gates passed. The inference path is now authorized through the dedicated rotating worker credential above, but real Harbor benchmark workers still need Hugging Face sandbox lifecycle access.
+Sandbox lifecycle operations are now authorized through exact signed worker capabilities. The remaining active ShellBench result catalog still needs a separate decision before migration and viewer replacement.
 
 Pending scope:
 
-- Extend signed worker capabilities to exact Hugging Face sandbox or Job lifecycle operations performed by the control Space on the worker's behalf.
 - Migrate the remaining active ShellBench result catalog needed for parity before replacing the legacy results viewer.
 
 Pending limits:
 
-- Bind every proxied lifecycle operation to the immutable campaign lock, launch action, task set, expiration, and approved budget.
-- Record immutable cost and lifecycle evidence. Do not build a general Hugging Face API proxy.
-- Keep `HF_TOKEN` in the control Space. Do not pass it to a worker or add another persistent resource, writable worker mount, or browser-visible private reference.
 - Keep production writes disabled and use free development hardware until local security tests and bounded hosted canaries pass.
 - Do not retire the legacy results viewer or stores until catalog parity is verified. No deletion is authorized.
 
@@ -67,4 +69,5 @@ Pending limits:
 - Directed the project to keep one authorization file indexed by canonical repository slug and to record approvals here.
 - At 2026-08-17T09:13:49Z, approved protected public ingress for the existing control Space so workers can use short-lived capabilities without receiving a persistent Hugging Face credential.
 - At 2026-08-17T13:30:03Z, requested an additional decision on capability-scoped inference and sandbox lifecycle operations plus the remaining legacy result-catalog migration.
-- At 2026-08-17T15:37:46Z, approved replacing the proposed inference gateway with a separate inference-only credential passed to reviewed workers and rotated regularly. The broader control credential remains confined to the control Space. Sandbox lifecycle operations and remaining result-catalog migration remain pending.
+- At 2026-08-17T15:37:46Z, approved replacing the proposed inference gateway with a separate inference-only credential passed to reviewed workers and rotated regularly. The broader control credential remains confined to the control Space. Sandbox lifecycle operations and remaining result-catalog migration remained pending.
+- At 2026-08-17T18:39:15Z, authorized finalizing the project, including capability-scoped Sandbox lifecycle operations and the requested Terminal-Bench 3 low-thinking campaign. The full paid campaign remains subject to the mandatory measured-cost launch approval. Remaining result-catalog migration is still pending.
