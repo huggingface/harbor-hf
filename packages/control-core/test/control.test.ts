@@ -531,7 +531,7 @@ describe("control service", () => {
     const control = await createTestControl(2);
     controls.push(control);
     const result = await control.service.submit(
-      submission,
+      { ...submission, ceiling_microusd: 1_000 },
       "sandbox-limit-key",
       operator,
     );
@@ -541,7 +541,7 @@ describe("control service", () => {
       timeout_seconds: 3_600,
       idle_timeout_seconds: 600,
       inference_token: "forbidden",
-      reservation_microusd: 0,
+      reservation_microusd: 100,
       active_hourly_cost_microusd: 0,
       max_sandboxes: 1,
       max_commands: 8,
@@ -565,6 +565,14 @@ describe("control service", () => {
     const winner = creates[winnerIndex];
     const loser = creates[1 - winnerIndex];
     if (!winner || !loser) throw new Error("Sandbox admission result is incomplete");
+    expect(
+      await control.service.reserveSandbox(
+        result.campaign_id,
+        winner.action_id,
+        winner.created_at,
+        policy.reservation_microusd,
+      ),
+    ).toBe(true);
     const createReceipt = await control.service.receipt(winner, {
       outcome: "created",
       observed_state: "RUNNING",
@@ -584,13 +592,35 @@ describe("control service", () => {
       },
     );
     await control.service.writeAction(close);
-    const closeReceipt = await control.service.receipt(close, {
+    const failedCloseReceipt = await control.service.receipt(close, {
+      outcome: "failed",
+      observed_state: "ERROR",
+      resource_id: "sandbox-limit-resource",
+      error_code: "sandbox-api-unavailable",
+    });
+    await control.service.markAdvanced(close, failedCloseReceipt);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      reserved_microusd: 100,
+    });
+    await expect(control.service.admitSandboxCreate(loser, 1)).rejects.toThrow(
+      "Sandbox count exceeds immutable policy",
+    );
+
+    const recoveredClose = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.close",
+      "sandbox-limit-resource",
+      1,
+      close.payload,
+    );
+    await control.service.writeAction(recoveredClose);
+    const recoveredCloseReceipt = await control.service.receipt(recoveredClose, {
       outcome: "completed",
       observed_state: "CANCELED",
       resource_id: "sandbox-limit-resource",
       cost_microusd: 0,
     });
-    await control.service.markAdvanced(close, closeReceipt);
+    await control.service.markAdvanced(recoveredClose, recoveredCloseReceipt);
 
     await expect(control.service.admitSandboxCreate(loser, 1)).resolves.toEqual({
       dispatch_created: true,
@@ -628,6 +658,7 @@ describe("control service", () => {
     );
     await control.service.writeAction(create);
     const observed: string[] = [];
+    let closeAttempts = 0;
     const noop = new NoopActions();
     const external: ExternalActionPort = {
       execute: async (intent): Promise<ExternalActionResult> => {
@@ -638,12 +669,21 @@ describe("control service", () => {
             observed_state: "RUNNING",
             resource_id: "sandbox-cancellation-resource",
           };
-        if (intent.action_kind === "sandbox.close")
-          return {
-            outcome: "completed",
-            observed_state: "CANCELED",
-            resource_id: "sandbox-cancellation-resource",
-          };
+        if (intent.action_kind === "sandbox.close") {
+          closeAttempts += 1;
+          return closeAttempts === 1
+            ? {
+                outcome: "failed",
+                observed_state: "ERROR",
+                resource_id: "sandbox-cancellation-resource",
+                error_code: "sandbox-api-unavailable",
+              }
+            : {
+                outcome: "completed",
+                observed_state: "CANCELED",
+                resource_id: "sandbox-cancellation-resource",
+              };
+        }
         if (intent.action_kind === "job.cancel")
           return {
             outcome: "completed",
@@ -704,9 +744,12 @@ describe("control service", () => {
     await settle(reconciler, 24);
 
     expect(observed).toContain("sandbox.close");
-    const close = (await control.projection.campaignActions(result.campaign_id)).find(
-      (action) => action.action_kind === "sandbox.close",
-    );
+    const closes = (
+      await control.projection.campaignActions(result.campaign_id)
+    ).filter((action) => action.action_kind === "sandbox.close");
+    expect(closes).toHaveLength(2);
+    expect(closes.some((action) => action.outcome === "failed")).toBe(true);
+    const close = closes.find((action) => action.outcome === "completed");
     expect(close?.observed_state).toBe("CANCELED");
     expect(
       close ? await control.projection.actionDispatch(close.action_id) : null,

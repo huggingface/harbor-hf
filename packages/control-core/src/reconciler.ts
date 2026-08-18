@@ -958,7 +958,9 @@ export class Reconciler {
       if (
         closes.some(
           (action) =>
-            action.receipt_body !== null && jobStateIsTerminal(action.observed_state),
+            action.receipt_body !== null &&
+            action.outcome === "completed" &&
+            jobStateIsTerminal(action.observed_state),
         )
       )
         continue;

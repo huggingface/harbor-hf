@@ -617,6 +617,7 @@ export class ControlService {
           (row) =>
             row.action_kind === "sandbox.close" &&
             row.receipt_body !== null &&
+            row.outcome === "completed" &&
             [
               "CANCELED",
               "CANCELLED",
@@ -1048,7 +1049,13 @@ export class ControlService {
         policy.reservation_microusd,
         receipt.cost_microusd ?? 0,
       );
-    } else if (intent.action_kind === "sandbox.close") {
+    } else if (
+      intent.action_kind === "sandbox.close" &&
+      receipt.outcome === "completed" &&
+      ["CANCELED", "CANCELLED", "COMPLETED", "DELETED", "ERROR", "STOPPED"].includes(
+        receipt.observed_state.toUpperCase(),
+      )
+    ) {
       const policy = intent.payload.sandbox;
       const createActionId = intent.payload.sandbox_create_action_id;
       if (!policy || typeof createActionId !== "string")
