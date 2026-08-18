@@ -1,5 +1,6 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import type * as React from "react";
+import { ApiError } from "./api";
 import { cn } from "./lib";
 
 const buttonVariants = cva(
@@ -95,5 +96,96 @@ export function Loading() {
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400 motion-reduce:animate-none" />
       Loading
     </div>
+  );
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error("The request failed.");
+}
+
+function errorTitle(error: unknown): string {
+  if (!(error instanceof ApiError)) return "Request failed";
+  if (error.status === 0) return "Offline";
+  if (error.status === 429) return "Rate limited";
+  if (error.status === 403) return "Forbidden";
+  if (error.status === 404) return "Not found";
+  if (error.status >= 500) return "Server error";
+  return "Request failed";
+}
+
+export function ErrorNotice({
+  error,
+  retry,
+  stale = false,
+}: {
+  error: unknown;
+  retry?: () => void;
+  stale?: boolean;
+}) {
+  const normalized = asError(error);
+  const apiError = error instanceof ApiError ? error : null;
+  return (
+    <Card
+      className={cn(
+        "border-rose-500/40 bg-rose-500/5 text-sm",
+        stale && "mb-4 border-amber-500/40 bg-amber-500/5",
+      )}
+      role="alert"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-medium text-slate-100">
+            {stale ? "Showing saved data" : errorTitle(error)}
+          </p>
+          <p className="mt-1 text-slate-400">
+            {stale
+              ? `The latest refresh failed: ${normalized.message}`
+              : normalized.message}
+          </p>
+          {apiError?.retryAt ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Retry after {new Date(apiError.retryAt).toLocaleTimeString()}.
+            </p>
+          ) : null}
+          {apiError?.requestId ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Request ID: <code className="select-all">{apiError.requestId}</code>
+            </p>
+          ) : null}
+        </div>
+        {retry ? (
+          <Button variant="outline" onClick={retry}>
+            Retry
+          </Button>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+interface QueryStateLike {
+  data: unknown;
+  error: unknown;
+  isPending: boolean;
+  refetch: () => Promise<unknown>;
+}
+
+export function QueryContent({
+  query,
+  children,
+}: {
+  query: QueryStateLike;
+  children: React.ReactNode;
+}) {
+  if (query.isPending && query.data === undefined) return <Loading />;
+  if (query.error && query.data === undefined)
+    return <ErrorNotice error={query.error} retry={() => void query.refetch()} />;
+  return (
+    <>
+      {query.error ? (
+        <ErrorNotice error={query.error} retry={() => void query.refetch()} stale />
+      ) : null}
+      {children}
+    </>
   );
 }

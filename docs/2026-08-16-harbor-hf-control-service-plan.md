@@ -21,6 +21,62 @@ Historical campaigns and publications remain immutable and readable.
 detached controller Job remain authoritative until the implementation passes
 its production gates and the new-write cutover is complete.
 
+## Web reliability and production usability
+
+The production web application must use SSE as its main update path. While SSE
+is connected, active queries do not poll. When the connection is down, visible
+pages may refresh active non-session queries once per minute. Typed control
+events refresh only the affected campaign, task, resource, profile, result, or
+audit queries. They never refresh the browser session.
+
+A valid browser session remains usable through transient rate limits, server
+errors, and network loss. Only a `401` response signs the user out. The browser
+keeps the last valid shell and query data, respects `Retry-After`, uses bounded
+delayed retries, and labels stale data. Error states distinguish offline,
+rate-limited, forbidden, missing, and server-failure responses and may show a
+safe request ID.
+
+OAuth subjects remain the access-control and audit identity. The browser
+session returns the Hugging Face username, role, transport, and expiry without
+returning the OAuth subject. Login returns only to a validated same-origin
+route. Users can sign out from the application. Sessions remain in the local,
+disposable service database and are lost when the Space restarts. This is an
+explicit availability tradeoff: signing in again is safe and infrequent, so a
+new persistent session store is not justified.
+
+Write role and write mode are separate checks. An operator can have permission
+to write while the deployment has writes disabled. Every browser mutation is
+disabled unless both checks pass, with a clear explanation. Server-side role,
+CSRF, write-mode, policy, and budget checks remain authoritative.
+
+Campaign launch uses approved profile aliases rather than free text. Before
+submission, the browser shows each immutable profile ID and safe resolved spec,
+task count, model revision, hardware, attempt limit, estimated reservation, and
+the exact dollar ceiling. The request keeps exact `ceiling_microusd` units.
+
+The integrated results browser replaces the archived viewer for normal result
+inspection. It provides bounded server-side model, benchmark, agent, status,
+and date filters, text search, useful sorting, and stable result detail routes.
+The detail view shows scores, task counts, revisions, the campaign link, and
+allowlisted provenance. Existing evidence redaction and cursor limits still
+apply.
+
+The system view shows the complete copyable source revision, whether writes are
+disabled, the projection state, and the last successful projection update.
+Live status means one of connected, reconnecting, offline, or stale and includes
+the last successful update. It does not imply that a benchmark is running.
+
+Acceptance for this slice requires focused unit and browser tests for rate
+limits, server and network failures, SSE reconnect, no polling while connected,
+typed invalidation, session preservation, username display, hidden OAuth
+subjects, disabled writes, safe return paths, stale data, and result and campaign
+errors. Run the generated-contract check, formatting, lint, type checks, unit
+tests, browser tests, build, dependency checks, SimpleDoc, and public privacy
+check before publication.
+
+This slice does not deploy or change the live Space, add a persistent store,
+change ACL keys, expose private evidence, or weaken server-side enforcement.
+
 ## Decision
 
 Build one publicly reachable, application-protected, always-on Docker Space per

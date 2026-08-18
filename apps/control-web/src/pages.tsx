@@ -6,6 +6,7 @@ import {
   ArrowRight,
   CircleDollarSign,
   Clock3,
+  Gauge,
   PauseCircle,
   PlayCircle,
   Plus,
@@ -26,10 +27,12 @@ import {
   type EndpointList,
   type JobList,
   type ProfileList,
+  type ResultDetail,
   type ResultList,
   type TaskList,
 } from "./api";
 import { DataTable } from "./components/data-table";
+import { useControlState } from "./control-state";
 import { PageHeader } from "./layout";
 import { formatDate, formatMoney, humanize, shortId } from "./lib";
 import {
@@ -40,12 +43,13 @@ import {
   useEndpoints,
   useJobs,
   useProfiles,
+  useResult,
   useResults,
   useSystem,
   useTask,
   useTasks,
 } from "./queries";
-import { Badge, Button, Card, Empty, Loading, Progress } from "./ui";
+import { Badge, Button, Card, Empty, Progress, QueryContent } from "./ui";
 
 type CampaignRow = CampaignList["items"][number];
 type TaskRow = TaskList["items"][number];
@@ -121,11 +125,11 @@ function CursorPager({
 }
 
 const launchSchema = z.object({
-  benchmark: z.string().min(3),
-  model: z.string().min(3),
-  harness: z.string().min(3),
-  deployment: z.string().min(3).optional(),
-  launch_policy: z.string().min(3),
+  benchmark: z.string().min(2),
+  model: z.string().min(2),
+  harness: z.string().min(2),
+  deployment: z.string().min(2).optional(),
+  launch_policy: z.string().min(2),
   ceiling_microusd: z.number().int().nonnegative(),
   confirmed: z
     .boolean()
@@ -227,8 +231,6 @@ export function OverviewPage() {
   const campaigns = useCampaigns();
   const endpoints = useEndpoints();
   const system = useSystem();
-  if (campaigns.isLoading || endpoints.isLoading || system.isLoading)
-    return <Loading />;
   const items = campaigns.data?.items ?? [];
   const active = items.filter((item) => item.status !== "completed").length;
   const failures = items.filter((item) =>
@@ -249,85 +251,111 @@ export function OverviewPage() {
         : 0,
     }));
   return (
-    <>
-      <PageHeader
-        title="Overview"
-        description="Campaign progress, spend, publication and endpoint safety from the immutable control record."
-      />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          label="Active campaigns"
-          value={String(active)}
-          note={`${items.length} total`}
-          icon={PlayCircle}
-        />
-        <Stat
-          label="Policy stops"
-          value={String(failures)}
-          note="Requires operator review"
-          icon={AlertTriangle}
-        />
-        <Stat
-          label="Observed spend"
-          value={formatMoney(spend)}
-          note="Across projected campaigns"
-          icon={CircleDollarSign}
-        />
-        <Stat
-          label="Unsafe endpoints"
-          value={String(unsafe)}
-          note={unsafe ? "Cleanup required" : "All observed endpoints safe"}
-          icon={ShieldCheck}
-        />
-      </div>
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-        <Card>
-          <h2 className="font-semibold">Recent campaign spend</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Observed cost in USD; reserved ceilings remain separate.
-          </p>
-          <div className="mt-6 h-72">
-            {chart.length ? (
-              <SpendChart data={chart} />
-            ) : (
-              <div className="grid h-full place-items-center text-sm text-slate-500">
-                No campaign spend yet
+    <QueryContent query={campaigns}>
+      <QueryContent query={endpoints}>
+        <QueryContent query={system}>
+          <PageHeader
+            title="Overview"
+            description="Campaign progress, spend, publication and endpoint safety from the immutable control record."
+          />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat
+              label="Active campaigns"
+              value={String(active)}
+              note={`${items.length} total`}
+              icon={PlayCircle}
+            />
+            <Stat
+              label="Policy stops"
+              value={String(failures)}
+              note="Requires operator review"
+              icon={AlertTriangle}
+            />
+            <Stat
+              label="Observed spend"
+              value={formatMoney(spend)}
+              note="Across projected campaigns"
+              icon={CircleDollarSign}
+            />
+            <Stat
+              label="Unsafe endpoints"
+              value={String(unsafe)}
+              note={unsafe ? "Cleanup required" : "All observed endpoints safe"}
+              icon={ShieldCheck}
+            />
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+            <Card>
+              <h2 className="font-semibold">Recent campaign spend</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Observed cost in USD; reserved ceilings remain separate.
+              </p>
+              <div className="mt-6 h-72">
+                {chart.length ? (
+                  <SpendChart data={chart} />
+                ) : (
+                  <div className="grid h-full place-items-center text-sm text-slate-500">
+                    No campaign spend yet
+                  </div>
+                )}
               </div>
-            )}
+            </Card>
+            <Card>
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold">Control readiness</h2>
+                <Badge status={system.data?.projection?.ready ? "ready" : "pending"}>
+                  {system.data?.projection?.ready ? "Ready" : "Rebuilding"}
+                </Badge>
+              </div>
+              <dl className="mt-5 space-y-4 text-sm">
+                <div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">Write mode</dt>
+                    <dd>{humanize(String(system.data?.write_mode ?? "unknown"))}</dd>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Write mode is a deployment safety switch. User roles are checked
+                    separately.
+                  </p>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Source revision</dt>
+                  <dd className="mt-1 break-all font-mono text-xs select-all">
+                    {String(system.data?.source_revision ?? "unknown")}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500">Projected objects</dt>
+                  <dd>{String(system.data?.projection?.object_count ?? 0)}</dd>
+                </div>
+                <div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">Projection freshness</dt>
+                    <dd>
+                      {system.data?.projection?.last_sync_at
+                        ? formatDate(system.data.projection.last_sync_at)
+                        : "No successful sync"}
+                    </dd>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    The projection is a disposable read view rebuilt from immutable
+                    records.
+                  </p>
+                </div>
+              </dl>
+            </Card>
           </div>
-        </Card>
-        <Card>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Control readiness</h2>
-            <Badge status={system.data?.projection?.ready ? "ready" : "pending"}>
-              {system.data?.projection?.ready ? "Ready" : "Rebuilding"}
-            </Badge>
-          </div>
-          <dl className="mt-5 space-y-4 text-sm">
-            <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">Write mode</dt>
-              <dd>{humanize(String(system.data?.write_mode ?? "unknown"))}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">Source revision</dt>
-              <dd className="font-mono text-xs">
-                {shortId(String(system.data?.source_revision ?? "unknown"))}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt className="text-slate-500">Projected objects</dt>
-              <dd>{String(system.data?.projection?.object_count ?? 0)}</dd>
-            </div>
-          </dl>
-        </Card>
-      </div>
-    </>
+        </QueryContent>
+      </QueryContent>
+    </QueryContent>
   );
 }
 
 function LaunchPanel({ onClose }: { onClose(): void }) {
   const navigate = useNavigate();
   const client = useQueryClient();
+  const profiles = useProfiles();
+  const { writesAllowed, writeMode } = useControlState();
   const form = useForm<z.infer<typeof launchSchema>>({
     resolver: zodResolver(launchSchema),
     defaultValues: {
@@ -340,6 +368,53 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
       confirmed: false,
     },
   });
+  const values = form.watch();
+  const approved = (profiles.data?.items ?? []).filter((profile) =>
+    Boolean(profile.approved_alias),
+  );
+  const options = (kind: string) =>
+    approved.filter((profile) => {
+      if (profile.profile_kind !== kind) return false;
+      if (kind !== "deployment") return true;
+      const spec = profile.spec as Record<string, unknown>;
+      return (
+        Array.isArray(spec.models) &&
+        spec.models.includes(values.model) &&
+        Array.isArray(spec.harnesses) &&
+        spec.harnesses.includes(values.harness)
+      );
+    });
+  const selectedAlias = (kind: string): string | undefined => {
+    if (kind === "benchmark") return values.benchmark;
+    if (kind === "model") return values.model;
+    if (kind === "harness") return values.harness;
+    if (kind === "deployment") return values.deployment;
+    if (kind === "launch_policy") return values.launch_policy;
+    return undefined;
+  };
+  const selected = approved.filter(
+    (profile) => profile.approved_alias === selectedAlias(profile.profile_kind),
+  );
+  const selectedByKind = (kind: string) =>
+    selected.find((profile) => profile.profile_kind === kind);
+  const benchmarkSpec = selectedByKind("benchmark")?.spec as
+    | Record<string, unknown>
+    | undefined;
+  const modelSpec = selectedByKind("model")?.spec as
+    | Record<string, unknown>
+    | undefined;
+  const deploymentSpec = selectedByKind("deployment")?.spec as
+    | Record<string, unknown>
+    | undefined;
+  const policySpec = selectedByKind("launch_policy")?.spec as
+    | Record<string, unknown>
+    | undefined;
+  const taskCount = Array.isArray(benchmarkSpec?.task_ids)
+    ? benchmarkSpec.task_ids.length
+    : 0;
+  const attemptLimit = Number(policySpec?.max_infrastructure_attempts ?? 0);
+  const reservation = Number(policySpec?.reservation_microusd ?? 0);
+  const estimatedMicrousd = taskCount * reservation;
   const mutation = useMutation({
     mutationFn: (input: CampaignSubmission) => submitCampaign(input),
     onSuccess: async (result) => {
@@ -349,70 +424,146 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
   });
   return (
     <Card className="mb-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="font-semibold">Launch campaign</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Resolve immutable profiles before any paid action.
+            Select approved aliases and review their immutable resolution before any
+            paid action.
           </p>
         </div>
         <Button variant="ghost" onClick={onClose}>
           Close
         </Button>
       </div>
-      <form
-        className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3"
-        onSubmit={form.handleSubmit((value) =>
-          mutation.mutate(value as CampaignSubmission),
-        )}
-      >
-        {(
-          ["benchmark", "model", "harness", "deployment", "launch_policy"] as const
-        ).map((field) => (
-          <label className="space-y-1.5 text-sm" key={field}>
-            <span className="text-slate-400">{humanize(field)}</span>
+      {!writesAllowed ? (
+        <p className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-200">
+          Launch is unavailable because write mode is {humanize(writeMode)}. Your role
+          and deployment write mode are separate controls.
+        </p>
+      ) : null}
+      <QueryContent query={profiles}>
+        <form
+          className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+          onSubmit={form.handleSubmit((value) =>
+            mutation.mutate(value as CampaignSubmission),
+          )}
+        >
+          {(
+            ["benchmark", "model", "harness", "deployment", "launch_policy"] as const
+          ).map((field) => (
+            <label className="space-y-1.5 text-sm" key={field}>
+              <span className="text-slate-400">{humanize(field)}</span>
+              <select
+                className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-400 disabled:opacity-50"
+                disabled={!writesAllowed}
+                {...form.register(field)}
+              >
+                {options(field).map((profile) => (
+                  <option key={profile.profile_id} value={profile.approved_alias ?? ""}>
+                    {profile.approved_alias}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+          <label className="space-y-1.5 text-sm">
+            <span className="text-slate-400">Hard cost ceiling, USD</span>
             <input
-              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-400"
-              {...form.register(field)}
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-400 disabled:opacity-50"
+              type="number"
+              min="0"
+              step="0.000001"
+              disabled={!writesAllowed}
+              {...form.register("ceiling_microusd", {
+                setValueAs: (value) => Math.round(Number(value) * 1_000_000),
+              })}
             />
           </label>
-        ))}
-        <label className="space-y-1.5 text-sm">
-          <span className="text-slate-400">Cost ceiling, micro-USD</span>
-          <input
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-400"
-            type="number"
-            {...form.register("ceiling_microusd", { valueAsNumber: true })}
-          />
-        </label>
-        <label className="flex items-start gap-3 md:col-span-2 xl:col-span-3">
-          <input
-            className="mt-1 h-4 w-4 accent-cyan-400"
-            type="checkbox"
-            {...form.register("confirmed")}
-          />
-          <span className="text-sm text-slate-300">
-            I confirm the resolved profiles, logical task count and cumulative cost
-            ceiling.
-          </span>
-        </label>
-        {form.formState.errors.confirmed ? (
-          <p className="text-sm text-rose-300 md:col-span-2 xl:col-span-3">
-            {form.formState.errors.confirmed.message}
-          </p>
-        ) : null}
-        {mutation.error ? (
-          <p className="text-sm text-rose-300 md:col-span-2 xl:col-span-3">
-            {mutation.error.message}
-          </p>
-        ) : null}
-        <div className="md:col-span-2 xl:col-span-3">
-          <Button disabled={mutation.isPending} type="submit">
-            <PlayCircle size={16} />
-            {mutation.isPending ? "Submitting" : "Create immutable campaign"}
-          </Button>
-        </div>
-      </form>
+          <Card className="md:col-span-2 xl:col-span-3">
+            <h3 className="font-medium">Resolved launch</h3>
+            <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <dt className="text-slate-500">Logical tasks</dt>
+                <dd>{taskCount}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Model revision</dt>
+                <dd className="break-all font-mono text-xs">
+                  {String(modelSpec?.revision ?? "Unavailable")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Hardware</dt>
+                <dd>{String(deploymentSpec?.hardware ?? "Unavailable")}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Attempt limit</dt>
+                <dd>{attemptLimit || "Unavailable"}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Estimated reservation</dt>
+                <dd>{formatMoney(estimatedMicrousd)}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Hard ceiling</dt>
+                <dd>
+                  {formatMoney(values.ceiling_microusd || 0)}{" "}
+                  <span className="text-xs text-slate-500">
+                    ({values.ceiling_microusd || 0} microusd)
+                  </span>
+                </dd>
+              </div>
+            </dl>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {selected.map((profile) => (
+                <details
+                  className="rounded-md border border-slate-800 p-3"
+                  key={`${profile.profile_kind}:${profile.profile_id}`}
+                >
+                  <summary className="cursor-pointer text-sm font-medium">
+                    {humanize(profile.profile_kind)}: {profile.approved_alias}
+                  </summary>
+                  <p className="mt-2 break-all font-mono text-xs text-slate-500">
+                    {profile.profile_id}
+                  </p>
+                  <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap text-xs text-slate-400">
+                    {JSON.stringify(profile.spec, null, 2)}
+                  </pre>
+                </details>
+              ))}
+            </div>
+          </Card>
+          <label className="flex items-start gap-3 md:col-span-2 xl:col-span-3">
+            <input
+              className="mt-1 h-4 w-4 accent-cyan-400"
+              type="checkbox"
+              disabled={!writesAllowed}
+              {...form.register("confirmed")}
+            />
+            <span className="text-sm text-slate-300">
+              I confirm the resolved profiles, logical task count, estimated
+              reservation, and hard cost ceiling.
+            </span>
+          </label>
+          {form.formState.errors.confirmed ? (
+            <p className="text-sm text-rose-300 md:col-span-2 xl:col-span-3">
+              {form.formState.errors.confirmed.message}
+            </p>
+          ) : null}
+          {mutation.error ? (
+            <p className="text-sm text-rose-300 md:col-span-2 xl:col-span-3">
+              {mutation.error.message}
+            </p>
+          ) : null}
+          <div className="md:col-span-2 xl:col-span-3">
+            <Button disabled={!writesAllowed || mutation.isPending} type="submit">
+              <PlayCircle size={16} />
+              {mutation.isPending ? "Submitting" : "Create immutable campaign"}
+            </Button>
+          </div>
+        </form>
+      </QueryContent>
     </Card>
   );
 }
@@ -422,6 +573,7 @@ export function CampaignsPage() {
   const navigation = useCursorNavigation();
   const [launching, setLaunching] = useState(false);
   const query = useCampaigns(navigation.cursor);
+  const { writesAllowed, writeMode } = useControlState();
   const filter = searchParams.get("status") ?? "all";
   const items = (query.data?.items ?? []).filter(
     (item) => filter === "all" || item.status === filter,
@@ -487,7 +639,15 @@ export function CampaignsPage() {
         title="Campaigns"
         description="Logical tasks remain separate from physical attempts and infrastructure repairs."
         action={
-          <Button onClick={() => setLaunching((value) => !value)}>
+          <Button
+            disabled={!writesAllowed}
+            title={
+              writesAllowed
+                ? "Launch a campaign"
+                : `Launch is unavailable while write mode is ${writeMode}`
+            }
+            onClick={() => setLaunching((value) => !value)}
+          >
             <Plus size={16} />
             Launch
           </Button>
@@ -505,18 +665,14 @@ export function CampaignsPage() {
           </Button>
         ))}
       </nav>
-      {query.isLoading ? (
-        <Loading />
-      ) : (
-        <>
-          <DataTable
-            columns={columns}
-            data={items}
-            empty="No campaigns match this filter"
-          />
-          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
-        </>
-      )}
+      <QueryContent query={query}>
+        <DataTable
+          columns={columns}
+          data={items}
+          empty="No campaigns match this filter"
+        />
+        <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+      </QueryContent>
     </>
   );
 }
@@ -527,6 +683,7 @@ export function CampaignPage() {
   const campaign = useCampaign(campaignId);
   const tasks = useTasks(campaignId, navigation.cursor);
   const client = useQueryClient();
+  const { writesAllowed, writeMode } = useControlState();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelAcknowledged, setCancelAcknowledged] = useState(false);
   const closeCancel = () => {
@@ -546,8 +703,12 @@ export function CampaignPage() {
       return client.invalidateQueries({ queryKey: keys.campaign(campaignId) });
     },
   });
-  if (campaign.isLoading || tasks.isLoading) return <Loading />;
-  if (!campaign.data) return <Empty>Campaign not found</Empty>;
+  if (!campaign.data)
+    return (
+      <QueryContent query={campaign}>
+        <Empty>Campaign not found</Empty>
+      </QueryContent>
+    );
   const item = campaign.data;
   const columns: ColumnDef<TaskRow>[] = [
     {
@@ -591,7 +752,7 @@ export function CampaignPage() {
     },
   ];
   return (
-    <>
+    <QueryContent query={campaign}>
       <PageHeader
         title={shortId(campaignId)}
         description="Campaign lock, logical outcomes, cost and publication state."
@@ -599,7 +760,12 @@ export function CampaignPage() {
           item.status !== "completed" ? (
             <Button
               variant="destructive"
-              disabled={cancel.isPending}
+              disabled={!writesAllowed || cancel.isPending}
+              title={
+                writesAllowed
+                  ? "Cancel this campaign"
+                  : `Cancellation is unavailable while write mode is ${writeMode}`
+              }
               onClick={() => setCancelOpen(true)}
             >
               <PauseCircle size={16} />
@@ -658,7 +824,7 @@ export function CampaignPage() {
               </Button>
               <Button
                 variant="destructive"
-                disabled={!cancelAcknowledged || cancel.isPending}
+                disabled={!writesAllowed || !cancelAcknowledged || cancel.isPending}
                 onClick={() => cancel.mutate()}
               >
                 {cancel.isPending ? "Cancelling…" : "Confirm cancellation"}
@@ -699,23 +865,29 @@ export function CampaignPage() {
           value={item.total_tasks ? (item.terminal_tasks / item.total_tasks) * 100 : 0}
         />
       </Card>
-      <DataTable
-        columns={columns}
-        data={tasks.data?.items ?? []}
-        empty="No tasks are locked"
-      />
-      <CursorPager navigation={navigation} nextCursor={tasks.data?.next_cursor} />
-    </>
+      <QueryContent query={tasks}>
+        <DataTable
+          columns={columns}
+          data={tasks.data?.items ?? []}
+          empty="No tasks are locked"
+        />
+        <CursorPager navigation={navigation} nextCursor={tasks.data?.next_cursor} />
+      </QueryContent>
+    </QueryContent>
   );
 }
 
 export function TaskPage() {
   const { campaignId = "", taskId = "" } = useParams();
   const detail = useTask(campaignId, taskId);
-  if (detail.isLoading) return <Loading />;
-  if (!detail.data) return <Empty>Task not found</Empty>;
+  if (!detail.data)
+    return (
+      <QueryContent query={detail}>
+        <Empty>Task not found</Empty>
+      </QueryContent>
+    );
   return (
-    <>
+    <QueryContent query={detail}>
       <PageHeader
         title={shortId(taskId)}
         description="One logical task with every immutable physical attempt."
@@ -785,7 +957,7 @@ export function TaskPage() {
           </Card>
         ))}
       </div>
-    </>
+    </QueryContent>
   );
 }
 
@@ -840,14 +1012,10 @@ export function JobsPage() {
         title="Jobs"
         description="HF Job identity, ownership and infrastructure state tied to deterministic actions."
       />
-      {query.isLoading ? (
-        <Loading />
-      ) : (
-        <>
-          <DataTable columns={columns} data={query.data?.items ?? []} />
-          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
-        </>
-      )}
+      <QueryContent query={query}>
+        <DataTable columns={columns} data={query.data?.items ?? []} />
+        <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+      </QueryContent>
     </>
   );
 }
@@ -912,44 +1080,50 @@ export function EndpointsPage() {
         title="Endpoints"
         description="Requested and observed state remain separate. Completion requires verified pause with zero ready replicas."
       />
-      {query.isLoading ? (
-        <Loading />
-      ) : (
-        <>
-          <DataTable columns={columns} data={query.data?.items ?? []} />
-          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
-        </>
-      )}
+      <QueryContent query={query}>
+        <DataTable columns={columns} data={query.data?.items ?? []} />
+        <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+      </QueryContent>
     </>
   );
 }
 
 export function ResultsPage() {
   const navigation = useCursorNavigation();
-  const query = useResults(navigation.cursor);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filters = {
+    model: searchParams.get("model") ?? undefined,
+    benchmark: searchParams.get("benchmark") ?? undefined,
+    agent: searchParams.get("agent") ?? undefined,
+    status: searchParams.get("result_status") ?? undefined,
+    search: searchParams.get("search") ?? undefined,
+    published_after: searchParams.get("published_after") ?? undefined,
+    published_before: searchParams.get("published_before") ?? undefined,
+    sort: (searchParams.get("sort") ?? "published_at") as
+      | "published_at"
+      | "model"
+      | "benchmark"
+      | "status"
+      | "score",
+    order: (searchParams.get("order") ?? "desc") as "asc" | "desc",
+  };
+  const query = useResults(navigation.cursor, filters);
   const columns: ColumnDef<ResultRow>[] = [
     {
       accessorKey: "publication_id",
       header: "Publication",
-      cell: ({ getValue }) => (
-        <span className="font-mono text-xs">{shortId(String(getValue()))}</span>
-      ),
-    },
-    {
-      accessorKey: "campaign_id",
-      header: "Campaign",
-      cell: ({ getValue }) => (
+      cell: ({ row }) => (
         <Link
-          className="font-mono text-xs text-cyan-300"
-          to={`/campaigns/${String(getValue())}`}
+          className="font-mono text-xs text-cyan-300 hover:underline"
+          to={`/results/${row.original.publication_id}`}
         >
-          {shortId(String(getValue()))}
+          {shortId(row.original.publication_id)}
         </Link>
       ),
     },
     {
       accessorKey: "model",
-      header: "Model",
+      header: "Model and benchmark",
       cell: ({ row }) => (
         <div>
           <div className="max-w-52 truncate font-medium">
@@ -962,16 +1136,16 @@ export function ResultsPage() {
       ),
     },
     {
+      accessorKey: "agent",
+      header: "Agent",
+      cell: ({ row }) => String(row.original.agent ?? row.original.harness ?? "—"),
+    },
+    {
       id: "score",
       header: "Primary metric",
       cell: ({ row }) => {
         const metric = row.original.primary_metric;
-        if (!metric) return "—";
-        return (
-          <span title={`${metric.name} (${metric.unit})`}>
-            {metric.value.toFixed(4)}
-          </span>
-        );
+        return metric ? `${metric.value.toFixed(4)} ${metric.unit}` : "—";
       },
     },
     {
@@ -990,15 +1164,6 @@ export function ResultsPage() {
       ),
     },
     {
-      accessorKey: "catalog_digest",
-      header: "Catalog",
-      cell: ({ getValue }) => (
-        <span className="font-mono text-xs text-slate-500">
-          {getValue() ? shortId(String(getValue())) : "—"}
-        </span>
-      ),
-    },
-    {
       accessorKey: "published_at",
       header: "Published",
       cell: ({ getValue }) => formatDate(String(getValue())),
@@ -1008,17 +1173,226 @@ export function ResultsPage() {
     <>
       <PageHeader
         title="Results"
-        description="Normalized publications and provenance projected from immutable Bucket objects."
+        description="Search normalized results and open stable detail views with allowlisted provenance."
       />
-      {query.isLoading ? (
-        <Loading />
-      ) : (
-        <>
-          <DataTable columns={columns} data={query.data?.items ?? []} />
-          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
-        </>
-      )}
+      <form
+        className="mb-5 grid gap-3 rounded-xl border border-slate-800 bg-slate-950/70 p-4 sm:grid-cols-2 xl:grid-cols-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          const next = new URLSearchParams();
+          for (const key of [
+            "search",
+            "model",
+            "benchmark",
+            "agent",
+            "result_status",
+            "sort",
+            "order",
+          ] as const) {
+            const value = String(data.get(key) ?? "").trim();
+            if (
+              value &&
+              !(
+                (key === "sort" && value === "published_at") ||
+                (key === "order" && value === "desc")
+              )
+            )
+              next.set(key, value);
+          }
+          const after = String(data.get("published_after") ?? "");
+          const before = String(data.get("published_before") ?? "");
+          if (after) next.set("published_after", `${after}T00:00:00.000Z`);
+          if (before) next.set("published_before", `${before}T23:59:59.999Z`);
+          setSearchParams(next);
+        }}
+      >
+        {(["search", "model", "benchmark", "agent"] as const).map((name) => (
+          <label className="space-y-1 text-sm" key={name}>
+            <span className="text-slate-400">{humanize(name)}</span>
+            <input
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
+              name={name}
+              defaultValue={searchParams.get(name) ?? ""}
+              type={name === "search" ? "search" : "text"}
+            />
+          </label>
+        ))}
+        <label className="space-y-1 text-sm">
+          <span className="text-slate-400">Status</span>
+          <select
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
+            name="result_status"
+            defaultValue={filters.status ?? ""}
+          >
+            <option value="">All</option>
+            <option value="published">Published</option>
+            <option value="pending">Pending</option>
+            <option value="failed">Failed</option>
+          </select>
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="text-slate-400">From date</span>
+          <input
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
+            name="published_after"
+            type="date"
+            defaultValue={filters.published_after?.slice(0, 10) ?? ""}
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="text-slate-400">Through date</span>
+          <input
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
+            name="published_before"
+            type="date"
+            defaultValue={filters.published_before?.slice(0, 10) ?? ""}
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="space-y-1 text-sm">
+            <span className="text-slate-400">Sort</span>
+            <select
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
+              name="sort"
+              defaultValue={filters.sort}
+            >
+              <option value="published_at">Published</option>
+              <option value="score">Score</option>
+              <option value="model">Model</option>
+              <option value="benchmark">Benchmark</option>
+              <option value="status">Status</option>
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="text-slate-400">Order</span>
+            <select
+              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
+              name="order"
+              defaultValue={filters.order}
+            >
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </select>
+          </label>
+        </div>
+        <div className="flex items-end gap-2 sm:col-span-2 xl:col-span-4">
+          <Button type="submit">Apply filters</Button>
+          <Button type="button" variant="ghost" onClick={() => setSearchParams({})}>
+            Clear
+          </Button>
+        </div>
+      </form>
+      <QueryContent query={query}>
+        <DataTable
+          columns={columns}
+          data={query.data?.items ?? []}
+          empty="No results match these filters"
+        />
+        <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+      </QueryContent>
     </>
+  );
+}
+
+function ResultField({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div>
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="mt-1 break-all">
+        {value === null || value === undefined || value === "" ? "—" : String(value)}
+      </dd>
+    </div>
+  );
+}
+
+export function ResultPage() {
+  const { publicationId = "" } = useParams();
+  const result = useResult(publicationId);
+  if (!result.data)
+    return (
+      <QueryContent query={result}>
+        <Empty>Result not found</Empty>
+      </QueryContent>
+    );
+  const item: ResultDetail = result.data;
+  return (
+    <QueryContent query={result}>
+      <PageHeader
+        title={shortId(item.publication_id)}
+        description="Result scores, revisions, campaign identity, and browser-safe provenance."
+      />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Status"
+          value={humanize(item.status)}
+          note={item.quality ? humanize(item.quality) : "No quality label"}
+          icon={RefreshCw}
+        />
+        <Stat
+          label="Primary metric"
+          value={item.primary_metric ? item.primary_metric.value.toFixed(4) : "—"}
+          note={
+            item.primary_metric
+              ? `${item.primary_metric.name} (${item.primary_metric.unit})`
+              : "No score"
+          }
+          icon={Gauge}
+        />
+        <Stat
+          label="Scored tasks"
+          value={`${item.scored_task_count ?? 0}/${item.task_count ?? 0}`}
+          note={`${item.strict_pass_count ?? 0} strict passes`}
+          icon={ShieldCheck}
+        />
+        <Stat
+          label="Published"
+          value={formatDate(item.published_at)}
+          note={item.publication_role ? humanize(item.publication_role) : "No role"}
+          icon={Clock3}
+        />
+      </div>
+      <Card className="mt-6">
+        <h2 className="font-semibold">Result</h2>
+        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <ResultField label="Model" value={item.model} />
+          <ResultField label="Benchmark" value={item.benchmark} />
+          <ResultField label="Agent" value={item.agent ?? item.harness} />
+          <ResultField label="Outcome" value={item.run_outcome} />
+          <ResultField label="Model revision" value={item.model_revision} />
+          <ResultField label="Benchmark revision" value={item.benchmark_revision} />
+          <ResultField label="Harness revision" value={item.harness_revision} />
+          <div>
+            <dt className="text-slate-500">Campaign</dt>
+            <dd className="mt-1">
+              <Link
+                className="break-all font-mono text-xs text-cyan-300 hover:underline"
+                to={`/campaigns/${item.campaign_id}`}
+              >
+                {item.campaign_id}
+              </Link>
+            </dd>
+          </div>
+        </dl>
+      </Card>
+      <Card className="mt-6">
+        <h2 className="font-semibold">Allowlisted provenance</h2>
+        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
+          <ResultField label="Publication ID" value={item.publication_id} />
+          <ResultField label="Run ID" value={item.run_id} />
+          <ResultField label="Catalog digest" value={item.catalog_digest} />
+          <ResultField
+            label="Catalog source digest"
+            value={item.catalog_source_digest}
+          />
+          <ResultField label="Profile source revision" value={item.source_revision} />
+          <ResultField label="Result record path" value={item.result_path} />
+          {Object.entries(item.profile_ids ?? {}).map(([kind, id]) => (
+            <ResultField key={kind} label={`${humanize(kind)} profile ID`} value={id} />
+          ))}
+        </dl>
+      </Card>
+    </QueryContent>
   );
 }
 
@@ -1069,14 +1443,10 @@ export function ProfilesPage() {
         title="Profiles"
         description="Resolved, immutable benchmark, model, harness, deployment and launch-policy records."
       />
-      {query.isLoading ? (
-        <Loading />
-      ) : (
-        <>
-          <DataTable columns={columns} data={query.data?.items ?? []} />
-          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
-        </>
-      )}
+      <QueryContent query={query}>
+        <DataTable columns={columns} data={query.data?.items ?? []} />
+        <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+      </QueryContent>
     </>
   );
 }
@@ -1120,14 +1490,10 @@ export function AuditPage() {
         title="Audit"
         description="Immutable intents, receipts, actors and integrity-relevant state changes."
       />
-      {query.isLoading ? (
-        <Loading />
-      ) : (
-        <>
-          <DataTable columns={columns} data={query.data?.items ?? []} />
-          <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
-        </>
-      )}
+      <QueryContent query={query}>
+        <DataTable columns={columns} data={query.data?.items ?? []} />
+        <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
+      </QueryContent>
     </>
   );
 }

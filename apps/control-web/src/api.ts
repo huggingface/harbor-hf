@@ -20,6 +20,8 @@ export type ProfileList =
   paths["/api/v1/profiles"]["get"]["responses"][200]["content"]["application/json"];
 export type ResultList =
   paths["/api/v1/results"]["get"]["responses"][200]["content"]["application/json"];
+export type ResultDetail =
+  paths["/api/v1/results/{publication_id}"]["get"]["responses"][200]["content"]["application/json"];
 export type AuditResponse =
   paths["/api/v1/audit"]["get"]["responses"][200]["content"]["application/json"];
 export type CampaignSubmission =
@@ -34,10 +36,24 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly requestId: string | null = null,
+    readonly retryAt: number | null = null,
   ) {
     super(message);
     this.name = "ApiError";
   }
+
+  get transient(): boolean {
+    return this.status === 0 || this.status === 429 || this.status >= 500;
+  }
+}
+
+function retryAt(header: string | null): number | null {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return Date.now() + seconds * 1000;
+  const date = Date.parse(header);
+  return Number.isFinite(date) ? date : null;
 }
 
 function cookie(name: string): string | null {
@@ -55,15 +71,26 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const csrf = cookie("hhf_csrf");
   if (csrf && init.method && !["GET", "HEAD"].includes(init.method))
     headers.set("X-CSRF-Token", csrf);
-  const response = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  let response: Response;
+  try {
+    response = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  } catch {
+    throw new ApiError(
+      0,
+      "network_error",
+      "The control service is unreachable. Check your connection and try again.",
+    );
+  }
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      error?: { code?: string; message?: string };
+      error?: { code?: string; message?: string; request_id?: string };
     } | null;
     throw new ApiError(
       response.status,
       body?.error?.code ?? "request_failed",
       body?.error?.message ?? `Request failed with ${response.status}`,
+      body?.error?.request_id ?? null,
+      retryAt(response.headers.get("Retry-After")),
     );
   }
   if (response.status === 204) return undefined as T;
@@ -76,6 +103,10 @@ export async function submitCampaign(input: CampaignSubmission): Promise<Accepte
     headers: { "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify(input),
   });
+}
+
+export async function signOut(): Promise<void> {
+  return request<void>("/auth/logout", { method: "POST" });
 }
 
 export async function actOnCampaign(

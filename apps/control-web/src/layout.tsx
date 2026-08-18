@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FileClock,
   Gauge,
+  LogOut,
   Menu,
   Network,
   ServerCog,
@@ -14,8 +15,10 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { cn, humanize } from "./lib";
-import { Badge, Button } from "./ui";
+import type { DisplayActor } from "./control-state";
+import { cn, formatDate, humanize } from "./lib";
+import type { LiveState } from "./queries";
+import { Badge, Button, ErrorNotice } from "./ui";
 
 const navigation = [
   ["/", "Overview", Gauge],
@@ -32,11 +35,19 @@ export function Layout({
   actor,
   writeMode,
   live,
+  sessionExpiresAt,
+  serviceError,
+  onSignOut,
+  signingOut,
 }: {
   children: ReactNode;
-  actor: { subject: string; role: string };
+  actor: DisplayActor;
   writeMode: string;
-  live: string;
+  live: LiveState;
+  sessionExpiresAt?: string | undefined;
+  serviceError: unknown;
+  onSignOut: () => void;
+  signingOut: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -109,10 +120,15 @@ export function Layout({
               <Activity size={14} />
               Live updates
             </span>
-            <Badge status={live === "connected" ? "ready" : "pending"}>
-              {humanize(live)}
+            <Badge status={live.status === "connected" ? "ready" : "pending"}>
+              {humanize(live.status)}
             </Badge>
           </div>
+          <p className="text-xs leading-5 text-slate-500">
+            {live.lastSuccessfulUpdate
+              ? `Last update ${formatDate(new Date(live.lastSuccessfulUpdate).toISOString())}`
+              : "Waiting for the first live update"}
+          </p>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-xs text-slate-400">
               <ShieldCheck size={14} />
@@ -123,15 +139,35 @@ export function Layout({
             </Badge>
           </div>
           <div className="border-t border-slate-800 pt-3">
-            <div className="truncate text-sm font-medium">{actor.subject}</div>
+            <div className="truncate text-sm font-medium">{actor.username}</div>
             <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
               <Settings2 size={12} />
-              {humanize(actor.role)}
+              {humanize(actor.role)} role
             </div>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Role grants permission. Write mode controls whether this deployment
+              accepts changes.
+            </p>
+            {sessionExpiresAt ? (
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                Session expires {formatDate(sessionExpiresAt)}. A service restart can
+                require a new sign-in.
+              </p>
+            ) : null}
+            <Button
+              className="mt-3 w-full"
+              variant="ghost"
+              disabled={signingOut}
+              onClick={onSignOut}
+            >
+              <LogOut size={14} />
+              {signingOut ? "Signing out" : "Sign out"}
+            </Button>
           </div>
         </div>
       </aside>
       <main id="main" className="min-h-screen px-4 py-8 sm:px-6 lg:ml-72 lg:px-10">
+        {serviceError ? <ErrorNotice error={serviceError} stale /> : null}
         {children}
       </main>
       {open ? (
