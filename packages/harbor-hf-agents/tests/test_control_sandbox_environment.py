@@ -78,7 +78,12 @@ async def test_routes_harbor_operations_through_worker_capability(
     monkeypatch.setattr(environment, "_upload_environment_dir_after_start", _noop)
 
     await environment.start(force_build=False)
-    result = await environment.exec("printf ok", cwd="/app", timeout_sec=30)
+    result = await environment.exec(
+        "printf ok",
+        cwd="/app",
+        timeout_sec=30,
+        user="harbor-agent",
+    )
     await environment.stop(delete=True)
 
     assert result.return_code == 0
@@ -90,11 +95,12 @@ async def test_routes_harbor_operations_through_worker_capability(
         "POST",
         "DELETE",
     ]
-    assert FakeClient.calls[3][2] == {
-        "command": ["/bin/sh", "-lc", "printf ok"],
-        "cwd": "/app",
-        "timeout_seconds": 30,
-    }
+    command = FakeClient.calls[3][2]
+    assert command is not None
+    assert command["command"][:2] == ["/bin/sh", "-lc"]
+    assert "runuser -u harbor-agent" in command["command"][2]
+    assert command["cwd"] == "/app"
+    assert command["timeout_seconds"] == 30
 
 
 async def _noop() -> None:

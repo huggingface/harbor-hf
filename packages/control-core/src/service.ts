@@ -129,9 +129,11 @@ function normalizeGitUrl(value: string): string {
 function imageRepository(value: string): string {
   const withoutDigest = value.split("@", 1)[0] as string;
   const tail = withoutDigest.slice(withoutDigest.lastIndexOf("/") + 1);
-  return tail.includes(":")
+  let repository = tail.includes(":")
     ? withoutDigest.slice(0, withoutDigest.lastIndexOf(":"))
     : withoutDigest;
+  repository = repository.replace(/^(?:docker\.io|registry-1\.docker\.io)\//, "");
+  return repository.includes("/") ? repository : `library/${repository}`;
 }
 
 function gitDatasetMatches(

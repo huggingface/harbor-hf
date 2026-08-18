@@ -287,7 +287,6 @@ class ControlSandboxEnvironment(BaseEnvironment):
         timeout_sec: int | None = None,
         user: str | int | None = None,
     ) -> ExecResult:
-        del user
         merged = self._merge_env(env)
         script = command
         if merged:
@@ -295,6 +294,12 @@ class ControlSandboxEnvironment(BaseEnvironment):
                 f"{key}={shlex.quote(value)}" for key, value in sorted(merged.items())
             )
             script = f"env {assignments} /bin/sh -lc {shlex.quote(command)}"
+        if user not in {None, "root", 0}:
+            if not isinstance(user, str) or not user:
+                raise ValueError("control Sandbox requires a named execution user")
+            script = (
+                f"runuser -u {shlex.quote(user)} -- /bin/sh -lc {shlex.quote(script)}"
+            )
         timeout = timeout_sec or 3600
         value = await asyncio.to_thread(
             self._client.request,
