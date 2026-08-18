@@ -1,3 +1,4 @@
+import type { SandboxPolicy } from "@harbor-hf/contracts";
 import { createTestControl, type TestControl } from "@harbor-hf/test-fixtures";
 import { afterEach, describe, expect, it } from "vitest";
 import { Projection, ProjectionIntegrityError } from "../src/projection.js";
@@ -41,10 +42,57 @@ describe("projection replay", () => {
   it("is independent of Bucket listing order", async () => {
     const control = await createTestControl();
     controls.push(control);
-    const submitted = await control.service.submit(input, "listing-order-key", {
-      subject: "operator",
-      role: "operator",
+    const submitted = await control.service.submit(
+      { ...input, ceiling_microusd: 1_000 },
+      "listing-order-key",
+      {
+        subject: "operator",
+        role: "operator",
+      },
+    );
+    const policy: SandboxPolicy = {
+      image: `example.invalid/task@sha256:${"a".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 600,
+      idle_timeout_seconds: 300,
+      inference_token: "forbidden",
+      reservation_microusd: 100,
+      active_hourly_cost_microusd: 10,
+      max_sandboxes: 1,
+      max_commands: 8,
+      max_command_seconds: 300,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/tmp"],
+    };
+    const createActionId = "sandbox-create-listing-order";
+    expect(
+      await control.service.reserveSandbox(
+        submitted.campaign_id,
+        createActionId,
+        new Date(Date.now() - 1_000).toISOString(),
+        policy.reservation_microusd,
+      ),
+    ).toBe(true);
+    const close = control.service.actionIntent(
+      submitted.campaign_id,
+      "sandbox.close",
+      "sandbox-listing-order",
+      0,
+      {
+        task_id: "control-smoke-task",
+        sandbox_create_action_id: createActionId,
+        resource_id: "sandbox-listing-order",
+        sandbox: policy,
+      },
+    );
+    await control.service.writeAction(close);
+    const receipt = await control.service.receipt(close, {
+      outcome: "completed",
+      observed_state: "CANCELED",
+      resource_id: "sandbox-listing-order",
+      cost_microusd: 50,
     });
+    await control.service.markAdvanced(close, receipt);
     const projection = await Projection.open(`${control.root}/reverse.sqlite`);
     await projection.rebuild(
       new ListingStore(control.store, (entries) => [...entries].reverse()),

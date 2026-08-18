@@ -986,7 +986,15 @@ export class Projection {
       .execute();
     const budgetRows = await this.db
       .selectFrom("budgets")
-      .select(["campaign_id", "event_kind", "amount_microusd"])
+      .select([
+        "campaign_id",
+        "event_kind",
+        "amount_microusd",
+        "created_at",
+        "record_id",
+      ])
+      .orderBy("created_at")
+      .orderBy("record_id")
       .execute();
     const budgetState = new Map<
       string,
