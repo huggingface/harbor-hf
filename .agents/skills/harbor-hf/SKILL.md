@@ -31,6 +31,30 @@ Read the relevant complete documents:
 
 Use the paid-compute-launch skill before launching, scaling, retrying, or automatically continuing paid accelerator work.
 
+## Keep one campaign path
+
+Harbor-HF must treat benchmark and model names as data. The same rule applies
+to harness names. Reject any campaign design that adds name-based branches,
+per-benchmark or per-model scripts, source parsers, profile generators,
+workers, API routes, or schema fields to the core service.
+
+Use the pinned Harbor version in an isolated preparation Job without persistent
+secrets. Harbor resolves the requested job and returns its exact `lock.json`.
+The control service validates and stores that lock before execution. Every
+retry and recovery action uses the same lock and never resolves the benchmark
+source again.
+
+A supported benchmark or model must use the existing campaign path through
+configuration and immutable records. The same rule applies to supported
+harnesses. New harness implementation code belongs in a Harbor agent plugin
+behind the common agent interface. If work needs a missing feature, add a
+general capability at the correct Harbor, agent, provider, or Hugging Face
+adapter boundary, or report it as unsupported.
+
+Before implementation or launch, confirm that another compatible benchmark or
+model could use the same path without core code changes or a new package
+script. Apply the same check to harness support.
+
 ## Required workflow
 
 ### Inspect state

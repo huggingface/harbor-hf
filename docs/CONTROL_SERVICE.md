@@ -79,6 +79,40 @@ The current results application is replaced in place by `control-web`. Do not
 keep a second production frontend or a compatibility reader for the old result
 service.
 
+## Campaign preparation
+
+Harbor-HF uses one path for every campaign. A campaign starts with a normal
+Harbor job configuration and approved Harbor-HF profiles.
+The control service starts an isolated preparation Job that runs the pinned
+Harbor version without persistent secrets or inference access. Harbor resolves
+the job and returns its exact `lock.json` through a short-lived capability.
+
+The Harbor lock is the source for trial identities, task and source digests,
+container image digests, resources, timeouts, verifier settings, agent settings,
+and Harbor version. Model and harness names remain configuration values. The
+control service and its workers do not branch on benchmark, model, model family,
+or harness names.
+
+Before it admits execution, the control service checks that the lock is
+portable, complete, digest-pinned, compatible with the selected deployment,
+and within the campaign cost and resource limits. It rejects local paths,
+mutable source references, unpinned images, unsupported environment features,
+and settings that disagree with approved profiles. It then stores the lock as
+an immutable content-addressed record. Execution and all later recovery work
+use that stored lock and never resolve the benchmark source again.
+
+Deployment profiles contain Hugging Face infrastructure and safety limits. They
+do not contain copies of benchmark task catalogs. A new Harbor-supported
+benchmark or compatible model requires configuration and immutable data only.
+The same rule applies to a supported harness. A new harness implementation
+belongs in a Harbor agent plugin behind the common agent interface. Missing
+behavior is added as a general capability at the correct Harbor, agent,
+provider, or Hugging Face adapter boundary. Harbor-HF does not add name-based
+special cases.
+
+One-time migration programs do not define campaign behavior and do not become
+the path for adding campaign support.
+
 ## Technology choices
 
 TypeScript is the control-service language. Hugging Face maintains JavaScript
@@ -403,14 +437,14 @@ matching deterministic Job label but cannot issue a second create request.
 Worker attempts remain bound to the exact launch action, and one physical
 action can produce no more than one attempt for the same logical task.
 
-A benchmark with different prebuilt images or resource limits for each task can
-lock a task Sandbox list in its deployment profile. The list maps each logical
-trial to its source task, trial number, immutable image digest, hardware, time
-limits, and cost rates. Admission requires exact one-to-one coverage of the
-benchmark task locks. The deployment's shared Sandbox policy still owns
-inference limits, allowed paths, transfer limits, command counts, and the
-root-owned bridge command. Each Sandbox action stores the fully resolved task
-policy, so replay does not depend on a mutable profile.
+Each action selects one trial from the stored Harbor lock. The trial supplies
+its task identity, source digest, image digest, resource request, time limits,
+and verifier settings. The deployment profile supplies generic Hugging Face
+limits for inference, hardware, paths and transfers. It also sets command and
+cost limits. Admission requires the locked trial to fit those limits. Each
+Sandbox action stores the fully resolved task policy, so replay does not depend
+on a mutable profile or a
+second reading of benchmark source files.
 
 The trusted outer worker receives only its signed campaign capability. A custom
 Harbor environment uses that capability to create, observe, execute in, transfer

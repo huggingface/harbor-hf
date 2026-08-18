@@ -29,10 +29,43 @@
   report exactly what was exposed and where, remove it from the current version,
   and ask before rewriting public history or rotating credentials.
 
+## General campaign architecture
+
+- Keep Harbor-HF independent of specific benchmarks and models. Keep its core
+  independent of harness names too. These names may appear in configuration,
+  immutable records, tests and fixtures, or display text, but control and worker
+  code must treat them as data.
+- Harbor is the only component that reads and resolves benchmark formats. Run
+  the pinned Harbor version in an isolated preparation Job without persistent
+  secrets, store its exact `lock.json`, and use that same lock for execution and
+  all later recovery work.
+- Do not add benchmark-specific scripts, parsers, generators, workers, API
+  routes, schema fields, or control branches. Derive tasks, trial counts, task
+  and image digests, resources and timeouts, plus verifier settings from the
+  Harbor lock.
+- Do not add model-specific scripts, workers, API routes, schema fields, or
+  control branches. Keep model IDs, revisions, providers, prices, context
+  limits, reasoning settings, and inference parameters in immutable profiles
+  and campaign locks. Represent behavior through general capabilities such as
+  protocol, tool use, reasoning, structured output, and context size.
+- Keep Harbor-HF control and worker code independent of harness names. A
+  supported Harbor harness must need only configuration. Code for a new harness
+  belongs in a Harbor agent plugin behind the common agent interface and must
+  not change campaign, API, schema, or infrastructure logic.
+- If a benchmark or model needs unsupported behavior, add a general capability
+  at the correct Harbor or provider boundary, or reject it as unsupported.
+  Apply the same rule to harnesses at the agent boundary. Never add a
+  name-based special case in Harbor-HF.
+- Keep one-time migration tools outside the normal campaign path. Never use a
+  migration script to add campaign support.
+- Before merging support for a benchmark or model, verify that another
+  compatible value can use the same path without implementation changes or a
+  new package script. Apply the same test to harness support.
+
 ## Development
 
-- Use Python 3.12+, uv, Pydantic, Typer, Ruff, ty, and pytest for the existing
-  CLI and remote workers.
+- Use Python 3.12+, uv, Pydantic, Typer, Ruff and ty, plus pytest for the
+  existing CLI and remote workers.
 - Implement the new control service and web application in TypeScript as
   specified in `docs/CONTROL_SERVICE.md`. Use the current Node.js LTS release,
   npm workspaces, one root npm lockfile, Fastify, React, Vite, Tailwind CSS,
@@ -49,8 +82,8 @@
 - Run `uv run slophammer-py dry .` and
   `uv run python scripts/check_mutation.py --min-kill-rate 90` before finishing
   behavior changes.
-- Keep domain planning separate from Hugging Face, Harbor, filesystem, clock,
-  and process-state adapters.
+- Keep domain planning separate from Hugging Face, Harbor, filesystem and clock
+  adapters, plus process-state adapters.
 - Use only public Harbor APIs. Do not monkeypatch Harbor internals.
 - Do not load models or run inference locally. Remote integration tests must be
   explicit and leave every Inference Endpoint paused.
