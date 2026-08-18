@@ -15,6 +15,7 @@ Amended at: 2026-08-17T09:13:49Z
 Inference-token amendment approved at: 2026-08-17T15:37:46Z
 Sandbox-lifecycle amendment approved at: 2026-08-17T18:39:15Z
 Finalization amendment approved at: 2026-08-18T00:25:01Z
+Terminal-Bench 2.1 amendment approved at: 2026-08-18T10:40:26Z
 
 ### Scope
 
@@ -29,6 +30,7 @@ Finalization amendment approved at: 2026-08-18T00:25:01Z
 - Install a separate, regularly rotated, inference-only Hugging Face credential in the existing control Space and pass it only to reviewed benchmark workers as `HF_INFERENCE_TOKEN`.
 - Extend signed worker capabilities to exact Hugging Face Sandbox lifecycle operations performed by the control Space for an immutable campaign task.
 - Prepare and run the requested Terminal-Bench 3 campaign for the locked model in low adaptive-thinking mode after the bounded paid canary and launch-review gates pass.
+- Prepare and run Terminal-Bench 2.1 at revision `d49e28f1e4ddd13d289e85a5f312a66750951932` with `deepseek-ai/DeepSeek-V4-Flash-0731` at revision `7872f01b1d1fe23eabc4c98b48bffcef5a386062`, the reviewed Pi 0.84.2 worker, and high reasoning. Run the official five-trial protocol when the measured launch review and enforced campaign ceiling fit within the total project limit.
 - Migrate the remaining active ShellBench result catalog, verify parity, replace the legacy results viewer, and perform the hard cutover without deleting legacy resources.
 
 ### Limits
@@ -48,6 +50,7 @@ Finalization amendment approved at: 2026-08-18T00:25:01Z
 - Bind every Sandbox operation to the immutable campaign lock, launch action, task, expiration, approved image, hardware, paths, transfer limits, timeouts, and budget. Record fenced lifecycle receipts and do not expose a general Hugging Face API proxy.
 - Keep `HF_TOKEN` in the control Space. Never pass it to a worker or Sandbox. The control Space may derive and use a per-Sandbox credential only inside its trusted process while handling an authorized lifecycle operation.
 - Keep the first Terminal-Bench canary below USD 5. Treat the full campaign as substantial paid compute: measure throughput and cost first, preserve durable partial evidence, prove pause and resume, and obtain explicit approval for the exact trial count, concurrency, hardware, and hard cost ceiling before launch.
+- For the approved Terminal-Bench 2.1 campaign, use one bounded representative canary and then continue without another conversational prompt only when the hosted control plane admits the measured worst-case cost for 89 tasks and five trials under the existing USD 300 total project limit. Count setup, canaries, retries, recovery, and cleanup. Allow only infrastructure replacements; never rerun a terminal semantic outcome.
 
 ### Remaining gates
 
@@ -55,7 +58,7 @@ No project-scope amendment remains pending. Operational gates still apply:
 
 - Keep production writes disabled and use free development hardware until local security tests and bounded hosted canaries pass.
 - Do not retire the legacy results viewer or stores until catalog parity is verified. No deletion is authorized.
-- Keep the substantial paid campaign behind its measured launch review and exact cost ceiling.
+- Keep each substantial paid campaign behind its measured launch review and exact enforced cost ceiling.
 
 ## Approval history
 
@@ -71,3 +74,4 @@ No project-scope amendment remains pending. Operational gates still apply:
 ### 2026-08-18
 
 - At 2026-08-18T00:25:01Z, approved all remaining project work needed for autonomous finalization, including result-catalog migration and viewer replacement. This did not authorize deleting legacy resources or bypassing the measured substantial paid-compute gate.
+- At 2026-08-18T10:40:26Z, directed the project to run DeepSeek V4 Flash on Terminal-Bench 2.1 autonomously while separate web UI work proceeds. The campaign uses the existing enforced total project limit and does not authorize a new credential, persistent store, or unreviewed runtime.
