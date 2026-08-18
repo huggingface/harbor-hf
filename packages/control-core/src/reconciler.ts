@@ -255,9 +255,35 @@ export class Reconciler {
           intent,
           new Date(Date.now() + this.options.observation_interval_ms).toISOString(),
         );
-      result = await this.external.execute(intent, {
-        adoption_only: intent.action_kind === "sandbox.create" && Boolean(dispatch),
-      });
+      if (
+        intent.action_kind === "sandbox.create" &&
+        dispatch &&
+        Date.parse(dispatch.adoption_not_before) > Date.now()
+      )
+        return;
+      try {
+        result = await this.external.execute(intent, {
+          adoption_only: intent.action_kind === "sandbox.create" && Boolean(dispatch),
+        });
+      } catch (error) {
+        if (
+          intent.action_kind === "sandbox.create" &&
+          error instanceof ExternalActionNotFoundError
+        ) {
+          const cancelled = await this.projection.hasCampaignAction(
+            intent.campaign_id,
+            "campaign.cancel",
+          );
+          result = {
+            outcome: cancelled ? "completed" : "failed",
+            observed_state: cancelled
+              ? "suppressed-cancelled-not-found"
+              : "sandbox-create-not-found",
+            error_code: cancelled ? null : "sandbox_create_not_found",
+          };
+        } else if (error instanceof AmbiguousExternalActionError) return;
+        else throw error;
+      }
     } else if (
       intent.action_kind === "endpoint.pause" ||
       intent.action_kind === "endpoint.resume"

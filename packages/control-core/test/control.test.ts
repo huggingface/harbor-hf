@@ -631,6 +631,96 @@ describe("control service", () => {
     });
   });
 
+  it("proves an ambiguous Sandbox create absent before cancellation seals", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "ambiguous-sandbox-cancellation-key",
+      operator,
+    );
+    const policy: SandboxPolicy = {
+      image: `registry.example/sandbox@sha256:${"b".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 3_600,
+      idle_timeout_seconds: 600,
+      inference_token: "forbidden",
+      reservation_microusd: 0,
+      active_hourly_cost_microusd: 0,
+      max_sandboxes: 1,
+      max_commands: 8,
+      max_command_seconds: 600,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/logs"],
+    };
+    const create = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.create",
+      "control-smoke-task",
+      0,
+      { task_id: "control-smoke-task", sandbox: policy },
+    );
+    await control.service.writeAction(create);
+    expect(
+      await control.service.reserveSandbox(
+        result.campaign_id,
+        create.action_id,
+        create.created_at,
+        0,
+      ),
+    ).toBe(true);
+    const noop = new NoopActions();
+    const external: ExternalActionPort = {
+      execute: async (intent, context): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "sandbox.create") {
+          if (context?.adoption_only)
+            throw new ExternalActionNotFoundError("Sandbox create was absent");
+          throw new AmbiguousExternalActionError("Sandbox create disconnected");
+        }
+        return noop.execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        batch_size: 16,
+        dispatch_adoption_delay_ms: 0,
+      },
+    );
+    await reconciler.tick();
+    expect(
+      (await control.projection.action(create.action_id))?.receipt_body,
+    ).toBeNull();
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "cancel", reason: "operator cancellation", confirmed: true },
+      "ambiguous-sandbox-cancel-action",
+      operator,
+    );
+
+    await settle(reconciler, 24);
+
+    expect(await control.projection.action(create.action_id)).toMatchObject({
+      outcome: "completed",
+      observed_state: "suppressed-cancelled-not-found",
+      resource_id: null,
+    });
+    expect(
+      (await control.projection.campaignActions(result.campaign_id)).some(
+        (action) => action.action_kind === "sandbox.close",
+      ),
+    ).toBe(false);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 1,
+    });
+  });
+
   it("turns failed Job launches into bounded infrastructure attempts", async () => {
     const control = await createTestControl();
     controls.push(control);
