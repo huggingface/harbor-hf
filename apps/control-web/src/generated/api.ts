@@ -191,13 +191,15 @@ export interface paths {
                         "application/json": {
                             authenticated: boolean;
                             login_url?: string;
+                            /** Format: date-time */
+                            expires_at?: string;
                             actor?: {
-                                subject: string;
-                                role: string;
-                                transport: string;
+                                username: string;
+                                /** @enum {unknown} */
+                                role: "operator" | "reader";
+                                /** @enum {unknown} */
+                                transport: "session" | "development";
                             };
-                        } & {
-                            [key: string]: unknown;
                         };
                     };
                 };
@@ -210,13 +212,15 @@ export interface paths {
                         "application/json": {
                             authenticated: boolean;
                             login_url?: string;
+                            /** Format: date-time */
+                            expires_at?: string;
                             actor?: {
-                                subject: string;
-                                role: string;
-                                transport: string;
+                                username: string;
+                                /** @enum {unknown} */
+                                role: "operator" | "reader";
+                                /** @enum {unknown} */
+                                transport: "session" | "development";
                             };
-                        } & {
-                            [key: string]: unknown;
                         };
                     };
                 };
@@ -254,15 +258,19 @@ export interface paths {
                     content: {
                         "application/json": {
                             source_revision: string;
-                            write_mode: string;
+                            /** @enum {unknown} */
+                            write_mode: "disabled" | "canary" | "enabled";
                             projection: {
-                                [key: string]: unknown;
+                                ready: boolean;
+                                rebuilding: boolean;
+                                object_count: number;
+                                last_rebuild_at: string | null;
+                                last_sync_at: string | null;
+                                integrity_error: string | null;
                             };
                             resource_contract: {
                                 [key: string]: number;
                             };
-                        } & {
-                            [key: string]: unknown;
                         };
                     };
                 };
@@ -1207,6 +1215,10 @@ export interface paths {
                                 source: string;
                                 promotion_state: string | null;
                                 alias: string | null;
+                                approved_alias: string | null;
+                                spec: {
+                                    [key: string]: unknown;
+                                };
                                 /** Format: date-time */
                                 created_at: string;
                             }[];
@@ -1236,6 +1248,15 @@ export interface paths {
                 query?: {
                     cursor?: string;
                     limit?: number;
+                    model?: string;
+                    benchmark?: string;
+                    agent?: string;
+                    status?: string;
+                    search?: string;
+                    published_after?: string;
+                    published_before?: string;
+                    sort?: "published_at" | "model" | "benchmark" | "status" | "score";
+                    order?: "asc" | "desc";
                 };
                 header?: never;
                 path?: never;
@@ -1274,8 +1295,105 @@ export interface paths {
                                     unit: string;
                                 } | null;
                                 result_path?: string | null;
+                                benchmark_revision?: string | null;
+                                model_revision?: string | null;
+                                harness_revision?: string | null;
+                                agent?: string | null;
+                                source_revision?: string | null;
+                                catalog_source_digest?: string | null;
+                                profile_ids?: {
+                                    [key: string]: string;
+                                };
                             }[];
                             next_cursor: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/results/{publication_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    publication_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            publication_id: string;
+                            campaign_id: string;
+                            status: string;
+                            catalog_digest: string | null;
+                            /** Format: date-time */
+                            published_at: string;
+                            run_id?: string | null;
+                            benchmark?: string | null;
+                            model?: string | null;
+                            harness?: string | null;
+                            inference_provider?: string | null;
+                            run_outcome?: string | null;
+                            quality?: string | null;
+                            publication_role?: string | null;
+                            task_count?: number | null;
+                            scored_task_count?: number | null;
+                            strict_pass_count?: number | null;
+                            primary_metric?: {
+                                name: string;
+                                value: number;
+                                unit: string;
+                            } | null;
+                            result_path?: string | null;
+                            benchmark_revision?: string | null;
+                            model_revision?: string | null;
+                            harness_revision?: string | null;
+                            agent?: string | null;
+                            source_revision?: string | null;
+                            catalog_source_digest?: string | null;
+                            profile_ids?: {
+                                [key: string]: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                request_id: string;
+                                fields?: {
+                                    [key: string]: string;
+                                };
+                            };
                         };
                     };
                 };

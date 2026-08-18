@@ -191,6 +191,7 @@ export interface SystemView {
   rebuilding: boolean;
   object_count: number;
   last_rebuild_at: string | null;
+  last_sync_at: string | null;
   integrity_error: string | null;
 }
 
@@ -235,6 +236,7 @@ export class Projection {
     rebuilding: true,
     object_count: 0,
     last_rebuild_at: null,
+    last_sync_at: null,
     integrity_error: null,
   };
 
@@ -477,6 +479,7 @@ export class Projection {
         rebuilding: false,
         object_count: entries.length,
         last_rebuild_at: new Date().toISOString(),
+        last_sync_at: new Date().toISOString(),
         integrity_error: null,
       };
     } catch (error) {
@@ -526,6 +529,7 @@ export class Projection {
         ready: true,
         rebuilding: false,
         object_count: this.state.object_count + ingested,
+        last_sync_at: new Date().toISOString(),
         integrity_error: null,
       };
       return ingested;
@@ -549,7 +553,11 @@ export class Projection {
     const entry = { key, digest, size: canonicalJson(record).length };
     await this.apply(entry, record);
     await this.verifyInvariants();
-    this.state = { ...this.state, object_count: this.state.object_count + 1 };
+    this.state = {
+      ...this.state,
+      object_count: this.state.object_count + 1,
+      last_sync_at: new Date().toISOString(),
+    };
   }
 
   private async apply(

@@ -212,7 +212,10 @@ function cursorOffset(cursor: string | undefined): number {
   if (!cursor) return 0;
   const text = Buffer.from(cursor, "base64url").toString("utf8");
   if (!/^\d+$/.test(text)) throw new PolicyError("cursor is invalid");
-  return Number(text);
+  const offset = Number(text);
+  if (!Number.isSafeInteger(offset) || offset > 1_000_000)
+    throw new PolicyError("cursor is outside the bounded result window");
+  return offset;
 }
 
 function offsetPage<T>(
@@ -238,6 +241,22 @@ const paginationQuerySchema = {
   },
 } as const;
 
+const resultQuerySchema = {
+  type: "object",
+  properties: {
+    ...paginationQuerySchema.properties,
+    model: { type: "string", maxLength: 512 },
+    benchmark: { type: "string", maxLength: 512 },
+    agent: { type: "string", maxLength: 512 },
+    status: { type: "string", maxLength: 80 },
+    search: { type: "string", maxLength: 200 },
+    published_after: { type: "string", format: "date-time" },
+    published_before: { type: "string", format: "date-time" },
+    sort: { enum: ["published_at", "model", "benchmark", "status", "score"] },
+    order: { enum: ["asc", "desc"] },
+  },
+} as const;
+
 function cleanSchema(value: object): object {
   const clone = structuredClone(value) as Record<string, unknown>;
   delete clone.$schema;
@@ -247,6 +266,17 @@ function cleanSchema(value: object): object {
 
 function sendEvent(reply: FastifyReply, event: ControlEvent): void {
   reply.raw.write(`id: ${event.id}\ndata: ${JSON.stringify(event)}\n\n`);
+}
+
+function profileString(
+  profiles: Array<{ kind: string; profile_id: string; spec: unknown }>,
+  kind: string,
+  key: string,
+): string | null {
+  const profile = profiles.find((item) => item.kind === kind);
+  if (!profile?.spec || typeof profile.spec !== "object") return null;
+  const value = (profile.spec as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : null;
 }
 
 async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]> {
@@ -275,13 +305,95 @@ async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]>
         ...entry,
         status: "published",
         catalog_digest: object.digest,
+        catalog_source_digest: catalog.source_digest,
       });
     }
   }
-  return [...byId.values()].sort((left, right) => {
-    const byTime = String(right.published_at).localeCompare(String(left.published_at));
+  for (const item of byId.values()) {
+    const campaignId = typeof item.campaign_id === "string" ? item.campaign_id : null;
+    if (!campaignId) continue;
+    const lock = await runtime.projection.campaignLock(campaignId);
+    if (!lock) continue;
+    item.benchmark_revision = profileString(lock.profiles, "benchmark", "revision");
+    item.model_revision = profileString(lock.profiles, "model", "revision");
+    item.harness_revision = profileString(lock.profiles, "harness", "revision");
+    item.agent = profileString(lock.profiles, "harness", "agent");
+    item.source_revision = lock.source_revision;
+    item.profile_ids = Object.fromEntries(
+      lock.profiles.map((profile) => [profile.kind, profile.profile_id]),
+    );
+  }
+  return [...byId.values()];
+}
+
+interface ResultQuery {
+  cursor?: string;
+  limit?: number;
+  model?: string;
+  benchmark?: string;
+  agent?: string;
+  status?: string;
+  search?: string;
+  published_after?: string;
+  published_before?: string;
+  sort?: "published_at" | "model" | "benchmark" | "status" | "score";
+  order?: "asc" | "desc";
+}
+
+function filterAndSortResults(
+  items: Record<string, unknown>[],
+  query: ResultQuery,
+): Record<string, unknown>[] {
+  const needle = query.search?.trim().toLowerCase();
+  const filtered = items.filter((item) => {
+    if (query.model && item.model !== query.model) return false;
+    if (query.benchmark && item.benchmark !== query.benchmark) return false;
+    if (query.agent && item.agent !== query.agent && item.harness !== query.agent)
+      return false;
+    if (query.status && item.status !== query.status) return false;
+    const publishedAt = String(item.published_at ?? "");
+    if (query.published_after && publishedAt < query.published_after) return false;
+    if (query.published_before && publishedAt > query.published_before) return false;
+    if (
+      needle &&
+      ![
+        item.publication_id,
+        item.campaign_id,
+        item.model,
+        item.benchmark,
+        item.agent,
+        item.harness,
+      ].some((value) =>
+        String(value ?? "")
+          .toLowerCase()
+          .includes(needle),
+      )
+    )
+      return false;
+    return true;
+  });
+  const sort = query.sort ?? "published_at";
+  const order = query.order === "asc" ? 1 : -1;
+  return filtered.sort((left, right) => {
+    const leftValue =
+      sort === "score"
+        ? Number(
+            (left.primary_metric as { value?: unknown } | null)?.value ?? -Infinity,
+          )
+        : String(left[sort] ?? "");
+    const rightValue =
+      sort === "score"
+        ? Number(
+            (right.primary_metric as { value?: unknown } | null)?.value ?? -Infinity,
+          )
+        : String(right[sort] ?? "");
+    const comparison =
+      typeof leftValue === "number" && typeof rightValue === "number"
+        ? leftValue - rightValue
+        : String(leftValue).localeCompare(String(rightValue));
     return (
-      byTime || String(right.publication_id).localeCompare(String(left.publication_id))
+      comparison * order ||
+      String(right.publication_id).localeCompare(String(left.publication_id))
     );
   });
 }
@@ -576,6 +688,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         subject: `worker:${capability.action_id}`,
         role: "operator",
         transport: "bearer",
+        username: "Campaign worker",
       };
     } else if (runtime.config.auth_mode === "development") {
       if (
@@ -810,8 +923,17 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       schema: { tags: ["auth"], response: { 200: sessionSchema, 401: sessionSchema } },
     },
     async (request, reply) => {
-      if (runtime.config.auth_mode === "development")
-        return { authenticated: true, actor: runtime.auth.developmentActor() };
+      if (runtime.config.auth_mode === "development") {
+        const development = runtime.auth.developmentActor();
+        return {
+          authenticated: true,
+          actor: {
+            username: development.username,
+            role: development.role,
+            transport: development.transport,
+          },
+        };
+      }
       const sessionId = request.cookies.hhf_session;
       const authenticated =
         request.actor && request.authSession
@@ -821,7 +943,15 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
             : null;
       if (!authenticated)
         return reply.code(401).send({ authenticated: false, login_url: "/auth/login" });
-      return { authenticated: true, actor: authenticated.actor };
+      return {
+        authenticated: true,
+        expires_at: new Date(authenticated.session.expires_at).toISOString(),
+        actor: {
+          username: authenticated.actor.username,
+          role: authenticated.actor.role,
+          transport: authenticated.actor.transport,
+        },
+      };
     },
   );
 
@@ -1616,8 +1746,20 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       const limit = query.limit ?? 50;
       const offset = cursorOffset(query.cursor);
       const items = await runtime.projection.profiles(limit + 1, offset);
+      const aliases = new Map(
+        runtime.service.resolver
+          .aliases()
+          .map((item) => [`${item.kind}:${item.profile_id}`, item.alias]),
+      );
       return offsetPage(
-        items.map((item) => redactSandboxTopology(item)),
+        items.map((item) =>
+          redactSandboxTopology({
+            ...item,
+            approved_alias:
+              aliases.get(`${item.profile_kind}:${item.profile_id}`) ?? null,
+            spec: JSON.parse(item.spec_body) as Record<string, unknown>,
+          }),
+        ),
         offset,
         limit,
       );
@@ -1628,16 +1770,49 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     {
       schema: {
         tags: ["results"],
-        querystring: paginationQuerySchema,
+        querystring: resultQuerySchema,
         response: { 200: itemList(publicationSchema) },
       },
     },
     async (request) => {
-      const query = request.query as { cursor?: string; limit?: number };
+      const query = request.query as ResultQuery;
       const limit = query.limit ?? 50;
       const offset = cursorOffset(query.cursor);
-      const items = (await resultItems(runtime)).slice(offset, offset + limit + 1);
+      const items = filterAndSortResults(await resultItems(runtime), query).slice(
+        offset,
+        offset + limit + 1,
+      );
       return offsetPage(items, offset, limit);
+    },
+  );
+  app.get(
+    "/api/v1/results/:publication_id",
+    {
+      schema: {
+        tags: ["results"],
+        params: {
+          type: "object",
+          required: ["publication_id"],
+          properties: { publication_id: { type: "string", maxLength: 160 } },
+        },
+        response: { 200: publicationSchema, 404: cleanSchema(schemas.apiError) },
+      },
+    },
+    async (request, reply) => {
+      const { publication_id } = request.params as { publication_id: string };
+      const item = (await resultItems(runtime)).find(
+        (candidate) => candidate.publication_id === publication_id,
+      );
+      return (
+        item ??
+        reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "result was not found",
+            request_id: request.id,
+          },
+        })
+      );
     },
   );
   app.get(
@@ -1702,7 +1877,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         }
       });
       let replayCursor = cursor;
-      for (;;) {
+      while (replayCursor) {
         const page = await runtime.projection.audit(replayCursor, 500);
         for (const event of page) {
           seen.add(event.id);
@@ -1718,7 +1893,13 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           sendEvent(reply, event);
         }
       }
-      const heartbeat = setInterval(() => reply.raw.write(": heartbeat\n\n"), 15_000);
+      const heartbeat = setInterval(
+        () =>
+          reply.raw.write(
+            `data: ${JSON.stringify({ type: "heartbeat", occurred_at: new Date().toISOString(), data: {} })}\n\n`,
+          ),
+        15_000,
+      );
       request.raw.on("close", () => {
         clearInterval(heartbeat);
         unsubscribe();

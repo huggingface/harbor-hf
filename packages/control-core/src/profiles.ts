@@ -93,6 +93,18 @@ export class ProfileResolver {
     return new Map([...this.builtInProfiles, ...this.promotedProfiles]);
   }
 
+  aliases(): Array<{
+    kind: ProfileObject["profile_kind"];
+    alias: string;
+    profile_id: string;
+  }> {
+    return [...this.availableProfiles()].map(([key, profile]) => ({
+      kind: profile.profile.profile_kind,
+      alias: key.slice(key.indexOf(":") + 1),
+      profile_id: profile.profile_id,
+    }));
+  }
+
   get(kind: ProfileObject["profile_kind"], name: string): LoadedProfile {
     const key = profileKey(kind, name);
     const profile = this.promotedProfiles.get(key) ?? this.builtInProfiles.get(key);

@@ -91,7 +91,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
+                  "additionalProperties": false,
                   "required": [
                     "authenticated"
                   ],
@@ -102,23 +102,33 @@
                     "login_url": {
                       "type": "string"
                     },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
                     "actor": {
                       "type": "object",
                       "additionalProperties": false,
                       "required": [
-                        "subject",
+                        "username",
                         "role",
                         "transport"
                       ],
                       "properties": {
-                        "subject": {
+                        "username": {
                           "type": "string"
                         },
                         "role": {
-                          "type": "string"
+                          "enum": [
+                            "operator",
+                            "reader"
+                          ]
                         },
                         "transport": {
-                          "type": "string"
+                          "enum": [
+                            "session",
+                            "development"
+                          ]
                         }
                       }
                     }
@@ -133,7 +143,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
+                  "additionalProperties": false,
                   "required": [
                     "authenticated"
                   ],
@@ -144,23 +154,33 @@
                     "login_url": {
                       "type": "string"
                     },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
                     "actor": {
                       "type": "object",
                       "additionalProperties": false,
                       "required": [
-                        "subject",
+                        "username",
                         "role",
                         "transport"
                       ],
                       "properties": {
-                        "subject": {
+                        "username": {
                           "type": "string"
                         },
                         "role": {
-                          "type": "string"
+                          "enum": [
+                            "operator",
+                            "reader"
+                          ]
                         },
                         "transport": {
-                          "type": "string"
+                          "enum": [
+                            "session",
+                            "development"
+                          ]
                         }
                       }
                     }
@@ -184,7 +204,7 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
+                  "additionalProperties": false,
                   "required": [
                     "source_revision",
                     "write_mode",
@@ -196,11 +216,64 @@
                       "type": "string"
                     },
                     "write_mode": {
-                      "type": "string"
+                      "enum": [
+                        "disabled",
+                        "canary",
+                        "enabled"
+                      ]
                     },
                     "projection": {
                       "type": "object",
-                      "additionalProperties": true
+                      "additionalProperties": false,
+                      "required": [
+                        "ready",
+                        "rebuilding",
+                        "object_count",
+                        "last_rebuild_at",
+                        "last_sync_at",
+                        "integrity_error"
+                      ],
+                      "properties": {
+                        "ready": {
+                          "type": "boolean"
+                        },
+                        "rebuilding": {
+                          "type": "boolean"
+                        },
+                        "object_count": {
+                          "type": "integer"
+                        },
+                        "last_rebuild_at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "last_sync_at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "integrity_error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
                     },
                     "resource_contract": {
                       "type": "object",
@@ -2053,6 +2126,8 @@
                           "source",
                           "promotion_state",
                           "alias",
+                          "approved_alias",
+                          "spec",
                           "created_at"
                         ],
                         "properties": {
@@ -2087,6 +2162,20 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "approved_alias": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "spec": {
+                            "type": "object",
+                            "additionalProperties": true
                           },
                           "created_at": {
                             "type": "string",
@@ -2137,6 +2226,94 @@
             },
             "in": "query",
             "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "in": "query",
+            "name": "model",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "in": "query",
+            "name": "benchmark",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "in": "query",
+            "name": "agent",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "in": "query",
+            "name": "published_after",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "in": "query",
+            "name": "published_before",
+            "required": false
+          },
+          {
+            "schema": {
+              "enum": [
+                "published_at",
+                "model",
+                "benchmark",
+                "status",
+                "score"
+              ]
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "in": "query",
+            "name": "order",
             "required": false
           }
         ],
@@ -2335,6 +2512,72 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "benchmark_revision": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model_revision": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "harness_revision": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "agent": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "source_revision": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "catalog_source_digest": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "profile_ids": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
                           }
                         }
                       }
@@ -2348,6 +2591,333 @@
                           "type": "null"
                         }
                       ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/results/{publication_id}": {
+      "get": {
+        "tags": [
+          "results"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 160
+            },
+            "in": "path",
+            "name": "publication_id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "publication_id",
+                    "campaign_id",
+                    "status",
+                    "catalog_digest",
+                    "published_at"
+                  ],
+                  "properties": {
+                    "publication_id": {
+                      "type": "string"
+                    },
+                    "campaign_id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "catalog_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "published_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "run_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "benchmark": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "harness": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "inference_provider": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "run_outcome": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "quality": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "publication_role": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "task_count": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scored_task_count": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "strict_pass_count": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "primary_metric": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "name",
+                            "value",
+                            "unit"
+                          ],
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "value": {
+                              "type": "number"
+                            },
+                            "unit": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "result_path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "benchmark_revision": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "model_revision": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "harness_revision": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "agent": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source_revision": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "catalog_source_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "profile_ids": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "API error v1",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "code",
+                        "message",
+                        "request_id"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]*$",
+                          "maxLength": 80
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "request_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        },
+                        "fields": {
+                          "type": "object",
+                          "maxProperties": 64,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        }
+                      }
                     }
                   }
                 }

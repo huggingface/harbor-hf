@@ -219,6 +219,8 @@ export const profileSchema = {
     "source",
     "promotion_state",
     "alias",
+    "approved_alias",
+    "spec",
     "created_at",
   ],
   properties: {
@@ -228,6 +230,8 @@ export const profileSchema = {
     source: { type: "string" },
     promotion_state: nullableString,
     alias: nullableString,
+    approved_alias: nullableString,
+    spec: { type: "object", additionalProperties: true },
     created_at: { type: "string", format: "date-time" },
   },
 } as const;
@@ -275,6 +279,16 @@ export const publicationSchema = {
       ],
     },
     result_path: nullableString,
+    benchmark_revision: nullableString,
+    model_revision: nullableString,
+    harness_revision: nullableString,
+    agent: nullableString,
+    source_revision: nullableString,
+    catalog_source_digest: nullableString,
+    profile_ids: {
+      type: "object",
+      additionalProperties: { type: "string" },
+    },
   },
 } as const;
 
@@ -291,19 +305,20 @@ export const itemList = (item: object) =>
 
 export const sessionSchema = {
   type: "object",
-  additionalProperties: true,
+  additionalProperties: false,
   required: ["authenticated"],
   properties: {
     authenticated: { type: "boolean" },
     login_url: { type: "string" },
+    expires_at: { type: "string", format: "date-time" },
     actor: {
       type: "object",
       additionalProperties: false,
-      required: ["subject", "role", "transport"],
+      required: ["username", "role", "transport"],
       properties: {
-        subject: { type: "string" },
-        role: { type: "string" },
-        transport: { type: "string" },
+        username: { type: "string" },
+        role: { enum: ["operator", "reader"] },
+        transport: { enum: ["session", "development"] },
       },
     },
   },
@@ -311,12 +326,31 @@ export const sessionSchema = {
 
 export const systemSchema = {
   type: "object",
-  additionalProperties: true,
+  additionalProperties: false,
   required: ["source_revision", "write_mode", "projection", "resource_contract"],
   properties: {
     source_revision: { type: "string" },
-    write_mode: { type: "string" },
-    projection: { type: "object", additionalProperties: true },
+    write_mode: { enum: ["disabled", "canary", "enabled"] },
+    projection: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "ready",
+        "rebuilding",
+        "object_count",
+        "last_rebuild_at",
+        "last_sync_at",
+        "integrity_error",
+      ],
+      properties: {
+        ready: { type: "boolean" },
+        rebuilding: { type: "boolean" },
+        object_count: integer,
+        last_rebuild_at: nullableString,
+        last_sync_at: nullableString,
+        integrity_error: nullableString,
+      },
+    },
     resource_contract: { type: "object", additionalProperties: { type: "integer" } },
   },
 } as const;

@@ -150,11 +150,29 @@ export class ControlService {
       throw new IdempotencyConflictError(`projection digest conflict at ${key}`);
     if (!projected) {
       await this.projection.ingest(key, result.digest, record);
+      const eventData: Record<string, unknown> = {
+        key,
+        digest: result.digest,
+        record_id: record.record_id,
+      };
+      for (const field of [
+        "campaign_id",
+        "task_id",
+        "attempt_id",
+        "action_id",
+        "action_kind",
+        "publication_id",
+        "profile_kind",
+        "alias",
+      ] as const) {
+        if (field in record)
+          eventData[field] = (record as unknown as Record<string, unknown>)[field];
+      }
       this.events.publish({
         id: eventCursor(record.created_at, key),
         type: record.kind,
         occurred_at: record.created_at,
-        data: { key, digest: result.digest, record_id: record.record_id },
+        data: eventData,
       });
       if (record.kind === "profile.object" || record.kind === "profile.promotion")
         await this.refreshProfileResolver();

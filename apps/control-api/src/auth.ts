@@ -24,11 +24,13 @@ export class UnauthorizedSubjectError extends Error {}
 export interface AuthenticatedActor extends Actor {
   role: AuthRole;
   transport: "session" | "bearer" | "development";
+  username: string;
 }
 
 export interface SessionRow {
   id: string;
   subject: string;
+  username: string | null;
   csrf_digest: string;
   expires_at: number;
 }
@@ -89,6 +91,7 @@ export class AuthStore {
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         subject TEXT NOT NULL,
+        username TEXT,
         csrf_digest TEXT NOT NULL,
         expires_at INTEGER NOT NULL
       );
@@ -100,6 +103,11 @@ export class AuthStore {
         expires_at INTEGER NOT NULL
       );
     `);
+    const sessionColumns = database
+      .prepare("PRAGMA table_info(sessions)")
+      .all() as Array<{ name: string }>;
+    if (!sessionColumns.some((column) => column.name === "username"))
+      database.exec("ALTER TABLE sessions ADD COLUMN username TEXT");
     return new AuthStore(database);
   }
 
@@ -141,6 +149,7 @@ export class AuthStore {
 
   createSession(
     subject: string,
+    username: string,
     ttlSeconds: number,
   ): { id: string; csrf: string; expires_at: number } {
     const id = randomToken();
@@ -151,9 +160,9 @@ export class AuthStore {
       this.database.prepare("DELETE FROM sessions WHERE expires_at < ?").run(now);
       this.database
         .prepare(
-          "INSERT INTO sessions (id, subject, csrf_digest, expires_at) VALUES (?, ?, ?, ?)",
+          "INSERT INTO sessions (id, subject, username, csrf_digest, expires_at) VALUES (?, ?, ?, ?, ?)",
         )
-        .run(id, subject, digest(csrf), expiresAt);
+        .run(id, subject, username, digest(csrf), expiresAt);
       this.database
         .prepare(
           "DELETE FROM sessions WHERE id IN (SELECT id FROM sessions ORDER BY expires_at DESC, id DESC LIMIT -1 OFFSET 4096)",
@@ -165,7 +174,9 @@ export class AuthStore {
 
   session(id: string): SessionRow | null {
     const row = this.database
-      .prepare("SELECT id, subject, csrf_digest, expires_at FROM sessions WHERE id = ?")
+      .prepare(
+        "SELECT id, subject, username, csrf_digest, expires_at FROM sessions WHERE id = ?",
+      )
       .get(id) as SessionRow | undefined;
     if (!row || row.expires_at < Date.now()) {
       if (row) this.deleteSession(id);
@@ -286,7 +297,17 @@ export class AuthenticationService {
     if (!user.sub) throw new Error("OAuth user info has no stable subject");
     if (!(await this.role(user.sub)))
       throw new UnauthorizedSubjectError("OAuth identity is not authorized");
-    const session = this.store.createSession(user.sub, this.oauth.session_ttl_seconds);
+    const username =
+      typeof user.preferred_username === "string"
+        ? user.preferred_username
+        : typeof user.name === "string"
+          ? user.name
+          : "Hugging Face user";
+    const session = this.store.createSession(
+      user.sub,
+      username,
+      this.oauth.session_ttl_seconds,
+    );
     return {
       session_id: session.id,
       csrf: session.csrf,
@@ -310,6 +331,7 @@ export class AuthenticationService {
         subject: session.subject,
         role,
         transport: "session",
+        username: session.username ?? "Hugging Face user",
       },
       session,
     };
@@ -351,7 +373,7 @@ export class AuthenticationService {
     const role = await this.role(subject);
     if (!role)
       throw new InvalidBearerCredentialError("bearer identity is not authorized");
-    return { subject, role, transport: "bearer" };
+    return { subject, role, transport: "bearer", username: "API client" };
   }
 
   private rememberBearer(
@@ -374,6 +396,7 @@ export class AuthenticationService {
       subject: "development-operator",
       role: "operator",
       transport: "development",
+      username: "Development operator",
     };
   }
 

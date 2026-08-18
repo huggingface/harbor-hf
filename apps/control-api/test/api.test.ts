@@ -315,13 +315,22 @@ describe("control API", () => {
       method: "GET",
       url: "/api/v1/profiles?limit=1",
     });
-    const firstProfile = firstProfiles.json().items[0].profile_id as string;
+    const firstProfileItem = firstProfiles.json().items[0] as Record<string, unknown>;
+    const firstProfile = firstProfileItem.profile_id as string;
+    expect(firstProfileItem.approved_alias).toEqual(expect.any(String));
+    expect(firstProfileItem.spec).toEqual(expect.any(Object));
     const cursor = firstProfiles.json().next_cursor as string;
     const secondProfiles = await app.inject({
       method: "GET",
       url: `/api/v1/profiles?limit=1&cursor=${encodeURIComponent(cursor)}`,
     });
     expect(secondProfiles.json().items[0].profile_id).not.toBe(firstProfile);
+    const outsideWindow = Buffer.from("1000001").toString("base64url");
+    const bounded = await app.inject({
+      method: "GET",
+      url: `/api/v1/results?cursor=${outsideWindow}`,
+    });
+    expect(bounded.statusCode).toBe(422);
     await app.close();
   });
 
@@ -633,7 +642,7 @@ describe("control API", () => {
       ).statusCode,
     ).toBe(429);
 
-    const session = runtime.auth.store.createSession("operator", 60);
+    const session = runtime.auth.store.createSession("operator", "test-user", 60);
     const authenticated = await app.inject({
       method: "GET",
       url: "/api/v1/auth/session",
@@ -642,8 +651,9 @@ describe("control API", () => {
     expect(authenticated.statusCode).toBe(200);
     expect(authenticated.json()).toMatchObject({
       authenticated: true,
-      actor: { subject: "operator", role: "operator" },
+      actor: { username: "test-user", role: "operator" },
     });
+    expect(authenticated.json().actor).not.toHaveProperty("subject");
     await app.close();
   });
 
@@ -786,7 +796,25 @@ describe("control API", () => {
       model: "model-one",
       primary_metric: { value: 0.75 },
       status: "published",
+      catalog_source_digest: catalog.source_digest,
     });
+    const filtered = await app.inject({
+      method: "GET",
+      url: "/api/v1/results?model=model-one&search=benchmark-one&sort=score&order=desc",
+    });
+    expect(filtered.statusCode).toBe(200);
+    expect(filtered.json().items).toHaveLength(1);
+    const empty = await app.inject({
+      method: "GET",
+      url: "/api/v1/results?agent=missing-agent",
+    });
+    expect(empty.json().items).toEqual([]);
+    const detail = await app.inject({
+      method: "GET",
+      url: "/api/v1/results/publication-one",
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({ publication_id: "publication-one" });
     await app.close();
   });
 
@@ -1275,7 +1303,7 @@ describe("authentication state", () => {
     const root = await mkdtemp(join(tmpdir(), "hhf-auth-"));
     roots.push(root);
     const store = await AuthStore.open(join(root, "auth.sqlite"));
-    const session = store.createSession("subject-1", 60);
+    const session = store.createSession("subject-1", "test-user", 60);
     const row = store.session(session.id);
     expect(row).not.toBeNull();
     if (!row) throw new Error("session was not stored");
@@ -1302,7 +1330,7 @@ describe("authentication state", () => {
     expect(await auth.role("operator")).toBe("operator");
     expect(await auth.role("reader")).toBe("reader");
     expect(await auth.role("unlisted")).toBeNull();
-    const unlisted = store.createSession("unlisted", 60);
+    const unlisted = store.createSession("unlisted", "unlisted-user", 60);
     expect(await auth.sessionActor(unlisted.id)).toBeNull();
     expect(store.session(unlisted.id)).toBeNull();
     store.close();
