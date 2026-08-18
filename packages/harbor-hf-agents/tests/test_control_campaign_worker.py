@@ -32,7 +32,10 @@ def _trial_lock() -> dict:
                 "ControlSandboxEnvironment"
             ),
             "delete": True,
-            "kwargs": {"control_task_id": "task-a-trial-1"},
+            "kwargs": {
+                "control_task_id": "task-a-trial-1",
+                "control_max_command_seconds": 900,
+            },
         },
         "verifier": {"disable": False},
     }
@@ -138,6 +141,10 @@ def test_reads_exact_prepared_worker_configuration(
     assert config.tasks[0].task_id == "task-a-trial-1"
     assert config.tasks[0].source_task_id == "task-a"
     assert config.tasks[0].trial_lock.task.digest == DIGEST
+    assert config.tasks[0].trial_lock.environment.kwargs == {
+        "control_task_id": "task-a-trial-1",
+        "control_max_command_seconds": 900,
+    }
     assert config.tasks[0].timeout_seconds == 2_460
 
 
@@ -183,6 +190,30 @@ def test_reconstructs_portable_git_task(monkeypatch: pytest.MonkeyPatch) -> None
             "",
             False,
             ("verifier", False),
+        ),
+        (
+            {
+                "exception_info": {
+                    "exception_type": "RuntimeError",
+                    "exception_message": "control Sandbox API returned HTTP 500",
+                }
+            },
+            "",
+            False,
+            ("infrastructure", True),
+        ),
+        (
+            {
+                "exception_info": {
+                    "exception_type": "RuntimeError",
+                    "exception_message": (
+                        "control Sandbox API returned HTTP 422: policy_rejected"
+                    ),
+                }
+            },
+            "",
+            False,
+            ("policy", False),
         ),
     ],
 )

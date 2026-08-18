@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from harbor.models.job.lock import TrialLock
 
 from harbor_hf_agents.support import control_prepare_worker as worker
 
@@ -87,6 +88,39 @@ def test_reads_exact_campaign_task_mapping() -> None:
             input_digest=DIGEST,
         ),
     )
+
+
+def test_locks_the_prepared_command_limit_into_the_environment() -> None:
+    source = TrialLock.model_validate(
+        {
+            "schema_version": 2,
+            "task": {
+                "name": "task-a",
+                "type": "git",
+                "digest": DIGEST,
+                "path": "tasks/task-a",
+                "git_url": "https://github.com/example/benchmark.git",
+                "git_commit_id": "b" * 40,
+            },
+            "install_only": False,
+            "timeout_multiplier": 1.0,
+            "agent": {
+                "import_path": "example.agent:Agent",
+                "model_name": "openai/example/model:provider",
+                "kwargs": {},
+            },
+            "skills": [],
+            "environment": {"delete": True},
+            "verifier": {"disable": False},
+        }
+    )
+
+    prepared = worker._execution_trial_lock(source, "task-a-trial-1", 900)
+
+    assert prepared.environment.kwargs == {
+        "control_task_id": "task-a-trial-1",
+        "control_max_command_seconds": 900,
+    }
 
 
 def test_keeps_digest_pinned_images_unchanged() -> None:

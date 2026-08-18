@@ -235,7 +235,11 @@ def _source_name(lock: TrialLock) -> str:
     return lock.task.name.rsplit("/", 1)[-1]
 
 
-def _execution_trial_lock(lock: TrialLock, task_id: str) -> TrialLock:
+def _execution_trial_lock(
+    lock: TrialLock,
+    task_id: str,
+    max_command_seconds: int,
+) -> TrialLock:
     environment = EnvironmentConfig.model_validate(
         {
             **lock.environment.model_dump(mode="json"),
@@ -245,7 +249,10 @@ def _execution_trial_lock(lock: TrialLock, task_id: str) -> TrialLock:
             ),
             "type": None,
             "delete": True,
-            "kwargs": {"control_task_id": task_id},
+            "kwargs": {
+                "control_task_id": task_id,
+                "control_max_command_seconds": max_command_seconds,
+            },
         }
     )
     return lock.model_copy(update={"environment": environment}, deep=True)
@@ -263,24 +270,7 @@ def _trial_body(
     if agent_base is None:
         raise RuntimeError("HF Sandbox execution requires a bounded agent timeout")
     setup_base = harbor_lock.agent.override_setup_timeout_sec or 360.0
-    prepared_lock = _execution_trial_lock(harbor_lock, expected.task_id)
-    return prepared_lock, {
-        "phase": "trial",
-        "task_id": expected.task_id,
-        "source_task_id": expected.source_task_id,
-        "trial_index": expected.trial_index,
-        "input_digest": expected.input_digest,
-        "trial_lock": prepared_lock.model_dump(mode="json"),
-        "declared_image": str(environment.docker_image),
-        "image": image,
-        "cpus": environment.cpus or int(template["default_cpus"]),
-        "memory_mb": environment.memory_mb or int(template["default_memory_mb"]),
-        "storage_mb": environment.storage_mb or int(template["default_storage_mb"]),
-        "gpus": (
-            environment.gpus
-            if environment.gpus is not None
-            else int(template["default_gpus"])
-        ),
+    phase_timeouts = {
         "agent_timeout_seconds": _scaled(
             agent_base,
             harbor_lock.agent_timeout_multiplier,
@@ -301,6 +291,30 @@ def _trial_body(
             harbor_lock.agent_setup_timeout_multiplier,
             harbor_lock.timeout_multiplier,
         ),
+    }
+    prepared_lock = _execution_trial_lock(
+        harbor_lock,
+        expected.task_id,
+        max(phase_timeouts.values()),
+    )
+    return prepared_lock, {
+        "phase": "trial",
+        "task_id": expected.task_id,
+        "source_task_id": expected.source_task_id,
+        "trial_index": expected.trial_index,
+        "input_digest": expected.input_digest,
+        "trial_lock": prepared_lock.model_dump(mode="json"),
+        "declared_image": str(environment.docker_image),
+        "image": image,
+        "cpus": environment.cpus or int(template["default_cpus"]),
+        "memory_mb": environment.memory_mb or int(template["default_memory_mb"]),
+        "storage_mb": environment.storage_mb or int(template["default_storage_mb"]),
+        "gpus": (
+            environment.gpus
+            if environment.gpus is not None
+            else int(template["default_gpus"])
+        ),
+        **phase_timeouts,
     }
 
 

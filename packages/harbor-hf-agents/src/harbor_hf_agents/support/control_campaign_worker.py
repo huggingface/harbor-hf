@@ -292,9 +292,19 @@ def _exception_outcome(  # noqa: C901 -- explicit terminal outcome map
     name = (
         str(exception.get("exception_type", "")) if isinstance(exception, dict) else ""
     )
+    detail = (
+        " ".join(
+            str(exception.get(key, ""))
+            for key in ("exception_message", "exception_traceback")
+        )
+        if isinstance(exception, dict)
+        else ""
+    )
     if name in {"AgentTimeoutError", "VerifierTimeoutError"}:
         return "benchmark_timeout", False
-    if any(marker in name for marker in _INFRASTRUCTURE_MARKERS):
+    if "policy_rejected" in detail:
+        return "policy", False
+    if any(marker in f"{name} {detail}" for marker in _INFRASTRUCTURE_MARKERS):
         return "infrastructure", True
     if "Verifier" in name or "Reward" in name:
         return "verifier", False

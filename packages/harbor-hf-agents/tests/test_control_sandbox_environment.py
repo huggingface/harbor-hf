@@ -74,6 +74,7 @@ async def test_routes_harbor_operations_through_worker_capability(
             workdir="/app",
         ),
         control_task_id="source-task-trial-1",
+        control_max_command_seconds=900,
     )
     monkeypatch.setattr(environment, "_upload_environment_dir_after_start", _noop)
 
@@ -84,12 +85,16 @@ async def test_routes_harbor_operations_through_worker_capability(
         timeout_sec=30,
         user="harbor-agent",
     )
+    await environment.exec("printf default", cwd="/app")
+    with pytest.raises(ValueError, match="exceeds prepared limit"):
+        await environment.exec("printf too-long", timeout_sec=901)
     await environment.stop(delete=True)
 
     assert result.return_code == 0
     assert result.stdout == "ok\n"
     assert [call[0] for call in FakeClient.calls] == [
         "GET",
+        "POST",
         "POST",
         "POST",
         "POST",
@@ -101,6 +106,9 @@ async def test_routes_harbor_operations_through_worker_capability(
     assert "runuser -u harbor-agent" in command["command"][2]
     assert command["cwd"] == "/app"
     assert command["timeout_seconds"] == 30
+    default_command = FakeClient.calls[4][2]
+    assert default_command is not None
+    assert default_command["timeout_seconds"] == 900
 
 
 async def _noop() -> None:

@@ -141,12 +141,20 @@ class ControlSandboxEnvironment(BaseEnvironment):
         task_env_config: EnvironmentConfig,
         *args: Any,  # noqa: ANN401 -- Harbor environment API
         control_task_id: str,
+        control_max_command_seconds: int,
         **kwargs: Any,  # noqa: ANN401 -- Harbor environment API
     ) -> None:
         if not control_task_id:
             raise ValueError("control_task_id is required")
+        if (
+            not isinstance(control_max_command_seconds, int)
+            or isinstance(control_max_command_seconds, bool)
+            or control_max_command_seconds < 1
+        ):
+            raise ValueError("control_max_command_seconds must be a positive integer")
         self._campaign_id = _required("HARBOR_HF_CAMPAIGN_ID")
         self._task_id = control_task_id
+        self._max_command_seconds = control_max_command_seconds
         self._client = _ControlClient(self._campaign_id, self._task_id)
         self._sandbox_id: str | None = None
         self._operation = 0
@@ -300,7 +308,9 @@ class ControlSandboxEnvironment(BaseEnvironment):
             script = (
                 f"runuser -u {shlex.quote(user)} -- /bin/sh -lc {shlex.quote(script)}"
             )
-        timeout = timeout_sec or 3600
+        timeout = self._max_command_seconds if timeout_sec is None else timeout_sec
+        if timeout < 1 or timeout > self._max_command_seconds:
+            raise ValueError("control Sandbox command timeout exceeds prepared limit")
         value = await asyncio.to_thread(
             self._client.request,
             "POST",
