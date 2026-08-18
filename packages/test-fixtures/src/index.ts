@@ -101,7 +101,12 @@ export function preparedProfiles(): LoadedProfile[] {
       revision: sha256("prepared-benchmark"),
       harbor_job: {
         n_attempts: 1,
-        datasets: [{ name: "example/tasks", version: "1" }],
+        datasets: [
+          {
+            repo: `https://github.com/example/tasks.git@${"a".repeat(40)}`,
+            path: "tasks",
+          },
+        ],
       },
     }),
     profile("model", "prepared-model", {

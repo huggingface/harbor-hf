@@ -135,6 +135,7 @@ function preparedTrial(): PreparedTrial {
     input_digest: digest,
     trial_lock: { schema_version: 2, task: { digest } },
     trial_lock_digest: digest,
+    declared_image: "example.invalid/task:release",
     image: `example.invalid/task@${digest}`,
     cpus: 4,
     memory_mb: 8_192,

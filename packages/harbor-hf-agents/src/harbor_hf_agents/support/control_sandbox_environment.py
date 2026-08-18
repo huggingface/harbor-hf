@@ -54,6 +54,12 @@ def _digest(value: bytes) -> str:
     return f"sha256:{hashlib.sha256(value).hexdigest()}"
 
 
+def _image_repository(value: str) -> str:
+    without_digest = value.split("@", 1)[0]
+    tail = without_digest.rsplit("/", 1)[-1]
+    return without_digest.rsplit(":", 1)[0] if ":" in tail else without_digest
+
+
 class _ControlClient:
     def __init__(self, campaign_id: str, task_id: str) -> None:
         self.origin = _origin(_required("HARBOR_HF_CONTROL_URL"))
@@ -183,6 +189,21 @@ class ControlSandboxEnvironment(BaseEnvironment):
         )
         if not self.task_env_config.docker_image:
             raise ValueError("control Sandbox requires a prebuilt task image")
+        prepared = self._client.request(
+            "GET",
+            (
+                f"/api/v1/campaigns/{self._campaign_id}/prepared-job/trials/"
+                f"{self._task_id}"
+            ),
+            idempotency_key=f"prepared-environment-{self._task_id}",
+            timeout=60.0,
+        )
+        declared = str(prepared.get("declared_image", ""))
+        resolved = str(prepared.get("image", ""))
+        if declared != self.task_env_config.docker_image or _image_repository(
+            declared
+        ) != _image_repository(resolved):
+            raise ValueError("prepared task image does not match Harbor task source")
 
     def _key(self, operation: str) -> str:
         self._operation += 1

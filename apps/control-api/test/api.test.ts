@@ -1156,6 +1156,7 @@ describe("control API", () => {
     expect(create.json()).toMatchObject({ state: "RUNNING" });
     expect(JSON.stringify(create.json())).not.toContain("private-remote-sandbox-id");
     const createIntent = lifecycle.mock.calls[0]?.[0];
+    expect(lifecycle.mock.calls[0]?.[1]).toEqual({ adoption_only: false });
     expect(createIntent?.payload.sandbox).toMatchObject({
       image: `registry.example/task-sandbox@sha256:${"c".repeat(64)}`,
       hardware: "cpu-upgrade",

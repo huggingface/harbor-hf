@@ -13,6 +13,7 @@
         "trial_index",
         "input_digest",
         "trial_lock",
+        "declared_image",
         "image",
         "cpus",
         "memory_mb",
@@ -52,6 +53,11 @@
           "type": "object",
           "minProperties": 1,
           "additionalProperties": true
+        },
+        "declared_image": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
         },
         "image": {
           "type": "string",

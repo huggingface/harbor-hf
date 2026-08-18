@@ -258,6 +258,13 @@ export class Reconciler {
           throw new PolicyError("Sandbox reservation does not match policy");
       }
       const dispatch = await this.projection.actionDispatch(intent.action_id);
+      if (
+        intent.action_kind === "sandbox.create" &&
+        !dispatch &&
+        intent.actor.subject.startsWith("worker:") &&
+        Date.parse(intent.created_at) + 30_000 > Date.now()
+      )
+        return;
       if (!dispatch)
         await this.service.dispatchAction(
           intent,

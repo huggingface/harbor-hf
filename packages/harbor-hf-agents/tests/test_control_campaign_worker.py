@@ -99,6 +99,7 @@ def _prepared_trial() -> dict:
         "source_task_id": "task-a",
         "trial_index": 1,
         "input_digest": DIGEST,
+        "declared_image": "example.invalid/task:release",
         "image": f"example.invalid/task@{DIGEST}",
         "agent_timeout_seconds": 900,
         "verifier_timeout_seconds": 600,

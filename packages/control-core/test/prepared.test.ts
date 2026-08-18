@@ -134,10 +134,12 @@ function trialPayload(inputDigest: string) {
       environment: {
         import_path:
           "harbor_hf_agents.support.control_sandbox_environment:ControlSandboxEnvironment",
+        delete: true,
         kwargs: { control_task_id: "task-001-trial-1" },
       },
       verifier: { disable: false },
     },
+    declared_image: "example.invalid/task:release",
     image: `example.invalid/task@sha256:${"b".repeat(64)}`,
     cpus: 1,
     memory_mb: 2048,
@@ -156,7 +158,12 @@ function finalizePayload(createdAt: string) {
     harbor_version: "0.21.0",
     job_config: {
       n_attempts: 1,
-      datasets: [{ name: "example/tasks", version: "1" }],
+      datasets: [
+        {
+          repo: `https://github.com/example/tasks.git@${"a".repeat(40)}`,
+          path: "tasks",
+        },
+      ],
       agents: [
         {
           import_path: "example.agent:Agent",
@@ -288,6 +295,20 @@ describe("prepared Harbor jobs", () => {
       worker_revision: "abcdef0",
     });
     expect(execution?.payload.prepared_job_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("rejects prepared task sources outside the benchmark profile", async () => {
+    const { service } = await setup();
+    const { campaignId, lock, launch } = await campaign(service);
+    const task = lock.tasks[0];
+    if (!task) throw new Error("campaign task is missing");
+    const payload = trialPayload(task.input_digest);
+    (payload.trial_lock.task as Record<string, unknown>).git_url =
+      "https://github.com/example/other.git";
+
+    await expect(
+      service.submitPreparedJob(campaignId, launch.action_id, payload),
+    ).rejects.toThrow("task source does not match");
   });
 
   it("rejects a changed prepared trial after the first durable write", async () => {

@@ -122,6 +122,103 @@ function subsetMatches(expected: unknown, actual: unknown): boolean {
   return Object.is(expected, actual);
 }
 
+function normalizeGitUrl(value: string): string {
+  return value.replace(/\.git$/, "");
+}
+
+function imageRepository(value: string): string {
+  const withoutDigest = value.split("@", 1)[0] as string;
+  const tail = withoutDigest.slice(withoutDigest.lastIndexOf("/") + 1);
+  return tail.includes(":")
+    ? withoutDigest.slice(0, withoutDigest.lastIndexOf(":"))
+    : withoutDigest;
+}
+
+function gitDatasetMatches(
+  task: Record<string, unknown>,
+  dataset: Record<string, unknown>,
+): boolean {
+  if (typeof dataset.repo !== "string" || typeof task.git_url !== "string")
+    return false;
+  const match = dataset.repo.match(/^(.*)@([0-9a-f]{40})$/);
+  if (!match) return false;
+  const [, repository, revision] = match;
+  if (
+    !repository ||
+    !revision ||
+    normalizeGitUrl(repository) !== normalizeGitUrl(task.git_url) ||
+    task.git_commit_id !== revision ||
+    typeof task.path !== "string"
+  )
+    return false;
+  if (typeof dataset.path !== "string") return true;
+  return task.path === dataset.path || task.path.startsWith(`${dataset.path}/`);
+}
+
+function preparedTaskSourceMatches(
+  task: Record<string, unknown>,
+  harborJob: unknown,
+): boolean {
+  if (task.type === "local") return false;
+  const job = objectValue(harborJob, "benchmark Harbor job");
+  const datasets = Array.isArray(job.datasets) ? job.datasets : [];
+  const tasks = Array.isArray(job.tasks) ? job.tasks : [];
+  if (
+    task.type === "git" &&
+    datasets.some(
+      (value) =>
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        gitDatasetMatches(task, value as Record<string, unknown>),
+    )
+  )
+    return true;
+  if (
+    task.type === "package" &&
+    datasets.some(
+      (value) =>
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        (value as Record<string, unknown>).name === task.source,
+    )
+  )
+    return true;
+  return tasks.some((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const expected = value as Record<string, unknown>;
+    if (task.type === "git")
+      return (
+        expected.git_url === task.git_url &&
+        expected.git_commit_id === task.git_commit_id &&
+        expected.path === task.path
+      );
+    return (
+      task.type === "package" &&
+      expected.name === task.name &&
+      expected.ref === task.digest
+    );
+  });
+}
+
+function validatePreparedEnvironment(value: unknown, taskId: string): void {
+  const environment = objectValue(value, "prepared Harbor environment lock");
+  const kwargs = objectValue(environment.kwargs, "prepared Harbor environment kwargs");
+  if (
+    environment.import_path !==
+      "harbor_hf_agents.support.control_sandbox_environment:ControlSandboxEnvironment" ||
+    environment.delete !== true ||
+    kwargs.control_task_id !== taskId ||
+    Object.keys(kwargs).length !== 1 ||
+    (Array.isArray(environment.mounts) && environment.mounts.length > 0) ||
+    (environment.env &&
+      objectValue(environment.env, "prepared Harbor environment variables") &&
+      Object.keys(environment.env as Record<string, unknown>).length > 0)
+  )
+    throw new PolicyError("prepared Harbor environment does not match control policy");
+}
+
 export class ControlService {
   readonly resolver: ProfileResolver;
   private appendQueue: Promise<void> = Promise.resolve();
@@ -312,10 +409,26 @@ export class ControlService {
         throw new PolicyError(
           "prepared Harbor task digest does not match the campaign",
         );
+      const benchmark = this.resolvedProfile<BenchmarkProfileSpec>(lock, "benchmark");
+      if (
+        !preparedTaskSourceMatches(harborTask, benchmark.harbor_job) ||
+        (typeof harborTask.name === "string" &&
+          harborTask.name.split("/").at(-1) !== input.source_task_id)
+      )
+        throw new PolicyError(
+          "prepared Harbor task source does not match the benchmark profile",
+        );
+      if (imageRepository(input.declared_image) !== imageRepository(input.image))
+        throw new PolicyError("prepared task image repository does not match");
       const model = this.resolvedProfile<ModelProfileSpec>(lock, "model");
+      const harness = this.resolvedProfile<HarnessProfileSpec>(lock, "harness");
       const agent = objectValue(trialLock.agent, "prepared Harbor agent lock");
-      if (agent.model_name !== model.harbor_model_name)
-        throw new PolicyError("prepared Harbor model does not match the model profile");
+      if (
+        agent.model_name !== model.harbor_model_name ||
+        !subsetMatches(harness.harbor_agent, agent)
+      )
+        throw new PolicyError("prepared Harbor agent does not match selected profiles");
+      validatePreparedEnvironment(trialLock.environment, input.task_id);
       const existing = await this.preparedTrial(campaignId, input.task_id);
       const createdAt = existing?.created_at ?? this.clock.now().toISOString();
       const record: PreparedTrial = {
@@ -333,6 +446,7 @@ export class ControlService {
         input_digest: input.input_digest,
         trial_lock: input.trial_lock,
         trial_lock_digest: trialLockDigest,
+        declared_image: input.declared_image,
         image: input.image,
         cpus: input.cpus,
         memory_mb: input.memory_mb,
@@ -437,7 +551,7 @@ export class ControlService {
   async admitSandboxCreate(
     intent: ActionIntent,
     maximumSandboxes: number,
-  ): Promise<void> {
+  ): Promise<{ dispatch_created: boolean }> {
     const operation = this.sandboxAdmissionQueue.then(() =>
       this.admitSandboxCreateSerialized(intent, maximumSandboxes),
     );
@@ -451,7 +565,7 @@ export class ControlService {
   private async admitSandboxCreateSerialized(
     intent: ActionIntent,
     maximumSandboxes: number,
-  ): Promise<void> {
+  ): Promise<{ dispatch_created: boolean }> {
     if (intent.action_kind !== "sandbox.create" || maximumSandboxes < 1)
       throw new PolicyError("Sandbox create admission is invalid");
     const existing = await this.projection.action(intent.action_id);
@@ -493,6 +607,11 @@ export class ControlService {
       await this.markAdvanced(intent, receipt);
       throw new PolicyError("Sandbox reservation exceeds the campaign ceiling");
     }
+    const dispatch = await this.dispatchAction(
+      intent,
+      new Date(this.clock.now().getTime() + 30_000).toISOString(),
+    );
+    return { dispatch_created: dispatch.created };
   }
 
   async submit(
@@ -548,10 +667,9 @@ export class ControlService {
       throw new PolicyError("imported deployment profiles cannot launch campaigns");
     const launchPolicy = profileSpec<LaunchPolicySpec>(profiles, "launch_policy");
     const tasks = existingLock?.tasks ?? this.resolver.tasks(input.benchmark);
-    const executionJobs =
-      preparationRequired(deployment) && deployment.worker_max_tasks_per_job
-        ? Math.ceil(tasks.length / deployment.worker_max_tasks_per_job)
-        : 1;
+    const executionJobs = deployment.worker_max_tasks_per_job
+      ? Math.ceil(tasks.length / deployment.worker_max_tasks_per_job)
+      : 1;
     const initialReservation =
       launchPolicy.reservation_microusd * executionJobs +
       (preparationRequired(deployment)

@@ -26,6 +26,11 @@ class FakeClient:
         **_kwargs,
     ) -> dict:
         self.calls.append((method, path, body))
+        if "/prepared-job/trials/" in path:
+            return {
+                "declared_image": "example.invalid/task:tag",
+                "image": f"example.invalid/task@sha256:{'a' * 64}",
+            }
         if path.endswith("/sandboxes"):
             return {"sandbox_id": "sandbox-1", "state": "STARTING"}
         if path.endswith("/observe"):
@@ -78,8 +83,14 @@ async def test_routes_harbor_operations_through_worker_capability(
 
     assert result.return_code == 0
     assert result.stdout == "ok\n"
-    assert [call[0] for call in FakeClient.calls] == ["POST", "POST", "POST", "DELETE"]
-    assert FakeClient.calls[2][2] == {
+    assert [call[0] for call in FakeClient.calls] == [
+        "GET",
+        "POST",
+        "POST",
+        "POST",
+        "DELETE",
+    ]
+    assert FakeClient.calls[3][2] == {
         "command": ["/bin/sh", "-lc", "printf ok"],
         "cwd": "/app",
         "timeout_seconds": 30,

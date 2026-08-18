@@ -60,6 +60,7 @@ describe("canonical contracts", () => {
       trial_index: 1,
       input_digest: digest,
       trial_lock: { schema_version: 2, task: { digest } },
+      declared_image: "example.invalid/task:release",
       image: `example.invalid/task@${digest}`,
       cpus: 1,
       memory_mb: 2048,

@@ -271,6 +271,7 @@ def _trial_body(
         "trial_index": expected.trial_index,
         "input_digest": expected.input_digest,
         "trial_lock": prepared_lock.model_dump(mode="json"),
+        "declared_image": str(environment.docker_image),
         "image": image,
         "cpus": environment.cpus or int(template["default_cpus"]),
         "memory_mb": environment.memory_mb or int(template["default_memory_mb"]),

@@ -444,6 +444,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       };
       result: T;
     }>,
+    ownsDispatch = false,
   ): Promise<T> => {
     const keyDigest = sha256(idempotencyKey(request));
     const intent = runtime.service.actionIntent(
@@ -490,7 +491,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       intent,
       new Date(Date.now() + 30_000).toISOString(),
     );
-    const output = await execute(intent, Boolean(dispatched));
+    const output = await execute(intent, Boolean(dispatched) && !ownsDispatch);
     await createJson(runtime.store, resultPath, output);
     const receipt = await runtime.service.receipt(intent, output.external);
     await runtime.service.markAdvanced(intent, receipt);
@@ -1115,7 +1116,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         payload,
         domainActor(request),
       );
-      await runtime.service.admitSandboxCreate(candidate, context.policy.max_sandboxes);
+      const admission = await runtime.service.admitSandboxCreate(
+        candidate,
+        context.policy.max_sandboxes,
+      );
       return executeSandboxAction(
         request,
         campaign_id,
@@ -1137,6 +1141,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
             },
           };
         },
+        admission.dispatch_created,
       );
     },
   );

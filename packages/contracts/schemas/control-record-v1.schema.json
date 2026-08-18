@@ -2226,6 +2226,7 @@
             "input_digest",
             "trial_lock",
             "trial_lock_digest",
+            "declared_image",
             "image",
             "cpus",
             "memory_mb",
@@ -2282,6 +2283,11 @@
             },
             "trial_lock_digest": {
               "$ref": "#/$defs/Digest"
+            },
+            "declared_image": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
             },
             "image": {
               "type": "string",

@@ -256,6 +256,7 @@ trial_lock: {
 [k: string]: unknown
 }
 trial_lock_digest: Digest
+declared_image: string
 image: string
 cpus: number
 memory_mb: number

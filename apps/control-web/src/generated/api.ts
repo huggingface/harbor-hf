@@ -558,6 +558,7 @@ export interface paths {
                         trial_lock: {
                             [key: string]: unknown;
                         };
+                        declared_image: string;
                         image: string;
                         cpus: number;
                         memory_mb: number;

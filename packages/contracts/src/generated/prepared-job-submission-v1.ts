@@ -9,6 +9,7 @@ input_digest: string
 trial_lock: {
 [k: string]: unknown
 }
+declared_image: string
 image: string
 cpus: number
 memory_mb: number
