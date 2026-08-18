@@ -596,17 +596,34 @@ export class ControlService {
     const taskId = intent.payload.task_id;
     if (typeof taskId !== "string")
       throw new PolicyError("Sandbox create admission has no task ID");
-    const creates = (await this.projection.campaignActions(intent.campaign_id)).filter(
-      (row) => {
-        if (
-          row.action_kind !== "sandbox.create" ||
-          row.outcome === "failed" ||
-          row.action_id === intent.action_id
+    const actions = await this.projection.campaignActions(intent.campaign_id);
+    const closedCreates = new Set(
+      actions
+        .filter(
+          (row) =>
+            row.action_kind === "sandbox.close" &&
+            row.receipt_body !== null &&
+            [
+              "CANCELED",
+              "CANCELLED",
+              "COMPLETED",
+              "DELETED",
+              "ERROR",
+              "STOPPED",
+            ].includes((row.observed_state ?? "").toUpperCase()),
         )
-          return false;
-        const recorded = JSON.parse(row.intent_body) as ActionIntent;
-        return recorded.payload.task_id === taskId;
-      },
+        .map((row) => {
+          const recorded = JSON.parse(row.intent_body) as ActionIntent;
+          return recorded.payload.sandbox_create_action_id;
+        })
+        .filter((value): value is string => typeof value === "string"),
+    );
+    const creates = actions.filter(
+      (row) =>
+        row.action_kind === "sandbox.create" &&
+        row.outcome !== "failed" &&
+        row.action_id !== intent.action_id &&
+        !closedCreates.has(row.action_id),
     );
     if (!existing && creates.length >= maximumSandboxes)
       throw new PolicyError("Sandbox count exceeds immutable policy");

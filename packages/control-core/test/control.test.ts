@@ -527,6 +527,76 @@ describe("control service", () => {
     });
   });
 
+  it("serializes the campaign-wide active Sandbox limit", async () => {
+    const control = await createTestControl(2);
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "sandbox-limit-key",
+      operator,
+    );
+    const policy: SandboxPolicy = {
+      image: `registry.example/sandbox@sha256:${"d".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 3_600,
+      idle_timeout_seconds: 600,
+      inference_token: "forbidden",
+      reservation_microusd: 0,
+      active_hourly_cost_microusd: 0,
+      max_sandboxes: 1,
+      max_commands: 8,
+      max_command_seconds: 600,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/logs"],
+    };
+    const creates = ["task-001", "task-002"].map((taskId) =>
+      control.service.actionIntent(result.campaign_id, "sandbox.create", taskId, 0, {
+        task_id: taskId,
+        sandbox: policy,
+      }),
+    );
+
+    const admissions = await Promise.allSettled(
+      creates.map((intent) => control.service.admitSandboxCreate(intent, 1)),
+    );
+    expect(admissions.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(admissions.filter((item) => item.status === "rejected")).toHaveLength(1);
+    const winnerIndex = admissions.findIndex((item) => item.status === "fulfilled");
+    const winner = creates[winnerIndex];
+    const loser = creates[1 - winnerIndex];
+    if (!winner || !loser) throw new Error("Sandbox admission result is incomplete");
+    const createReceipt = await control.service.receipt(winner, {
+      outcome: "created",
+      observed_state: "RUNNING",
+      resource_id: "sandbox-limit-resource",
+    });
+    await control.service.markAdvanced(winner, createReceipt);
+    const close = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.close",
+      "sandbox-limit-resource",
+      0,
+      {
+        task_id: winner.payload.task_id,
+        sandbox_create_action_id: winner.action_id,
+        resource_id: "sandbox-limit-resource",
+        sandbox: policy,
+      },
+    );
+    await control.service.writeAction(close);
+    const closeReceipt = await control.service.receipt(close, {
+      outcome: "completed",
+      observed_state: "CANCELED",
+      resource_id: "sandbox-limit-resource",
+      cost_microusd: 0,
+    });
+    await control.service.markAdvanced(close, closeReceipt);
+
+    await expect(control.service.admitSandboxCreate(loser, 1)).resolves.toEqual({
+      dispatch_created: true,
+    });
+  });
+
   it("closes active Sandboxes before sealing campaign cancellation", async () => {
     const control = await createTestControl();
     controls.push(control);
