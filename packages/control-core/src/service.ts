@@ -181,7 +181,9 @@ function preparedTaskSourceMatches(
         value &&
         typeof value === "object" &&
         !Array.isArray(value) &&
-        (value as Record<string, unknown>).name === task.source,
+        (value as Record<string, unknown>).name === task.source &&
+        typeof (value as Record<string, unknown>).ref === "string" &&
+        /^sha256:[a-f0-9]{64}$/.test((value as Record<string, unknown>).ref as string),
     )
   )
     return true;
