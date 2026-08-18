@@ -20,14 +20,8 @@
       "sha256:bcaa2399985cd57666018025846289ab25e193ae0dd8fb7f0ffab2410c24d4de",
       "sha256:67a9952aca67df9c70510acf62faea336644a0e9d379f3aaf9df79f14c8fcb12"
     ],
-    "source_task_ids": [
-      "adaptive-rejection-sampler",
-      "modernize-scientific-stack"
-    ],
-    "trial_indices": [
-      1,
-      1
-    ],
+    "source_task_ids": ["adaptive-rejection-sampler", "modernize-scientific-stack"],
+    "trial_indices": [1, 1],
     "harbor_job": {
       "n_attempts": 1,
       "n_concurrent_trials": 2,
@@ -35,10 +29,7 @@
         {
           "repo": "https://github.com/harbor-framework/terminal-bench-2-1.git@d49e28f1e4ddd13d289e85a5f312a66750951932",
           "path": "tasks",
-          "task_names": [
-            "adaptive-rejection-sampler",
-            "modernize-scientific-stack"
-          ]
+          "task_names": ["adaptive-rejection-sampler", "modernize-scientific-stack"]
         }
       ],
       "artifacts": [
