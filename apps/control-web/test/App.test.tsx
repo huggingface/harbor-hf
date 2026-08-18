@@ -100,6 +100,17 @@ describe("control web", () => {
     renderApp();
     expect(await screen.findByText("visible-user")).toBeInTheDocument();
     expect(screen.queryByText("opaque-oauth-subject")).not.toBeInTheDocument();
+
+    const detailsButton = screen.getByRole("button", {
+      name: "Account and session details",
+    });
+    const detailsId = detailsButton.getAttribute("aria-describedby");
+    const details = detailsId ? document.getElementById(detailsId) : null;
+    expect(details).toHaveAttribute("role", "tooltip");
+    expect(details).toHaveClass("invisible", "absolute");
+    expect(details).toHaveTextContent("Operator role");
+    expect(details).toHaveTextContent("Your role grants permission");
+    expect(details).toHaveTextContent("Session expires");
   });
 
   it("keeps the authenticated shell and stale data after a transient session failure", async () => {

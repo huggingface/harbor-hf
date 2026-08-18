@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   Boxes,
+  CircleHelp,
   ClipboardList,
   FileClock,
   Gauge,
@@ -9,7 +10,6 @@ import {
   Menu,
   Network,
   ServerCog,
-  Settings2,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -139,23 +139,42 @@ export function Layout({
             </Badge>
           </div>
           <div className="border-t border-slate-800 pt-3">
-            <div className="truncate text-sm font-medium">{actor.username}</div>
-            <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
-              <Settings2 size={12} />
-              {humanize(actor.role)} role
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1 truncate text-sm font-medium">
+                {actor.username}
+              </div>
+              <div className="group relative shrink-0">
+                <button
+                  type="button"
+                  className="grid h-7 w-7 place-items-center rounded-md text-slate-500 transition-colors hover:bg-slate-800 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                  aria-label="Account and session details"
+                  aria-describedby="account-session-details"
+                >
+                  <CircleHelp size={15} />
+                </button>
+                <div
+                  id="account-session-details"
+                  role="tooltip"
+                  className="invisible absolute bottom-full right-0 z-50 mb-2 w-64 rounded-lg border border-slate-700 bg-slate-900 p-3 text-left text-xs leading-5 text-slate-300 opacity-0 shadow-xl transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+                >
+                  <p className="font-medium text-slate-100">
+                    {humanize(actor.role)} role
+                  </p>
+                  <p className="mt-1 text-slate-400">
+                    Your role grants permission. Write mode controls whether this
+                    deployment accepts changes.
+                  </p>
+                  {sessionExpiresAt ? (
+                    <p className="mt-2 border-t border-slate-700 pt-2 text-slate-400">
+                      Session expires {formatDate(sessionExpiresAt)}. A service restart
+                      can require a new sign-in.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
             </div>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              Role grants permission. Write mode controls whether this deployment
-              accepts changes.
-            </p>
-            {sessionExpiresAt ? (
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                Session expires {formatDate(sessionExpiresAt)}. A service restart can
-                require a new sign-in.
-              </p>
-            ) : null}
             <Button
-              className="mt-3 w-full"
+              className="mt-2 w-full"
               variant="ghost"
               disabled={signingOut}
               onClick={onSignOut}

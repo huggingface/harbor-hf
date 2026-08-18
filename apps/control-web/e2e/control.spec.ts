@@ -49,7 +49,7 @@ test("shows the operational overview on desktop and mobile", async ({ page }) =>
   ).toBe(true);
 });
 
-test("disables campaign launch when writes are disabled", async ({ page }) => {
+test("disables campaign launch and keeps account details compact", async ({ page }) => {
   await page.route("**/api/v1/auth/session", (route) =>
     route.fulfill({ json: session }),
   );
@@ -62,7 +62,12 @@ test("disables campaign launch when writes are disabled", async ({ page }) => {
   await page.route("**/api/v1/events", (route) => route.abort());
   await page.goto("/campaigns");
   await expect(page.getByRole("button", { name: "Launch" })).toBeDisabled();
-  await expect(page.getByText(/role grants permission/i)).toBeVisible();
+  const details = page.getByRole("button", { name: "Account and session details" });
+  const guidance = page.getByText(/role grants permission/i);
+  await expect(guidance).toBeHidden();
+  await details.focus();
+  await expect(guidance).toBeVisible();
+  await expect(page.getByText(/session expires/i)).toBeVisible();
 });
 
 test("shows campaign failures as errors rather than missing data", async ({ page }) => {
