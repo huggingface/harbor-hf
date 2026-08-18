@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from harbor.models.task.config import EnvironmentConfig
+from harbor.models.trial.paths import TrialPaths
+
+from harbor_hf_agents.support import control_sandbox_environment as control
+
+
+class FakeClient:
+    calls: list[tuple[str, str, dict | None]] = []
+
+    def __init__(self, campaign_id: str, task_id: str) -> None:
+        self.campaign_id = campaign_id
+        self.task_id = task_id
+        self.prefix = f"/api/v1/campaigns/{campaign_id}/tasks/{task_id}"
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict | None = None,
+        **_kwargs,
+    ) -> dict:
+        self.calls.append((method, path, body))
+        if path.endswith("/sandboxes"):
+            return {"sandbox_id": "sandbox-1", "state": "STARTING"}
+        if path.endswith("/observe"):
+            return {"sandbox_id": "sandbox-1", "state": "RUNNING"}
+        if path.endswith("/exec"):
+            return {
+                "exit_code": 0,
+                "stdout": "ok\n",
+                "stderr": "",
+                "signal": None,
+                "timed_out": False,
+                "duration_ms": 1,
+            }
+        if method == "DELETE":
+            return {"sandbox_id": "sandbox-1", "state": "STOPPED"}
+        raise AssertionError((method, path, body))
+
+
+@pytest.mark.asyncio
+async def test_routes_harbor_operations_through_worker_capability(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    FakeClient.calls.clear()
+    for key, value in {
+        "HARBOR_HF_CONTROL_URL": "https://control.example",
+        "HARBOR_HF_WORKER_CAPABILITY": "capability",
+        "HARBOR_HF_CAMPAIGN_ID": "campaign-1",
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(control, "_ControlClient", FakeClient)
+    environment_dir = tmp_path / "environment"
+    environment_dir.mkdir()
+    environment = control.ControlSandboxEnvironment(
+        environment_dir=environment_dir,
+        environment_name="source-task",
+        session_id="trial-1__env",
+        trial_paths=TrialPaths(tmp_path / "trial"),
+        task_env_config=EnvironmentConfig(
+            docker_image="example.invalid/task:tag",
+            workdir="/app",
+        ),
+        control_task_id="source-task-trial-1",
+    )
+    monkeypatch.setattr(environment, "_upload_environment_dir_after_start", _noop)
+
+    await environment.start(force_build=False)
+    result = await environment.exec("printf ok", cwd="/app", timeout_sec=30)
+    await environment.stop(delete=True)
+
+    assert result.return_code == 0
+    assert result.stdout == "ok\n"
+    assert [call[0] for call in FakeClient.calls] == ["POST", "POST", "POST", "DELETE"]
+    assert FakeClient.calls[2][2] == {
+        "command": ["/bin/sh", "-lc", "printf ok"],
+        "cwd": "/app",
+        "timeout_seconds": 30,
+    }
+
+
+async def _noop() -> None:
+    return None
+
+
+def test_preflight_rejects_broad_hf_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key, value in {
+        "HARBOR_HF_CONTROL_URL": "https://control.example",
+        "HARBOR_HF_WORKER_CAPABILITY": "capability",
+        "HARBOR_HF_CAMPAIGN_ID": "campaign-1",
+        "HF_TOKEN": "broad-token",
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    with pytest.raises(RuntimeError, match="must not receive HF_TOKEN"):
+        control.ControlSandboxEnvironment.preflight()

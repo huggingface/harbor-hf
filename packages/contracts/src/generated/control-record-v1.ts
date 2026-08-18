@@ -75,6 +75,18 @@ inference_max_concurrency?: number
 inference_timeout_seconds?: number
 inference_max_output_tokens?: number
 sandbox?: SandboxPolicy
+/**
+ * @minItems 1
+ * @maxItems 100000
+ */
+task_sandboxes?: [TaskSandboxSpec, ...(TaskSandboxSpec)[]]
+inference_provider?: string
+input_price_microusd_per_million_tokens?: number
+output_price_microusd_per_million_tokens?: number
+harbor_version?: string
+worker_revision?: string
+worker_concurrency?: number
+context_window?: number
 })
 export type SandboxPolicy = ({
 [k: string]: any
@@ -345,6 +357,9 @@ task_ids: [Id, ...(Id)[]]
  * @maxItems 100000
  */
 task_digests: [Digest, ...(Digest)[]]
+source_repository?: string
+source_path?: string
+trials_per_source_task?: number
 }
 export interface ModelProfileSpec {
 model_id: string
@@ -357,6 +372,19 @@ revision: string
  * @maxItems 64
  */
 required_evidence: Id[]
+reasoning_effort?: ("off" | "minimal" | "low" | "medium" | "high" | "xhigh")
+}
+export interface TaskSandboxSpec {
+task_id: Id
+source_task_id: Id
+trial_index: number
+image: string
+hardware: string
+timeout_seconds: number
+idle_timeout_seconds: number
+reservation_microusd: number
+active_hourly_cost_microusd: number
+max_command_seconds: number
 }
 export interface ImportedDeploymentProfileSpec {
 route: "imported"

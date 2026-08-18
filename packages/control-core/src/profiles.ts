@@ -1,6 +1,13 @@
 import { opendir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ProfileObject, ResolvedProfile, TaskLock } from "@harbor-hf/contracts";
+import type {
+  BenchmarkProfileSpec,
+  DeploymentProfileSpec,
+  ProfileObject,
+  ResolvedProfile,
+  SandboxPolicy,
+  TaskLock,
+} from "@harbor-hf/contracts";
 import {
   canonicalJson,
   deterministicId,
@@ -49,6 +56,110 @@ export async function loadBuiltInProfiles(root: string): Promise<LoadedProfile[]
 }
 
 export class ProfileResolutionError extends Error {}
+
+type TaskSandboxSpec = {
+  task_id: string;
+  source_task_id: string;
+  trial_index: number;
+  image: string;
+  hardware: string;
+  timeout_seconds: number;
+  idle_timeout_seconds: number;
+  reservation_microusd: number;
+  active_hourly_cost_microusd: number;
+  max_command_seconds: number;
+};
+
+function taskSandboxSpecs(deployment: DeploymentProfileSpec): TaskSandboxSpec[] | null {
+  const value = (deployment as unknown as Record<string, unknown>).task_sandboxes;
+  if (value === undefined) return null;
+  if (!Array.isArray(value))
+    throw new ProfileResolutionError("deployment task_sandboxes must be an array");
+  return value as TaskSandboxSpec[];
+}
+
+export function validateTaskSandboxCoverage(
+  deployment: DeploymentProfileSpec,
+  tasks: readonly TaskLock[],
+  benchmark?: BenchmarkProfileSpec,
+): void {
+  const specs = taskSandboxSpecs(deployment);
+  if (!specs) return;
+  if (
+    benchmark &&
+    (!benchmark.source_repository ||
+      !benchmark.source_path ||
+      !benchmark.trials_per_source_task)
+  )
+    throw new ProfileResolutionError(
+      "task Sandbox profiles require a pinned benchmark source",
+    );
+  if (deployment.route !== "hf_job" || !deployment.sandbox)
+    throw new ProfileResolutionError(
+      "task Sandbox profiles require an HF Job deployment Sandbox policy",
+    );
+  const expected = new Set(tasks.map((task) => task.task_id));
+  const seen = new Set<string>();
+  const trials = new Set<string>();
+  for (const spec of specs) {
+    if (seen.has(spec.task_id))
+      throw new ProfileResolutionError(
+        `duplicate task Sandbox profile: ${spec.task_id}`,
+      );
+    seen.add(spec.task_id);
+    if (!expected.has(spec.task_id))
+      throw new ProfileResolutionError(
+        `task Sandbox profile is outside the benchmark: ${spec.task_id}`,
+      );
+    const trial = `${spec.source_task_id}:${spec.trial_index}`;
+    if (trials.has(trial))
+      throw new ProfileResolutionError(`duplicate source task trial: ${trial}`);
+    trials.add(trial);
+    if (
+      spec.idle_timeout_seconds > spec.timeout_seconds ||
+      spec.max_command_seconds > spec.timeout_seconds
+    )
+      throw new ProfileResolutionError(
+        `task Sandbox time limits exceed lifetime: ${spec.task_id}`,
+      );
+  }
+  if (seen.size !== expected.size || [...expected].some((task) => !seen.has(task)))
+    throw new ProfileResolutionError(
+      "task Sandbox profiles must cover every benchmark task exactly once",
+    );
+}
+
+export function taskSandboxPolicy(
+  deployment: DeploymentProfileSpec,
+  taskId: string,
+): SandboxPolicy | null {
+  if (deployment.route !== "hf_job") return null;
+  const base = deployment.sandbox;
+  const specs = taskSandboxSpecs(deployment);
+  if (!specs) return base ?? null;
+  if (!base)
+    throw new ProfileResolutionError("task Sandbox profile has no base policy");
+  const selected = specs.find((spec) => spec.task_id === taskId);
+  if (!selected)
+    throw new ProfileResolutionError(`task Sandbox profile is missing: ${taskId}`);
+  return {
+    ...base,
+    image: selected.image,
+    hardware: selected.hardware,
+    timeout_seconds: selected.timeout_seconds,
+    idle_timeout_seconds: selected.idle_timeout_seconds,
+    reservation_microusd: selected.reservation_microusd,
+    active_hourly_cost_microusd: selected.active_hourly_cost_microusd,
+    max_command_seconds: selected.max_command_seconds,
+  };
+}
+
+export function taskSandboxSpec(
+  deployment: DeploymentProfileSpec,
+  taskId: string,
+): TaskSandboxSpec | null {
+  return taskSandboxSpecs(deployment)?.find((spec) => spec.task_id === taskId) ?? null;
+}
 
 function scalarArray(spec: ProfileObject["spec"], key: string): string[] {
   const value = (spec as unknown as Record<string, unknown>)[key];

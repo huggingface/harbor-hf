@@ -1,6 +1,7 @@
 import type {
   ActionAdvanced,
   ActionDispatch,
+  BenchmarkProfileSpec,
   ActionIntent,
   ActionReceipt,
   Actor,
@@ -33,7 +34,12 @@ import {
   verifyWorkerEvidence,
 } from "./evidence.js";
 import { EventBus, eventCursor } from "./events.js";
-import { type LoadedProfile, ProfileResolver, profileSpec } from "./profiles.js";
+import {
+  type LoadedProfile,
+  ProfileResolver,
+  profileSpec,
+  validateTaskSandboxCoverage,
+} from "./profiles.js";
 import type { Projection } from "./projection.js";
 import { createJson, type ImmutableObjectStore } from "./store.js";
 
@@ -229,6 +235,15 @@ export class ControlService {
     const launchPolicy = profileSpec<LaunchPolicySpec>(profiles, "launch_policy");
     if (launchPolicy.reservation_microusd > input.ceiling_microusd)
       throw new PolicyError("launch reservation exceeds the campaign ceiling");
+    const tasks = existingLock?.tasks ?? this.resolver.tasks(input.benchmark);
+    const benchmark = profileSpec<BenchmarkProfileSpec>(profiles, "benchmark");
+    try {
+      validateTaskSandboxCoverage(deployment, tasks, benchmark);
+    } catch (error) {
+      throw new PolicyError(
+        error instanceof Error ? error.message : "task Sandbox profile is invalid",
+      );
+    }
     const timestamp =
       existingLock?.created_at ??
       existingRequest?.created_at ??
@@ -261,7 +276,7 @@ export class ControlService {
         actor: recordActor,
         campaign_id: campaignId,
         profiles: profiles as CampaignLock["profiles"],
-        tasks: this.resolver.tasks(input.benchmark) as CampaignLock["tasks"],
+        tasks: tasks as CampaignLock["tasks"],
         ceiling_microusd: input.ceiling_microusd,
         source_revision: this.resolver.sourceRevision(),
       } satisfies CampaignLock);

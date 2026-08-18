@@ -26,6 +26,7 @@ import {
   type ControlEvent,
   type WorkerCapability,
   type WorkerOperation,
+  taskSandboxPolicy,
   verifyWorkerCapability,
 } from "@harbor-hf/control-core";
 import cookie from "@fastify/cookie";
@@ -200,7 +201,16 @@ function redactSandboxTopology<T>(value: T): T {
     if (!profile || typeof profile !== "object") continue;
     const spec = (profile as { spec?: unknown }).spec;
     if (!spec || typeof spec !== "object") continue;
-    const sandbox = (spec as { sandbox?: unknown }).sandbox;
+    const record = spec as {
+      sandbox?: unknown;
+      task_sandboxes?: unknown;
+      sandbox_task_count?: number;
+    };
+    if (Array.isArray(record.task_sandboxes)) {
+      record.sandbox_task_count = record.task_sandboxes.length;
+      delete record.task_sandboxes;
+    }
+    const sandbox = record.sandbox;
     if (!sandbox || typeof sandbox !== "object") continue;
     if ("inference_upstream" in sandbox)
       (sandbox as { inference_upstream?: string }).inference_upstream = "<redacted>";
@@ -368,8 +378,14 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     if (sha256(canonicalJson(lock)) !== capability.campaign_lock_digest)
       throw new WorkerScopeError("worker capability does not match the campaign lock");
     const deployment = lock.profiles.find((profile) => profile.kind === "deployment");
-    const policy = (deployment?.spec as { sandbox?: SandboxPolicy } | undefined)
-      ?.sandbox;
+    let policy: SandboxPolicy | null;
+    try {
+      policy = deployment ? taskSandboxPolicy(deployment.spec, taskId) : null;
+    } catch (error) {
+      throw new PolicyError(
+        error instanceof Error ? error.message : "task Sandbox profile is invalid",
+      );
+    }
     if (!policy) throw new PolicyError("campaign does not authorize Sandboxes");
     if (!lock.tasks.some((task) => task.task_id === taskId))
       throw new PolicyError("campaign lock does not contain this task");

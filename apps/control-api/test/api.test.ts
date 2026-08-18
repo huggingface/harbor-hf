@@ -83,7 +83,7 @@ const input = {
   confirmed: true,
 };
 
-function sandboxDeploymentRecords(): [ProfileObject, ProfilePromotion] {
+function sandboxDeploymentRecords(): Array<ProfileObject | ProfilePromotion> {
   const sandbox = {
     image: `registry.example/sandbox@sha256:${"b".repeat(64)}`,
     hardware: "h200",
@@ -117,6 +117,27 @@ function sandboxDeploymentRecords(): [ProfileObject, ProfilePromotion] {
     trusted_worker: true,
     inference_token: "forbidden" as const,
     sandbox,
+    task_sandboxes: [
+      {
+        task_id: "control-smoke-task",
+        source_task_id: "control-smoke-task",
+        trial_index: 1,
+        image: `registry.example/task-sandbox@sha256:${"c".repeat(64)}`,
+        hardware: "cpu-upgrade",
+        timeout_seconds: 7_200,
+        idle_timeout_seconds: 1_800,
+        reservation_microusd: 2_000_000,
+        active_hourly_cost_microusd: 30_000,
+        max_command_seconds: 3_600,
+      },
+    ],
+    inference_provider: "test-provider",
+    input_price_microusd_per_million_tokens: 100_000,
+    output_price_microusd_per_million_tokens: 200_000,
+    harbor_version: "0.21.0",
+    worker_revision: "abcdef0",
+    worker_concurrency: 1,
+    context_window: 131_072,
   };
   const profile: ProfileObject = {
     schema_version: "v1",
@@ -153,7 +174,51 @@ function sandboxDeploymentRecords(): [ProfileObject, ProfilePromotion] {
     reason: "approved after sandbox review",
     evidence: [sha256("sandbox-canary-evidence")],
   };
-  return [profile, promotion];
+  const benchmarkSpec = {
+    task_ids: ["control-smoke-task"] as [string],
+    task_digests: [sha256("control-smoke-task")] as [string],
+    benchmark: "control-smoke",
+    revision: sha256("benchmark"),
+    source_repository: "https://github.com/example/control-smoke.git",
+    source_path: "tasks",
+    trials_per_source_task: 1,
+  };
+  const benchmarkProfile: ProfileObject = {
+    schema_version: "v1",
+    kind: "profile.object",
+    record_id: deterministicId(
+      "profile",
+      "benchmark",
+      "control-smoke",
+      sha256(canonicalJson(benchmarkSpec)),
+    ),
+    created_at: "2026-08-18T00:00:00.000Z",
+    actor: { subject: "profile-import", role: "migration" },
+    profile_kind: "benchmark",
+    name: "control-smoke",
+    spec: benchmarkSpec,
+  };
+  const benchmarkProfileId = sha256(canonicalJson(benchmarkProfile));
+  const benchmarkPromotion: ProfilePromotion = {
+    schema_version: "v1",
+    kind: "profile.promotion",
+    record_id: deterministicId(
+      "promotion",
+      "benchmark",
+      "control-smoke",
+      benchmarkProfileId,
+      "approved",
+    ),
+    created_at: "2026-08-18T00:00:01.000Z",
+    actor: { subject: "profile-operator", role: "operator" },
+    profile_kind: "benchmark",
+    alias: "control-smoke",
+    profile_id: benchmarkProfileId,
+    promotion_state: "approved",
+    reason: "approved after sandbox review",
+    evidence: [sha256("sandbox-canary-evidence")],
+  };
+  return [profile, promotion, benchmarkProfile, benchmarkPromotion];
 }
 
 describe("control API", () => {
@@ -986,6 +1051,16 @@ describe("control API", () => {
       (action) => action.action_kind === "job.launch",
     );
     if (!launch) throw new Error("campaign admission did not create a Job launch");
+    const browserLock = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/${campaignId}/lock`,
+    });
+    expect(browserLock.statusCode).toBe(200);
+    const browserDeployment = browserLock
+      .json()
+      .profiles.find((profile: { kind: string }) => profile.kind === "deployment");
+    expect(browserDeployment.spec).not.toHaveProperty("task_sandboxes");
+    expect(browserDeployment.spec).toMatchObject({ sandbox_task_count: 1 });
     const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
       namespace: runtime.config.namespace,
       campaign_id: campaignId,
@@ -1082,6 +1157,12 @@ describe("control API", () => {
     expect(create.statusCode).toBe(200);
     expect(create.json()).toMatchObject({ state: "RUNNING" });
     expect(JSON.stringify(create.json())).not.toContain("private-remote-sandbox-id");
+    const createIntent = lifecycle.mock.calls[0]?.[0];
+    expect(createIntent?.payload.sandbox).toMatchObject({
+      image: `registry.example/task-sandbox@sha256:${"c".repeat(64)}`,
+      hardware: "cpu-upgrade",
+      reservation_microusd: 2_000_000,
+    });
     const sandboxId = create.json().sandbox_id as string;
     const repeatedCreate = await app.inject({
       method: "POST",
@@ -1171,7 +1252,7 @@ describe("control API", () => {
     expect(close.json()).toEqual({ sandbox_id: sandboxId, state: "CANCELED" });
     expect(await runtime.projection.campaign(campaignId)).toMatchObject({
       reserved_microusd: 0,
-      observed_microusd: 20_000_000,
+      observed_microusd: 2_000_000,
     });
     const actionKinds = (await runtime.projection.campaignActions(campaignId)).map(
       (action) => action.action_kind,

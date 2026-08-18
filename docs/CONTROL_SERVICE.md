@@ -403,6 +403,24 @@ matching deterministic Job label but cannot issue a second create request.
 Worker attempts remain bound to the exact launch action, and one physical
 action can produce no more than one attempt for the same logical task.
 
+A benchmark with different prebuilt images or resource limits for each task can
+lock a task Sandbox list in its deployment profile. The list maps each logical
+trial to its source task, trial number, immutable image digest, hardware, time
+limits, and cost rates. Admission requires exact one-to-one coverage of the
+benchmark task locks. The deployment's shared Sandbox policy still owns
+inference limits, allowed paths, transfer limits, command counts, and the
+root-owned bridge command. Each Sandbox action stores the fully resolved task
+policy, so replay does not depend on a mutable profile.
+
+The trusted outer worker receives only its signed campaign capability. A custom
+Harbor environment uses that capability to create, observe, execute in, transfer
+files to and from, and close each Sandbox through this service. `HF_TOKEN`
+never enters the worker. When inference is required, the control service passes
+`HF_INFERENCE_TOKEN` directly to the Sandbox root bootstrap. The benchmark
+agent receives only a loopback route and placeholder key. Trial directories and
+complete workspaces return to the trusted worker in bounded chunks, then enter
+the private evidence store through content-addressed worker uploads.
+
 The reconciler uses `AbortController` for graceful shutdown. Shutdown stops new
 admissions, lets an in-flight Bucket write reach a safe boundary, closes SSE
 connections, and exits within the Space termination window. Remote Jobs keep
