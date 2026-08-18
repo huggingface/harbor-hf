@@ -301,12 +301,12 @@ class ControlSandboxEnvironment(BaseEnvironment):
             assignments = " ".join(
                 f"{key}={shlex.quote(value)}" for key, value in sorted(merged.items())
             )
-            script = f"env {assignments} /bin/sh -lc {shlex.quote(command)}"
+            script = f"env {assignments} /bin/bash -lc {shlex.quote(command)}"
         if user not in {None, "root", 0}:
             if not isinstance(user, str) or not user:
                 raise ValueError("control Sandbox requires a named execution user")
             script = (
-                f"runuser -u {shlex.quote(user)} -- /bin/sh -lc {shlex.quote(script)}"
+                f"runuser -u {shlex.quote(user)} -- /bin/bash -lc {shlex.quote(script)}"
             )
         timeout = self._max_command_seconds if timeout_sec is None else timeout_sec
         if timeout < 1 or timeout > self._max_command_seconds:
@@ -315,8 +315,12 @@ class ControlSandboxEnvironment(BaseEnvironment):
             self._client.request,
             "POST",
             self._sandbox_path("/exec"),
+            # Harbor installed agents prepend `set -o pipefail`. Use explicit Bash
+            # at every shell boundary because `/bin/sh` is dash in many task images
+            # and exits before the requested command. This matches Harbor's native
+            # Hugging Face Sandbox adapter.
             body={
-                "command": ["/bin/sh", "-lc", script],
+                "command": ["/bin/bash", "-lc", script],
                 "cwd": cwd or self.task_env_config.workdir or "/app",
                 "timeout_seconds": timeout,
             },

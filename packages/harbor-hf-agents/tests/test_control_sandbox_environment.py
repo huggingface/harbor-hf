@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 import pytest
@@ -80,12 +81,13 @@ async def test_routes_harbor_operations_through_worker_capability(
 
     await environment.start(force_build=False)
     result = await environment.exec(
-        "printf ok",
+        "set -o pipefail; printf ok",
         cwd="/app",
+        env={"TEST_VALUE": "with space"},
         timeout_sec=30,
         user="harbor-agent",
     )
-    await environment.exec("printf default", cwd="/app")
+    await environment.exec("set -o pipefail; printf default", cwd="/app")
     with pytest.raises(ValueError, match="exceeds prepared limit"):
         await environment.exec("printf too-long", timeout_sec=901)
     await environment.stop(delete=True)
@@ -102,12 +104,31 @@ async def test_routes_harbor_operations_through_worker_capability(
     ]
     command = FakeClient.calls[3][2]
     assert command is not None
-    assert command["command"][:2] == ["/bin/sh", "-lc"]
-    assert "runuser -u harbor-agent" in command["command"][2]
+    assert command["command"][:2] == ["/bin/bash", "-lc"]
+    runuser_command = shlex.split(command["command"][2])
+    assert runuser_command[:6] == [
+        "runuser",
+        "-u",
+        "harbor-agent",
+        "--",
+        "/bin/bash",
+        "-lc",
+    ]
+    agent_command = shlex.split(runuser_command[6])
+    assert agent_command[:4] == [
+        "env",
+        "TEST_VALUE=with space",
+        "/bin/bash",
+        "-lc",
+    ]
+    assert agent_command[4] == "set -o pipefail; printf ok"
+    assert "/bin/sh" not in command["command"][2]
     assert command["cwd"] == "/app"
     assert command["timeout_seconds"] == 30
     default_command = FakeClient.calls[4][2]
     assert default_command is not None
+    assert default_command["command"][:2] == ["/bin/bash", "-lc"]
+    assert "set -o pipefail" in default_command["command"][2]
     assert default_command["timeout_seconds"] == 900
 
 
