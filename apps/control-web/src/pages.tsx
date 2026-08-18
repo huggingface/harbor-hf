@@ -34,7 +34,13 @@ import {
 import { DataTable } from "./components/data-table";
 import { useControlState } from "./control-state";
 import { PageHeader } from "./layout";
-import { formatDate, formatMoney, humanize, shortId } from "./lib";
+import {
+  estimateLaunchReservationMicrousd,
+  formatDate,
+  formatMoney,
+  humanize,
+  shortId,
+} from "./lib";
 import {
   keys,
   useAudit,
@@ -416,8 +422,11 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
     ? benchmarkSpec.task_ids.length
     : 0;
   const attemptLimit = Number(policySpec?.max_infrastructure_attempts ?? 0);
-  const reservation = Number(policySpec?.reservation_microusd ?? 0);
-  const estimatedMicrousd = taskCount * reservation;
+  const estimatedMicrousd = estimateLaunchReservationMicrousd(
+    taskCount,
+    deploymentSpec,
+    policySpec,
+  );
   const mutation = useMutation({
     mutationFn: (input: CampaignSubmission) => submitCampaign(input),
     onSuccess: async (result) => {
