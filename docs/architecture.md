@@ -107,6 +107,27 @@ do not pretend that unreported runtime, hardware, or quantization details are
 known. Endpoint and provider profiles remain distinct in manifests, locks,
 metrics, and result tables.
 
+### Sandbox Gateway
+
+The TypeScript control service is the only holder of broad Hugging Face Sandbox
+lifecycle authority. A signed worker capability may authorize a closed set of
+operations for one immutable campaign lock and task. The public Sandbox ID is the
+deterministic create-action ID. Remote Job IDs, proxy URLs, per-Sandbox tokens
+and inference topology remain server-side.
+
+Every lifecycle mutation uses intent, dispatch, result, receipt and advanced
+records. Create adopts only a Job with the exact deterministic label. An
+ambiguous command is never replayed automatically. File transfers are bounded,
+root-restricted and content-addressed. The immutable deployment policy reserves
+the maximum Sandbox cost before launch, records observed cost at close and
+releases the reservation only after remote cleanup.
+
+The Sandbox Job receives a derived `SBX_TOKEN`, never `HF_TOKEN` or
+`SBX_DL_TOKEN`. When inference is required, it also receives the distinct scoped
+inference credential. A reviewed root bootstrap starts the credential-holding
+loopback bridge and removes all inference credential and route variables before
+the Sandbox server accepts benchmark commands.
+
 ### Planner
 
 The planner validates an experiment, resolves its benchmark source, expands its
@@ -371,12 +392,14 @@ resources and record final usage and request state.
 
 The worker verifies `status.state = paused` and `readyReplica = 0` before it
 writes `_SUCCESS`. The final snapshot also records `targetReplica`, which may
-remain nonzero on a paused endpoint. HF Sandbox environments are killed by
-Harbor, and their idle timeout limits abandoned resources if the controller is
-terminated. The idle timeout must exceed the longest uninterrupted agent or
-verifier command because an active streaming command does not necessarily
-refresh the Sandbox idle timer. It must also remain at or below the controller
-Job timeout, which is the outer lifecycle bound.
+remain nonzero on a paused endpoint. HF Sandbox environments are closed through durable control actions before a
+campaign cancellation is sealed. Their idle timeout remains an independent
+fallback for a terminated worker or control process. The idle timeout must
+exceed the longest uninterrupted agent or verifier command because an active
+streaming command does not necessarily refresh the Sandbox idle timer. It must
+also remain at or below the locked Sandbox lifetime, which is the outer
+lifecycle bound. Restart recovery adopts a dispatched create by deterministic
+label and retries close until the remote Job is terminal.
 
 Endpoint pause requests and status reads retry transient provider failures until
 the bounded cleanup deadline. Each endpoint CLI call is limited to 60 seconds or

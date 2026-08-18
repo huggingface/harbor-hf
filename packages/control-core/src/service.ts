@@ -408,8 +408,18 @@ export class ControlService {
     intent: ActionIntent,
     adoptionNotBefore: string,
   ): Promise<{ record: ActionDispatch; created: boolean }> {
-    if (intent.action_kind !== "job.launch")
-      throw new PolicyError("only Job launches use create dispatch fences");
+    const operationByKind = {
+      "job.launch": "create",
+      "sandbox.create": "create",
+      "sandbox.observe": "observe",
+      "sandbox.exec": "execute",
+      "sandbox.write": "write",
+      "sandbox.read": "read",
+      "sandbox.close": "close",
+    } as const;
+    const operation =
+      operationByKind[intent.action_kind as keyof typeof operationByKind];
+    if (!operation) throw new PolicyError("action does not support a dispatch fence");
     const existing = await this.projection.actionDispatch(intent.action_id);
     if (existing)
       return {
@@ -424,7 +434,7 @@ export class ControlService {
       actor: serviceActor(),
       action_id: intent.action_id,
       campaign_id: intent.campaign_id,
-      operation: "create",
+      operation,
       adoption_not_before: adoptionNotBefore,
     };
     const result = await this.append(record);
@@ -472,6 +482,19 @@ export class ControlService {
       receipt.campaign_id !== intent.campaign_id
     )
       throw new PolicyError("advanced action receipt does not match its intent");
+    if (intent.action_kind === "sandbox.close") {
+      const policy = intent.payload.sandbox;
+      const createActionId = intent.payload.sandbox_create_action_id;
+      if (!policy || typeof createActionId !== "string")
+        throw new PolicyError("Sandbox close action is missing budget identity");
+      await this.finalizeSandboxBudget(
+        intent.campaign_id,
+        createActionId,
+        receipt.created_at,
+        policy.reservation_microusd,
+        receipt.cost_microusd ?? policy.reservation_microusd,
+      );
+    }
     const record: ActionAdvanced = {
       schema_version: "v1",
       kind: "action.advanced",
@@ -722,6 +745,151 @@ export class ControlService {
     };
     await this.append(reservation);
     return true;
+  }
+
+  async reserveSandbox(
+    campaignId: string,
+    createActionId: string,
+    createdAt: string,
+    amountMicrousd: number,
+  ): Promise<boolean> {
+    const operation = this.budgetQueue.then(() =>
+      this.reserveSandboxSerialized(
+        campaignId,
+        createActionId,
+        createdAt,
+        amountMicrousd,
+      ),
+    );
+    this.budgetQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  private async reserveSandboxSerialized(
+    campaignId: string,
+    createActionId: string,
+    createdAt: string,
+    amountMicrousd: number,
+  ): Promise<boolean> {
+    const recordId = deterministicId("budget", campaignId, "sandbox", createActionId);
+    const existing = await this.projection.budget(recordId);
+    if (existing) {
+      if (
+        existing.campaign_id !== campaignId ||
+        existing.event_kind !== "reserve" ||
+        existing.amount_microusd !== amountMicrousd
+      )
+        throw new IdempotencyConflictError(
+          "Sandbox budget reservation conflicts with durable state",
+        );
+      return true;
+    }
+    const campaign = await this.projection.campaign(campaignId);
+    if (!campaign) throw new PolicyError("campaign does not exist");
+    const committedMicrousd = Math.max(
+      campaign.reserved_microusd,
+      campaign.observed_microusd,
+    );
+    if (committedMicrousd + amountMicrousd > campaign.ceiling_microusd) return false;
+    const observedOverage = Math.max(
+      0,
+      campaign.observed_microusd - campaign.reserved_microusd,
+    );
+    if (observedOverage > 0) {
+      const catchUp: BudgetEvent = {
+        schema_version: "v1",
+        kind: "budget.event",
+        record_id: deterministicId(
+          "budget",
+          campaignId,
+          "sandbox-observed-overage",
+          createActionId,
+        ),
+        created_at: createdAt,
+        actor: serviceActor(),
+        campaign_id: campaignId,
+        event_kind: "reserve",
+        amount_microusd: observedOverage,
+      };
+      await this.append(catchUp);
+    }
+    const reservation: BudgetEvent = {
+      schema_version: "v1",
+      kind: "budget.event",
+      record_id: recordId,
+      created_at: createdAt,
+      actor: serviceActor(),
+      campaign_id: campaignId,
+      event_kind: "reserve",
+      amount_microusd: amountMicrousd,
+    };
+    await this.append(reservation);
+    return true;
+  }
+
+  private async finalizeSandboxBudget(
+    campaignId: string,
+    createActionId: string,
+    completedAt: string,
+    reservationMicrousd: number,
+    observedMicrousd: number,
+  ): Promise<void> {
+    const operation = this.budgetQueue.then(async () => {
+      const releaseId = deterministicId(
+        "budget",
+        campaignId,
+        "sandbox-release",
+        createActionId,
+      );
+      const existing = await this.projection.budget(releaseId);
+      if (existing) {
+        if (
+          existing.event_kind !== "release" ||
+          existing.amount_microusd !== reservationMicrousd
+        )
+          throw new IdempotencyConflictError(
+            "Sandbox budget release conflicts with durable state",
+          );
+        return;
+      }
+      const campaign = await this.projection.campaign(campaignId);
+      if (!campaign) throw new PolicyError("campaign does not exist");
+      const reconcile: BudgetEvent = {
+        schema_version: "v1",
+        kind: "budget.event",
+        record_id: deterministicId(
+          "budget",
+          campaignId,
+          "sandbox-observed",
+          createActionId,
+        ),
+        created_at: completedAt,
+        actor: serviceActor(),
+        campaign_id: campaignId,
+        event_kind: "reconcile",
+        amount_microusd: campaign.observed_microusd + observedMicrousd,
+      };
+      const release: BudgetEvent = {
+        schema_version: "v1",
+        kind: "budget.event",
+        record_id: releaseId,
+        created_at: completedAt,
+        actor: serviceActor(),
+        campaign_id: campaignId,
+        event_kind: "release",
+        amount_microusd: reservationMicrousd,
+      };
+      await this.append(reconcile);
+      await this.append(release);
+    });
+    this.budgetQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    await operation;
   }
 
   async withInfrastructureRetryAdmission<T>(operation: () => Promise<T>): Promise<T> {

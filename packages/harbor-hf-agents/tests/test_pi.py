@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from harbor.models.agent.context import AgentContext
 
-from harbor_hf_agents.pi.agent import PiAgent, pi_jsonl_to_atif_trajectory
+from harbor_hf_agents.pi.agent import (
+    PiAgent,
+    _use_sandbox_inference_route,
+    pi_jsonl_to_atif_trajectory,
+)
 
 
 @pytest.fixture
@@ -76,6 +80,37 @@ def test_pi_jsonl_converts_tool_use_to_atif(temp_dir) -> None:
     assert trajectory.final_metrics is not None
     assert trajectory.final_metrics.total_prompt_tokens == 17
     assert trajectory.final_metrics.total_completion_tokens == 3
+
+
+@pytest.mark.asyncio
+async def test_uses_prepared_sandbox_loopback_route() -> None:
+    agent = AsyncMock()
+    route = {
+        "schema_version": "v1",
+        "api": "chat-completions",
+        "base_url": "http://127.0.0.1:18080/v1",
+        "api_key": "harbor-local-inference-bridge",
+        "model": "example/model",
+    }
+    agent.exec_as_root.return_value = AsyncMock(
+        return_code=0,
+        stdout=json.dumps(route),
+        stderr="",
+    )
+    env: dict[str, str] = {}
+
+    assert await _use_sandbox_inference_route(
+        agent,
+        AsyncMock(),
+        env,
+        allowed_model="example/model",
+    )
+    assert env == {
+        "OPENAI_BASE_URL": "http://127.0.0.1:18080/v1",
+        "OPENAI_API_KEY": "harbor-local-inference-bridge",
+    }
+    agent.exec_as_agent.assert_awaited_once()
+    assert "cat /proc/$pid/environ" in agent.exec_as_agent.await_args.kwargs["command"]
 
 
 class TestPiAgent:

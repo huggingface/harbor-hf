@@ -14,6 +14,7 @@ import {
   runJob,
   type SpaceHardwareFlavor,
 } from "@huggingface/hub";
+import { HuggingFaceSandboxGateway } from "./sandbox.js";
 
 interface AdapterConfig {
   namespace: string;
@@ -130,12 +131,14 @@ function endpointStatus(raw: unknown): {
 
 export class HuggingFaceActions implements ExternalActionPort {
   private readonly endpointsUrl: string;
+  readonly sandboxes: HuggingFaceSandboxGateway;
 
   constructor(private readonly config: AdapterConfig) {
     if (config.inferenceToken && config.inferenceToken === config.accessToken)
       throw new Error("control and inference credentials must be distinct");
     this.endpointsUrl =
       config.endpointsUrl ?? "https://api.endpoints.huggingface.cloud/v2";
+    this.sandboxes = new HuggingFaceSandboxGateway(config);
   }
 
   async execute(
@@ -156,6 +159,16 @@ export class HuggingFaceActions implements ExternalActionPort {
           return await this.endpointMutation(intent, "pause");
         case "endpoint.resume":
           return await this.endpointMutation(intent, "resume");
+        case "sandbox.create":
+        case "sandbox.observe":
+        case "sandbox.close":
+          return await this.sandboxes.lifecycle(intent, context);
+        case "sandbox.exec":
+        case "sandbox.write":
+        case "sandbox.read":
+          throw new AmbiguousExternalActionError(
+            "Sandbox data action requires an idempotent worker retry",
+          );
         case "campaign.cancel":
         case "publication.publish":
           return { outcome: "completed", observed_state: "handled_locally" };
@@ -232,12 +245,32 @@ export class HuggingFaceActions implements ExternalActionPort {
       throw new Error("Job launch requires the control service URL");
     const timeoutSeconds = numberValue(intent, "timeout_seconds");
     const taskIds = stringValues(intent, "task_ids");
+    const sandboxOperations = intent.payload.sandbox
+      ? ([
+          "sandbox.create",
+          "sandbox.observe",
+          "sandbox.exec",
+          "sandbox.write",
+          "sandbox.read",
+          "sandbox.close",
+        ] as const)
+      : [];
     const capability = mintWorkerCapability(this.config.accessToken, {
       namespace: this.config.namespace,
       campaign_id: intent.campaign_id,
+      campaign_lock_digest: stringValue(intent, "campaign_lock_digest"),
       action_id: intent.action_id,
       task_ids: taskIds,
-      expires_at: Math.floor(Date.now() / 1000) + timeoutSeconds + 3_600,
+      operations: [
+        "campaign.read",
+        "attempt.submit",
+        "evidence.write",
+        ...sandboxOperations,
+      ],
+      expires_at:
+        Math.floor(Date.now() / 1000) +
+        Math.max(timeoutSeconds, intent.payload.sandbox?.timeout_seconds ?? 0) +
+        3_600,
     });
     let job: Awaited<ReturnType<typeof runJob>>;
     try {

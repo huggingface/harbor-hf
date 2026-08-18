@@ -74,6 +74,39 @@ inference_max_requests?: number
 inference_max_concurrency?: number
 inference_timeout_seconds?: number
 inference_max_output_tokens?: number
+sandbox?: SandboxPolicy
+})
+export type SandboxPolicy = ({
+[k: string]: any
+} & {
+image: string
+hardware: string
+timeout_seconds: number
+idle_timeout_seconds: number
+inference_token?: ("forbidden" | "required")
+inference_upstream?: string
+inference_model?: string
+inference_api?: ("chat-completions" | "responses")
+inference_max_requests?: number
+inference_max_concurrency?: number
+inference_timeout_seconds?: number
+inference_max_output_tokens?: number
+/**
+ * @minItems 1
+ * @maxItems 128
+ */
+root_bootstrap_command?: [string, ...(string)[]]
+reservation_microusd: number
+active_hourly_cost_microusd: number
+max_sandboxes: number
+max_commands: number
+max_command_seconds: number
+max_transfer_bytes: number
+/**
+ * @minItems 1
+ * @maxItems 32
+ */
+allowed_roots: [string, ...(string)[]]
 })
 export type LaunchPolicyProfileObject = (Base & {
 schema_version: "v1"
@@ -160,7 +193,7 @@ created_at: Timestamp
 actor: Actor
 action_id: Id
 campaign_id: Id
-action_kind: ("campaign.admit" | "job.launch" | "job.observe" | "job.cancel" | "endpoint.resume" | "endpoint.pause" | "publication.publish" | "campaign.cancel")
+action_kind: ("campaign.admit" | "job.launch" | "job.observe" | "job.cancel" | "endpoint.resume" | "endpoint.pause" | "sandbox.create" | "sandbox.observe" | "sandbox.exec" | "sandbox.write" | "sandbox.read" | "sandbox.close" | "publication.publish" | "campaign.cancel")
 generation: number
 target: string
 payload: ActionPayload
@@ -173,7 +206,7 @@ created_at: Timestamp
 actor: Actor
 action_id: Id
 campaign_id: Id
-operation: "create"
+operation: ("create" | "observe" | "execute" | "write" | "read" | "close")
 adoption_not_before: Timestamp
 })
 export type ActionReceipt = (Base & {
@@ -423,4 +456,17 @@ worker_receipt_deadline?: Timestamp
 prior_attempt_id?: Id
 endpoint_id?: string
 watchdog_verified?: boolean
+sandbox?: SandboxPolicy
+campaign_lock_digest?: Digest
+sandbox_create_action_id?: Id
+/**
+ * @minItems 1
+ * @maxItems 128
+ */
+command?: [string, ...(string)[]]
+cwd?: string
+path?: string
+content_digest?: Digest
+content_size?: number
+mode?: string
 }

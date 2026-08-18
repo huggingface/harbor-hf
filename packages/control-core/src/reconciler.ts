@@ -232,6 +232,33 @@ export class Reconciler {
       if (observation.outcome === "failed") return;
       result = observation;
     } else if (
+      intent.action_kind === "sandbox.create" ||
+      intent.action_kind === "sandbox.observe" ||
+      intent.action_kind === "sandbox.close"
+    ) {
+      if (intent.action_kind === "sandbox.create") {
+        const policy = intent.payload.sandbox;
+        if (!policy) throw new PolicyError("Sandbox create is missing policy");
+        const reservation = await this.projection.budget(
+          deterministicId("budget", intent.campaign_id, "sandbox", intent.action_id),
+        );
+        if (!reservation) return;
+        if (
+          reservation.event_kind !== "reserve" ||
+          reservation.amount_microusd !== policy.reservation_microusd
+        )
+          throw new PolicyError("Sandbox reservation does not match policy");
+      }
+      const dispatch = await this.projection.actionDispatch(intent.action_id);
+      if (!dispatch)
+        await this.service.dispatchAction(
+          intent,
+          new Date(Date.now() + this.options.observation_interval_ms).toISOString(),
+        );
+      result = await this.external.execute(intent, {
+        adoption_only: intent.action_kind === "sandbox.create" && Boolean(dispatch),
+      });
+    } else if (
       intent.action_kind === "endpoint.pause" ||
       intent.action_kind === "endpoint.resume"
     ) {
@@ -330,6 +357,13 @@ export class Reconciler {
           );
         } else if (receipt.resource_id) await this.recordEndpoint(intent, receipt);
         break;
+      case "sandbox.create":
+      case "sandbox.observe":
+      case "sandbox.exec":
+      case "sandbox.write":
+      case "sandbox.read":
+      case "sandbox.close":
+        break;
       case "campaign.cancel":
         await this.continueCancellation(intent.campaign_id);
         break;
@@ -390,6 +424,13 @@ export class Reconciler {
             ),
           }
         : {};
+    const sandbox = deployment.sandbox;
+    if (
+      sandbox !== undefined &&
+      (!sandbox || typeof sandbox !== "object" || Array.isArray(sandbox))
+    )
+      throw new PolicyError("profile sandbox must be an object");
+    const sandboxPolicy = sandbox as ActionIntent["payload"]["sandbox"];
     const intent = this.service.actionIntent(
       campaignId,
       "job.launch",
@@ -415,6 +456,8 @@ export class Reconciler {
         trusted_worker: profileScalar<boolean>(deployment, "trusted_worker", "boolean"),
         inference_token: inferenceToken,
         ...inferenceLimits,
+        campaign_lock_digest: sha256(canonicalJson(lock)),
+        ...(sandboxPolicy ? { sandbox: sandboxPolicy } : {}),
       },
     );
     await this.service.writeAction(intent);
@@ -660,6 +703,56 @@ export class Reconciler {
     for (const launch of unresolvedLaunches) {
       if (await this.projection.actionDispatch(launch.action_id)) return;
     }
+    const unresolvedSandboxes = actions.filter(
+      (action) =>
+        action.action_kind === "sandbox.create" && action.receipt_body === null,
+    );
+    if (unresolvedSandboxes.length > 0) return;
+    const sandboxCreates = actions.filter(
+      (action) =>
+        action.action_kind === "sandbox.create" &&
+        action.receipt_body !== null &&
+        action.resource_id !== null,
+    );
+    let sandboxCleanupPending = false;
+    for (const create of sandboxCreates) {
+      const createIntent = JSON.parse(create.intent_body) as ActionIntent;
+      const closes = actions.filter((action) => {
+        if (action.action_kind !== "sandbox.close") return false;
+        const closeIntent = JSON.parse(action.intent_body) as ActionIntent;
+        return closeIntent.payload.sandbox_create_action_id === create.action_id;
+      });
+      if (
+        closes.some(
+          (action) =>
+            action.receipt_body !== null && jobStateIsTerminal(action.observed_state),
+        )
+      )
+        continue;
+      sandboxCleanupPending = true;
+      if (closes.some((action) => action.receipt_body === null)) continue;
+      if (
+        !create.resource_id ||
+        typeof createIntent.payload.task_id !== "string" ||
+        !createIntent.payload.sandbox
+      )
+        throw new PolicyError("Sandbox create action is missing cleanup identity");
+      await this.service.writeAction(
+        this.service.actionIntent(
+          campaignId,
+          "sandbox.close",
+          create.resource_id,
+          closes.length,
+          {
+            task_id: createIntent.payload.task_id,
+            sandbox_create_action_id: create.action_id,
+            resource_id: create.resource_id,
+            sandbox: createIntent.payload.sandbox,
+          },
+        ),
+      );
+    }
+    if (sandboxCleanupPending) return;
     const launches = actions.filter(
       (action) =>
         action.action_kind === "job.launch" &&

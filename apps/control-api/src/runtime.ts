@@ -14,6 +14,7 @@ import {
   attestInferenceToken,
   HuggingFaceActions,
   HuggingFaceBucketStore,
+  type HuggingFaceSandboxGateway,
   NoopActions,
 } from "@harbor-hf/hf-adapters";
 import { AuthStore, AuthenticationService } from "./auth.js";
@@ -25,6 +26,7 @@ export interface Runtime {
   store: ImmutableObjectStore;
   service: ControlService;
   auth: AuthenticationService;
+  sandboxes: HuggingFaceSandboxGateway | null;
   reconciler: Reconciler;
   initialize(): Promise<void>;
   start(): void;
@@ -51,7 +53,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     config.oauth,
     () => projection.latestAcl(),
   );
-  const external = config.hf_token
+  const hfActions = config.hf_token
     ? new HuggingFaceActions({
         namespace: config.namespace,
         accessToken: config.hf_token,
@@ -60,7 +62,8 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
           : {}),
         controlUrl: config.public_origin,
       })
-    : new NoopActions();
+    : null;
+  const external = hfActions ?? new NoopActions();
   const publisher = new ResultPublisher(store, projection, service);
   const reconciler = new Reconciler(service, projection, external, publisher, {
     interval_ms: config.reconcile_interval_ms,
@@ -75,6 +78,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     store,
     service,
     auth,
+    sandboxes: hfActions?.sandboxes ?? null,
     reconciler,
     async initialize() {
       if (config.hf_inference_token)

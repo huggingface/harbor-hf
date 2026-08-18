@@ -38,7 +38,7 @@ The Space runs one Node.js process and one Fastify server. The process owns:
 - the background reconciler;
 - the disposable SQLite projection;
 - the compiled React application;
-- adapters for Hugging Face Jobs, Endpoints, Providers, Spaces and Buckets.
+- adapters for Hugging Face Jobs, Sandboxes, Endpoints, Providers, Spaces and Buckets.
 
 The service does not use Node cluster mode or multiple server workers. More
 than one process would create competing reconcilers and violate the single
@@ -172,6 +172,12 @@ GET  /api/v1/campaigns/{campaign_id}
 GET  /api/v1/campaigns/{campaign_id}/tasks
 GET  /api/v1/campaigns/{campaign_id}/tasks/{task_id}
 POST /api/v1/campaigns/{campaign_id}/tasks/{task_id}/attempts
+POST /api/v1/campaigns/{campaign_id}/tasks/{task_id}/sandboxes
+POST /api/v1/campaigns/{campaign_id}/tasks/{task_id}/sandboxes/{sandbox_id}/observe
+POST /api/v1/campaigns/{campaign_id}/tasks/{task_id}/sandboxes/{sandbox_id}/exec
+PUT  /api/v1/campaigns/{campaign_id}/tasks/{task_id}/sandboxes/{sandbox_id}/files
+POST /api/v1/campaigns/{campaign_id}/tasks/{task_id}/sandboxes/{sandbox_id}/files/read
+DELETE /api/v1/campaigns/{campaign_id}/tasks/{task_id}/sandboxes/{sandbox_id}
 POST /api/v1/campaigns/{campaign_id}/actions
 GET  /api/v1/jobs
 GET  /api/v1/endpoints
@@ -199,14 +205,34 @@ Workers receive a short-lived signed control capability and never receive
 inference credential `required` or `forbidden`. A required profile receives only
 `HF_INFERENCE_TOKEN` as an encrypted Job secret; a forbidden profile receives no
 operator-managed secret. The capability is scoped to one namespace, campaign,
-launch action, task set, and expiration. It authorizes only the campaign-lock
-and attempt-receipt routes.
+immutable campaign-lock digest, launch action, task set, operation set and
+expiration. Every capability authorizes campaign-lock reads, evidence upload and
+attempt submission. A deployment with an immutable Sandbox policy may also
+authorize create, observe, command, file write, file read and close operations.
 
 An inference-required deployment also locks maximum requests, concurrency,
 upstream timeout, and output tokens. The service supplies those non-secret
 limits to the worker. The root-owned bridge accepts only the selected Chat
 Completions or Responses path, the locked model, approved Hugging Face hosts,
 and requests within those limits.
+
+Sandbox policies lock the digest-pinned image, hardware, lifetime, idle timeout,
+reservation, hourly cost, command count, command timeout, transfer size and
+filesystem roots. The control service writes a dispatch fence before every
+Sandbox side effect. Create and close are remotely adoptable. Commands are not
+automatically replayed after an ambiguous dispatch. File writes repeat only with
+identical content-addressed bytes. Results are stored immutably outside the
+projection prefix before the action receipt, so restart recovery cannot duplicate
+a completed operation.
+
+The control service launches the Sandbox server from its read-only public server
+Bucket mount. It derives a per-Sandbox HMAC token and sends only that token plus,
+when required, `HF_INFERENCE_TOKEN` as Job secrets. It never sends `HF_TOKEN` or
+`SBX_DL_TOKEN` to the Sandbox. A reviewed root bootstrap consumes the inference
+credential, starts the root-owned bridge, then removes inference route values and
+the credential from the Sandbox server environment before unprivileged benchmark
+commands are accepted. Worker responses contain an opaque Sandbox action ID, not
+the remote Job ID or proxy URL.
 
 Evidence upload is resumable and content addressed. A worker uses an upload
 operation on the attempt-receipt route for bounded base64 chunks, then uploads
@@ -318,8 +344,9 @@ Jobs never receive `HF_TOKEN` or a writable mount of the canonical control
 Bucket. An inference-required deployment receives `HF_INFERENCE_TOKEN` as its
 only operator-managed Job secret. The service signs a short-lived capability
 for the exact campaign, launch action, and task set. That capability is accepted
-only by the worker campaign-lock and attempt-receipt routes, is redacted from
-logs, and cannot invoke operator or collection APIs.
+only by the worker campaign-lock, attempt-receipt and explicitly locked Sandbox
+routes, is redacted from logs, and cannot invoke operator or collection APIs.
+Browser lock and profile views redact Sandbox inference topology.
 
 The built-in control smoke Job runs a reviewed inline script in a digest-pinned
 official Node.js image. Its deployment forbids inference, so it refuses both
@@ -327,6 +354,13 @@ operator-managed credentials, reads its
 campaign lock, uploads canonical evidence, and submits one task receipt through
 its scoped capability. Control smoke success requires that worker receipt, so a
 completed Job cannot hide a broken callback path.
+
+The separate Sandbox control smoke remains inference-free. Its reviewed worker
+creates one digest-pinned CPU Sandbox, adopts readiness by opaque action ID,
+executes one bounded command, round-trips one content-addressed file, closes the
+remote Job, verifies budget reconciliation, then submits its attempt receipt. It
+fails if either the broad control credential or inference credential appears in
+the worker.
 
 ## Local projection
 

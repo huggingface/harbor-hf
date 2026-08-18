@@ -462,6 +462,12 @@
                 "job.cancel",
                 "endpoint.resume",
                 "endpoint.pause",
+                "sandbox.create",
+                "sandbox.observe",
+                "sandbox.exec",
+                "sandbox.write",
+                "sandbox.read",
+                "sandbox.close",
                 "publication.publish",
                 "campaign.cancel"
               ]
@@ -525,7 +531,7 @@
               "$ref": "#/$defs/Id"
             },
             "operation": {
-              "const": "create"
+              "enum": ["create", "observe", "execute", "write", "read", "close"]
             },
             "adoption_not_before": {
               "$ref": "#/$defs/Timestamp"
@@ -1236,6 +1242,9 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 1048576
+        },
+        "sandbox": {
+          "$ref": "#/$defs/SandboxPolicy"
         }
       },
       "allOf": [
@@ -1260,6 +1269,165 @@
               "inference_max_concurrency": {},
               "inference_timeout_seconds": {},
               "inference_max_output_tokens": {}
+            }
+          }
+        }
+      ]
+    },
+    "SandboxPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image",
+        "hardware",
+        "timeout_seconds",
+        "idle_timeout_seconds",
+        "reservation_microusd",
+        "active_hourly_cost_microusd",
+        "max_sandboxes",
+        "max_commands",
+        "max_command_seconds",
+        "max_transfer_bytes",
+        "allowed_roots"
+      ],
+      "properties": {
+        "image": {
+          "type": "string",
+          "pattern": "^.+@sha256:[0-9a-f]{64}$",
+          "maxLength": 1024
+        },
+        "hardware": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 86400
+        },
+        "idle_timeout_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 86400
+        },
+        "inference_token": {
+          "enum": ["forbidden", "required"]
+        },
+        "inference_upstream": {
+          "type": "string",
+          "pattern": "^https://(?:router\\.huggingface\\.co|[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.endpoints\\.huggingface\\.cloud|[a-z0-9-]+\\.hf\\.jobs/scopes/[A-Za-z0-9._~/-]+)(?:/v1)?$",
+          "maxLength": 1024
+        },
+        "inference_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "inference_api": {
+          "enum": ["chat-completions", "responses"]
+        },
+        "inference_max_requests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "inference_max_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "inference_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "inference_max_output_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "root_bootstrap_command": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "reservation_microusd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "active_hourly_cost_microusd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "max_sandboxes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "max_commands": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "max_command_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "max_transfer_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "allowed_roots": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^/",
+            "maxLength": 512
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["inference_token"],
+            "properties": {
+              "inference_token": {
+                "const": "required"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "inference_upstream",
+              "inference_model",
+              "inference_api",
+              "inference_max_requests",
+              "inference_max_concurrency",
+              "inference_timeout_seconds",
+              "inference_max_output_tokens",
+              "root_bootstrap_command"
+            ],
+            "properties": {
+              "inference_upstream": {},
+              "inference_model": {},
+              "inference_api": {},
+              "inference_max_requests": {},
+              "inference_max_concurrency": {},
+              "inference_timeout_seconds": {},
+              "inference_max_output_tokens": {},
+              "root_bootstrap_command": {}
             }
           }
         }
@@ -1481,6 +1649,46 @@
         },
         "watchdog_verified": {
           "type": "boolean"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/SandboxPolicy"
+        },
+        "campaign_lock_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "sandbox_create_action_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "content_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "content_size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 67108864
+        },
+        "mode": {
+          "type": "string",
+          "pattern": "^0[0-7]{3}$"
         }
       }
     },

@@ -1,4 +1,5 @@
 import type { ActionIntent } from "@harbor-hf/contracts";
+import { verifyWorkerCapability } from "@harbor-hf/control-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HuggingFaceActions } from "../src/actions.js";
 
@@ -24,6 +25,7 @@ const base: ActionIntent = {
     hardware: "cpu-basic",
     timeout_seconds: 60,
     trusted_worker: true,
+    campaign_lock_digest: `sha256:${"c".repeat(64)}`,
   },
 };
 
@@ -97,6 +99,16 @@ describe("HuggingFaceActions", () => {
           HARBOR_HF_CONTROL_URL: "https://control.example",
         });
         expect(request.environment.HARBOR_HF_WORKER_CAPABILITY).toMatch(/^v1\./);
+        expect(
+          verifyWorkerCapability(
+            testToken,
+            request.environment.HARBOR_HF_WORKER_CAPABILITY,
+            "example",
+          ),
+        ).toMatchObject({
+          campaign_lock_digest: base.payload.campaign_lock_digest,
+          operations: ["attempt.submit", "campaign.read", "evidence.write"],
+        });
         expect(JSON.stringify(request.environment)).not.toContain(testToken);
         expect(request.secrets).toBeUndefined();
         expect(request.volumes).toBeUndefined();

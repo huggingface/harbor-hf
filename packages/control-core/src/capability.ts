@@ -1,12 +1,28 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { canonicalJson } from "@harbor-hf/contracts";
 
+export const workerOperations = [
+  "campaign.read",
+  "attempt.submit",
+  "evidence.write",
+  "sandbox.create",
+  "sandbox.observe",
+  "sandbox.exec",
+  "sandbox.write",
+  "sandbox.read",
+  "sandbox.close",
+] as const;
+
+export type WorkerOperation = (typeof workerOperations)[number];
+
 export interface WorkerCapability {
   version: 1;
   namespace: string;
   campaign_id: string;
+  campaign_lock_digest: string;
   action_id: string;
   task_ids: string[];
+  operations: WorkerOperation[];
   expires_at: number;
 }
 
@@ -23,6 +39,7 @@ export function mintWorkerCapability(
     version: 1,
     ...capability,
     task_ids: [...new Set(capability.task_ids)].sort(),
+    operations: [...new Set(capability.operations)].sort(),
   };
   const body = Buffer.from(canonicalJson(value), "utf8").toString("base64url");
   return `v1.${body}.${signature(secret, body).toString("base64url")}`;
@@ -57,11 +74,19 @@ export function verifyWorkerCapability(
     candidate.version !== 1 ||
     candidate.namespace !== namespace ||
     typeof candidate.campaign_id !== "string" ||
+    typeof candidate.campaign_lock_digest !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/.test(candidate.campaign_lock_digest) ||
     typeof candidate.action_id !== "string" ||
     !Array.isArray(candidate.task_ids) ||
     candidate.task_ids.length === 0 ||
     !candidate.task_ids.every((task) => typeof task === "string") ||
     new Set(candidate.task_ids).size !== candidate.task_ids.length ||
+    !Array.isArray(candidate.operations) ||
+    candidate.operations.length === 0 ||
+    !candidate.operations.every((operation) =>
+      workerOperations.includes(operation as WorkerOperation),
+    ) ||
+    new Set(candidate.operations).size !== candidate.operations.length ||
     typeof candidate.expires_at !== "number" ||
     !Number.isSafeInteger(candidate.expires_at) ||
     candidate.expires_at < Math.floor(now / 1000)

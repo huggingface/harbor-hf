@@ -27,6 +27,7 @@ from packaging.version import InvalidVersion, Version
 from harbor_hf_agents.support.hf_inference_bridge import (
     prepare_hf_inference_bridge,
     stop_hf_inference_bridge,
+    verify_hf_inference_isolation,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
 
@@ -61,6 +62,41 @@ def _materialize_pi_models_json() -> None:
         json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     destination.chmod(0o600)
+
+
+async def _use_sandbox_inference_route(
+    agent: IsolatedProviderAgent,
+    environment: BaseEnvironment,
+    env: dict[str, str],
+    *,
+    allowed_model: str,
+) -> bool:
+    """Load a non-secret loopback route prepared by the Sandbox root process."""
+    result = await agent.exec_as_root(
+        environment,
+        command=(
+            "if [ -f /run/harbor-hf-inference.json ]; then "
+            "cat /run/harbor-hf-inference.json; fi"
+        ),
+    )
+    text = (result.stdout or "").strip()
+    if not text:
+        return False
+    value = json.loads(text)
+    if set(value) != {"schema_version", "api", "base_url", "api_key", "model"}:
+        raise RuntimeError("Sandbox inference route has unknown or missing fields")
+    if (
+        value["schema_version"] != "v1"
+        or value["api"] != "chat-completions"
+        or value["base_url"] != "http://127.0.0.1:18080/v1"
+        or value["api_key"] != "harbor-local-inference-bridge"
+        or value["model"] != allowed_model
+    ):
+        raise RuntimeError("Sandbox inference route does not match the locked model")
+    env["OPENAI_BASE_URL"] = value["base_url"]
+    env["OPENAI_API_KEY"] = value["api_key"]
+    await verify_hf_inference_isolation(agent, environment)
+    return True
 
 
 def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
@@ -436,20 +472,32 @@ class PiAgent(IsolatedProviderAgent):
             if val:
                 env[key] = val
 
-        bridged = await prepare_hf_inference_bridge(
-            self,
-            environment,
-            env,
-            base_url_key="OPENAI_BASE_URL",
-            api_key_key="OPENAI_API_KEY",
-            inference_token=self._get_env("HF_INFERENCE_TOKEN"),
-            api="chat-completions",
-            allowed_model=self.model_name.split("/", 1)[1],
-            max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
-            max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
-            timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
-            max_output_tokens=self._get_env("HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"),
-        )
+        allowed_model = self.model_name.split("/", 1)[1]
+        bridged = False
+        if provider == "openai":
+            bridged = await _use_sandbox_inference_route(
+                self,
+                environment,
+                env,
+                allowed_model=allowed_model,
+            )
+        if not bridged:
+            bridged = await prepare_hf_inference_bridge(
+                self,
+                environment,
+                env,
+                base_url_key="OPENAI_BASE_URL",
+                api_key_key="OPENAI_API_KEY",
+                inference_token=self._get_env("HF_INFERENCE_TOKEN"),
+                api="chat-completions",
+                allowed_model=allowed_model,
+                max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
+                max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
+                timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
+                max_output_tokens=self._get_env(
+                    "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"
+                ),
+            )
 
         model_args = (
             f"--provider {provider} --model {self.model_name.split('/', 1)[1]} "

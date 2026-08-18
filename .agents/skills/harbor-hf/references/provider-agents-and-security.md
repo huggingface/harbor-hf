@@ -227,6 +227,21 @@ Verify the exact Pi package version, model configuration, Chat Completions
 route, reasoning setting, native Pi transcript, and ATIF identity. Keep Pi
 provider files inside the isolated agent home.
 
+### Capability-scoped Sandboxes
+
+Verify the capability's campaign-lock digest, task and operation set before each
+Sandbox request. Confirm the remote Job's deterministic action label,
+digest-pinned image, hardware and secret names during create, adoption,
+observation and command execution. The only allowed Sandbox secrets are the
+derived `SBX_TOKEN` and, for a reviewed inference-required image, the distinct
+`HF_INFERENCE_TOKEN`.
+
+The root bootstrap must start the bridge before removing the inference token and
+route variables from the Sandbox server environment. The benchmark agent must
+see only the loopback route and placeholder key. Commands, paths, transfer size,
+command count and lifetime cannot exceed the immutable policy. Preserve the
+opaque action ID in worker evidence, never the remote Job ID or proxy URL.
+
 ## Judge isolation
 
 The judge recorder is separate from the agent provider recorder. The verifier
@@ -246,6 +261,11 @@ Stop the campaign when:
 - bridge environment is readable by the agent;
 - a real credential appears in the agent environment or runtime files;
 - ingress accepts an unexpected route;
+- a Sandbox receives `HF_TOKEN` or `SBX_DL_TOKEN`;
+- the Sandbox server or benchmark agent retains the inference token or upstream
+  route after root bootstrap;
+- a Sandbox image, hardware, label, filesystem root or limit differs from the
+  immutable policy;
 - provider or judge evidence contains a capability or authorization material;
 - a session path escapes its allowed root;
 - exact evidence contains a known secret;

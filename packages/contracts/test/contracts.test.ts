@@ -82,6 +82,69 @@ describe("canonical contracts", () => {
     );
   });
 
+  it("requires a reviewed root bootstrap for inference-enabled Sandboxes", () => {
+    const sandbox = {
+      image: `registry.example/sandbox@sha256:${"a".repeat(64)}`,
+      hardware: "h200",
+      timeout_seconds: 21_600,
+      idle_timeout_seconds: 1_800,
+      inference_token: "required",
+      inference_upstream: "https://route.example.endpoints.huggingface.cloud/v1",
+      inference_model: "example/model",
+      inference_api: "chat-completions",
+      inference_max_requests: 256,
+      inference_max_concurrency: 1,
+      inference_timeout_seconds: 1_800,
+      inference_max_output_tokens: 32_768,
+      reservation_microusd: 20_000_000,
+      active_hourly_cost_microusd: 5_000_000,
+      max_sandboxes: 1,
+      max_commands: 128,
+      max_command_seconds: 3_600,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/logs"],
+    };
+    const intent = {
+      schema_version: "v1",
+      kind: "action.intent",
+      record_id: "sandbox-action-test",
+      created_at: "2026-08-18T00:00:00Z",
+      actor: { subject: "control", role: "service" },
+      action_id: "sandbox-action-test",
+      campaign_id: "campaign-test",
+      action_kind: "sandbox.create",
+      generation: 0,
+      target: "task-test",
+      payload: { task_id: "task-test", sandbox },
+    };
+    expect(() => validateControlRecord(intent)).toThrow(ContractValidationError);
+    expect(
+      validateControlRecord({
+        ...intent,
+        payload: {
+          task_id: "task-test",
+          sandbox: {
+            ...sandbox,
+            root_bootstrap_command: ["/opt/worker/start-root-services"],
+          },
+        },
+      }),
+    ).toMatchObject({ kind: "action.intent", action_kind: "sandbox.create" });
+    expect(
+      validateControlRecord({
+        schema_version: "v1",
+        kind: "action.dispatch",
+        record_id: "sandbox-dispatch-test",
+        created_at: "2026-08-18T00:00:00Z",
+        actor: { subject: "control", role: "service" },
+        action_id: "sandbox-exec-test",
+        campaign_id: "campaign-test",
+        operation: "execute",
+        adoption_not_before: "2026-08-18T00:01:00Z",
+      }),
+    ).toMatchObject({ operation: "execute" });
+  });
+
   it("keeps profile and action payloads closed", () => {
     const base = {
       schema_version: "v1",

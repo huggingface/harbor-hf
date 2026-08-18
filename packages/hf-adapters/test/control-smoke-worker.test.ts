@@ -185,6 +185,25 @@ describe("control smoke worker", () => {
     }
   });
 
+  it("embeds the reviewed Sandbox smoke worker in its pinned profile", async () => {
+    const profile = JSON.parse(
+      await readFile(resolve("profiles/deployment/hf-cpu-sandbox-smoke.json"), "utf8"),
+    ) as { spec: { job_command: string[]; sandbox: Record<string, unknown> } };
+    const source = await readFile(
+      resolve("scripts/control-service/sandbox-smoke-worker.cjs"),
+      "utf8",
+    );
+
+    expect(profile.spec.job_command.slice(3).join("")).toBe(source);
+    expect(profile.spec.sandbox).toMatchObject({
+      hardware: "cpu-basic",
+      inference_token: "forbidden",
+      reservation_microusd: 2000,
+      active_hourly_cost_microusd: 10000,
+      max_sandboxes: 1,
+    });
+  });
+
   it.each(["HF_TOKEN", "HF_INFERENCE_TOKEN"])(
     "refuses the %s credential in a no-inference worker",
     async (credentialName) => {

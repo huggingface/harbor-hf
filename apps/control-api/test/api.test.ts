@@ -83,6 +83,79 @@ const input = {
   confirmed: true,
 };
 
+function sandboxDeploymentRecords(): [ProfileObject, ProfilePromotion] {
+  const sandbox = {
+    image: `registry.example/sandbox@sha256:${"b".repeat(64)}`,
+    hardware: "h200",
+    timeout_seconds: 21_600,
+    idle_timeout_seconds: 1_800,
+    inference_token: "required" as const,
+    inference_upstream: "https://route.example.endpoints.huggingface.cloud/v1",
+    inference_model: "example/model",
+    inference_api: "chat-completions" as const,
+    inference_max_requests: 256,
+    inference_max_concurrency: 1,
+    inference_timeout_seconds: 1_800,
+    inference_max_output_tokens: 32_768,
+    root_bootstrap_command: ["/opt/worker/start-root-services"],
+    reservation_microusd: 20_000_000,
+    active_hourly_cost_microusd: 5_000_000,
+    max_sandboxes: 1,
+    max_commands: 8,
+    max_command_seconds: 3_600,
+    max_transfer_bytes: 1_048_576,
+    allowed_roots: ["/app", "/logs"] as [string, ...string[]],
+  };
+  const spec = {
+    route: "hf_job" as const,
+    models: ["control-smoke"] as [string, ...string[]],
+    harnesses: ["control-smoke"] as [string, ...string[]],
+    job_image: `registry.example/worker@sha256:${"a".repeat(64)}`,
+    job_command: ["python", "-m", "worker"] as [string, ...string[]],
+    hardware: "cpu-basic",
+    timeout_seconds: 7_200,
+    trusted_worker: true,
+    inference_token: "forbidden" as const,
+    sandbox,
+  };
+  const profile: ProfileObject = {
+    schema_version: "v1",
+    kind: "profile.object",
+    record_id: deterministicId(
+      "profile",
+      "deployment",
+      "hf-sandbox-test",
+      sha256(canonicalJson(spec)),
+    ),
+    created_at: "2026-08-18T00:00:00.000Z",
+    actor: { subject: "profile-import", role: "migration" },
+    profile_kind: "deployment",
+    name: "hf-sandbox-test",
+    spec,
+  };
+  const profileId = sha256(canonicalJson(profile));
+  const promotion: ProfilePromotion = {
+    schema_version: "v1",
+    kind: "profile.promotion",
+    record_id: deterministicId(
+      "promotion",
+      "deployment",
+      "hf-sandbox-test",
+      profileId,
+      "approved",
+    ),
+    created_at: "2026-08-18T00:00:01.000Z",
+    actor: { subject: "profile-operator", role: "operator" },
+    profile_kind: "deployment",
+    alias: "hf-sandbox-test",
+    profile_id: profileId,
+    promotion_state: "approved",
+    reason: "approved after sandbox review",
+    evidence: [sha256("sandbox-canary-evidence")],
+  };
+  return [profile, promotion];
+}
+
 describe("control API", () => {
   it("reports liveness and projection readiness separately", async () => {
     const { app } = await setup();
@@ -261,13 +334,16 @@ describe("control API", () => {
     );
     const lock = await runtime.projection.campaignLock(submission.campaign_id);
     expect(lock).not.toBeNull();
-    const taskId = lock?.tasks[0]?.task_id;
+    if (!lock) throw new Error("campaign lock is missing");
+    const taskId = lock.tasks[0]?.task_id;
     expect(taskId).toBeDefined();
     const token = mintWorkerCapability(runtime.config.hf_token ?? "", {
       namespace: runtime.config.namespace,
       campaign_id: submission.campaign_id,
+      campaign_lock_digest: sha256(canonicalJson(lock)),
       action_id: "action-worker-capability",
       task_ids: [taskId ?? "missing"],
+      operations: ["campaign.read", "attempt.submit", "evidence.write"],
       expires_at: Math.floor(Date.now() / 1000) + 60,
     });
     const headers = { "x-harbor-hf-worker-capability": token };
@@ -442,8 +518,10 @@ describe("control API", () => {
     const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
       namespace: runtime.config.namespace,
       campaign_id: "campaign-rate-limit",
+      campaign_lock_digest: `sha256:${"a".repeat(64)}`,
       action_id: "action-rate-limit",
       task_ids: ["task-rate-limit"],
+      operations: ["campaign.read"],
       expires_at: Math.floor(Date.now() / 1000) + 60,
     });
     expect(
@@ -507,8 +585,10 @@ describe("control API", () => {
     const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
       namespace: runtime.config.namespace,
       campaign_id: "campaign-verified-limit",
+      campaign_lock_digest: `sha256:${"a".repeat(64)}`,
       action_id: "action-verified-limit",
       task_ids: ["task-verified-limit"],
+      operations: ["campaign.read"],
       expires_at: Math.floor(Date.now() / 1000) + 60,
     });
     expect(
@@ -724,11 +804,15 @@ describe("control API", () => {
       (action) => action.action_kind === "job.launch",
     );
     if (!launch) throw new Error("campaign admission did not create a Job launch");
+    const lock = await runtime.projection.campaignLock(campaignId);
+    if (!lock) throw new Error("campaign lock is missing");
     const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
       namespace: runtime.config.namespace,
       campaign_id: campaignId,
+      campaign_lock_digest: sha256(canonicalJson(lock)),
       action_id: launch.action_id,
       task_ids: ["control-smoke-task"],
+      operations: ["campaign.read", "attempt.submit", "evidence.write"],
       expires_at: Math.floor(Date.now() / 1000) + 60,
     });
     const capabilityHeaders = {
@@ -871,6 +955,236 @@ describe("control API", () => {
     expect(attemptEvent.data.record_id).toMatch(/^attempt-receipt-/);
     expect(attemptEvent.data).not.toHaveProperty("record");
     expect(JSON.stringify(attemptEvent)).not.toContain(payload.evidence_path);
+    await app.close();
+  });
+
+  it("keeps Sandbox lifecycle capability-scoped, durable, and topology-redacted", async () => {
+    const records = sandboxDeploymentRecords();
+    const { runtime, app } = await setup("enabled", async (seedRuntime) => {
+      for (const record of records)
+        await seedRuntime.store.create(
+          controlRecordPath(record),
+          new TextEncoder().encode(canonicalJson(record)),
+        );
+    });
+    const submission = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "sandbox-campaign-key" },
+      payload: {
+        ...input,
+        deployment: "hf-sandbox-test",
+        ceiling_microusd: 20_000_000,
+      },
+    });
+    expect(submission.statusCode).toBe(202);
+    const campaignId = submission.json().campaign_id as string;
+    await runtime.reconciler.tick();
+    const lock = await runtime.projection.campaignLock(campaignId);
+    if (!lock) throw new Error("campaign lock is missing");
+    const launch = (await runtime.projection.campaignActions(campaignId)).find(
+      (action) => action.action_kind === "job.launch",
+    );
+    if (!launch) throw new Error("campaign admission did not create a Job launch");
+    const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
+      namespace: runtime.config.namespace,
+      campaign_id: campaignId,
+      campaign_lock_digest: sha256(canonicalJson(lock)),
+      action_id: launch.action_id,
+      task_ids: ["control-smoke-task"],
+      operations: [
+        "campaign.read",
+        "attempt.submit",
+        "evidence.write",
+        "sandbox.create",
+        "sandbox.observe",
+        "sandbox.exec",
+        "sandbox.write",
+        "sandbox.read",
+        "sandbox.close",
+      ],
+      expires_at: Math.floor(Date.now() / 1000) + 60,
+    });
+    const capabilityHeaders = {
+      "x-harbor-hf-worker-capability": capability,
+    };
+    const lifecycle = vi.spyOn(
+      runtime.sandboxes as NonNullable<Runtime["sandboxes"]>,
+      "lifecycle",
+    );
+    lifecycle.mockImplementation(async (intent) => ({
+      outcome: intent.action_kind === "sandbox.create" ? "created" : "completed",
+      observed_state: intent.action_kind === "sandbox.close" ? "CANCELED" : "RUNNING",
+      resource_id: "private-remote-sandbox-id",
+    }));
+    vi.spyOn(
+      runtime.sandboxes as NonNullable<Runtime["sandboxes"]>,
+      "execute",
+    ).mockResolvedValue({
+      exit_code: 0,
+      stdout: "ok\n",
+      stderr: "",
+      signal: null,
+      timed_out: false,
+      duration_ms: 12,
+    });
+    const write = vi
+      .spyOn(runtime.sandboxes as NonNullable<Runtime["sandboxes"]>, "write")
+      .mockResolvedValue();
+    vi.spyOn(
+      runtime.sandboxes as NonNullable<Runtime["sandboxes"]>,
+      "read",
+    ).mockResolvedValue({ bytes: Buffer.from("result", "utf8") });
+
+    const operatorLock = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/${campaignId}/lock`,
+    });
+    expect(JSON.stringify(operatorLock.json())).not.toContain(
+      "route.example.endpoints.huggingface.cloud",
+    );
+    const workerLock = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/${campaignId}/lock`,
+      headers: capabilityHeaders,
+    });
+    expect(JSON.stringify(workerLock.json())).toContain(
+      "route.example.endpoints.huggingface.cloud",
+    );
+
+    const limitedCapability = mintWorkerCapability(runtime.config.hf_token ?? "", {
+      namespace: runtime.config.namespace,
+      campaign_id: campaignId,
+      campaign_lock_digest: sha256(canonicalJson(lock)),
+      action_id: launch.action_id,
+      task_ids: ["control-smoke-task"],
+      operations: ["campaign.read"],
+      expires_at: Math.floor(Date.now() / 1000) + 60,
+    });
+    const deniedCreate = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes`,
+      headers: {
+        "x-harbor-hf-worker-capability": limitedCapability,
+        "idempotency-key": "sandbox-denied-create-key",
+      },
+    });
+    expect(deniedCreate.statusCode).toBe(403);
+
+    const create = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-create-key",
+      },
+    });
+    expect(create.statusCode).toBe(200);
+    expect(create.json()).toMatchObject({ state: "RUNNING" });
+    expect(JSON.stringify(create.json())).not.toContain("private-remote-sandbox-id");
+    const sandboxId = create.json().sandbox_id as string;
+    const repeatedCreate = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-create-key",
+      },
+    });
+    expect(repeatedCreate.json()).toEqual(create.json());
+    expect(lifecycle).toHaveBeenCalledTimes(1);
+
+    const exec = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/exec`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-command-key",
+      },
+      payload: {
+        command: ["python", "worker.py"],
+        cwd: "/app",
+        timeout_seconds: 60,
+      },
+    });
+    expect(exec.statusCode).toBe(200);
+    expect(exec.json()).toMatchObject({ exit_code: 0, stdout: "ok\n" });
+
+    const content = Buffer.from("input", "utf8");
+    const deniedUpload = await app.inject({
+      method: "PUT",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/files`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-denied-upload-key",
+      },
+      payload: {
+        path: "/etc/input.txt",
+        content_digest: sha256(content),
+        content_base64: content.toString("base64"),
+      },
+    });
+    expect(deniedUpload.statusCode).toBe(422);
+    const upload = await app.inject({
+      method: "PUT",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/files`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-upload-key",
+      },
+      payload: {
+        path: "/app/input.txt",
+        content_digest: sha256(content),
+        content_base64: content.toString("base64"),
+        mode: "0600",
+      },
+    });
+    expect(upload.statusCode).toBe(200);
+    expect(upload.json()).toEqual({ digest: sha256(content), size: 5 });
+    expect(write).toHaveBeenCalledOnce();
+
+    const download = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/files/read`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-download-key",
+      },
+      payload: { path: "/logs/result.txt" },
+    });
+    expect(download.statusCode).toBe(200);
+    expect(download.json()).toEqual({
+      digest: sha256("result"),
+      size: 6,
+      content_base64: Buffer.from("result", "utf8").toString("base64"),
+    });
+
+    const close = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-close-key",
+      },
+    });
+    expect(close.statusCode).toBe(200);
+    expect(close.json()).toEqual({ sandbox_id: sandboxId, state: "CANCELED" });
+    expect(await runtime.projection.campaign(campaignId)).toMatchObject({
+      reserved_microusd: 0,
+      observed_microusd: 20_000_000,
+    });
+    const actionKinds = (await runtime.projection.campaignActions(campaignId)).map(
+      (action) => action.action_kind,
+    );
+    expect(actionKinds).toEqual(
+      expect.arrayContaining([
+        "sandbox.create",
+        "sandbox.exec",
+        "sandbox.write",
+        "sandbox.read",
+        "sandbox.close",
+      ]),
+    );
     await app.close();
   });
 

@@ -1,11 +1,16 @@
 import { existsSync } from "node:fs";
+import { posix } from "node:path";
 import type {
+  ActionIntent,
+  ActionReceipt,
   Actor,
   AttemptSubmissionV1,
   CampaignSubmissionV1,
   HarborHFResultCatalogV1,
+  SandboxPolicy,
 } from "@harbor-hf/contracts";
 import {
+  canonicalJson,
   deterministicId,
   schemas,
   sha256,
@@ -14,11 +19,13 @@ import {
 import {
   ConfirmationRequiredError,
   ControlNotReadyError,
+  createJson,
   IdempotencyConflictError,
   PolicyError,
   ProfileResolutionError,
   type ControlEvent,
   type WorkerCapability,
+  type WorkerOperation,
   verifyWorkerCapability,
 } from "@harbor-hf/control-core";
 import cookie from "@fastify/cookie";
@@ -86,7 +93,11 @@ function isWorkerCapabilityRoute(request: FastifyRequest): boolean {
   return (
     (request.method === "GET" && /^\/api\/v1\/campaigns\/[^/]+\/lock$/.test(path)) ||
     (request.method === "POST" &&
-      /^\/api\/v1\/campaigns\/[^/]+\/tasks\/[^/]+\/attempts$/.test(path))
+      /^\/api\/v1\/campaigns\/[^/]+\/tasks\/[^/]+\/attempts$/.test(path)) ||
+    (/^[A-Z]+$/.test(request.method) &&
+      /^\/api\/v1\/campaigns\/[^/]+\/tasks\/[^/]+\/sandboxes(?:\/[^/]+(?:\/observe|\/exec|\/files(?:\/read)?)?)?$/.test(
+        path,
+      ))
   );
 }
 
@@ -149,6 +160,52 @@ function idempotencyKey(request: FastifyRequest): string {
       "Idempotency-Key must contain 8 to 256 characters",
     );
   return value;
+}
+
+class WorkerScopeError extends Error {}
+
+function requireWorkerOperation(
+  request: FastifyRequest,
+  operation: WorkerOperation,
+): WorkerCapability {
+  const capability = request.workerCapability;
+  if (!capability) throw new WorkerScopeError("a worker capability is required");
+  if (!capability.operations.includes(operation))
+    throw new WorkerScopeError(`worker capability does not authorize ${operation}`);
+  return capability;
+}
+
+function sandboxResultPath(campaignId: string, actionId: string): string {
+  return `sandbox-results/schema=v1/${campaignId}/${actionId}/result.json`;
+}
+
+function requireAllowedSandboxPath(path: string, policy: SandboxPolicy): string {
+  if (!posix.isAbsolute(path) || posix.normalize(path) !== path)
+    throw new PolicyError("sandbox path must be normalized and absolute");
+  if (
+    !policy.allowed_roots.some(
+      (root) => path === root || path.startsWith(`${root.replace(/\/$/, "")}/`),
+    )
+  )
+    throw new PolicyError("sandbox path is outside immutable policy roots");
+  return path;
+}
+
+function redactSandboxTopology<T>(value: T): T {
+  const clone = structuredClone(value) as T;
+  if (!clone || typeof clone !== "object") return clone;
+  const profiles = (clone as { profiles?: unknown }).profiles;
+  const candidates = Array.isArray(profiles) ? profiles : [clone];
+  for (const profile of candidates) {
+    if (!profile || typeof profile !== "object") continue;
+    const spec = (profile as { spec?: unknown }).spec;
+    if (!spec || typeof spec !== "object") continue;
+    const sandbox = (spec as { sandbox?: unknown }).sandbox;
+    if (!sandbox || typeof sandbox !== "object") continue;
+    if ("inference_upstream" in sandbox)
+      (sandbox as { inference_upstream?: string }).inference_upstream = "<redacted>";
+  }
+  return clone;
 }
 
 function cursorOffset(cursor: string | undefined): number {
@@ -239,7 +296,8 @@ function canarySubmission(body: unknown): boolean {
     input.launch_policy === "control-smoke" &&
     (input.deployment === undefined ||
       input.deployment === null ||
-      input.deployment === "hf-cpu-smoke")
+      input.deployment === "hf-cpu-smoke" ||
+      input.deployment === "hf-cpu-sandbox-smoke")
   );
 }
 
@@ -294,6 +352,116 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       ),
     },
   });
+
+  const loadSandboxContext = async (
+    request: FastifyRequest,
+    campaignId: string,
+    taskId: string,
+    operation: WorkerOperation,
+    sandboxId?: string,
+  ) => {
+    const capability = requireWorkerOperation(request, operation);
+    if (capability.campaign_id !== campaignId || !capability.task_ids.includes(taskId))
+      throw new WorkerScopeError("worker capability does not authorize this task");
+    const lock = await runtime.projection.campaignLock(campaignId);
+    if (!lock) throw new PolicyError("campaign lock is missing");
+    if (sha256(canonicalJson(lock)) !== capability.campaign_lock_digest)
+      throw new WorkerScopeError("worker capability does not match the campaign lock");
+    const deployment = lock.profiles.find((profile) => profile.kind === "deployment");
+    const policy = (deployment?.spec as { sandbox?: SandboxPolicy } | undefined)
+      ?.sandbox;
+    if (!policy) throw new PolicyError("campaign does not authorize Sandboxes");
+    if (!lock.tasks.some((task) => task.task_id === taskId))
+      throw new PolicyError("campaign lock does not contain this task");
+    let resourceId: string | null = null;
+    if (sandboxId) {
+      const row = await runtime.projection.action(sandboxId);
+      if (
+        !row ||
+        row.campaign_id !== campaignId ||
+        row.action_kind !== "sandbox.create"
+      )
+        throw new PolicyError("sandbox identifier is invalid");
+      const createIntent = JSON.parse(row.intent_body) as ActionIntent;
+      if (createIntent.payload.task_id !== taskId)
+        throw new PolicyError("sandbox identifier does not belong to this task");
+      resourceId = row.resource_id;
+      if (!resourceId) throw new PolicyError("sandbox creation is not complete");
+    }
+    return { capability, lock, policy, resourceId };
+  };
+
+  const executeSandboxAction = async <T>(
+    request: FastifyRequest,
+    campaignId: string,
+    _taskId: string,
+    actionKind: ActionIntent["action_kind"],
+    target: string,
+    payload: ActionIntent["payload"],
+    replaySafe: boolean,
+    execute: (
+      intent: ActionIntent,
+      adoptionOnly: boolean,
+    ) => Promise<{
+      external: {
+        outcome: ActionReceipt["outcome"];
+        observed_state: string;
+        resource_id?: string | null;
+        cost_microusd?: number | null;
+      };
+      result: T;
+    }>,
+  ): Promise<T> => {
+    const keyDigest = sha256(idempotencyKey(request));
+    const intent = runtime.service.actionIntent(
+      campaignId,
+      actionKind,
+      `${target}:${keyDigest.slice(7, 23)}`,
+      0,
+      payload,
+      domainActor(request),
+    );
+    const existing = await runtime.projection.action(intent.action_id);
+    const resultPath = sandboxResultPath(campaignId, intent.action_id);
+    const resultPrefix = resultPath.slice(0, -"/result.json".length);
+    const resultEntry = (await runtime.store.list(resultPrefix)).find(
+      (entry) => entry.key === resultPath,
+    );
+    if (resultEntry) {
+      const bytes = await runtime.store.read(resultPath);
+      const stored = JSON.parse(new TextDecoder().decode(bytes)) as {
+        external: {
+          outcome: ActionReceipt["outcome"];
+          observed_state: string;
+          resource_id?: string | null;
+          cost_microusd?: number | null;
+        };
+        result: T;
+      };
+      if (!existing?.receipt_body) {
+        const receipt = await runtime.service.receipt(intent, stored.external);
+        await runtime.service.markAdvanced(intent, receipt);
+      }
+      return stored.result;
+    }
+    if (existing?.receipt_body)
+      throw new PolicyError("Sandbox action receipt is missing its durable result");
+    const dispatched = await runtime.projection.actionDispatch(intent.action_id);
+    await runtime.service.writeAction(intent);
+    if (dispatched && !replaySafe)
+      throw new IdempotencyConflictError(
+        "ambiguous sandbox command cannot be replayed; inspect state and use a new key",
+      );
+    await runtime.service.dispatchAction(
+      intent,
+      new Date(Date.now() + 30_000).toISOString(),
+    );
+    const output = await execute(intent, Boolean(dispatched));
+    await createJson(runtime.store, resultPath, output);
+    const receipt = await runtime.service.receipt(intent, output.external);
+    await runtime.service.markAdvanced(intent, receipt);
+    return output.result;
+  };
 
   app.addHook("onRequest", async (request, reply) => {
     const origin = request.headers.origin;
@@ -755,6 +923,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     },
     async (request, reply) => {
       const { campaign_id } = request.params as { campaign_id: string };
+      if (request.workerCapability) requireWorkerOperation(request, "campaign.read");
       if (
         request.workerCapability &&
         request.workerCapability.campaign_id !== campaign_id
@@ -767,15 +936,26 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           },
         });
       const lock = await runtime.projection.campaignLock(campaign_id);
-      if (lock && request.workerCapability)
+      if (lock && request.workerCapability) {
+        if (
+          sha256(canonicalJson(lock)) !== request.workerCapability.campaign_lock_digest
+        )
+          return reply.code(403).send({
+            error: {
+              code: "worker_scope_rejected",
+              message: "the worker capability does not match this campaign lock",
+              request_id: request.id,
+            },
+          });
         return {
           ...lock,
           tasks: lock.tasks.filter((task) =>
             request.workerCapability?.task_ids.includes(task.task_id),
           ),
         };
+      }
       return (
-        lock ??
+        (lock ? redactSandboxTopology(lock) : null) ??
         reply.code(404).send({
           error: {
             code: "not_found",
@@ -783,6 +963,424 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
             request_id: request.id,
           },
         })
+      );
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id/sandboxes",
+    {
+      schema: {
+        tags: ["campaigns"],
+        response: {
+          200: {
+            type: "object",
+            additionalProperties: false,
+            required: ["sandbox_id", "state"],
+            properties: { sandbox_id: { type: "string" }, state: { type: "string" } },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { campaign_id, task_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+      };
+      const context = await loadSandboxContext(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.create",
+      );
+      if (!runtime.sandboxes) throw new PolicyError("Sandbox gateway is unavailable");
+      const creates = (await runtime.projection.campaignActions(campaign_id)).filter(
+        (row) => {
+          if (row.action_kind !== "sandbox.create" || row.outcome === "failed")
+            return false;
+          const intent = JSON.parse(row.intent_body) as ActionIntent;
+          return intent.payload.task_id === task_id;
+        },
+      );
+      const target = `sandbox:${task_id}`;
+      const payload = { task_id, sandbox: context.policy };
+      const candidate = runtime.service.actionIntent(
+        campaign_id,
+        "sandbox.create",
+        `${target}:${sha256(idempotencyKey(request)).slice(7, 23)}`,
+        0,
+        payload,
+        domainActor(request),
+      );
+      if (
+        creates.length >= context.policy.max_sandboxes &&
+        !creates.some((row) => row.action_id === candidate.action_id)
+      )
+        throw new PolicyError("Sandbox count exceeds immutable policy");
+      await runtime.service.writeAction(candidate);
+      const recordedCandidate = await runtime.projection.action(candidate.action_id);
+      if (recordedCandidate?.observed_state === "budget-rejected")
+        throw new PolicyError("Sandbox reservation exceeds the campaign ceiling");
+      if (
+        !(await runtime.service.reserveSandbox(
+          campaign_id,
+          candidate.action_id,
+          candidate.created_at,
+          context.policy.reservation_microusd,
+        ))
+      ) {
+        const receipt = await runtime.service.receipt(candidate, {
+          outcome: "failed",
+          observed_state: "budget-rejected",
+          error_code: "campaign_ceiling_exceeded",
+        });
+        await runtime.service.markAdvanced(candidate, receipt);
+        throw new PolicyError("Sandbox reservation exceeds the campaign ceiling");
+      }
+      return executeSandboxAction(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.create",
+        target,
+        payload,
+        true,
+        async (intent, adoptionOnly) => {
+          const external = await runtime.sandboxes?.lifecycle(intent, {
+            adoption_only: adoptionOnly,
+          });
+          if (!external) throw new PolicyError("Sandbox gateway is unavailable");
+          return {
+            external,
+            result: {
+              sandbox_id: intent.action_id,
+              state: external.observed_state,
+            },
+          };
+        },
+      );
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id/sandboxes/:sandbox_id/observe",
+    async (request) => {
+      const { campaign_id, task_id, sandbox_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+        sandbox_id: string;
+      };
+      const context = await loadSandboxContext(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.observe",
+        sandbox_id,
+      );
+      if (!runtime.sandboxes || !context.resourceId)
+        throw new PolicyError("Sandbox gateway is unavailable");
+      return executeSandboxAction(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.observe",
+        `sandbox-observe:${sandbox_id}`,
+        {
+          task_id,
+          sandbox_create_action_id: sandbox_id,
+          resource_id: context.resourceId,
+          sandbox: context.policy,
+        },
+        true,
+        async (intent) => {
+          const external = await runtime.sandboxes?.lifecycle(intent);
+          if (!external) throw new PolicyError("Sandbox gateway is unavailable");
+          return {
+            external,
+            result: { sandbox_id, state: external.observed_state },
+          };
+        },
+      );
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id/sandboxes/:sandbox_id/exec",
+    {
+      bodyLimit: 1024 * 1024,
+      schema: {
+        tags: ["campaigns"],
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["command", "cwd", "timeout_seconds"],
+          properties: {
+            command: {
+              type: "array",
+              minItems: 1,
+              maxItems: 128,
+              items: { type: "string", maxLength: 4096 },
+            },
+            cwd: { type: "string", minLength: 1, maxLength: 512 },
+            timeout_seconds: { type: "integer", minimum: 1, maximum: 86400 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { campaign_id, task_id, sandbox_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+        sandbox_id: string;
+      };
+      const body = request.body as {
+        command: [string, ...string[]];
+        cwd: string;
+        timeout_seconds: number;
+      };
+      const context = await loadSandboxContext(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.exec",
+        sandbox_id,
+      );
+      if (!runtime.sandboxes || !context.resourceId)
+        throw new PolicyError("Sandbox gateway is unavailable");
+      requireAllowedSandboxPath(body.cwd, context.policy);
+      const commands = (await runtime.projection.campaignActions(campaign_id)).filter(
+        (row) => {
+          if (row.action_kind !== "sandbox.exec") return false;
+          const intent = JSON.parse(row.intent_body) as ActionIntent;
+          return intent.payload.sandbox_create_action_id === sandbox_id;
+        },
+      );
+      const target = `sandbox-exec:${sandbox_id}`;
+      const payload = {
+        task_id,
+        sandbox_create_action_id: sandbox_id,
+        resource_id: context.resourceId,
+        sandbox: context.policy,
+        command: body.command,
+        cwd: body.cwd,
+        timeout_seconds: body.timeout_seconds,
+      };
+      const candidate = runtime.service.actionIntent(
+        campaign_id,
+        "sandbox.exec",
+        `${target}:${sha256(idempotencyKey(request)).slice(7, 23)}`,
+        0,
+        payload,
+        domainActor(request),
+      );
+      if (
+        commands.length >= context.policy.max_commands &&
+        !commands.some((row) => row.action_id === candidate.action_id)
+      )
+        throw new PolicyError("Sandbox command count exceeds immutable policy");
+      return executeSandboxAction(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.exec",
+        target,
+        payload,
+        false,
+        async (intent) => ({
+          external: {
+            outcome: "completed",
+            observed_state: "command-completed",
+            resource_id: context.resourceId,
+          },
+          result: await runtime.sandboxes?.execute(intent),
+        }),
+      );
+    },
+  );
+
+  app.put(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id/sandboxes/:sandbox_id/files",
+    {
+      bodyLimit: 90 * 1024 * 1024,
+      schema: {
+        tags: ["campaigns"],
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["path", "content_digest", "content_base64"],
+          properties: {
+            path: { type: "string", minLength: 1, maxLength: 512 },
+            content_digest: { type: "string", pattern: "^sha256:[0-9a-f]{64}$" },
+            content_base64: { type: "string", maxLength: 89478488 },
+            mode: { type: "string", pattern: "^0[0-7]{3}$" },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { campaign_id, task_id, sandbox_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+        sandbox_id: string;
+      };
+      const body = request.body as {
+        path: string;
+        content_digest: string;
+        content_base64: string;
+        mode?: string;
+      };
+      const context = await loadSandboxContext(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.write",
+        sandbox_id,
+      );
+      if (!runtime.sandboxes || !context.resourceId)
+        throw new PolicyError("Sandbox gateway is unavailable");
+      const path = requireAllowedSandboxPath(body.path, context.policy);
+      const bytes = Buffer.from(body.content_base64, "base64");
+      if (bytes.toString("base64") !== body.content_base64)
+        throw new PolicyError("Sandbox write content must use canonical base64");
+      if (bytes.byteLength > context.policy.max_transfer_bytes)
+        throw new PolicyError("Sandbox write exceeds immutable transfer limit");
+      if (sha256(bytes) !== body.content_digest)
+        throw new PolicyError("Sandbox write digest does not match content");
+      return executeSandboxAction(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.write",
+        `sandbox-write:${sandbox_id}:${sha256(path)}`,
+        {
+          task_id,
+          sandbox_create_action_id: sandbox_id,
+          resource_id: context.resourceId,
+          sandbox: context.policy,
+          path,
+          content_digest: body.content_digest,
+          content_size: bytes.byteLength,
+          ...(body.mode ? { mode: body.mode } : {}),
+        },
+        true,
+        async (intent) => {
+          await runtime.sandboxes?.write(intent, bytes);
+          return {
+            external: {
+              outcome: "completed",
+              observed_state: "write-completed",
+              resource_id: context.resourceId,
+            },
+            result: { digest: body.content_digest, size: bytes.byteLength },
+          };
+        },
+      );
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id/sandboxes/:sandbox_id/files/read",
+    {
+      schema: {
+        tags: ["campaigns"],
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["path"],
+          properties: { path: { type: "string", minLength: 1, maxLength: 512 } },
+        },
+      },
+    },
+    async (request) => {
+      const { campaign_id, task_id, sandbox_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+        sandbox_id: string;
+      };
+      const body = request.body as { path: string };
+      const context = await loadSandboxContext(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.read",
+        sandbox_id,
+      );
+      if (!runtime.sandboxes || !context.resourceId)
+        throw new PolicyError("Sandbox gateway is unavailable");
+      const path = requireAllowedSandboxPath(body.path, context.policy);
+      return executeSandboxAction(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.read",
+        `sandbox-read:${sandbox_id}:${sha256(path)}`,
+        {
+          task_id,
+          sandbox_create_action_id: sandbox_id,
+          resource_id: context.resourceId,
+          sandbox: context.policy,
+          path,
+        },
+        true,
+        async (intent) => {
+          const output = await runtime.sandboxes?.read(intent);
+          if (!output) throw new PolicyError("Sandbox gateway is unavailable");
+          const digest = sha256(output.bytes);
+          return {
+            external: {
+              outcome: "completed",
+              observed_state: "read-completed",
+              resource_id: context.resourceId,
+            },
+            result: {
+              digest,
+              size: output.bytes.byteLength,
+              content_base64: Buffer.from(output.bytes).toString("base64"),
+            },
+          };
+        },
+      );
+    },
+  );
+
+  app.delete(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id/sandboxes/:sandbox_id",
+    async (request) => {
+      const { campaign_id, task_id, sandbox_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+        sandbox_id: string;
+      };
+      const context = await loadSandboxContext(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.close",
+        sandbox_id,
+      );
+      if (!runtime.sandboxes || !context.resourceId)
+        throw new PolicyError("Sandbox gateway is unavailable");
+      return executeSandboxAction(
+        request,
+        campaign_id,
+        task_id,
+        "sandbox.close",
+        `sandbox-close:${sandbox_id}`,
+        {
+          task_id,
+          sandbox_create_action_id: sandbox_id,
+          resource_id: context.resourceId,
+          sandbox: context.policy,
+        },
+        true,
+        async (intent) => {
+          const external = await runtime.sandboxes?.lifecycle(intent);
+          if (!external) throw new PolicyError("Sandbox gateway is unavailable");
+          return {
+            external,
+            result: { sandbox_id, state: external.observed_state },
+          };
+        },
       );
     },
   );
@@ -910,10 +1508,13 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
             request_id: request.id,
           },
         });
+      const requiredOperation: WorkerOperation =
+        "operation" in input ? "evidence.write" : "attempt.submit";
       if (
         request.workerCapability.campaign_id !== campaign_id ||
         request.workerCapability.action_id !== input.action_id ||
-        !request.workerCapability.task_ids.includes(task_id)
+        !request.workerCapability.task_ids.includes(task_id) ||
+        !request.workerCapability.operations.includes(requiredOperation)
       )
         return reply.code(403).send({
           error: {
@@ -1015,7 +1616,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       const limit = query.limit ?? 50;
       const offset = cursorOffset(query.cursor);
       const items = await runtime.projection.profiles(limit + 1, offset);
-      return offsetPage(items, offset, limit);
+      return offsetPage(
+        items.map((item) => redactSandboxTopology(item)),
+        offset,
+        limit,
+      );
     },
   );
   app.get(
@@ -1140,6 +1745,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     } else if (error instanceof ProfileResolutionError) {
       status = 422;
       code = "profile_resolution_failed";
+      message = error.message;
+    } else if (error instanceof WorkerScopeError) {
+      status = 403;
+      code = "worker_scope_rejected";
       message = error.message;
     } else if (error instanceof PolicyError) {
       status = 422;

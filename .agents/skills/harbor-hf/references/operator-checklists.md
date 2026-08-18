@@ -37,9 +37,22 @@ inspecting the named artifact or command output.
       deployment marked `forbidden` receives no operator-managed secret. Signed
       capabilities authorize only the campaign, launch action, task set, and
       expiration.
+- [ ] A Sandbox-enabled capability is bound to the campaign-lock digest, task
+      set, operation set and expiration. Worker responses expose neither remote
+      Job IDs nor proxy URLs.
+- [ ] Sandbox create, observe, command, file write, file read and close actions
+      have durable dispatch and result evidence. An ambiguous command is not
+      replayed automatically.
+- [ ] Sandbox Jobs receive no `HF_TOKEN` or `SBX_DL_TOKEN`. The per-Sandbox token
+      is derived in the control process, and a required inference token is
+      consumed by the reviewed root bootstrap before the unprivileged agent runs.
+- [ ] Sandbox image, hardware, lifetime, idle timeout, roots, transfer limits,
+      command limits, reservation and hourly cost match the immutable policy.
 - [ ] A worker uploads content-addressed evidence chunks and a canonical
       manifest before its attempt receipt. Missing, changed, cross-scope, or
       incomplete evidence is rejected during both receipt acceptance and replay.
+- [ ] The hosted inference-free Sandbox smoke creates, observes, executes,
+      round-trips a file, closes, reconciles cost and leaves no active Job.
 - [ ] Every endpoint is paused with zero ready replicas after the deployment
       canary.
 
@@ -167,6 +180,9 @@ inspecting the named artifact or command output.
 - [ ] Durable cancellation was previewed and recorded.
 - [ ] New shard admission stopped.
 - [ ] Queued and active Jobs were observed or cancelled through control state.
+- [ ] Every dispatched Sandbox create was adopted or proven absent, and every
+      active Sandbox reached a terminal close receipt before task sealing.
+- [ ] Sandbox observed cost was reconciled and its reservation was released.
 - [ ] Active work drained or became terminal.
 - [ ] Endpoint is paused with zero ready replicas when applicable.
 - [ ] Existing valid trial evidence is retained.
