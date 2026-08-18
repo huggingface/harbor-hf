@@ -28,6 +28,9 @@ from harbor_hf_agents.support.hf_inference_bridge import (
     stop_hf_inference_bridge,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
+from harbor_hf_agents.support.sandbox_inference_route import (
+    use_sandbox_inference_route,
+)
 
 # Hermes native provider routing.
 # Maps Harbor provider prefix → (hermes --provider CLI flag, env var names).
@@ -555,9 +558,21 @@ class HermesAgent(IsolatedProviderAgent):
             "TERMINAL_ENV": "local",
         }
 
-        hermes_provider_flag: str | None = None
-        use_native = False
-        if provider in _NATIVE_PROVIDERS:
+        bridged = False
+        if provider == "openai":
+            bridged = await use_sandbox_inference_route(
+                self,
+                environment,
+                env,
+                base_url_key="OPENAI_BASE_URL",
+                api_key_key="OPENAI_API_KEY",
+                api="chat-completions",
+                allowed_model=model,
+            )
+
+        hermes_provider_flag: str | None = "custom" if bridged else None
+        use_native = bridged
+        if not bridged and provider in _NATIVE_PROVIDERS:
             native_flag, key_names = _NATIVE_PROVIDERS[provider]
             for key_name in key_names:
                 key_value = self._get_env(key_name)
@@ -583,8 +598,12 @@ class HermesAgent(IsolatedProviderAgent):
                 raise ValueError("No API key found. Set OPENROUTER_API_KEY.")
             env["OPENROUTER_API_KEY"] = openrouter_key
 
-        bridged = False
-        if use_native and provider == "openai" and "OPENAI_BASE_URL" in env:
+        if (
+            not bridged
+            and use_native
+            and provider == "openai"
+            and "OPENAI_BASE_URL" in env
+        ):
             bridged = await prepare_hf_inference_bridge(
                 self,
                 environment,

@@ -7,7 +7,17 @@ import pytest
 import yaml
 from harbor.models.agent.context import AgentContext
 
+from harbor_hf_agents.hermes import agent as hermes_agent
 from harbor_hf_agents.hermes.agent import HermesAgent, HermesRuntimeConfig
+
+
+@pytest.fixture(autouse=True)
+def no_sandbox_inference_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        hermes_agent,
+        "use_sandbox_inference_route",
+        AsyncMock(return_value=False),
+    )
 
 
 class TestHermesRunCommands:
@@ -35,6 +45,31 @@ class TestHermesRunCommands:
         assert "--provider anthropic" in run_call.kwargs["command"]
         assert "--model claude-sonnet-4-6" in run_call.kwargs["command"]
         assert run_call.kwargs["env"]["ANTHROPIC_API_KEY"] == "test-key"
+
+    @pytest.mark.asyncio
+    async def test_sandbox_route_needs_no_outer_inference_credential(
+        self,
+        temp_dir,
+        monkeypatch,
+    ):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+        async def use_route(_agent, _environment, env, **_kwargs):
+            env["OPENAI_BASE_URL"] = "http://127.0.0.1:18080/v1"
+            env["OPENAI_API_KEY"] = "harbor-local-inference-bridge"
+            return True
+
+        monkeypatch.setattr(hermes_agent, "use_sandbox_inference_route", use_route)
+        agent = HermesAgent(logs_dir=temp_dir, model_name="openai/example/model")
+        mock_env = AsyncMock()
+        mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+
+        await agent.run("do something", mock_env, AsyncMock())
+
+        run_call = self._get_run_call(mock_env.exec.call_args_list)
+        assert "--provider custom" in run_call.kwargs["command"]
 
     @pytest.mark.asyncio
     async def test_anthropic_token_fallback(self, temp_dir, monkeypatch):

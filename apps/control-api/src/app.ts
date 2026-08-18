@@ -1232,6 +1232,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       if (!runtime.sandboxes || !context.resourceId)
         throw new PolicyError("Sandbox gateway is unavailable");
       requireAllowedSandboxPath(body.cwd, context.policy);
+      if (body.timeout_seconds > context.policy.max_command_seconds)
+        throw new PolicyError("Sandbox command timeout exceeds immutable policy");
       const target = `sandbox-exec:${sandbox_id}`;
       const payload = {
         task_id,

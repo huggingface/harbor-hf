@@ -42,6 +42,10 @@ async def test_codex_run_applies_prompt_template(tmp_path: Path) -> None:
 
     with (
         patch(
+            "harbor_hf_agents.openclaw_codex.agent.use_sandbox_inference_route",
+            AsyncMock(return_value=False),
+        ),
+        patch(
             "harbor_hf_agents.openclaw_codex.agent.prepare_hf_inference_bridge",
             AsyncMock(return_value=False),
         ),

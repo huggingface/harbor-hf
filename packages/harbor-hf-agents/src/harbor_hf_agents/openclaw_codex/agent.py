@@ -14,6 +14,9 @@ from harbor_hf_agents.support.hf_inference_bridge import (
     prepare_hf_inference_bridge,
     stop_hf_inference_bridge,
 )
+from harbor_hf_agents.support.sandbox_inference_route import (
+    use_sandbox_inference_route,
+)
 
 _DEFAULT_CODEX_PLUGIN_VERSION = "2026.7.1-1"
 
@@ -409,20 +412,32 @@ class OpenClawCodexAgent(OpenClawAgent):
             if (value := self._get_env(key))
         }
         env["OPENCLAW_AGENT_ID"] = self._resolved_openclaw_agent_id()
-        bridged = await prepare_hf_inference_bridge(
+        bridged = await use_sandbox_inference_route(
             self,
             environment,
             env,
             base_url_key="OPENAI_BASE_URL",
             api_key_key="OPENAI_API_KEY",
-            inference_token=self._get_env("HF_INFERENCE_TOKEN"),
             api="responses",
             allowed_model=model,
-            max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
-            max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
-            timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
-            max_output_tokens=self._get_env("HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"),
         )
+        if not bridged:
+            bridged = await prepare_hf_inference_bridge(
+                self,
+                environment,
+                env,
+                base_url_key="OPENAI_BASE_URL",
+                api_key_key="OPENAI_API_KEY",
+                inference_token=self._get_env("HF_INFERENCE_TOKEN"),
+                api="responses",
+                allowed_model=model,
+                max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
+                max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
+                timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
+                max_output_tokens=self._get_env(
+                    "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"
+                ),
+            )
         try:
             await self.exec_as_agent(
                 environment,

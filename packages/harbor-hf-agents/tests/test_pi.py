@@ -7,10 +7,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from harbor.models.agent.context import AgentContext
 
-from harbor_hf_agents.pi.agent import (
-    PiAgent,
-    _use_sandbox_inference_route,
-    pi_jsonl_to_atif_trajectory,
+from harbor_hf_agents.pi.agent import PiAgent, pi_jsonl_to_atif_trajectory
+from harbor_hf_agents.support.sandbox_inference_route import (
+    use_sandbox_inference_route,
 )
 
 
@@ -99,10 +98,13 @@ async def test_uses_prepared_sandbox_loopback_route() -> None:
     )
     env: dict[str, str] = {}
 
-    assert await _use_sandbox_inference_route(
+    assert await use_sandbox_inference_route(
         agent,
         AsyncMock(),
         env,
+        base_url_key="OPENAI_BASE_URL",
+        api_key_key="OPENAI_API_KEY",
+        api="chat-completions",
         allowed_model="example/model",
     )
     assert env == {

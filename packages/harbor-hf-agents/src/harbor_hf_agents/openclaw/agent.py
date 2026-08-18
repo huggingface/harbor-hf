@@ -30,6 +30,9 @@ from harbor_hf_agents.support.hf_inference_bridge import (
     stop_hf_inference_bridge,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
+from harbor_hf_agents.support.sandbox_inference_route import (
+    use_sandbox_inference_route,
+)
 
 OPENCLAW_AGENT_SETUP_TIMEOUT_SEC = 1200.0
 
@@ -1130,20 +1133,34 @@ class OpenClawAgent(IsolatedProviderAgent):
                 self.logger.debug("Missing optional env key for OpenClaw run: %s", key)
 
         prefix = self._provider_env_prefix(provider)
-        bridged = await prepare_hf_inference_bridge(
-            self,
-            environment,
-            env,
-            base_url_key=f"{prefix}_BASE_URL",
-            api_key_key=f"{prefix}_API_KEY",
-            inference_token=self._get_env("HF_INFERENCE_TOKEN"),
-            api=self._PROVIDER_API,
-            allowed_model=model,
-            max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
-            max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
-            timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
-            max_output_tokens=self._get_env("HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"),
-        )
+        bridged = False
+        if provider == "openai":
+            bridged = await use_sandbox_inference_route(
+                self,
+                environment,
+                env,
+                base_url_key=f"{prefix}_BASE_URL",
+                api_key_key=f"{prefix}_API_KEY",
+                api=self._PROVIDER_API,
+                allowed_model=model,
+            )
+        if not bridged:
+            bridged = await prepare_hf_inference_bridge(
+                self,
+                environment,
+                env,
+                base_url_key=f"{prefix}_BASE_URL",
+                api_key_key=f"{prefix}_API_KEY",
+                inference_token=self._get_env("HF_INFERENCE_TOKEN"),
+                api=self._PROVIDER_API,
+                allowed_model=model,
+                max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
+                max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
+                timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
+                max_output_tokens=self._get_env(
+                    "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"
+                ),
+            )
         try:
             await self._run_prepared(instruction, environment, context, env)
         finally:

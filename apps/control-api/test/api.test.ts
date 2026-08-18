@@ -1174,6 +1174,22 @@ describe("control API", () => {
     expect(repeatedCreate.json()).toEqual(create.json());
     expect(lifecycle).toHaveBeenCalledTimes(1);
 
+    const oversizedCommand = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/exec`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-oversized-command-key",
+      },
+      payload: {
+        command: ["python", "worker.py"],
+        cwd: "/app",
+        timeout_seconds: 3_601,
+      },
+    });
+    expect(oversizedCommand.statusCode).toBe(422);
+    expect(oversizedCommand.json().error.message).toContain("timeout");
+
     const competingCommands = await Promise.all([
       app.inject({
         method: "POST",

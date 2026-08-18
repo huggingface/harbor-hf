@@ -12,11 +12,21 @@ from harbor.models.agent.context import AgentContext
 from harbor.models.agent.name import AgentName
 from harbor.models.trial.config import AgentConfig
 
+from harbor_hf_agents.openclaw import agent as openclaw_agent
 from harbor_hf_agents.openclaw.agent import (
     OPENCLAW_AGENT_SETUP_TIMEOUT_SEC,
     OpenClawAgent,
     openclaw_session_jsonl_to_atif_steps,
 )
+
+
+@pytest.fixture(autouse=True)
+def no_sandbox_inference_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        openclaw_agent,
+        "use_sandbox_inference_route",
+        AsyncMock(return_value=False),
+    )
 
 
 @pytest.fixture
