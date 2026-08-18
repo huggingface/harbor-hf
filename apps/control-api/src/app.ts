@@ -1232,13 +1232,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       if (!runtime.sandboxes || !context.resourceId)
         throw new PolicyError("Sandbox gateway is unavailable");
       requireAllowedSandboxPath(body.cwd, context.policy);
-      const commands = (await runtime.projection.campaignActions(campaign_id)).filter(
-        (row) => {
-          if (row.action_kind !== "sandbox.exec") return false;
-          const intent = JSON.parse(row.intent_body) as ActionIntent;
-          return intent.payload.sandbox_create_action_id === sandbox_id;
-        },
-      );
       const target = `sandbox-exec:${sandbox_id}`;
       const payload = {
         task_id,
@@ -1257,11 +1250,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         payload,
         domainActor(request),
       );
-      if (
-        commands.length >= context.policy.max_commands &&
-        !commands.some((row) => row.action_id === candidate.action_id)
-      )
-        throw new PolicyError("Sandbox command count exceeds immutable policy");
+      await runtime.service.admitSandboxCommand(candidate, context.policy.max_commands);
       return executeSandboxAction(
         request,
         campaign_id,

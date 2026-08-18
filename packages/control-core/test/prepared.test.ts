@@ -85,6 +85,7 @@ async function campaign(service: Service) {
 
 class PreparationActions implements ExternalActionPort {
   prepared = false;
+  failPreparation = false;
   readonly intents: ActionIntent[] = [];
 
   async execute(intent: ActionIntent): Promise<ExternalActionResult> {
@@ -101,9 +102,11 @@ class PreparationActions implements ExternalActionPort {
       return {
         outcome: "completed",
         observed_state:
-          intent.payload.worker_role === "preparation" && this.prepared
-            ? "COMPLETED"
-            : "RUNNING",
+          intent.payload.worker_role === "preparation" && this.failPreparation
+            ? "ERROR"
+            : intent.payload.worker_role === "preparation" && this.prepared
+              ? "COMPLETED"
+              : "RUNNING",
         resource_id: intent.payload.resource_id as string,
       };
     return { outcome: "completed", observed_state: "handled" };
@@ -295,6 +298,55 @@ describe("prepared Harbor jobs", () => {
       worker_revision: "abcdef0",
     });
     expect(execution?.payload.prepared_job_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("stops preparation after its configured attempt limit", async () => {
+    const { service, projection } = await setup();
+    const submitted = await service.submit(
+      {
+        benchmark: "prepared-benchmark",
+        model: "prepared-model",
+        harness: "prepared-harness",
+        deployment: "prepared-deployment",
+        launch_policy: "prepared-policy",
+        ceiling_microusd: 1_000_000,
+        confirmed: true,
+      },
+      "failed-preparation-campaign",
+      { subject: "operator", role: "operator" },
+    );
+    const actions = new PreparationActions();
+    actions.failPreparation = true;
+    const reconciler = new Reconciler(
+      service,
+      projection,
+      actions,
+      new ResultPublisher(service.store, projection, service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        worker_receipt_grace_ms: 0,
+        batch_size: 16,
+      },
+    );
+
+    await settle(reconciler, 24);
+
+    const launches = (await projection.campaignActions(submitted.campaign_id))
+      .map((row) => JSON.parse(row.intent_body) as ActionIntent)
+      .filter(
+        (intent) =>
+          intent.action_kind === "job.launch" &&
+          intent.payload.worker_role === "preparation",
+      );
+    expect(launches).toHaveLength(2);
+    expect(launches.every((intent) => intent.target === "campaign-preparation")).toBe(
+      true,
+    );
+    expect(await projection.campaign(submitted.campaign_id)).toMatchObject({
+      terminal_tasks: 1,
+      total_tasks: 1,
+    });
   });
 
   it("rejects prepared task sources outside the benchmark profile", async () => {

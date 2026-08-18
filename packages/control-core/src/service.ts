@@ -614,6 +614,49 @@ export class ControlService {
     return { dispatch_created: dispatch.created };
   }
 
+  async admitSandboxCommand(
+    intent: ActionIntent,
+    maximumCommands: number,
+  ): Promise<void> {
+    const operation = this.sandboxAdmissionQueue.then(() =>
+      this.admitSandboxCommandSerialized(intent, maximumCommands),
+    );
+    this.sandboxAdmissionQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  private async admitSandboxCommandSerialized(
+    intent: ActionIntent,
+    maximumCommands: number,
+  ): Promise<void> {
+    const sandboxId = intent.payload.sandbox_create_action_id;
+    if (
+      intent.action_kind !== "sandbox.exec" ||
+      maximumCommands < 1 ||
+      typeof sandboxId !== "string"
+    )
+      throw new PolicyError("Sandbox command admission is invalid");
+    const existing = await this.projection.action(intent.action_id);
+    const commands = (await this.projection.campaignActions(intent.campaign_id)).filter(
+      (row) => {
+        if (
+          row.action_kind !== "sandbox.exec" ||
+          row.outcome === "failed" ||
+          row.action_id === intent.action_id
+        )
+          return false;
+        const recorded = JSON.parse(row.intent_body) as ActionIntent;
+        return recorded.payload.sandbox_create_action_id === sandboxId;
+      },
+    );
+    if (!existing && commands.length >= maximumCommands)
+      throw new PolicyError("Sandbox command count exceeds immutable policy");
+    await this.writeAction(intent);
+  }
+
   async submit(
     raw: unknown,
     idempotencyKey: string,

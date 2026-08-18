@@ -101,7 +101,7 @@ function sandboxDeploymentRecords(): Array<ProfileObject | ProfilePromotion> {
     reservation_microusd: 2_000_000,
     active_hourly_cost_microusd: 30_000,
     max_sandboxes: 1,
-    max_commands: 8,
+    max_commands: 1,
     max_command_seconds: 3_600,
     max_transfer_bytes: 1_048_576,
     allowed_roots: ["/app", "/logs"] as [string, ...string[]],
@@ -1174,21 +1174,41 @@ describe("control API", () => {
     expect(repeatedCreate.json()).toEqual(create.json());
     expect(lifecycle).toHaveBeenCalledTimes(1);
 
-    const exec = await app.inject({
-      method: "POST",
-      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/exec`,
-      headers: {
-        ...capabilityHeaders,
-        "idempotency-key": "sandbox-command-key",
-      },
-      payload: {
-        command: ["python", "worker.py"],
-        cwd: "/app",
-        timeout_seconds: 60,
-      },
-    });
-    expect(exec.statusCode).toBe(200);
+    const competingCommands = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/exec`,
+        headers: {
+          ...capabilityHeaders,
+          "idempotency-key": "sandbox-command-key",
+        },
+        payload: {
+          command: ["python", "worker.py"],
+          cwd: "/app",
+          timeout_seconds: 60,
+        },
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/exec`,
+        headers: {
+          ...capabilityHeaders,
+          "idempotency-key": "sandbox-competing-command-key",
+        },
+        payload: {
+          command: ["python", "other.py"],
+          cwd: "/app",
+          timeout_seconds: 60,
+        },
+      }),
+    ]);
+    const exec = competingCommands.find((response) => response.statusCode === 200);
+    const rejectedCommand = competingCommands.find(
+      (response) => response.statusCode === 422,
+    );
+    if (!exec) throw new Error("Sandbox command did not succeed");
     expect(exec.json()).toMatchObject({ exit_code: 0, stdout: "ok\n" });
+    expect(rejectedCommand?.json().error.message).toContain("command count");
     const conflictingExec = await app.inject({
       method: "POST",
       url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/exec`,

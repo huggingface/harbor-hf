@@ -776,7 +776,7 @@ export class Reconciler {
       await this.launchPreparation(lock, receipt.created_at, attempt + 1);
       return;
     }
-    await this.completeTasksFromJob(intent, receipt, "infrastructure");
+    await this.completeTasksFromJob(intent, receipt, "infrastructure", false);
   }
 
   private async allWorkerAttemptsPresent(intent: ActionIntent): Promise<boolean> {
@@ -795,6 +795,7 @@ export class Reconciler {
     intent: ActionIntent,
     receipt: ActionReceipt,
     fallback: AttemptReceipt["outcome"],
+    replacementEligible = fallback === "infrastructure",
   ): Promise<void> {
     const tasks = stringArray(intent.payload, "task_ids");
     const known = await this.projection.campaignAttempts(intent.campaign_id);
@@ -828,7 +829,7 @@ export class Reconciler {
         attempt_id: attemptId,
         action_id: launchActionId,
         outcome: fallback,
-        replacement_eligible: fallback === "infrastructure",
+        replacement_eligible: replacementEligible,
         evidence_digest: sha256(canonicalJson(receipt)),
         evidence_path: controlRecordPath(receipt),
         cost_microusd: receipt.cost_microusd ?? 0,
@@ -901,7 +902,12 @@ export class Reconciler {
       });
       return;
     }
-    await this.service.selectTerminal(attempt, "valid terminal worker outcome");
+    await this.service.selectTerminal(
+      attempt,
+      attempt.outcome === "infrastructure"
+        ? "non-retryable infrastructure outcome"
+        : "valid terminal worker outcome",
+    );
   }
 
   private async ensureSandboxCleanup(
