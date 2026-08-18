@@ -607,6 +607,23 @@ describe("control service", () => {
     ).toBe(true);
     await reconciler.tick();
     expect(observed).toContain("sandbox.create");
+    const command = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.exec",
+      "sandbox-cancellation-resource",
+      0,
+      {
+        task_id: "control-smoke-task",
+        sandbox_create_action_id: create.action_id,
+        resource_id: "sandbox-cancellation-resource",
+        sandbox: policy,
+        command: ["python", "worker.py"],
+        cwd: "/app",
+        timeout_seconds: 60,
+      },
+    );
+    await control.service.writeAction(command);
+    await control.service.dispatchAction(command, "2026-08-18T00:01:00Z");
     await control.service.campaignAction(
       result.campaign_id,
       { action: "cancel", reason: "operator cancellation", confirmed: true },
@@ -624,6 +641,10 @@ describe("control service", () => {
     expect(
       close ? await control.projection.actionDispatch(close.action_id) : null,
     ).not.toBeNull();
+    expect(await control.projection.action(command.action_id)).toMatchObject({
+      outcome: "completed",
+      observed_state: "suppressed-cancelled-ambiguous",
+    });
     const campaign = await control.projection.campaign(result.campaign_id);
     expect(campaign).toMatchObject({
       status: "completed",

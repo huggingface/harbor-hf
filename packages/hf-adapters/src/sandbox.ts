@@ -156,7 +156,7 @@ function verifiedProxyUrl(value: string): string {
     url.protocol !== "https:" ||
     url.port !== "" ||
     !/^[a-z0-9-]+--49983\.hf\.jobs$/.test(url.hostname) ||
-    !url.pathname.startsWith("/scopes/") ||
+    (url.pathname !== "/" && !url.pathname.startsWith("/scopes/")) ||
     url.username !== "" ||
     url.password !== "" ||
     url.search !== "" ||

@@ -232,6 +232,12 @@ export class Reconciler {
       if (observation.outcome === "failed") return;
       result = observation;
     } else if (
+      intent.action_kind === "sandbox.exec" ||
+      intent.action_kind === "sandbox.write" ||
+      intent.action_kind === "sandbox.read"
+    ) {
+      return;
+    } else if (
       intent.action_kind === "sandbox.create" ||
       intent.action_kind === "sandbox.observe" ||
       intent.action_kind === "sandbox.close"
@@ -779,6 +785,26 @@ export class Reconciler {
       );
     }
     if (sandboxCleanupPending) return;
+    const pendingSandboxData = actions.filter(
+      (action) =>
+        ["sandbox.exec", "sandbox.write", "sandbox.read"].includes(
+          action.action_kind,
+        ) && action.receipt_body === null,
+    );
+    if (pendingSandboxData.length > 0) {
+      for (const action of pendingSandboxData) {
+        const intent = JSON.parse(action.intent_body) as ActionIntent;
+        const dispatched = await this.projection.actionDispatch(action.action_id);
+        const receipt = await this.service.receipt(intent, {
+          outcome: "completed",
+          observed_state: dispatched
+            ? "suppressed-cancelled-ambiguous"
+            : "suppressed-cancelled-before-dispatch",
+        });
+        await this.service.markAdvanced(intent, receipt);
+      }
+      return;
+    }
     const launches = actions.filter(
       (action) =>
         action.action_kind === "job.launch" &&

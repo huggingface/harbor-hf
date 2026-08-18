@@ -64,7 +64,7 @@ function rawJob(state = "RUNNING") {
     status: {
       stage: state,
       failureCount: 0,
-      exposeUrls: ["https://sandbox-job--49983.hf.jobs/scopes/opaque-capability"],
+      exposeUrls: ["https://sandbox-job--49983.hf.jobs"],
     },
     labels: {
       "hf-sandbox": "1",
