@@ -13,7 +13,12 @@
     "agent": "pi",
     "revision": "0.84.2",
     "reasoning_effort": "high",
-    "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
+    "required_evidence": [
+      "workspace",
+      "trajectory",
+      "verifier",
+      "provider-usage"
+    ],
     "harbor_agent": {
       "import_path": "harbor_hf_agents.pi.agent:PiAgent",
       "model_name": "openai/deepseek-ai/DeepSeek-V4-Flash-0731:together",
@@ -35,7 +40,9 @@
                   "id": "deepseek-ai/DeepSeek-V4-Flash-0731:together",
                   "name": "deepseek-ai/DeepSeek-V4-Flash-0731:together",
                   "reasoning": true,
-                  "input": ["text"],
+                  "input": [
+                    "text"
+                  ],
                   "contextWindow": 131072,
                   "maxTokens": 32768,
                   "cost": {

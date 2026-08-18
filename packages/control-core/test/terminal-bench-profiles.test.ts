@@ -46,7 +46,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
     expect(spec.sandbox_template.inference_model).toBe(
       "deepseek-ai/DeepSeek-V4-Flash-0731:together",
     );
-    expect(spec.worker_revision).toBe("0d0af43cfe2ea27eec8b74547006c2e1f733e2c8");
+    expect(spec.worker_revision).toBe("ef65fb461b59bbdf84fcf7d368abf309111bc3b1");
     expect(spec.worker_max_tasks_per_job).toBe(445);
     expect(spec.sandbox_template.root_bootstrap_command.join("\n")).not.toContain(
       "HF_TOKEN=",

@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-dc2cf5227941f35c0f94aae5",
+  "record_id": "profile-7b3dcb7852ef1ca89d9c59c7",
   "created_at": "2026-08-18T14:53:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
@@ -11,18 +11,22 @@
   "name": "tb21-deepseek-v4-flash-official-5",
   "spec": {
     "route": "hf_job",
-    "models": ["deepseek-v4-flash-0731-together"],
-    "harnesses": ["pi-0-84-2-high-deepseek-v4-flash-0731-together"],
+    "models": [
+      "deepseek-v4-flash-0731-together"
+    ],
+    "harnesses": [
+      "pi-0-84-2-high-deepseek-v4-flash-0731-together"
+    ],
     "job_image": "ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248",
     "preparation_job_command": [
       "/bin/sh",
       "-lc",
-      "exec uv run --no-project --python 3.12 --with harbor==0.21.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/0d0af43cfe2ea27eec8b74547006c2e1f733e2c8.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_prepare_worker"
+      "exec uv run --no-project --python 3.12 --with harbor==0.21.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/ef65fb461b59bbdf84fcf7d368abf309111bc3b1.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_prepare_worker"
     ],
     "job_command": [
       "/bin/sh",
       "-lc",
-      "exec uv run --no-project --python 3.12 --with harbor==0.21.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/0d0af43cfe2ea27eec8b74547006c2e1f733e2c8.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_campaign_worker"
+      "exec uv run --no-project --python 3.12 --with harbor==0.21.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/ef65fb461b59bbdf84fcf7d368abf309111bc3b1.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_campaign_worker"
     ],
     "hardware": "cpu-upgrade",
     "trusted_worker": true,
@@ -58,7 +62,7 @@
       "root_bootstrap_command": [
         "/bin/sh",
         "-c",
-        "set -eu\nif ! command -v python3 >/dev/null 2>&1 || ! command -v bash >/dev/null 2>&1; then\n  if ! command -v apt-get >/dev/null 2>&1; then\n    echo \"python3 and bash are required for the inference bridge\" >&2\n    exit 1\n  fi\n  apt-get update\n  DEBIAN_FRONTEND=noninteractive apt-get install -y python3 bash ca-certificates\nfi\nroot=/opt/harbor-hf-worker\nmkdir -p \"$root/harbor_hf_agents/support\" /run\n: > \"$root/harbor_hf_agents/__init__.py\"\n: > \"$root/harbor_hf_agents/support/__init__.py\"\nREVISION=0d0af43cfe2ea27eec8b74547006c2e1f733e2c8 ROOT=\"$root\" python3 - <<'PY'\nimport hashlib, os, pathlib, urllib.request\nrevision = os.environ['REVISION']\nroot = pathlib.Path(os.environ['ROOT']) / 'harbor_hf_agents' / 'support'\nfiles = {\n    'hf_inference_bridge.py': '6a194cbfa7ffb348ba26ae6ecf7651df86cfe56189c851e64e78afdd34cf1be2',\n    'sandbox_root_bridge.py': 'ec80056b2eba539040bd411848b8e09f5dfce2066f715f814f40c8d909222da4',\n}\nbase = f'https://raw.githubusercontent.com/huggingface/harbor-hf/{revision}/packages/harbor-hf-agents/src/harbor_hf_agents/support'\nfor name, expected in files.items():\n    with urllib.request.urlopen(f'{base}/{name}', timeout=30) as response:\n        data = response.read()\n    if hashlib.sha256(data).hexdigest() != expected:\n        raise RuntimeError(f'worker source digest mismatch: {name}')\n    (root / name).write_bytes(data)\nPY\nPYTHONPATH=\"$root\" python3 -m harbor_hf_agents.support.sandbox_root_bridge\n"
+        "set -eu\nif ! command -v python3 >/dev/null 2>&1 || ! command -v bash >/dev/null 2>&1; then\n  if ! command -v apt-get >/dev/null 2>&1; then\n    echo \"python3 and bash are required for the inference bridge\" >&2\n    exit 1\n  fi\n  apt-get update\n  DEBIAN_FRONTEND=noninteractive apt-get install -y python3 bash ca-certificates\nfi\nroot=/opt/harbor-hf-worker\nmkdir -p \"$root/harbor_hf_agents/support\" /run\n: > \"$root/harbor_hf_agents/__init__.py\"\n: > \"$root/harbor_hf_agents/support/__init__.py\"\nREVISION=ef65fb461b59bbdf84fcf7d368abf309111bc3b1 ROOT=\"$root\" python3 - <<'PY'\nimport hashlib, os, pathlib, urllib.request\nrevision = os.environ['REVISION']\nroot = pathlib.Path(os.environ['ROOT']) / 'harbor_hf_agents' / 'support'\nfiles = {\n    'hf_inference_bridge.py': '6a194cbfa7ffb348ba26ae6ecf7651df86cfe56189c851e64e78afdd34cf1be2',\n    'sandbox_root_bridge.py': 'ec80056b2eba539040bd411848b8e09f5dfce2066f715f814f40c8d909222da4',\n}\nbase = f'https://raw.githubusercontent.com/huggingface/harbor-hf/{revision}/packages/harbor-hf-agents/src/harbor_hf_agents/support'\nfor name, expected in files.items():\n    with urllib.request.urlopen(f'{base}/{name}', timeout=30) as response:\n        data = response.read()\n    if hashlib.sha256(data).hexdigest() != expected:\n        raise RuntimeError(f'worker source digest mismatch: {name}')\n    (root / name).write_bytes(data)\nPY\nPYTHONPATH=\"$root\" python3 -m harbor_hf_agents.support.sandbox_root_bridge\n"
       ],
       "max_sandboxes": 16,
       "max_commands": 512,
@@ -86,7 +90,7 @@
     "input_price_microusd_per_million_tokens": 140000,
     "output_price_microusd_per_million_tokens": 280000,
     "harbor_version": "0.21.0",
-    "worker_revision": "0d0af43cfe2ea27eec8b74547006c2e1f733e2c8",
+    "worker_revision": "ef65fb461b59bbdf84fcf7d368abf309111bc3b1",
     "context_window": 131072,
     "timeout_seconds": 604800,
     "preparation_timeout_seconds": 7200,
