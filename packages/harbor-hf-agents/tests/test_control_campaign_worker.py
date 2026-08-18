@@ -134,6 +134,17 @@ def test_reads_exact_prepared_worker_configuration(
     assert config.tasks[0].timeout_seconds == 2_460
 
 
+def test_rejects_oversized_worker_assignment(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setenv(
+        "HARBOR_HF_TASK_IDS_JSON",
+        '["task-a-trial-1","task-b-trial-1"]',
+    )
+
+    with pytest.raises(RuntimeError, match="exceeds its locked task limit"):
+        worker._locked_config(_lock())
+
+
 def test_rejects_task_outside_prepared_job(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure(monkeypatch)
     monkeypatch.setenv("HARBOR_HF_TASK_IDS_JSON", '["other"]')

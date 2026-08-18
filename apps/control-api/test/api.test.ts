@@ -1129,15 +1129,30 @@ describe("control API", () => {
     });
     expect(deniedCreate.statusCode).toBe(403);
 
-    const create = await app.inject({
-      method: "POST",
-      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes`,
-      headers: {
-        ...capabilityHeaders,
-        "idempotency-key": "sandbox-create-key",
-      },
-    });
-    expect(create.statusCode).toBe(200);
+    const competingCreates = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes`,
+        headers: {
+          ...capabilityHeaders,
+          "idempotency-key": "sandbox-create-key",
+        },
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes`,
+        headers: {
+          ...capabilityHeaders,
+          "idempotency-key": "sandbox-competing-create-key",
+        },
+      }),
+    ]);
+    const create = competingCreates.find((response) => response.statusCode === 200);
+    const rejectedCreate = competingCreates.find(
+      (response) => response.statusCode === 422,
+    );
+    if (!create) throw new Error("Sandbox create did not succeed");
+    expect(rejectedCreate?.json().error.message).toContain("Sandbox count");
     expect(create.json()).toMatchObject({ state: "RUNNING" });
     expect(JSON.stringify(create.json())).not.toContain("private-remote-sandbox-id");
     const createIntent = lifecycle.mock.calls[0]?.[0];
