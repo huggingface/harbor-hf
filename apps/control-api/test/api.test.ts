@@ -137,6 +137,7 @@ function sandboxDeploymentRecords(): Array<ProfileObject | ProfilePromotion> {
     harbor_version: "0.21.0",
     worker_revision: "abcdef0",
     worker_concurrency: 1,
+    worker_max_tasks_per_job: 1,
     context_window: 131_072,
   };
   const profile: ProfileObject = {

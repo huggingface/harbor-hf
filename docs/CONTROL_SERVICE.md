@@ -419,7 +419,10 @@ never enters the worker. When inference is required, the control service passes
 `HF_INFERENCE_TOKEN` directly to the Sandbox root bootstrap. The benchmark
 agent receives only a loopback route and placeholder key. Trial directories and
 complete workspaces return to the trusted worker in bounded chunks, then enter
-the private evidence store through content-addressed worker uploads.
+the private evidence store through content-addressed worker uploads. A locked
+worker task limit supports recovery canaries: the first Job can stop after a
+durable subset, and normal missing-receipt recovery must launch only the
+remaining logical tasks.
 
 The reconciler uses `AbortController` for graceful shutdown. Shutdown stops new
 admissions, lets an in-flight Bucket write reach a safe boundary, closes SSE

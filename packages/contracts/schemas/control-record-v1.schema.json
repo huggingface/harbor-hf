@@ -1301,6 +1301,11 @@
           "minimum": 1,
           "maximum": 64
         },
+        "worker_max_tasks_per_job": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
         "context_window": {
           "type": "integer",
           "minimum": 1024,
@@ -1348,6 +1353,7 @@
               "harbor_version",
               "worker_revision",
               "worker_concurrency",
+              "worker_max_tasks_per_job",
               "context_window"
             ],
             "properties": {
@@ -1358,6 +1364,7 @@
               "harbor_version": {},
               "worker_revision": {},
               "worker_concurrency": {},
+              "worker_max_tasks_per_job": {},
               "context_window": {}
             }
           }

@@ -69,6 +69,7 @@ function deployment(taskIds = tasks.map((task) => task.task_id)) {
     harbor_version: "0.21.0",
     worker_revision: "abcdef0",
     worker_concurrency: 2,
+    worker_max_tasks_per_job: 2,
     context_window: 131_072,
   } as DeploymentProfileSpec;
 }

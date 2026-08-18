@@ -86,6 +86,7 @@ output_price_microusd_per_million_tokens?: number
 harbor_version?: string
 worker_revision?: string
 worker_concurrency?: number
+worker_max_tasks_per_job?: number
 context_window?: number
 })
 export type SandboxPolicy = ({

@@ -53,6 +53,7 @@ class WorkerConfig:
     harbor_version: str
     worker_revision: str
     concurrency: int
+    max_tasks_per_job: int
     context_window: int
     max_output_tokens: int
     provider_timeout_seconds: int
@@ -139,6 +140,7 @@ def _locked_config(lock: dict[str, Any]) -> WorkerConfig:
         harbor_version=str(deployment["harbor_version"]),
         worker_revision=str(deployment["worker_revision"]),
         concurrency=int(deployment["worker_concurrency"]),
+        max_tasks_per_job=int(deployment["worker_max_tasks_per_job"]),
         context_window=int(deployment["context_window"]),
         max_output_tokens=int(base["inference_max_output_tokens"]),
         provider_timeout_seconds=int(base["inference_timeout_seconds"]),
@@ -569,10 +571,11 @@ def main() -> None:  # noqa: C901 -- bounded batch orchestration
         failures: list[BaseException] = []
         completed: list[str] = []
         lock_guard = threading.Lock()
-        width = min(config.concurrency, len(config.tasks))
+        assigned_tasks = config.tasks[: config.max_tasks_per_job]
+        width = min(config.concurrency, len(assigned_tasks))
         with concurrent.futures.ThreadPoolExecutor(max_workers=width) as executor:
-            for offset in range(0, len(config.tasks), width):
-                batch = config.tasks[offset : offset + width]
+            for offset in range(0, len(assigned_tasks), width):
+                batch = assigned_tasks[offset : offset + width]
                 futures = {
                     executor.submit(_run_task, config, task, source, root): task
                     for task in batch
@@ -598,6 +601,8 @@ def main() -> None:  # noqa: C901 -- bounded batch orchestration
                     "campaign_id": config.campaign_id,
                     "action_id": config.action_id,
                     "task_count": len(completed),
+                    "assigned_task_count": len(config.tasks),
+                    "partial": len(completed) < len(config.tasks),
                 },
                 sort_keys=True,
             )

@@ -92,6 +92,7 @@ def _lock() -> dict:
                     "harbor_version": "0.21.0",
                     "worker_revision": "abcdef0",
                     "worker_concurrency": 4,
+                    "worker_max_tasks_per_job": 1,
                     "context_window": 131072,
                 },
             },
@@ -109,6 +110,7 @@ def test_reads_exact_locked_worker_configuration(
 
     assert config.routed_model == "example/model:together"
     assert config.harbor_version == "0.21.0"
+    assert config.max_tasks_per_job == 1
     assert config.tasks == (
         worker.LockedTask(
             task_id="task-a-trial-1",
