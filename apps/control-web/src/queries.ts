@@ -218,6 +218,8 @@ export function affectedQueryKeys(event: ControlEvent): QueryKey[] {
     if (campaignId) {
       affected.push(keys.campaign(campaignId), keys.tasks(campaignId));
       if (taskId) affected.push(keys.task(campaignId, taskId));
+    } else {
+      affected.push(["campaign"], ["tasks"], ["task"]);
     }
   }
   if (event.type.startsWith("action.")) {

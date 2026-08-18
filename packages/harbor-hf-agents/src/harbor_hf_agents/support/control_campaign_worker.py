@@ -23,7 +23,7 @@ from harbor.models.job.lock import TrialLock
 
 from harbor_hf_agents.support.control_sandbox_environment import _ControlClient, _digest
 
-_EVIDENCE_CHUNK_BYTES = 16 * 1024 * 1024
+_EVIDENCE_CHUNK_BYTES = 8 * 1024 * 1024
 _POLICY_FAILURES = {
     "AgentAuthenticationError",
     "ApiUsageLimitError",

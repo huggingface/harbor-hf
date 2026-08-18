@@ -119,6 +119,12 @@ def _configure(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def test_evidence_chunks_fit_the_encoded_api_limit() -> None:
+    encoded_size = 4 * ((worker._EVIDENCE_CHUNK_BYTES + 2) // 3)
+    assert encoded_size <= 12_000_000
+    assert encoded_size + 100_000 < 16 * 1024 * 1024
+
+
 def test_reads_exact_prepared_worker_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

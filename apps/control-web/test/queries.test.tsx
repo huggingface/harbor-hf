@@ -61,6 +61,18 @@ describe("live query updates", () => {
     expect(affected).not.toContainEqual(keys.results);
   });
 
+  it("refreshes open detail views for replay events without scope fields", () => {
+    const affected = affectedQueryKeys({
+      type: "attempt.receipt",
+      occurred_at: "2026-08-18T00:00:00Z",
+      data: { key: "control/example", digest: "sha256:example" },
+    });
+    expect(affected).toContainEqual(keys.campaigns);
+    expect(affected).toContainEqual(["campaign"]);
+    expect(affected).toContainEqual(["tasks"]);
+    expect(affected).toContainEqual(["task"]);
+  });
+
   it("resumes SSE from the projection cursor before page queries start", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
