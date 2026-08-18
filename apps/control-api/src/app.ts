@@ -461,6 +461,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       (entry) => entry.key === resultPath,
     );
     if (resultEntry) {
+      await runtime.service.writeAction(intent);
       const bytes = await runtime.store.read(resultPath);
       const stored = JSON.parse(new TextDecoder().decode(bytes)) as {
         external: {

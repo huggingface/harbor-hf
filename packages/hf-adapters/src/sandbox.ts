@@ -459,9 +459,14 @@ export class HuggingFaceSandboxGateway {
     verifyLabels(job, intent);
     const policy = policyValue(intent);
     verifySpec(job, policy);
+    const state = jobState(job);
+    if (!isTerminal(state))
+      throw new AmbiguousExternalActionError(
+        "Sandbox shutdown is still pending remote termination",
+      );
     return {
       outcome: "completed",
-      observed_state: jobState(job),
+      observed_state: state,
       resource_id: job.id,
       cost_microusd: observedCostMicrousd(job, policy),
     };

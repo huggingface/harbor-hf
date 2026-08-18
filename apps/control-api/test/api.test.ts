@@ -1173,6 +1173,20 @@ describe("control API", () => {
     });
     expect(exec.statusCode).toBe(200);
     expect(exec.json()).toMatchObject({ exit_code: 0, stdout: "ok\n" });
+    const conflictingExec = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/exec`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-command-key",
+      },
+      payload: {
+        command: ["false"],
+        cwd: "/app",
+        timeout_seconds: 60,
+      },
+    });
+    expect(conflictingExec.statusCode).toBe(409);
 
     const content = Buffer.from("input", "utf8");
     const deniedUpload = await app.inject({

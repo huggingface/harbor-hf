@@ -88,6 +88,12 @@ const execIntent = intent("sandbox.exec", {
   cwd: "/app",
   timeout_seconds: 60,
 });
+const closeIntent = intent("sandbox.close", {
+  task_id: taskId,
+  sandbox_create_action_id: sandboxActionId,
+  resource_id: remoteId,
+  sandbox: policy,
+});
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -167,6 +173,38 @@ describe("HuggingFaceSandboxGateway", () => {
     await expect(
       gateway.lifecycle(createIntent, { adoption_only: true }),
     ).resolves.toMatchObject({ outcome: "adopted", observed_state: "SCHEDULING" });
+  });
+
+  it("keeps close pending until the remote Sandbox Job is terminal", async () => {
+    let observation = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+        if (init?.method)
+          return new Response(JSON.stringify(rawJob("RUNNING")), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        observation += 1;
+        return new Response(
+          JSON.stringify(rawJob(observation === 1 ? "RUNNING" : "CANCELED")),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+    const gateway = new HuggingFaceSandboxGateway({
+      namespace: "example",
+      accessToken: controlToken,
+      inferenceToken,
+    });
+
+    await expect(gateway.lifecycle(closeIntent)).rejects.toThrow(
+      "shutdown is still pending",
+    );
+    await expect(gateway.lifecycle(closeIntent)).resolves.toMatchObject({
+      outcome: "completed",
+      observed_state: "CANCELED",
+    });
   });
 
   it("rejects an unscoped proxy before sending the control credential", async () => {
