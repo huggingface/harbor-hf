@@ -954,7 +954,7 @@ export class ControlService {
       typeof intent.payload.task_id === "string" ? intent.payload.task_id : null;
     if (taskId) {
       const task = await this.projection.task(intent.campaign_id, taskId);
-      if (task?.task.terminal_outcome)
+      if (task?.task.terminal_outcome && intent.action_kind !== "sandbox.close")
         throw new PolicyError(`terminal task cannot receive action: ${taskId}`);
     }
     await this.append(intent);

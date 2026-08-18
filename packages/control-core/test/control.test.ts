@@ -765,6 +765,81 @@ describe("control service", () => {
     });
   });
 
+  it("allows Sandbox cleanup after its task becomes terminal", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "terminal-sandbox-cleanup-key",
+      operator,
+    );
+    const lock = await control.projection.campaignLock(result.campaign_id);
+    const taskId = lock?.tasks[0]?.task_id;
+    if (!taskId) throw new Error("campaign task is missing");
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "cancel", reason: "test terminal cleanup", confirmed: true },
+      "terminal-sandbox-cancel-key",
+      operator,
+    );
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    await settle(reconciler, 12);
+    expect(
+      (await control.projection.task(result.campaign_id, taskId))?.task,
+    ).toMatchObject({ terminal_outcome: "cancelled" });
+    const policy: SandboxPolicy = {
+      image: `registry.example/sandbox@sha256:${"e".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 600,
+      idle_timeout_seconds: 300,
+      inference_token: "forbidden",
+      reservation_microusd: 0,
+      active_hourly_cost_microusd: 0,
+      max_sandboxes: 1,
+      max_commands: 8,
+      max_command_seconds: 300,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/tmp"],
+    };
+    const cleanup = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.close",
+      "terminal-sandbox-resource",
+      0,
+      {
+        task_id: taskId,
+        sandbox_create_action_id: "terminal-sandbox-create",
+        resource_id: "terminal-sandbox-resource",
+        sandbox: policy,
+      },
+    );
+    await expect(control.service.writeAction(cleanup)).resolves.toBeUndefined();
+    const newWork = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.exec",
+      "terminal-sandbox-resource",
+      0,
+      {
+        task_id: taskId,
+        sandbox_create_action_id: "terminal-sandbox-create",
+        resource_id: "terminal-sandbox-resource",
+        sandbox: policy,
+        command: ["true"],
+        cwd: "/app",
+        timeout_seconds: 30,
+      },
+    );
+    await expect(control.service.writeAction(newWork)).rejects.toThrow(
+      "terminal task cannot receive action",
+    );
+  });
+
   it("closes active Sandboxes before normal publication", async () => {
     const control = await createTestControl();
     controls.push(control);
