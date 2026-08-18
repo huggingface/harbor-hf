@@ -34,7 +34,13 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
     upstream_host = upstream.hostname
     if upstream_host is None:
         raise RuntimeError("Hugging Face inference upstream host is missing")
-    token = os.environ["HARBOR_HF_INFERENCE_TOKEN"]
+    token_file = os.environ.get("HARBOR_HF_INFERENCE_TOKEN_FILE")
+    if token_file:
+        with open(token_file, encoding="utf-8") as handle:
+            token = handle.read().strip()
+        os.unlink(token_file)
+    else:
+        token = os.environ["HARBOR_HF_INFERENCE_TOKEN"]
     port = int(os.environ["HARBOR_HF_INFERENCE_LOCAL_PORT"])
     allowed_path = os.environ["HARBOR_HF_INFERENCE_ALLOWED_PATH"]
     allowed_model = os.environ["HARBOR_HF_INFERENCE_ALLOWED_MODEL"]

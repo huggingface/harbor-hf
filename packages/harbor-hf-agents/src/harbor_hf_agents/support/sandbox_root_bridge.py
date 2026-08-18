@@ -32,12 +32,21 @@ def main() -> None:
     except KeyError as error:
         raise RuntimeError("Sandbox bridge API is invalid") from error
     inference_token = _required("HF_INFERENCE_TOKEN")
+    token_path = Path("/run/harbor-hf-inference.token")
+    token_path.write_text(inference_token, encoding="utf-8")
+    token_path.chmod(0o600)
     env = {
-        **os.environ,
-        "HARBOR_HF_INFERENCE_TOKEN": inference_token,
-        "HARBOR_HF_INFERENCE_LOCAL_PORT": str(_LOCAL_PORT),
-        "HARBOR_HF_INFERENCE_ALLOWED_PATH": allowed_path,
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"HF_INFERENCE_TOKEN", "HARBOR_HF_INFERENCE_TOKEN"}
     }
+    env.update(
+        {
+            "HARBOR_HF_INFERENCE_TOKEN_FILE": str(token_path),
+            "HARBOR_HF_INFERENCE_LOCAL_PORT": str(_LOCAL_PORT),
+            "HARBOR_HF_INFERENCE_ALLOWED_PATH": allowed_path,
+        }
+    )
     subprocess.run(
         ["/bin/bash", "-lc", _bridge_command()],
         check=True,

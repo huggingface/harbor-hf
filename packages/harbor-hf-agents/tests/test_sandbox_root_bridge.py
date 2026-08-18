@@ -14,7 +14,12 @@ def test_starts_bridge_and_writes_only_loopback_settings(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "route.json"
-    monkeypatch.setattr(sandbox_root_bridge, "Path", lambda _value: output)
+    token = tmp_path / "token"
+    monkeypatch.setattr(
+        sandbox_root_bridge,
+        "Path",
+        lambda value: token if str(value).endswith(".token") else output,
+    )
     for key, value in {
         "HF_INFERENCE_TOKEN": "private-inference-token",
         "HARBOR_HF_INFERENCE_UPSTREAM": "https://router.huggingface.co/v1",
@@ -37,7 +42,11 @@ def test_starts_bridge_and_writes_only_loopback_settings(
 
     sandbox_root_bridge.main()
 
-    assert calls[0]["HARBOR_HF_INFERENCE_TOKEN"] == "private-inference-token"
+    assert "HF_INFERENCE_TOKEN" not in calls[0]
+    assert "HARBOR_HF_INFERENCE_TOKEN" not in calls[0]
+    assert calls[0]["HARBOR_HF_INFERENCE_TOKEN_FILE"] == str(token)
+    assert token.read_text() == "private-inference-token"
+    assert token.stat().st_mode & 0o777 == 0o600
     value = json.loads(output.read_text())
     assert value == {
         "schema_version": "v1",
