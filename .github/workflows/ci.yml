@@ -35,7 +35,7 @@ jobs:
       - run: npm run build
       - run: npm run check:generated
       - run: npm audit --audit-level=low
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install chromium
       - run: npm run test:e2e
       - run: docker build --platform linux/amd64 -f deploy/control-space/Dockerfile .
       - run: uv run slophammer-py dry .
