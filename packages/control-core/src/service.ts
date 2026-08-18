@@ -206,7 +206,11 @@ function preparedTaskSourceMatches(
   });
 }
 
-function validatePreparedEnvironment(value: unknown, taskId: string): void {
+function validatePreparedEnvironment(
+  value: unknown,
+  taskId: string,
+  maxCommandSeconds: number,
+): void {
   const environment = objectValue(value, "prepared Harbor environment lock");
   const kwargs = objectValue(environment.kwargs, "prepared Harbor environment kwargs");
   if (
@@ -214,7 +218,8 @@ function validatePreparedEnvironment(value: unknown, taskId: string): void {
       "harbor_hf_agents.support.control_sandbox_environment:ControlSandboxEnvironment" ||
     environment.delete !== true ||
     kwargs.control_task_id !== taskId ||
-    Object.keys(kwargs).length !== 1 ||
+    kwargs.control_max_command_seconds !== maxCommandSeconds ||
+    Object.keys(kwargs).length !== 2 ||
     (Array.isArray(environment.mounts) && environment.mounts.length > 0) ||
     (environment.env &&
       objectValue(environment.env, "prepared Harbor environment variables") &&
@@ -450,7 +455,16 @@ export class ControlService {
         !subsetMatches(harness.harbor_agent, agent)
       )
         throw new PolicyError("prepared Harbor agent does not match selected profiles");
-      validatePreparedEnvironment(trialLock.environment, input.task_id);
+      validatePreparedEnvironment(
+        trialLock.environment,
+        input.task_id,
+        Math.max(
+          input.agent_timeout_seconds,
+          input.verifier_timeout_seconds,
+          input.environment_build_timeout_seconds,
+          input.agent_setup_timeout_seconds,
+        ),
+      );
       const existing = await this.preparedTrial(campaignId, input.task_id);
       const createdAt = existing?.created_at ?? this.clock.now().toISOString();
       const record: PreparedTrial = {

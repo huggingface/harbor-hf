@@ -138,7 +138,10 @@ function trialPayload(inputDigest: string) {
         import_path:
           "harbor_hf_agents.support.control_sandbox_environment:ControlSandboxEnvironment",
         delete: true,
-        kwargs: { control_task_id: "task-001-trial-1" },
+        kwargs: {
+          control_task_id: "task-001-trial-1",
+          control_max_command_seconds: 900,
+        },
       },
       verifier: { disable: false },
     },
@@ -361,6 +364,21 @@ describe("prepared Harbor jobs", () => {
     await expect(
       service.submitPreparedJob(campaignId, launch.action_id, payload),
     ).rejects.toThrow("task source does not match");
+  });
+
+  it("rejects a prepared command limit that differs from task timeouts", async () => {
+    const { service } = await setup();
+    const { campaignId, lock, launch } = await campaign(service);
+    const task = lock.tasks[0];
+    if (!task) throw new Error("campaign task is missing");
+    const payload = trialPayload(task.input_digest);
+    (
+      payload.trial_lock.environment.kwargs as Record<string, unknown>
+    ).control_max_command_seconds = 899;
+
+    await expect(
+      service.submitPreparedJob(campaignId, launch.action_id, payload),
+    ).rejects.toThrow("environment does not match control policy");
   });
 
   it("rejects a changed prepared trial after the first durable write", async () => {
