@@ -26,7 +26,9 @@ import {
   type ControlEvent,
   type WorkerCapability,
   type WorkerOperation,
-  taskSandboxPolicy,
+  preparedSandboxPolicy,
+  preparationRequired,
+  staticSandboxPolicy,
   verifyWorkerCapability,
 } from "@harbor-hf/control-core";
 import cookie from "@fastify/cookie";
@@ -92,9 +94,14 @@ function domainActor(request: FastifyRequest): Actor {
 function isWorkerCapabilityRoute(request: FastifyRequest): boolean {
   const path = request.url.split("?", 1)[0] ?? request.url;
   return (
-    (request.method === "GET" && /^\/api\/v1\/campaigns\/[^/]+\/lock$/.test(path)) ||
+    (request.method === "GET" &&
+      /^\/api\/v1\/campaigns\/[^/]+\/(?:lock|prepared-job(?:\/trials\/[^/]+)?)$/.test(
+        path,
+      )) ||
     (request.method === "POST" &&
-      /^\/api\/v1\/campaigns\/[^/]+\/tasks\/[^/]+\/attempts$/.test(path)) ||
+      /^\/api\/v1\/campaigns\/[^/]+\/(?:prepared-job|tasks\/[^/]+\/attempts)$/.test(
+        path,
+      )) ||
     (/^[A-Z]+$/.test(request.method) &&
       /^\/api\/v1\/campaigns\/[^/]+\/tasks\/[^/]+\/sandboxes(?:\/[^/]+(?:\/observe|\/exec|\/files(?:\/read)?)?)?$/.test(
         path,
@@ -203,17 +210,13 @@ function redactSandboxTopology<T>(value: T): T {
     if (!spec || typeof spec !== "object") continue;
     const record = spec as {
       sandbox?: unknown;
-      task_sandboxes?: unknown;
-      sandbox_task_count?: number;
+      sandbox_template?: unknown;
     };
-    if (Array.isArray(record.task_sandboxes)) {
-      record.sandbox_task_count = record.task_sandboxes.length;
-      delete record.task_sandboxes;
+    for (const sandbox of [record.sandbox, record.sandbox_template]) {
+      if (!sandbox || typeof sandbox !== "object") continue;
+      if ("inference_upstream" in sandbox)
+        (sandbox as { inference_upstream?: string }).inference_upstream = "<redacted>";
     }
-    const sandbox = record.sandbox;
-    if (!sandbox || typeof sandbox !== "object") continue;
-    if ("inference_upstream" in sandbox)
-      (sandbox as { inference_upstream?: string }).inference_upstream = "<redacted>";
   }
   return clone;
 }
@@ -380,10 +383,24 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     const deployment = lock.profiles.find((profile) => profile.kind === "deployment");
     let policy: SandboxPolicy | null;
     try {
-      policy = deployment ? taskSandboxPolicy(deployment.spec, taskId) : null;
+      if (!deployment) policy = null;
+      else if (preparationRequired(deployment.spec)) {
+        const prepared = await runtime.service.preparedJob(campaignId);
+        const trial = await runtime.service.preparedTrial(campaignId, taskId);
+        if (!prepared || !trial)
+          throw new PolicyError("campaign preparation is incomplete");
+        const reference = prepared.trials.find((item) => item.task_id === taskId);
+        if (
+          !reference ||
+          reference.record_id !== trial.record_id ||
+          reference.record_digest !== sha256(canonicalJson(trial))
+        )
+          throw new PolicyError("prepared trial does not match the prepared job");
+        policy = preparedSandboxPolicy(deployment.spec, trial);
+      } else policy = staticSandboxPolicy(deployment.spec);
     } catch (error) {
       throw new PolicyError(
-        error instanceof Error ? error.message : "task Sandbox profile is invalid",
+        error instanceof Error ? error.message : "prepared Sandbox policy is invalid",
       );
     }
     if (!policy) throw new PolicyError("campaign does not authorize Sandboxes");
@@ -980,6 +997,83 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           },
         })
       );
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns/:campaign_id/prepared-job",
+    {
+      schema: {
+        tags: ["campaigns"],
+        body: cleanSchema(schemas.preparedJobSubmission),
+        response: {
+          200: {
+            type: "object",
+            additionalProperties: false,
+            required: ["phase", "record_id", "digest", "adopted"],
+            properties: {
+              phase: { enum: ["trial", "finalize"] },
+              record_id: { type: "string" },
+              digest: { type: "string" },
+              adopted: { type: "boolean" },
+            },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { campaign_id } = request.params as { campaign_id: string };
+      requireWorkerOperation(request, "preparation.submit");
+      if (request.workerCapability?.campaign_id !== campaign_id)
+        throw new WorkerScopeError(
+          "the worker capability does not authorize this campaign",
+        );
+      return runtime.service.submitPreparedJob(
+        campaign_id,
+        request.workerCapability.action_id,
+        request.body,
+      );
+    },
+  );
+
+  app.get("/api/v1/campaigns/:campaign_id/prepared-job", async (request) => {
+    const { campaign_id } = request.params as { campaign_id: string };
+    requireWorkerOperation(request, "campaign.read");
+    if (request.workerCapability?.campaign_id !== campaign_id)
+      throw new WorkerScopeError(
+        "the worker capability does not authorize this campaign",
+      );
+    const prepared = await runtime.service.preparedJob(campaign_id);
+    if (!prepared) throw new PolicyError("prepared job is not available");
+    return prepared;
+  });
+
+  app.get(
+    "/api/v1/campaigns/:campaign_id/prepared-job/trials/:task_id",
+    async (request) => {
+      const { campaign_id, task_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+      };
+      requireWorkerOperation(request, "campaign.read");
+      if (
+        request.workerCapability?.campaign_id !== campaign_id ||
+        !request.workerCapability.task_ids.includes(task_id)
+      )
+        throw new WorkerScopeError(
+          "the worker capability does not authorize this prepared trial",
+        );
+      const prepared = await runtime.service.preparedJob(campaign_id);
+      const trial = await runtime.service.preparedTrial(campaign_id, task_id);
+      if (!prepared || !trial) throw new PolicyError("prepared trial is not available");
+      const reference = prepared.trials.find((item) => item.task_id === task_id);
+      if (
+        !reference ||
+        reference.record_id !== trial.record_id ||
+        reference.record_digest !== sha256(canonicalJson(trial))
+      )
+        throw new PolicyError("prepared trial does not match the prepared job");
+      return trial;
     },
   );
 

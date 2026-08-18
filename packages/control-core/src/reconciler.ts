@@ -4,6 +4,7 @@ import type {
   AttemptReceipt,
   BudgetEvent,
   CampaignLock,
+  DeploymentProfileSpec,
   EndpointResource,
 } from "@harbor-hf/contracts";
 import {
@@ -12,6 +13,7 @@ import {
   deterministicId,
   sha256,
 } from "@harbor-hf/contracts";
+import { preparationRequired } from "./profiles.js";
 import type { ResultPublisher } from "./publication.js";
 import type { Projection } from "./projection.js";
 import { PolicyError, type ControlService } from "./service.js";
@@ -357,9 +359,11 @@ export class Reconciler {
         break;
       case "job.launch":
         if (receipt.observed_state.startsWith("suppressed-")) break;
-        if (receipt.outcome === "failed")
-          await this.completeTasksFromJob(intent, receipt, "infrastructure");
-        else await this.observeJob(intent, receipt);
+        if (receipt.outcome === "failed") {
+          if (intent.payload.worker_role === "preparation")
+            await this.handlePreparationTerminal(intent, receipt, "ERROR");
+          else await this.completeTasksFromJob(intent, receipt, "infrastructure");
+        } else await this.observeJob(intent, receipt);
         break;
       case "job.observe":
         await this.handleJobObservation(intent, receipt);
@@ -410,70 +414,152 @@ export class Reconciler {
     await this.maybePublish(intent.campaign_id);
   }
 
+  private async reserveInitialAction(
+    campaignId: string,
+    category: string,
+    generation: number,
+    amountMicrousd: number,
+    createdAt: string,
+  ): Promise<void> {
+    if (amountMicrousd === 0) return;
+    const budget: BudgetEvent = {
+      schema_version: "v1",
+      kind: "budget.event",
+      record_id: deterministicId("budget", campaignId, category, String(generation)),
+      created_at: createdAt,
+      actor: { subject: "harbor-hf-control", role: "service" },
+      campaign_id: campaignId,
+      event_kind: "reserve",
+      amount_microusd: amountMicrousd,
+    };
+    await this.service.append(budget);
+  }
+
   private async admit(admission: ActionIntent, receipt: ActionReceipt): Promise<void> {
-    const campaignId = admission.campaign_id;
-    const lock = await this.requiredLock(campaignId);
+    const lock = await this.requiredLock(admission.campaign_id);
+    const deployment = profile(lock, "deployment") as DeploymentProfileSpec;
+    if (preparationRequired(deployment))
+      await this.launchPreparation(lock, receipt.created_at, 0);
+    else await this.launchExecution(lock, receipt.created_at, 0);
+  }
+
+  private async launchPreparation(
+    lock: CampaignLock,
+    createdAt: string,
+    attempt: number,
+  ): Promise<void> {
     const deployment = profile(lock, "deployment");
     const policy = profile(lock, "launch_policy");
+    const reservation =
+      typeof policy.preparation_reservation_microusd === "number"
+        ? policy.preparation_reservation_microusd
+        : 0;
+    await this.reserveInitialAction(
+      lock.campaign_id,
+      "preparation",
+      attempt,
+      reservation,
+      createdAt,
+    );
+    const intent = this.service.actionIntent(
+      lock.campaign_id,
+      "job.launch",
+      "campaign-preparation",
+      attempt,
+      {
+        worker_role: "preparation",
+        preparation_attempt: attempt,
+        task_ids: lock.tasks.map((task) => task.task_id),
+        job_image: profileScalar<string>(deployment, "job_image", "string"),
+        job_command: profileStrings(deployment, "preparation_job_command"),
+        hardware: profileScalar<string>(deployment, "hardware", "string"),
+        timeout_seconds: profileScalar<number>(
+          deployment,
+          "preparation_timeout_seconds",
+          "number",
+        ),
+        success_without_worker_receipt: true,
+        max_infrastructure_attempts:
+          typeof policy.max_preparation_attempts === "number"
+            ? policy.max_preparation_attempts
+            : 1,
+        reservation_microusd: reservation,
+        trusted_worker: profileScalar<boolean>(deployment, "trusted_worker", "boolean"),
+        worker_revision: profileScalar<string>(deployment, "worker_revision", "string"),
+        inference_token: "forbidden",
+        campaign_lock_digest: sha256(canonicalJson(lock)),
+      },
+    );
+    await this.service.writeAction(intent);
+  }
+
+  private async launchExecution(
+    lock: CampaignLock,
+    createdAt: string,
+    generation: number,
+    taskIds = lock.tasks.map((task) => task.task_id),
+  ): Promise<void> {
+    const deployment = profile(lock, "deployment") as DeploymentProfileSpec;
+    if (deployment.route !== "hf_job")
+      throw new PolicyError("imported deployments cannot launch execution Jobs");
+    const policy = profile(lock, "launch_policy");
     const reservation = profileScalar<number>(policy, "reservation_microusd", "number");
-    if (reservation > lock.ceiling_microusd) return;
-    if (reservation > 0) {
-      const budget: BudgetEvent = {
-        schema_version: "v1",
-        kind: "budget.event",
-        record_id: deterministicId("budget", campaignId, "reserve", "0"),
-        created_at: receipt.created_at,
-        actor: { subject: "harbor-hf-control", role: "service" },
-        campaign_id: campaignId,
-        event_kind: "reserve",
-        amount_microusd: reservation,
-      };
-      await this.service.append(budget);
-    }
-    const inferenceToken = profileInferenceToken(deployment);
+    await this.reserveInitialAction(
+      lock.campaign_id,
+      "execution",
+      generation,
+      reservation,
+      createdAt,
+    );
+    const inferenceToken = profileInferenceToken(
+      deployment as unknown as Record<string, unknown>,
+    );
     const inferenceLimits =
       inferenceToken === "required"
         ? {
             inference_max_requests: profileScalar<number>(
-              deployment,
+              deployment as unknown as Record<string, unknown>,
               "inference_max_requests",
               "number",
             ),
             inference_max_concurrency: profileScalar<number>(
-              deployment,
+              deployment as unknown as Record<string, unknown>,
               "inference_max_concurrency",
               "number",
             ),
             inference_timeout_seconds: profileScalar<number>(
-              deployment,
+              deployment as unknown as Record<string, unknown>,
               "inference_timeout_seconds",
               "number",
             ),
             inference_max_output_tokens: profileScalar<number>(
-              deployment,
+              deployment as unknown as Record<string, unknown>,
               "inference_max_output_tokens",
               "number",
             ),
           }
         : {};
+    const prepared = preparationRequired(deployment)
+      ? await this.service.preparedJob(lock.campaign_id)
+      : null;
+    if (preparationRequired(deployment) && !prepared)
+      throw new PolicyError("campaign preparation is incomplete");
     const sandbox = deployment.sandbox;
-    if (
-      sandbox !== undefined &&
-      (!sandbox || typeof sandbox !== "object" || Array.isArray(sandbox))
-    )
-      throw new PolicyError("profile sandbox must be an object");
-    const sandboxPolicy = sandbox as ActionIntent["payload"]["sandbox"];
+    const sandboxAuthorized = Boolean(sandbox || deployment.sandbox_template);
+    const sandboxTimeout =
+      deployment.sandbox_template?.max_timeout_seconds ?? sandbox?.timeout_seconds;
     const intent = this.service.actionIntent(
-      campaignId,
+      lock.campaign_id,
       "job.launch",
       "campaign-tasks",
-      0,
+      generation,
       {
-        task_ids: lock.tasks.map((task) => task.task_id),
-        job_image: profileScalar<string>(deployment, "job_image", "string"),
-        job_command: profileStrings(deployment, "job_command"),
-        hardware: profileScalar<string>(deployment, "hardware", "string"),
-        timeout_seconds: profileScalar<number>(deployment, "timeout_seconds", "number"),
+        worker_role: "execution",
+        task_ids: taskIds,
+        job_image: deployment.job_image,
+        job_command: deployment.job_command,
+        hardware: deployment.hardware,
+        timeout_seconds: deployment.timeout_seconds,
         success_without_worker_receipt: profileScalar<boolean>(
           policy,
           "success_without_worker_receipt",
@@ -485,11 +571,17 @@ export class Reconciler {
           "number",
         ),
         reservation_microusd: reservation,
-        trusted_worker: profileScalar<boolean>(deployment, "trusted_worker", "boolean"),
+        trusted_worker: deployment.trusted_worker,
+        ...(deployment.worker_revision
+          ? { worker_revision: deployment.worker_revision }
+          : {}),
         inference_token: inferenceToken,
         ...inferenceLimits,
         campaign_lock_digest: sha256(canonicalJson(lock)),
-        ...(sandboxPolicy ? { sandbox: sandboxPolicy } : {}),
+        ...(prepared ? { prepared_job_digest: sha256(canonicalJson(prepared)) } : {}),
+        ...(sandbox ? { sandbox } : {}),
+        ...(sandboxAuthorized ? { sandbox_authorized: true } : {}),
+        ...(sandboxTimeout ? { sandbox_timeout_seconds: sandboxTimeout } : {}),
       },
     );
     await this.service.writeAction(intent);
@@ -555,6 +647,10 @@ export class Reconciler {
       await this.service.writeAction(next);
       return;
     }
+    if (intent.payload.worker_role === "preparation") {
+      await this.handlePreparationTerminal(intent, receipt, state);
+      return;
+    }
     if (state === "STOPPED" || state === "COMPLETED") {
       const successful = scalar<boolean>(
         intent.payload,
@@ -597,6 +693,64 @@ export class Reconciler {
         receipt,
         successful ? "complete" : "infrastructure",
       );
+      return;
+    }
+    await this.completeTasksFromJob(intent, receipt, "infrastructure");
+  }
+
+  private async handlePreparationTerminal(
+    intent: ActionIntent,
+    receipt: ActionReceipt,
+    state: string,
+  ): Promise<void> {
+    const successful = state === "STOPPED" || state === "COMPLETED";
+    const prepared = successful
+      ? await this.service.preparedJob(intent.campaign_id)
+      : null;
+    if (prepared) {
+      const lock = await this.requiredLock(intent.campaign_id);
+      if (prepared.campaign_lock_digest !== sha256(canonicalJson(lock)))
+        throw new PolicyError("prepared job does not match the campaign lock");
+      await this.launchExecution(lock, receipt.created_at, 0);
+      return;
+    }
+    const graceMs = this.options.worker_receipt_grace_ms ?? 0;
+    const deadline = intent.payload.worker_receipt_deadline;
+    const cancelling = await this.projection.hasCampaignAction(
+      intent.campaign_id,
+      "campaign.cancel",
+    );
+    if (successful && !cancelling && typeof deadline !== "string" && graceMs > 0) {
+      const preparationDeadline = new Date(
+        Date.parse(receipt.created_at) + graceMs,
+      ).toISOString();
+      await this.service.writeAction(
+        this.service.actionIntent(
+          intent.campaign_id,
+          "job.observe",
+          intent.target,
+          intent.generation + 1,
+          {
+            ...intent.payload,
+            not_before: preparationDeadline,
+            worker_receipt_deadline: preparationDeadline,
+          },
+        ),
+      );
+      return;
+    }
+    const attempt =
+      typeof intent.payload.preparation_attempt === "number"
+        ? intent.payload.preparation_attempt
+        : 0;
+    const maximum = scalar<number>(
+      intent.payload,
+      "max_infrastructure_attempts",
+      "number",
+    );
+    if (!cancelling && attempt + 1 < maximum) {
+      const lock = await this.requiredLock(intent.campaign_id);
+      await this.launchPreparation(lock, receipt.created_at, attempt + 1);
       return;
     }
     await this.completeTasksFromJob(intent, receipt, "infrastructure");

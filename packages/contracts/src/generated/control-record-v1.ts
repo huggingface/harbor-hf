@@ -1,6 +1,6 @@
 /* Generated from JSON Schema. Do not edit. */
 
-export type HarborHFControlRecordV1 = (ProfileObject | ProfilePromotion | OperatorAcl | CampaignRequest | CampaignLock | ActionIntent | ActionDispatch | ActionReceipt | ActionAdvanced | AttemptReceipt | TerminalSelection | BudgetEvent | EndpointResource | PublicationReceipt | MigrationRecord)
+export type HarborHFControlRecordV1 = (ProfileObject | ProfilePromotion | OperatorAcl | CampaignRequest | CampaignLock | PreparedTrial | PreparedJob | ActionIntent | ActionDispatch | ActionReceipt | ActionAdvanced | AttemptReceipt | TerminalSelection | BudgetEvent | EndpointResource | PublicationReceipt | MigrationRecord)
 export type ProfileObject = (BenchmarkProfileObject | ModelProfileObject | HarnessProfileObject | DeploymentProfileObject | LaunchPolicyProfileObject)
 export type BenchmarkProfileObject = (Base & {
 schema_version: "v1"
@@ -47,7 +47,7 @@ spec: DeploymentProfileSpec
 })
 export type DeploymentProfileSpec = (HFJobDeploymentProfileSpec | ImportedDeploymentProfileSpec)
 export type HFJobDeploymentProfileSpec = ({
-[k: string]: any
+[k: string]: unknown
 } & {
 route: "hf_job"
 /**
@@ -75,11 +75,6 @@ inference_max_concurrency?: number
 inference_timeout_seconds?: number
 inference_max_output_tokens?: number
 sandbox?: SandboxPolicy
-/**
- * @minItems 1
- * @maxItems 100000
- */
-task_sandboxes?: [TaskSandboxSpec, ...(TaskSandboxSpec)[]]
 inference_provider?: string
 input_price_microusd_per_million_tokens?: number
 output_price_microusd_per_million_tokens?: number
@@ -88,9 +83,17 @@ worker_revision?: string
 worker_concurrency?: number
 worker_max_tasks_per_job?: number
 context_window?: number
+preparation?: ("forbidden" | "required")
+/**
+ * @minItems 1
+ * @maxItems 128
+ */
+preparation_job_command?: [string, ...(string)[]]
+preparation_timeout_seconds?: number
+sandbox_template?: SandboxTemplate
 })
 export type SandboxPolicy = ({
-[k: string]: any
+[k: string]: unknown
 } & {
 image: string
 hardware: string
@@ -120,6 +123,44 @@ max_transfer_bytes: number
  * @maxItems 32
  */
 allowed_roots: [string, ...(string)[]]
+})
+export type SandboxTemplate = ({
+[k: string]: unknown
+} & {
+/**
+ * @minItems 1
+ * @maxItems 32
+ */
+flavors: [SandboxFlavor, ...(SandboxFlavor)[]]
+max_sandboxes: number
+max_commands: number
+max_command_seconds: number
+max_transfer_bytes: number
+/**
+ * @minItems 1
+ * @maxItems 32
+ */
+allowed_roots: [string, ...(string)[]]
+inference_token?: ("forbidden" | "required")
+inference_upstream?: string
+inference_model?: string
+inference_api?: ("chat-completions" | "responses")
+inference_max_requests?: number
+inference_max_concurrency?: number
+inference_timeout_seconds?: number
+inference_max_output_tokens?: number
+/**
+ * @minItems 1
+ * @maxItems 128
+ */
+root_bootstrap_command?: [string, ...(string)[]]
+default_cpus: number
+default_memory_mb: number
+default_storage_mb: number
+default_gpus: number
+max_timeout_seconds: number
+lifetime_overhead_seconds: number
+idle_timeout_overhead_seconds: number
 })
 export type LaunchPolicyProfileObject = (Base & {
 schema_version: "v1"
@@ -198,6 +239,56 @@ ceiling_microusd: number
 source_revision: Digest
 })
 export type ResolvedProfile = (ResolvedBenchmarkProfile | ResolvedModelProfile | ResolvedHarnessProfile | ResolvedDeploymentProfile | ResolvedLaunchPolicyProfile)
+export type PreparedTrial = (Base & {
+schema_version: "v1"
+kind: "prepared.trial"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+campaign_id: Id
+preparation_id: Id
+campaign_lock_digest: Digest
+task_id: Id
+source_task_id: Id
+trial_index: number
+input_digest: Digest
+trial_lock: {
+[k: string]: unknown
+}
+trial_lock_digest: Digest
+image: string
+cpus: number
+memory_mb: number
+storage_mb: number
+gpus: number
+agent_timeout_seconds: number
+verifier_timeout_seconds: number
+environment_build_timeout_seconds: number
+agent_setup_timeout_seconds: number
+})
+export type PreparedJob = (Base & {
+schema_version: "v1"
+kind: "prepared.job"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+campaign_id: Id
+preparation_id: Id
+campaign_lock_digest: Digest
+harbor_version: string
+job_config: {
+[k: string]: unknown
+}
+job_lock_header: {
+[k: string]: unknown
+}
+/**
+ * @minItems 1
+ * @maxItems 100000
+ */
+trials: [PreparedTrialRef, ...(PreparedTrialRef)[]]
+harbor_lock_digest: Digest
+})
 export type ActionIntent = (Base & {
 schema_version: "v1"
 kind: "action.intent"
@@ -339,7 +430,7 @@ kind: string
 record_id: Id
 created_at: Timestamp
 actor: Actor
-[k: string]: any
+[k: string]: unknown
 }
 export interface Actor {
 subject: string
@@ -358,13 +449,24 @@ task_ids: [Id, ...(Id)[]]
  * @maxItems 100000
  */
 task_digests: [Digest, ...(Digest)[]]
-source_repository?: string
-source_path?: string
-trials_per_source_task?: number
+/**
+ * @minItems 1
+ * @maxItems 100000
+ */
+source_task_ids?: [Id, ...(Id)[]]
+/**
+ * @minItems 1
+ * @maxItems 100000
+ */
+trial_indices?: [number, ...(number)[]]
+harbor_job?: {
+[k: string]: unknown
+}
 }
 export interface ModelProfileSpec {
 model_id: string
 revision: string
+harbor_model_name?: string
 }
 export interface HarnessProfileSpec {
 agent: Id
@@ -374,18 +476,17 @@ revision: string
  */
 required_evidence: Id[]
 reasoning_effort?: ("off" | "minimal" | "low" | "medium" | "high" | "xhigh")
+harbor_agent?: {
+[k: string]: unknown
 }
-export interface TaskSandboxSpec {
-task_id: Id
-source_task_id: Id
-trial_index: number
-image: string
+}
+export interface SandboxFlavor {
 hardware: string
-timeout_seconds: number
-idle_timeout_seconds: number
-reservation_microusd: number
+cpus: number
+memory_mb: number
+storage_mb: number
+gpus: number
 active_hourly_cost_microusd: number
-max_command_seconds: number
 }
 export interface ImportedDeploymentProfileSpec {
 route: "imported"
@@ -415,6 +516,8 @@ max_infrastructure_attempts: number
 reservation_microusd: number
 success_without_worker_receipt: boolean
 publication_role: ("final" | "component" | "diagnostic")
+preparation_reservation_microusd?: number
+max_preparation_attempts?: number
 }
 export interface ProfileRef {
 kind: ("benchmark" | "model" | "harness" | "deployment" | "launch_policy")
@@ -453,6 +556,13 @@ spec: LaunchPolicySpec
 export interface TaskLock {
 task_id: Id
 input_digest: Digest
+source_task_id?: Id
+trial_index?: number
+}
+export interface PreparedTrialRef {
+task_id: Id
+record_id: Id
+record_digest: Digest
 }
 export interface ActionPayload {
 /**
@@ -498,4 +608,10 @@ path?: string
 content_digest?: Digest
 content_size?: number
 mode?: string
+worker_role?: ("preparation" | "execution")
+prepared_job_digest?: Digest
+sandbox_authorized?: boolean
+sandbox_timeout_seconds?: number
+preparation_attempt?: number
+worker_revision?: string
 }

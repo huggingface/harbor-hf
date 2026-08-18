@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import base64
 import concurrent.futures
+import copy
 import json
 import math
 import os
-import shutil
 import subprocess
 import tarfile
 import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any
+
+from harbor.models.job.config import JobConfig
+from harbor.models.job.lock import TrialLock
 
 from harbor_hf_agents.support.control_sandbox_environment import _ControlClient, _digest
 
@@ -36,29 +40,20 @@ class LockedTask:
     input_digest: str
     image: str
     timeout_seconds: int
+    trial_lock: TrialLock
 
 
 @dataclass(frozen=True)
 class WorkerConfig:
     campaign_id: str
     action_id: str
-    benchmark_revision: str
-    source_repository: str
-    source_path: str
-    model_id: str
-    model_revision: str
-    routed_model: str
-    agent_version: str
-    reasoning_effort: str
     harbor_version: str
     worker_revision: str
     concurrency: int
     max_tasks_per_job: int
-    context_window: int
-    max_output_tokens: int
-    provider_timeout_seconds: int
     input_price: int
     output_price: int
+    job_config: dict[str, Any]
     tasks: tuple[LockedTask, ...]
 
 
@@ -90,220 +85,180 @@ def _read_lock(campaign_id: str) -> dict[str, Any]:
     )
 
 
+def _read_prepared_job(campaign_id: str) -> dict[str, Any]:
+    return _ControlClient(campaign_id, "prepared-job").request(
+        "GET",
+        f"/api/v1/campaigns/{campaign_id}/prepared-job",
+        idempotency_key=f"prepared-job-{_required('HARBOR_HF_ACTION_ID')}",
+        timeout=60.0,
+    )
+
+
+def _read_prepared_trial(campaign_id: str, task_id: str) -> dict[str, Any]:
+    return _ControlClient(campaign_id, task_id).request(
+        "GET",
+        f"/api/v1/campaigns/{campaign_id}/prepared-job/trials/{task_id}",
+        idempotency_key=(
+            f"prepared-trial-{_required('HARBOR_HF_ACTION_ID')}-{task_id}"
+        ),
+        timeout=60.0,
+    )
+
+
+def _assigned_task_ids() -> tuple[str, ...]:
+    value = json.loads(_required("HARBOR_HF_TASK_IDS_JSON"))
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, str) and item for item in value)
+        or len(set(value)) != len(value)
+    ):
+        raise RuntimeError("worker task assignment is invalid")
+    return tuple(value)
+
+
 def _locked_config(lock: dict[str, Any]) -> WorkerConfig:
     campaign_id = _required("HARBOR_HF_CAMPAIGN_ID")
     action_id = _required("HARBOR_HF_ACTION_ID")
     if lock.get("campaign_id") != campaign_id:
         raise RuntimeError("campaign lock identity does not match worker environment")
-    benchmark = _profile(lock, "benchmark")
-    model = _profile(lock, "model")
-    harness = _profile(lock, "harness")
     deployment = _profile(lock, "deployment")
-    if deployment.get("route") != "hf_job":
-        raise RuntimeError("control worker requires an HF Job deployment")
-    base = deployment.get("sandbox")
-    task_specs = deployment.get("task_sandboxes")
-    if not isinstance(base, dict) or not isinstance(task_specs, list):
-        raise RuntimeError("control worker requires task Sandbox profiles")
-    task_locks = {item["task_id"]: item["input_digest"] for item in lock["tasks"]}
-    by_id = {item["task_id"]: item for item in task_specs}
-    if set(by_id) != set(task_locks):
-        raise RuntimeError("task Sandbox profiles do not match assigned lock tasks")
-    tasks = tuple(
-        LockedTask(
-            task_id=task_id,
-            source_task_id=str(by_id[task_id]["source_task_id"]),
-            trial_index=int(by_id[task_id]["trial_index"]),
-            input_digest=str(input_digest),
-            image=str(by_id[task_id]["image"]),
-            timeout_seconds=int(by_id[task_id]["timeout_seconds"]),
+    if (
+        deployment.get("route") != "hf_job"
+        or deployment.get("preparation") != "required"
+    ):
+        raise RuntimeError("control worker requires a prepared HF Job deployment")
+    prepared = _read_prepared_job(campaign_id)
+    references = {
+        item["task_id"]: item
+        for item in prepared.get("trials", [])
+        if isinstance(item, dict) and isinstance(item.get("task_id"), str)
+    }
+    campaign_tasks = {
+        item["task_id"]: item
+        for item in lock.get("tasks", [])
+        if isinstance(item, dict) and isinstance(item.get("task_id"), str)
+    }
+    max_tasks_per_job = int(deployment["worker_max_tasks_per_job"])
+    assigned = _assigned_task_ids()[:max_tasks_per_job]
+    if any(
+        task_id not in references or task_id not in campaign_tasks
+        for task_id in assigned
+    ):
+        raise RuntimeError("worker task assignment is outside the prepared job")
+    tasks: list[LockedTask] = []
+    for task_id in assigned:
+        value = _read_prepared_trial(campaign_id, task_id)
+        expected = campaign_tasks[task_id]
+        if (
+            value.get("record_id") != references[task_id].get("record_id")
+            or value.get("input_digest") != expected.get("input_digest")
+            or value.get("source_task_id") != expected.get("source_task_id")
+            or value.get("trial_index") != expected.get("trial_index")
+        ):
+            raise RuntimeError("prepared trial does not match the campaign lock")
+        harbor_lock = TrialLock.model_validate(value.get("trial_lock"))
+        if harbor_lock.task.digest != value.get("input_digest"):
+            raise RuntimeError("prepared Harbor task digest does not match")
+        timeout = sum(
+            int(value[name])
+            for name in (
+                "agent_timeout_seconds",
+                "verifier_timeout_seconds",
+                "environment_build_timeout_seconds",
+                "agent_setup_timeout_seconds",
+            )
         )
-        for task_id, input_digest in sorted(task_locks.items())
-    )
-    routed_model = str(base.get("inference_model", ""))
-    if not routed_model.startswith(f"{model['model_id']}:"):
-        raise RuntimeError("routed provider model does not match the model profile")
-    source_repository = str(benchmark.get("source_repository", ""))
-    if not source_repository.startswith("https://github.com/"):
-        raise RuntimeError("benchmark source must be anonymous public GitHub HTTPS")
+        tasks.append(
+            LockedTask(
+                task_id=task_id,
+                source_task_id=str(value["source_task_id"]),
+                trial_index=int(value["trial_index"]),
+                input_digest=str(value["input_digest"]),
+                image=str(value["image"]),
+                timeout_seconds=timeout,
+                trial_lock=harbor_lock,
+            )
+        )
+    job_config = prepared.get("job_config")
+    if not isinstance(job_config, dict):
+        raise RuntimeError("prepared Harbor job config is invalid")
     return WorkerConfig(
         campaign_id=campaign_id,
         action_id=action_id,
-        benchmark_revision=str(benchmark["revision"]),
-        source_repository=source_repository,
-        source_path=str(benchmark["source_path"]),
-        model_id=str(model["model_id"]),
-        model_revision=str(model["revision"]),
-        routed_model=routed_model,
-        agent_version=str(harness["revision"]),
-        reasoning_effort=str(harness["reasoning_effort"]),
         harbor_version=str(deployment["harbor_version"]),
         worker_revision=str(deployment["worker_revision"]),
         concurrency=int(deployment["worker_concurrency"]),
-        max_tasks_per_job=int(deployment["worker_max_tasks_per_job"]),
-        context_window=int(deployment["context_window"]),
-        max_output_tokens=int(base["inference_max_output_tokens"]),
-        provider_timeout_seconds=int(base["inference_timeout_seconds"]),
+        max_tasks_per_job=max_tasks_per_job,
         input_price=int(deployment["input_price_microusd_per_million_tokens"]),
         output_price=int(deployment["output_price_microusd_per_million_tokens"]),
-        tasks=tasks,
+        job_config=copy.deepcopy(job_config),
+        tasks=tuple(tasks),
     )
 
 
-def _clone_source(config: WorkerConfig, destination: Path) -> Path:
-    subprocess.run(["git", "init", "-q", str(destination)], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(destination),
-            "remote",
-            "add",
-            "origin",
-            config.source_repository,
-        ],
-        check=True,
-    )
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(destination),
-            "fetch",
-            "-q",
-            "--depth=1",
-            "origin",
-            config.benchmark_revision,
-        ],
-        check=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(destination), "checkout", "-q", "--detach", "FETCH_HEAD"],
-        check=True,
-    )
-    observed = subprocess.check_output(
-        ["git", "-C", str(destination), "rev-parse", "HEAD"], text=True
-    ).strip()
-    if observed != config.benchmark_revision:
-        raise RuntimeError("benchmark source revision mismatch")
-    source = (destination / config.source_path).resolve()
-    if destination.resolve() not in source.parents or not source.is_dir():
-        raise RuntimeError("benchmark source path is invalid")
-    return source
+def _task_source(task: LockedTask) -> dict[str, Any]:
+    source = task.trial_lock.task
+    if source.type == "package":
+        return {
+            "name": source.name,
+            "ref": source.digest,
+            **({"source": source.source} if source.source else {}),
+        }
+    if source.type == "git":
+        if not source.git_url or not source.git_commit_id or source.path is None:
+            raise RuntimeError("prepared Git task lock is incomplete")
+        path = Path(source.path)
+        if path.is_absolute() or ".." in path.parts:
+            raise RuntimeError("prepared Git task path is not portable")
+        return {
+            "path": path.as_posix(),
+            "git_url": source.git_url,
+            "git_commit_id": source.git_commit_id,
+            **({"source": source.source} if source.source else {}),
+        }
+    raise RuntimeError("prepared local Harbor tasks are not portable")
 
 
-def _task_manifest(source: Path) -> dict[str, str]:
-    import tomllib
-
-    value = tomllib.loads((source / "dataset.toml").read_text())
-    result: dict[str, str] = {}
-    for item in value["tasks"]:
-        name = str(item["name"]).split("/", 1)[-1]
-        result[name] = str(item["digest"])
-    return result
-
-
-def _image_repository(value: str) -> str:
-    without_digest = value.split("@", 1)[0]
-    tail = without_digest.rsplit("/", 1)[-1]
-    if ":" in tail:
-        return without_digest.rsplit(":", 1)[0]
-    return without_digest
-
-
-def _validate_tasks(config: WorkerConfig, source: Path) -> None:
-    import tomllib
-
-    manifest = _task_manifest(source)
-    for task in config.tasks:
-        task_dir = source / task.source_task_id
-        if not task_dir.is_dir() or task.source_task_id not in manifest:
-            raise RuntimeError(f"locked source task is missing: {task.source_task_id}")
-        if manifest[task.source_task_id] != task.input_digest:
-            raise RuntimeError(f"locked task digest mismatch: {task.task_id}")
-        task_toml = tomllib.loads((task_dir / "task.toml").read_text())
-        declared = str(task_toml["environment"]["docker_image"])
-        if _image_repository(declared) != _image_repository(task.image):
-            raise RuntimeError(f"locked task image mismatch: {task.task_id}")
-
-
-def _harbor_version() -> str:
-    harbor = shutil.which("harbor")
-    if not harbor:
-        raise RuntimeError("Harbor executable is missing")
-    return subprocess.check_output([harbor, "--version"], text=True).strip()
-
-
-def _job_config(
-    config: WorkerConfig, task: LockedTask, source: Path, root: Path
-) -> Path:
-    model_cost = {
-        "input": config.input_price / 1_000_000,
-        "output": config.output_price / 1_000_000,
-        "cacheRead": config.input_price / 1_000_000,
-        "cacheWrite": config.input_price / 1_000_000,
-    }
-    job_name = task.task_id
-    value = {
-        "job_name": job_name,
-        "jobs_dir": str(root / "jobs"),
-        "n_attempts": 1,
-        "n_concurrent_trials": 1,
-        "retry": {"max_retries": 0},
-        "agents": [
-            {
-                "name": "harbor_hf_agents.pi.agent:PiAgent",
-                "model_name": f"openai/{config.routed_model}",
-                "n_concurrent": 1,
-                "kwargs": {
-                    "version": config.agent_version,
-                    "thinking": config.reasoning_effort,
-                    "models_json": {
-                        "providers": {
-                            "openai": {
-                                "baseUrl": "$OPENAI_BASE_URL",
-                                "api": "openai-completions",
-                                "compat": {
-                                    "supportsDeveloperRole": False,
-                                    "supportsReasoningEffort": True,
-                                    "maxTokensField": "max_tokens",
-                                },
-                                "models": [
-                                    {
-                                        "id": config.routed_model,
-                                        "name": config.routed_model,
-                                        "reasoning": True,
-                                        "input": ["text"],
-                                        "contextWindow": config.context_window,
-                                        "maxTokens": config.max_output_tokens,
-                                        "cost": model_cost,
-                                    }
-                                ],
-                            }
-                        }
-                    },
-                    "provider_runtime": {
-                        "api": "chat-completions",
-                        "timeout_seconds": config.provider_timeout_seconds,
-                        "max_attempts": 1,
-                    },
-                },
-            }
-        ],
-        "environment": {
-            "import_path": (
-                "harbor_hf_agents.support.control_sandbox_environment:"
-                "ControlSandboxEnvironment"
+def _job_config(config: WorkerConfig, task: LockedTask, root: Path) -> Path:
+    lock = task.trial_lock
+    if lock.skills or lock.extra_instructions or lock.extra_docker_compose:
+        raise RuntimeError(
+            "prepared skills, instructions, and compose overlays are unsupported"
+        )
+    verifier = lock.verifier.model_dump(mode="json")
+    verifier.pop("environment_mode", None)
+    agent = lock.agent.model_dump(mode="json")
+    agent["skills"] = []
+    value = copy.deepcopy(config.job_config)
+    value.update(
+        {
+            "job_name": task.task_id,
+            "jobs_dir": str(root / "jobs"),
+            "n_attempts": 1,
+            "n_concurrent_trials": 1,
+            "retry": {"max_retries": 0},
+            "datasets": [],
+            "tasks": [_task_source(task)],
+            "agents": [agent],
+            "environment": lock.environment.model_dump(mode="json"),
+            "verifier": verifier,
+            "timeout_multiplier": lock.timeout_multiplier,
+            "agent_timeout_multiplier": lock.agent_timeout_multiplier,
+            "verifier_timeout_multiplier": lock.verifier_timeout_multiplier,
+            "agent_setup_timeout_multiplier": lock.agent_setup_timeout_multiplier,
+            "environment_build_timeout_multiplier": (
+                lock.environment_build_timeout_multiplier
             ),
-            "delete": True,
-            "kwargs": {"control_task_id": task.task_id},
-        },
-        "artifacts": [{"source": "/app", "destination": "workspace/app"}],
-        "tasks": [{"path": str(source / task.source_task_id)}],
-    }
+            "extra_instruction_paths": [],
+        }
+    )
+    validated = JobConfig.model_validate(value)
     path = root / "configs" / f"{task.task_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
+    path.write_text(
+        json.dumps(validated.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+    )
     return path
 
 
@@ -518,8 +473,8 @@ def _submit_attempt(
     )
 
 
-def _run_task(config: WorkerConfig, task: LockedTask, source: Path, root: Path) -> str:
-    path = _job_config(config, task, source, root)
+def _run_task(config: WorkerConfig, task: LockedTask, root: Path) -> str:
+    path = _job_config(config, task, root)
     timed_out = False
     try:
         process = subprocess.run(
@@ -535,7 +490,15 @@ def _run_task(config: WorkerConfig, task: LockedTask, source: Path, root: Path) 
         raw = error.stdout or ""
         output = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
     result_path = _result_path(root, task)
-    result = json.loads(result_path.read_text()) if result_path else None
+    if not result_path:
+        raise RuntimeError("Harbor did not write a trial result")
+    observed_lock_path = result_path.parent / "lock.json"
+    if not observed_lock_path.is_file():
+        raise RuntimeError("Harbor did not write a trial lock")
+    observed_lock = TrialLock.model_validate_json(observed_lock_path.read_text())
+    if observed_lock != task.trial_lock:
+        raise RuntimeError("executed Harbor trial lock differs from preparation")
+    result = json.loads(result_path.read_text())
     capability = _required("HARBOR_HF_WORKER_CAPABILITY").encode()
     if result_path:
         for trial_file in result_path.parent.rglob("*"):
@@ -556,18 +519,18 @@ def _run_task(config: WorkerConfig, task: LockedTask, source: Path, root: Path) 
 
 
 def main() -> None:  # noqa: C901 -- bounded batch orchestration
-    if os.environ.get("HF_TOKEN"):
-        raise RuntimeError("control worker must not receive HF_TOKEN")
+    if _required("HARBOR_HF_WORKER_ROLE") != "execution":
+        raise RuntimeError("control worker role is invalid")
+    if os.environ.get("HF_TOKEN") or os.environ.get("HF_INFERENCE_TOKEN"):
+        raise RuntimeError("control worker must not receive persistent credentials")
     lock = _read_lock(_required("HARBOR_HF_CAMPAIGN_ID"))
     config = _locked_config(lock)
-    if _harbor_version() != config.harbor_version:
+    if version("harbor") != config.harbor_version:
         raise RuntimeError("Harbor version does not match the deployment profile")
     if _required("HARBOR_HF_WORKER_REVISION") != config.worker_revision:
         raise RuntimeError("worker revision does not match the deployment profile")
     with tempfile.TemporaryDirectory(prefix="harbor-hf-control-worker-") as temporary:
         root = Path(temporary)
-        source = _clone_source(config, root / "source")
-        _validate_tasks(config, source)
         failures: list[BaseException] = []
         completed: list[str] = []
         lock_guard = threading.Lock()
@@ -577,7 +540,7 @@ def main() -> None:  # noqa: C901 -- bounded batch orchestration
             for offset in range(0, len(assigned_tasks), width):
                 batch = assigned_tasks[offset : offset + width]
                 futures = {
-                    executor.submit(_run_task, config, task, source, root): task
+                    executor.submit(_run_task, config, task, root): task
                     for task in batch
                 }
                 for future in concurrent.futures.as_completed(futures):

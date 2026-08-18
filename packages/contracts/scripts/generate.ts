@@ -27,7 +27,7 @@ for (const file of files) {
       tabWidth: 2,
       trailingComma: "all",
     },
-    unknownAny: false,
+    unknownAny: true,
   });
   const outputName = `${stem}.ts`;
   await writeFile(join(outputRoot, outputName), output, "utf8");

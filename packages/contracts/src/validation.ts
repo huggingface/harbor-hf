@@ -15,6 +15,7 @@ export const schemas = {
   campaignAction: load("campaign-action-v1.schema.json"),
   campaignSubmission: load("campaign-submission-v1.schema.json"),
   controlRecord: load("control-record-v1.schema.json"),
+  preparedJobSubmission: load("prepared-job-submission-v1.schema.json"),
   resultCatalog: load("result-catalog-v1.schema.json"),
   workerEvidenceManifest: load("worker-evidence-manifest-v1.schema.json"),
 } as const;
@@ -30,6 +31,7 @@ const validators = {
   campaignAction: ajv.compile(schemas.campaignAction),
   campaignSubmission: ajv.compile(schemas.campaignSubmission),
   controlRecord: ajv.compile(schemas.controlRecord),
+  preparedJobSubmission: ajv.compile(schemas.preparedJobSubmission),
   resultCatalog: ajv.compile(schemas.resultCatalog),
   workerEvidenceManifest: ajv.compile(schemas.workerEvidenceManifest),
 } as const;
@@ -65,6 +67,14 @@ export function validateCampaignSubmission<T>(value: unknown): T {
 
 export function validateCampaignAction<T>(value: unknown): T {
   return validate<T>(validators.campaignAction, value, "campaign action");
+}
+
+export function validatePreparedJobSubmission<T>(value: unknown): T {
+  return validate<T>(
+    validators.preparedJobSubmission,
+    value,
+    "prepared job submission",
+  );
 }
 
 export function validateResultCatalog<T>(value: unknown): T {

@@ -3,9 +3,13 @@ import { join } from "node:path";
 import type {
   BenchmarkProfileSpec,
   DeploymentProfileSpec,
+  HarnessProfileSpec,
+  ModelProfileSpec,
+  PreparedTrial,
   ProfileObject,
   ResolvedProfile,
   SandboxPolicy,
+  SandboxTemplate,
   TaskLock,
 } from "@harbor-hf/contracts";
 import {
@@ -57,108 +61,154 @@ export async function loadBuiltInProfiles(root: string): Promise<LoadedProfile[]
 
 export class ProfileResolutionError extends Error {}
 
-type TaskSandboxSpec = {
-  task_id: string;
-  source_task_id: string;
-  trial_index: number;
-  image: string;
-  hardware: string;
-  timeout_seconds: number;
-  idle_timeout_seconds: number;
-  reservation_microusd: number;
-  active_hourly_cost_microusd: number;
-  max_command_seconds: number;
-};
-
-function taskSandboxSpecs(deployment: DeploymentProfileSpec): TaskSandboxSpec[] | null {
-  const value = (deployment as unknown as Record<string, unknown>).task_sandboxes;
-  if (value === undefined) return null;
-  if (!Array.isArray(value))
-    throw new ProfileResolutionError("deployment task_sandboxes must be an array");
-  return value as TaskSandboxSpec[];
+function objectValue(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-export function validateTaskSandboxCoverage(
+export function preparationRequired(deployment: DeploymentProfileSpec): boolean {
+  return deployment.route === "hf_job" && deployment.preparation === "required";
+}
+
+export function validatePreparedCampaignProfiles(
   deployment: DeploymentProfileSpec,
+  benchmark: BenchmarkProfileSpec,
+  model: ModelProfileSpec,
+  harness: HarnessProfileSpec,
   tasks: readonly TaskLock[],
-  benchmark?: BenchmarkProfileSpec,
 ): void {
-  const specs = taskSandboxSpecs(deployment);
-  if (!specs) return;
+  if (!preparationRequired(deployment)) return;
+  if (!objectValue(benchmark.harbor_job))
+    throw new ProfileResolutionError(
+      "prepared campaigns require a Harbor job in the benchmark profile",
+    );
+  if (!Array.isArray(benchmark.source_task_ids))
+    throw new ProfileResolutionError(
+      "prepared campaigns require benchmark source task IDs",
+    );
+  if (!Array.isArray(benchmark.trial_indices))
+    throw new ProfileResolutionError(
+      "prepared campaigns require benchmark trial numbers",
+    );
   if (
-    benchmark &&
-    (!benchmark.source_repository ||
-      !benchmark.source_path ||
-      !benchmark.trials_per_source_task)
+    benchmark.source_task_ids.length !== tasks.length ||
+    benchmark.trial_indices.length !== tasks.length
   )
     throw new ProfileResolutionError(
-      "task Sandbox profiles require a pinned benchmark source",
+      "prepared benchmark task mappings must cover every logical task",
     );
-  if (deployment.route !== "hf_job" || !deployment.sandbox)
-    throw new ProfileResolutionError(
-      "task Sandbox profiles require an HF Job deployment Sandbox policy",
-    );
-  const expected = new Set(tasks.map((task) => task.task_id));
-  const seen = new Set<string>();
-  const trials = new Set<string>();
-  for (const spec of specs) {
-    if (seen.has(spec.task_id))
+  const sourceTrials = new Set<string>();
+  for (const task of tasks) {
+    if (!task.source_task_id || !task.trial_index)
       throw new ProfileResolutionError(
-        `duplicate task Sandbox profile: ${spec.task_id}`,
+        `prepared benchmark task has no source mapping: ${task.task_id}`,
       );
-    seen.add(spec.task_id);
-    if (!expected.has(spec.task_id))
+    const sourceTrial = `${task.source_task_id}:${task.trial_index}`;
+    if (sourceTrials.has(sourceTrial))
       throw new ProfileResolutionError(
-        `task Sandbox profile is outside the benchmark: ${spec.task_id}`,
+        `duplicate benchmark source trial: ${sourceTrial}`,
       );
-    const trial = `${spec.source_task_id}:${spec.trial_index}`;
-    if (trials.has(trial))
-      throw new ProfileResolutionError(`duplicate source task trial: ${trial}`);
-    trials.add(trial);
-    if (
-      spec.idle_timeout_seconds > spec.timeout_seconds ||
-      spec.max_command_seconds > spec.timeout_seconds
-    )
-      throw new ProfileResolutionError(
-        `task Sandbox time limits exceed lifetime: ${spec.task_id}`,
-      );
+    sourceTrials.add(sourceTrial);
   }
-  if (seen.size !== expected.size || [...expected].some((task) => !seen.has(task)))
+  if (!model.harbor_model_name)
     throw new ProfileResolutionError(
-      "task Sandbox profiles must cover every benchmark task exactly once",
+      "prepared campaigns require a Harbor model name in the model profile",
+    );
+  if (!objectValue(harness.harbor_agent))
+    throw new ProfileResolutionError(
+      "prepared campaigns require a Harbor agent in the harness profile",
+    );
+  if (deployment.route !== "hf_job" || !deployment.sandbox_template)
+    throw new ProfileResolutionError(
+      "prepared campaigns require an HF Job Sandbox template",
     );
 }
 
-export function taskSandboxPolicy(
-  deployment: DeploymentProfileSpec,
-  taskId: string,
-): SandboxPolicy | null {
-  if (deployment.route !== "hf_job") return null;
-  const base = deployment.sandbox;
-  const specs = taskSandboxSpecs(deployment);
-  if (!specs) return base ?? null;
-  if (!base)
-    throw new ProfileResolutionError("task Sandbox profile has no base policy");
-  const selected = specs.find((spec) => spec.task_id === taskId);
+function selectFlavor(template: SandboxTemplate, trial: PreparedTrial) {
+  const matches = template.flavors.filter(
+    (flavor) =>
+      flavor.cpus >= trial.cpus &&
+      flavor.memory_mb >= trial.memory_mb &&
+      flavor.storage_mb >= trial.storage_mb &&
+      flavor.gpus >= trial.gpus,
+  );
+  matches.sort(
+    (left, right) =>
+      left.active_hourly_cost_microusd - right.active_hourly_cost_microusd ||
+      left.gpus - right.gpus ||
+      left.cpus - right.cpus ||
+      left.memory_mb - right.memory_mb ||
+      left.storage_mb - right.storage_mb ||
+      left.hardware.localeCompare(right.hardware),
+  );
+  const selected = matches[0];
   if (!selected)
-    throw new ProfileResolutionError(`task Sandbox profile is missing: ${taskId}`);
+    throw new ProfileResolutionError(
+      `no Sandbox flavor can run prepared task: ${trial.task_id}`,
+    );
+  return selected;
+}
+
+export function preparedSandboxPolicy(
+  deployment: DeploymentProfileSpec,
+  trial: PreparedTrial,
+): SandboxPolicy {
+  if (deployment.route !== "hf_job" || !deployment.sandbox_template)
+    throw new ProfileResolutionError("deployment has no prepared Sandbox template");
+  const template = deployment.sandbox_template;
+  const {
+    flavors: _flavors,
+    default_cpus: _defaultCpus,
+    default_memory_mb: _defaultMemory,
+    default_storage_mb: _defaultStorage,
+    default_gpus: _defaultGpus,
+    max_timeout_seconds: _maxTimeout,
+    lifetime_overhead_seconds: _lifetimeOverhead,
+    idle_timeout_overhead_seconds: _idleOverhead,
+    ...base
+  } = template;
+  const flavor = selectFlavor(template, trial);
+  const maxCommandSeconds = Math.max(
+    trial.agent_timeout_seconds,
+    trial.verifier_timeout_seconds,
+    trial.environment_build_timeout_seconds,
+    trial.agent_setup_timeout_seconds,
+  );
+  const timeoutSeconds =
+    trial.agent_timeout_seconds +
+    trial.verifier_timeout_seconds +
+    trial.environment_build_timeout_seconds +
+    trial.agent_setup_timeout_seconds +
+    template.lifetime_overhead_seconds;
+  const idleTimeoutSeconds = Math.min(
+    timeoutSeconds,
+    maxCommandSeconds + template.idle_timeout_overhead_seconds,
+  );
+  if (
+    maxCommandSeconds > template.max_command_seconds ||
+    timeoutSeconds > template.max_timeout_seconds
+  )
+    throw new ProfileResolutionError(
+      `prepared task time limits exceed deployment limits: ${trial.task_id}`,
+    );
   return {
     ...base,
-    image: selected.image,
-    hardware: selected.hardware,
-    timeout_seconds: selected.timeout_seconds,
-    idle_timeout_seconds: selected.idle_timeout_seconds,
-    reservation_microusd: selected.reservation_microusd,
-    active_hourly_cost_microusd: selected.active_hourly_cost_microusd,
-    max_command_seconds: selected.max_command_seconds,
+    image: trial.image,
+    hardware: flavor.hardware,
+    timeout_seconds: timeoutSeconds,
+    idle_timeout_seconds: idleTimeoutSeconds,
+    reservation_microusd: Math.ceil(
+      (flavor.active_hourly_cost_microusd * timeoutSeconds) / 3600,
+    ),
+    active_hourly_cost_microusd: flavor.active_hourly_cost_microusd,
+    max_command_seconds: maxCommandSeconds,
   };
 }
 
-export function taskSandboxSpec(
+export function staticSandboxPolicy(
   deployment: DeploymentProfileSpec,
-  taskId: string,
-): TaskSandboxSpec | null {
-  return taskSandboxSpecs(deployment)?.find((spec) => spec.task_id === taskId) ?? null;
+): SandboxPolicy | null {
+  if (deployment.route !== "hf_job") return null;
+  return deployment.sandbox ?? null;
 }
 
 function scalarArray(spec: ProfileObject["spec"], key: string): string[] {
@@ -281,9 +331,27 @@ export class ProfileResolver {
       throw new ProfileResolutionError(
         "benchmark task IDs and digests must have equal non-zero length",
       );
+    const sources = (spec as BenchmarkProfileSpec).source_task_ids;
+    const trialIndices = (spec as BenchmarkProfileSpec).trial_indices;
+    if (
+      (sources !== undefined || trialIndices !== undefined) &&
+      (!Array.isArray(sources) ||
+        !Array.isArray(trialIndices) ||
+        sources.length !== ids.length ||
+        trialIndices.length !== ids.length)
+    )
+      throw new ProfileResolutionError(
+        "benchmark source task IDs and trial numbers must cover every task",
+      );
     return ids.map((task_id, index) => ({
       task_id,
       input_digest: digests[index] as string,
+      ...(sources && trialIndices
+        ? {
+            source_task_id: sources[index] as string,
+            trial_index: trialIndices[index] as number,
+          }
+        : {}),
     }));
   }
 

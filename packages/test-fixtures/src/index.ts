@@ -88,6 +88,94 @@ export function smokeProfiles(
   ];
 }
 
+export function preparedProfiles(): LoadedProfile[] {
+  const taskId = "task-001-trial-1";
+  const taskDigest = sha256("task-001");
+  return [
+    profile("benchmark", "prepared-benchmark", {
+      task_ids: [taskId],
+      task_digests: [taskDigest],
+      source_task_ids: ["task-001"],
+      trial_indices: [1],
+      benchmark: "prepared-benchmark",
+      revision: sha256("prepared-benchmark"),
+      harbor_job: {
+        n_attempts: 1,
+        datasets: [{ name: "example/tasks", version: "1" }],
+      },
+    }),
+    profile("model", "prepared-model", {
+      model_id: "example/model",
+      revision: sha256("prepared-model"),
+      harbor_model_name: "openai/example/model:provider",
+    }),
+    profile("harness", "prepared-harness", {
+      agent: "example-agent",
+      revision: "1.0.0",
+      required_evidence: ["workspace"],
+      harbor_agent: {
+        import_path: "example.agent:Agent",
+        model_name: "openai/example/model:provider",
+      },
+    }),
+    profile("deployment", "prepared-deployment", {
+      route: "hf_job",
+      models: ["prepared-model"],
+      harnesses: ["prepared-harness"],
+      job_image:
+        "example.invalid/worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      job_command: ["run-worker"],
+      preparation_job_command: ["prepare-worker"],
+      hardware: "cpu-basic",
+      timeout_seconds: 3600,
+      preparation_timeout_seconds: 600,
+      trusted_worker: true,
+      inference_token: "forbidden",
+      preparation: "required",
+      sandbox_template: {
+        flavors: [
+          {
+            hardware: "cpu-basic",
+            cpus: 2,
+            memory_mb: 16384,
+            storage_mb: 20480,
+            gpus: 0,
+            active_hourly_cost_microusd: 10000,
+          },
+        ],
+        max_sandboxes: 2,
+        max_commands: 128,
+        max_command_seconds: 3600,
+        max_transfer_bytes: 67108864,
+        allowed_roots: ["/app", "/logs", "/tmp"],
+        default_cpus: 1,
+        default_memory_mb: 2048,
+        default_storage_mb: 10240,
+        default_gpus: 0,
+        max_timeout_seconds: 7200,
+        lifetime_overhead_seconds: 300,
+        idle_timeout_overhead_seconds: 300,
+      },
+      inference_provider: "provider",
+      input_price_microusd_per_million_tokens: 100000,
+      output_price_microusd_per_million_tokens: 200000,
+      harbor_version: "0.21.0",
+      worker_revision: "abcdef0",
+      worker_concurrency: 1,
+      worker_max_tasks_per_job: 1,
+      context_window: 131072,
+    }),
+    profile("launch_policy", "prepared-policy", {
+      max_infrastructure_attempts: 2,
+      reservation_microusd: 100000,
+      preparation_reservation_microusd: 10000,
+      max_preparation_attempts: 2,
+      success_without_worker_receipt: false,
+      publication_role: "diagnostic",
+    }),
+  ];
+}
+
 export interface TestControl {
   root: string;
   bucket: string;

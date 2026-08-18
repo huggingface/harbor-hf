@@ -19,51 +19,43 @@ continue to call Harbor and write attempt evidence, but they do not become a
 second control authority. See the [control service
 specification](CONTROL_SERVICE.md).
 
-Application modules call `FilesystemHarborExecutionAdapter`. They do not render
-Harbor run flags or inspect Harbor result paths. All current Harbor-specific
-knowledge lives under `harbor_hf.harbor_adapter`.
+The hosted control path calls Harbor through two generic workers. The
+preparation worker resolves the job. The execution worker runs its prepared
+trials. Neither worker branches on a benchmark, model, or harness name.
+`FilesystemHarborExecutionAdapter` remains outside the hosted new-write path for
+historical evidence tools.
 
 ## Execution Input
 
-Each physical execution writes two immutable files before Harbor starts:
+A campaign first locks its approved profiles and expected logical tasks. A
+secret-free preparation Job runs the pinned Harbor release and builds one
+normal `JobConfig`. Harbor resolves the dataset and task sources through its
+public `JobPlan` API. The preparation worker then writes:
 
-- `harbor-job.json` is the exact `JobConfig` document consumed by Harbor.
-- `harbor-request.json` contains that config, its SHA-256 digest, the pinned
-  Harbor revision, and the independent `harbor-hf` verification policy.
+- one immutable `prepared.trial` record per logical task;
+- one final `prepared.job` record that binds the ordered trials;
+- one SHA-256 digest for the reconstructed Harbor `JobLock`.
 
-The job config is the only source for attempts, concurrency, retry policy,
-dataset and task selection, logical agent identity, custom-agent import path and
-parameters, model identity, environment type and parameters, output path, and
-allowed model host. Its dataset configuration is derived from the verified
-`source.lock.json`: anonymous public Git uses Harbor's `repo` and `path` fields,
-a benchmark bundle uses Harbor's public local `path` field rooted at the
-verified extraction directory, and a package uses its content-addressed
-reference. Internal Harbor retries are fixed at zero. Agent concurrency equals
-trial concurrency.
+Each prepared trial contains the exact Harbor `TrialLock`, source task digest,
+container image digest, resource request, and phase time limits. The control
+service checks the task against the campaign lock and selects compatible Hugging
+Face Sandbox hardware from the deployment profile. The deployment profile sets
+limits and prices but contains no benchmark task catalog.
 
-The process command is deliberately small:
+An execution worker receives only the tasks assigned to its physical Job. It
+fetches their prepared records, reconstructs a one-attempt Harbor `JobConfig`,
+and lets Harbor fetch each exact Git or package task. It does not read a dataset
+manifest or select tasks again. Harbor's internal retry count remains zero.
+After a trial, the worker compares Harbor's emitted `TrialLock` with the
+prepared lock before it can submit evidence or an outcome.
 
-```text
-uv run --project HARBOR_SOURCE --locked --no-dev --extra hf-sandbox \
-  --with WORKER_SOURCE/packages/harbor-hf-agents \
-  harbor run --config HARBOR_JOB_JSON --yes
-```
-
-`WORKER_SOURCE` is the existing immutable `remote.worker` checkout. The agent
-package is dependency-free, so layering it into Harbor does not resolve or
-replace Harbor dependencies.
-
-Harbor receives only the explicitly approved runtime values required by the
-selected deployment and judge, such as a purpose-scoped `HF_TOKEN`,
-`OPENAI_API_KEY`, and `OPENAI_BASE_URL`. It never receives a Git credential,
-SSH agent, operator path, or source-secret name. Secret values are not
-serialized into either input file.
-For provider-backed agents, the custom agent starts a root-owned loopback bridge
-and passes only a localhost URL and non-secret placeholder key to the
-unprivileged agent process. The agent never receives `HF_TOKEN`, the private HF
-Jobs ingress credential, scoped route URL, provider credentials, or judge
-credentials. The adapter checks both input files byte-for-byte before execution
-and again before accepting output.
+Both workers install the reviewed Harbor-HF agent package at its immutable
+revision and use the official pinned Harbor release. The preparation worker has
+no persistent secret, inference access, Sandbox authority, or Bucket mount. The
+execution worker has no persistent secret or Bucket mount and reaches Sandboxes
+only through its short-lived capability. The root-owned bridge receives the
+inference credential directly from the control service. The benchmark agent
+receives only its loopback route and placeholder key.
 
 ## Custom Provider Agents
 

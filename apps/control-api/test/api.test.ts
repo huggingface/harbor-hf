@@ -85,9 +85,9 @@ const input = {
 
 function sandboxDeploymentRecords(): Array<ProfileObject | ProfilePromotion> {
   const sandbox = {
-    image: `registry.example/sandbox@sha256:${"b".repeat(64)}`,
-    hardware: "h200",
-    timeout_seconds: 21_600,
+    image: `registry.example/task-sandbox@sha256:${"c".repeat(64)}`,
+    hardware: "cpu-upgrade",
+    timeout_seconds: 7_200,
     idle_timeout_seconds: 1_800,
     inference_token: "required" as const,
     inference_upstream: "https://route.example.endpoints.huggingface.cloud/v1",
@@ -98,8 +98,8 @@ function sandboxDeploymentRecords(): Array<ProfileObject | ProfilePromotion> {
     inference_timeout_seconds: 1_800,
     inference_max_output_tokens: 32_768,
     root_bootstrap_command: ["/opt/worker/start-root-services"],
-    reservation_microusd: 20_000_000,
-    active_hourly_cost_microusd: 5_000_000,
+    reservation_microusd: 2_000_000,
+    active_hourly_cost_microusd: 30_000,
     max_sandboxes: 1,
     max_commands: 8,
     max_command_seconds: 3_600,
@@ -117,20 +117,6 @@ function sandboxDeploymentRecords(): Array<ProfileObject | ProfilePromotion> {
     trusted_worker: true,
     inference_token: "forbidden" as const,
     sandbox,
-    task_sandboxes: [
-      {
-        task_id: "control-smoke-task",
-        source_task_id: "control-smoke-task",
-        trial_index: 1,
-        image: `registry.example/task-sandbox@sha256:${"c".repeat(64)}`,
-        hardware: "cpu-upgrade",
-        timeout_seconds: 7_200,
-        idle_timeout_seconds: 1_800,
-        reservation_microusd: 2_000_000,
-        active_hourly_cost_microusd: 30_000,
-        max_command_seconds: 3_600,
-      },
-    ],
     inference_provider: "test-provider",
     input_price_microusd_per_million_tokens: 100_000,
     output_price_microusd_per_million_tokens: 200_000,
@@ -180,9 +166,6 @@ function sandboxDeploymentRecords(): Array<ProfileObject | ProfilePromotion> {
     task_digests: [sha256("control-smoke-task")] as [string],
     benchmark: "control-smoke",
     revision: sha256("benchmark"),
-    source_repository: "https://github.com/example/control-smoke.git",
-    source_path: "tasks",
-    trials_per_source_task: 1,
   };
   const benchmarkProfile: ProfileObject = {
     schema_version: "v1",
@@ -1061,7 +1044,6 @@ describe("control API", () => {
       .json()
       .profiles.find((profile: { kind: string }) => profile.kind === "deployment");
     expect(browserDeployment.spec).not.toHaveProperty("task_sandboxes");
-    expect(browserDeployment.spec).toMatchObject({ sandbox_task_count: 1 });
     const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
       namespace: runtime.config.namespace,
       campaign_id: campaignId,

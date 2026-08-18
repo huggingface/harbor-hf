@@ -54,8 +54,9 @@ The work includes:
    launches the normal execution worker with a capability bound to the prepared
    lock digest and the still-missing logical tasks.
 7. The execution worker loads the prepared lock, reconstructs each Harbor trial,
-   and runs Harbor through the generic control-backed Sandbox environment. It
-   does not clone or parse the benchmark source again.
+   and runs Harbor through the generic control-backed Sandbox environment.
+   Harbor fetches the exact locked Git or package task without reading the
+   benchmark dataset again.
 8. Attempt receipts and evidence continue through the existing control path.
    The same path handles replacement admission, publication and cleanup.
 
@@ -67,17 +68,16 @@ new lock for that campaign.
 
 Add versioned JSON Schemas for these private records:
 
-- `prepared-job.manifest`: exact Harbor version, job-config digest, Harbor-lock
-  digest, artifact manifest, expected profile identities, and preparation
-  action binding;
-- `prepared-job.trial`: logical task identity, source task identity and digest,
-  trial number, Harbor trial-lock digest, image digest, resources, time limits,
-  and verifier mode.
+- `prepared.job`: exact Harbor version, resolved job config, job-lock header,
+  ordered prepared-trial references, and the complete Harbor-lock digest;
+- `prepared.trial`: logical task identity, source task identity and digest,
+  trial number, exact Harbor trial lock, image digest, resources, and phase time
+  limits.
 
-The full Harbor lock is stored as content-addressed private data. Browser
-collection responses omit it. The campaign lock records the
-prepared-job manifest digest after preparation through a separate immutable
-record. Existing records are never rewritten.
+The control service reconstructs the full Harbor lock from these private
+content-addressed records. Browser collection responses omit them. Each
+execution action records the prepared-job digest without changing the campaign
+lock. Existing records are never rewritten.
 
 Unknown fields are rejected. Local absolute paths, mutable Git references,
 unpinned images, duplicate logical tasks, mismatched trial counts, and values
@@ -180,8 +180,9 @@ ceiling keep total project spending within the approved limit.
 The work is complete when:
 
 - no benchmark-specific profile generator exists;
-- production control and worker code has no Terminal-Bench, ShellBench,
-  DeepSeek, Qwen, Pi, Hermes, or OpenClaw name branch;
+- production control and generic worker code has no benchmark, model, or
+  harness name branch; individual Harbor agent plugins may name the harness
+  they implement;
 - a new Harbor-supported benchmark or compatible model needs configuration only;
 - a supported harness needs configuration only, while a new harness needs only
   a Harbor agent plugin;

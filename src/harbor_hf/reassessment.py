@@ -150,7 +150,7 @@ class ReassessmentPlan(FrozenModel):
     judge: ReassessmentJudge
     verifier_judge_timeout_seconds: Literal[900] = 900
     harbor_hf_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
-    benchmark_repository: Literal["ShellBench/public-tasks"] = "ShellBench/public-tasks"
+    benchmark_repository: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
     benchmark_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     runtime_image: str = Field(min_length=1)
     output_prefix: str = Field(min_length=1)

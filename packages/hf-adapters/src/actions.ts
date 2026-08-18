@@ -61,6 +61,13 @@ function stringValues(
   return value;
 }
 
+function workerRole(intent: ActionIntent): "preparation" | "execution" {
+  const value = intent.payload.worker_role ?? "execution";
+  if (value !== "preparation" && value !== "execution")
+    throw new Error("action payload worker_role is invalid");
+  return value;
+}
+
 function inferenceTokenPolicy(intent: ActionIntent): "forbidden" | "required" {
   const value = intent.payload.inference_token ?? "forbidden";
   if (value !== "forbidden" && value !== "required")
@@ -196,6 +203,7 @@ export class HuggingFaceActions implements ExternalActionPort {
     context?: ExternalActionContext,
   ): Promise<ExternalActionResult> {
     const tokenPolicy = inferenceTokenPolicy(intent);
+    const role = workerRole(intent);
     if (tokenPolicy === "required" && !this.config.inferenceToken)
       throw new Error("required worker inference credential is unavailable");
     const inferenceEnvironment =
@@ -229,6 +237,8 @@ export class HuggingFaceActions implements ExternalActionPort {
       const job = matches[0];
       if (!job) throw new Error("matching Job disappeared");
       verifyJobSecretNames(intent, job.secrets);
+      if (job.labels?.harbor_hf_worker_role !== role)
+        throw new Error("adopted Job worker role does not match the launch intent");
       return {
         outcome: "adopted",
         observed_state: job.status.stage,
@@ -245,7 +255,13 @@ export class HuggingFaceActions implements ExternalActionPort {
       throw new Error("Job launch requires the control service URL");
     const timeoutSeconds = numberValue(intent, "timeout_seconds");
     const taskIds = stringValues(intent, "task_ids");
-    const sandboxOperations = intent.payload.sandbox
+    if (role === "preparation" && tokenPolicy !== "forbidden")
+      throw new Error("preparation Jobs cannot receive an inference credential");
+    const sandboxAuthorized =
+      role === "execution" &&
+      (Boolean(intent.payload.sandbox) ||
+        booleanValue(intent, "sandbox_authorized", false));
+    const sandboxOperations = sandboxAuthorized
       ? ([
           "sandbox.create",
           "sandbox.observe",
@@ -261,15 +277,19 @@ export class HuggingFaceActions implements ExternalActionPort {
       campaign_lock_digest: stringValue(intent, "campaign_lock_digest"),
       action_id: intent.action_id,
       task_ids: taskIds,
-      operations: [
-        "campaign.read",
-        "attempt.submit",
-        "evidence.write",
-        ...sandboxOperations,
-      ],
+      operations:
+        role === "preparation"
+          ? ["campaign.read", "preparation.submit"]
+          : ["campaign.read", "attempt.submit", "evidence.write", ...sandboxOperations],
       expires_at:
         Math.floor(Date.now() / 1000) +
-        Math.max(timeoutSeconds, intent.payload.sandbox?.timeout_seconds ?? 0) +
+        Math.max(
+          timeoutSeconds,
+          intent.payload.sandbox?.timeout_seconds ?? 0,
+          typeof intent.payload.sandbox_timeout_seconds === "number"
+            ? intent.payload.sandbox_timeout_seconds
+            : 0,
+        ) +
         3_600,
     });
     let job: Awaited<ReturnType<typeof runJob>>;
@@ -286,6 +306,7 @@ export class HuggingFaceActions implements ExternalActionPort {
         labels: {
           harbor_hf_action_id: intent.action_id,
           harbor_hf_campaign_id: intent.campaign_id,
+          harbor_hf_worker_role: role,
         },
         environment: {
           HARBOR_HF_CAMPAIGN_ID: intent.campaign_id,
@@ -293,6 +314,13 @@ export class HuggingFaceActions implements ExternalActionPort {
           HARBOR_HF_TASK_IDS_JSON: JSON.stringify(taskIds),
           HARBOR_HF_CONTROL_URL: this.config.controlUrl,
           HARBOR_HF_WORKER_CAPABILITY: capability,
+          HARBOR_HF_WORKER_ROLE: role,
+          ...(typeof intent.payload.worker_revision === "string"
+            ? { HARBOR_HF_WORKER_REVISION: intent.payload.worker_revision }
+            : {}),
+          ...(typeof intent.payload.prepared_job_digest === "string"
+            ? { HARBOR_HF_PREPARED_JOB_DIGEST: intent.payload.prepared_job_digest }
+            : {}),
           ...inferenceEnvironment,
         },
         ...(tokenPolicy === "required"
@@ -300,6 +328,8 @@ export class HuggingFaceActions implements ExternalActionPort {
           : {}),
       });
       verifyJobSecretNames(intent, job.secrets);
+      if (job.labels?.harbor_hf_worker_role !== role)
+        throw new Error("created Job worker role does not match the launch intent");
     } catch (error) {
       throw new AmbiguousExternalActionError("Job launch outcome is ambiguous", {
         cause: error,
@@ -323,6 +353,8 @@ export class HuggingFaceActions implements ExternalActionPort {
     verifyJobSecretNames(intent, job.secrets);
     if (job.labels?.harbor_hf_action_id !== intent.payload.launch_action_id)
       throw new Error("observed Job action label does not match the launch intent");
+    if (job.labels?.harbor_hf_worker_role !== workerRole(intent))
+      throw new Error("observed Job worker role does not match the launch intent");
     return {
       outcome: "completed",
       observed_state: job.status.stage,

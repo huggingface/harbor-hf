@@ -35,6 +35,19 @@ _CONTROL_PATH_PARTS = {
     "operator.acl": ("operators", "{record_id}.json"),
     "campaign.request": ("campaigns", "{campaign_id}", "request.json"),
     "campaign.lock": ("campaigns", "{campaign_id}", "campaign.lock.json"),
+    "prepared.trial": (
+        "campaigns",
+        "{campaign_id}",
+        "prepared",
+        "trials",
+        "{task_id}.json",
+    ),
+    "prepared.job": (
+        "campaigns",
+        "{campaign_id}",
+        "prepared",
+        "zz-manifest.json",
+    ),
     "action.intent": (
         "campaigns",
         "{campaign_id}",

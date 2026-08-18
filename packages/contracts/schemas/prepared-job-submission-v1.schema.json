@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harborframework.com/schemas/harbor-hf/prepared-job-submission-v1.schema.json",
+  "title": "Prepared job submission v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "task_id",
+        "source_task_id",
+        "trial_index",
+        "input_digest",
+        "trial_lock",
+        "image",
+        "cpus",
+        "memory_mb",
+        "storage_mb",
+        "gpus",
+        "agent_timeout_seconds",
+        "verifier_timeout_seconds",
+        "environment_build_timeout_seconds",
+        "agent_setup_timeout_seconds"
+      ],
+      "properties": {
+        "phase": {
+          "const": "trial"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "source_task_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "trial_index": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "input_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "trial_lock": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": true
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^.+@sha256:[0-9a-f]{64}$",
+          "maxLength": 1024
+        },
+        "cpus": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "memory_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4194304
+        },
+        "storage_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "gpus": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "agent_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "verifier_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "environment_build_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "agent_setup_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "harbor_version", "job_config", "job_lock_header"],
+      "properties": {
+        "phase": {
+          "const": "finalize"
+        },
+        "harbor_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "job_config": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": true
+        },
+        "job_lock_header": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": true
+        }
+      }
+    }
+  ]
+}

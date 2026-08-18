@@ -3,6 +3,7 @@ import { canonicalJson } from "@harbor-hf/contracts";
 
 export const workerOperations = [
   "campaign.read",
+  "preparation.submit",
   "attempt.submit",
   "evidence.write",
   "sandbox.create",

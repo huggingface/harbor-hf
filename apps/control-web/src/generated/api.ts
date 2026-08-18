@@ -509,6 +509,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/campaigns/{campaign_id}/prepared-job": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    campaign_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    campaign_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {unknown} */
+                        phase: "trial";
+                        task_id: string;
+                        source_task_id: string;
+                        trial_index: number;
+                        input_digest: string;
+                        trial_lock: {
+                            [key: string]: unknown;
+                        };
+                        image: string;
+                        cpus: number;
+                        memory_mb: number;
+                        storage_mb: number;
+                        gpus: number;
+                        agent_timeout_seconds: number;
+                        verifier_timeout_seconds: number;
+                        environment_build_timeout_seconds: number;
+                        agent_setup_timeout_seconds: number;
+                    } | {
+                        /** @enum {unknown} */
+                        phase: "finalize";
+                        harbor_version: string;
+                        job_config: {
+                            [key: string]: unknown;
+                        };
+                        job_lock_header: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {unknown} */
+                            phase: "trial" | "finalize";
+                            record_id: string;
+                            digest: string;
+                            adopted: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/campaigns/{campaign_id}/prepared-job/trials/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    campaign_id: string;
+                    task_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/campaigns/{campaign_id}/tasks/{task_id}/sandboxes": {
         parameters: {
             query?: never;

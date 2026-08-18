@@ -43,7 +43,10 @@ describe("HuggingFaceActions", () => {
               createdAt: "2026-08-16T00:00:00Z",
               flavor: "cpu-basic",
               status: { stage: "RUNNING", failureCount: 0 },
-              labels: { harbor_hf_action_id: base.action_id },
+              labels: {
+                harbor_hf_action_id: base.action_id,
+                harbor_hf_worker_role: "execution",
+              },
             },
           ]),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -136,6 +139,71 @@ describe("HuggingFaceActions", () => {
       resource_id: "job-2",
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("launches secret-free preparation Jobs with a preparation-only capability", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        if (!init?.method)
+          return new Response("[]", {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        const request = JSON.parse(String(init.body)) as {
+          labels: Record<string, string>;
+          environment: Record<string, string>;
+          secrets?: Record<string, string>;
+        };
+        expect(request.labels.harbor_hf_worker_role).toBe("preparation");
+        expect(request.environment).toMatchObject({
+          HARBOR_HF_WORKER_ROLE: "preparation",
+          HARBOR_HF_WORKER_REVISION: "abcdef0",
+        });
+        expect(
+          verifyWorkerCapability(
+            testToken,
+            request.environment.HARBOR_HF_WORKER_CAPABILITY,
+            "example",
+          ),
+        ).toMatchObject({
+          operations: ["campaign.read", "preparation.submit"],
+        });
+        expect(request.secrets).toBeUndefined();
+        return new Response(
+          JSON.stringify({
+            type: "job",
+            id: "job-preparation",
+            createdAt: "2026-08-16T00:00:00Z",
+            flavor: "cpu-basic",
+            status: { stage: "RUNNING", failureCount: 0 },
+            labels: request.labels,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new HuggingFaceActions({
+      namespace: "example",
+      accessToken: testToken,
+      controlUrl: "https://control.example",
+    });
+
+    await expect(
+      adapter.execute({
+        ...base,
+        action_id: "action-preparation",
+        payload: {
+          ...base.payload,
+          worker_role: "preparation",
+          worker_revision: "abcdef0",
+          inference_token: "forbidden",
+        },
+      }),
+    ).resolves.toMatchObject({
+      outcome: "created",
+      resource_id: "job-preparation",
+    });
   });
 
   it("injects only the dedicated inference credential when the profile requires it", async () => {
@@ -248,7 +316,10 @@ describe("HuggingFaceActions", () => {
               createdAt: "2026-08-16T00:00:00Z",
               flavor: "cpu-basic",
               status: { stage: "RUNNING", failureCount: 0 },
-              labels: { harbor_hf_action_id: base.action_id },
+              labels: {
+                harbor_hf_action_id: base.action_id,
+                harbor_hf_worker_role: "execution",
+              },
             },
           ]),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -287,7 +358,10 @@ describe("HuggingFaceActions", () => {
             createdAt: "2026-08-16T00:00:00Z",
             flavor: "cpu-basic",
             status: { stage: "CANCELED", failureCount: 0 },
-            labels: { harbor_hf_action_id: base.action_id },
+            labels: {
+              harbor_hf_action_id: base.action_id,
+              harbor_hf_worker_role: "execution",
+            },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),

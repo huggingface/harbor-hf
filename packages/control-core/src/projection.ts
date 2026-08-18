@@ -17,7 +17,12 @@ import type {
   PublicationReceipt,
   TerminalSelection,
 } from "@harbor-hf/contracts";
-import { canonicalJson, sha256, validateControlRecord } from "@harbor-hf/contracts";
+import {
+  canonicalJson,
+  ContractValidationError,
+  sha256,
+  validateControlRecord,
+} from "@harbor-hf/contracts";
 import Database from "better-sqlite3";
 import { Kysely, type Selectable, SqliteDialect, sql } from "kysely";
 import { verifyEvidenceReference, verifyWorkerEvidence } from "./evidence.js";
@@ -224,7 +229,25 @@ function parseRecord(bytes: Uint8Array, entry: ObjectEntry): HarborHFControlReco
   if (canonicalJson(value) !== text) {
     throw new ProjectionIntegrityError(`non-canonical JSON at ${entry.key}`);
   }
-  return validateControlRecord<HarborHFControlRecordV1>(value);
+  try {
+    return validateControlRecord<HarborHFControlRecordV1>(value);
+  } catch (error) {
+    const details =
+      error instanceof ContractValidationError
+        ? error.errors
+            .slice(0, 8)
+            .map(
+              (item) =>
+                `${item.instancePath || "/"} ${item.message ?? "invalid"} ${JSON.stringify(item.params)}`,
+            )
+            .join("; ")
+        : error instanceof Error
+          ? error.message
+          : "validation failed";
+    throw new ProjectionIntegrityError(
+      `invalid control record at ${entry.key}: ${details}`,
+    );
+  }
 }
 
 export class Projection {

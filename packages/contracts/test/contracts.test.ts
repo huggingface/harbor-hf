@@ -7,6 +7,7 @@ import {
   sha256,
   validateCampaignSubmission,
   validateControlRecord,
+  validatePreparedJobSubmission,
   validateResultCatalog,
   validateWorkerEvidenceManifest,
   workerEvidenceObjectPath,
@@ -47,6 +48,31 @@ describe("canonical contracts", () => {
     expect(validateWorkerEvidenceManifest(manifest)).toEqual(manifest);
     expect(() =>
       validateWorkerEvidenceManifest({ ...manifest, undocumented: true }),
+    ).toThrow(ContractValidationError);
+  });
+
+  it("validates bounded prepared Harbor job submissions", () => {
+    const digest = `sha256:${"a".repeat(64)}`;
+    const trial = {
+      phase: "trial",
+      task_id: "task-one-trial-1",
+      source_task_id: "task-one",
+      trial_index: 1,
+      input_digest: digest,
+      trial_lock: { schema_version: 2, task: { digest } },
+      image: `example.invalid/task@${digest}`,
+      cpus: 1,
+      memory_mb: 2048,
+      storage_mb: 10240,
+      gpus: 0,
+      agent_timeout_seconds: 900,
+      verifier_timeout_seconds: 600,
+      environment_build_timeout_seconds: 600,
+      agent_setup_timeout_seconds: 360,
+    };
+    expect(validatePreparedJobSubmission(trial)).toEqual(trial);
+    expect(() =>
+      validatePreparedJobSubmission({ ...trial, benchmark_name: "special-case" }),
     ).toThrow(ContractValidationError);
   });
 

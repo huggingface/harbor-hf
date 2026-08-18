@@ -7,130 +7,150 @@ from harbor_hf_agents.support import control_campaign_worker as worker
 DIGEST = f"sha256:{'a' * 64}"
 
 
-def _lock() -> dict:
-    sandbox = {
-        "image": f"example.invalid/base@{DIGEST}",
-        "hardware": "cpu-basic",
-        "timeout_seconds": 7200,
-        "idle_timeout_seconds": 3600,
-        "inference_token": "required",
-        "inference_upstream": "https://router.huggingface.co",
-        "inference_model": "example/model:together",
-        "inference_api": "chat-completions",
-        "inference_max_requests": 256,
-        "inference_max_concurrency": 1,
-        "inference_timeout_seconds": 1800,
-        "inference_max_output_tokens": 32768,
-        "root_bootstrap_command": ["/root/start"],
-        "reservation_microusd": 20000,
-        "active_hourly_cost_microusd": 10000,
-        "max_sandboxes": 2,
-        "max_commands": 128,
-        "max_command_seconds": 3600,
-        "max_transfer_bytes": 67108864,
-        "allowed_roots": ["/app", "/logs", "/tmp"],
+def _trial_lock() -> dict:
+    return {
+        "schema_version": 2,
+        "task": {
+            "name": "task-a",
+            "type": "git",
+            "digest": DIGEST,
+            "path": "tasks/task-a",
+            "git_url": "https://github.com/example/benchmark.git",
+            "git_commit_id": "b" * 40,
+        },
+        "install_only": False,
+        "timeout_multiplier": 1.0,
+        "agent": {
+            "import_path": "example.agent:Agent",
+            "model_name": "openai/example/model:together",
+            "kwargs": {},
+        },
+        "skills": [],
+        "environment": {
+            "import_path": (
+                "harbor_hf_agents.support.control_sandbox_environment:"
+                "ControlSandboxEnvironment"
+            ),
+            "delete": True,
+            "kwargs": {"control_task_id": "task-a-trial-1"},
+        },
+        "verifier": {"disable": False},
     }
+
+
+def _lock() -> dict:
     return {
         "campaign_id": "campaign-1",
-        "tasks": [{"task_id": "task-a-trial-1", "input_digest": DIGEST}],
+        "tasks": [
+            {
+                "task_id": "task-a-trial-1",
+                "source_task_id": "task-a",
+                "trial_index": 1,
+                "input_digest": DIGEST,
+            }
+        ],
         "profiles": [
-            {
-                "kind": "benchmark",
-                "spec": {
-                    "benchmark": "terminal-bench-2-1",
-                    "revision": "b" * 40,
-                    "task_ids": ["task-a-trial-1"],
-                    "task_digests": [DIGEST],
-                    "source_repository": "https://github.com/example/benchmark.git",
-                    "source_path": "tasks",
-                    "trials_per_source_task": 1,
-                },
-            },
-            {
-                "kind": "model",
-                "spec": {"model_id": "example/model", "revision": "c" * 40},
-            },
-            {
-                "kind": "harness",
-                "spec": {
-                    "agent": "pi",
-                    "revision": "0.84.2",
-                    "required_evidence": ["workspace"],
-                    "reasoning_effort": "high",
-                },
-            },
             {
                 "kind": "deployment",
                 "spec": {
                     "route": "hf_job",
-                    "models": ["model"],
-                    "harnesses": ["harness"],
-                    "job_image": f"example.invalid/worker@{DIGEST}",
-                    "job_command": ["true"],
-                    "hardware": "cpu-upgrade",
-                    "timeout_seconds": 86400,
-                    "trusted_worker": True,
-                    "inference_token": "forbidden",
-                    "sandbox": sandbox,
-                    "task_sandboxes": [
-                        {
-                            "task_id": "task-a-trial-1",
-                            "source_task_id": "task-a",
-                            "trial_index": 1,
-                            "image": f"example.invalid/task@{DIGEST}",
-                            "hardware": "cpu-basic",
-                            "timeout_seconds": 7200,
-                            "idle_timeout_seconds": 3600,
-                            "reservation_microusd": 20000,
-                            "active_hourly_cost_microusd": 10000,
-                            "max_command_seconds": 3600,
-                        }
-                    ],
-                    "inference_provider": "together",
-                    "input_price_microusd_per_million_tokens": 140000,
-                    "output_price_microusd_per_million_tokens": 280000,
+                    "preparation": "required",
                     "harbor_version": "0.21.0",
                     "worker_revision": "abcdef0",
                     "worker_concurrency": 4,
                     "worker_max_tasks_per_job": 1,
-                    "context_window": 131072,
+                    "input_price_microusd_per_million_tokens": 100_000,
+                    "output_price_microusd_per_million_tokens": 200_000,
                 },
-            },
+            }
         ],
     }
 
 
-def test_reads_exact_locked_worker_configuration(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _prepared_job() -> dict:
+    return {
+        "job_config": {
+            "job_name": "prepared",
+            "jobs_dir": "/tmp/jobs",
+            "n_attempts": 1,
+            "n_concurrent_trials": 1,
+            "retry": {"max_retries": 0},
+            "agents": [
+                {
+                    "import_path": "example.agent:Agent",
+                    "model_name": "openai/example/model:together",
+                }
+            ],
+        },
+        "trials": [
+            {
+                "task_id": "task-a-trial-1",
+                "record_id": "prepared-task-a",
+                "record_digest": DIGEST,
+            }
+        ],
+    }
+
+
+def _prepared_trial() -> dict:
+    return {
+        "record_id": "prepared-task-a",
+        "task_id": "task-a-trial-1",
+        "source_task_id": "task-a",
+        "trial_index": 1,
+        "input_digest": DIGEST,
+        "image": f"example.invalid/task@{DIGEST}",
+        "agent_timeout_seconds": 900,
+        "verifier_timeout_seconds": 600,
+        "environment_build_timeout_seconds": 600,
+        "agent_setup_timeout_seconds": 360,
+        "trial_lock": _trial_lock(),
+    }
+
+
+def _configure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HARBOR_HF_CAMPAIGN_ID", "campaign-1")
     monkeypatch.setenv("HARBOR_HF_ACTION_ID", "action-1")
-
-    config = worker._locked_config(_lock())
-
-    assert config.routed_model == "example/model:together"
-    assert config.harbor_version == "0.21.0"
-    assert config.max_tasks_per_job == 1
-    assert config.tasks == (
-        worker.LockedTask(
-            task_id="task-a-trial-1",
-            source_task_id="task-a",
-            trial_index=1,
-            input_digest=DIGEST,
-            image=f"example.invalid/task@{DIGEST}",
-            timeout_seconds=7200,
-        ),
+    monkeypatch.setenv("HARBOR_HF_TASK_IDS_JSON", '["task-a-trial-1"]')
+    monkeypatch.setattr(worker, "_read_prepared_job", lambda _: _prepared_job())
+    monkeypatch.setattr(
+        worker, "_read_prepared_trial", lambda _c, _t: _prepared_trial()
     )
 
 
-def test_rejects_unassigned_task_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HARBOR_HF_CAMPAIGN_ID", "campaign-1")
-    monkeypatch.setenv("HARBOR_HF_ACTION_ID", "action-1")
-    value = _lock()
-    value["profiles"][3]["spec"]["task_sandboxes"][0]["task_id"] = "other"
+def test_reads_exact_prepared_worker_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure(monkeypatch)
 
-    with pytest.raises(RuntimeError, match="do not match assigned"):
-        worker._locked_config(value)
+    config = worker._locked_config(_lock())
+
+    assert config.harbor_version == "0.21.0"
+    assert config.max_tasks_per_job == 1
+    assert len(config.tasks) == 1
+    assert config.tasks[0].task_id == "task-a-trial-1"
+    assert config.tasks[0].source_task_id == "task-a"
+    assert config.tasks[0].trial_lock.task.digest == DIGEST
+    assert config.tasks[0].timeout_seconds == 2_460
+
+
+def test_rejects_task_outside_prepared_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setenv("HARBOR_HF_TASK_IDS_JSON", '["other"]')
+
+    with pytest.raises(RuntimeError, match="outside the prepared job"):
+        worker._locked_config(_lock())
+
+
+def test_reconstructs_portable_git_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure(monkeypatch)
+    task = worker._locked_config(_lock()).tasks[0]
+
+    assert worker._task_source(task) == {
+        "path": "tasks/task-a",
+        "git_url": "https://github.com/example/benchmark.git",
+        "git_commit_id": "b" * 40,
+    }
 
 
 @pytest.mark.parametrize(
@@ -153,9 +173,8 @@ def test_classifies_terminal_outcomes(result, stderr, timed_out, expected) -> No
 
 
 def test_computes_conservative_token_cost(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HARBOR_HF_CAMPAIGN_ID", "campaign-1")
-    monkeypatch.setenv("HARBOR_HF_ACTION_ID", "action-1")
+    _configure(monkeypatch)
     config = worker._locked_config(_lock())
     result = {"agent_result": {"n_input_tokens": 1_000_000, "n_output_tokens": 500_000}}
 
-    assert worker._cost_microusd(config, result) == 280_000
+    assert worker._cost_microusd(config, result) == 200_000

@@ -82,24 +82,27 @@ service.
 ## Campaign preparation
 
 Harbor-HF uses one path for every campaign. A campaign starts with a normal
-Harbor job configuration and approved Harbor-HF profiles.
-The control service starts an isolated preparation Job that runs the pinned
-Harbor version without persistent secrets or inference access. Harbor resolves
-the job and returns its exact `lock.json` through a short-lived capability.
+Harbor job configuration and approved Harbor-HF profiles. The control service
+starts an isolated preparation Job that runs the pinned Harbor version without
+persistent secrets or inference access. Harbor resolves the job. The worker
+submits one `prepared.trial` record per logical task and then one `prepared.job`
+record through a short-lived capability.
 
-The Harbor lock is the source for trial identities, task and source digests,
-container image digests, resources, timeouts, verifier settings, agent settings,
-and Harbor version. Model and harness names remain configuration values. The
-control service and its workers do not branch on benchmark, model, model family,
-or harness names.
+The prepared records contain the exact Harbor trial locks and the data needed
+for admission, including source and task digests, resolved image digests,
+resources, phase time limits, agent settings, and Harbor version. The final
+record binds their order and the reconstructed Harbor job-lock digest. Model
+and harness names remain configuration values. The control service and its
+workers do not branch on benchmark, model, model family, or harness names.
 
 Before it admits execution, the control service checks that the lock is
 portable, complete, digest-pinned, compatible with the selected deployment,
 and within the campaign cost and resource limits. It rejects local paths,
 mutable source references, unpinned images, unsupported environment features,
-and settings that disagree with approved profiles. It then stores the lock as
-an immutable content-addressed record. Execution and all later recovery work
-use that stored lock and never resolve the benchmark source again.
+and settings that disagree with approved profiles. It stores each prepared
+record immutably. Execution and all later recovery work use those records.
+Harbor fetches the exact locked Git or package task without resolving the
+benchmark dataset again.
 
 Deployment profiles contain Hugging Face infrastructure and safety limits. They
 do not contain copies of benchmark task catalogs. A new Harbor-supported
