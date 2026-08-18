@@ -231,6 +231,7 @@
                         "object_count",
                         "last_rebuild_at",
                         "last_sync_at",
+                        "event_cursor",
                         "integrity_error"
                       ],
                       "properties": {
@@ -254,6 +255,16 @@
                           ]
                         },
                         "last_sync_at": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "event_cursor": {
                           "anyOf": [
                             {
                               "type": "string"

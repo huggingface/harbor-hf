@@ -12,7 +12,7 @@ class FakeEventSource {
   onmessage: ((event: MessageEvent<string>) => void) | null = null;
   closed = false;
 
-  constructor() {
+  constructor(readonly url: string) {
     FakeEventSource.instances.push(this);
   }
 
@@ -59,6 +59,16 @@ describe("live query updates", () => {
     expect(affected).toContainEqual(keys.task("campaign-1", "task-1"));
     expect(affected).not.toContainEqual(keys.session);
     expect(affected).not.toContainEqual(keys.results);
+  });
+
+  it("resumes SSE from the projection cursor before page queries start", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    renderHook(() => useLiveUpdates(true, "cursor-one"), { wrapper });
+    expect(FakeEventSource.instances[0]?.url).toBe("/api/v1/events?cursor=cursor-one");
   });
 
   it("does not poll while SSE stays connected", () => {

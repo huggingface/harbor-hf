@@ -16,6 +16,7 @@ function system(writeMode: "disabled" | "canary" | "enabled" = "canary") {
       object_count: 12,
       last_rebuild_at: "2026-08-18T00:00:00.000Z",
       last_sync_at: "2026-08-18T00:01:00.000Z",
+      event_cursor: null,
       integrity_error: null,
     },
     resource_contract: { spaces: 1, buckets: 1, operator_secrets: 2 },

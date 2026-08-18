@@ -230,16 +230,20 @@ export function affectedQueryKeys(event: ControlEvent): QueryKey[] {
   return affected;
 }
 
-export function useLiveUpdates(enabled: boolean): LiveState {
+export function useLiveUpdates(
+  enabled: boolean,
+  initialCursor?: string | null,
+): LiveState {
   const client = useQueryClient();
   const [visible, setVisible] = useState(() => document.visibilityState !== "hidden");
   const [state, setState] = useState<LiveState>({
-    status: navigator.onLine === false ? "offline" : "reconnecting",
+    status: enabled && navigator.onLine !== false ? "reconnecting" : "offline",
     lastSuccessfulUpdate: null,
     retryAt: null,
   });
   const attempts = useRef(0);
   const lastEventId = useRef<string | null>(null);
+  if (initialCursor && !lastEventId.current) lastEventId.current = initialCursor;
 
   useEffect(() => {
     const onVisibility = () => setVisible(document.visibilityState !== "hidden");
@@ -289,6 +293,7 @@ export function useLiveUpdates(enabled: boolean): LiveState {
                     ...current.projection,
                     object_count: current.projection.object_count + 1,
                     last_sync_at: event.occurred_at,
+                    event_cursor: event.id ?? current.projection.event_cursor,
                   },
                 }
               : current,

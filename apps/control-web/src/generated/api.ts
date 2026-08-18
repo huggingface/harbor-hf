@@ -266,6 +266,7 @@ export interface paths {
                                 object_count: number;
                                 last_rebuild_at: string | null;
                                 last_sync_at: string | null;
+                                event_cursor: string | null;
                                 integrity_error: string | null;
                             };
                             resource_contract: {

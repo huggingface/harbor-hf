@@ -17,7 +17,7 @@ import {
   TaskPage,
 } from "./pages";
 import { keys, useLiveUpdates, useSession, useSystem } from "./queries";
-import { Button, Card, ErrorNotice, Loading } from "./ui";
+import { Button, Card, ErrorNotice, Loading, QueryContent } from "./ui";
 
 function AuthenticatedApp({
   actor,
@@ -30,7 +30,10 @@ function AuthenticatedApp({
 }) {
   const client = useQueryClient();
   const system = useSystem();
-  const live = useLiveUpdates(true);
+  const live = useLiveUpdates(
+    Boolean(system.data),
+    system.data?.projection.event_cursor,
+  );
   const logout = useMutation({
     mutationFn: signOut,
     onSuccess: () => {
@@ -49,23 +52,27 @@ function AuthenticatedApp({
         writeMode={writeMode}
         live={live}
         sessionExpiresAt={expiresAt}
-        serviceError={sessionError ?? system.error}
+        serviceError={sessionError ?? (system.data ? system.error : null)}
         onSignOut={() => logout.mutate()}
         signingOut={logout.isPending}
       >
-        <Routes>
-          <Route path="/" element={<OverviewPage />} />
-          <Route path="/campaigns" element={<CampaignsPage />} />
-          <Route path="/campaigns/:campaignId" element={<CampaignPage />} />
-          <Route path="/campaigns/:campaignId/tasks/:taskId" element={<TaskPage />} />
-          <Route path="/jobs" element={<JobsPage />} />
-          <Route path="/endpoints" element={<EndpointsPage />} />
-          <Route path="/results" element={<ResultsPage />} />
-          <Route path="/results/:publicationId" element={<ResultPage />} />
-          <Route path="/profiles" element={<ProfilesPage />} />
-          <Route path="/audit" element={<AuditPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
+        {system.data ? (
+          <Routes>
+            <Route path="/" element={<OverviewPage />} />
+            <Route path="/campaigns" element={<CampaignsPage />} />
+            <Route path="/campaigns/:campaignId" element={<CampaignPage />} />
+            <Route path="/campaigns/:campaignId/tasks/:taskId" element={<TaskPage />} />
+            <Route path="/jobs" element={<JobsPage />} />
+            <Route path="/endpoints" element={<EndpointsPage />} />
+            <Route path="/results" element={<ResultsPage />} />
+            <Route path="/results/:publicationId" element={<ResultPage />} />
+            <Route path="/profiles" element={<ProfilesPage />} />
+            <Route path="/audit" element={<AuditPage />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        ) : (
+          <QueryContent query={system}>{null}</QueryContent>
+        )}
       </Layout>
     </ControlStateProvider>
   );

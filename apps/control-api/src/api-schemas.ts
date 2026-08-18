@@ -340,6 +340,7 @@ export const systemSchema = {
         "object_count",
         "last_rebuild_at",
         "last_sync_at",
+        "event_cursor",
         "integrity_error",
       ],
       properties: {
@@ -348,6 +349,7 @@ export const systemSchema = {
         object_count: integer,
         last_rebuild_at: nullableString,
         last_sync_at: nullableString,
+        event_cursor: nullableString,
         integrity_error: nullableString,
       },
     },

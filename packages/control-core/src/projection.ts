@@ -192,6 +192,7 @@ export interface SystemView {
   object_count: number;
   last_rebuild_at: string | null;
   last_sync_at: string | null;
+  event_cursor: string | null;
   integrity_error: string | null;
 }
 
@@ -237,6 +238,7 @@ export class Projection {
     object_count: 0,
     last_rebuild_at: null,
     last_sync_at: null,
+    event_cursor: null,
     integrity_error: null,
   };
 
@@ -261,6 +263,16 @@ export class Projection {
 
   system(): SystemView {
     return { ...this.state };
+  }
+
+  private async latestEventCursor(): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("objects")
+      .select(["key", "created_at"])
+      .orderBy("created_at", "desc")
+      .orderBy("key", "desc")
+      .executeTakeFirst();
+    return row ? eventCursor(row.created_at, row.key) : null;
   }
 
   async objectDigest(key: string): Promise<string | null> {
@@ -480,6 +492,7 @@ export class Projection {
         object_count: entries.length,
         last_rebuild_at: new Date().toISOString(),
         last_sync_at: new Date().toISOString(),
+        event_cursor: await this.latestEventCursor(),
         integrity_error: null,
       };
     } catch (error) {
@@ -530,6 +543,7 @@ export class Projection {
         rebuilding: false,
         object_count: this.state.object_count + ingested,
         last_sync_at: new Date().toISOString(),
+        event_cursor: await this.latestEventCursor(),
         integrity_error: null,
       };
       return ingested;
@@ -557,6 +571,7 @@ export class Projection {
       ...this.state,
       object_count: this.state.object_count + 1,
       last_sync_at: new Date().toISOString(),
+      event_cursor: await this.latestEventCursor(),
     };
   }
 
