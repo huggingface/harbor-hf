@@ -117,6 +117,14 @@ def _assigned_task_ids() -> tuple[str, ...]:
     return tuple(value)
 
 
+def _bounded_assignments(deployment: dict[str, Any]) -> tuple[int, tuple[str, ...]]:
+    maximum = int(deployment["worker_max_tasks_per_job"])
+    assigned = _assigned_task_ids()
+    if len(assigned) > maximum:
+        raise RuntimeError("worker assignment exceeds its locked task limit")
+    return maximum, assigned
+
+
 def _locked_config(lock: dict[str, Any]) -> WorkerConfig:
     campaign_id = _required("HARBOR_HF_CAMPAIGN_ID")
     action_id = _required("HARBOR_HF_ACTION_ID")
@@ -139,8 +147,7 @@ def _locked_config(lock: dict[str, Any]) -> WorkerConfig:
         for item in lock.get("tasks", [])
         if isinstance(item, dict) and isinstance(item.get("task_id"), str)
     }
-    max_tasks_per_job = int(deployment["worker_max_tasks_per_job"])
-    assigned = _assigned_task_ids()[:max_tasks_per_job]
+    max_tasks_per_job, assigned = _bounded_assignments(deployment)
     if any(
         task_id not in references or task_id not in campaign_tasks
         for task_id in assigned
@@ -534,7 +541,7 @@ def main() -> None:  # noqa: C901 -- bounded batch orchestration
         failures: list[BaseException] = []
         completed: list[str] = []
         lock_guard = threading.Lock()
-        assigned_tasks = config.tasks[: config.max_tasks_per_job]
+        assigned_tasks = config.tasks
         width = min(config.concurrency, len(assigned_tasks))
         with concurrent.futures.ThreadPoolExecutor(max_workers=width) as executor:
             for offset in range(0, len(assigned_tasks), width):

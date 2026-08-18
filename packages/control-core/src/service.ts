@@ -129,6 +129,7 @@ export class ControlService {
   private retryAdmissionQueue: Promise<void> = Promise.resolve();
   private submitQueue: Promise<void> = Promise.resolve();
   private preparationQueue: Promise<void> = Promise.resolve();
+  private sandboxAdmissionQueue: Promise<void> = Promise.resolve();
 
   constructor(
     readonly namespace: string,
@@ -433,6 +434,67 @@ export class ControlService {
     };
   }
 
+  async admitSandboxCreate(
+    intent: ActionIntent,
+    maximumSandboxes: number,
+  ): Promise<void> {
+    const operation = this.sandboxAdmissionQueue.then(() =>
+      this.admitSandboxCreateSerialized(intent, maximumSandboxes),
+    );
+    this.sandboxAdmissionQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  private async admitSandboxCreateSerialized(
+    intent: ActionIntent,
+    maximumSandboxes: number,
+  ): Promise<void> {
+    if (intent.action_kind !== "sandbox.create" || maximumSandboxes < 1)
+      throw new PolicyError("Sandbox create admission is invalid");
+    const existing = await this.projection.action(intent.action_id);
+    if (existing?.observed_state === "budget-rejected")
+      throw new PolicyError("Sandbox reservation exceeds the campaign ceiling");
+    const taskId = intent.payload.task_id;
+    if (typeof taskId !== "string")
+      throw new PolicyError("Sandbox create admission has no task ID");
+    const creates = (await this.projection.campaignActions(intent.campaign_id)).filter(
+      (row) => {
+        if (
+          row.action_kind !== "sandbox.create" ||
+          row.outcome === "failed" ||
+          row.action_id === intent.action_id
+        )
+          return false;
+        const recorded = JSON.parse(row.intent_body) as ActionIntent;
+        return recorded.payload.task_id === taskId;
+      },
+    );
+    if (!existing && creates.length >= maximumSandboxes)
+      throw new PolicyError("Sandbox count exceeds immutable policy");
+    await this.writeAction(intent);
+    const policy = intent.payload.sandbox;
+    if (!policy) throw new PolicyError("Sandbox create has no immutable policy");
+    if (
+      !(await this.reserveSandbox(
+        intent.campaign_id,
+        intent.action_id,
+        intent.created_at,
+        policy.reservation_microusd,
+      ))
+    ) {
+      const receipt = await this.receipt(intent, {
+        outcome: "failed",
+        observed_state: "budget-rejected",
+        error_code: "campaign_ceiling_exceeded",
+      });
+      await this.markAdvanced(intent, receipt);
+      throw new PolicyError("Sandbox reservation exceeds the campaign ceiling");
+    }
+  }
+
   async submit(
     raw: unknown,
     idempotencyKey: string,
@@ -485,15 +547,19 @@ export class ControlService {
     if (deployment.route !== "hf_job")
       throw new PolicyError("imported deployment profiles cannot launch campaigns");
     const launchPolicy = profileSpec<LaunchPolicySpec>(profiles, "launch_policy");
+    const tasks = existingLock?.tasks ?? this.resolver.tasks(input.benchmark);
+    const executionJobs =
+      preparationRequired(deployment) && deployment.worker_max_tasks_per_job
+        ? Math.ceil(tasks.length / deployment.worker_max_tasks_per_job)
+        : 1;
     const initialReservation =
-      launchPolicy.reservation_microusd +
+      launchPolicy.reservation_microusd * executionJobs +
       (preparationRequired(deployment)
         ? (launchPolicy.preparation_reservation_microusd ?? 0) *
           (launchPolicy.max_preparation_attempts ?? 1)
         : 0);
     if (initialReservation > input.ceiling_microusd)
       throw new PolicyError("launch reservation exceeds the campaign ceiling");
-    const tasks = existingLock?.tasks ?? this.resolver.tasks(input.benchmark);
     const benchmark = profileSpec<BenchmarkProfileSpec>(profiles, "benchmark");
     const model = profileSpec<ModelProfileSpec>(profiles, "model");
     const harness = profileSpec<HarnessProfileSpec>(profiles, "harness");

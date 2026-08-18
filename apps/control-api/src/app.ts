@@ -1105,14 +1105,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         "sandbox.create",
       );
       if (!runtime.sandboxes) throw new PolicyError("Sandbox gateway is unavailable");
-      const creates = (await runtime.projection.campaignActions(campaign_id)).filter(
-        (row) => {
-          if (row.action_kind !== "sandbox.create" || row.outcome === "failed")
-            return false;
-          const intent = JSON.parse(row.intent_body) as ActionIntent;
-          return intent.payload.task_id === task_id;
-        },
-      );
       const target = `sandbox:${task_id}`;
       const payload = { task_id, sandbox: context.policy };
       const candidate = runtime.service.actionIntent(
@@ -1123,31 +1115,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         payload,
         domainActor(request),
       );
-      if (
-        creates.length >= context.policy.max_sandboxes &&
-        !creates.some((row) => row.action_id === candidate.action_id)
-      )
-        throw new PolicyError("Sandbox count exceeds immutable policy");
-      await runtime.service.writeAction(candidate);
-      const recordedCandidate = await runtime.projection.action(candidate.action_id);
-      if (recordedCandidate?.observed_state === "budget-rejected")
-        throw new PolicyError("Sandbox reservation exceeds the campaign ceiling");
-      if (
-        !(await runtime.service.reserveSandbox(
-          campaign_id,
-          candidate.action_id,
-          candidate.created_at,
-          context.policy.reservation_microusd,
-        ))
-      ) {
-        const receipt = await runtime.service.receipt(candidate, {
-          outcome: "failed",
-          observed_state: "budget-rejected",
-          error_code: "campaign_ceiling_exceeded",
-        });
-        await runtime.service.markAdvanced(candidate, receipt);
-        throw new PolicyError("Sandbox reservation exceeds the campaign ceiling");
-      }
+      await runtime.service.admitSandboxCreate(candidate, context.policy.max_sandboxes);
       return executeSandboxAction(
         request,
         campaign_id,

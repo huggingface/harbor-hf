@@ -502,11 +502,23 @@ export class Reconciler {
     const deployment = profile(lock, "deployment") as DeploymentProfileSpec;
     if (deployment.route !== "hf_job")
       throw new PolicyError("imported deployments cannot launch execution Jobs");
+    const maximumTasks = deployment.worker_max_tasks_per_job ?? taskIds.length;
+    if (taskIds.length > maximumTasks) {
+      for (let offset = 0; offset < taskIds.length; offset += maximumTasks)
+        await this.launchExecution(
+          lock,
+          createdAt,
+          generation,
+          taskIds.slice(offset, offset + maximumTasks),
+        );
+      return;
+    }
+    const batchKey = sha256(canonicalJson(taskIds)).slice(7, 23);
     const policy = profile(lock, "launch_policy");
     const reservation = profileScalar<number>(policy, "reservation_microusd", "number");
     await this.reserveInitialAction(
       lock.campaign_id,
-      "execution",
+      `execution-${batchKey}`,
       generation,
       reservation,
       createdAt,
@@ -551,7 +563,7 @@ export class Reconciler {
     const intent = this.service.actionIntent(
       lock.campaign_id,
       "job.launch",
-      "campaign-tasks",
+      `campaign-tasks-${batchKey}`,
       generation,
       {
         worker_role: "execution",
@@ -881,29 +893,47 @@ export class Reconciler {
     await this.service.selectTerminal(attempt, "valid terminal worker outcome");
   }
 
-  private async continueCancellation(campaignId: string): Promise<void> {
-    const actions = await this.projection.campaignActions(campaignId);
-    const unresolvedLaunches = actions.filter(
-      (action) => action.action_kind === "job.launch" && action.receipt_body === null,
-    );
-    for (const launch of unresolvedLaunches) {
-      if (await this.projection.actionDispatch(launch.action_id)) return;
-    }
-    const unresolvedSandboxes = actions.filter(
+  private async ensureSandboxCleanup(
+    campaignId: string,
+    actions?: Awaited<ReturnType<Projection["campaignActions"]>>,
+  ): Promise<boolean> {
+    const campaignActions =
+      actions ?? (await this.projection.campaignActions(campaignId));
+    const unresolvedCreates = campaignActions.filter(
       (action) =>
         action.action_kind === "sandbox.create" && action.receipt_body === null,
     );
-    if (unresolvedSandboxes.length > 0) return;
-    const sandboxCreates = actions.filter(
+    if (unresolvedCreates.length > 0) return true;
+    const pendingData = campaignActions.filter(
+      (action) =>
+        ["sandbox.exec", "sandbox.write", "sandbox.read"].includes(
+          action.action_kind,
+        ) && action.receipt_body === null,
+    );
+    if (pendingData.length > 0) {
+      for (const action of pendingData) {
+        const intent = JSON.parse(action.intent_body) as ActionIntent;
+        const dispatched = await this.projection.actionDispatch(action.action_id);
+        const receipt = await this.service.receipt(intent, {
+          outcome: "completed",
+          observed_state: dispatched
+            ? "suppressed-sandbox-cleanup-ambiguous"
+            : "suppressed-sandbox-cleanup-before-dispatch",
+        });
+        await this.service.markAdvanced(intent, receipt);
+      }
+      return true;
+    }
+    const creates = campaignActions.filter(
       (action) =>
         action.action_kind === "sandbox.create" &&
         action.receipt_body !== null &&
         action.resource_id !== null,
     );
-    let sandboxCleanupPending = false;
-    for (const create of sandboxCreates) {
+    let pending = false;
+    for (const create of creates) {
       const createIntent = JSON.parse(create.intent_body) as ActionIntent;
-      const closes = actions.filter((action) => {
+      const closes = campaignActions.filter((action) => {
         if (action.action_kind !== "sandbox.close") return false;
         const closeIntent = JSON.parse(action.intent_body) as ActionIntent;
         return closeIntent.payload.sandbox_create_action_id === create.action_id;
@@ -915,7 +945,7 @@ export class Reconciler {
         )
       )
         continue;
-      sandboxCleanupPending = true;
+      pending = true;
       if (closes.some((action) => action.receipt_body === null)) continue;
       if (
         !create.resource_id ||
@@ -938,27 +968,18 @@ export class Reconciler {
         ),
       );
     }
-    if (sandboxCleanupPending) return;
-    const pendingSandboxData = actions.filter(
-      (action) =>
-        ["sandbox.exec", "sandbox.write", "sandbox.read"].includes(
-          action.action_kind,
-        ) && action.receipt_body === null,
+    return pending;
+  }
+
+  private async continueCancellation(campaignId: string): Promise<void> {
+    const actions = await this.projection.campaignActions(campaignId);
+    const unresolvedLaunches = actions.filter(
+      (action) => action.action_kind === "job.launch" && action.receipt_body === null,
     );
-    if (pendingSandboxData.length > 0) {
-      for (const action of pendingSandboxData) {
-        const intent = JSON.parse(action.intent_body) as ActionIntent;
-        const dispatched = await this.projection.actionDispatch(action.action_id);
-        const receipt = await this.service.receipt(intent, {
-          outcome: "completed",
-          observed_state: dispatched
-            ? "suppressed-cancelled-ambiguous"
-            : "suppressed-cancelled-before-dispatch",
-        });
-        await this.service.markAdvanced(intent, receipt);
-      }
-      return;
+    for (const launch of unresolvedLaunches) {
+      if (await this.projection.actionDispatch(launch.action_id)) return;
     }
+    if (await this.ensureSandboxCleanup(campaignId, actions)) return;
     const launches = actions.filter(
       (action) =>
         action.action_kind === "job.launch" &&
@@ -1099,6 +1120,7 @@ export class Reconciler {
       campaign.terminal_tasks !== campaign.total_tasks
     )
       return false;
+    if (await this.ensureSandboxCleanup(campaignId)) return true;
     if (await this.ensureEndpointCleanup(campaignId)) return true;
     const refreshed = await this.projection.campaign(campaignId);
     if (!refreshed || refreshed.pending_actions > 0 || refreshed.cleanup_pending)
