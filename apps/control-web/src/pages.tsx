@@ -369,8 +369,11 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
     },
   });
   const values = form.watch();
-  const approved = (profiles.data?.items ?? []).filter((profile) =>
-    Boolean(profile.approved_alias),
+  const approved = (profiles.data?.items ?? []).flatMap((profile) =>
+    profile.approved_aliases.map((approved_alias) => ({
+      ...profile,
+      approved_alias,
+    })),
   );
   const options = (kind: string) =>
     approved.filter((profile) => {
@@ -1432,9 +1435,9 @@ export function ProfilesPage() {
       ),
     },
     {
-      accessorKey: "alias",
-      header: "Alias",
-      cell: ({ getValue }) => String(getValue() ?? "—"),
+      accessorKey: "approved_aliases",
+      header: "Approved aliases",
+      cell: ({ row }) => row.original.approved_aliases.join(", ") || "—",
     },
   ];
   return (

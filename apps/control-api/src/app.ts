@@ -1746,17 +1746,17 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       const limit = query.limit ?? 50;
       const offset = cursorOffset(query.cursor);
       const items = await runtime.projection.profiles(limit + 1, offset);
-      const aliases = new Map(
-        runtime.service.resolver
-          .aliases()
-          .map((item) => [`${item.kind}:${item.profile_id}`, item.alias]),
-      );
+      const aliases = new Map<string, string[]>();
+      for (const item of runtime.service.resolver.aliases()) {
+        const key = `${item.kind}:${item.profile_id}`;
+        aliases.set(key, [...(aliases.get(key) ?? []), item.alias].sort());
+      }
       return offsetPage(
         items.map((item) =>
           redactSandboxTopology({
             ...item,
-            approved_alias:
-              aliases.get(`${item.profile_kind}:${item.profile_id}`) ?? null,
+            approved_aliases:
+              aliases.get(`${item.profile_kind}:${item.profile_id}`) ?? [],
             spec: JSON.parse(item.spec_body) as Record<string, unknown>,
           }),
         ),

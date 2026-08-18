@@ -1216,7 +1216,7 @@ export interface paths {
                                 source: string;
                                 promotion_state: string | null;
                                 alias: string | null;
-                                approved_alias: string | null;
+                                approved_aliases: string[];
                                 spec: {
                                     [key: string]: unknown;
                                 };

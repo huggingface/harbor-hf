@@ -317,7 +317,7 @@ describe("control API", () => {
     });
     const firstProfileItem = firstProfiles.json().items[0] as Record<string, unknown>;
     const firstProfile = firstProfileItem.profile_id as string;
-    expect(firstProfileItem.approved_alias).toEqual(expect.any(String));
+    expect(firstProfileItem.approved_aliases).toEqual([expect.any(String)]);
     expect(firstProfileItem.spec).toEqual(expect.any(Object));
     const cursor = firstProfiles.json().next_cursor as string;
     const secondProfiles = await app.inject({

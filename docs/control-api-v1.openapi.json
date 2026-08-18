@@ -2137,7 +2137,7 @@
                           "source",
                           "promotion_state",
                           "alias",
-                          "approved_alias",
+                          "approved_aliases",
                           "spec",
                           "created_at"
                         ],
@@ -2174,15 +2174,12 @@
                               }
                             ]
                           },
-                          "approved_alias": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
-                            ]
+                          "approved_aliases": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "maxItems": 100
                           },
                           "spec": {
                             "type": "object",
