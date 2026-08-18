@@ -16,6 +16,7 @@ Inference-token amendment approved at: 2026-08-17T15:37:46Z
 Sandbox-lifecycle amendment approved at: 2026-08-17T18:39:15Z
 Finalization amendment approved at: 2026-08-18T00:25:01Z
 Terminal-Bench 2.1 amendment approved at: 2026-08-18T10:40:26Z
+Terminal-Bench 2.1 USD 300 campaign-ceiling amendment approved at: 2026-08-18T17:20:36Z
 
 ### Scope
 
@@ -38,6 +39,7 @@ Terminal-Bench 2.1 amendment approved at: 2026-08-18T10:40:26Z
 - Deploy an exact merged source revision with writes disabled first.
 - Use `cpu-upgrade` at USD 0.03 per active hour for the always-on control service.
 - Keep total project spend within USD 300. This includes campaign, recovery, provider and endpoint costs plus the control service.
+- For the next Terminal-Bench 2.1 production campaign, use the later explicitly approved USD 300 hard campaign ceiling. This campaign-specific amendment supersedes the preceding cumulative limit for that campaign only. Preserve and report all earlier spend separately.
 - Do not create another persistent Space, Bucket, repository, Dataset, schedule, credential beyond the approved inference credential, lease store, status store, backup store, or result store.
 - Do not rerun valid logical tasks or use inference during migration and publication recovery.
 - Keep credential values, private resource identifiers, operator paths, and private topology out of Git and browsers. Do not expose credentials in logs or evidence; the approved inference credential may appear only in the trusted worker or root-owned inference bridge environment.
@@ -75,3 +77,4 @@ No project-scope amendment remains pending. Operational gates still apply:
 
 - At 2026-08-18T00:25:01Z, approved all remaining project work needed for autonomous finalization, including result-catalog migration and viewer replacement. This did not authorize deleting legacy resources or bypassing the measured substantial paid-compute gate.
 - At 2026-08-18T10:40:26Z, directed the project to run DeepSeek V4 Flash on Terminal-Bench 2.1 autonomously while separate web UI work proceeds. The campaign uses the existing enforced total project limit and does not authorize a new credential, persistent store, or unreviewed runtime.
+- At 2026-08-18T17:20:36Z, set a USD 300 hard ceiling for the next Terminal-Bench 2.1 production campaign. This later campaign-specific limit supersedes the earlier cumulative USD 300 limit for that campaign only; earlier spend remains part of the reported project cost.
