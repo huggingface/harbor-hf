@@ -257,6 +257,12 @@ export class HuggingFaceActions implements ExternalActionPort {
     const taskIds = stringValues(intent, "task_ids");
     if (role === "preparation" && tokenPolicy !== "forbidden")
       throw new Error("preparation Jobs cannot receive an inference credential");
+    if (
+      role === "execution" &&
+      intent.payload.prepared_job_digest &&
+      tokenPolicy !== "forbidden"
+    )
+      throw new Error("prepared execution Jobs cannot receive an inference credential");
     const sandboxAuthorized =
       role === "execution" &&
       (Boolean(intent.payload.sandbox) ||

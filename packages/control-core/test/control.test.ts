@@ -643,7 +643,7 @@ describe("control service", () => {
     ).not.toBeNull();
     expect(await control.projection.action(command.action_id)).toMatchObject({
       outcome: "completed",
-      observed_state: "suppressed-cancelled-ambiguous",
+      observed_state: "suppressed-sandbox-cleanup-ambiguous",
     });
     const campaign = await control.projection.campaign(result.campaign_id);
     expect(campaign).toMatchObject({
@@ -652,16 +652,16 @@ describe("control service", () => {
     });
   });
 
-  it("proves an ambiguous Sandbox create absent before cancellation seals", async () => {
+  it("closes active Sandboxes before normal publication", async () => {
     const control = await createTestControl();
     controls.push(control);
     const result = await control.service.submit(
       submission,
-      "ambiguous-sandbox-cancellation-key",
+      "sandbox-publication-key",
       operator,
     );
     const policy: SandboxPolicy = {
-      image: `registry.example/sandbox@sha256:${"b".repeat(64)}`,
+      image: `registry.example/sandbox@sha256:${"c".repeat(64)}`,
       hardware: "cpu-basic",
       timeout_seconds: 3_600,
       idle_timeout_seconds: 600,
@@ -688,6 +688,86 @@ describe("control service", () => {
         create.action_id,
         create.created_at,
         0,
+      ),
+    ).toBe(true);
+    const observed: string[] = [];
+    const noop = new NoopActions();
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        observed.push(intent.action_kind);
+        if (intent.action_kind === "sandbox.create")
+          return {
+            outcome: "created",
+            observed_state: "RUNNING",
+            resource_id: "sandbox-publication-resource",
+          };
+        if (intent.action_kind === "sandbox.close")
+          return {
+            outcome: "completed",
+            observed_state: "CANCELED",
+            resource_id: "sandbox-publication-resource",
+            cost_microusd: 0,
+          };
+        return noop.execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 24);
+
+    expect(observed).toContain("sandbox.close");
+    const close = (await control.projection.campaignActions(result.campaign_id)).find(
+      (action) => action.action_kind === "sandbox.close",
+    );
+    expect(close?.observed_state).toBe("CANCELED");
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      publication_status: "published",
+    });
+  });
+
+  it("proves an ambiguous Sandbox create absent before cancellation seals", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 1_000 },
+      "ambiguous-sandbox-cancellation-key",
+      operator,
+    );
+    const policy: SandboxPolicy = {
+      image: `registry.example/sandbox@sha256:${"b".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 3_600,
+      idle_timeout_seconds: 600,
+      inference_token: "forbidden",
+      reservation_microusd: 1_000,
+      active_hourly_cost_microusd: 0,
+      max_sandboxes: 1,
+      max_commands: 8,
+      max_command_seconds: 600,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/logs"],
+    };
+    const create = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.create",
+      "control-smoke-task",
+      0,
+      { task_id: "control-smoke-task", sandbox: policy },
+    );
+    await control.service.writeAction(create);
+    expect(
+      await control.service.reserveSandbox(
+        result.campaign_id,
+        create.action_id,
+        create.created_at,
+        1_000,
       ),
     ).toBe(true);
     const noop = new NoopActions();
@@ -739,6 +819,8 @@ describe("control service", () => {
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       status: "completed",
       terminal_tasks: 1,
+      reserved_microusd: 0,
+      observed_microusd: 0,
     });
   });
 

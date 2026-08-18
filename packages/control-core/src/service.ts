@@ -823,7 +823,18 @@ export class ControlService {
       receipt.campaign_id !== intent.campaign_id
     )
       throw new PolicyError("advanced action receipt does not match its intent");
-    if (intent.action_kind === "sandbox.close") {
+    if (intent.action_kind === "sandbox.create" && !receipt.resource_id) {
+      const policy = intent.payload.sandbox;
+      if (!policy)
+        throw new PolicyError("failed Sandbox create is missing budget identity");
+      await this.finalizeSandboxBudget(
+        intent.campaign_id,
+        intent.action_id,
+        receipt.created_at,
+        policy.reservation_microusd,
+        receipt.cost_microusd ?? 0,
+      );
+    } else if (intent.action_kind === "sandbox.close") {
       const policy = intent.payload.sandbox;
       const createActionId = intent.payload.sandbox_create_action_id;
       if (!policy || typeof createActionId !== "string")

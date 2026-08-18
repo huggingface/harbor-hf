@@ -163,6 +163,20 @@ describe("prepared campaign profiles", () => {
     });
   });
 
+  it("rejects inference credentials in prepared outer Jobs", () => {
+    const value = {
+      ...deployment(),
+      inference_token: "required" as const,
+      inference_max_requests: 64,
+      inference_max_concurrency: 1,
+      inference_timeout_seconds: 600,
+      inference_max_output_tokens: 32_768,
+    };
+    expect(() =>
+      validatePreparedCampaignProfiles(value, benchmark, model, harness, tasks),
+    ).toThrow("must not receive an inference credential");
+  });
+
   it("rejects incomplete benchmark source mappings", () => {
     expect(() =>
       validatePreparedCampaignProfiles(

@@ -121,6 +121,10 @@ export function validatePreparedCampaignProfiles(
     throw new ProfileResolutionError(
       "prepared campaigns require an HF Job Sandbox template",
     );
+  if ((deployment.inference_token ?? "forbidden") !== "forbidden")
+    throw new ProfileResolutionError(
+      "prepared execution Jobs must not receive an inference credential",
+    );
 }
 
 function selectFlavor(template: SandboxTemplate, trial: PreparedTrial) {

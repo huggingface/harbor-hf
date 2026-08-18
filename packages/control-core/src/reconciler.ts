@@ -514,6 +514,10 @@ export class Reconciler {
       return;
     }
     const batchKey = sha256(canonicalJson(taskIds)).slice(7, 23);
+    const target =
+      taskIds.length === lock.tasks.length
+        ? "campaign-tasks"
+        : `campaign-tasks-${batchKey}`;
     const policy = profile(lock, "launch_policy");
     const reservation = profileScalar<number>(policy, "reservation_microusd", "number");
     await this.reserveInitialAction(
@@ -563,7 +567,7 @@ export class Reconciler {
     const intent = this.service.actionIntent(
       lock.campaign_id,
       "job.launch",
-      `campaign-tasks-${batchKey}`,
+      target,
       generation,
       {
         worker_role: "execution",
