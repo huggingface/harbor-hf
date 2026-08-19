@@ -79,6 +79,12 @@ function rawJob(state = "RUNNING") {
 }
 
 const createIntent = intent("sandbox.create", { task_id: taskId, sandbox: policy });
+const observeIntent = intent("sandbox.observe", {
+  task_id: taskId,
+  sandbox_create_action_id: sandboxActionId,
+  resource_id: remoteId,
+  sandbox: policy,
+});
 const execIntent = intent("sandbox.exec", {
   task_id: taskId,
   sandbox_create_action_id: sandboxActionId,
@@ -173,6 +179,58 @@ describe("HuggingFaceSandboxGateway", () => {
     await expect(
       gateway.lifecycle(createIntent, { adoption_only: true }),
     ).resolves.toMatchObject({ outcome: "adopted", observed_state: "SCHEDULING" });
+  });
+
+  it("keeps a running Job in STARTING until the Sandbox proxy is healthy", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).includes("/api/jobs/"))
+        return new Response(JSON.stringify(rawJob()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      return new Response("proxy is starting", { status: 502 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new HuggingFaceSandboxGateway({
+      namespace: "example",
+      accessToken: controlToken,
+      inferenceToken,
+    });
+
+    await expect(gateway.lifecycle(observeIntent)).resolves.toMatchObject({
+      outcome: "completed",
+      observed_state: "STARTING",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports RUNNING only after the Sandbox health check passes", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).includes("/api/jobs/"))
+        return new Response(JSON.stringify(rawJob()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      expect(String(url)).toMatch(/--49983\.hf\.jobs\/health$/);
+      expect(new Headers(init?.headers).get("Authorization")).toBe(
+        `Bearer ${controlToken}`,
+      );
+      return new Response(
+        JSON.stringify({ status: "ok", version: "0.5.0", uptime_ms: 12 }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const gateway = new HuggingFaceSandboxGateway({
+      namespace: "example",
+      accessToken: controlToken,
+      inferenceToken,
+    });
+
+    await expect(gateway.lifecycle(observeIntent)).resolves.toMatchObject({
+      outcome: "completed",
+      observed_state: "RUNNING",
+    });
   });
 
   it("keeps close pending until the remote Sandbox Job is terminal", async () => {

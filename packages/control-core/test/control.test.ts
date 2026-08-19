@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type {
   ActionIntent,
   AttemptReceipt,
@@ -16,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NoopActions } from "@harbor-hf/hf-adapters";
 import { Projection } from "../src/projection.js";
 import { ResultPublisher } from "../src/publication.js";
-import type { AttemptInput } from "../src/service.js";
+import { ControlService, type AttemptInput } from "../src/service.js";
 import {
   AmbiguousExternalActionError,
   type ExternalActionContext,
@@ -347,6 +348,93 @@ describe("control service", () => {
       terminal_tasks: 1,
       publication_status: "published",
     });
+  });
+
+  it("adopts durable action records while a projection catches up", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "durable-action-adoption-key",
+      operator,
+    );
+    const first = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "durable-action-adoption",
+      0,
+      {
+        task_ids: ["task-001"],
+        max_infrastructure_attempts: 1,
+        success_without_worker_receipt: false,
+      },
+      undefined,
+      "2026-08-16T00:00:01.000Z",
+    );
+    await control.service.writeAction(first);
+
+    const laggingProjection = await Projection.open(
+      join(control.root, "lagging-projection.sqlite"),
+    );
+    await laggingProjection.rebuild(control.store);
+    const laggingService = new ControlService(
+      "test",
+      control.store,
+      laggingProjection,
+      control.profiles,
+    );
+    const retry = laggingService.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "durable-action-adoption",
+      0,
+      first.payload,
+      undefined,
+      "2026-08-16T00:00:02.000Z",
+    );
+    const originalDispatch = await control.service.dispatchAction(
+      first,
+      "2026-08-16T00:00:31.000Z",
+    );
+    const adoptedDispatch = await laggingService.dispatchAction(
+      retry,
+      "2026-08-16T00:00:32.000Z",
+    );
+    expect(adoptedDispatch).toEqual({
+      record: originalDispatch.record,
+      created: false,
+    });
+
+    const originalReceipt = await control.service.receipt(first, {
+      outcome: "created",
+      observed_state: "RUNNING",
+      resource_id: "job-durable-action-adoption",
+    });
+    const adoptedReceipt = await laggingService.receipt(retry, {
+      outcome: "created",
+      observed_state: "RUNNING",
+      resource_id: "job-durable-action-adoption",
+    });
+    expect(adoptedReceipt).toEqual(originalReceipt);
+
+    const originalAdvanced = await control.service.markAdvanced(first, originalReceipt);
+    const adoptedAdvanced = await laggingService.markAdvanced(retry, adoptedReceipt);
+    expect(adoptedAdvanced).toEqual(originalAdvanced);
+
+    const emptyProjection = await Projection.open(
+      join(control.root, "empty-projection.sqlite"),
+    );
+    const emptyService = new ControlService(
+      "test",
+      control.store,
+      emptyProjection,
+      control.profiles,
+    );
+    await expect(emptyService.writeAction(retry)).resolves.toBeUndefined();
+    expect(await emptyProjection.action(first.action_id)).not.toBeNull();
+
+    await emptyProjection.close();
+    await laggingProjection.close();
   });
 
   it("rebuilds the same projection from immutable objects", async () => {

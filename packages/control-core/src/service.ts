@@ -48,13 +48,24 @@ import {
   validatePreparedCampaignProfiles,
 } from "./profiles.js";
 import type { Projection } from "./projection.js";
-import { createJson, type ImmutableObjectStore } from "./store.js";
+import {
+  createJson,
+  ImmutableConflictError,
+  type ImmutableObjectStore,
+} from "./store.js";
 
 export interface Clock {
   now(): Date;
 }
 
 export const systemClock: Clock = { now: () => new Date() };
+
+function isImmutableConflict(error: unknown): error is ImmutableConflictError {
+  return (
+    error instanceof ImmutableConflictError ||
+    (error instanceof Error && error.name === "ImmutableConflictError")
+  );
+}
 
 export interface AttemptInput {
   campaign_id: string;
@@ -354,6 +365,29 @@ export class ControlService {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
+    }
+  }
+
+  private async appendAdopting<T extends HarborHFControlRecordV1>(
+    record: T,
+    equivalent: (existing: T) => boolean,
+  ): Promise<{ created: boolean; key: string; digest: string; record: T }> {
+    try {
+      return { ...(await this.append(record)), record };
+    } catch (error) {
+      if (!isImmutableConflict(error)) throw error;
+      const existing = await this.readRecord<T>(record);
+      if (!existing || !equivalent(existing))
+        throw new IdempotencyConflictError(
+          `immutable idempotency conflict at ${controlRecordPath(record)}`,
+        );
+      await this.syncProjection();
+      return {
+        created: false,
+        key: controlRecordPath(existing),
+        digest: sha256(canonicalJson(existing)),
+        record: existing,
+      };
     }
   }
 
@@ -957,7 +991,16 @@ export class ControlService {
       if (task?.task.terminal_outcome && intent.action_kind !== "sandbox.close")
         throw new PolicyError(`terminal task cannot receive action: ${taskId}`);
     }
-    await this.append(intent);
+    await this.appendAdopting(intent, (recorded) => {
+      return (
+        recorded.campaign_id === intent.campaign_id &&
+        recorded.action_kind === intent.action_kind &&
+        recorded.generation === intent.generation &&
+        recorded.target === intent.target &&
+        canonicalJson(recorded.actor) === canonicalJson(intent.actor) &&
+        canonicalJson(recorded.payload) === canonicalJson(intent.payload)
+      );
+    });
   }
 
   async dispatchAction(
@@ -993,8 +1036,15 @@ export class ControlService {
       operation,
       adoption_not_before: adoptionNotBefore,
     };
-    const result = await this.append(record);
-    return { record, created: result.created };
+    const result = await this.appendAdopting(record, (recorded) => {
+      return (
+        recorded.action_id === record.action_id &&
+        recorded.campaign_id === record.campaign_id &&
+        recorded.operation === record.operation &&
+        canonicalJson(recorded.actor) === canonicalJson(record.actor)
+      );
+    });
+    return { record: result.record, created: result.created };
   }
 
   async receipt(
@@ -1025,8 +1075,12 @@ export class ControlService {
       active_hourly_cost_microusd: result.active_hourly_cost_microusd ?? null,
       cost_microusd: result.cost_microusd ?? null,
     };
-    await this.append(receipt);
-    return receipt;
+    const appended = await this.appendAdopting(receipt, (recorded) => {
+      const { created_at: _recordedAt, ...recordedResult } = recorded;
+      const { created_at: _candidateAt, ...candidateResult } = receipt;
+      return canonicalJson(recordedResult) === canonicalJson(candidateResult);
+    });
+    return appended.record;
   }
 
   async markAdvanced(
@@ -1077,8 +1131,12 @@ export class ControlService {
       action_id: intent.action_id,
       campaign_id: intent.campaign_id,
     };
-    await this.append(record);
-    return record;
+    const appended = await this.appendAdopting(record, (recorded) => {
+      const { created_at: _recordedAt, ...recordedResult } = recorded;
+      const { created_at: _candidateAt, ...candidateResult } = record;
+      return canonicalJson(recordedResult) === canonicalJson(candidateResult);
+    });
+    return appended.record;
   }
 
   async uploadEvidenceObject(

@@ -434,11 +434,38 @@ export class HuggingFaceSandboxGateway {
     verifyLabels(job, intent);
     verifySecrets(job, policyValue(intent));
     verifySpec(job, policyValue(intent));
+    const state = jobState(job);
     return {
       outcome: "completed",
-      observed_state: jobState(job),
+      observed_state:
+        state.toUpperCase() === "RUNNING" && !(await this.proxyReady(job))
+          ? "STARTING"
+          : state,
       resource_id: job.id,
     };
+  }
+
+  private async proxyReady(job: RawJob): Promise<boolean> {
+    const baseUrl = job.status?.exposeUrls?.find((url) =>
+      url.includes(`--${sandboxPort}.`),
+    );
+    if (!baseUrl) return false;
+    const proxyUrl = verifiedProxyUrl(baseUrl);
+    try {
+      const response = await fetch(`${proxyUrl}/health`, {
+        headers: { Authorization: `Bearer ${this.config.accessToken}` },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!response.ok) return false;
+      const bytes = await readBounded(response, 4_096);
+      const health = JSON.parse(new TextDecoder().decode(bytes)) as Record<
+        string,
+        unknown
+      >;
+      return health.status === "ok" && typeof health.version === "string";
+    } catch {
+      return false;
+    }
   }
 
   private async close(intent: ActionIntent): Promise<ExternalActionResult> {
