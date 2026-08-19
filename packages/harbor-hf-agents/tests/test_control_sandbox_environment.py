@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import shlex
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from harbor_hf_agents.support import control_sandbox_environment as control
 
 class FakeClient:
     calls: list[tuple[str, str, dict | None]] = []
+    idempotency_keys: list[str] = []
 
     def __init__(self, campaign_id: str, task_id: str) -> None:
         self.campaign_id = campaign_id
@@ -24,9 +26,11 @@ class FakeClient:
         path: str,
         *,
         body: dict | None = None,
+        idempotency_key: str,
         **_kwargs,
     ) -> dict:
         self.calls.append((method, path, body))
+        self.idempotency_keys.append(idempotency_key)
         if "/prepared-job/trials/" in path:
             return {
                 "declared_image": "example.invalid/task:tag",
@@ -56,10 +60,12 @@ async def test_routes_harbor_operations_through_worker_capability(
     tmp_path: Path,
 ) -> None:
     FakeClient.calls.clear()
+    FakeClient.idempotency_keys.clear()
     for key, value in {
         "HARBOR_HF_CONTROL_URL": "https://control.example",
         "HARBOR_HF_WORKER_CAPABILITY": "capability",
         "HARBOR_HF_CAMPAIGN_ID": "campaign-1",
+        "HARBOR_HF_ACTION_ID": "action-attempt-1",
     }.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(control, "_ControlClient", FakeClient)
@@ -102,6 +108,10 @@ async def test_routes_harbor_operations_through_worker_capability(
         "POST",
         "DELETE",
     ]
+    seed = "campaign-1:action-attempt-1:source-task-trial-1:trial-1__env:create:1"
+    assert FakeClient.idempotency_keys[1] == (
+        f"control-sandbox-{hashlib.sha256(seed.encode()).hexdigest()[:32]}"
+    )
     command = FakeClient.calls[3][2]
     assert command is not None
     assert command["command"][:2] == ["/bin/bash", "-lc"]
@@ -141,6 +151,7 @@ def test_preflight_rejects_broad_hf_token(monkeypatch: pytest.MonkeyPatch) -> No
         "HARBOR_HF_CONTROL_URL": "https://control.example",
         "HARBOR_HF_WORKER_CAPABILITY": "capability",
         "HARBOR_HF_CAMPAIGN_ID": "campaign-1",
+        "HARBOR_HF_ACTION_ID": "action-attempt-1",
         "HF_TOKEN": "broad-token",
     }.items():
         monkeypatch.setenv(key, value)

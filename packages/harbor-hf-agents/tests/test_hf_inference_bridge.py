@@ -15,6 +15,7 @@ import pytest
 
 from harbor_hf_agents.support.hf_inference_bridge import (
     _run_hf_inference_bridge,
+    _upstream_request_path,
     is_hf_inference_url,
     prepare_hf_inference_bridge,
 )
@@ -35,15 +36,37 @@ def test_embedded_bridge_allows_bounded_streaming_overhead() -> None:
     assert "inference bridge response limit exceeded" in source
 
 
+@pytest.mark.parametrize(
+    ("upstream_path", "request_path", "expected"),
+    [
+        ("", "/v1/chat/completions", "/v1/chat/completions"),
+        ("/v1", "/v1/chat/completions", "/v1/chat/completions"),
+        ("/v1/", "/v1/responses", "/v1/responses"),
+        (
+            "/scopes/opaque/v1",
+            "/v1/chat/completions",
+            "/scopes/opaque/v1/chat/completions",
+        ),
+    ],
+)
+def test_upstream_request_path_has_one_api_version(
+    upstream_path: str,
+    request_path: str,
+    expected: str,
+) -> None:
+    assert _upstream_request_path(upstream_path, request_path) == expected
+
+
 def test_embedded_bridge_runs_without_module_globals() -> None:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    script = textwrap.dedent(inspect.getsource(_run_hf_inference_bridge))
+    script = textwrap.dedent(inspect.getsource(_upstream_request_path))
+    script += "\n" + textwrap.dedent(inspect.getsource(_run_hf_inference_bridge))
     script += "\n_run_hf_inference_bridge()\n"
     env = {
         **os.environ,
-        "HARBOR_HF_INFERENCE_UPSTREAM": "https://router.huggingface.co",
+        "HARBOR_HF_INFERENCE_UPSTREAM": "https://router.huggingface.co/v1",
         "HARBOR_HF_INFERENCE_TOKEN": "test-token",
         "HARBOR_HF_INFERENCE_LOCAL_PORT": str(port),
         "HARBOR_HF_INFERENCE_ALLOWED_PATH": "/v1/chat/completions",

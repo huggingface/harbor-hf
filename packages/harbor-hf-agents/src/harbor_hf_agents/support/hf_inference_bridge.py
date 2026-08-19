@@ -21,6 +21,13 @@ _HF_ROUTER_HOST = "router.huggingface.co"
 _LOCAL_API_KEY = "harbor-local-inference-bridge"
 
 
+def _upstream_request_path(upstream_path: str, request_path: str) -> str:
+    base_path = upstream_path.rstrip("/")
+    if base_path.endswith("/v1"):
+        base_path = base_path[:-3]
+    return f"{base_path}{request_path}"
+
+
 def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
     """Run as root inside the Sandbox and inject the inference credential."""
     import http.client
@@ -50,7 +57,6 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
     max_output_tokens = int(os.environ["HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"])
     max_response_bytes = min(64 * 1024 * 1024, 1024 * 1024 + max_output_tokens * 1024)
     local_api_key = "harbor-local-inference-bridge"
-    base_path = upstream.path.rstrip("/")
     admission = threading.BoundedSemaphore(max_concurrency)
     counter_lock = threading.Lock()
     request_count = 0
@@ -121,7 +127,10 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
                 }
                 try:
                     connection.request(
-                        "POST", base_path + self.path, body=body, headers=headers
+                        "POST",
+                        _upstream_request_path(upstream.path, self.path),
+                        body=body,
+                        headers=headers,
                     )
                     response = connection.getresponse()
                     self.send_response(response.status)
@@ -167,8 +176,9 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
 
 
 def _bridge_command() -> str:
+    path_helper = inspect.getsource(_upstream_request_path)
     body = inspect.getsource(_run_hf_inference_bridge)
-    script = body + "\n_run_hf_inference_bridge()\n"
+    script = path_helper + "\n" + body + "\n_run_hf_inference_bridge()\n"
     return (
         "set -euo pipefail; "
         "if [ -f /tmp/harbor-hf-inference-bridge.pid ]; then "

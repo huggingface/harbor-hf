@@ -74,5 +74,6 @@ also_copy = [
   "schemas",
   "scripts",
   ".agents/skills",
+  "packages/contracts",
   "packages/harbor-hf-agents",
 ]

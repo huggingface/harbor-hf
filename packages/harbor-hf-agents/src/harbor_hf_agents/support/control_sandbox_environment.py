@@ -153,6 +153,7 @@ class ControlSandboxEnvironment(BaseEnvironment):
         ):
             raise ValueError("control_max_command_seconds must be a positive integer")
         self._campaign_id = _required("HARBOR_HF_CAMPAIGN_ID")
+        self._action_id = _required("HARBOR_HF_ACTION_ID")
         self._task_id = control_task_id
         self._max_command_seconds = control_max_command_seconds
         self._client = _ControlClient(self._campaign_id, self._task_id)
@@ -179,6 +180,7 @@ class ControlSandboxEnvironment(BaseEnvironment):
             "HARBOR_HF_CONTROL_URL",
             "HARBOR_HF_WORKER_CAPABILITY",
             "HARBOR_HF_CAMPAIGN_ID",
+            "HARBOR_HF_ACTION_ID",
         ):
             _required(name)
         if os.environ.get("HF_TOKEN"):
@@ -216,8 +218,8 @@ class ControlSandboxEnvironment(BaseEnvironment):
     def _key(self, operation: str) -> str:
         self._operation += 1
         seed = (
-            f"{self._campaign_id}:{self._task_id}:{self.session_id}:"
-            f"{operation}:{self._operation}"
+            f"{self._campaign_id}:{self._action_id}:{self._task_id}:"
+            f"{self.session_id}:{operation}:{self._operation}"
         )
         return f"control-sandbox-{hashlib.sha256(seed.encode()).hexdigest()[:32]}"
 
