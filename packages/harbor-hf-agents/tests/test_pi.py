@@ -8,6 +8,7 @@ import pytest
 from harbor.models.agent.context import AgentContext
 
 from harbor_hf_agents.pi.agent import PiAgent, pi_jsonl_to_atif_trajectory
+from harbor_hf_agents.support.provider_outcome import TransientProviderError
 from harbor_hf_agents.support.sandbox_inference_route import (
     use_sandbox_inference_route,
 )
@@ -16,6 +17,32 @@ from harbor_hf_agents.support.sandbox_inference_route import (
 @pytest.fixture
 def temp_dir(tmp_path):
     return tmp_path
+
+
+def _successful_pi_output() -> str:
+    return json.dumps(
+        {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "stopReason": "stop",
+                "usage": {"input": 10, "output": 5},
+            },
+        }
+    )
+
+
+def _exec_result(output: str | None = None) -> AsyncMock:
+    return AsyncMock(
+        return_code=0,
+        stdout=_successful_pi_output() if output is None else output,
+        stderr="",
+    )
+
+
+def _exec_with_empty_sandbox_probe(*_args, **kwargs) -> AsyncMock:
+    command = kwargs.get("command", "")
+    return _exec_result("" if "/run/harbor-hf-inference.json" in command else None)
 
 
 def test_pi_jsonl_converts_tool_use_to_atif(temp_dir) -> None:
@@ -130,7 +157,7 @@ class TestPiAgent:
     ):
         agent = PiAgent(logs_dir=temp_dir, version=version)
         mock_env = AsyncMock()
-        mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+        mock_env.exec.return_value = _exec_result()
 
         await agent.install(mock_env)
 
@@ -145,7 +172,7 @@ class TestPiAgent:
     async def test_run_command_structure(self, temp_dir):
         agent = PiAgent(logs_dir=temp_dir, model_name="anthropic/claude-sonnet-4-5")
         mock_env = AsyncMock()
-        mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+        mock_env.exec.return_value = _exec_result()
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}, clear=False):
             await agent.run("Fix the bug", mock_env, AsyncMock())
 
@@ -163,7 +190,7 @@ class TestPiAgent:
     async def test_run_no_model(self, temp_dir):
         agent = PiAgent(logs_dir=temp_dir)
         mock_env = AsyncMock()
-        mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+        mock_env.exec.return_value = _exec_result()
         with pytest.raises(ValueError, match="provider/model_name"):
             await agent.run("Fix the bug", mock_env, AsyncMock())
 
@@ -171,7 +198,7 @@ class TestPiAgent:
     async def test_run_no_slash_in_model(self, temp_dir):
         agent = PiAgent(logs_dir=temp_dir, model_name="claude-sonnet-4-5")
         mock_env = AsyncMock()
-        mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+        mock_env.exec.return_value = _exec_result()
         with pytest.raises(ValueError, match="provider/model_name"):
             await agent.run("Fix the bug", mock_env, AsyncMock())
 
@@ -179,16 +206,73 @@ class TestPiAgent:
     async def test_run_with_any_provider(self, temp_dir):
         agent = PiAgent(logs_dir=temp_dir, model_name="my-provider/my-model")
         mock_env = AsyncMock()
-        mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+        mock_env.exec.return_value = _exec_result()
         await agent.run("Fix the bug", mock_env, AsyncMock())
         run_command = mock_env.exec.call_args_list[-1].kwargs["command"]
         assert "--provider my-provider --model my-model" in run_command
 
     @pytest.mark.asyncio
+    async def test_run_rejects_final_zero_token_rate_limit_and_cleans_up(
+        self, temp_dir
+    ):
+        agent = PiAgent(
+            logs_dir=temp_dir,
+            model_name="my-provider/my-model",
+            models_json={
+                "providers": {"my-provider": {"baseUrl": "https://proxy.example/v1"}}
+            },
+        )
+        output = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "message_end",
+                        "message": {
+                            "role": "assistant",
+                            "stopReason": "toolUse",
+                            "usage": {"input": 500, "output": 100},
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "message_end",
+                        "message": {
+                            "role": "assistant",
+                            "stopReason": "error",
+                            "errorMessage": "429: model_rate_limit",
+                            "usage": {"input": 0, "output": 0},
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "message_end",
+                        "message": {
+                            "role": "assistant",
+                            "stopReason": "error",
+                            "errorMessage": "Provider finish_reason: error",
+                            "usage": {"input": 0, "output": 0},
+                        },
+                    }
+                ),
+            ]
+        )
+        mock_env = AsyncMock()
+        mock_env.exec.return_value = _exec_result(output)
+        mock_env.capabilities.mounted = True
+
+        with pytest.raises(TransientProviderError, match="transient failure"):
+            await agent.run("Fix the bug", mock_env, AsyncMock())
+
+        commands = [call.kwargs["command"] for call in mock_env.exec.call_args_list]
+        assert "rm -f $HOME/.pi/agent/models.json" in commands[-1]
+
+    @pytest.mark.asyncio
     async def test_api_key_forwarding_anthropic(self, temp_dir):
         agent = PiAgent(logs_dir=temp_dir, model_name="anthropic/claude-sonnet-4-5")
         mock_env = AsyncMock()
-        mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+        mock_env.exec.return_value = _exec_result()
         env_vars = {
             "ANTHROPIC_API_KEY": "ak-123",
             "UNRELATED_KEY": "ignored",
@@ -204,7 +288,7 @@ class TestPiAgent:
     async def test_api_key_forwarding_openai(self, temp_dir):
         agent = PiAgent(logs_dir=temp_dir, model_name="openai/gpt-4")
         mock_env = AsyncMock()
-        mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+        mock_env.exec.side_effect = _exec_with_empty_sandbox_probe
         env_vars = {
             "OPENAI_API_KEY": "sk-456",
             "OPENAI_BASE_URL": "https://proxy.example/v1",
@@ -238,7 +322,7 @@ class TestPiAgent:
             models_json=models_json,
         )
         mock_env = AsyncMock()
-        mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+        mock_env.exec.side_effect = _exec_with_empty_sandbox_probe
         mock_env.capabilities.mounted = False
         env_vars = {
             "OPENAI_API_KEY": "scoped-token",

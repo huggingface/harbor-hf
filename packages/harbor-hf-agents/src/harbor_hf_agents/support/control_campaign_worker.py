@@ -22,6 +22,11 @@ from harbor.models.job.config import JobConfig
 from harbor.models.job.lock import TrialLock
 
 from harbor_hf_agents.support.control_sandbox_environment import _ControlClient, _digest
+from harbor_hf_agents.support.provider_outcome import (
+    ProviderPolicyError,
+    TerminalProviderError,
+    TransientProviderError,
+)
 
 _EVIDENCE_CHUNK_BYTES = 8 * 1024 * 1024
 _POLICY_FAILURES = {
@@ -302,6 +307,12 @@ def _exception_outcome(  # noqa: C901 -- explicit terminal outcome map
     )
     if name in {"AgentTimeoutError", "VerifierTimeoutError"}:
         return "benchmark_timeout", False
+    if name == TransientProviderError.__name__:
+        return "infrastructure", True
+    if name == ProviderPolicyError.__name__:
+        return "policy", False
+    if name == TerminalProviderError.__name__:
+        return "agent", False
     if "policy_rejected" in detail:
         return "policy", False
     if any(marker in f"{name} {detail}" for marker in _INFRASTRUCTURE_MARKERS):

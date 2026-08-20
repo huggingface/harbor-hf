@@ -1,3 +1,10 @@
+---
+title: General Harbor job path plan
+author: Harbor-HF maintainers
+date: 2026-08-18
+tags: [harbor, jobs, campaigns]
+---
+
 # General Harbor job path plan
 
 Harbor-HF must not gain a new script or worker path for each benchmark, model,
@@ -118,7 +125,36 @@ The execution worker:
 - sends the inference credential only to the root-owned Sandbox bridge through
   the control service;
 - runs the selected Harbor agent plugin without name-based worker branches;
+- accepts a complete attempt only after that plugin proves its final agent
+  event;
 - uploads content-addressed trial evidence before its attempt receipt.
+
+## Agent terminal outcome
+
+Each in-repository agent plugin owns validation of its agent's final event. The
+Pi plugin reads the captured `message_end` events after the command finishes. It
+requires a final assistant event and rejects `stopReason=error`, even when
+previous turns used tokens or Harbor wrote an otherwise complete result.
+Mounted and remote environments use the existing Harbor command result stream
+for validation while `tee` retains the same `pi.txt` evidence.
+
+The plugin passes a safe, stable failure class through Harbor's existing
+`exception_info` field:
+
+- an explicit `429` or `model_rate_limit` in the trailing assistant error events
+  is a transient provider failure;
+- authentication, quota, and unavailable-model signals are provider policy
+  failures and take precedence;
+- another provider error, or a missing or malformed final state, is a
+  non-retryable terminal provider failure.
+
+The campaign worker maps only the transient class to `infrastructure` with
+replacement eligibility. It maps policy failures to `policy` and other terminal
+provider failures to a non-retryable agent outcome. The launch policy remains
+the only retry and cost authority. Raw provider bodies, credentials, request
+identifiers, and private paths do not enter failure messages or public records.
+The current `exception_info`, attempt outcome, and `replacement_eligible`
+fields carry this contract without a second format or compatibility path.
 
 ## Existing specific code
 
@@ -154,6 +190,13 @@ Local checks must prove:
 - retries cannot replace the prepared lock;
 - task-specific resources come from Harbor and remain within deployment limits;
 - capabilities separate preparation from execution and Sandbox operations;
+- a normal final Pi stop succeeds, while a final zero-token provider error fails
+  even after earlier nonzero token use;
+- a trailing `429` followed by a generic provider error is retryable, while
+  policy, unknown, missing, and malformed terminal states fail closed without
+  automatic retry;
+- mounted and remote Pi output paths retain evidence and run cleanup on every
+  terminal class;
 - browser APIs omit lock contents and private paths together with topology and
   evidence references;
 - budget reservation and partial-worker recovery remain correct, together with
@@ -165,15 +208,39 @@ check PR comments and required CI before merge.
 
 ## Hosted checks
 
-After merge, deploy the exact revision with production writes disabled. Run one
-secret-free preparation canary, then one bounded execution and recovery canary.
-Verify exact lock reuse, credential isolation, Sandbox close, durable evidence,
-budget reconciliation, and endpoint cleanup.
+Ship the worker repair before the profile update so each deployment profile can
+pin an immutable reviewed worker revision. Deploy the exact merged profile
+revision to the existing control Space without changing its resources,
+credentials, hardware, storage, or visibility. Verify the source revision,
+worker pin, write mode, projection integrity, and approved resource contract.
 
-Only after these checks pass can the approved Terminal-Bench 2.1 campaign be
-submitted. The campaign uses configuration and immutable data only. Its full
-five-trial run starts only when the measured canary and enforced control-plane
-ceiling keep total project spending within the approved limit.
+Run one secret-free preparation canary, then one bounded execution and recovery
+canary. For the provider-error repair, the replacement canary contains only the
+previously invalid logical task. Keep the earlier valid canary task sealed and
+unchanged. The replacement must end with a successful final Pi event, nonzero
+input and output tokens, exact model and provider evidence, credential
+isolation, valid content-addressed evidence, publication, Sandbox close, budget
+reconciliation, and no active Endpoint. Retry only an eligible transient
+physical attempt within the locked attempt and cost limits.
+
+Use the preserved valid sample and the valid replacement sample for a private
+measured launch review. Record raw duration, token, cost, and reward values, and
+label any p50 or p95 value with its sample count. Include setup, bounded retries,
+and cleanup in the high estimate. The hosted control plane must admit the
+worst-case next action within the approved cumulative ceiling before launch.
+
+The current Terminal-Bench 2.1 run has exactly 89 logical tasks and one trial
+per task. Its benchmark and launch-policy profiles must label it as diagnostic,
+contain 89 unique `trial-1` tasks, and leave the official five-trial profiles
+unchanged. Submit it once through the existing control API and use the existing
+Bucket for control and evidence. The result is single-trial diagnostic evidence
+and does not make an official five-trial or production-selection claim.
+
+Monitor every attempt, evidence manifest, result, spend event, publication,
+cleanup receipt, Sandbox, and Endpoint. Never rerun a sealed valid logical task.
+A shared deterministic defect stops affected work. Policy, provenance,
+credential, budget, or cleanup failures stop the campaign instead of changing
+the protected contract.
 
 ## Completion criteria
 
@@ -188,5 +255,10 @@ The work is complete when:
   a Harbor agent plugin;
 - every campaign execution is bound to one verified Harbor lock;
 - the merged implementation is deployed and verified through hosted canaries;
-- the requested Terminal-Bench 2.1 campaign is complete and published, with
-  cleanup verified within its enforced ceiling.
+- the provider-error replacement canary reruns only the invalid task and proves
+  a successful final Pi event, evidence, isolation, publication, and cleanup;
+- the 89-task, one-trial Terminal-Bench 2.1 diagnostic campaign is complete and
+  published without a five-trial claim;
+- all 89 logical tasks are sealed, no action or cleanup is pending, cumulative
+  spend is within the enforced ceiling, all Sandboxes are closed, and every
+  owned Endpoint is paused with zero ready replicas.

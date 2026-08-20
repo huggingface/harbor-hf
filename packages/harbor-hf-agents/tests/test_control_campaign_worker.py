@@ -182,6 +182,24 @@ def test_reconstructs_portable_git_task(monkeypatch: pytest.MonkeyPatch) -> None
     ("result", "stderr", "timed_out", "expected"),
     [
         ({"exception_info": None}, "", False, ("complete", False)),
+        (
+            {"exception_info": {"exception_type": "TransientProviderError"}},
+            "",
+            False,
+            ("infrastructure", True),
+        ),
+        (
+            {"exception_info": {"exception_type": "ProviderPolicyError"}},
+            "",
+            False,
+            ("policy", False),
+        ),
+        (
+            {"exception_info": {"exception_type": "TerminalProviderError"}},
+            "",
+            False,
+            ("agent", False),
+        ),
         (None, "Sandbox API failed", False, ("infrastructure", True)),
         (None, "AgentAuthenticationError", False, ("policy", False)),
         (None, "", True, ("benchmark_timeout", False)),

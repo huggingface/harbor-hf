@@ -29,6 +29,7 @@ from harbor_hf_agents.support.hf_inference_bridge import (
     stop_hf_inference_bridge,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
+from harbor_hf_agents.support.provider_outcome import validate_pi_terminal_output
 from harbor_hf_agents.support.sandbox_inference_route import (
     use_sandbox_inference_route,
 )
@@ -499,7 +500,7 @@ class PiAgent(IsolatedProviderAgent):
             )
 
         try:
-            await self.exec_as_agent(
+            result = await self.exec_as_agent(
                 environment,
                 command="bash -lc "
                 + shlex.quote(
@@ -513,6 +514,9 @@ class PiAgent(IsolatedProviderAgent):
                     f"stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}"
                 ),
                 env=env,
+            )
+            validate_pi_terminal_output(
+                result.stdout if isinstance(result.stdout, str) else ""
             )
         finally:
             try:
