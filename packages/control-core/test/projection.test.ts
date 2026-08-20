@@ -103,6 +103,122 @@ describe("projection replay", () => {
     await projection.close();
   });
 
+  it("finds only dispatched pending Sandbox commands in one task", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const submitted = await control.service.submit(
+      { ...input, ceiling_microusd: 1_000 },
+      "pending-sandbox-command-key",
+      { subject: "operator", role: "operator" },
+    );
+    const policy: SandboxPolicy = {
+      image: `example.invalid/task@sha256:${"b".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 600,
+      idle_timeout_seconds: 300,
+      inference_token: "forbidden",
+      reservation_microusd: 0,
+      active_hourly_cost_microusd: 0,
+      max_sandboxes: 1,
+      max_commands: 8,
+      max_command_seconds: 300,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/tmp"],
+    };
+    const create = control.service.actionIntent(
+      submitted.campaign_id,
+      "sandbox.create",
+      "sandbox-pending-command",
+      0,
+      { task_id: "task-001", sandbox: policy },
+    );
+    await control.service.writeAction(create);
+    const createReceipt = await control.service.receipt(create, {
+      outcome: "created",
+      observed_state: "RUNNING",
+      resource_id: "sandbox-pending-command-resource",
+    });
+    await control.service.markAdvanced(create, createReceipt);
+    const command = control.service.actionIntent(
+      submitted.campaign_id,
+      "sandbox.exec",
+      "sandbox-pending-command",
+      0,
+      {
+        task_id: "task-001",
+        sandbox_create_action_id: create.action_id,
+        resource_id: "sandbox-pending-command-resource",
+        sandbox: policy,
+        command: ["true"],
+        cwd: "/app",
+        timeout_seconds: 30,
+      },
+    );
+    await control.service.writeAction(command);
+    await control.service.dispatchAction(command, "2026-08-18T00:00:00.000Z");
+    const undispatched = control.service.actionIntent(
+      submitted.campaign_id,
+      "sandbox.exec",
+      "sandbox-undispatched-command",
+      0,
+      {
+        task_id: "task-001",
+        sandbox_create_action_id: create.action_id,
+        resource_id: "sandbox-pending-command-resource",
+        sandbox: policy,
+        command: ["false"],
+        cwd: "/app",
+        timeout_seconds: 30,
+      },
+    );
+    await control.service.writeAction(undispatched);
+
+    expect(
+      await control.projection.pendingDispatchedSandboxExecActions(
+        submitted.campaign_id,
+        "task-001",
+      ),
+    ).toEqual([command]);
+    expect(
+      await control.projection.pendingDispatchedSandboxExecActions(
+        submitted.campaign_id,
+        "another-task",
+      ),
+    ).toEqual([]);
+    expect(await control.projection.actionAdvanced(command.action_id)).toBe(false);
+
+    const ambiguous = await control.service.ambiguousSandboxReceipt(command, {
+      subject: "operator",
+      role: "operator",
+    });
+    await control.service.markAdvanced(command, ambiguous);
+    const nextCommand = control.service.actionIntent(
+      submitted.campaign_id,
+      "sandbox.exec",
+      "sandbox-next-command",
+      0,
+      {
+        task_id: "task-001",
+        sandbox_create_action_id: create.action_id,
+        resource_id: "sandbox-pending-command-resource",
+        sandbox: policy,
+        command: ["false"],
+        cwd: "/app",
+        timeout_seconds: 30,
+      },
+    );
+    await expect(control.service.admitSandboxCommand(nextCommand, 1)).rejects.toThrow(
+      "Sandbox command count exceeds immutable policy",
+    );
+    expect(
+      await control.projection.pendingDispatchedSandboxExecActions(
+        submitted.campaign_id,
+        "task-001",
+      ),
+    ).toEqual([]);
+    expect(await control.projection.actionAdvanced(command.action_id)).toBe(true);
+  });
+
   it("rejects duplicate listings and conflicting bytes", async () => {
     const control = await createTestControl();
     controls.push(control);

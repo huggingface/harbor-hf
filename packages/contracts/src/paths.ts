@@ -18,6 +18,16 @@ function required(value: string | undefined, field: string): string {
   return value;
 }
 
+export function sandboxActionResultPath(campaignId: string, actionId: string): string {
+  for (const [name, value] of [
+    ["campaign_id", campaignId],
+    ["action_id", actionId],
+  ] as const) {
+    if (!idPattern.test(value)) throw new Error(`${name} is not a safe identifier`);
+  }
+  return `sandbox-results/schema=v1/${campaignId}/${actionId}/result.json`;
+}
+
 export function workerEvidenceObjectPath(
   campaignId: string,
   actionId: string,

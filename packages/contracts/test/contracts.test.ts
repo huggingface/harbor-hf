@@ -4,6 +4,7 @@ import {
   ContractValidationError,
   controlRecordPath,
   deterministicId,
+  sandboxActionResultPath,
   sha256,
   validateCampaignSubmission,
   validateControlRecord,
@@ -74,6 +75,18 @@ describe("canonical contracts", () => {
         }),
       ).toThrow(ContractValidationError);
     }
+  });
+
+  it("keeps Sandbox action result paths stable and scoped", () => {
+    expect(sandboxActionResultPath("campaign-test", "action-test")).toBe(
+      "sandbox-results/schema=v1/campaign-test/action-test/result.json",
+    );
+    expect(() => sandboxActionResultPath("../campaign", "action-test")).toThrow(
+      "campaign_id is not a safe identifier",
+    );
+    expect(() => sandboxActionResultPath("campaign-test", "action/test")).toThrow(
+      "action_id is not a safe identifier",
+    );
   });
 
   it("validates scoped worker evidence manifests", () => {

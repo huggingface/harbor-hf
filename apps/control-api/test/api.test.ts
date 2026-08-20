@@ -10,6 +10,7 @@ import {
   canonicalJson,
   controlRecordPath,
   deterministicId,
+  sandboxActionResultPath,
   sha256,
   workerEvidenceObjectPath,
 } from "@harbor-hf/contracts";
@@ -1343,6 +1344,134 @@ describe("control API", () => {
         "sandbox.close",
       ]),
     );
+    await app.close();
+  });
+
+  it("terminalizes an ambiguous Sandbox command without replay", async () => {
+    const records = sandboxDeploymentRecords();
+    const { runtime, app } = await setup("enabled", async (seedRuntime) => {
+      for (const record of records)
+        await seedRuntime.store.create(
+          controlRecordPath(record),
+          new TextEncoder().encode(canonicalJson(record)),
+        );
+    });
+    const submission = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "sandbox-ambiguous-campaign-key" },
+      payload: {
+        ...input,
+        deployment: "hf-sandbox-test",
+        ceiling_microusd: 20_000_000,
+      },
+    });
+    expect(submission.statusCode).toBe(202);
+    const campaignId = submission.json().campaign_id as string;
+    await runtime.reconciler.tick();
+    const lock = await runtime.projection.campaignLock(campaignId);
+    if (!lock) throw new Error("campaign lock is missing");
+    const launch = (await runtime.projection.campaignActions(campaignId)).find(
+      (action) => action.action_kind === "job.launch",
+    );
+    if (!launch) throw new Error("campaign admission did not create a Job launch");
+    const capability = mintWorkerCapability(runtime.config.hf_token ?? "", {
+      namespace: runtime.config.namespace,
+      campaign_id: campaignId,
+      campaign_lock_digest: sha256(canonicalJson(lock)),
+      action_id: launch.action_id,
+      task_ids: ["control-smoke-task"],
+      operations: ["campaign.read", "sandbox.create", "sandbox.exec", "sandbox.close"],
+      expires_at: Math.floor(Date.now() / 1000) + 60,
+    });
+    const capabilityHeaders = {
+      "x-harbor-hf-worker-capability": capability,
+    };
+    vi.spyOn(
+      runtime.sandboxes as NonNullable<Runtime["sandboxes"]>,
+      "lifecycle",
+    ).mockImplementation(async (intent) => ({
+      outcome: intent.action_kind === "sandbox.create" ? "created" : "completed",
+      observed_state: intent.action_kind === "sandbox.close" ? "CANCELED" : "RUNNING",
+      resource_id: "private-ambiguous-sandbox-resource",
+    }));
+    const execute = vi
+      .spyOn(runtime.sandboxes as NonNullable<Runtime["sandboxes"]>, "execute")
+      .mockRejectedValue(
+        new Error(
+          "private adapter response at https://private.example.invalid contains topology",
+        ),
+      );
+    const create = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-ambiguous-create-key",
+      },
+    });
+    expect(create.statusCode).toBe(200);
+    const sandboxId = create.json().sandbox_id as string;
+    const execUrl = `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}/exec`;
+    const execInput = {
+      method: "POST" as const,
+      url: execUrl,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-ambiguous-command-key",
+      },
+      payload: {
+        command: ["python", "worker.py"],
+        cwd: "/app",
+        timeout_seconds: 60,
+      },
+    };
+    const failed = await app.inject(execInput);
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json()).toMatchObject({
+      error: {
+        code: "sandbox_action_ambiguous",
+        message: "Sandbox action outcome is unknown and cannot be replayed",
+        request_id: expect.any(String),
+      },
+    });
+    expect(JSON.stringify(failed.json())).not.toContain("private.example.invalid");
+    expect(execute).toHaveBeenCalledOnce();
+    const command = (await runtime.projection.campaignActions(campaignId)).find(
+      (action) => action.action_kind === "sandbox.exec",
+    );
+    if (!command?.receipt_body) throw new Error("ambiguous receipt is missing");
+    expect(JSON.parse(command.receipt_body)).toMatchObject({
+      outcome: "failed",
+      observed_state: "AMBIGUOUS",
+      error_code: "sandbox_external_outcome_unknown",
+    });
+    expect(await runtime.projection.actionAdvanced(command.action_id)).toBe(true);
+    const resultPath = sandboxActionResultPath(campaignId, command.action_id);
+    const resultPrefix = resultPath.slice(0, -"/result.json".length);
+    expect(await runtime.store.list(resultPrefix)).toEqual([]);
+    expect(
+      await runtime.projection.pendingDispatchedSandboxExecActions(
+        campaignId,
+        "control-smoke-task",
+      ),
+    ).toEqual([]);
+
+    const repeated = await app.inject(execInput);
+    expect(repeated.statusCode).toBe(409);
+    expect(repeated.json()).toMatchObject({
+      error: { code: "idempotency_conflict" },
+    });
+    expect(execute).toHaveBeenCalledOnce();
+    const close = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/campaigns/${campaignId}/tasks/control-smoke-task/sandboxes/${sandboxId}`,
+      headers: {
+        ...capabilityHeaders,
+        "idempotency-key": "sandbox-ambiguous-close-key",
+      },
+    });
+    expect(close.statusCode).toBe(200);
     await app.close();
   });
 

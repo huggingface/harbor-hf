@@ -411,6 +411,83 @@ This is the transactional outbox pattern expressed with immutable Bucket
 objects and deterministic HF labels. The single control writer removes the need
 for a Git parent-commit claim.
 
+### Sandbox command ambiguity
+
+`sandbox.exec` is not replay-safe. A lost response can mean that the command ran,
+did not run, or ran without returning a result. The service must keep that
+uncertainty visible and must not leave the action pending forever.
+
+When the Sandbox adapter throws after dispatch, `executeSandboxAction` writes no
+result. It appends an action receipt with `outcome=failed`,
+`observed_state=AMBIGUOUS`, and
+`error_code=sandbox_external_outcome_unknown`, appends `action.advanced`, and
+returns a safe `503 sandbox_action_ambiguous` response. The raw adapter error,
+remote body, command, URL, resource identity, credential, and private topology
+do not cross the API boundary. A repeated idempotency key returns a conflict and
+does not call the adapter.
+
+A process exit between dispatch and receipt still leaves an older ambiguous
+action. Before infrastructure retry or cancellation, the service performs a
+bounded query for dispatched `sandbox.exec` actions in the selected campaign
+and task that have no result or receipt. It can settle one only when all of the
+following facts are durable:
+
+- the action belongs to the selected campaign and task;
+- its `sandbox_create_action_id` and resource identity match the owning create
+  action;
+- the canonical result path is absent;
+- no receipt exists;
+- a matching Sandbox close receipt completed in a terminal observed state; and
+- the close action is advanced.
+
+Settlement appends the same failed ambiguous receipt and advancement. It never
+replays the command or writes a result. A mismatch, an open Sandbox, an existing
+result, a conflicting receipt, or an unsupported action stops recovery. The
+infrastructure-retry path settles only its selected task and then verifies that
+no unresolved non-replay-safe Sandbox action remains before it reserves or
+launches a replacement. Cancellation settles only close-fenced actions and
+leaves open resources on the existing cleanup path. There is no global sweep,
+new route, fallback reader, or second durable format.
+
+The durable result key must have one shared implementation so execution and
+recovery check the same bytes. The current action receipt schema already accepts
+`failed`, `AMBIGUOUS`, and the stable error code, so the expected change needs no
+schema or generated-file update. Historical records keep their meaning.
+`action.advanced` states that the control lifecycle ended; it does not state that
+the external effect was absent.
+
+The first physical attempt in the one-task replacement campaign exposed this
+failure during inference-bridge shutdown. The attempt is an eligible
+infrastructure outcome with no terminal task selection. The Sandbox closed with
+a terminal CANCELED state, but at least seven dispatched command actions have no
+receipt. The campaign therefore remains at zero of one terminal tasks with nine
+pending actions, 10,167 microusd observed, and no publication. This attempt and
+its evidence remain immutable and consume one of the two allowed infrastructure
+attempts.
+
+Implementation and rollout use this order:
+
+1. preserve a private hash-checked incident snapshot;
+2. add the shared result path, typed safe error, ambiguous receipt writer,
+   bounded projection query, and close-gated settlement;
+3. test live exceptions, hard-crash leftovers, same-key replay, restart,
+   projection rebuild, concurrent settlement, retry, cancellation, and every
+   fail-closed ownership check;
+4. confirm the worker revision and all profile files remain unchanged;
+5. pass local, generated, image, privacy, review, and CI gates;
+6. deploy the exact repair merge to the existing control Space and verify the
+   unchanged resource contract; and
+7. invoke the existing infrastructure-retry operation once for the unsealed
+   task.
+
+The retry retains attempt 1, its evidence, the 10,167 microusd observed spend,
+the campaign lock, task digest, profiles, and 180,000,000 microusd ceiling. It
+can create only physical attempt 2. The valid canary-v5 task remains sealed and
+is not part of this campaign. If attempt 2 repeats this control failure or ends
+with another policy, provenance, credential, budget, or cleanup failure, paid
+work stops. The 89-task diagnostic campaign stays blocked until attempt 2 is a
+valid published sample and the private two-sample launch review passes.
+
 ## Trial completion and repair
 
 A worker receives a fixed set of logical task IDs and new physical attempt IDs.

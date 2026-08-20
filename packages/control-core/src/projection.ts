@@ -1088,6 +1088,30 @@ export class Projection {
     }));
   }
 
+  async pendingDispatchedSandboxExecActions(
+    campaignId: string,
+    taskId?: string,
+    limit = 1_025,
+  ): Promise<ActionIntent[]> {
+    const rows = await this.db
+      .selectFrom("actions")
+      .innerJoin("dispatches", "dispatches.action_id", "actions.action_id")
+      .select("actions.intent_body")
+      .where("actions.campaign_id", "=", campaignId)
+      .where("actions.action_kind", "=", "sandbox.exec")
+      .where("actions.receipt_body", "is", null)
+      .$if(taskId !== undefined, (query) =>
+        query.where(
+          sql<boolean>`json_extract(actions.intent_body, '$.payload.task_id') = ${taskId}`,
+        ),
+      )
+      .orderBy("actions.created_at")
+      .orderBy("actions.action_id")
+      .limit(limit)
+      .execute();
+    return rows.map((row) => JSON.parse(row.intent_body) as ActionIntent);
+  }
+
   async actionDispatch(actionId: string): Promise<Selectable<DispatchRow> | null> {
     return (
       (await this.db
@@ -1095,6 +1119,16 @@ export class Projection {
         .selectAll()
         .where("action_id", "=", actionId)
         .executeTakeFirst()) ?? null
+    );
+  }
+
+  async actionAdvanced(actionId: string): Promise<boolean> {
+    return Boolean(
+      await this.db
+        .selectFrom("advancements")
+        .select("action_id")
+        .where("action_id", "=", actionId)
+        .executeTakeFirst(),
     );
   }
 

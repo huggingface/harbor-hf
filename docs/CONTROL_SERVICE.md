@@ -256,11 +256,28 @@ and requests within those limits.
 Sandbox policies lock the digest-pinned image, hardware, lifetime, idle timeout,
 reservation, hourly cost, command count, command timeout, transfer size and
 filesystem roots. The control service writes a dispatch fence before every
-Sandbox side effect. Create and close are remotely adoptable. Commands are not
-automatically replayed after an ambiguous dispatch. File writes repeat only with
-identical content-addressed bytes. Results are stored immutably outside the
-projection prefix before the action receipt, so restart recovery cannot duplicate
-a completed operation.
+Sandbox side effect. Create and close are remotely adoptable. File writes repeat
+only with identical content-addressed bytes. Results are stored immutably outside
+the projection prefix before the action receipt, so restart recovery cannot
+duplicate a completed operation.
+
+`sandbox.exec` is not replay-safe. If its external call fails after dispatch, the
+service writes no result. It writes an action receipt with `outcome=failed`,
+`observed_state=AMBIGUOUS`, and
+`error_code=sandbox_external_outcome_unknown`, then writes `action.advanced`.
+The API returns a safe `sandbox_action_ambiguous` error without the external
+error body, command, resource identity, credential, or private route. A repeated
+idempotency key returns a conflict and never calls the Sandbox API again.
+
+A process exit can still leave a dispatch with no result or receipt. The existing
+infrastructure-retry and cancellation paths may settle that action only within
+the selected campaign and task, and only after a matching Sandbox close receipt
+proves a terminal observed state. Settlement verifies the create action, task,
+resource identity, dispatch, missing result, missing receipt, close receipt, and
+close advancement. It then appends the same failed ambiguous receipt and
+advancement. It does not replay the command, create a result, change an attempt,
+or scan another campaign. `action.advanced` ends the control action; it does not
+prove that the external command did not run.
 
 The control service launches the Sandbox server from its read-only public server
 Bucket mount. It derives a per-Sandbox HMAC token and sends only that token plus,

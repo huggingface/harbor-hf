@@ -12,6 +12,7 @@ import type {
 import {
   canonicalJson,
   deterministicId,
+  sandboxActionResultPath,
   schemas,
   sha256,
   validateResultCatalog,
@@ -23,6 +24,7 @@ import {
   IdempotencyConflictError,
   PolicyError,
   ProfileResolutionError,
+  SandboxActionAmbiguousError,
   type ControlEvent,
   type WorkerCapability,
   type WorkerOperation,
@@ -181,10 +183,6 @@ function requireWorkerOperation(
   if (!capability.operations.includes(operation))
     throw new WorkerScopeError(`worker capability does not authorize ${operation}`);
   return capability;
-}
-
-function sandboxResultPath(campaignId: string, actionId: string): string {
-  return `sandbox-results/schema=v1/${campaignId}/${actionId}/result.json`;
 }
 
 function requireAllowedSandboxPath(path: string, policy: SandboxPolicy): string {
@@ -568,7 +566,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       domainActor(request),
     );
     const existing = await runtime.projection.action(intent.action_id);
-    const resultPath = sandboxResultPath(campaignId, intent.action_id);
+    const resultPath = sandboxActionResultPath(campaignId, intent.action_id);
     const resultPrefix = resultPath.slice(0, -"/result.json".length);
     const resultEntry = (await runtime.store.list(resultPrefix)).find(
       (entry) => entry.key === resultPath,
@@ -591,8 +589,18 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       }
       return stored.result;
     }
-    if (existing?.receipt_body)
+    if (existing?.receipt_body) {
+      const receipt = JSON.parse(existing.receipt_body) as ActionReceipt;
+      if (
+        receipt.outcome === "failed" &&
+        receipt.observed_state === "AMBIGUOUS" &&
+        receipt.error_code === "sandbox_external_outcome_unknown"
+      )
+        throw new IdempotencyConflictError(
+          "ambiguous Sandbox action cannot be replayed",
+        );
       throw new PolicyError("Sandbox action receipt is missing its durable result");
+    }
     const dispatched = await runtime.projection.actionDispatch(intent.action_id);
     await runtime.service.writeAction(intent);
     if (dispatched && !replaySafe)
@@ -603,7 +611,22 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       intent,
       new Date(Date.now() + 30_000).toISOString(),
     );
-    const output = await execute(intent, Boolean(dispatched) && !ownsDispatch);
+    let output: Awaited<ReturnType<typeof execute>>;
+    try {
+      output = await execute(intent, Boolean(dispatched) && !ownsDispatch);
+    } catch (error) {
+      if (!replaySafe) {
+        const receipt = await runtime.service.ambiguousSandboxReceipt(
+          intent,
+          domainActor(request),
+        );
+        await runtime.service.markAdvanced(intent, receipt);
+        throw new SandboxActionAmbiguousError(
+          "Sandbox action outcome is unknown and cannot be replayed",
+        );
+      }
+      throw error;
+    }
     await createJson(runtime.store, resultPath, output);
     const receipt = await runtime.service.receipt(intent, output.external);
     await runtime.service.markAdvanced(intent, receipt);
@@ -2002,6 +2025,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       status = 422;
       code = "profile_resolution_failed";
       message = error.message;
+    } else if (error instanceof SandboxActionAmbiguousError) {
+      status = 503;
+      code = "sandbox_action_ambiguous";
+      message = "Sandbox action outcome is unknown and cannot be replayed";
     } else if (error instanceof WorkerScopeError) {
       status = 403;
       code = "worker_scope_rejected";
