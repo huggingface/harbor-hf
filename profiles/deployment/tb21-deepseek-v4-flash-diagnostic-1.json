@@ -1,0 +1,96 @@
+{
+  "schema_version": "v1",
+  "kind": "profile.object",
+  "record_id": "profile-bb27a031c1084a132d22be7d",
+  "created_at": "2026-08-20T20:32:01.000Z",
+  "actor": {
+    "subject": "harbor-hf-source",
+    "role": "service"
+  },
+  "profile_kind": "deployment",
+  "name": "tb21-deepseek-v4-flash-diagnostic-1",
+  "spec": {
+    "route": "hf_job",
+    "models": ["deepseek-v4-flash-0731-together"],
+    "harnesses": ["pi-0-84-2-high-deepseek-v4-flash-0731-together"],
+    "job_image": "ghcr.io/astral-sh/uv:0.9.30-python3.12-bookworm@sha256:85d4cb1afa769a7338e095b927bee941cf5ec92266c7424b3f6c0f2748567248",
+    "preparation_job_command": [
+      "/bin/sh",
+      "-lc",
+      "exec uv run --no-project --python 3.12 --with harbor==0.21.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/422cf445ce04cfc8f331ddeebfd88f6bc2c5eae9.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_prepare_worker"
+    ],
+    "job_command": [
+      "/bin/sh",
+      "-lc",
+      "exec uv run --no-project --python 3.12 --with harbor==0.21.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/422cf445ce04cfc8f331ddeebfd88f6bc2c5eae9.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_campaign_worker"
+    ],
+    "hardware": "cpu-upgrade",
+    "trusted_worker": true,
+    "inference_token": "forbidden",
+    "preparation": "required",
+    "sandbox_template": {
+      "flavors": [
+        {
+          "hardware": "cpu-basic",
+          "cpus": 2,
+          "memory_mb": 16384,
+          "storage_mb": 102400,
+          "gpus": 0,
+          "active_hourly_cost_microusd": 10000
+        },
+        {
+          "hardware": "cpu-upgrade",
+          "cpus": 8,
+          "memory_mb": 32768,
+          "storage_mb": 102400,
+          "gpus": 0,
+          "active_hourly_cost_microusd": 30000
+        }
+      ],
+      "inference_token": "required",
+      "inference_upstream": "https://router.huggingface.co/v1",
+      "inference_model": "deepseek-ai/DeepSeek-V4-Flash-0731:together",
+      "inference_api": "chat-completions",
+      "inference_max_requests": 512,
+      "inference_max_concurrency": 1,
+      "inference_timeout_seconds": 1800,
+      "inference_max_output_tokens": 32768,
+      "root_bootstrap_command": [
+        "/bin/sh",
+        "-c",
+        "set -eu\nif ! command -v python3 >/dev/null 2>&1 || ! command -v bash >/dev/null 2>&1; then\n  if ! command -v apt-get >/dev/null 2>&1; then\n    echo \"python3 and bash are required for the inference bridge\" >&2\n    exit 1\n  fi\n  apt-get update\n  DEBIAN_FRONTEND=noninteractive apt-get install -y python3 bash ca-certificates\nfi\nroot=/opt/harbor-hf-worker\nmkdir -p \"$root/harbor_hf_agents/support\" /run\n: > \"$root/harbor_hf_agents/__init__.py\"\n: > \"$root/harbor_hf_agents/support/__init__.py\"\nREVISION=422cf445ce04cfc8f331ddeebfd88f6bc2c5eae9 ROOT=\"$root\" python3 - <<'PY'\nimport hashlib, os, pathlib, urllib.request\nrevision = os.environ['REVISION']\nroot = pathlib.Path(os.environ['ROOT']) / 'harbor_hf_agents' / 'support'\nfiles = {\n    'hf_inference_bridge.py': 'a67e6442b5a9be11591699aaf8a861c021ac1e49c10bcd09992ab562098ea2eb',\n    'sandbox_root_bridge.py': 'ec80056b2eba539040bd411848b8e09f5dfce2066f715f814f40c8d909222da4',\n}\nbase = f'https://raw.githubusercontent.com/huggingface/harbor-hf/{revision}/packages/harbor-hf-agents/src/harbor_hf_agents/support'\nfor name, expected in files.items():\n    with urllib.request.urlopen(f'{base}/{name}', timeout=30) as response:\n        data = response.read()\n    if hashlib.sha256(data).hexdigest() != expected:\n        raise RuntimeError(f'worker source digest mismatch: {name}')\n    (root / name).write_bytes(data)\nPY\nPYTHONPATH=\"$root\" python3 -m harbor_hf_agents.support.sandbox_root_bridge\n"
+      ],
+      "max_sandboxes": 16,
+      "max_commands": 512,
+      "max_command_seconds": 28800,
+      "max_transfer_bytes": 67108864,
+      "allowed_roots": [
+        "/app",
+        "/home",
+        "/logs",
+        "/root",
+        "/run",
+        "/solution",
+        "/tests",
+        "/tmp"
+      ],
+      "default_cpus": 1,
+      "default_memory_mb": 2048,
+      "default_storage_mb": 10240,
+      "default_gpus": 0,
+      "max_timeout_seconds": 43200,
+      "lifetime_overhead_seconds": 900,
+      "idle_timeout_overhead_seconds": 600
+    },
+    "inference_provider": "together",
+    "input_price_microusd_per_million_tokens": 140000,
+    "output_price_microusd_per_million_tokens": 280000,
+    "harbor_version": "0.21.0",
+    "worker_revision": "422cf445ce04cfc8f331ddeebfd88f6bc2c5eae9",
+    "context_window": 131072,
+    "timeout_seconds": 604800,
+    "preparation_timeout_seconds": 7200,
+    "worker_concurrency": 8,
+    "worker_max_tasks_per_job": 89
+  }
+}

@@ -456,6 +456,24 @@ receipt and `replacement_eligible` fields carry this decision, so no new public
 API or durable record version is needed. The locked launch policy remains the
 only authority for retry count, cost admission, and logical task selection.
 
+The provider repair is merged at worker revision
+`422cf445ce04cfc8f331ddeebfd88f6bc2c5eae9`. Its profile rollout adds new
+immutable records and leaves the historical canary and official five-trial
+profiles unchanged. The replacement profile family contains one trial-1 task.
+The diagnostic profile family contains the stable trial-1 projection of all 89
+source tasks in the official profile. Both deployment profiles pin the merged
+revision in the preparation command, execution command, `worker_revision`, and
+root bootstrap. Tests verify the bootstrap file hashes and canonical profile
+IDs. The replacement deployment accepts one task. The diagnostic deployment
+accepts 89 tasks at the approved concurrency of eight.
+
+The replacement and diagnostic launch policies require worker receipts, allow
+at most two preparation attempts and two infrastructure attempts, and publish
+as diagnostic evidence. Their reservations follow the existing per-action
+budget rules. The cumulative 180,000,000 microusd replacement ceiling and
+300,000,000 microusd diagnostic ceiling remain server-enforced campaign limits;
+profile reservations do not replace those limits.
+
 Completed, invalid, semantic, refusal, verifier, agent, and benchmark-timeout
 outcomes are terminal according to the locked policy. Only a proven retryable
 infrastructure outcome may receive a new physical attempt. A replacement never
