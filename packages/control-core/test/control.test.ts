@@ -1786,6 +1786,105 @@ describe("control service", () => {
     ).toEqual([]);
   });
 
+  it("serializes Sandbox close settlement with command completion", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "close-command-completion-race-campaign-key",
+      operator,
+    );
+    const command = await appendClosedSandboxAmbiguity(
+      control,
+      result.campaign_id,
+      "task-001",
+      "completion-race",
+      "none",
+    );
+    const policy = command.payload.sandbox;
+    const createActionId = command.payload.sandbox_create_action_id;
+    const resourceId = command.payload.resource_id;
+    if (!policy || typeof createActionId !== "string" || typeof resourceId !== "string")
+      throw new Error("command fixture is missing Sandbox ownership");
+
+    let releaseCompletion = (): void => undefined;
+    const completionGate = new Promise<void>((resolve) => {
+      releaseCompletion = resolve;
+    });
+    let finalizationStarted = (): void => undefined;
+    const started = new Promise<void>((resolve) => {
+      finalizationStarted = resolve;
+    });
+    const commandCompletion = control.service.withSandboxActionFinalization(
+      command.action_id,
+      async () => {
+        finalizationStarted();
+        await completionGate;
+        const external = {
+          outcome: "completed" as const,
+          observed_state: "command-completed",
+          resource_id: resourceId,
+        };
+        await control.store.create(
+          sandboxActionResultPath(result.campaign_id, command.action_id),
+          new TextEncoder().encode(
+            canonicalJson({ external, result: { exit_code: 0 } }),
+          ),
+        );
+        const receipt = await control.service.receipt(command, external);
+        await control.service.markAdvanced(command, receipt);
+      },
+    );
+    await started;
+
+    const close = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.close",
+      "sandbox-close-completion-race",
+      0,
+      {
+        task_id: "task-001",
+        sandbox_create_action_id: createActionId,
+        resource_id: resourceId,
+        sandbox: policy,
+      },
+    );
+    await control.service.writeAction(close);
+    const closeReceipt = await control.service.receipt(close, {
+      outcome: "completed",
+      observed_state: "CANCELED",
+      resource_id: resourceId,
+      cost_microusd: 0,
+    });
+    const pendingQuery = vi.spyOn(
+      control.projection,
+      "pendingDispatchedSandboxExecActions",
+    );
+    let closeCompleted = false;
+    const closeCompletion = control.service
+      .markAdvanced(close, closeReceipt)
+      .then(() => {
+        closeCompleted = true;
+      });
+    await vi.waitFor(() => expect(pendingQuery).toHaveBeenCalled());
+    expect(closeCompleted).toBe(false);
+
+    releaseCompletion();
+    await Promise.all([commandCompletion, closeCompletion]);
+
+    expect(await control.projection.action(command.action_id)).toMatchObject({
+      outcome: "completed",
+      observed_state: "command-completed",
+    });
+    expect(await control.projection.actionAdvanced(command.action_id)).toBe(true);
+    expect(
+      await control.projection.pendingDispatchedSandboxExecActions(
+        result.campaign_id,
+        "task-001",
+      ),
+    ).toEqual([]);
+  });
+
   it("does not settle an ambiguous command while its Sandbox is open", async () => {
     const control = await createTestControl();
     controls.push(control);

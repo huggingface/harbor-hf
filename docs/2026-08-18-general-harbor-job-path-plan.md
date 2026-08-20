@@ -284,22 +284,22 @@ isolation, valid content-addressed evidence, publication, Sandbox close, budget
 reconciliation, and no active Endpoint. Retry only an eligible transient
 physical attempt within the locked attempt and cost limits.
 
-The first replacement physical attempt is invalid infrastructure evidence. A
-safe Sandbox API error during inference-bridge shutdown left at least seven
-dispatched command actions without receipts. The Sandbox later closed with a
-terminal CANCELED state, but the campaign remains at zero of one terminal tasks
-with nine pending actions, 10,167 microusd observed, and no publication. The
-attempt and spend remain immutable and consume one of the two allowed
-infrastructure attempts.
+If a post-dispatch Sandbox command response is lost, the related physical
+attempt is invalid infrastructure evidence. Operator-specific incident
+identities, counts, spend, and attempt state stay in the private launch record.
+The failed attempt, evidence, spend, and consumed attempt count remain
+immutable.
 
 Paid work stops until a reviewed control-only repair makes new post-dispatch
-errors terminally ambiguous and lets the existing retry operation settle the
-close-fenced commands. The control release must pass source, readiness, write,
-projection, resource, profile, and zero-Endpoint checks before recovery. The
-existing retry operation may then create physical attempt 2 for the same
-unsealed task. It cannot reset spend, change the lock, or run the sealed valid
-canary task. A repeated control failure stops the campaign without a third
-execution.
+errors terminally ambiguous and lets the existing retry operation settle
+close-fenced commands. Command completion and settlement use the same
+action-specific finalization fence, and settlement checks the durable result and
+receipt again while it holds that fence. The control release must pass source,
+readiness, write, projection, resource, profile, and zero-Endpoint checks before
+recovery. The existing retry operation may then use only the remaining attempt
+allowed by the locked policy for the same unsealed task. It cannot reset spend,
+change the lock, or run a sealed valid task. A repeated control failure stops the
+campaign without another execution.
 
 Use the preserved valid sample and the valid replacement sample for a private
 measured launch review. Record raw duration, token, cost, and reward values, and

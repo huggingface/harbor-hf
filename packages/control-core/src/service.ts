@@ -258,6 +258,7 @@ export class ControlService {
   private submitQueue: Promise<void> = Promise.resolve();
   private preparationQueue: Promise<void> = Promise.resolve();
   private sandboxAdmissionQueue: Promise<void> = Promise.resolve();
+  private sandboxActionFinalizationQueues = new Map<string, Promise<void>>();
 
   constructor(
     readonly namespace: string,
@@ -1209,6 +1210,26 @@ export class ControlService {
     return appended.record;
   }
 
+  async withSandboxActionFinalization<T>(
+    actionId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous =
+      this.sandboxActionFinalizationQueues.get(actionId) ?? Promise.resolve();
+    const current = previous.then(operation);
+    const tail = current.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.sandboxActionFinalizationQueues.set(actionId, tail);
+    try {
+      return await current;
+    } finally {
+      if (this.sandboxActionFinalizationQueues.get(actionId) === tail)
+        this.sandboxActionFinalizationQueues.delete(actionId);
+    }
+  }
+
   private async hasSandboxResult(
     campaignId: string,
     actionId: string,
@@ -1233,46 +1254,53 @@ export class ControlService {
     let settled = 0;
     let unresolved = 0;
     for (const intent of candidates) {
-      if (await this.hasSandboxResult(campaignId, intent.action_id)) {
-        unresolved += 1;
-        continue;
-      }
-      const createActionId = intent.payload.sandbox_create_action_id;
-      const resourceId = intent.payload.resource_id;
-      if (typeof createActionId !== "string" || typeof resourceId !== "string")
-        throw new PolicyError("ambiguous Sandbox command has invalid ownership");
-      const create = await this.projection.action(createActionId);
-      if (
-        !create ||
-        create.campaign_id !== campaignId ||
-        create.action_kind !== "sandbox.create" ||
-        create.resource_id !== resourceId
-      )
-        throw new PolicyError("ambiguous Sandbox command has invalid create action");
-      const createIntent = JSON.parse(create.intent_body) as ActionIntent;
-      if (createIntent.payload.task_id !== taskId)
-        throw new PolicyError("ambiguous Sandbox command belongs to another task");
-      const close = campaignActions.find((action) => {
-        if (action.action_kind !== "sandbox.close" || !action.receipt_body)
-          return false;
-        const closeIntent = JSON.parse(action.intent_body) as ActionIntent;
-        const closeReceipt = JSON.parse(action.receipt_body) as ActionReceipt;
-        return (
-          closeIntent.payload.task_id === taskId &&
-          closeIntent.payload.sandbox_create_action_id === createActionId &&
-          closeIntent.payload.resource_id === resourceId &&
-          closeReceipt.resource_id === resourceId &&
-          closeReceipt.outcome === "completed" &&
-          terminalSandboxStates.has(closeReceipt.observed_state.toUpperCase())
-        );
-      });
-      if (!close || !(await this.projection.actionAdvanced(close.action_id))) {
-        unresolved += 1;
-        continue;
-      }
-      const receipt = await this.ambiguousSandboxReceipt(intent, actor);
-      await this.markAdvanced(intent, receipt);
-      settled += 1;
+      const disposition = await this.withSandboxActionFinalization(
+        intent.action_id,
+        async (): Promise<"settled" | "resolved" | "unresolved"> => {
+          const current = await this.projection.action(intent.action_id);
+          if (!current || current.receipt_body) return "resolved";
+          if (await this.hasSandboxResult(campaignId, intent.action_id))
+            return "unresolved";
+          const createActionId = intent.payload.sandbox_create_action_id;
+          const resourceId = intent.payload.resource_id;
+          if (typeof createActionId !== "string" || typeof resourceId !== "string")
+            throw new PolicyError("ambiguous Sandbox command has invalid ownership");
+          const create = await this.projection.action(createActionId);
+          if (
+            !create ||
+            create.campaign_id !== campaignId ||
+            create.action_kind !== "sandbox.create" ||
+            create.resource_id !== resourceId
+          )
+            throw new PolicyError(
+              "ambiguous Sandbox command has invalid create action",
+            );
+          const createIntent = JSON.parse(create.intent_body) as ActionIntent;
+          if (createIntent.payload.task_id !== taskId)
+            throw new PolicyError("ambiguous Sandbox command belongs to another task");
+          const close = campaignActions.find((action) => {
+            if (action.action_kind !== "sandbox.close" || !action.receipt_body)
+              return false;
+            const closeIntent = JSON.parse(action.intent_body) as ActionIntent;
+            const closeReceipt = JSON.parse(action.receipt_body) as ActionReceipt;
+            return (
+              closeIntent.payload.task_id === taskId &&
+              closeIntent.payload.sandbox_create_action_id === createActionId &&
+              closeIntent.payload.resource_id === resourceId &&
+              closeReceipt.resource_id === resourceId &&
+              closeReceipt.outcome === "completed" &&
+              terminalSandboxStates.has(closeReceipt.observed_state.toUpperCase())
+            );
+          });
+          if (!close || !(await this.projection.actionAdvanced(close.action_id)))
+            return "unresolved";
+          const receipt = await this.ambiguousSandboxReceipt(intent, actor);
+          await this.markAdvanced(intent, receipt);
+          return "settled";
+        },
+      );
+      if (disposition === "settled") settled += 1;
+      else if (disposition === "unresolved") unresolved += 1;
     }
     return { settled, unresolved };
   }

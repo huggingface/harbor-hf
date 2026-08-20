@@ -272,12 +272,15 @@ idempotency key returns a conflict and never calls the Sandbox API again.
 A process exit can still leave a dispatch with no result or receipt. The existing
 infrastructure-retry and cancellation paths may settle that action only within
 the selected campaign and task, and only after a matching Sandbox close receipt
-proves a terminal observed state. Settlement verifies the create action, task,
-resource identity, dispatch, missing result, missing receipt, close receipt, and
-close advancement. It then appends the same failed ambiguous receipt and
-advancement. It does not replay the command, create a result, change an attempt,
-or scan another campaign. `action.advanced` ends the control action; it does not
-prove that the external command did not run.
+proves a terminal observed state. Command execution and settlement use the same
+action-specific finalization fence. The fence covers the external call, result,
+receipt, and advancement. Settlement waits for an in-flight command, then checks
+the result and receipt again while it holds the fence. It also verifies the
+create action, task, resource identity, dispatch, close receipt, and close
+advancement. It then appends the same failed ambiguous receipt and advancement.
+It does not replay the command, create a result, change an attempt, or scan
+another campaign. `action.advanced` ends the control action; it does not prove
+that the external command did not run.
 
 The control service launches the Sandbox server from its read-only public server
 Bucket mount. It derives a per-Sandbox HMAC token and sends only that token plus,

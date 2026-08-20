@@ -565,72 +565,74 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       payload,
       domainActor(request),
     );
-    const existing = await runtime.projection.action(intent.action_id);
-    const resultPath = sandboxActionResultPath(campaignId, intent.action_id);
-    const resultPrefix = resultPath.slice(0, -"/result.json".length);
-    const resultEntry = (await runtime.store.list(resultPrefix)).find(
-      (entry) => entry.key === resultPath,
-    );
-    if (resultEntry) {
-      await runtime.service.writeAction(intent);
-      const bytes = await runtime.store.read(resultPath);
-      const stored = JSON.parse(new TextDecoder().decode(bytes)) as {
-        external: {
-          outcome: ActionReceipt["outcome"];
-          observed_state: string;
-          resource_id?: string | null;
-          cost_microusd?: number | null;
-        };
-        result: T;
-      };
-      if (!existing?.receipt_body) {
-        const receipt = await runtime.service.receipt(intent, stored.external);
-        await runtime.service.markAdvanced(intent, receipt);
-      }
-      return stored.result;
-    }
-    if (existing?.receipt_body) {
-      const receipt = JSON.parse(existing.receipt_body) as ActionReceipt;
-      if (
-        receipt.outcome === "failed" &&
-        receipt.observed_state === "AMBIGUOUS" &&
-        receipt.error_code === "sandbox_external_outcome_unknown"
-      )
-        throw new IdempotencyConflictError(
-          "ambiguous Sandbox action cannot be replayed",
-        );
-      throw new PolicyError("Sandbox action receipt is missing its durable result");
-    }
-    const dispatched = await runtime.projection.actionDispatch(intent.action_id);
-    await runtime.service.writeAction(intent);
-    if (dispatched && !replaySafe)
-      throw new IdempotencyConflictError(
-        "ambiguous sandbox command cannot be replayed; inspect state and use a new key",
+    return runtime.service.withSandboxActionFinalization(intent.action_id, async () => {
+      const existing = await runtime.projection.action(intent.action_id);
+      const resultPath = sandboxActionResultPath(campaignId, intent.action_id);
+      const resultPrefix = resultPath.slice(0, -"/result.json".length);
+      const resultEntry = (await runtime.store.list(resultPrefix)).find(
+        (entry) => entry.key === resultPath,
       );
-    await runtime.service.dispatchAction(
-      intent,
-      new Date(Date.now() + 30_000).toISOString(),
-    );
-    let output: Awaited<ReturnType<typeof execute>>;
-    try {
-      output = await execute(intent, Boolean(dispatched) && !ownsDispatch);
-    } catch (error) {
-      if (!replaySafe) {
-        const receipt = await runtime.service.ambiguousSandboxReceipt(
-          intent,
-          domainActor(request),
-        );
-        await runtime.service.markAdvanced(intent, receipt);
-        throw new SandboxActionAmbiguousError(
-          "Sandbox action outcome is unknown and cannot be replayed",
-        );
+      if (resultEntry) {
+        await runtime.service.writeAction(intent);
+        const bytes = await runtime.store.read(resultPath);
+        const stored = JSON.parse(new TextDecoder().decode(bytes)) as {
+          external: {
+            outcome: ActionReceipt["outcome"];
+            observed_state: string;
+            resource_id?: string | null;
+            cost_microusd?: number | null;
+          };
+          result: T;
+        };
+        if (!existing?.receipt_body) {
+          const receipt = await runtime.service.receipt(intent, stored.external);
+          await runtime.service.markAdvanced(intent, receipt);
+        }
+        return stored.result;
       }
-      throw error;
-    }
-    await createJson(runtime.store, resultPath, output);
-    const receipt = await runtime.service.receipt(intent, output.external);
-    await runtime.service.markAdvanced(intent, receipt);
-    return output.result;
+      if (existing?.receipt_body) {
+        const receipt = JSON.parse(existing.receipt_body) as ActionReceipt;
+        if (
+          receipt.outcome === "failed" &&
+          receipt.observed_state === "AMBIGUOUS" &&
+          receipt.error_code === "sandbox_external_outcome_unknown"
+        )
+          throw new IdempotencyConflictError(
+            "ambiguous Sandbox action cannot be replayed",
+          );
+        throw new PolicyError("Sandbox action receipt is missing its durable result");
+      }
+      const dispatched = await runtime.projection.actionDispatch(intent.action_id);
+      await runtime.service.writeAction(intent);
+      if (dispatched && !replaySafe)
+        throw new IdempotencyConflictError(
+          "ambiguous sandbox command cannot be replayed; inspect state and use a new key",
+        );
+      await runtime.service.dispatchAction(
+        intent,
+        new Date(Date.now() + 30_000).toISOString(),
+      );
+      let output: Awaited<ReturnType<typeof execute>>;
+      try {
+        output = await execute(intent, Boolean(dispatched) && !ownsDispatch);
+      } catch (error) {
+        if (!replaySafe) {
+          const receipt = await runtime.service.ambiguousSandboxReceipt(
+            intent,
+            domainActor(request),
+          );
+          await runtime.service.markAdvanced(intent, receipt);
+          throw new SandboxActionAmbiguousError(
+            "Sandbox action outcome is unknown and cannot be replayed",
+          );
+        }
+        throw error;
+      }
+      await createJson(runtime.store, resultPath, output);
+      const receipt = await runtime.service.receipt(intent, output.external);
+      await runtime.service.markAdvanced(intent, receipt);
+      return output.result;
+    });
   };
 
   app.addHook("onRequest", async (request, reply) => {

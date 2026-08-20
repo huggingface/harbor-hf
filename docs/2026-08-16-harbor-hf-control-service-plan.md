@@ -441,13 +441,17 @@ following facts are durable:
 - the close action is advanced.
 
 Settlement appends the same failed ambiguous receipt and advancement. It never
-replays the command or writes a result. A mismatch, an open Sandbox, an existing
-result, a conflicting receipt, or an unsupported action stops recovery. The
-infrastructure-retry path settles only its selected task and then verifies that
-no unresolved non-replay-safe Sandbox action remains before it reserves or
-launches a replacement. Cancellation settles only close-fenced actions and
-leaves open resources on the existing cleanup path. There is no global sweep,
-new route, fallback reader, or second durable format.
+replays the command or writes a result. Command execution and settlement use the
+same action-specific finalization fence. The fence covers the external call,
+result persistence, receipt, and advancement. Settlement waits for an in-flight
+command, then checks the result and receipt again while it holds the fence. A
+mismatch, an open Sandbox, an existing result, a conflicting receipt, or an
+unsupported action stops recovery. The infrastructure-retry path settles only
+its selected task and then verifies that no unresolved non-replay-safe Sandbox
+action remains before it reserves or launches a replacement. Cancellation
+settles only close-fenced actions and leaves open resources on the existing
+cleanup path. There is no global sweep, new route, fallback reader, or second
+durable format.
 
 The durable result key must have one shared implementation so execution and
 recovery check the same bytes. The current action receipt schema already accepts
@@ -456,37 +460,34 @@ schema or generated-file update. Historical records keep their meaning.
 `action.advanced` states that the control lifecycle ended; it does not state that
 the external effect was absent.
 
-The first physical attempt in the one-task replacement campaign exposed this
-failure during inference-bridge shutdown. The attempt is an eligible
-infrastructure outcome with no terminal task selection. The Sandbox closed with
-a terminal CANCELED state, but at least seven dispatched command actions have no
-receipt. The campaign therefore remains at zero of one terminal tasks with nine
-pending actions, 10,167 microusd observed, and no publication. This attempt and
-its evidence remain immutable and consume one of the two allowed infrastructure
-attempts.
+Operator-specific incident identities, action counts, spend, and attempt state
+stay in a private hash-checked snapshot. Public documentation records only the
+general recovery contract. Recovery preserves the failed attempt, its evidence,
+observed spend, campaign lock, task digest, profiles, ceiling, and consumed
+attempt count.
 
 Implementation and rollout use this order:
 
-1. preserve a private hash-checked incident snapshot;
+1. preserve the private hash-checked incident snapshot;
 2. add the shared result path, typed safe error, ambiguous receipt writer,
-   bounded projection query, and close-gated settlement;
+   bounded projection query, action-specific finalization fence, and close-gated
+   settlement;
 3. test live exceptions, hard-crash leftovers, same-key replay, restart,
-   projection rebuild, concurrent settlement, retry, cancellation, and every
-   fail-closed ownership check;
+   projection rebuild, command-completion races, concurrent settlement, retry,
+   cancellation, and every fail-closed ownership check;
 4. confirm the worker revision and all profile files remain unchanged;
 5. pass local, generated, image, privacy, review, and CI gates;
 6. deploy the exact repair merge to the existing control Space and verify the
    unchanged resource contract; and
-7. invoke the existing infrastructure-retry operation once for the unsealed
-   task.
+7. invoke the existing infrastructure-retry operation only after private checks
+   prove that the locked retry remains eligible.
 
-The retry retains attempt 1, its evidence, the 10,167 microusd observed spend,
-the campaign lock, task digest, profiles, and 180,000,000 microusd ceiling. It
-can create only physical attempt 2. The valid canary-v5 task remains sealed and
-is not part of this campaign. If attempt 2 repeats this control failure or ends
-with another policy, provenance, credential, budget, or cleanup failure, paid
-work stops. The 89-task diagnostic campaign stays blocked until attempt 2 is a
-valid published sample and the private two-sample launch review passes.
+The retry can use only the remaining attempt allowed by the immutable launch
+policy. It cannot reset spend, change the lock, or include a sealed valid task.
+A repeated control failure or a policy, provenance, credential, budget, or
+cleanup failure stops paid work. The diagnostic campaign stays blocked until
+the replacement is a valid published sample and the private measured launch
+review passes.
 
 ## Trial completion and repair
 
