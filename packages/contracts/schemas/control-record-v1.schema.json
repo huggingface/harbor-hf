@@ -1656,6 +1656,11 @@
           "minimum": 0,
           "maximum": 1000000000000
         },
+        "max_campaign_ceiling_microusd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
         "success_without_worker_receipt": {
           "type": "boolean"
         },

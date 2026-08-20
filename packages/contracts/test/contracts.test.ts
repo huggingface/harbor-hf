@@ -29,6 +29,53 @@ describe("canonical contracts", () => {
     );
   });
 
+  it("validates optional launch-policy campaign ceiling maximums", () => {
+    const spec = {
+      max_infrastructure_attempts: 2,
+      reservation_microusd: 100_000,
+      max_campaign_ceiling_microusd: 300_000_000,
+      success_without_worker_receipt: false,
+      publication_role: "diagnostic",
+    };
+    const profile = {
+      schema_version: "v1",
+      kind: "profile.object",
+      record_id: "profile-launch-policy-cap",
+      created_at: "2026-08-20T00:00:00.000Z",
+      actor: { subject: "test", role: "service" },
+      profile_kind: "launch_policy",
+      name: "capped-policy",
+      spec,
+    };
+
+    expect(validateControlRecord(profile)).toEqual(profile);
+    const { max_campaign_ceiling_microusd: _maximum, ...historicalSpec } = spec;
+    expect(validateControlRecord({ ...profile, spec: historicalSpec })).toMatchObject({
+      spec: historicalSpec,
+    });
+    expect(
+      validateControlRecord({
+        ...profile,
+        spec: { ...spec, max_campaign_ceiling_microusd: 0 },
+      }),
+    ).toMatchObject({ spec: { max_campaign_ceiling_microusd: 0 } });
+    expect(
+      validateControlRecord({
+        ...profile,
+        spec: { ...spec, max_campaign_ceiling_microusd: 1_000_000_000_000 },
+      }),
+    ).toMatchObject({ spec: { max_campaign_ceiling_microusd: 1_000_000_000_000 } });
+
+    for (const invalid of [-1, 1.5, "300000000", 1_000_000_000_001]) {
+      expect(() =>
+        validateControlRecord({
+          ...profile,
+          spec: { ...spec, max_campaign_ceiling_microusd: invalid },
+        }),
+      ).toThrow(ContractValidationError);
+    }
+  });
+
   it("validates scoped worker evidence manifests", () => {
     const digest = `sha256:${"a".repeat(64)}`;
     const path = workerEvidenceObjectPath(

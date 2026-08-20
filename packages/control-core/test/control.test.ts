@@ -153,6 +153,66 @@ describe("control service", () => {
     expect(await control.projection.pendingActions()).toEqual([]);
   });
 
+  it("enforces the immutable launch-policy campaign ceiling before durable state", async () => {
+    const control = await createTestControl(1, 1, 0, true, "forbidden", 100);
+    controls.push(control);
+
+    const lower = await control.service.submit(
+      { ...submission, ceiling_microusd: 80 },
+      "profile-ceiling-lower-key",
+      operator,
+    );
+    const lowerLock = await control.projection.campaignLock(lower.campaign_id);
+    expect(lowerLock).toMatchObject({ ceiling_microusd: 80 });
+    expect(
+      lowerLock?.profiles.find((profile) => profile.kind === "launch_policy")?.spec,
+    ).toMatchObject({ max_campaign_ceiling_microusd: 100 });
+    expect(
+      await control.service.submit(
+        { ...submission, ceiling_microusd: 80 },
+        "profile-ceiling-lower-key",
+        operator,
+      ),
+    ).toMatchObject({ campaign_id: lower.campaign_id, adopted: true });
+
+    const exact = await control.service.submit(
+      { ...submission, ceiling_microusd: 100 },
+      "profile-ceiling-exact-key",
+      operator,
+    );
+    expect(await control.projection.campaignLock(exact.campaign_id)).toMatchObject({
+      ceiling_microusd: 100,
+    });
+
+    const overKey = "profile-ceiling-over-key";
+    const overCampaignId = deterministicId(
+      "campaign",
+      "test",
+      operator.subject,
+      sha256(overKey),
+    );
+    await expect(
+      control.service.submit(
+        { ...submission, ceiling_microusd: 101 },
+        overKey,
+        operator,
+      ),
+    ).rejects.toThrow("campaign ceiling exceeds the launch policy maximum");
+    expect(await control.projection.campaignRequest(overCampaignId)).toBeNull();
+    expect(await control.projection.campaignLock(overCampaignId)).toBeNull();
+    expect(await control.projection.campaignActions(overCampaignId)).toEqual([]);
+
+    const corrected = await control.service.submit(
+      { ...submission, ceiling_microusd: 100 },
+      overKey,
+      operator,
+    );
+    expect(corrected.campaign_id).toBe(overCampaignId);
+    expect(await control.projection.campaignLock(overCampaignId)).toMatchObject({
+      ceiling_microusd: 100,
+    });
+  });
+
   it("recovers action advancement after a receipt-only crash", async () => {
     const control = await createTestControl();
     controls.push(control);

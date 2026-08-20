@@ -797,6 +797,11 @@ export class ControlService {
     if (deployment.route !== "hf_job")
       throw new PolicyError("imported deployment profiles cannot launch campaigns");
     const launchPolicy = profileSpec<LaunchPolicySpec>(profiles, "launch_policy");
+    if (
+      launchPolicy.max_campaign_ceiling_microusd !== undefined &&
+      input.ceiling_microusd > launchPolicy.max_campaign_ceiling_microusd
+    )
+      throw new PolicyError("campaign ceiling exceeds the launch policy maximum");
     const tasks = existingLock?.tasks ?? this.resolver.tasks(input.benchmark);
     const executionJobs = deployment.worker_max_tasks_per_job
       ? Math.ceil(tasks.length / deployment.worker_max_tasks_per_job)

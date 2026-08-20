@@ -470,9 +470,16 @@ accepts 89 tasks at the approved concurrency of eight.
 The replacement and diagnostic launch policies require worker receipts, allow
 at most two preparation attempts and two infrastructure attempts, and publish
 as diagnostic evidence. Their reservations follow the existing per-action
-budget rules. The cumulative 180,000,000 microusd replacement ceiling and
-300,000,000 microusd diagnostic ceiling remain server-enforced campaign limits;
-profile reservations do not replace those limits.
+budget rules. Each policy also sets `max_campaign_ceiling_microusd`: 180,000,000
+for replacement and 300,000,000 for the diagnostic campaign.
+
+The service resolves the launch policy before it writes a campaign request or
+lock. It rejects a requested ceiling above the policy maximum before any durable
+campaign state or paid action exists. A requested ceiling at or below the
+maximum is stored unchanged in the request and lock and remains the runtime
+cumulative budget for reservations, observed spend, retries, and cleanup. The
+maximum is optional only so historical profile objects remain readable. The two
+new paid policies always include it, and no other field can override it.
 
 Completed, invalid, semantic, refusal, verifier, agent, and benchmark-timeout
 outcomes are terminal according to the locked policy. Only a proven retryable

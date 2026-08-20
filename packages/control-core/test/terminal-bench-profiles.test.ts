@@ -7,6 +7,7 @@ import {
   validateControlRecord,
 } from "@harbor-hf/contracts";
 import { describe, expect, it } from "vitest";
+import { loadBuiltInProfiles } from "../src/profiles.js";
 
 const WORKER_REVISION = "422cf445ce04cfc8f331ddeebfd88f6bc2c5eae9";
 const PREVIOUS_WORKER_REVISION = "0b199c7cdec7cfcdbdbd48819ca146dc79e45dc3";
@@ -188,18 +189,41 @@ describe("Terminal-Bench 2.1 profiles", () => {
   it("keep replacement and single-trial launch policies diagnostic and bounded", async () => {
     const canary = record((await profile("launch-policy", "tb21-canary")).spec);
     const official = record((await profile("launch-policy", "tb21-official-5")).spec);
-    const replacement = record(
-      (await profile("launch-policy", "tb21-replacement")).spec,
-    );
-    const diagnostic = record(
-      (await profile("launch-policy", "tb21-diagnostic-1")).spec,
-    );
+    const replacementProfile = await profile("launch-policy", "tb21-replacement");
+    const diagnosticProfile = await profile("launch-policy", "tb21-diagnostic-1");
+    const replacement = record(replacementProfile.spec);
+    const diagnostic = record(diagnosticProfile.spec);
 
-    expect(replacement).toEqual(canary);
-    expect(diagnostic).toEqual({ ...official, publication_role: "diagnostic" });
-    for (const spec of [replacement, diagnostic]) {
+    expect(replacementProfile.record_id).toBe("profile-ff9e906d69e089a009d00fe8");
+    expect(diagnosticProfile.record_id).toBe("profile-ede7617f34276455bde5e8b5");
+    const immutableIds = new Map(
+      (await loadBuiltInProfiles("profiles")).map((item) => [
+        item.profile.name,
+        item.profile_id,
+      ]),
+    );
+    expect(immutableIds.get("tb21-replacement")).toBe(
+      "sha256:485dc1ad6c00550478db1b2cba6f0fcacc579e49244fd9cc1cdddf56014abcea",
+    );
+    expect(immutableIds.get("tb21-diagnostic-1")).toBe(
+      "sha256:60fdb06aa333652caf69506586d724e4f2b766c427f70f0f38c718b44d59604a",
+    );
+    expect(replacement).toEqual({
+      ...canary,
+      max_campaign_ceiling_microusd: 180_000_000,
+    });
+    expect(diagnostic).toEqual({
+      ...official,
+      max_campaign_ceiling_microusd: 300_000_000,
+      publication_role: "diagnostic",
+    });
+    for (const [spec, maximum] of [
+      [replacement, 180_000_000],
+      [diagnostic, 300_000_000],
+    ] as const) {
       expect(spec.max_infrastructure_attempts).toBe(2);
       expect(spec.max_preparation_attempts).toBe(2);
+      expect(spec.max_campaign_ceiling_microusd).toBe(maximum);
       expect(spec.success_without_worker_receipt).toBe(false);
       expect(spec.publication_role).toBe("diagnostic");
     }

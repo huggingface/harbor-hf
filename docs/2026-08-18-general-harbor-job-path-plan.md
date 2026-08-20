@@ -204,7 +204,11 @@ Local checks must prove:
 - preparation, execution, `worker_revision`, and root bootstrap all pin the
   reviewed worker and exact file hashes;
 - replacement and diagnostic launch policies require receipts, keep bounded
-  attempts, and publish as diagnostic evidence;
+  attempts, publish as diagnostic evidence, and set the approved maximum
+  campaign ceiling;
+- a lower or exact requested ceiling is preserved, while an over-limit request
+  fails before durable campaign state exists;
+- historical profiles without a maximum remain readable;
 - the six historical canary and official profile files remain unchanged;
 - browser APIs omit lock contents and private paths together with topology and
   evidence references;
@@ -232,8 +236,14 @@ than changing the historical canary or official five-trial profiles:
 Both deployment profiles pin the merged worker in the package URLs,
 `worker_revision`, and root bootstrap. Their bootstrap file hashes and canonical
 profile IDs must reproduce. Profile reservations follow the existing per-action
-budget rules. The cumulative replacement and diagnostic ceilings remain
-server-enforced campaign limits.
+budget rules.
+
+The replacement launch policy sets `max_campaign_ceiling_microusd` to
+180,000,000. The diagnostic launch policy sets it to 300,000,000. The service
+resolves that policy before it writes campaign state and rejects a larger
+requested ceiling. A lower or exact requested ceiling is stored unchanged and
+remains the cumulative runtime budget. The maximum is optional only for reading
+historical profiles. Both new policies require it.
 
 Deploy the exact merged profile revision to the existing control Space without
 changing its resources, credentials, hardware, storage, or visibility. Verify

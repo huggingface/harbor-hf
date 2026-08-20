@@ -515,6 +515,7 @@ source_revisions: [string, ...(string)[]]
 export interface LaunchPolicySpec {
 max_infrastructure_attempts: number
 reservation_microusd: number
+max_campaign_ceiling_microusd?: number
 success_without_worker_receipt: boolean
 publication_role: ("final" | "component" | "diagnostic")
 preparation_reservation_microusd?: number

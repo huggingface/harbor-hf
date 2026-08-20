@@ -1361,6 +1361,44 @@ describe("control API", () => {
     await app.close();
   });
 
+  it("rejects a campaign ceiling above the immutable launch-policy maximum", async () => {
+    const { app } = await setup("enabled");
+    const cappedInput = {
+      benchmark: "terminal-bench-2-1-replacement",
+      model: "deepseek-v4-flash-0731-together",
+      harness: "pi-0-84-2-high-deepseek-v4-flash-0731-together",
+      deployment: "tb21-deepseek-v4-flash-replacement",
+      launch_policy: "tb21-replacement",
+      ceiling_microusd: 180_000_001,
+      confirmed: true,
+    };
+    const over = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "profile-ceiling-api-key" },
+      payload: cappedInput,
+    });
+    expect(over.statusCode).toBe(422);
+    expect(over.json()).toMatchObject({
+      error: {
+        code: "policy_rejected",
+        message: "campaign ceiling exceeds the launch policy maximum",
+        request_id: expect.any(String),
+      },
+    });
+    const empty = await app.inject({ method: "GET", url: "/api/v1/campaigns" });
+    expect(empty.json().items).toEqual([]);
+
+    const exact = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "profile-ceiling-api-key" },
+      payload: { ...cappedInput, ceiling_microusd: 180_000_000 },
+    });
+    expect(exact.statusCode).toBe(202);
+    await app.close();
+  });
+
   it("enforces canary profiles, confirmation, and idempotency", async () => {
     const { runtime, app } = await setup();
     const missingKey = await app.inject({
