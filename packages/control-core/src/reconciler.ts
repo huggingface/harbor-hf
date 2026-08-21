@@ -840,6 +840,24 @@ export class Reconciler {
     }
   }
 
+  private async deferRetryUntilSandboxCleanup(source: ActionIntent): Promise<void> {
+    if (source.action_kind !== "job.observe") return;
+    await this.service.writeAction(
+      this.service.actionIntent(
+        source.campaign_id,
+        "job.observe",
+        source.target,
+        source.generation + 1,
+        {
+          ...source.payload,
+          not_before: new Date(
+            Date.parse(source.created_at) + this.options.observation_interval_ms,
+          ).toISOString(),
+        },
+      ),
+    );
+  }
+
   private async finishAttempt(
     attempt: AttemptReceipt,
     source: ActionIntent,
@@ -853,6 +871,19 @@ export class Reconciler {
           )
         )
           return;
+        if (await this.ensureSandboxCleanup(attempt.campaign_id, attempt.task_id)) {
+          await this.deferRetryUntilSandboxCleanup(source);
+          return;
+        }
+        const settlement = await this.service.settleClosedSandboxAmbiguities(
+          attempt.campaign_id,
+          attempt.task_id,
+        );
+        const unresolved = await this.projection.pendingDispatchedSandboxExecActions(
+          attempt.campaign_id,
+          attempt.task_id,
+        );
+        if (settlement.unresolved > 0 || unresolved.length > 0) return;
         const attempts = (
           await this.projection.campaignAttempts(attempt.campaign_id)
         ).filter((item) => item.task_id === attempt.task_id);
@@ -912,42 +943,67 @@ export class Reconciler {
 
   private async ensureSandboxCleanup(
     campaignId: string,
+    taskId?: string,
     actions?: Awaited<ReturnType<Projection["campaignActions"]>>,
   ): Promise<boolean> {
-    const campaignActions =
+    let campaignActions =
       actions ?? (await this.projection.campaignActions(campaignId));
+    const belongsToTask = (action: (typeof campaignActions)[number]): boolean => {
+      if (taskId === undefined) return true;
+      const intent = JSON.parse(action.intent_body) as ActionIntent;
+      return intent.payload.task_id === taskId;
+    };
     const unresolvedCreates = campaignActions.filter(
       (action) =>
-        action.action_kind === "sandbox.create" && action.receipt_body === null,
+        action.action_kind === "sandbox.create" &&
+        action.receipt_body === null &&
+        belongsToTask(action),
     );
     if (unresolvedCreates.length > 0) return true;
+    const pendingCommandTasks = new Set<string>();
+    for (const action of campaignActions) {
+      if (
+        action.action_kind !== "sandbox.exec" ||
+        action.receipt_body !== null ||
+        !belongsToTask(action)
+      )
+        continue;
+      const intent = JSON.parse(action.intent_body) as ActionIntent;
+      if (typeof intent.payload.task_id === "string")
+        pendingCommandTasks.add(intent.payload.task_id);
+    }
+    for (const taskId of pendingCommandTasks)
+      await this.service.settleClosedSandboxAmbiguities(campaignId, taskId);
+    if (pendingCommandTasks.size > 0)
+      campaignActions = await this.projection.campaignActions(campaignId);
     const pendingData = campaignActions.filter(
       (action) =>
         ["sandbox.exec", "sandbox.write", "sandbox.read"].includes(
           action.action_kind,
-        ) && action.receipt_body === null,
+        ) &&
+        action.receipt_body === null &&
+        belongsToTask(action),
     );
-    if (pendingData.length > 0) {
-      for (const action of pendingData) {
-        const intent = JSON.parse(action.intent_body) as ActionIntent;
-        const dispatched = await this.projection.actionDispatch(action.action_id);
-        const receipt = await this.service.receipt(intent, {
-          outcome: "completed",
-          observed_state: dispatched
-            ? "suppressed-sandbox-cleanup-ambiguous"
-            : "suppressed-sandbox-cleanup-before-dispatch",
-        });
-        await this.service.markAdvanced(intent, receipt);
-      }
-      return true;
+    let pending = pendingData.length > 0;
+    for (const action of pendingData) {
+      const intent = JSON.parse(action.intent_body) as ActionIntent;
+      const dispatched = await this.projection.actionDispatch(action.action_id);
+      if (action.action_kind === "sandbox.exec" && dispatched) continue;
+      const receipt = await this.service.receipt(intent, {
+        outcome: "completed",
+        observed_state: dispatched
+          ? "suppressed-sandbox-cleanup-ambiguous"
+          : "suppressed-sandbox-cleanup-before-dispatch",
+      });
+      await this.service.markAdvanced(intent, receipt);
     }
     const creates = campaignActions.filter(
       (action) =>
         action.action_kind === "sandbox.create" &&
         action.receipt_body !== null &&
-        action.resource_id !== null,
+        action.resource_id !== null &&
+        belongsToTask(action),
     );
-    let pending = false;
     for (const create of creates) {
       const createIntent = JSON.parse(create.intent_body) as ActionIntent;
       const closes = campaignActions.filter((action) => {
@@ -998,7 +1054,7 @@ export class Reconciler {
     for (const launch of unresolvedLaunches) {
       if (await this.projection.actionDispatch(launch.action_id)) return;
     }
-    if (await this.ensureSandboxCleanup(campaignId, actions)) return;
+    if (await this.ensureSandboxCleanup(campaignId, undefined, actions)) return;
     const launches = actions.filter(
       (action) =>
         action.action_kind === "job.launch" &&

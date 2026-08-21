@@ -1242,7 +1242,7 @@ export class ControlService {
   async settleClosedSandboxAmbiguities(
     campaignId: string,
     taskId: string,
-    actor: Actor,
+    actor: Actor = serviceActor(),
   ): Promise<{ settled: number; unresolved: number }> {
     const candidates = await this.projection.pendingDispatchedSandboxExecActions(
       campaignId,

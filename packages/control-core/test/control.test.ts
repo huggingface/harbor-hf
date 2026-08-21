@@ -994,9 +994,13 @@ describe("control service", () => {
     expect(
       close ? await control.projection.actionDispatch(close.action_id) : null,
     ).not.toBeNull();
-    expect(await control.projection.action(command.action_id)).toMatchObject({
-      outcome: "completed",
-      observed_state: "suppressed-sandbox-cleanup-ambiguous",
+    const commandReceipt = JSON.parse(
+      (await control.projection.action(command.action_id))?.receipt_body ?? "null",
+    );
+    expect(commandReceipt).toMatchObject({
+      outcome: "failed",
+      observed_state: "AMBIGUOUS",
+      error_code: "sandbox_external_outcome_unknown",
     });
     const campaign = await control.projection.campaign(result.campaign_id);
     expect(campaign).toMatchObject({
@@ -1291,6 +1295,100 @@ describe("control service", () => {
       terminal_tasks: 1,
       publication_status: "published",
     });
+  });
+
+  it("closes and settles Sandbox commands before automatic retry", async () => {
+    const control = await createTestControl(1, 2, 1, false);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 2 },
+      "automatic-retry-sandbox-recovery-key",
+      operator,
+    );
+    let initialLaunches = 0;
+    let replacementLaunches = 0;
+    let sandboxClosed = false;
+    let replacementBeforeClose = false;
+    const noop = new NoopActions();
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.launch") {
+          if (typeof intent.payload.prior_attempt_id === "string") {
+            replacementLaunches += 1;
+            replacementBeforeClose ||= !sandboxClosed;
+            return {
+              outcome: "created",
+              observed_state: "RUNNING",
+              resource_id: "replacement-job",
+            };
+          }
+          initialLaunches += 1;
+          return {
+            outcome: "created",
+            observed_state: "RUNNING",
+            resource_id: "initial-job",
+          };
+        }
+        if (intent.action_kind === "job.observe")
+          return {
+            outcome: "completed",
+            observed_state: "COMPLETED",
+            resource_id: intent.payload.resource_id as string,
+          };
+        if (intent.action_kind === "sandbox.close") {
+          sandboxClosed = true;
+          return {
+            outcome: "completed",
+            observed_state: "CANCELED",
+            resource_id: intent.payload.resource_id as string,
+          };
+        }
+        return noop.execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        worker_receipt_grace_ms: 0,
+        batch_size: 16,
+      },
+    );
+    await reconciler.tick();
+    const command = await appendClosedSandboxAmbiguity(
+      control,
+      result.campaign_id,
+      "task-001",
+      "automatic-retry",
+      "none",
+    );
+
+    await settle(reconciler, 24);
+
+    expect(initialLaunches).toBe(1);
+    expect(replacementLaunches).toBe(1);
+    expect(sandboxClosed).toBe(true);
+    expect(replacementBeforeClose).toBe(false);
+    const commandReceipt = JSON.parse(
+      (await control.projection.action(command.action_id))?.receipt_body ?? "null",
+    );
+    expect(commandReceipt).toMatchObject({
+      outcome: "failed",
+      observed_state: "AMBIGUOUS",
+      error_code: "sandbox_external_outcome_unknown",
+    });
+    const replacement = (
+      await control.projection.campaignActions(result.campaign_id)
+    ).find((action) => {
+      if (action.action_kind !== "job.launch") return false;
+      const intent = JSON.parse(action.intent_body) as ActionIntent;
+      return typeof intent.payload.prior_attempt_id === "string";
+    });
+    expect(replacement).toBeDefined();
   });
 
   it("fences an ambiguous Job create before retrying label adoption", async () => {

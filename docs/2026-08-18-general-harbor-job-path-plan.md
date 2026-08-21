@@ -187,9 +187,12 @@ A process exit can leave an older dispatch without a receipt. Infrastructure
 retry settles it only after a matching create action and durable terminal
 Sandbox close prove that the resource cannot produce another effect. Recovery
 is limited to the selected campaign and task, checks that no result exists, and
-appends the ambiguous receipt and advancement. Cancellation uses the same rule
-for close-fenced actions and leaves open resources on the normal cleanup path.
-No command is replayed and no historical record is changed.
+appends the ambiguous receipt and advancement. Cancellation leaves a dispatched
+command unresolved while it closes the Sandbox, then settles the command after
+the close fence; it never suppresses the command as completed. Operator and
+automatic infrastructure retries use the same recovery gate before reservation
+or replacement launch. No command is replayed and no historical record is
+changed.
 
 ## Verification
 

@@ -277,10 +277,14 @@ action-specific finalization fence. The fence covers the external call, result,
 receipt, and advancement. Settlement waits for an in-flight command, then checks
 the result and receipt again while it holds the fence. It also verifies the
 create action, task, resource identity, dispatch, close receipt, and close
-advancement. It then appends the same failed ambiguous receipt and advancement.
-It does not replay the command, create a result, change an attempt, or scan
-another campaign. `action.advanced` ends the control action; it does not prove
-that the external command did not run.
+advancement. Cancellation schedules and verifies close before it settles a
+dispatched command; it never suppresses that command as completed. Operator and
+automatic infrastructure retries use the same settlement and pending-command
+gate before they reserve or launch replacement work. Settlement then appends
+the same failed ambiguous receipt and advancement. It does not replay the
+command, create a result, change an attempt, or scan another campaign.
+`action.advanced` ends the control action; it does not prove that the external
+command did not run.
 
 The control service launches the Sandbox server from its read-only public server
 Bucket mount. It derives a per-Sandbox HMAC token and sends only that token plus,

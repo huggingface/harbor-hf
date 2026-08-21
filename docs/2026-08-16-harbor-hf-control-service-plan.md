@@ -446,12 +446,13 @@ same action-specific finalization fence. The fence covers the external call,
 result persistence, receipt, and advancement. Settlement waits for an in-flight
 command, then checks the result and receipt again while it holds the fence. A
 mismatch, an open Sandbox, an existing result, a conflicting receipt, or an
-unsupported action stops recovery. The infrastructure-retry path settles only
-its selected task and then verifies that no unresolved non-replay-safe Sandbox
-action remains before it reserves or launches a replacement. Cancellation
-settles only close-fenced actions and leaves open resources on the existing
-cleanup path. There is no global sweep, new route, fallback reader, or second
-durable format.
+unsupported action stops recovery. Operator and automatic infrastructure-retry
+paths settle only their selected task and then verify that no unresolved
+non-replay-safe Sandbox action remains before they reserve or launch a
+replacement. Cancellation never marks a dispatched command as completed. It
+leaves open resources on the existing cleanup path, verifies close, and then
+settles the close-fenced command as failed and ambiguous. There is no global
+sweep, new route, fallback reader, or second durable format.
 
 The durable result key must have one shared implementation so execution and
 recovery check the same bytes. The current action receipt schema already accepts
