@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type {
   ActionAdvanced,
+  ActionDisposition,
   ActionIntent,
   ActionReceipt,
   AttemptReceipt,
@@ -16,21 +17,21 @@ import {
   sha256,
   workerEvidenceObjectPath,
 } from "@harbor-hf/contracts";
+import { NoopActions } from "@harbor-hf/hf-adapters";
+import type { TestControl } from "@harbor-hf/test-fixtures";
 import { createTestControl } from "@harbor-hf/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NoopActions } from "@harbor-hf/hf-adapters";
 import { Projection } from "../src/projection.js";
 import { ResultPublisher } from "../src/publication.js";
-import { ControlService, type AttemptInput } from "../src/service.js";
 import {
   AmbiguousExternalActionError,
   type ExternalActionContext,
   ExternalActionNotFoundError,
-  Reconciler,
   type ExternalActionPort,
   type ExternalActionResult,
+  Reconciler,
 } from "../src/reconciler.js";
-import type { TestControl } from "@harbor-hf/test-fixtures";
+import { type AttemptInput, ControlService } from "../src/service.js";
 
 const controls: TestControl[] = [];
 afterEach(async () =>
@@ -157,6 +158,7 @@ async function appendLegacySuppressedSandboxCommand(
   campaignId: string,
   taskId: string,
   label: string,
+  receiptResourceId?: string | null,
 ): Promise<{ command: ActionIntent; receipt: ActionReceipt }> {
   const command = await appendClosedSandboxAmbiguity(
     control,
@@ -167,6 +169,10 @@ async function appendLegacySuppressedSandboxCommand(
   const receipt = await control.service.receipt(command, {
     outcome: "completed",
     observed_state: "suppressed-sandbox-cleanup-ambiguous",
+    resource_id:
+      receiptResourceId === undefined
+        ? (command.payload.resource_id as string)
+        : receiptResourceId,
   });
   await control.service.markAdvanced(command, receipt);
   return { command, receipt };
@@ -2577,6 +2583,7 @@ describe("control service", () => {
     const openReceipt = await control.service.receipt(open, {
       outcome: "completed",
       observed_state: "suppressed-sandbox-cleanup-ambiguous",
+      resource_id: open.payload.resource_id as string,
     });
     await control.service.markAdvanced(open, openReceipt);
     await expect(
@@ -2595,6 +2602,103 @@ describe("control service", () => {
     expect(
       await control.projection.actionDispositionViews(result.campaign_id, "task-001"),
     ).toEqual([]);
+  });
+
+  it("rejects disposition proof with a mismatched source resource", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "mismatched-source-resource-campaign-key",
+      operator,
+    );
+    const legacy = await appendLegacySuppressedSandboxCommand(
+      control,
+      result.campaign_id,
+      "task-001",
+      "mismatched-source-resource",
+      "another-sandbox-resource",
+    );
+    expect(legacy.receipt.resource_id).toBe("another-sandbox-resource");
+    expect(legacy.command.payload.resource_id).toBe(
+      "sandbox-resource-mismatched-source-resource",
+    );
+    expect(
+      JSON.parse(
+        (await control.projection.action(legacy.command.action_id))?.receipt_body ??
+          "null",
+      ),
+    ).toMatchObject({ resource_id: "another-sandbox-resource" });
+    await expect(
+      control.service.correctHistoricalSandboxAmbiguities(
+        result.campaign_id,
+        "task-001",
+        {
+          action_ids: [legacy.command.action_id],
+          reason: "reject inconsistent source and close evidence",
+          confirmed: true,
+        },
+        "mismatched-source-resource-key",
+        operator,
+      ),
+    ).rejects.toThrow("source resource does not match");
+
+    const close = (await control.projection.campaignActions(result.campaign_id)).find(
+      (action) => action.action_kind === "sandbox.close",
+    );
+    if (!close?.receipt_body) throw new Error("test close receipt is missing");
+    const closeReceipt = JSON.parse(close.receipt_body) as ActionReceipt;
+    const reason = "reject inconsistent source and close evidence";
+    const reasonCode = "historical_non_replay_safe_command_ambiguity" as const;
+    const batchId = deterministicId(
+      "disposition-batch",
+      result.campaign_id,
+      "task-001",
+      sha256("mismatched-source-resource-key"),
+    );
+    const disposition: ActionDisposition = {
+      schema_version: "v1",
+      kind: "action.disposition",
+      record_id: deterministicId("disposition", legacy.command.action_id),
+      created_at: "2026-08-21T00:00:00.000Z",
+      actor: operator,
+      campaign_id: result.campaign_id,
+      task_id: "task-001",
+      action_id: legacy.command.action_id,
+      source_receipt_id: legacy.receipt.record_id,
+      source_receipt_digest: sha256(canonicalJson(legacy.receipt)),
+      close_action_id: close.action_id,
+      close_receipt_id: closeReceipt.record_id,
+      close_receipt_digest: sha256(canonicalJson(closeReceipt)),
+      batch_id: batchId,
+      batch_digest: sha256(
+        canonicalJson({
+          action_ids: [legacy.command.action_id],
+          reason_code: reasonCode,
+          reason,
+        }),
+      ),
+      batch_size: 1,
+      effective_outcome: "failed",
+      effective_observed_state: "AMBIGUOUS",
+      effective_error_code: "sandbox_external_outcome_unknown",
+      reason_code: reasonCode,
+      reason,
+    };
+    await expect(control.service.append(disposition)).rejects.toThrow(
+      "source resource mismatch",
+    );
+    const rebuilt = await Projection.open(
+      `${control.root}/mismatched-source-resource.sqlite`,
+    );
+    await expect(rebuilt.rebuild(control.store)).rejects.toThrow(
+      "source resource mismatch",
+    );
+    expect(rebuilt.system()).toMatchObject({
+      ready: false,
+      integrity_error: expect.stringContaining("source resource mismatch"),
+    });
+    await rebuilt.close();
   });
 
   it("rejects a Sandbox reservation before it crosses the campaign ceiling", async () => {

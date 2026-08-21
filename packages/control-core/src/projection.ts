@@ -19,8 +19,8 @@ import type {
   TerminalSelection,
 } from "@harbor-hf/contracts";
 import {
-  canonicalJson,
   ContractValidationError,
+  canonicalJson,
   deterministicId,
   sandboxActionResultPath,
   sha256,
@@ -28,8 +28,8 @@ import {
 } from "@harbor-hf/contracts";
 import Database from "better-sqlite3";
 import { Kysely, type Selectable, SqliteDialect, sql } from "kysely";
+import { type ControlEvent, decodeEventCursor, eventCursor } from "./events.js";
 import { verifyEvidenceReference, verifyWorkerEvidence } from "./evidence.js";
-import { decodeEventCursor, eventCursor, type ControlEvent } from "./events.js";
 import type { PromotedProfile } from "./profiles.js";
 import type { ImmutableObjectStore, ObjectEntry } from "./store.js";
 
@@ -1156,6 +1156,10 @@ export class Projection {
       if (typeof createActionId !== "string" || typeof resourceId !== "string")
         throw new ProjectionIntegrityError(
           `disposition ownership is incomplete: ${record.record_id}`,
+        );
+      if (sourceReceipt.resource_id !== resourceId)
+        throw new ProjectionIntegrityError(
+          `disposition source resource mismatch: ${record.record_id}`,
         );
       const create = await this.db
         .selectFrom("actions")

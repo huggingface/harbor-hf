@@ -2,11 +2,11 @@ import type {
   ActionAdvanced,
   ActionDispatch,
   ActionDisposition,
-  BenchmarkProfileSpec,
   ActionIntent,
   ActionReceipt,
   Actor,
   AttemptReceipt,
+  BenchmarkProfileSpec,
   BudgetEvent,
   CampaignActionV1,
   CampaignLock,
@@ -36,16 +36,16 @@ import {
   validatePreparedJobSubmission,
   workerEvidenceObjectPath,
 } from "@harbor-hf/contracts";
+import { EventBus, eventCursor } from "./events.js";
 import {
   EvidenceIntegrityError,
   verifyEvidenceReference,
   verifyWorkerEvidence,
 } from "./evidence.js";
-import { EventBus, eventCursor } from "./events.js";
 import {
   type LoadedProfile,
-  preparationRequired,
   ProfileResolver,
+  preparationRequired,
   profileSpec,
   validatePreparedCampaignProfiles,
 } from "./profiles.js";
@@ -1383,6 +1383,8 @@ export class ControlService {
       const resourceId = intent.payload.resource_id;
       if (typeof createActionId !== "string" || typeof resourceId !== "string")
         throw new PolicyError("action disposition ownership is incomplete");
+      if (sourceReceipt.resource_id !== resourceId)
+        throw new PolicyError("action disposition source resource does not match");
       const create = await this.projection.action(createActionId);
       if (
         !create ||
