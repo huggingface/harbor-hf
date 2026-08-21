@@ -61,7 +61,7 @@ function tokenState(
   const previousCursor = snapshot.refill_cursor_at
     ? Date.parse(snapshot.refill_cursor_at)
     : now;
-  const cursor = Math.min(previousCursor, now);
+  const cursor = previousCursor;
   const starting = Math.min(
     profile.start_burst,
     snapshot.tokens_remaining ?? profile.start_burst,

@@ -135,7 +135,18 @@ describe("Sandbox admission", () => {
     ).toEqual({
       outcome: "deferred",
       limiting_factor: "sandbox_start_rate",
-      not_before: "2026-08-22T00:00:10.000Z",
+      not_before: "2026-08-22T00:01:10.000Z",
+    });
+    expect(
+      decideSandboxAdmission(request, {
+        ...snapshot,
+        tokens_remaining: 1,
+        refill_cursor_at: "2026-08-22T00:01:00.000Z",
+      }),
+    ).toEqual({
+      outcome: "admitted",
+      tokens_remaining: 0,
+      refill_cursor_at: "2026-08-22T00:01:00.000Z",
     });
   });
 

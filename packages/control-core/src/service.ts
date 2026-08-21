@@ -1027,7 +1027,7 @@ export class ControlService {
       const now = this.clock.now().getTime();
       const periodMs = capacity.spec.start_refill_period_seconds * 1000;
       const previousCursor = latest ? Date.parse(latest.refill_cursor_at) : now;
-      const cursor = Math.min(previousCursor, now);
+      const cursor = previousCursor;
       const periods = Math.max(0, Math.floor((now - cursor) / periodMs));
       startTokens = Math.min(
         capacity.spec.start_burst,
