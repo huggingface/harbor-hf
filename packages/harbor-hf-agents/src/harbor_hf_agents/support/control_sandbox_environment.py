@@ -232,7 +232,6 @@ class ControlSandboxEnvironment(BaseEnvironment):
 
     async def _await_sandbox_admission(self) -> dict[str, Any]:
         create_key = self._key("create")
-        deadline = time.monotonic() + 900
         while True:
             value = await asyncio.to_thread(
                 self._client.request,
@@ -243,8 +242,6 @@ class ControlSandboxEnvironment(BaseEnvironment):
             )
             if str(value.get("state", "UNKNOWN")).upper() != "QUEUED":
                 return value
-            if time.monotonic() >= deadline:
-                raise RuntimeError("control Sandbox admission timed out")
             not_before = value.get("not_before")
             delay = 2.0
             if isinstance(not_before, str):

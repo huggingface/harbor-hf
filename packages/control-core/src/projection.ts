@@ -1775,6 +1775,17 @@ export class Projection {
     return new Set(rows.map((row) => row.action_id));
   }
 
+  async campaignPendingSandboxCreateCount(campaignId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom("actions")
+      .select(({ fn }) => fn.countAll<number>().as("count"))
+      .where("campaign_id", "=", campaignId)
+      .where("action_kind", "=", "sandbox.create")
+      .where("receipt_body", "is", null)
+      .executeTakeFirstOrThrow();
+    return Number(row.count);
+  }
+
   async pendingSandboxCreates(limit = 1_024): Promise<ActionIntent[]> {
     const rows = await this.db
       .selectFrom("actions")

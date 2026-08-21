@@ -975,10 +975,7 @@ export class ControlService {
     const lock = await this.projection.campaignLock(campaignId);
     if (!lock) throw new PolicyError("campaign lock is missing");
     const deployment = profileSpec<DeploymentProfileSpec>(lock.profiles, "deployment");
-    if (deployment.route !== "hf_job")
-      throw new PolicyError("campaign deployment has no Sandbox capacity");
-    const template = deployment.sandbox_template ?? deployment.sandbox;
-    if (!template) throw new PolicyError("campaign deployment has no Sandbox policy");
+    const capacity = this.capacityProfile();
     const activeGrants = await this.projection.activeSandboxAdmissions(this.namespace);
     const allActions = await this.projection.sandboxLifecycleActions();
     const grantedIds = new Set(activeGrants.map((grant) => grant.action_id));
@@ -988,6 +985,33 @@ export class ControlService {
       (grant) => grant.campaign_id === campaignId,
     );
     const campaignLegacy = legacy.filter((row) => row.campaign_id === campaignId);
+    const latest = await this.projection.latestSandboxAdmission(this.namespace);
+    const queued = await this.projection.campaignPendingSandboxCreateCount(campaignId);
+    const template =
+      deployment.route === "hf_job"
+        ? (deployment.sandbox_template ?? deployment.sandbox)
+        : null;
+    if (!template)
+      return {
+        configured: Boolean(capacity),
+        profile_id: capacity?.profile_id ?? null,
+        namespace_limit: capacity?.spec.max_active_sandboxes ?? null,
+        namespace_active: activeGrants.length + legacy.length,
+        campaign_limit: 0,
+        campaign_active: campaignGrants.length + campaignLegacy.length,
+        hardware_limit: null,
+        hardware_active: 0,
+        provider_limit: 0,
+        provider_reserved: 0,
+        start_tokens: capacity
+          ? (latest?.tokens_remaining ?? capacity.spec.start_burst)
+          : null,
+        start_burst: capacity?.spec.start_burst ?? null,
+        queued,
+        cleanup_held: 0,
+        limiting_factor: null,
+        not_before: null,
+      };
     const providerReserved =
       campaignGrants.reduce(
         (total, grant) => total + grant.reserved_provider_requests,
@@ -997,11 +1021,6 @@ export class ControlService {
         const intent = JSON.parse(row.intent_body) as ActionIntent;
         return total + (intent.payload.sandbox?.inference_max_concurrency ?? 0);
       }, 0);
-    const capacity = this.capacityProfile();
-    const latest = await this.projection.latestSandboxAdmission(this.namespace);
-    const queued = (await this.projection.pendingSandboxCreates()).filter(
-      (intent) => intent.campaign_id === campaignId,
-    ).length;
     let startTokens: number | null = null;
     let startNotBefore: string | null = null;
     if (capacity) {

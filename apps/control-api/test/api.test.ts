@@ -277,6 +277,30 @@ describe("control API", () => {
     await app.close();
   });
 
+  it("returns an unavailable capacity view for campaigns without Sandboxes", async () => {
+    const { app } = await setup();
+    const submission = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "no-sandbox-capacity" },
+      payload: input,
+    });
+    const campaignId = submission.json().campaign_id as string;
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/${campaignId}/capacity`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      configured: true,
+      campaign_limit: 0,
+      campaign_active: 0,
+      provider_limit: 0,
+    });
+    await app.close();
+  });
+
   it("loads approved durable profile aliases and ignores recommendations", async () => {
     const spec = {
       model_id: "example/durable-model",
