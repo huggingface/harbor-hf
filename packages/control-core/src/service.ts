@@ -1071,13 +1071,16 @@ export class ControlService {
       limitingFactor = "provider_request_capacity";
     else if (capacity && startTokens !== null && startTokens < 1)
       limitingFactor = "sandbox_start_rate";
-    const cleanupHeld = campaignGrants.filter((grant) => {
-      const create = allActions.find((row) => row.action_id === grant.action_id);
+    const cleanupHeld = [
+      ...campaignGrants.map((grant) => grant.action_id),
+      ...campaignLegacy.map((row) => row.action_id),
+    ].filter((createActionId) => {
+      const create = allActions.find((row) => row.action_id === createActionId);
       if (!create?.resource_id) return false;
       return allActions.some((row) => {
         if (row.action_kind !== "sandbox.close") return false;
         const intent = JSON.parse(row.intent_body) as ActionIntent;
-        if (intent.payload.sandbox_create_action_id !== grant.action_id) return false;
+        if (intent.payload.sandbox_create_action_id !== createActionId) return false;
         return !(
           row.outcome === "completed" &&
           terminalSandboxStates.has((row.observed_state ?? "").toUpperCase())
