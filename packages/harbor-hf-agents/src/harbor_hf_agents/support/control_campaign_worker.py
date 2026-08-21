@@ -11,7 +11,7 @@ import os
 import subprocess
 import tarfile
 import tempfile
-import threading
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import version
@@ -546,7 +546,54 @@ def _run_task(config: WorkerConfig, task: LockedTask, root: Path) -> str:
     return task.task_id
 
 
-def main() -> None:  # noqa: C901 -- bounded batch orchestration
+def _fill_available_slots(
+    executor: concurrent.futures.ThreadPoolExecutor,
+    futures: dict[concurrent.futures.Future[str], LockedTask],
+    pending: Iterator[LockedTask],
+    config: WorkerConfig,
+    root: Path,
+    width: int,
+) -> None:
+    while len(futures) < width:
+        try:
+            task = next(pending)
+        except StopIteration:
+            return
+        futures[executor.submit(_run_task, config, task, root)] = task
+
+
+def _run_assigned_tasks(
+    config: WorkerConfig, root: Path
+) -> tuple[list[str], list[BaseException]]:
+    completed: list[str] = []
+    failures: list[BaseException] = []
+    pending = iter(config.tasks)
+    width = min(config.concurrency, len(config.tasks))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=width) as executor:
+        futures: dict[concurrent.futures.Future[str], LockedTask] = {}
+
+        _fill_available_slots(executor, futures, pending, config, root, width)
+        accepting = True
+        while futures:
+            done, _ = concurrent.futures.wait(
+                futures, return_when=concurrent.futures.FIRST_COMPLETED
+            )
+            for future in done:
+                futures.pop(future)
+                try:
+                    completed.append(future.result())
+                except BaseException as error:
+                    failures.append(error)
+            if failures:
+                accepting = False
+            if accepting:
+                _fill_available_slots(executor, futures, pending, config, root, width)
+
+    return completed, failures
+
+
+def main() -> None:  # noqa: C901 -- bounded orchestration
     if _required("HARBOR_HF_WORKER_ROLE") != "execution":
         raise RuntimeError("control worker role is invalid")
     if os.environ.get("HF_TOKEN") or os.environ.get("HF_INFERENCE_TOKEN"):
@@ -559,27 +606,7 @@ def main() -> None:  # noqa: C901 -- bounded batch orchestration
         raise RuntimeError("worker revision does not match the deployment profile")
     with tempfile.TemporaryDirectory(prefix="harbor-hf-control-worker-") as temporary:
         root = Path(temporary)
-        failures: list[BaseException] = []
-        completed: list[str] = []
-        lock_guard = threading.Lock()
-        assigned_tasks = config.tasks
-        width = min(config.concurrency, len(assigned_tasks))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=width) as executor:
-            for offset in range(0, len(assigned_tasks), width):
-                batch = assigned_tasks[offset : offset + width]
-                futures = {
-                    executor.submit(_run_task, config, task, root): task
-                    for task in batch
-                }
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        task_id = future.result()
-                        with lock_guard:
-                            completed.append(task_id)
-                    except BaseException as error:
-                        failures.append(error)
-                if failures:
-                    break
+        completed, failures = _run_assigned_tasks(config, root)
         if failures:
             raise RuntimeError(
                 f"{len(failures)} control worker task(s) failed before receipt; "

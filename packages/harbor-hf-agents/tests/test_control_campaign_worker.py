@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import concurrent.futures
+from dataclasses import replace
+from pathlib import Path
+from threading import Event
+
 import pytest
 
 from harbor_hf_agents.support import control_campaign_worker as worker
@@ -176,6 +181,82 @@ def test_reconstructs_portable_git_task(monkeypatch: pytest.MonkeyPatch) -> None
         "git_url": "https://github.com/example/benchmark.git",
         "git_commit_id": "b" * 40,
     }
+
+
+def _scheduler_config(
+    monkeypatch: pytest.MonkeyPatch, *, task_count: int = 3
+) -> worker.WorkerConfig:
+    _configure(monkeypatch)
+    config = worker._locked_config(_lock())
+    task = config.tasks[0]
+    tasks = tuple(replace(task, task_id=f"task-{index}") for index in range(task_count))
+    return replace(
+        config,
+        concurrency=2,
+        max_tasks_per_job=task_count,
+        tasks=tasks,
+    )
+
+
+def test_refills_available_worker_slot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _scheduler_config(monkeypatch)
+    first_started = Event()
+    release_first = Event()
+    third_started = Event()
+
+    def fake_run_task(
+        _config: worker.WorkerConfig, task: worker.LockedTask, _root: Path
+    ) -> str:
+        if task.task_id == "task-0":
+            first_started.set()
+            assert release_first.wait(timeout=5)
+        elif task.task_id == "task-2":
+            third_started.set()
+        return task.task_id
+
+    monkeypatch.setattr(worker, "_run_task", fake_run_task)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as supervisor:
+        future = supervisor.submit(worker._run_assigned_tasks, config, tmp_path)
+        assert first_started.wait(timeout=1)
+        assert third_started.wait(timeout=1)
+        assert not release_first.is_set()
+        release_first.set()
+        completed, failures = future.result(timeout=2)
+
+    assert set(completed) == {"task-0", "task-1", "task-2"}
+    assert failures == []
+
+
+def test_stops_refilling_after_task_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _scheduler_config(monkeypatch)
+    release_second = Event()
+    third_started = Event()
+
+    def fake_run_task(
+        _config: worker.WorkerConfig, task: worker.LockedTask, _root: Path
+    ) -> str:
+        if task.task_id == "task-0":
+            raise RuntimeError("deterministic failure")
+        if task.task_id == "task-1":
+            assert release_second.wait(timeout=5)
+        if task.task_id == "task-2":
+            third_started.set()
+        return task.task_id
+
+    monkeypatch.setattr(worker, "_run_task", fake_run_task)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as supervisor:
+        future = supervisor.submit(worker._run_assigned_tasks, config, tmp_path)
+        release_second.set()
+        completed, failures = future.result(timeout=2)
+
+    assert completed == ["task-1"]
+    assert len(failures) == 1
+    assert isinstance(failures[0], RuntimeError)
+    assert not third_started.is_set()
 
 
 @pytest.mark.parametrize(
