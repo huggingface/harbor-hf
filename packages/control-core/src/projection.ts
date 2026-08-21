@@ -987,10 +987,17 @@ export class Projection {
   ): Promise<void> {
     const grant = await this.db
       .selectFrom("sandbox_admissions")
-      .select(["campaign_id"])
+      .select(["campaign_id", "body"])
       .where("action_id", "=", record.action_id)
       .executeTakeFirst();
-    if (!grant || grant.campaign_id !== record.campaign_id)
+    const grantRecord = grant
+      ? (JSON.parse(grant.body) as SandboxAdmissionGrant)
+      : null;
+    if (
+      !grant ||
+      grant.campaign_id !== record.campaign_id ||
+      grantRecord?.record_id !== record.grant_id
+    )
       throw new ProjectionIntegrityError(
         `Sandbox capacity release has no matching grant: ${record.action_id}`,
       );
@@ -1524,10 +1531,47 @@ export class Projection {
           `Sandbox capacity release evidence is missing: ${release.action_id}`,
         );
       const receipt = JSON.parse(evidence.body) as ActionReceipt;
+      const grant = grantsByRecord.get(release.grant_id);
+      if (
+        !grant ||
+        grant.action_id !== release.action_id ||
+        grant.campaign_id !== release.campaign_id
+      )
+        throw new ProjectionIntegrityError(
+          `Sandbox capacity release grant mismatch: ${release.action_id}`,
+        );
       if (receipt.campaign_id !== release.campaign_id)
         throw new ProjectionIntegrityError(
           `Sandbox capacity release evidence campaign mismatch: ${release.action_id}`,
         );
+      if (release.release_reason === "create_failed") {
+        if (
+          receipt.action_id !== release.action_id ||
+          receipt.resource_id !== null ||
+          !["failed", "completed"].includes(receipt.outcome)
+        )
+          throw new ProjectionIntegrityError(
+            `Sandbox failed-create release proof is invalid: ${release.action_id}`,
+          );
+      } else {
+        const close = await this.db
+          .selectFrom("actions")
+          .select(["action_kind", "intent_body"])
+          .where("action_id", "=", receipt.action_id)
+          .executeTakeFirst();
+        const closeIntent = close
+          ? (JSON.parse(close.intent_body) as ActionIntent)
+          : null;
+        if (
+          close?.action_kind !== "sandbox.close" ||
+          closeIntent?.payload.sandbox_create_action_id !== release.action_id ||
+          receipt.outcome !== "completed" ||
+          !terminalSandboxStates.has(receipt.observed_state.toUpperCase())
+        )
+          throw new ProjectionIntegrityError(
+            `Sandbox close release proof is invalid: ${release.action_id}`,
+          );
+      }
     }
 
     const campaignRows = await this.db
