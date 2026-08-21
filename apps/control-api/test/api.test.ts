@@ -1267,6 +1267,13 @@ describe("control API", () => {
       "x-harbor-hf-worker-capability": capability,
       "idempotency-key": "capacity-create-key",
     };
+    const campaignState = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/${campaignId}`,
+      headers: { "x-harbor-hf-worker-capability": capability },
+    });
+    expect(campaignState.statusCode).toBe(200);
+    expect(campaignState.json().cancellation_requested).toBe(false);
     const lifecycle = vi.spyOn(
       runtime.sandboxes as NonNullable<Runtime["sandboxes"]>,
       "lifecycle",

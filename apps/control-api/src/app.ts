@@ -115,9 +115,10 @@ function isWorkerCapabilityRoute(request: FastifyRequest): boolean {
   const path = request.url.split("?", 1)[0] ?? request.url;
   return (
     (request.method === "GET" &&
-      /^\/api\/v1\/campaigns\/[^/]+\/(?:lock|prepared-job(?:\/trials\/[^/]+)?)$/.test(
-        path,
-      )) ||
+      (/^\/api\/v1\/campaigns\/[^/]+$/.test(path) ||
+        /^\/api\/v1\/campaigns\/[^/]+\/(?:lock|prepared-job(?:\/trials\/[^/]+)?)$/.test(
+          path,
+        ))) ||
     (request.method === "POST" &&
       /^\/api\/v1\/campaigns\/[^/]+\/(?:prepared-job|tasks\/[^/]+\/attempts)$/.test(
         path,
