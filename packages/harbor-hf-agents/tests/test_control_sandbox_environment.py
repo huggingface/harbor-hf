@@ -150,10 +150,18 @@ async def test_waits_for_queued_sandbox_admission_with_one_idempotency_key(
     class QueuedClient(FakeClient):
         create_calls = 0
 
-        def request(self, method: str, path: str, **kwargs) -> dict:
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: dict[str, object] | None = None,
+            idempotency_key: str,
+            **kwargs: object,
+        ) -> dict[str, object]:
             if path.endswith("/sandboxes"):
-                self.calls.append((method, path, kwargs.get("body")))
-                self.idempotency_keys.append(kwargs["idempotency_key"])
+                self.calls.append((method, path, body))
+                self.idempotency_keys.append(idempotency_key)
                 self.__class__.create_calls += 1
                 if self.__class__.create_calls == 1:
                     return {
@@ -163,7 +171,13 @@ async def test_waits_for_queued_sandbox_admission_with_one_idempotency_key(
                         "not_before": None,
                     }
                 return {"sandbox_id": "sandbox-1", "state": "STARTING"}
-            return super().request(method, path, **kwargs)
+            return super().request(
+                method,
+                path,
+                body=body,
+                idempotency_key=idempotency_key,
+                **kwargs,
+            )
 
     FakeClient.calls.clear()
     FakeClient.idempotency_keys.clear()
