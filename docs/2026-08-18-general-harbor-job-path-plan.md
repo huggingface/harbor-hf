@@ -102,10 +102,22 @@ Profiles remain reusable approval data:
 - the deployment profile sets Hugging Face Job and Sandbox limits, credential
   policy, bridge limits, and generic worker commands;
 - the launch policy sets preparation and execution reservations plus retry
-  limits.
+  limits; and
+- a promoted service capacity profile sets namespace and hardware Sandbox caps
+  plus Sandbox start pacing.
 
-Deployment profiles do not contain task catalogs or per-task image lists.
-Names are data and never select code branches.
+The service capacity profile is not a campaign profile reference and does not
+enter the campaign lock. Every Sandbox admission records the capacity profile
+digest that authorized it. Deployment profiles do not contain task catalogs or
+per-task image lists. Names are data and never select code branches.
+
+The deployment fields have separate meanings. `worker_concurrency` bounds trial
+futures in one worker. `sandbox_template.max_sandboxes` bounds active or
+reserved Sandboxes for one campaign. `worker_max_tasks_per_job` bounds one Job's
+assignment and recovery impact. `inference_max_concurrency` applies to one
+Sandbox. `inference_max_total_concurrency` bounds provider request units across
+one campaign. Budget admission remains under the launch policy and campaign
+ceiling.
 
 ## Worker boundaries
 
@@ -128,6 +140,69 @@ The execution worker:
 - accepts a complete attempt only after that plugin proves its final agent
   event;
 - uploads content-addressed trial evidence before its attempt receipt.
+
+PR #100 replaced fixed barrier batches with a bounded rolling scheduler. The
+worker keeps at most `worker_concurrency` futures, waits for `FIRST_COMPLETED`,
+and starts one queued task when a slot becomes free. This implementation and its
+tests remain the scheduler baseline.
+
+The remaining worker change is cooperative campaign cancellation through the
+existing Harbor-HF control API. Once cancellation is visible, the worker stops
+submitting tasks. Already running tasks continue through evidence upload and
+Sandbox cleanup. A pre-receipt shared failure has the same stop-refill behavior.
+The implementation does not patch Harbor internals or submit the whole task
+assignment to an unbounded executor queue.
+
+## Capacity admission
+
+The control service owns Sandbox admission across workers and campaigns. It
+uses the existing single-writer process, immutable Bucket, and disposable
+projection. No queue service, database, Dataset, Bucket, or lease store is
+added.
+
+A create action is the durable queue entry. Admission follows this order:
+
+1. Write or adopt the immutable create intent.
+2. Write or adopt its campaign budget reservation.
+3. Evaluate cancellation, campaign capacity, namespace capacity, hardware
+   capacity, campaign provider units, start pacing, and budget.
+4. Return `deferred` for a temporary limit or `rejected` for a permanent
+   failure, with a stable reason code.
+5. Write one immutable admission grant for an eligible action.
+6. Write the existing dispatch fence before the Hugging Face adapter call.
+7. Release capacity only after definitive no-resource failure or verified
+   terminal Sandbox close.
+
+The pure admission decision receives a projection snapshot and injected clock.
+It does not call Hugging Face, Harbor, the filesystem, or process state. A
+deferred action carries a factual next eligible time only when token refill can
+supply one. Capacity with an unknown release time has no estimated wait.
+
+The projection derives pending actions, active grants, hardware use, provider
+units, token state, cleanup-held slots, and limiting reasons from immutable
+records. A rebuild must produce the same state and fair order. Historical
+Sandbox creates without grants count as active legacy reservations until a
+verified terminal close or definitive no-resource failure releases them.
+
+The start limiter is an integer token bucket stored through replayable grants.
+A clock rollback adds no tokens. A capacity-profile promotion does not restore a
+fresh burst. A lower profile blocks new grants and lets existing work drain.
+
+Deferred creates remain FIFO within one campaign. The reconciler rotates among
+campaigns when slots become available and keeps cleanup ahead of new work. Only
+an admitted create reaches the Hugging Face adapter. Repeated submit, observe,
+or recovery calls adopt the same intent, reservation, token charge, grant,
+dispatch, and remote Sandbox.
+
+The create API returns an existing resource or `202 Accepted` with an action
+identifier, queue state, limiting reason, and factual retry time when known. The
+worker observes the same action with bounded backoff. Polling creates no new
+remote effect.
+
+Operator API, events, and web pages show configured, used, available, queued,
+cleanup-held, provider, pacing, and effective-capacity values. They also name
+the active limiting reason. These views do not expose credentials, provider
+bodies, private paths, or unnecessary remote topology.
 
 ## Agent terminal outcome
 
@@ -176,6 +251,12 @@ inference count too, as does cleanup.
 A preparation failure cannot start benchmark execution. A deterministic shared
 worker defect stops the affected campaign. A missing execution receipt can
 launch only the tasks that remain unsealed, using the same prepared lock.
+
+Sandbox capacity is reserved before remote create. Ambiguous create, failed
+close, and uncertain cleanup keep that reservation. Cancellation closes active
+Sandboxes before capacity release and stops the worker from filling more trial
+slots. Budget admission remains fail-closed at every replay or recovery
+boundary.
 
 A post-dispatch `sandbox.exec` failure is different from a replayable transport
 failure. The control operation becomes `failed` with observed state `AMBIGUOUS`
@@ -233,6 +314,20 @@ Local checks must prove:
 - changed source, task, image, profile, or Harbor version fails closed;
 - duplicate preparation and ambiguous Job launch are adopted without a second
   remote create;
+- the PR #100 scheduler refills one completed slot while other trials remain
+  active and never exceeds `worker_concurrency`;
+- visible campaign cancellation and pre-receipt shared failure stop later task
+  submission while active evidence and cleanup finish;
+- campaign, namespace, hardware, provider, start-rate, and budget limits remain
+  independent and report the correct limiting reason;
+- concurrent campaigns cannot exceed a limit or starve another eligible
+  campaign;
+- deferred create polling cannot duplicate intent, reservation, token charge,
+  grant, dispatch, or remote Sandbox;
+- interruption after every admission step adopts the same durable action after
+  restart;
+- projection rebuild reproduces grants, releases, token state, fair order,
+  cleanup-held capacity, and conservative historical reservations;
 - a post-dispatch Sandbox command exception writes no result, writes a safe
   failed and `AMBIGUOUS` receipt, advances the action, and returns a bounded
   `sandbox_action_ambiguous` error;
@@ -396,4 +491,13 @@ The work is complete when:
   published without a five-trial claim;
 - all 89 logical tasks are sealed, no action or cleanup is pending, cumulative
   spend is within the enforced ceiling, all Sandboxes are closed, and every
-  owned Endpoint is paused with zero ready replicas.
+  owned Endpoint is paused with zero ready replicas;
+- every new Sandbox create has one durable admission grant before dispatch;
+- write-enabled startup requires a reviewed promoted capacity profile, while
+  read-only historical replay remains available without one;
+- namespace and campaign status explain whether worker slots, Sandbox capacity,
+  hardware capacity, provider capacity, start pacing, budget, cancellation, or
+  cleanup limits work; and
+- generated contracts, Python and TypeScript checks, coverage, Slophammer, dry
+  checks, mutation checks, Pi Reviewer, browser tests, and relevant pull-request
+  CI pass before merge.

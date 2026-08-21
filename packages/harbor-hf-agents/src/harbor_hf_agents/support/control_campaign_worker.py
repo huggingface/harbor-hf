@@ -597,6 +597,21 @@ def _run_task(config: WorkerConfig, task: LockedTask, root: Path) -> str:
     return task.task_id
 
 
+def _campaign_cancelled(config: WorkerConfig) -> bool:
+    client = _ControlClient(config.campaign_id, config.tasks[0].task_id)
+    try:
+        campaign = client.request(
+            "GET",
+            f"/api/v1/campaigns/{config.campaign_id}",
+            idempotency_key=f"campaign-state-{config.action_id}",
+            timeout=60.0,
+        )
+    except RuntimeError:
+        _log({"status": "campaign_state_unavailable"})
+        return True
+    return bool(campaign.get("cancellation_requested"))
+
+
 def _fill_available_slots(
     executor: concurrent.futures.ThreadPoolExecutor,
     futures: dict[concurrent.futures.Future[str], LockedTask],
@@ -605,6 +620,8 @@ def _fill_available_slots(
     root: Path,
     width: int,
 ) -> None:
+    if _campaign_cancelled(config):
+        return
     while len(futures) < width:
         try:
             task = next(pending)

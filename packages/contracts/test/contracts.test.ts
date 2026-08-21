@@ -215,6 +215,65 @@ describe("canonical contracts", () => {
       );
   });
 
+  it("validates service capacity profiles and Sandbox capacity records", () => {
+    const profile = {
+      schema_version: "v1",
+      kind: "profile.object",
+      record_id: "profile-capacity-test",
+      created_at: "2026-08-22T00:00:00.000Z",
+      actor: { subject: "test", role: "service" },
+      profile_kind: "capacity",
+      name: "capacity-test",
+      spec: {
+        namespace: "test",
+        max_active_sandboxes: 8,
+        hardware_limits: [{ hardware: "cpu-basic", max_active_sandboxes: 4 }],
+        start_burst: 2,
+        start_refill_tokens: 1,
+        start_refill_period_seconds: 10,
+      },
+    } as const;
+    const grant = {
+      schema_version: "v1",
+      kind: "sandbox.admission",
+      record_id: "sandbox-admission-test",
+      created_at: "2026-08-22T00:00:01.000Z",
+      actor: { subject: "control", role: "service" },
+      action_id: "sandbox-action-test",
+      campaign_id: "campaign-test",
+      namespace: "test",
+      capacity_profile_id: `sha256:${"a".repeat(64)}`,
+      hardware: "cpu-basic",
+      reserved_provider_requests: 1,
+      tokens_remaining: 1,
+      refill_cursor_at: "2026-08-22T00:00:00.000Z",
+    } as const;
+    const release = {
+      schema_version: "v1",
+      kind: "sandbox.capacity-release",
+      record_id: "sandbox-capacity-release-test",
+      created_at: "2026-08-22T00:01:00.000Z",
+      actor: { subject: "control", role: "service" },
+      action_id: "sandbox-action-test",
+      campaign_id: "campaign-test",
+      grant_id: grant.record_id,
+      release_reason: "sandbox_closed",
+      evidence_record_id: "receipt-test",
+    } as const;
+
+    expect(validateControlRecord(profile)).toEqual(profile);
+    expect(validateControlRecord(grant)).toEqual(grant);
+    expect(validateControlRecord(release)).toEqual(release);
+    expect(controlRecordPath(grant)).toContain("/p-admission.json");
+    expect(controlRecordPath(release)).toContain("/zy-capacity-release.json");
+    expect(() =>
+      validateControlRecord({
+        ...profile,
+        spec: { ...profile.spec, start_burst: 0 },
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
   it("requires a reviewed root bootstrap for inference-enabled Sandboxes", () => {
     const sandbox = {
       image: `registry.example/sandbox@sha256:${"a".repeat(64)}`,
@@ -227,6 +286,7 @@ describe("canonical contracts", () => {
       inference_api: "chat-completions",
       inference_max_requests: 256,
       inference_max_concurrency: 1,
+      inference_max_total_concurrency: 1,
       inference_timeout_seconds: 1_800,
       inference_max_output_tokens: 32_768,
       reservation_microusd: 20_000_000,

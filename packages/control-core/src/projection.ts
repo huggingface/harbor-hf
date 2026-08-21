@@ -16,6 +16,8 @@ import type {
   ProfileObject,
   ProfilePromotion,
   PublicationReceipt,
+  SandboxAdmissionGrant,
+  SandboxCapacityRelease,
   TerminalSelection,
 } from "@harbor-hf/contracts";
 import {
@@ -92,6 +94,29 @@ interface DispatchRow {
   campaign_id: string;
   operation: string;
   adoption_not_before: string;
+  created_at: string;
+  body: string;
+}
+
+interface AdmissionRow {
+  action_id: string;
+  campaign_id: string;
+  namespace: string;
+  capacity_profile_id: string;
+  hardware: string;
+  reserved_provider_requests: number;
+  tokens_remaining: number;
+  refill_cursor_at: string;
+  created_at: string;
+  body: string;
+}
+
+interface CapacityReleaseRow {
+  action_id: string;
+  campaign_id: string;
+  grant_id: string;
+  release_reason: string;
+  evidence_record_id: string;
   created_at: string;
   body: string;
 }
@@ -192,6 +217,8 @@ interface DatabaseSchema {
   actions: ActionRow;
   dispositions: DispositionRow;
   dispatches: DispatchRow;
+  sandbox_admissions: AdmissionRow;
+  sandbox_capacity_releases: CapacityReleaseRow;
   advancements: AdvancementRow;
   tasks: TaskRow;
   attempts: AttemptRow;
@@ -217,6 +244,7 @@ export interface CampaignView {
   pending_actions: number;
   publication_status: string | null;
   cleanup_pending: boolean;
+  cancellation_requested: boolean;
 }
 
 export interface ActionDispositionView {
@@ -459,6 +487,31 @@ export class Projection {
       .addColumn("body", "text", (column) => column.notNull())
       .execute();
     await this.db.schema
+      .createTable("sandbox_admissions")
+      .ifNotExists()
+      .addColumn("action_id", "text", (column) => column.primaryKey())
+      .addColumn("campaign_id", "text", (column) => column.notNull())
+      .addColumn("namespace", "text", (column) => column.notNull())
+      .addColumn("capacity_profile_id", "text", (column) => column.notNull())
+      .addColumn("hardware", "text", (column) => column.notNull())
+      .addColumn("reserved_provider_requests", "integer", (column) => column.notNull())
+      .addColumn("tokens_remaining", "integer", (column) => column.notNull())
+      .addColumn("refill_cursor_at", "text", (column) => column.notNull())
+      .addColumn("created_at", "text", (column) => column.notNull())
+      .addColumn("body", "text", (column) => column.notNull())
+      .execute();
+    await this.db.schema
+      .createTable("sandbox_capacity_releases")
+      .ifNotExists()
+      .addColumn("action_id", "text", (column) => column.primaryKey())
+      .addColumn("campaign_id", "text", (column) => column.notNull())
+      .addColumn("grant_id", "text", (column) => column.notNull())
+      .addColumn("release_reason", "text", (column) => column.notNull())
+      .addColumn("evidence_record_id", "text", (column) => column.notNull())
+      .addColumn("created_at", "text", (column) => column.notNull())
+      .addColumn("body", "text", (column) => column.notNull())
+      .execute();
+    await this.db.schema
       .createTable("advancements")
       .ifNotExists()
       .addColumn("action_id", "text", (column) => column.primaryKey())
@@ -560,6 +613,12 @@ export class Projection {
       .addColumn("body", "text", (column) => column.notNull())
       .execute();
     await sql`CREATE INDEX IF NOT EXISTS actions_campaign_idx ON actions(campaign_id, created_at)`.execute(
+      this.db,
+    );
+    await sql`CREATE INDEX IF NOT EXISTS sandbox_admissions_campaign_idx ON sandbox_admissions(campaign_id, created_at)`.execute(
+      this.db,
+    );
+    await sql`CREATE INDEX IF NOT EXISTS sandbox_admissions_namespace_idx ON sandbox_admissions(namespace, created_at)`.execute(
       this.db,
     );
     await sql`CREATE INDEX IF NOT EXISTS dispositions_campaign_task_idx ON dispositions(campaign_id, task_id, created_at)`.execute(
@@ -738,6 +797,12 @@ export class Projection {
       case "action.dispatch":
         await this.applyActionDispatch(record);
         break;
+      case "sandbox.admission":
+        await this.applySandboxAdmission(record);
+        break;
+      case "sandbox.capacity-release":
+        await this.applySandboxCapacityRelease(record);
+        break;
       case "action.receipt":
         await this.applyActionReceipt(record);
         break;
@@ -875,6 +940,63 @@ export class Projection {
         campaign_id: record.campaign_id,
         operation: record.operation,
         adoption_not_before: record.adoption_not_before,
+        created_at: record.created_at,
+        body: body(record),
+      })
+      .execute();
+  }
+
+  private async applySandboxAdmission(record: SandboxAdmissionGrant): Promise<void> {
+    const action = await this.db
+      .selectFrom("actions")
+      .select(["campaign_id", "action_kind", "receipt_body"])
+      .where("action_id", "=", record.action_id)
+      .executeTakeFirst();
+    if (action?.action_kind !== "sandbox.create")
+      throw new ProjectionIntegrityError(
+        `Sandbox admission has no create intent: ${record.action_id}`,
+      );
+    if (action.campaign_id !== record.campaign_id || action.receipt_body)
+      throw new ProjectionIntegrityError(
+        `Sandbox admission state is invalid: ${record.action_id}`,
+      );
+    await this.db
+      .insertInto("sandbox_admissions")
+      .values({
+        action_id: record.action_id,
+        campaign_id: record.campaign_id,
+        namespace: record.namespace,
+        capacity_profile_id: record.capacity_profile_id,
+        hardware: record.hardware,
+        reserved_provider_requests: record.reserved_provider_requests,
+        tokens_remaining: record.tokens_remaining,
+        refill_cursor_at: record.refill_cursor_at,
+        created_at: record.created_at,
+        body: body(record),
+      })
+      .execute();
+  }
+
+  private async applySandboxCapacityRelease(
+    record: SandboxCapacityRelease,
+  ): Promise<void> {
+    const grant = await this.db
+      .selectFrom("sandbox_admissions")
+      .select(["campaign_id"])
+      .where("action_id", "=", record.action_id)
+      .executeTakeFirst();
+    if (!grant || grant.campaign_id !== record.campaign_id)
+      throw new ProjectionIntegrityError(
+        `Sandbox capacity release has no matching grant: ${record.action_id}`,
+      );
+    await this.db
+      .insertInto("sandbox_capacity_releases")
+      .values({
+        action_id: record.action_id,
+        campaign_id: record.campaign_id,
+        grant_id: record.grant_id,
+        release_reason: record.release_reason,
+        evidence_record_id: record.evidence_record_id,
         created_at: record.created_at,
         body: body(record),
       })
@@ -1310,7 +1432,7 @@ export class Projection {
     await this.verifyDispositionInvariants(store);
     const profileRows = await this.db
       .selectFrom("profiles")
-      .select(["profile_id", "profile_kind"])
+      .select(["profile_id", "profile_kind", "spec_body"])
       .execute();
     const profileKinds = new Map(
       profileRows.map((profile) => [profile.profile_id, profile.profile_kind]),
@@ -1328,6 +1450,46 @@ export class Projection {
       if (profileKind !== promotion.profile_kind)
         throw new ProjectionIntegrityError(
           `promotion profile kind mismatch: ${promotion.record_id}`,
+        );
+    }
+    const capacityProfiles = new Map(
+      profileRows
+        .filter((profile) => profile.profile_kind === "capacity")
+        .map((profile) => [
+          profile.profile_id,
+          JSON.parse(profile.spec_body) as { start_burst: number },
+        ]),
+    );
+    const grants = await this.db.selectFrom("sandbox_admissions").selectAll().execute();
+    for (const grant of grants) {
+      const profile = capacityProfiles.get(grant.capacity_profile_id);
+      if (!profile)
+        throw new ProjectionIntegrityError(
+          `Sandbox admission references missing capacity profile: ${grant.action_id}`,
+        );
+      if (grant.tokens_remaining > profile.start_burst)
+        throw new ProjectionIntegrityError(
+          `Sandbox admission token state exceeds profile: ${grant.action_id}`,
+        );
+    }
+    const releases = await this.db
+      .selectFrom("sandbox_capacity_releases")
+      .selectAll()
+      .execute();
+    for (const release of releases) {
+      const evidence = await this.db
+        .selectFrom("objects")
+        .select(["kind", "body"])
+        .where("record_id", "=", release.evidence_record_id)
+        .executeTakeFirst();
+      if (evidence?.kind !== "action.receipt")
+        throw new ProjectionIntegrityError(
+          `Sandbox capacity release evidence is missing: ${release.action_id}`,
+        );
+      const receipt = JSON.parse(evidence.body) as ActionReceipt;
+      if (receipt.campaign_id !== release.campaign_id)
+        throw new ProjectionIntegrityError(
+          `Sandbox capacity release evidence campaign mismatch: ${release.action_id}`,
         );
     }
 
@@ -1504,6 +1666,79 @@ export class Projection {
         .where("action_id", "=", actionId)
         .executeTakeFirst()) ?? null
     );
+  }
+
+  async sandboxAdmission(actionId: string): Promise<SandboxAdmissionGrant | null> {
+    const row = await this.db
+      .selectFrom("sandbox_admissions")
+      .select("body")
+      .where("action_id", "=", actionId)
+      .executeTakeFirst();
+    return row ? (JSON.parse(row.body) as SandboxAdmissionGrant) : null;
+  }
+
+  async sandboxCapacityRelease(
+    actionId: string,
+  ): Promise<SandboxCapacityRelease | null> {
+    const row = await this.db
+      .selectFrom("sandbox_capacity_releases")
+      .select("body")
+      .where("action_id", "=", actionId)
+      .executeTakeFirst();
+    return row ? (JSON.parse(row.body) as SandboxCapacityRelease) : null;
+  }
+
+  async activeSandboxAdmissions(namespace: string): Promise<SandboxAdmissionGrant[]> {
+    const rows = await this.db
+      .selectFrom("sandbox_admissions")
+      .leftJoin(
+        "sandbox_capacity_releases",
+        "sandbox_capacity_releases.action_id",
+        "sandbox_admissions.action_id",
+      )
+      .select("sandbox_admissions.body")
+      .where("sandbox_admissions.namespace", "=", namespace)
+      .where("sandbox_capacity_releases.action_id", "is", null)
+      .orderBy("sandbox_admissions.created_at")
+      .orderBy("sandbox_admissions.action_id")
+      .execute();
+    return rows.map((row) => JSON.parse(row.body) as SandboxAdmissionGrant);
+  }
+
+  async latestSandboxAdmission(
+    namespace: string,
+  ): Promise<SandboxAdmissionGrant | null> {
+    const row = await this.db
+      .selectFrom("sandbox_admissions")
+      .select("body")
+      .where("namespace", "=", namespace)
+      .orderBy("created_at", "desc")
+      .orderBy("action_id", "desc")
+      .executeTakeFirst();
+    return row ? (JSON.parse(row.body) as SandboxAdmissionGrant) : null;
+  }
+
+  async dispatchedSandboxCreateActionIds(): Promise<Set<string>> {
+    const rows = await this.db
+      .selectFrom("actions")
+      .innerJoin("dispatches", "dispatches.action_id", "actions.action_id")
+      .select("actions.action_id")
+      .where("actions.action_kind", "=", "sandbox.create")
+      .execute();
+    return new Set(rows.map((row) => row.action_id));
+  }
+
+  async pendingSandboxCreates(limit = 1_024): Promise<ActionIntent[]> {
+    const rows = await this.db
+      .selectFrom("actions")
+      .select("intent_body")
+      .where("action_kind", "=", "sandbox.create")
+      .where("receipt_body", "is", null)
+      .orderBy("created_at")
+      .orderBy("action_id")
+      .limit(limit)
+      .execute();
+    return rows.map((row) => JSON.parse(row.intent_body) as ActionIntent);
   }
 
   async campaignRequest(campaignId: string): Promise<CampaignRequest | null> {
@@ -1709,6 +1944,7 @@ export class Projection {
       pending_actions: pending,
       publication_status: publication?.status ?? null,
       cleanup_pending: cleanupPending,
+      cancellation_requested: cancelled,
     };
   }
 
@@ -1827,6 +2063,16 @@ export class Projection {
         batch_size: row.batch_size,
       };
     });
+  }
+
+  async sandboxLifecycleActions(): Promise<Selectable<ActionRow>[]> {
+    return this.db
+      .selectFrom("actions")
+      .selectAll()
+      .where("action_kind", "in", ["sandbox.create", "sandbox.close"])
+      .orderBy("created_at", "desc")
+      .orderBy("action_id", "desc")
+      .execute();
   }
 
   async actions(limit = 100): Promise<Selectable<ActionRow>[]> {

@@ -31,6 +31,12 @@
       "$ref": "#/$defs/ActionDispatch"
     },
     {
+      "$ref": "#/$defs/SandboxAdmissionGrant"
+    },
+    {
+      "$ref": "#/$defs/SandboxCapacityRelease"
+    },
+    {
       "$ref": "#/$defs/ActionReceipt"
     },
     {
@@ -178,6 +184,9 @@
         },
         {
           "$ref": "#/$defs/LaunchPolicyProfileObject"
+        },
+        {
+          "$ref": "#/$defs/CapacityProfileObject"
         }
       ]
     },
@@ -219,7 +228,14 @@
               "$ref": "#/$defs/Actor"
             },
             "profile_kind": {
-              "enum": ["benchmark", "model", "harness", "deployment", "launch_policy"]
+              "enum": [
+                "benchmark",
+                "model",
+                "harness",
+                "deployment",
+                "launch_policy",
+                "capacity"
+              ]
             },
             "alias": {
               "$ref": "#/$defs/Id"
@@ -553,6 +569,100 @@
             "adoption_not_before": {
               "$ref": "#/$defs/Timestamp"
             }
+          }
+        }
+      ]
+    },
+    "SandboxAdmissionGrant": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "action_id",
+            "campaign_id",
+            "namespace",
+            "capacity_profile_id",
+            "hardware",
+            "reserved_provider_requests",
+            "tokens_remaining",
+            "refill_cursor_at"
+          ],
+          "properties": {
+            "schema_version": { "const": "v1" },
+            "kind": { "const": "sandbox.admission" },
+            "record_id": { "$ref": "#/$defs/Id" },
+            "created_at": { "$ref": "#/$defs/Timestamp" },
+            "actor": { "$ref": "#/$defs/Actor" },
+            "action_id": { "$ref": "#/$defs/Id" },
+            "campaign_id": { "$ref": "#/$defs/Id" },
+            "namespace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "capacity_profile_id": { "$ref": "#/$defs/Digest" },
+            "hardware": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "reserved_provider_requests": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65536
+            },
+            "tokens_remaining": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1024
+            },
+            "refill_cursor_at": { "$ref": "#/$defs/Timestamp" }
+          }
+        }
+      ]
+    },
+    "SandboxCapacityRelease": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "action_id",
+            "campaign_id",
+            "grant_id",
+            "release_reason",
+            "evidence_record_id"
+          ],
+          "properties": {
+            "schema_version": { "const": "v1" },
+            "kind": { "const": "sandbox.capacity-release" },
+            "record_id": { "$ref": "#/$defs/Id" },
+            "created_at": { "$ref": "#/$defs/Timestamp" },
+            "actor": { "$ref": "#/$defs/Actor" },
+            "action_id": { "$ref": "#/$defs/Id" },
+            "campaign_id": { "$ref": "#/$defs/Id" },
+            "grant_id": { "$ref": "#/$defs/Id" },
+            "release_reason": {
+              "enum": ["create_failed", "sandbox_closed"]
+            },
+            "evidence_record_id": { "$ref": "#/$defs/Id" }
           }
         }
       ]
@@ -1607,6 +1717,11 @@
           "minimum": 1,
           "maximum": 64
         },
+        "inference_max_total_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
         "inference_timeout_seconds": {
           "type": "integer",
           "minimum": 1,
@@ -1695,6 +1810,7 @@
               "inference_api": {},
               "inference_max_requests": {},
               "inference_max_concurrency": {},
+              "inference_max_total_concurrency": {},
               "inference_timeout_seconds": {},
               "inference_max_output_tokens": {},
               "root_bootstrap_command": {}
@@ -1802,6 +1918,66 @@
         }
       }
     },
+    "CapacityProfileSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "max_active_sandboxes",
+        "hardware_limits",
+        "start_burst",
+        "start_refill_tokens",
+        "start_refill_period_seconds"
+      ],
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "max_active_sandboxes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "hardware_limits": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["hardware", "max_active_sandboxes"],
+            "properties": {
+              "hardware": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "max_active_sandboxes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1024
+              }
+            }
+          }
+        },
+        "start_burst": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "start_refill_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "start_refill_period_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      }
+    },
     "ProfileSpec": {
       "oneOf": [
         {
@@ -1818,6 +1994,9 @@
         },
         {
           "$ref": "#/$defs/LaunchPolicySpec"
+        },
+        {
+          "$ref": "#/$defs/CapacityProfileSpec"
         }
       ]
     },
@@ -2336,6 +2515,37 @@
         }
       ]
     },
+    "CapacityProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": { "const": "v1" },
+            "kind": { "const": "profile.object" },
+            "record_id": { "$ref": "#/$defs/Id" },
+            "created_at": { "$ref": "#/$defs/Timestamp" },
+            "actor": { "$ref": "#/$defs/Actor" },
+            "profile_kind": { "const": "capacity" },
+            "name": { "$ref": "#/$defs/Id" },
+            "spec": { "$ref": "#/$defs/CapacityProfileSpec" }
+          }
+        }
+      ]
+    },
     "PreparedTrial": {
       "allOf": [
         {
@@ -2692,6 +2902,11 @@
           "minimum": 1,
           "maximum": 64
         },
+        "inference_max_total_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
         "inference_timeout_seconds": {
           "type": "integer",
           "minimum": 1,
@@ -2774,6 +2989,7 @@
               "inference_api": {},
               "inference_max_requests": {},
               "inference_max_concurrency": {},
+              "inference_max_total_concurrency": {},
               "inference_timeout_seconds": {},
               "inference_max_output_tokens": {},
               "root_bootstrap_command": {}

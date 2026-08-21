@@ -8,6 +8,8 @@ export type CampaignList =
   paths["/api/v1/campaigns"]["get"]["responses"][200]["content"]["application/json"];
 export type Campaign =
   paths["/api/v1/campaigns/{campaign_id}"]["get"]["responses"][200]["content"]["application/json"];
+export type Capacity =
+  paths["/api/v1/campaigns/{campaign_id}/capacity"]["get"]["responses"][200]["content"]["application/json"];
 export type TaskList =
   paths["/api/v1/campaigns/{campaign_id}/tasks"]["get"]["responses"][200]["content"]["application/json"];
 export type TaskDetail =

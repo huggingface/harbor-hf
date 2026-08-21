@@ -64,6 +64,7 @@ import {
   useAudit,
   useCampaign,
   useCampaigns,
+  useCapacity,
   useEndpoints,
   useJobs,
   useProfiles,
@@ -1055,6 +1056,7 @@ export function CampaignPage() {
   const { campaignId = "" } = useParams();
   const navigation = useCursorNavigation();
   const campaign = useCampaign(campaignId);
+  const capacity = useCapacity(campaignId);
   const tasks = useTasks(campaignId, navigation.cursor);
   const client = useQueryClient();
   const { writesAllowed, writeMode } = useControlState();
@@ -1243,6 +1245,56 @@ export function CampaignPage() {
           value={item.total_tasks ? (item.terminal_tasks / item.total_tasks) * 100 : 0}
         />
       </Card>
+      {capacity.data ? (
+        <Card className="my-6">
+          <h2 className="text-base font-semibold text-white">Sandbox capacity</h2>
+          <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <dt className="text-slate-500">Campaign</dt>
+              <dd className="mt-1">
+                {capacity.data.campaign_active}/{capacity.data.campaign_limit} active
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Namespace</dt>
+              <dd className="mt-1">
+                {capacity.data.namespace_active}/
+                {capacity.data.namespace_limit ?? "unconfigured"} active
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Provider requests</dt>
+              <dd className="mt-1">
+                {capacity.data.provider_reserved}/{capacity.data.provider_limit}{" "}
+                reserved
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Start tokens</dt>
+              <dd className="mt-1">
+                {capacity.data.start_tokens ?? "unconfigured"}/
+                {capacity.data.start_burst ?? "unconfigured"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Queued creates</dt>
+              <dd className="mt-1">{capacity.data.queued}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Cleanup-held slots</dt>
+              <dd className="mt-1">{capacity.data.cleanup_held}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-slate-500">Current limit</dt>
+              <dd className="mt-1">
+                {capacity.data.limiting_factor
+                  ? humanize(capacity.data.limiting_factor)
+                  : "None"}
+              </dd>
+            </div>
+          </dl>
+        </Card>
+      ) : null}
       <QueryContent query={tasks}>
         <DataTable
           columns={columns}

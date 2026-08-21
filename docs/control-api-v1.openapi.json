@@ -357,7 +357,8 @@
                           "successful_tasks",
                           "pending_actions",
                           "publication_status",
-                          "cleanup_pending"
+                          "cleanup_pending",
+                          "cancellation_requested"
                         ],
                         "properties": {
                           "campaign_id": {
@@ -402,6 +403,9 @@
                             ]
                           },
                           "cleanup_pending": {
+                            "type": "boolean"
+                          },
+                          "cancellation_requested": {
                             "type": "boolean"
                           }
                         }
@@ -561,7 +565,8 @@
                     "successful_tasks",
                     "pending_actions",
                     "publication_status",
-                    "cleanup_pending"
+                    "cleanup_pending",
+                    "cancellation_requested"
                   ],
                   "properties": {
                     "campaign_id": {
@@ -607,6 +612,207 @@
                     },
                     "cleanup_pending": {
                       "type": "boolean"
+                    },
+                    "cancellation_requested": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "API error v1",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "code",
+                        "message",
+                        "request_id"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]*$",
+                          "maxLength": 80
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "request_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        },
+                        "fields": {
+                          "type": "object",
+                          "maxProperties": 64,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 500
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/campaigns/{campaign_id}/capacity": {
+      "get": {
+        "tags": [
+          "campaigns"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "campaign_id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "configured",
+                    "profile_id",
+                    "namespace_limit",
+                    "namespace_active",
+                    "campaign_limit",
+                    "campaign_active",
+                    "hardware_limit",
+                    "hardware_active",
+                    "provider_limit",
+                    "provider_reserved",
+                    "start_tokens",
+                    "start_burst",
+                    "queued",
+                    "cleanup_held",
+                    "limiting_factor",
+                    "not_before"
+                  ],
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "profile_id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "namespace_limit": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "namespace_active": {
+                      "type": "integer"
+                    },
+                    "campaign_limit": {
+                      "type": "integer"
+                    },
+                    "campaign_active": {
+                      "type": "integer"
+                    },
+                    "hardware_limit": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hardware_active": {
+                      "type": "integer"
+                    },
+                    "provider_limit": {
+                      "type": "integer"
+                    },
+                    "provider_reserved": {
+                      "type": "integer"
+                    },
+                    "start_tokens": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "start_burst": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "queued": {
+                      "type": "integer"
+                    },
+                    "cleanup_held": {
+                      "type": "integer"
+                    },
+                    "limiting_factor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "not_before": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }
@@ -1085,6 +1291,54 @@
                     },
                     "state": {
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sandbox_id",
+                    "state",
+                    "limiting_factor",
+                    "not_before"
+                  ],
+                  "properties": {
+                    "sandbox_id": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "enum": [
+                        "QUEUED"
+                      ]
+                    },
+                    "limiting_factor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "not_before": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }

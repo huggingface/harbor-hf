@@ -54,6 +54,7 @@ import {
   auditSchema,
   campaignListSchema,
   campaignViewSchema,
+  capacitySchema,
   endpointSchema,
   evidenceAcceptedSchema,
   evidenceUploadSchema,
@@ -1145,6 +1146,13 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     },
     async (request, reply) => {
       const { campaign_id } = request.params as { campaign_id: string };
+      if (request.workerCapability) {
+        requireWorkerOperation(request, "campaign.read");
+        if (request.workerCapability.campaign_id !== campaign_id)
+          throw new WorkerScopeError(
+            "the worker capability does not authorize this campaign",
+          );
+      }
       const campaign = await runtime.projection.campaign(campaign_id);
       return (
         campaign ??
@@ -1156,6 +1164,28 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           },
         })
       );
+    },
+  );
+
+  app.get(
+    "/api/v1/campaigns/:campaign_id/capacity",
+    {
+      schema: {
+        tags: ["campaigns"],
+        response: { 200: capacitySchema, 404: cleanSchema(schemas.apiError) },
+      },
+    },
+    async (request, reply) => {
+      const { campaign_id } = request.params as { campaign_id: string };
+      if (!(await runtime.projection.campaign(campaign_id)))
+        return reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "campaign was not found",
+            request_id: request.id,
+          },
+        });
+      return runtime.service.sandboxCapacityView(campaign_id);
     },
   );
 
@@ -1306,10 +1336,25 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
             required: ["sandbox_id", "state"],
             properties: { sandbox_id: { type: "string" }, state: { type: "string" } },
           },
+          202: {
+            type: "object",
+            additionalProperties: false,
+            required: ["sandbox_id", "state", "limiting_factor", "not_before"],
+            properties: {
+              sandbox_id: { type: "string" },
+              state: { const: "QUEUED" },
+              limiting_factor: {
+                anyOf: [{ type: "string" }, { type: "null" }],
+              },
+              not_before: {
+                anyOf: [{ type: "string", format: "date-time" }, { type: "null" }],
+              },
+            },
+          },
         },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const { campaign_id, task_id } = request.params as {
         campaign_id: string;
         task_id: string;
@@ -1320,7 +1365,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         task_id,
         "sandbox.create",
       );
-      if (!runtime.sandboxes) throw new PolicyError("Sandbox gateway is unavailable");
       const target = `sandbox:${task_id}`;
       const payload = { task_id, sandbox: context.policy };
       const candidate = runtime.service.actionIntent(
@@ -1335,29 +1379,54 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         candidate,
         context.policy.max_sandboxes,
       );
-      return executeSandboxAction(
-        request,
-        campaign_id,
-        task_id,
-        "sandbox.create",
-        target,
-        payload,
-        true,
-        async (intent, adoptionOnly) => {
-          const external = await runtime.sandboxes?.lifecycle(intent, {
-            adoption_only: adoptionOnly,
-          });
-          if (!external) throw new PolicyError("Sandbox gateway is unavailable");
-          return {
-            external,
-            result: {
-              sandbox_id: intent.action_id,
-              state: external.observed_state,
-            },
-          };
-        },
-        admission.dispatch_created,
-      );
+      if (admission.status === "rejected")
+        throw new PolicyError(
+          `Sandbox admission rejected: ${admission.limiting_factor ?? "policy"}`,
+        );
+      if (!runtime.service.capacityProfile()) {
+        if (!runtime.sandboxes) throw new PolicyError("Sandbox gateway is unavailable");
+        return executeSandboxAction(
+          request,
+          campaign_id,
+          task_id,
+          "sandbox.create",
+          target,
+          payload,
+          true,
+          async (intent, adoptionOnly) => {
+            const external = await runtime.sandboxes?.lifecycle(intent, {
+              adoption_only: adoptionOnly,
+            });
+            if (!external) throw new PolicyError("Sandbox gateway is unavailable");
+            return {
+              external,
+              result: {
+                sandbox_id: intent.action_id,
+                state: external.observed_state,
+              },
+            };
+          },
+          admission.dispatch_created,
+        );
+      }
+      const row = await runtime.projection.action(candidate.action_id);
+      if (row?.receipt_body) {
+        const receipt = JSON.parse(row.receipt_body) as ActionReceipt;
+        if (receipt.outcome === "failed")
+          throw new PolicyError(
+            `Sandbox creation failed: ${receipt.error_code ?? receipt.observed_state}`,
+          );
+        return {
+          sandbox_id: candidate.action_id,
+          state: receipt.observed_state,
+        };
+      }
+      return reply.code(202).send({
+        sandbox_id: candidate.action_id,
+        state: "QUEUED",
+        limiting_factor: admission.limiting_factor,
+        not_before: admission.not_before,
+      });
     },
   );
 
@@ -1985,14 +2054,16 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         aliases.set(key, [...(aliases.get(key) ?? []), item.alias].sort());
       }
       return offsetPage(
-        items.map((item) =>
-          redactSandboxTopology({
+        items.map((item) => {
+          const spec = JSON.parse(item.spec_body) as Record<string, unknown>;
+          if (item.profile_kind === "capacity") delete spec.namespace;
+          return redactSandboxTopology({
             ...item,
             approved_aliases:
               aliases.get(`${item.profile_kind}:${item.profile_id}`) ?? [],
-            spec: JSON.parse(item.spec_body) as Record<string, unknown>,
-          }),
-        ),
+            spec,
+          });
+        }),
         offset,
         limit,
       );

@@ -4,6 +4,7 @@ import type {
   AuditResponse,
   Campaign,
   CampaignList,
+  Capacity,
   EndpointList,
   JobList,
   ProfileList,
@@ -21,6 +22,7 @@ export const keys = {
   system: ["system"] as const,
   campaigns: ["campaigns"] as const,
   campaign: (id: string) => ["campaign", id] as const,
+  capacity: (id: string) => ["capacity", id] as const,
   tasks: (id: string) => ["tasks", id] as const,
   task: (campaign: string, task: string) => ["task", campaign, task] as const,
   jobs: ["jobs"] as const,
@@ -116,6 +118,15 @@ export const useCampaign = (id: string) =>
   useQuery({
     queryKey: keys.campaign(id),
     queryFn: () => request<Campaign>(`/api/v1/campaigns/${encodeURIComponent(id)}`),
+    enabled: Boolean(id),
+    retry: retryTransient,
+    retryDelay: queryRetryDelay,
+  });
+export const useCapacity = (id: string) =>
+  useQuery({
+    queryKey: keys.capacity(id),
+    queryFn: () =>
+      request<Capacity>(`/api/v1/campaigns/${encodeURIComponent(id)}/capacity`),
     enabled: Boolean(id),
     retry: retryTransient,
     retryDelay: queryRetryDelay,
@@ -224,11 +235,16 @@ export function affectedQueryKeys(event: ControlEvent): QueryKey[] {
     event.type.startsWith("attempt.") ||
     event.type.startsWith("terminal.") ||
     event.type.startsWith("action.") ||
+    event.type.startsWith("sandbox.") ||
     event.type === "publication.receipt"
   ) {
     affected.push(keys.campaigns);
     if (campaignId) {
-      affected.push(keys.campaign(campaignId), keys.tasks(campaignId));
+      affected.push(
+        keys.campaign(campaignId),
+        keys.capacity(campaignId),
+        keys.tasks(campaignId),
+      );
       if (taskId) affected.push(keys.task(campaignId, taskId));
     } else {
       affected.push(["campaign"], ["tasks"], ["task"]);

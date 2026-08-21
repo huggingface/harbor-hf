@@ -22,6 +22,15 @@ describe("control API configuration", () => {
     expect(config.oauth?.callback_url).toBe("https://control.example/auth/callback");
   });
 
+  it("loads the nonsecret capacity profile alias", () => {
+    const config = loadConfig({
+      ...environment,
+      HARBOR_HF_CAPACITY_PROFILE_ALIAS: "capacity-current",
+    });
+
+    expect(config.capacity_profile_alias).toBe("capacity-current");
+  });
+
   it("loads a distinct worker inference credential without exposing it elsewhere", () => {
     const config = loadConfig({
       ...environment,

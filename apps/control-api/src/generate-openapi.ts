@@ -21,6 +21,7 @@ const config: AppConfig = {
   projection_path: join(scratch, "projection.sqlite"),
   auth_path: join(scratch, "auth.sqlite"),
   profiles_root: join(repository, "profiles"),
+  capacity_profile_alias: null,
   web_root: join(scratch, "web"),
   auth_mode: "development",
   write_mode: "disabled",

@@ -54,6 +54,7 @@
       "inference_api": "chat-completions",
       "inference_max_requests": 512,
       "inference_max_concurrency": 1,
+      "inference_max_total_concurrency": 16,
       "inference_timeout_seconds": 1800,
       "inference_max_output_tokens": 32768,
       "root_bootstrap_command": [

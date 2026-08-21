@@ -325,6 +325,7 @@ export interface paths {
                                 pending_actions: number;
                                 publication_status: string | null;
                                 cleanup_pending: boolean;
+                                cancellation_requested: boolean;
                             }[];
                             next_cursor: string | null;
                         };
@@ -414,6 +415,79 @@ export interface paths {
                             pending_actions: number;
                             publication_status: string | null;
                             cleanup_pending: boolean;
+                            cancellation_requested: boolean;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                request_id: string;
+                                fields?: {
+                                    [key: string]: string;
+                                };
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/campaigns/{campaign_id}/capacity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    campaign_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            configured: boolean;
+                            profile_id: string | null;
+                            namespace_limit: number | null;
+                            namespace_active: number;
+                            campaign_limit: number;
+                            campaign_active: number;
+                            hardware_limit: number | null;
+                            hardware_active: number;
+                            provider_limit: number;
+                            provider_reserved: number;
+                            start_tokens: number | null;
+                            start_burst: number | null;
+                            queued: number;
+                            cleanup_held: number;
+                            limiting_factor: string | null;
+                            not_before: string | null;
                         };
                     };
                 };
@@ -682,6 +756,21 @@ export interface paths {
                         "application/json": {
                             sandbox_id: string;
                             state: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sandbox_id: string;
+                            /** @enum {unknown} */
+                            state: "QUEUED";
+                            limiting_factor: string | null;
+                            not_before: string | null;
                         };
                     };
                 };

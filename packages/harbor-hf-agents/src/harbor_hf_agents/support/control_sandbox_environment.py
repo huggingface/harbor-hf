@@ -12,6 +12,7 @@ import tarfile
 import tempfile
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, override
 from urllib.error import HTTPError, URLError
@@ -229,16 +230,34 @@ class ControlSandboxEnvironment(BaseEnvironment):
         sandbox_id = quote(self._sandbox_id, safe="")
         return f"{self._client.prefix}/sandboxes/{sandbox_id}{suffix}"
 
+    async def _await_sandbox_admission(self) -> dict[str, Any]:
+        create_key = self._key("create")
+        deadline = time.monotonic() + 900
+        while True:
+            value = await asyncio.to_thread(
+                self._client.request,
+                "POST",
+                f"{self._client.prefix}/sandboxes",
+                idempotency_key=create_key,
+                timeout=180.0,
+            )
+            if str(value.get("state", "UNKNOWN")).upper() != "QUEUED":
+                return value
+            if time.monotonic() >= deadline:
+                raise RuntimeError("control Sandbox admission timed out")
+            not_before = value.get("not_before")
+            delay = 2.0
+            if isinstance(not_before, str):
+                eligible_at = datetime.fromisoformat(
+                    not_before.replace("Z", "+00:00")
+                ).timestamp()
+                delay = max(0.1, min(15.0, eligible_at - time.time()))
+            await asyncio.sleep(delay)
+
     @override
     async def start(self, force_build: bool) -> None:
         del force_build
-        value = await asyncio.to_thread(
-            self._client.request,
-            "POST",
-            f"{self._client.prefix}/sandboxes",
-            idempotency_key=self._key("create"),
-            timeout=180.0,
-        )
+        value = await self._await_sandbox_admission()
         sandbox_id = value.get("sandbox_id")
         if not isinstance(sandbox_id, str) or not sandbox_id:
             raise RuntimeError("control Sandbox create response has no ID")

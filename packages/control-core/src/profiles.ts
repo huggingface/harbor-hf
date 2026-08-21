@@ -277,6 +277,13 @@ export class ProfileResolver {
     return profile;
   }
 
+  promoted(kind: ProfileObject["profile_kind"], alias: string): LoadedProfile {
+    const profile = this.promotedProfiles.get(profileKey(kind, alias));
+    if (!profile)
+      throw new ProfileResolutionError(`unapproved ${kind} profile: ${alias}`);
+    return profile;
+  }
+
   selectDeployment(
     model: string,
     harness: string,

@@ -50,6 +50,7 @@ function protectedDeployment(spec: Record<string, unknown>): Record<string, unkn
   const {
     root_bootstrap_command: _bootstrapCommand,
     max_sandboxes: _maxSandboxes,
+    inference_max_total_concurrency: _inferenceTotal,
     ...protectedSandbox
   } = record(sandboxValue);
   return { ...protectedSpec, sandbox_template: protectedSandbox };
@@ -188,6 +189,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
         "deepseek-ai/DeepSeek-V4-Flash-0731:together",
       );
       expect(sandbox.max_sandboxes).toBe(maxSandboxes);
+      expect(sandbox.inference_max_total_concurrency).toBe(maxSandboxes);
       expect(bootstrapCommand).not.toContain("HF_TOKEN=");
     }
   });

@@ -61,10 +61,22 @@ describe("live query updates", () => {
     });
     expect(affected).toContainEqual(keys.campaigns);
     expect(affected).toContainEqual(keys.campaign("campaign-1"));
+    expect(affected).toContainEqual(keys.capacity("campaign-1"));
     expect(affected).toContainEqual(keys.tasks("campaign-1"));
     expect(affected).toContainEqual(keys.task("campaign-1", "task-1"));
     expect(affected).not.toContainEqual(keys.session);
     expect(affected).not.toContainEqual(keys.results);
+  });
+
+  it("targets capacity views for Sandbox admission records", () => {
+    const affected = affectedQueryKeys({
+      type: "sandbox.admission",
+      occurred_at: "2026-08-18T00:00:00Z",
+      data: { campaign_id: "campaign-1", action_id: "action-1" },
+    });
+    expect(affected).toContainEqual(keys.capacity("campaign-1"));
+    expect(affected).toContainEqual(keys.campaign("campaign-1"));
+    expect(affected).not.toContainEqual(keys.session);
   });
 
   it("refreshes open detail views for replay events without scope fields", () => {

@@ -110,6 +110,47 @@ ladder starts, calibrated requests approach the declared context boundary while
 submitting the full declared output limit; a profile fails if either limit is
 not accepted.
 
+## Capacity controls
+
+Profile these limits separately because they control different resources:
+
+- `worker_concurrency` limits trial futures submitted by one execution worker;
+- `sandbox_template.max_sandboxes` limits active or reserved Sandboxes for one
+  campaign;
+- namespace and hardware caps limit Sandboxes across campaigns;
+- Sandbox start pacing limits how quickly new Sandboxes are authorized;
+- `inference_max_concurrency` limits provider requests from one Sandbox;
+- `inference_max_total_concurrency` limits provider request units reserved by
+  one campaign;
+- `worker_max_tasks_per_job` limits assignment and recovery impact rather than
+  live concurrency; and
+- budget admission limits work by reservation and cumulative ceiling.
+
+First compare fixed barrier batching with the PR #100 rolling scheduler at the
+same concurrency. This isolates the gain from filling free worker slots without
+raising peak use. Later profiles may test higher worker, campaign, namespace,
+hardware, provider, or start-rate limits, but each tested point must name the
+limit that changed and keep the others fixed.
+
+Use ascending powers of two for each capacity boundary. Record successful
+terminal trials per hour as the primary goodput measure together with raw
+successes and attempts. Also record Sandbox startup p50 and p95, queued time,
+provider throttling, infrastructure failures, cleanup failures, deadline
+headroom, active and reserved spend, and the limiting reason reported by the
+control service.
+
+Choose no production namespace, hardware, provider, or start-rate value from
+employee access or an undocumented assumption. The run plan must contain a
+verified quota or measured capacity source. It must also set a minimum worthwhile
+absolute goodput gain before the final comparison. A cleanup error, unsafe
+failure rate, provider throttling, missed deadline, or cost ceiling vetoes a
+candidate even when its throughput is higher.
+
+When candidates are within the practical tie range, select the lower limit. A
+profile can recommend a value but cannot promote the service capacity profile
+or change a campaign lock. Promotion and launch remain separate reviewed
+actions.
+
 ## Workload
 
 Profile against the workload the full campaign will run. For benchmark-speed
@@ -182,9 +223,16 @@ The selection names the winning concurrency, criterion, supporting point
 digests, and rationale. The full campaign's `execution.concurrent_trials` must
 equal `selection.concurrency`.
 
+For capacity admission, the selection also records the tested worker, campaign
+Sandbox, namespace, hardware, provider, and start-rate values. It records the
+effective concurrency, active limiting reason, raw completed and attempted
+counts, and minimum worthwhile effect. It distinguishes the measured
+recommendation from a later approved profile promotion.
+
 Higher concurrency is not automatically better. Prefer the lower point when
-two candidates are within measurement noise unless repeated evidence shows a
-material throughput advantage.
+two candidates are within measurement noise or the absolute gain is smaller
+than the registered minimum worthwhile effect. Safety, cleanup, provider,
+deadline, and cost vetoes take precedence over the primary metric.
 
 ## Storage
 

@@ -142,7 +142,75 @@ async def test_routes_harbor_operations_through_worker_capability(
     assert default_command["timeout_seconds"] == 900
 
 
+@pytest.mark.asyncio
+async def test_waits_for_queued_sandbox_admission_with_one_idempotency_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class QueuedClient(FakeClient):
+        create_calls = 0
+
+        def request(self, method: str, path: str, **kwargs) -> dict:
+            if path.endswith("/sandboxes"):
+                self.calls.append((method, path, kwargs.get("body")))
+                self.idempotency_keys.append(kwargs["idempotency_key"])
+                self.__class__.create_calls += 1
+                if self.__class__.create_calls == 1:
+                    return {
+                        "sandbox_id": "sandbox-1",
+                        "state": "QUEUED",
+                        "limiting_factor": "namespace_sandbox_capacity",
+                        "not_before": None,
+                    }
+                return {"sandbox_id": "sandbox-1", "state": "STARTING"}
+            return super().request(method, path, **kwargs)
+
+    FakeClient.calls.clear()
+    FakeClient.idempotency_keys.clear()
+    QueuedClient.create_calls = 0
+    for key, value in {
+        "HARBOR_HF_CONTROL_URL": "https://control.example",
+        "HARBOR_HF_WORKER_CAPABILITY": "capability",
+        "HARBOR_HF_CAMPAIGN_ID": "campaign-1",
+        "HARBOR_HF_ACTION_ID": "action-attempt-1",
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(control, "_ControlClient", QueuedClient)
+    monkeypatch.setattr(control.asyncio, "sleep", _noop_sleep)
+    environment_dir = tmp_path / "environment"
+    environment_dir.mkdir()
+    environment = control.ControlSandboxEnvironment(
+        environment_dir=environment_dir,
+        environment_name="source-task",
+        session_id="trial-1__env",
+        trial_paths=TrialPaths(tmp_path / "trial"),
+        task_env_config=EnvironmentConfig(
+            docker_image="example.invalid/task:tag",
+            workdir="/app",
+        ),
+        control_task_id="source-task-trial-1",
+        control_max_command_seconds=900,
+    )
+    monkeypatch.setattr(environment, "_upload_environment_dir_after_start", _noop)
+
+    await environment.start(force_build=False)
+
+    create_keys = [
+        key
+        for (method, path, _body), key in zip(
+            FakeClient.calls, FakeClient.idempotency_keys, strict=True
+        )
+        if method == "POST" and path.endswith("/sandboxes")
+    ]
+    assert len(create_keys) == 2
+    assert len(set(create_keys)) == 1
+
+
 async def _noop() -> None:
+    return None
+
+
+async def _noop_sleep(_delay: float) -> None:
     return None
 
 

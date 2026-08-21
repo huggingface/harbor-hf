@@ -203,6 +203,37 @@ visible but cannot authorize a campaign. A campaign lock retains the selected
 alias, immutable profile digest, and complete spec even when that alias later
 moves. Canonical migration preserves profile objects and promotion records.
 
+### Capacity contracts
+
+Each concurrency field has one meaning:
+
+- `worker_concurrency` is the maximum number of trial futures submitted by one
+  execution worker at a time;
+- `sandbox_template.max_sandboxes` is the maximum number of active or reserved
+  Sandboxes for one campaign;
+- `worker_max_tasks_per_job` bounds the task assignment and recovery impact of
+  one execution Job and does not set concurrency;
+- `inference_max_concurrency` limits concurrent provider requests from one
+  Sandbox;
+- `inference_max_total_concurrency` limits the provider request units reserved
+  across all active Sandboxes in one campaign;
+- the namespace capacity profile limits active or reserved Sandboxes across
+  campaigns and by hardware name, and sets the Sandbox start rate; and
+- budget admission limits work through the campaign's immutable reservations
+  and ceiling.
+
+The namespace capacity profile is service policy. It uses the existing profile
+object and promotion records, but it is not a campaign profile reference and is
+not part of a campaign lock. Every admission grant records the exact capacity
+profile digest that authorized it. A later promotion applies only to later
+grants. Lower limits stop new admissions and let active work drain.
+
+Write-enabled startup resolves the promoted alias named by
+`HARBOR_HF_CAPACITY_PROFILE_ALIAS` and fails when it is absent or invalid.
+Read-only startup may replay and display historical records without one, but it
+cannot admit new Sandbox work. No production capacity value is implied by this specification.
+Operators select values from verified quota and profiling evidence.
+
 ## HTTP API
 
 The service exposes these route groups:
@@ -577,6 +608,69 @@ the database is disposable.
 Snapshots may improve startup time. They cannot authorize paid work until their
 source digest set is verified.
 
+## Sandbox capacity admission
+
+A Sandbox create action is the durable queue entry. The control service is the
+only admission writer and applies these states in order:
+
+```text
+pending admission
+admitted
+remote dispatch authorized
+remote Sandbox created
+capacity released
+```
+
+The service writes the create intent and campaign budget reservation before it
+considers capacity. A pure admission decision then returns `admitted`,
+`deferred`, or `rejected`. It checks cancellation and policy validity first,
+then campaign Sandbox capacity, namespace capacity, hardware capacity, campaign
+provider capacity, Sandbox start pacing, and budget. Each result has a stable
+reason code. A deferral includes a next eligible time only when token refill
+provides one. The service does not invent an estimate for an unknown capacity
+release.
+
+An admitted action receives one immutable `sandbox.admission` grant before the
+action-dispatch fence and before any Hugging Face adapter call. The grant binds
+the action, campaign, namespace, hardware, provider request units, capacity
+profile digest, admission time, and token-bucket state. Repeating an idempotent
+request adopts the same intent, reservation, grant, dispatch, and remote
+resource.
+
+The namespace start limit is a durable integer token bucket. Its profile sets
+the token capacity, refill amount, and refill period. Replay reconstructs the
+same token state. Time moving backward cannot add tokens, and a profile
+promotion cannot reset a partly used bucket to a fresh burst. A token is not
+refunded after a remote start was authorized.
+
+Capacity remains reserved from grant until one of two proofs exists:
+
+- the create failed definitively and no remote resource exists; or
+- a close receipt verifies an accepted terminal Sandbox state.
+
+An ambiguous create, failed close, or uncertain cleanup retains the slot. The
+projection reports that slot as cleanup-held. Historical dispatched creates
+without admission records count as legacy reservations until the same terminal
+proof exists. Historical records are never rewritten.
+
+Pending creates keep FIFO order inside each campaign. The reconciler rotates
+among eligible campaigns so one campaign cannot take every released namespace
+slot. Cleanup keeps priority over new work. Temporary deferral causes no remote
+call and no retry storm.
+
+The worker-facing create route submits or adopts the durable action. It returns
+the completed resource when one exists, or `202 Accepted` with the action ID,
+queue state, limiting reason, and a factual retry time when available. Workers
+observe that action with bounded backoff. Observation cannot create another
+intent, reservation, token charge, grant, dispatch, or Sandbox.
+
+PR #100 established the execution worker's bounded rolling scheduler. It keeps
+at most `worker_concurrency` futures, waits for `FIRST_COMPLETED`, and fills a
+free slot while tasks remain. This design stays in place. Campaign cancellation
+closes the refill gate through the existing control API. The worker starts no
+new task after cancellation becomes visible. Tasks already running continue to
+their evidence and cleanup boundary. Harbor internals are not patched.
+
 ## Reconciler
 
 The reconciler runs in the Fastify process and executes bounded work cycles. It
@@ -681,6 +775,13 @@ reconciler heartbeat, last successful Bucket write, and dependency health. It
 must not report secret values or private deployment identifiers to users who
 lack operator access.
 
+Capacity views report the configured limit, reserved and active use, available
+slots, queued creates, cleanup-held slots, provider request units, start tokens,
+effective capacity, and the current limiting reason. Namespace and campaign
+views keep worker, Sandbox, provider, start-rate, assignment, and budget limits
+separate. Server-Sent Events target only the queries affected by an admission,
+release, profile promotion, or limiting-state change.
+
 The overview and audit pages expose durable operational evidence. External
 telemetry is disabled unless a separate privacy and credential review approves
 it.
@@ -716,8 +817,25 @@ Acceptance requires these failure tests:
 - valid historical action disposition with recorded and effective state;
 - disposition rejection for wrong action, receipt, result, ownership, or close;
 - partial and concurrent disposition batch adoption;
-- disposition proof failure during shuffled projection replay; and
-- disposition correction with no retry, budget, attempt, publication, or resource side effect.
+- disposition proof failure during shuffled projection replay;
+- disposition correction with no retry, budget, attempt, publication, or resource side effect;
+- rolling refill while another trial remains a straggler;
+- cancellation and pre-receipt failure stopping later task admission;
+- concurrent campaign admissions at campaign, namespace, hardware, provider,
+  start-rate, and budget boundaries;
+- fair deferred admission before and after full projection rebuild;
+- process exit after intent, reservation, grant, dispatch, create, receipt, and
+  release;
+- ambiguous create and failed cleanup retaining capacity;
+- historical Sandbox actions rebuilding as conservative reservations; and
+- API, event, and browser status showing the correct limiting reason without
+  private topology or credentials.
+
+Behavior changes also run the repository Ruff, format, type, coverage,
+Slophammer, dry-run, and mutation gates together with generated-contract,
+OpenAPI, TypeScript, build, and browser checks. Pi Reviewer runs against the
+current base until no P0 or P1 finding remains. Relevant pull-request CI must be
+green before the change is ready to merge.
 
 ## Deployment and replacement
 
@@ -730,6 +848,15 @@ The replacement is a hard new-write switch. Before it begins, all active legacy
 controllers must finish, every managed endpoint must be paused, the new Space
 must pass recovery tests, and normalized result catalog data must exist in the
 Bucket.
+
+Capacity admission rolls out in four stages. First, additive schemas, legacy
+replay, capacity status, and tests ship while writes stay disabled. Second, an
+operator promotes a reviewed namespace capacity profile and configures its
+alias. Write-enabled startup fails closed until that profile is available and
+no ambiguous legacy create can escape conservative accounting. Third, every new
+Sandbox create requires a durable admission grant. Fourth, new deployment
+profiles pin the worker revision that includes cancellation awareness. Existing
+campaign locks keep their recorded worker revision and are not changed.
 
 At the boundary, the TypeScript service becomes the only campaign writer. New
 campaigns and publications stop using the coordination and result Datasets.

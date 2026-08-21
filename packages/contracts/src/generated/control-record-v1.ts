@@ -1,7 +1,7 @@
 /* Generated from JSON Schema. Do not edit. */
 
-export type HarborHFControlRecordV1 = (ProfileObject | ProfilePromotion | OperatorAcl | CampaignRequest | CampaignLock | PreparedTrial | PreparedJob | ActionIntent | ActionDispatch | ActionReceipt | ActionDisposition | ActionAdvanced | AttemptReceipt | TerminalSelection | BudgetEvent | EndpointResource | PublicationReceipt | MigrationRecord)
-export type ProfileObject = (BenchmarkProfileObject | ModelProfileObject | HarnessProfileObject | DeploymentProfileObject | LaunchPolicyProfileObject)
+export type HarborHFControlRecordV1 = (ProfileObject | ProfilePromotion | OperatorAcl | CampaignRequest | CampaignLock | PreparedTrial | PreparedJob | ActionIntent | ActionDispatch | SandboxAdmissionGrant | SandboxCapacityRelease | ActionReceipt | ActionDisposition | ActionAdvanced | AttemptReceipt | TerminalSelection | BudgetEvent | EndpointResource | PublicationReceipt | MigrationRecord)
+export type ProfileObject = (BenchmarkProfileObject | ModelProfileObject | HarnessProfileObject | DeploymentProfileObject | LaunchPolicyProfileObject | CapacityProfileObject)
 export type BenchmarkProfileObject = (Base & {
 schema_version: "v1"
 kind: "profile.object"
@@ -106,6 +106,7 @@ inference_model?: string
 inference_api?: ("chat-completions" | "responses")
 inference_max_requests?: number
 inference_max_concurrency?: number
+inference_max_total_concurrency?: number
 inference_timeout_seconds?: number
 inference_max_output_tokens?: number
 /**
@@ -148,6 +149,7 @@ inference_model?: string
 inference_api?: ("chat-completions" | "responses")
 inference_max_requests?: number
 inference_max_concurrency?: number
+inference_max_total_concurrency?: number
 inference_timeout_seconds?: number
 inference_max_output_tokens?: number
 /**
@@ -173,13 +175,23 @@ profile_kind: "launch_policy"
 name: Id
 spec: LaunchPolicySpec
 })
+export type CapacityProfileObject = (Base & {
+schema_version: "v1"
+kind: "profile.object"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+profile_kind: "capacity"
+name: Id
+spec: CapacityProfileSpec
+})
 export type ProfilePromotion = (Base & {
 schema_version: "v1"
 kind: "profile.promotion"
 record_id: Id
 created_at: Timestamp
 actor: Actor
-profile_kind: ("benchmark" | "model" | "harness" | "deployment" | "launch_policy")
+profile_kind: ("benchmark" | "model" | "harness" | "deployment" | "launch_policy" | "capacity")
 alias: Id
 profile_id: Digest
 reason: string
@@ -314,6 +326,33 @@ action_id: Id
 campaign_id: Id
 operation: ("create" | "observe" | "execute" | "write" | "read" | "close")
 adoption_not_before: Timestamp
+})
+export type SandboxAdmissionGrant = (Base & {
+schema_version: "v1"
+kind: "sandbox.admission"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+action_id: Id
+campaign_id: Id
+namespace: string
+capacity_profile_id: Digest
+hardware: string
+reserved_provider_requests: number
+tokens_remaining: number
+refill_cursor_at: Timestamp
+})
+export type SandboxCapacityRelease = (Base & {
+schema_version: "v1"
+kind: "sandbox.capacity-release"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+action_id: Id
+campaign_id: Id
+grant_id: Id
+release_reason: ("create_failed" | "sandbox_closed")
+evidence_record_id: Id
 })
 export type ActionReceipt = (Base & {
 schema_version: "v1"
@@ -547,6 +586,20 @@ success_without_worker_receipt: boolean
 publication_role: ("final" | "component" | "diagnostic")
 preparation_reservation_microusd?: number
 max_preparation_attempts?: number
+}
+export interface CapacityProfileSpec {
+namespace: string
+max_active_sandboxes: number
+/**
+ * @maxItems 32
+ */
+hardware_limits: {
+hardware: string
+max_active_sandboxes: number
+}[]
+start_burst: number
+start_refill_tokens: number
+start_refill_period_seconds: number
 }
 export interface ProfileRef {
 kind: ("benchmark" | "model" | "harness" | "deployment" | "launch_policy")

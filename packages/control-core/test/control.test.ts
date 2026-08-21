@@ -7,6 +7,8 @@ import type {
   AttemptReceipt,
   BudgetEvent,
   EndpointResource,
+  ProfileObject,
+  ProfilePromotion,
   SandboxPolicy,
 } from "@harbor-hf/contracts";
 import {
@@ -52,6 +54,63 @@ const operator = { subject: "operator-1", role: "operator" as const };
 
 async function settle(reconciler: Reconciler, rounds = 8): Promise<void> {
   for (let index = 0; index < rounds; index += 1) await reconciler.tick();
+}
+
+async function configureCapacity(
+  control: TestControl,
+  input: {
+    maximum?: number;
+    hardwareMaximum?: number;
+    burst?: number;
+  } = {},
+): Promise<void> {
+  const createdAt = "2026-08-22T00:00:00.000Z";
+  const spec = {
+    namespace: "test",
+    max_active_sandboxes: input.maximum ?? 2,
+    hardware_limits: [
+      {
+        hardware: "cpu-basic",
+        max_active_sandboxes: input.hardwareMaximum ?? 2,
+      },
+    ],
+    start_burst: input.burst ?? 2,
+    start_refill_tokens: 1,
+    start_refill_period_seconds: 60,
+  };
+  const profile: ProfileObject = {
+    schema_version: "v1",
+    kind: "profile.object",
+    record_id: deterministicId(
+      "profile",
+      "capacity",
+      "capacity-test",
+      sha256(canonicalJson(spec)),
+    ),
+    created_at: createdAt,
+    actor: { subject: "test", role: "service" },
+    profile_kind: "capacity",
+    name: "capacity-test",
+    spec,
+  };
+  const profileId = sha256(canonicalJson(profile));
+  const promotion: ProfilePromotion = {
+    schema_version: "v1",
+    kind: "profile.promotion",
+    record_id: deterministicId("profile-promotion", "capacity", "current"),
+    created_at: createdAt,
+    actor: operator,
+    profile_kind: "capacity",
+    alias: "current",
+    profile_id: profileId,
+    promotion_state: "approved",
+    reason: "test capacity policy",
+    evidence: [],
+  };
+  await control.service.append(profile);
+  await control.service.append(promotion);
+  await control.service.refreshProfileResolver();
+  control.service.configureCapacityProfile("current");
 }
 
 async function putEvidenceReference(
@@ -255,6 +314,16 @@ async function putWorkerEvidence(
 }
 
 describe("control service", () => {
+  it("fails closed when a configured capacity profile is not approved", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    control.service.configureCapacityProfile("missing-capacity");
+
+    expect(() => control.service.requireCapacityProfile()).toThrow(
+      "unapproved capacity profile",
+    );
+  });
+
   it("adopts idempotent submissions and completes a control smoke campaign", async () => {
     const control = await createTestControl();
     controls.push(control);
@@ -861,6 +930,104 @@ describe("control service", () => {
     });
   });
 
+  it("serializes namespace admission and releases capacity after verified close", async () => {
+    const control = await createTestControl(2);
+    controls.push(control);
+    await configureCapacity(control, { maximum: 1, hardwareMaximum: 1, burst: 2 });
+    const first = await control.service.submit(
+      { ...submission, ceiling_microusd: 1_000 },
+      "capacity-first",
+      operator,
+    );
+    const second = await control.service.submit(
+      { ...submission, ceiling_microusd: 1_000 },
+      "capacity-second",
+      operator,
+    );
+    const policy: SandboxPolicy = {
+      image: `registry.example/sandbox@sha256:${"d".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 3_600,
+      idle_timeout_seconds: 600,
+      inference_token: "forbidden",
+      reservation_microusd: 100,
+      active_hourly_cost_microusd: 0,
+      max_sandboxes: 2,
+      max_commands: 8,
+      max_command_seconds: 600,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/logs"],
+    };
+    const create = (campaignId: string, taskId: string) =>
+      control.service.actionIntent(campaignId, "sandbox.create", taskId, 0, {
+        task_id: taskId,
+        sandbox: policy,
+      });
+    const firstIntent = create(first.campaign_id, "task-001");
+    const secondIntent = create(second.campaign_id, "task-001");
+
+    await expect(control.service.admitSandboxCreate(firstIntent, 2)).resolves.toEqual(
+      expect.objectContaining({ status: "admitted" }),
+    );
+    await expect(control.service.admitSandboxCreate(secondIntent, 2)).resolves.toEqual(
+      expect.objectContaining({
+        status: "deferred",
+        limiting_factor: "namespace_sandbox_capacity",
+      }),
+    );
+    expect(
+      await control.projection.sandboxAdmission(firstIntent.action_id),
+    ).not.toBeNull();
+    expect(
+      await control.projection.sandboxAdmission(secondIntent.action_id),
+    ).toBeNull();
+    await expect(control.service.admitSandboxCreate(firstIntent, 2)).resolves.toEqual(
+      expect.objectContaining({ status: "admitted" }),
+    );
+    expect(await control.projection.activeSandboxAdmissions("test")).toHaveLength(1);
+
+    const createReceipt = await control.service.receipt(firstIntent, {
+      outcome: "created",
+      observed_state: "RUNNING",
+      resource_id: "sandbox-capacity-resource",
+    });
+    await control.service.markAdvanced(firstIntent, createReceipt);
+    const close = control.service.actionIntent(
+      first.campaign_id,
+      "sandbox.close",
+      "sandbox-capacity-resource",
+      0,
+      {
+        task_id: "task-001",
+        sandbox_create_action_id: firstIntent.action_id,
+        resource_id: "sandbox-capacity-resource",
+        sandbox: policy,
+      },
+    );
+    await control.service.writeAction(close);
+    const closeReceipt = await control.service.receipt(close, {
+      outcome: "completed",
+      observed_state: "CANCELED",
+      resource_id: "sandbox-capacity-resource",
+      cost_microusd: 0,
+    });
+    await control.service.markAdvanced(close, closeReceipt);
+
+    expect(
+      await control.projection.sandboxCapacityRelease(firstIntent.action_id),
+    ).toMatchObject({ release_reason: "sandbox_closed" });
+    await expect(control.service.admitSandboxCreate(secondIntent, 2)).resolves.toEqual(
+      expect.objectContaining({ status: "admitted" }),
+    );
+    const rebuilt = await Projection.open(join(control.root, "capacity-replay.sqlite"));
+    await rebuilt.rebuild(control.store);
+    expect(await rebuilt.sandboxCapacityRelease(firstIntent.action_id)).toMatchObject({
+      release_reason: "sandbox_closed",
+    });
+    expect(await rebuilt.activeSandboxAdmissions("test")).toHaveLength(1);
+    await rebuilt.close();
+  });
+
   it("serializes the campaign-wide active Sandbox limit", async () => {
     const control = await createTestControl(2);
     controls.push(control);
@@ -956,9 +1123,12 @@ describe("control service", () => {
     });
     await control.service.markAdvanced(recoveredClose, recoveredCloseReceipt);
 
-    await expect(control.service.admitSandboxCreate(loser, 1)).resolves.toEqual({
-      dispatch_created: true,
-    });
+    await expect(control.service.admitSandboxCreate(loser, 1)).resolves.toEqual(
+      expect.objectContaining({
+        status: "admitted",
+        dispatch_created: true,
+      }),
+    );
   });
 
   it("closes active Sandboxes before sealing campaign cancellation", async () => {

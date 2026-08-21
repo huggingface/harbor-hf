@@ -659,6 +659,25 @@ describe("control web", () => {
         const path = String(input);
         if (path.includes("auth/session")) return json(session());
         if (path.includes("/system")) return json(system());
+        if (path.endsWith("/api/v1/campaigns/campaign-mixed/capacity"))
+          return json({
+            configured: true,
+            profile_id: "sha256:capacity",
+            namespace_limit: 8,
+            namespace_active: 3,
+            campaign_limit: 4,
+            campaign_active: 2,
+            hardware_limit: null,
+            hardware_active: 0,
+            provider_limit: 4,
+            provider_reserved: 2,
+            start_tokens: 1,
+            start_burst: 2,
+            queued: 1,
+            cleanup_held: 0,
+            limiting_factor: "namespace_sandbox_capacity",
+            not_before: null,
+          });
         if (path.endsWith("/api/v1/campaigns/campaign-mixed"))
           return json({
             campaign_id: "campaign-mixed",
@@ -673,6 +692,7 @@ describe("control web", () => {
             reserved_microusd: 0,
             ceiling_microusd: 0,
             cleanup_pending: false,
+            cancellation_requested: false,
           });
         if (path.includes("/api/v1/campaigns/campaign-mixed/tasks"))
           return json({
@@ -706,6 +726,9 @@ describe("control web", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Scored success").className).toContain("emerald");
     expect(screen.getByText("Timed out").className).toContain("amber");
+    expect(screen.getByText("Sandbox capacity")).toBeInTheDocument();
+    expect(screen.getByText("Namespace sandbox capacity")).toBeInTheDocument();
+    expect(screen.getByText("3/8 active")).toBeInTheDocument();
   });
 
   it("shows cancelled outcomes in orange", async () => {
@@ -716,6 +739,25 @@ describe("control web", () => {
         const path = String(input);
         if (path.includes("auth/session")) return json(session());
         if (path.includes("/system")) return json(system());
+        if (path.endsWith("/api/v1/campaigns/campaign-cancelled/capacity"))
+          return json({
+            configured: false,
+            profile_id: null,
+            namespace_limit: null,
+            namespace_active: 0,
+            campaign_limit: 1,
+            campaign_active: 0,
+            hardware_limit: null,
+            hardware_active: 0,
+            provider_limit: 0,
+            provider_reserved: 0,
+            start_tokens: null,
+            start_burst: null,
+            queued: 0,
+            cleanup_held: 0,
+            limiting_factor: "campaign_cancelled",
+            not_before: null,
+          });
         if (path.endsWith("/api/v1/campaigns/campaign-cancelled"))
           return json({
             campaign_id: "campaign-cancelled",
@@ -730,6 +772,7 @@ describe("control web", () => {
             reserved_microusd: 0,
             ceiling_microusd: 0,
             cleanup_pending: false,
+            cancellation_requested: true,
           });
         if (path.includes("/api/v1/campaigns/campaign-cancelled/tasks"))
           return json({

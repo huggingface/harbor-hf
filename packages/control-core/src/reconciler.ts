@@ -139,6 +139,42 @@ function profileInferenceToken(
   return value;
 }
 
+export function fairSandboxCreateOrder(
+  intents: readonly ActionIntent[],
+  latestCampaignId: string | null,
+): ActionIntent[] {
+  const groups = new Map<string, ActionIntent[]>();
+  for (const intent of intents) {
+    const group = groups.get(intent.campaign_id) ?? [];
+    group.push(intent);
+    groups.set(intent.campaign_id, group);
+  }
+  let campaigns = [...groups.keys()].sort((left, right) => {
+    const leftIntent = groups.get(left)?.[0];
+    const rightIntent = groups.get(right)?.[0];
+    return (leftIntent?.created_at ?? left).localeCompare(
+      rightIntent?.created_at ?? right,
+    );
+  });
+  const latestIndex = latestCampaignId ? campaigns.indexOf(latestCampaignId) : -1;
+  if (latestIndex >= 0)
+    campaigns = [
+      ...campaigns.slice(latestIndex + 1),
+      ...campaigns.slice(0, latestIndex + 1),
+    ];
+  const output: ActionIntent[] = [];
+  while (groups.size > 0) {
+    for (const campaignId of campaigns) {
+      const group = groups.get(campaignId);
+      const next = group?.shift();
+      if (next) output.push(next);
+      if (group?.length === 0) groups.delete(campaignId);
+    }
+    campaigns = campaigns.filter((campaignId) => groups.has(campaignId));
+  }
+  return output;
+}
+
 export class Reconciler {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
@@ -188,11 +224,44 @@ export class Reconciler {
       await this.service.markAdvanced(intent, receipt);
       handled += 1;
     }
-    for (const intent of await this.projection.pendingActions(
-      this.options.batch_size,
-    )) {
+    const pending = await this.projection.pendingActions(10_000);
+    const ordinary = pending.filter(
+      (intent) => intent.action_kind !== "sandbox.create",
+    );
+    ordinary.sort((left, right) => {
+      const priority = (intent: ActionIntent): number =>
+        intent.action_kind === "sandbox.close" ||
+        intent.action_kind === "campaign.cancel" ||
+        intent.action_kind === "job.cancel"
+          ? 0
+          : 1;
+      return priority(left) - priority(right);
+    });
+    let ordinaryHandled = 0;
+    const ordinaryLimit = Math.max(1, this.options.batch_size - 1);
+    for (const intent of ordinary.slice(0, ordinaryLimit)) {
       const notBefore = intent.payload.not_before;
       if (typeof notBefore === "string" && Date.parse(notBefore) > Date.now()) continue;
+      await this.handle(intent);
+      handled += 1;
+      ordinaryHandled += 1;
+    }
+    const remaining = Math.max(1, this.options.batch_size - ordinaryHandled);
+    for (const intent of (
+      await this.fairSandboxCreates(
+        pending.filter((candidate) => candidate.action_kind === "sandbox.create"),
+      )
+    ).slice(0, remaining)) {
+      if (!this.service.capacityProfile()) {
+        await this.handle(intent);
+        handled += 1;
+        continue;
+      }
+      const maximum = intent.payload.sandbox?.max_sandboxes;
+      if (typeof maximum !== "number")
+        throw new PolicyError("Sandbox create is missing its campaign capacity");
+      const admission = await this.service.admitSandboxCreate(intent, maximum);
+      if (admission.status !== "admitted") continue;
       await this.handle(intent);
       handled += 1;
     }
@@ -200,6 +269,11 @@ export class Reconciler {
       if (await this.maybePublish(campaign.campaign_id)) handled += 1;
     }
     return handled;
+  }
+
+  private async fairSandboxCreates(intents: ActionIntent[]): Promise<ActionIntent[]> {
+    const latest = await this.projection.latestSandboxAdmission(this.service.namespace);
+    return fairSandboxCreateOrder(intents, latest?.campaign_id ?? null);
   }
 
   private async handle(intent: ActionIntent): Promise<void> {
@@ -266,9 +340,14 @@ export class Reconciler {
           throw new PolicyError("Sandbox reservation does not match policy");
       }
       const dispatch = await this.projection.actionDispatch(intent.action_id);
+      const admission =
+        intent.action_kind === "sandbox.create"
+          ? await this.projection.sandboxAdmission(intent.action_id)
+          : null;
       if (
         intent.action_kind === "sandbox.create" &&
         !dispatch &&
+        !admission &&
         intent.actor.subject.startsWith("worker:") &&
         Date.parse(intent.created_at) + 30_000 > Date.now()
       )
