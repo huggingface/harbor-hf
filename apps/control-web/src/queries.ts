@@ -227,7 +227,10 @@ export function affectedQueryKeys(event: ControlEvent): QueryKey[] {
   const affected: QueryKey[] = [keys.audit];
   const campaignId = stringData(event, "campaign_id");
   const taskId = stringData(event, "task_id");
-  if (event.type.startsWith("profile.")) affected.push(keys.profiles);
+  if (event.type.startsWith("profile.")) {
+    affected.push(keys.profiles);
+    if (stringData(event, "profile_kind") === "capacity") affected.push(["capacity"]);
+  }
   if (event.type === "publication.receipt") affected.push(keys.results);
   if (
     event.type.startsWith("campaign.") ||

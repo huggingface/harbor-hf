@@ -107,6 +107,7 @@ interface AdmissionRow {
   reserved_provider_requests: number;
   tokens_remaining: number;
   refill_cursor_at: string;
+  previous_grant_id: string | null;
   created_at: string;
   body: string;
 }
@@ -497,6 +498,7 @@ export class Projection {
       .addColumn("reserved_provider_requests", "integer", (column) => column.notNull())
       .addColumn("tokens_remaining", "integer", (column) => column.notNull())
       .addColumn("refill_cursor_at", "text", (column) => column.notNull())
+      .addColumn("previous_grant_id", "text")
       .addColumn("created_at", "text", (column) => column.notNull())
       .addColumn("body", "text", (column) => column.notNull())
       .execute();
@@ -647,6 +649,8 @@ export class Projection {
       "attempts",
       "tasks",
       "advancements",
+      "sandbox_capacity_releases",
+      "sandbox_admissions",
       "dispatches",
       "dispositions",
       "actions",
@@ -971,6 +975,7 @@ export class Projection {
         reserved_provider_requests: record.reserved_provider_requests,
         tokens_remaining: record.tokens_remaining,
         refill_cursor_at: record.refill_cursor_at,
+        previous_grant_id: record.previous_grant_id,
         created_at: record.created_at,
         body: body(record),
       })
@@ -1472,6 +1477,38 @@ export class Projection {
           `Sandbox admission token state exceeds profile: ${grant.action_id}`,
         );
     }
+    const grantsByRecord = new Map(
+      grants.map((grant) => [
+        grant.body ? (JSON.parse(grant.body) as SandboxAdmissionGrant).record_id : "",
+        grant,
+      ]),
+    );
+    const followers = new Map<string, number>();
+    for (const grant of grants) {
+      if (!grant.previous_grant_id) continue;
+      const previous = grantsByRecord.get(grant.previous_grant_id);
+      if (!previous || previous.namespace !== grant.namespace)
+        throw new ProjectionIntegrityError(
+          `Sandbox admission predecessor is invalid: ${grant.action_id}`,
+        );
+      followers.set(
+        grant.previous_grant_id,
+        (followers.get(grant.previous_grant_id) ?? 0) + 1,
+      );
+    }
+    if ([...followers.values()].some((count) => count > 1))
+      throw new ProjectionIntegrityError("Sandbox admission chain has a fork");
+    for (const namespace of new Set(grants.map((grant) => grant.namespace))) {
+      const namespaceGrants = grants.filter((grant) => grant.namespace === namespace);
+      const tips = namespaceGrants.filter((grant) => {
+        const record = JSON.parse(grant.body) as SandboxAdmissionGrant;
+        return !followers.has(record.record_id);
+      });
+      if (tips.length !== 1)
+        throw new ProjectionIntegrityError(
+          `Sandbox admission chain has ${tips.length} tips: ${namespace}`,
+        );
+    }
     const releases = await this.db
       .selectFrom("sandbox_capacity_releases")
       .selectAll()
@@ -1708,14 +1745,24 @@ export class Projection {
   async latestSandboxAdmission(
     namespace: string,
   ): Promise<SandboxAdmissionGrant | null> {
-    const row = await this.db
+    const rows = await this.db
       .selectFrom("sandbox_admissions")
       .select("body")
       .where("namespace", "=", namespace)
-      .orderBy("created_at", "desc")
-      .orderBy("action_id", "desc")
-      .executeTakeFirst();
-    return row ? (JSON.parse(row.body) as SandboxAdmissionGrant) : null;
+      .execute();
+    const grants = rows.map((row) => JSON.parse(row.body) as SandboxAdmissionGrant);
+    if (grants.length === 0) return null;
+    const predecessors = new Set(
+      grants
+        .map((grant) => grant.previous_grant_id)
+        .filter((value): value is string => value !== null),
+    );
+    const tips = grants.filter((grant) => !predecessors.has(grant.record_id));
+    if (tips.length !== 1)
+      throw new ProjectionIntegrityError(
+        `Sandbox admission chain has ${tips.length} tips: ${namespace}`,
+      );
+    return tips[0] as SandboxAdmissionGrant;
   }
 
   async dispatchedSandboxCreateActionIds(): Promise<Set<string>> {

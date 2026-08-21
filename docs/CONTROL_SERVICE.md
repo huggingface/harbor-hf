@@ -638,8 +638,9 @@ request adopts the same intent, reservation, grant, dispatch, and remote
 resource.
 
 The namespace start limit is a durable integer token bucket. Its profile sets
-the token capacity, refill amount, and refill period. Replay reconstructs the
-same token state. Time moving backward cannot add tokens, and a profile
+the token capacity, refill amount, and refill period. Each grant names its
+causal predecessor, so replay reconstructs the same order and token state even
+when timestamps are equal. Time moving backward cannot add tokens, and a profile
 promotion cannot reset a partly used bucket to a fresh burst. A token is not
 refunded after a remote start was authorized.
 

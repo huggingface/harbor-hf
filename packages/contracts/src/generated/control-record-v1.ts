@@ -341,6 +341,7 @@ hardware: string
 reserved_provider_requests: number
 tokens_remaining: number
 refill_cursor_at: Timestamp
+previous_grant_id: (Id | null)
 })
 export type SandboxCapacityRelease = (Base & {
 schema_version: "v1"

@@ -247,6 +247,7 @@ describe("canonical contracts", () => {
       reserved_provider_requests: 1,
       tokens_remaining: 1,
       refill_cursor_at: "2026-08-22T00:00:00.000Z",
+      previous_grant_id: null,
     } as const;
     const release = {
       schema_version: "v1",

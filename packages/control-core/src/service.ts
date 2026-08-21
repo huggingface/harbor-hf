@@ -756,6 +756,7 @@ export class ControlService {
     profileId: string,
     hardware: string,
     reservedProviderRequests: number,
+    previousGrantId: string | null,
     decision: Extract<SandboxAdmissionDecision, { outcome: "admitted" }>,
   ): Promise<SandboxAdmissionGrant> {
     const grant: SandboxAdmissionGrant = {
@@ -772,6 +773,7 @@ export class ControlService {
       reserved_provider_requests: reservedProviderRequests,
       tokens_remaining: decision.tokens_remaining,
       refill_cursor_at: decision.refill_cursor_at,
+      previous_grant_id: previousGrantId,
     };
     return (
       await this.appendAdopting(grant, (recorded) => {
@@ -943,6 +945,7 @@ export class ControlService {
         capacity.profile_id,
         policy.hardware,
         providerUnits,
+        latest?.record_id ?? null,
         decision,
       );
     }

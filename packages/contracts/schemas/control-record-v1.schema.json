@@ -594,7 +594,8 @@
             "hardware",
             "reserved_provider_requests",
             "tokens_remaining",
-            "refill_cursor_at"
+            "refill_cursor_at",
+            "previous_grant_id"
           ],
           "properties": {
             "schema_version": { "const": "v1" },
@@ -625,7 +626,10 @@
               "minimum": 0,
               "maximum": 1024
             },
-            "refill_cursor_at": { "$ref": "#/$defs/Timestamp" }
+            "refill_cursor_at": { "$ref": "#/$defs/Timestamp" },
+            "previous_grant_id": {
+              "oneOf": [{ "$ref": "#/$defs/Id" }, { "type": "null" }]
+            }
           }
         }
       ]

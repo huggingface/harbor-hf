@@ -68,6 +68,16 @@ describe("live query updates", () => {
     expect(affected).not.toContainEqual(keys.results);
   });
 
+  it("invalidates every capacity view after capacity profile promotion", () => {
+    const affected = affectedQueryKeys({
+      type: "profile.promotion",
+      occurred_at: "2026-08-18T00:00:00Z",
+      data: { profile_kind: "capacity", alias: "current" },
+    });
+    expect(affected).toContainEqual(["capacity"]);
+    expect(affected).toContainEqual(keys.profiles);
+  });
+
   it("targets capacity views for Sandbox admission records", () => {
     const affected = affectedQueryKeys({
       type: "sandbox.admission",
