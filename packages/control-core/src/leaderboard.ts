@@ -5,12 +5,14 @@ import type {
   CampaignLock,
   HarborHFLeaderboardSnapshotV1,
   HarborHFResultCatalogV1,
+  PublicationReceipt,
   ResolvedProfile,
 } from "@harbor-hf/contracts";
 import {
   canonicalJson,
   deterministicId,
   sha256,
+  validateControlRecord,
   validateLeaderboardSnapshot,
   validateResultCatalog,
 } from "@harbor-hf/contracts";
@@ -151,6 +153,25 @@ function catalogString(value: string | null, field: string): string {
   return value;
 }
 
+async function requirePublishedReceipt(
+  store: ImmutableObjectStore,
+  entry: CatalogEntry,
+): Promise<void> {
+  const receipt = validateControlRecord<PublicationReceipt>(
+    JSON.parse(new TextDecoder().decode(await store.read(entry.result_path))),
+  );
+  if (
+    receipt.kind !== "publication.receipt" ||
+    receipt.publication_state !== "published" ||
+    receipt.publication_id !== entry.publication_id ||
+    receipt.campaign_id !== entry.campaign_id
+  ) {
+    throw new Error(
+      `leaderboard catalog ${entry.publication_id} has no matching published receipt`,
+    );
+  }
+}
+
 export async function encodeLeaderboardSqlite(
   rows: readonly LeaderboardRow[],
 ): Promise<Uint8Array> {
@@ -241,6 +262,7 @@ async function catalogRows(
     );
     for (const entry of catalog.entries) {
       if (!leaderboardEligible(entry)) continue;
+      await requirePublishedReceipt(store, entry);
       const lock = await projection.campaignLock(entry.campaign_id);
       if (!lock)
         throw new Error(

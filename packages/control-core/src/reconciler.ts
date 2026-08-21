@@ -14,9 +14,9 @@ import {
   sha256,
 } from "@harbor-hf/contracts";
 import { preparationRequired } from "./profiles.js";
-import type { ResultPublisher } from "./publication.js";
 import type { Projection } from "./projection.js";
-import { PolicyError, type ControlService } from "./service.js";
+import type { ResultPublisher } from "./publication.js";
+import { type ControlService, PolicyError } from "./service.js";
 
 export interface ExternalActionResult {
   outcome: ActionReceipt["outcome"];

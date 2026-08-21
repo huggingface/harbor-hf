@@ -19,8 +19,13 @@ export function productionTarballUrls(lockfile: NpmLockfile): string[] {
     if (pkg.dev === true) continue;
     const resolved = pkg.resolved;
     if (resolved === undefined) continue;
-    if (!resolved.startsWith("https://") && !resolved.startsWith("http://")) continue;
-    if (!resolved.endsWith(".tgz"))
+    if (!resolved.includes("://")) continue;
+    const url = new URL(resolved);
+    if (
+      url.protocol !== "https:" ||
+      url.origin !== "https://registry.npmjs.org" ||
+      !url.pathname.endsWith(".tgz")
+    )
       throw new Error(`unsupported production package URL: ${resolved}`);
     urls.add(resolved);
   }

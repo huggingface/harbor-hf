@@ -32,7 +32,7 @@ afterEach(async () => {
 });
 
 async function setup(
-  writeMode: AppConfig["write_mode"] = "canary",
+  writeMode: AppConfig["write_mode"] = "enabled",
   seed?: (runtime: Runtime) => Promise<void>,
 ): Promise<{
   runtime: Runtime;
@@ -161,7 +161,7 @@ function sandboxDeploymentRecords(): Array<ProfileObject | ProfilePromotion> {
     profile_id: profileId,
     promotion_state: "approved",
     reason: "approved after sandbox review",
-    evidence: [sha256("sandbox-canary-evidence")],
+    evidence: [sha256("sandbox-evidence")],
   };
   const benchmarkSpec = {
     task_ids: ["control-smoke-task"] as [string],
@@ -202,7 +202,7 @@ function sandboxDeploymentRecords(): Array<ProfileObject | ProfilePromotion> {
     profile_id: benchmarkProfileId,
     promotion_state: "approved",
     reason: "approved after sandbox review",
-    evidence: [sha256("sandbox-canary-evidence")],
+    evidence: [sha256("sandbox-evidence")],
   };
   return [profile, promotion, benchmarkProfile, benchmarkPromotion];
 }
@@ -256,7 +256,7 @@ describe("control API", () => {
       profile_id: targetProfileId,
       promotion_state: state,
       reason: `${state} after profile review`,
-      evidence: [sha256(`${alias}-canary-evidence`)],
+      evidence: [sha256(`${alias}-evidence`)],
     });
     const approved = promotion("control-smoke", "approved", "2026-08-16T00:00:01.000Z");
     const recommended = promotion(
@@ -264,7 +264,7 @@ describe("control API", () => {
       "recommended",
       "2026-08-16T00:00:02.000Z",
     );
-    const { runtime, app } = await setup("canary", async (seedRuntime) => {
+    const { runtime, app } = await setup("enabled", async (seedRuntime) => {
       for (const record of [profile, approved, recommended])
         await seedRuntime.store.create(
           controlRecordPath(record),
@@ -805,7 +805,7 @@ describe("control API", () => {
       operators: ["operator"],
       readers: [],
     };
-    const { runtime, app } = await setup("canary", async (seededRuntime) => {
+    const { runtime, app } = await setup("enabled", async (seededRuntime) => {
       await seededRuntime.service.append(acl);
     });
     runtime.config.auth_mode = "oauth";
@@ -911,7 +911,7 @@ describe("control API", () => {
       operators: ["operator"],
       readers: [],
     };
-    const { runtime, app } = await setup("canary", async (seededRuntime) => {
+    const { runtime, app } = await setup("enabled", async (seededRuntime) => {
       await seededRuntime.service.append(acl);
     });
     runtime.config.auth_mode = "oauth";
@@ -1754,7 +1754,7 @@ describe("control API", () => {
     await app.close();
   });
 
-  it("enforces canary profiles, confirmation, and idempotency", async () => {
+  it("enforces profile resolution, confirmation, and idempotency", async () => {
     const { runtime, app } = await setup();
     const missingKey = await app.inject({
       method: "POST",

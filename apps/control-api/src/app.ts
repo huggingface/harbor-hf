@@ -5,7 +5,6 @@ import type {
   ActionReceipt,
   Actor,
   AttemptSubmissionV1,
-  CampaignSubmissionV1,
   HarborHFResultCatalogV1,
   SandboxPolicy,
 } from "@harbor-hf/contracts";
@@ -465,21 +464,6 @@ function filterAndSortResults(
       String(right.publication_id).localeCompare(String(left.publication_id))
     );
   });
-}
-
-function canarySubmission(body: unknown): boolean {
-  if (!body || typeof body !== "object") return false;
-  const input = body as Partial<CampaignSubmissionV1>;
-  return (
-    input.benchmark === "control-smoke" &&
-    input.model === "control-smoke" &&
-    input.harness === "control-smoke" &&
-    input.launch_policy === "control-smoke" &&
-    (input.deployment === undefined ||
-      input.deployment === null ||
-      input.deployment === "hf-cpu-smoke" ||
-      input.deployment === "hf-cpu-sandbox-smoke")
-  );
 }
 
 export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
@@ -1116,10 +1100,6 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     async (request, reply) => {
       if (runtime.config.write_mode === "disabled")
         throw new ControlNotReadyError("campaign writes are disabled before cutover");
-      if (runtime.config.write_mode === "canary" && !canarySubmission(request.body))
-        throw new PolicyError(
-          "canary mode accepts only the built-in control smoke profile",
-        );
       const result = await runtime.service.submit(
         request.body,
         idempotencyKey(request),

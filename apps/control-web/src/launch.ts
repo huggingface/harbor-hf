@@ -1,13 +1,5 @@
 import { humanize } from "./lib";
 
-export const LAUNCH_DEFAULTS = {
-  benchmark: "terminal-bench-2-1-diagnostic-1",
-  model: "gpt-oss-20b",
-  harnessAgent: "opencode",
-  reasoning: "off",
-  deploymentKind: "providers",
-} as const;
-
 export const REASONING_OPTIONS = [
   ["off", "None"],
   ["minimal", "Minimal"],
@@ -17,29 +9,29 @@ export const REASONING_OPTIONS = [
   ["xhigh", "Extra high"],
 ] as const;
 
-export const BENCHMARK_LAUNCH_POLICY: Record<string, string> = {
-  "control-smoke": "control-smoke",
-  "terminal-bench-2-1-canary": "tb21-canary",
-  "terminal-bench-2-1-diagnostic-1": "tb21-diagnostic-1",
-  "terminal-bench-2-1-official-5": "tb21-official-5",
-  "terminal-bench-2-1-replacement": "tb21-replacement",
-};
-
+export type ReasoningOption = (typeof REASONING_OPTIONS)[number][0];
 export type DeploymentKind = "providers" | "endpoints";
 
-export function preferredAlias(
-  preferred: string,
-  available: readonly string[],
-): string {
-  if (!available.includes(preferred))
-    throw new Error(`approved default ${preferred} is missing`);
-  return preferred;
-}
+export type LaunchSelection = {
+  model: string;
+  harnessAgent: string;
+  reasoning: ReasoningOption;
+  deploymentKind: DeploymentKind;
+};
 
-export function launchPolicyForBenchmark(benchmarkAlias: string): string {
-  const policy = BENCHMARK_LAUNCH_POLICY[benchmarkAlias];
-  if (!policy) throw new Error(`no launch policy is configured for ${benchmarkAlias}`);
-  return policy;
+type ApprovedProfile = {
+  alias: string;
+  spec: Record<string, unknown>;
+};
+
+export function approvedAlias(
+  selected: string,
+  available: readonly string[],
+  kind = "profile",
+): string {
+  if (!available.includes(selected))
+    throw new Error(`approved ${kind} ${selected || "selection"} is missing`);
+  return selected;
 }
 
 export function doubleReservationMicrousd(estimatedMicrousd: number): number {
@@ -71,9 +63,11 @@ export function harnessAgent(spec: Record<string, unknown>): string {
   return agent;
 }
 
-export function harnessReasoning(spec: Record<string, unknown>): string {
+export function harnessReasoning(spec: Record<string, unknown>): ReasoningOption {
   const value = spec.reasoning_effort;
-  return typeof value === "string" ? value : "off";
+  return REASONING_OPTIONS.some(([option]) => option === value)
+    ? (value as ReasoningOption)
+    : "off";
 }
 
 export function profileLabel(
@@ -127,7 +121,7 @@ export function selectHarnessAlias(
 }
 
 export function selectDeploymentAlias(
-  deployments: ReadonlyArray<{ alias: string; spec: Record<string, unknown> }>,
+  deployments: ReadonlyArray<ApprovedProfile>,
   kind: DeploymentKind,
   model: string,
   harness: string,
@@ -148,4 +142,45 @@ export function selectDeploymentAlias(
       `no approved ${kind} deployment is available for ${model} and ${harness}`,
     );
   return match.alias;
+}
+
+export function firstCompatibleLaunchSelection(
+  models: ReadonlyArray<ApprovedProfile>,
+  harnesses: ReadonlyArray<ApprovedProfile>,
+  deployments: ReadonlyArray<ApprovedProfile>,
+): LaunchSelection {
+  const modelAliases = new Set(models.map((profile) => profile.alias));
+  const harnessByAlias = new Map(harnesses.map((profile) => [profile.alias, profile]));
+  for (const deployment of deployments) {
+    const kind = deploymentKind(deployment.spec);
+    if (kind === "other") continue;
+    const deploymentModels = deployment.spec.models;
+    const deploymentHarnesses = deployment.spec.harnesses;
+    if (!Array.isArray(deploymentModels) || !Array.isArray(deploymentHarnesses))
+      continue;
+    for (const model of deploymentModels) {
+      if (typeof model !== "string" || !modelAliases.has(model)) continue;
+      for (const harnessAlias of deploymentHarnesses) {
+        if (typeof harnessAlias !== "string") continue;
+        const harness = harnessByAlias.get(harnessAlias);
+        if (!harness) continue;
+        const agent = harnessAgent(harness.spec);
+        const reasoning = harnessReasoning(harness.spec);
+        const selectedHarness = harnesses.find(
+          (profile) =>
+            harnessAgent(profile.spec) === agent &&
+            harnessReasoning(profile.spec) === reasoning,
+        );
+        if (!selectedHarness || !deploymentHarnesses.includes(selectedHarness.alias))
+          continue;
+        return {
+          model,
+          harnessAgent: agent,
+          reasoning,
+          deploymentKind: kind,
+        };
+      }
+    }
+  }
+  throw new Error("no compatible approved launch profile combination is available");
 }

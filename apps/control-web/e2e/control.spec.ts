@@ -6,7 +6,7 @@ const session = {
   actor: { username: "test-user", role: "operator", transport: "session" },
 };
 
-function system(writeMode: "disabled" | "canary" | "enabled" = "canary") {
+function system(writeMode: "disabled" | "enabled" = "enabled") {
   return {
     source_revision: "test-revision-0123456789abcdef",
     write_mode: writeMode,
@@ -159,6 +159,9 @@ test("requires confirmation before starting a run", async ({ page }) => {
   await page.getByRole("button", { name: "Start a run" }).click();
   const create = page.getByRole("button", { name: "Start run" });
   await expect(create).toBeDisabled();
+  await page
+    .getByRole("combobox", { name: "Launch policy" })
+    .selectOption("tb21-diagnostic-1");
   await page.getByRole("checkbox").check();
   await expect(create).toBeEnabled();
   await page.getByText("Cost ceiling, USD", { exact: true }).hover();

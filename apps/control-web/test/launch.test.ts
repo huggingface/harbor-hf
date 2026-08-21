@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  approvedAlias,
   doubleReservationMicrousd,
-  launchPolicyForBenchmark,
-  preferredAlias,
+  firstCompatibleLaunchSelection,
   profileLabel,
   selectDeploymentAlias,
   selectHarnessAlias,
 } from "../src/launch";
 
 describe("launch helpers", () => {
-  it("keeps the preferred alias when it is approved", () => {
-    expect(preferredAlias("gpt-oss-20b", ["control-smoke", "gpt-oss-20b"])).toBe(
-      "gpt-oss-20b",
+  it("keeps a selected alias when it is approved", () => {
+    expect(
+      approvedAlias("gpt-oss-20b", ["control-smoke", "gpt-oss-20b"], "model"),
+    ).toBe("gpt-oss-20b");
+    expect(() => approvedAlias("missing", ["control-smoke"], "launch policy")).toThrow(
+      "approved launch policy missing is missing",
     );
   });
 
@@ -41,14 +44,83 @@ describe("launch helpers", () => {
     ).toThrow(/no approved opencode harness/);
   });
 
-  it("maps Terminal-Bench 2.1 diagnostic to its launch policy", () => {
-    expect(launchPolicyForBenchmark("terminal-bench-2-1-diagnostic-1")).toBe(
-      "tb21-diagnostic-1",
-    );
-  });
-
   it("doubles the estimated reservation for the default ceiling", () => {
     expect(doubleReservationMicrousd(5_200_000)).toBe(10_400_000);
+  });
+
+  it("derives defaults from the first compatible promoted deployment", () => {
+    expect(
+      firstCompatibleLaunchSelection(
+        [
+          { alias: "unrelated-model", spec: {} },
+          { alias: "compatible-model", spec: {} },
+        ],
+        [
+          {
+            alias: "compatible-harness",
+            spec: { agent: "general-agent", reasoning_effort: "medium" },
+          },
+        ],
+        [
+          {
+            alias: "unsupported-runtime",
+            spec: {
+              models: ["unrelated-model"],
+              harnesses: ["compatible-harness"],
+            },
+          },
+          {
+            alias: "compatible-runtime",
+            spec: {
+              models: ["compatible-model"],
+              harnesses: ["compatible-harness"],
+              inference_provider: "provider",
+            },
+          },
+        ],
+      ),
+    ).toEqual({
+      model: "compatible-model",
+      harnessAgent: "general-agent",
+      reasoning: "medium",
+      deploymentKind: "providers",
+    });
+  });
+
+  it("skips an ambiguous harness alias unsupported by the deployment", () => {
+    expect(
+      firstCompatibleLaunchSelection(
+        [{ alias: "model", spec: {} }],
+        [
+          { alias: "first-harness", spec: { agent: "agent" } },
+          { alias: "second-harness", spec: { agent: "agent" } },
+          { alias: "distinct-harness", spec: { agent: "other-agent" } },
+        ],
+        [
+          {
+            alias: "ambiguous-runtime",
+            spec: {
+              models: ["model"],
+              harnesses: ["second-harness"],
+              inference_provider: "provider",
+            },
+          },
+          {
+            alias: "compatible-runtime",
+            spec: {
+              models: ["model"],
+              harnesses: ["distinct-harness"],
+              inference_provider: "provider",
+            },
+          },
+        ],
+      ),
+    ).toEqual({
+      model: "model",
+      harnessAgent: "other-agent",
+      reasoning: "off",
+      deploymentKind: "providers",
+    });
   });
 
   it("labels Terminal-Bench 2.1 by source tasks and trials, not logical attempts", () => {

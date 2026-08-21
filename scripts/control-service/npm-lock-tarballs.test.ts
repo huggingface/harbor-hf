@@ -19,30 +19,34 @@ describe("productionTarballUrls", () => {
         },
         "node_modules/lightningcss-linux-x64-gnu": {
           resolved:
-            "https://npm.registries.huggingface.tech/lightningcss-linux-x64-gnu/-/lightningcss-linux-x64-gnu-1.32.0.tgz",
+            "https://registry.npmjs.org/lightningcss-linux-x64-gnu/-/lightningcss-linux-x64-gnu-1.32.0.tgz",
         },
       },
     });
     expect(urls).toEqual([
-      "https://npm.registries.huggingface.tech/lightningcss-linux-x64-gnu/-/lightningcss-linux-x64-gnu-1.32.0.tgz",
       "https://registry.npmjs.org/fastify/-/fastify-5.12.0.tgz",
+      "https://registry.npmjs.org/lightningcss-linux-x64-gnu/-/lightningcss-linux-x64-gnu-1.32.0.tgz",
     ]);
   });
 
-  it("rejects a production package that is not a tarball", () => {
-    expect(() =>
+  it.each([
+    "http://registry.npmjs.org/weird/-/weird-1.0.0.tgz",
+    "https://example.invalid/weird/-/weird-1.0.0.tgz",
+    "https://registry.npmjs.org/weird.git",
+  ])("rejects unsupported production package URL %s", (resolved) => {
+    expect(() => {
       productionTarballUrls({
         packages: {
-          "node_modules/weird": { resolved: "https://example.invalid/weird.git" },
+          "node_modules/weird": { resolved },
         },
-      }),
-    ).toThrow("unsupported production package URL");
+      });
+    }).toThrow("unsupported production package URL");
   });
 
   it("fails when the lockfile has no packages map", () => {
-    expect(() => productionTarballUrls({} as { packages: Record<string, never> })).toThrow(
-      "package-lock.json is missing packages",
-    );
+    expect(() =>
+      productionTarballUrls({} as { packages: Record<string, never> }),
+    ).toThrow("package-lock.json is missing packages");
   });
 
   it("selects only production tarballs from the committed lockfile", () => {
@@ -51,7 +55,16 @@ describe("productionTarballUrls", () => {
     ) as { packages: Record<string, { resolved?: string; dev?: boolean }> };
     const urls = productionTarballUrls(lockfile);
     expect(urls.length).toBeGreaterThan(200);
-    expect(urls.every((url) => url.endsWith(".tgz"))).toBe(true);
+    expect(
+      urls.every((url) => {
+        const parsed = new URL(url);
+        return (
+          parsed.protocol === "https:" &&
+          parsed.origin === "https://registry.npmjs.org" &&
+          parsed.pathname.endsWith(".tgz")
+        );
+      }),
+    ).toBe(true);
     expect(urls.some((url) => url.includes("lightningcss-linux-x64-gnu"))).toBe(true);
     expect(urls.some((url) => url.includes("better-sqlite3"))).toBe(true);
     expect(urls.some((url) => url.includes("playwright"))).toBe(false);

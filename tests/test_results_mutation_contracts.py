@@ -349,15 +349,15 @@ def test_full_result_rows_publication_and_index_have_canonical_hashes() -> None:
                 "index_size": len(index_file.content),
             }
         )
-        == "e756acd7847285b9fb2831863c378aa820e047ebc4e8d99af49fd2d7bb09fe74"
+        == "6f5df2a50bb6812cac7306085b1d764a9a507ad25b35f91ab2fd05dafd091485"
     )
     assert [_sha256(item.content) for item in publication.files] == [
-        "sha256:554def6faaff42ade95f427dea3940d26f39772e2f238b0223ea5e4d85998c4b",
-        "sha256:b006a7442fc8c3a7336056043e084472e783a54e62048fb0b1c380b93e1f1242",
-        "sha256:ab3305b9cd77bb0bf7e3ddb5b85be2d85fda5e952de57030ed58c7e618422bb0",
-        "sha256:0f56186556772b9697a9ab8db57ef1071b8700259a1c220ddc91f9fabeddf8c3",
-        "sha256:e5885f84dff3d3f8d8d45882da53865676b2c2f392f427e81641b527414ff948",
-        "sha256:d9c2cb82822a159281b2a4556cfb28a40fc3edb60c82be19fa59f71847948ed6",
+        "sha256:ebd8692bf1023e04da96035cbbf4e96d33577b4354b8ff6409b566f21a7810ba",
+        "sha256:1d365a1570af03dec46eb504b00cce6d90ccebf0ebc17b13d3fe7b362b94e7a5",
+        "sha256:32346c0ec7ba7496244917085dcda0f0d8e84dfaa1f72d22925759b43ca934d4",
+        "sha256:5900826f887dd08f156689d44d8165798a89b18b6aa8e49026ac5d8a7b20d761",
+        "sha256:e0cb775d15ea6b1f2c6de11f8c4f4315561aa770efebb1366d7eae19bf6ef61f",
+        "sha256:7fe41c48f25be922ab66e8ae8bffe7112fe710eae329e7bd2b840b38e931207a",
     ]
 
     common = ("hf://buckets/private-evidence", SOURCE.prefix)

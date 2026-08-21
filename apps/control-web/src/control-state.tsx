@@ -8,7 +8,7 @@ export interface DisplayActor {
 
 interface ControlState {
   actor: DisplayActor;
-  writeMode: "disabled" | "canary" | "enabled" | "unknown";
+  writeMode: "disabled" | "enabled" | "unknown";
   writesAllowed: boolean;
 }
 
@@ -28,9 +28,7 @@ export function ControlStateProvider({
       value={{
         actor,
         writeMode,
-        writesAllowed:
-          actor.role === "operator" &&
-          (writeMode === "canary" || writeMode === "enabled"),
+        writesAllowed: actor.role === "operator" && writeMode === "enabled",
       }}
     >
       {children}

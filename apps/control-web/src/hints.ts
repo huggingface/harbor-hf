@@ -18,7 +18,7 @@ export const hints = {
     liveUpdates:
       "The browser refreshes from the control API and event stream. This is a read view, not the durable Bucket.",
     writeMode:
-      "Deployment safety switch. Disabled or canary still checks your role. Enabled is required for new runs.",
+      "Deployment safety switch. Disabled blocks new runs even for approved operators. Enabled is required for new runs.",
   },
   overview: {
     active:
@@ -51,7 +51,7 @@ export const hints = {
     deployment:
       "Where the model is served: Hugging Face Inference Providers, or a dedicated Inference Endpoint.",
     launch_policy:
-      "Admission and repair rules selected from the benchmark. You do not pick this separately.",
+      "Promoted admission, reservation, repair, and publication rules to lock for this run.",
     ceiling:
       "Hard spend stop for this run, entered in USD. Defaults to twice the estimated reservation until you edit it. Control refuses new reservations once reserved plus observed cost would exceed it.",
     confirmed:

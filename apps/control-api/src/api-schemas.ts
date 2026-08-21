@@ -486,7 +486,7 @@ export const systemSchema = {
   required: ["source_revision", "write_mode", "projection", "resource_contract"],
   properties: {
     source_revision: { type: "string" },
-    write_mode: { enum: ["disabled", "canary", "enabled"] },
+    write_mode: { enum: ["disabled", "enabled"] },
     projection: {
       type: "object",
       additionalProperties: false,

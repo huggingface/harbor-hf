@@ -294,7 +294,6 @@ export class ResultPublisher {
       `results/schema=v1/catalog/records/${catalog.record_id}.json`,
       catalogBytes,
     );
-    await refreshLeaderboardSnapshot(this.store, this.projection);
     const receipt: PublicationReceipt = {
       schema_version: "v1",
       kind: "publication.receipt",
@@ -313,6 +312,7 @@ export class ResultPublisher {
       `results/schema=v1/publications/${publicationId}/receipt.json`,
       receiptBytes,
     );
+    await refreshLeaderboardSnapshot(this.store, this.projection);
     await this.service.writePublication(receipt);
     return receipt;
   }

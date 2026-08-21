@@ -13,7 +13,7 @@ const schema = z.object({
   HARBOR_HF_PROFILES_ROOT: z.string().min(1).default("./profiles"),
   HARBOR_HF_WEB_ROOT: z.string().min(1).default("./apps/control-web/dist"),
   HARBOR_HF_AUTH_MODE: z.enum(["oauth", "development"]).default("oauth"),
-  HARBOR_HF_WRITE_MODE: z.enum(["disabled", "canary", "enabled"]).default("disabled"),
+  HARBOR_HF_WRITE_MODE: z.enum(["disabled", "enabled"]).default("disabled"),
   HARBOR_HF_PUBLIC_ORIGIN: z.string().url().optional(),
   SPACE_HOST: z.string().min(1).optional(),
   OAUTH_CLIENT_ID: z.string().min(1).optional(),
@@ -56,7 +56,7 @@ export interface AppConfig {
   profiles_root: string;
   web_root: string;
   auth_mode: "oauth" | "development";
-  write_mode: "disabled" | "canary" | "enabled";
+  write_mode: "disabled" | "enabled";
   public_origin: string;
   oauth: {
     issuer: string;

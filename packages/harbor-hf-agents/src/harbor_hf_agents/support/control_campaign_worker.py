@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import codecs
 import concurrent.futures
 import copy
 import json
@@ -13,7 +14,9 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+from collections import deque
 from collections.abc import Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import version
@@ -24,7 +27,6 @@ from harbor.models.job.config import JobConfig
 from harbor.models.job.lock import TrialLock
 
 from harbor_hf_agents.support.control_sandbox_environment import _ControlClient, _digest
-from harbor_hf_agents.support.harbor_0210_empty_metrics import harbor_cli_env
 from harbor_hf_agents.support.provider_outcome import (
     ProviderPolicyError,
     TerminalProviderError,
@@ -32,6 +34,55 @@ from harbor_hf_agents.support.provider_outcome import (
 )
 
 _EVIDENCE_CHUNK_BYTES = 8 * 1024 * 1024
+_LOG_READ_CHARS = 8 * 1024
+_LOG_DRAIN_SECONDS = 5
+_MAX_SENSITIVE_OUTPUT_CHARS = 4 * 1024
+_MAX_STREAMED_OUTPUT_CHARS = 1_000_000
+_MAX_RETAINED_OUTPUT_CHARS = 1_000_000
+_SENSITIVE_OUTPUT_ENVIRONMENT = (
+    "HARBOR_HF_WORKER_CAPABILITY",
+    "HF_INFERENCE_TOKEN",
+    "HF_TOKEN",
+    "SBX_TOKEN",
+)
+_HARBOR_CHILD_ENVIRONMENT = frozenset(
+    {
+        "ALL_PROXY",
+        "CURL_CA_BUNDLE",
+        "HARBOR_HF_ACTION_ID",
+        "HARBOR_HF_CAMPAIGN_ID",
+        "HARBOR_HF_CONTROL_URL",
+        "HARBOR_HF_TASK_IDS_JSON",
+        "HARBOR_HF_WORKER_CAPABILITY",
+        "HARBOR_HF_WORKER_REVISION",
+        "HARBOR_HF_WORKER_ROLE",
+        "HOME",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "LD_LIBRARY_PATH",
+        "NO_PROXY",
+        "PATH",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_DIR",
+        "SSL_CERT_FILE",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "VIRTUAL_ENV",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "all_proxy",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    }
+)
 _POLICY_FAILURES = {
     "AgentAuthenticationError",
     "ApiUsageLimitError",
@@ -213,13 +264,7 @@ def _locked_config(lock: dict[str, Any]) -> WorkerConfig:
 
 
 def _task_source(task: LockedTask) -> dict[str, Any]:
-    """Build the Harbor run task without a dataset source label.
-
-    Harbor 0.21.0 still reloads ``source`` from the task itself, so omitting it
-    here is not enough. The Harbor CLI subprocess also applies
-    ``harbor_0210_empty_metrics``. Delete that module when Harbor ships
-    https://github.com/harbor-framework/harbor/pull/2681.
-    """
+    """Build the Harbor run task without a dataset source label."""
     source = task.trial_lock.task
     if source.type == "package":
         return {
@@ -315,8 +360,6 @@ def _exception_outcome(  # noqa: C901 -- explicit terminal outcome map
     )
     if name in {"AgentTimeoutError", "VerifierTimeoutError"}:
         return "benchmark_timeout", False
-    if name == "IndexError" and "_update_metric_display" in f"{detail} {stderr}":
-        return "complete", False
     if name == TransientProviderError.__name__:
         return "infrastructure", True
     if name == ProviderPolicyError.__name__:
@@ -515,28 +558,169 @@ def _log(event: dict[str, object]) -> None:
     print(json.dumps(event, sort_keys=True), flush=True)
 
 
-def _run_logged_command(
-    command: list[str],
-    timeout_seconds: int,
-    env: dict[str, str] | None = None,
+def _sensitive_output_environment() -> tuple[str, ...]:
+    bare_names = {
+        "ACCESS_KEY",
+        "API_KEY",
+        "CREDENTIAL",
+        "PASSWORD",
+        "PRIVATE_KEY",
+        "SECRET",
+        "TOKEN",
+    }
+    suffixes = (
+        "_ACCESS_KEY",
+        "_API_KEY",
+        "_CREDENTIAL",
+        "_PASSWORD",
+        "_PRIVATE_KEY",
+        "_SECRET",
+        "_TOKEN",
+    )
+    return tuple(
+        name
+        for name, value in os.environ.items()
+        if value
+        and (
+            name in _SENSITIVE_OUTPUT_ENVIRONMENT
+            or name.upper() in bare_names
+            or name.upper().endswith(suffixes)
+        )
+    )
+
+
+def _sensitive_output_values() -> tuple[str, ...]:
+    values = {os.environ[name] for name in _sensitive_output_environment()}
+    if any(len(value) > _MAX_SENSITIVE_OUTPUT_CHARS for value in values):
+        raise RuntimeError("sensitive worker setting exceeds the output safety limit")
+    return tuple(sorted(values, key=len, reverse=True))
+
+
+def _redaction_marker(sensitive_values: tuple[str, ...]) -> str:
+    for marker in ("<redacted>", "[private]", "***"):
+        if all(value not in marker for value in sensitive_values):
+            return marker
+    return ""
+
+
+def _path_contains_sensitive_value(
+    path: Path, sensitive_values: tuple[str, ...]
+) -> bool:
+    encoded = tuple(
+        value.encode("utf-8") for value in sensitive_values if value.encode("utf-8")
+    )
+    carry_bytes = max((len(value) for value in encoded), default=1) - 1
+    pending = b""
+    with path.open("rb") as handle:
+        while chunk := handle.read(_LOG_READ_CHARS):
+            pending += chunk
+            if any(value in pending for value in encoded):
+                return True
+            pending = pending[-carry_bytes:] if carry_bytes else b""
+    return False
+
+
+def _path_metadata_contains_sensitive_value(
+    root: Path, path: Path, sensitive_values: tuple[str, ...]
+) -> bool:
+    values = [path.relative_to(root).as_posix()]
+    if path.is_symlink():
+        values.append(os.readlink(path))
+    return any(sensitive in value for value in values for sensitive in sensitive_values)
+
+
+def _redact_pending_output(
+    pending: str,
+    sensitive_values: tuple[str, ...],
+    marker: str,
+    *,
+    final: bool,
+) -> tuple[str, str]:
+    redacted: list[str] = []
+    while pending:
+        matches = [value for value in sensitive_values if pending.startswith(value)]
+        longer_prefix = not final and any(
+            value.startswith(pending) and len(value) > len(pending)
+            for value in sensitive_values
+        )
+        if matches and not longer_prefix:
+            match = matches[0]
+            redacted.append(marker)
+            pending = pending[len(match) :]
+        elif not final and any(value.startswith(pending) for value in sensitive_values):
+            break
+        else:
+            redacted.append(pending[0])
+            pending = pending[1:]
+    return "".join(redacted), pending
+
+
+def _run_logged_command(  # noqa: C901 -- bounded streaming and process cleanup
+    command: list[str], timeout_seconds: int
 ) -> tuple[str, bool]:
-    """Copy command output to this Job's logs and kill the process group on timeout."""
+    """Copy bounded redacted output to Job logs and kill the group on timeout."""
+    sensitive_values = _sensitive_output_values()
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if name in _HARBOR_CHILD_ENVIRONMENT
+    }
     process = subprocess.Popen(
         command,
+        env=environment,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
         start_new_session=True,
-        env=env,
     )
-    chunks: list[str] = []
+    chunks: deque[str] = deque()
+    retained_chars = 0
+    streamed_chars = 0
+    stream_truncated = False
+    reader_errors: list[BaseException] = []
+    marker = _redaction_marker(sensitive_values)
+
+    def _emit(value: str) -> None:
+        nonlocal retained_chars, streamed_chars, stream_truncated
+        if not value:
+            return
+        available = max(0, _MAX_STREAMED_OUTPUT_CHARS - streamed_chars)
+        if available:
+            print(value[:available], end="", flush=True)
+            streamed_chars += min(available, len(value))
+        if len(value) > available and not stream_truncated:
+            print("\n<output truncated>\n", end="", flush=True)
+            stream_truncated = True
+        chunks.append(value)
+        retained_chars += len(value)
+        while retained_chars > _MAX_RETAINED_OUTPUT_CHARS and chunks:
+            overflow = retained_chars - _MAX_RETAINED_OUTPUT_CHARS
+            first = chunks[0]
+            if len(first) <= overflow:
+                retained_chars -= len(chunks.popleft())
+            else:
+                chunks[0] = first[overflow:]
+                retained_chars -= overflow
 
     def _copy() -> None:
-        if process.stdout is None:
-            return
-        for line in process.stdout:
-            chunks.append(line)
-            print(line, end="", flush=True)
+        try:
+            if process.stdout is None:
+                return
+            pending = ""
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            while raw := os.read(process.stdout.fileno(), _LOG_READ_CHARS):
+                value = decoder.decode(raw)
+                pending += value
+                redacted, pending = _redact_pending_output(
+                    pending, sensitive_values, marker, final=False
+                )
+                _emit(redacted)
+            pending += decoder.decode(b"", final=True)
+            redacted, _ = _redact_pending_output(
+                pending, sensitive_values, marker, final=True
+            )
+            _emit(redacted)
+        except BaseException as error:
+            reader_errors.append(error)
 
     reader = threading.Thread(target=_copy, daemon=True)
     reader.start()
@@ -550,7 +734,22 @@ def _run_logged_command(
         except ProcessLookupError:
             process.kill()
         process.wait()
-    reader.join(timeout=30)
+    if not timed_out:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+    reader.join(timeout=_LOG_DRAIN_SECONDS)
+    if reader.is_alive():
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        reader.join(timeout=_LOG_DRAIN_SECONDS)
+    if reader.is_alive():
+        if process.stdout is not None:
+            process.stdout.close()
+        reader.join(timeout=_LOG_DRAIN_SECONDS)
+    if reader.is_alive():
+        raise RuntimeError("command output reader did not stop")
+    if reader_errors:
+        raise RuntimeError("command output reader failed") from reader_errors[0]
     return "".join(chunks), timed_out
 
 
@@ -566,7 +765,6 @@ def _run_task(config: WorkerConfig, task: LockedTask, root: Path) -> str:
     output, timed_out = _run_logged_command(
         ["harbor", "run", "--config", str(path), "--yes"],
         task.timeout_seconds + 600,
-        harbor_cli_env(root),
     )
     result_path = _result_path(root, task)
     if not result_path:
@@ -578,11 +776,21 @@ def _run_task(config: WorkerConfig, task: LockedTask, root: Path) -> str:
     if observed_lock != task.trial_lock:
         raise RuntimeError("executed Harbor trial lock differs from preparation")
     result = json.loads(result_path.read_text())
-    capability = _required("HARBOR_HF_WORKER_CAPABILITY").encode()
+    sensitive_values = _sensitive_output_values()
     if result_path:
-        for trial_file in result_path.parent.rglob("*"):
-            if trial_file.is_file() and capability in trial_file.read_bytes():
-                raise RuntimeError("worker capability leaked into trial evidence")
+        for trial_path in result_path.parent.rglob("*"):
+            metadata_leaked = _path_metadata_contains_sensitive_value(
+                result_path.parent, trial_path, sensitive_values
+            )
+            content_leaked = (
+                trial_path.is_file()
+                and not trial_path.is_symlink()
+                and _path_contains_sensitive_value(trial_path, sensitive_values)
+            )
+            if metadata_leaked or content_leaked:
+                raise RuntimeError(
+                    "sensitive worker setting leaked into trial evidence"
+                )
     archive = _archive_trial(root, task, result_path, output)
     digest, evidence_path = _upload_evidence(config, task, archive)
     _submit_attempt(

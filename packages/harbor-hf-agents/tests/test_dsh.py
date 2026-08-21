@@ -171,3 +171,19 @@ def test_converts_session_jsonl_to_trajectory(temp_dir) -> None:
     assert trajectory.final_metrics is not None
     assert trajectory.final_metrics.total_prompt_tokens == 17
     assert trajectory.final_metrics.total_completion_tokens == 3
+
+
+def test_ignores_invalid_session_token_counts() -> None:
+    metrics = DshAgent._build_metrics(
+        {
+            "inputTokens": "10",
+            "outputTokens": True,
+            "cacheReadTokens": -3,
+            "cacheWriteTokens": 2,
+        }
+    )
+
+    assert metrics is not None
+    assert metrics.prompt_tokens == 2
+    assert metrics.completion_tokens == 0
+    assert metrics.cached_tokens == 0

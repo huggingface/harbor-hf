@@ -218,7 +218,6 @@
                     "write_mode": {
                       "enum": [
                         "disabled",
-                        "canary",
                         "enabled"
                       ]
                     },

@@ -17,7 +17,7 @@ import {
   type HuggingFaceSandboxGateway,
   NoopActions,
 } from "@harbor-hf/hf-adapters";
-import { AuthStore, AuthenticationService } from "./auth.js";
+import { AuthenticationService, AuthStore } from "./auth.js";
 import type { AppConfig } from "./config.js";
 
 export interface Runtime {

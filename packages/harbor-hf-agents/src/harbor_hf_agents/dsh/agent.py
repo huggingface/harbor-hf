@@ -6,7 +6,7 @@ import json
 import shlex
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, override
+from typing import Any, cast, override
 
 import yaml
 from harbor.agents.installed.base import with_prompt_template
@@ -311,16 +311,27 @@ class DshAgent(IsolatedProviderAgent):
         return calls
 
     @staticmethod
-    def _build_metrics(usage: object) -> Metrics | None:
+    def _token_count(usage: object, key: str) -> int:
+        if not isinstance(usage, dict):
+            return 0
+        payload = cast(dict[str, object], usage)
+        value = payload.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            return 0
+        return value
+
+    @classmethod
+    def _build_metrics(cls, usage: object) -> Metrics | None:
         if not isinstance(usage, dict):
             return None
-        input_tokens = usage.get("inputTokens") or 0
-        cache_read = usage.get("cacheReadTokens") or 0
-        cache_write = usage.get("cacheWriteTokens") or 0
-        output_tokens = usage.get("outputTokens") or 0
+        input_tokens = cls._token_count(usage, "inputTokens")
+        cache_read = cls._token_count(usage, "cacheReadTokens")
+        cache_write = cls._token_count(usage, "cacheWriteTokens")
+        output_tokens = cls._token_count(usage, "outputTokens")
+        payload = cast(dict[str, object], usage)
         extra = {
             key: value
-            for key, value in usage.items()
+            for key, value in payload.items()
             if key not in {"inputTokens", "outputTokens", "cacheReadTokens"}
         }
         return Metrics(

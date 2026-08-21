@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
-import os
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 from threading import Event
@@ -336,7 +336,7 @@ def test_stops_refilling_after_task_failure(
             },
             "",
             False,
-            ("complete", False),
+            ("agent", False),
         ),
         (None, "Sandbox API failed", False, ("infrastructure", True)),
         (None, "IndexError: list index out of range", False, ("infrastructure", True)),
@@ -409,12 +409,193 @@ def test_streams_command_output_and_kills_a_hung_process(
     assert "hello-from-worker" in capsys.readouterr().out
 
 
-def test_streams_command_output_with_injected_env() -> None:
+def test_streams_short_flushed_output_before_process_exit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    logged = ""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            worker._run_logged_command,
+            [
+                sys.executable,
+                "-c",
+                ("print('live-before-exit', flush=True); import time; time.sleep(1)"),
+            ],
+            10,
+        )
+        deadline = time.monotonic() + 0.75
+        while "live-before-exit" not in logged and time.monotonic() < deadline:
+            time.sleep(0.02)
+            logged += capsys.readouterr().out
+        assert "live-before-exit" in logged
+        assert future.done() is False
+        output, timed_out = future.result()
+
+    assert timed_out is False
+    assert "live-before-exit" in output
+
+
+def test_redacts_and_bounds_streamed_command_output(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capability = "capability-placeholder-with-boundary"
+    provider_key = "provider-key-placeholder-with-boundary"
+    database_url = "database-credential-without-secret-suffix"
+    monkeypatch.setenv("HARBOR_HF_WORKER_CAPABILITY", capability)
+    monkeypatch.setenv("API_KEY", provider_key)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setattr(worker, "_LOG_READ_CHARS", 7)
+    monkeypatch.setattr(worker, "_MAX_STREAMED_OUTPUT_CHARS", 128)
+    monkeypatch.setattr(worker, "_MAX_RETAINED_OUTPUT_CHARS", 64)
+
     output, timed_out = worker._run_logged_command(
-        [sys.executable, "-c", "import os; print(os.environ['HHF_PATCH'], flush=True)"],
-        5,
-        {**os.environ, "HHF_PATCH": "applied"},
+        [
+            sys.executable,
+            "-c",
+            (
+                "import os, sys; "
+                'print(f"capability-inherited='
+                "{os.getenv('HARBOR_HF_WORKER_CAPABILITY') is not None}\"); "
+                "print(f\"provider-inherited={os.getenv('API_KEY') is not None}\"); "
+                "print("
+                "f\"database-inherited={os.getenv('DATABASE_URL') is not None}\"); "
+                "print(os.getenv('HARBOR_HF_WORKER_CAPABILITY')); "
+                "print(os.getenv('API_KEY', 'not-inherited')); "
+                "print(sys.argv[1]); "
+                "print('x' * 200)"
+            ),
+            capability,
+        ],
+        10,
+    )
+
+    logged = capsys.readouterr().out
+    assert timed_out is False
+    assert capability not in logged
+    assert capability not in output
+    assert provider_key not in logged
+    assert provider_key not in output
+    assert database_url not in logged
+    assert database_url not in output
+    assert "capability-inherited=True" in logged
+    assert "provider-inherited=False" in logged
+    assert "database-inherited=False" in logged
+    assert "<redacted>" in logged
+    assert "<output truncated>" in logged
+    assert logged.count("x") < 100
+    assert len(output) <= 64
+
+
+def test_redacts_sensitive_output_around_malformed_bytes(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capability = "capability-after-malformed-output"
+    monkeypatch.setenv("HARBOR_HF_WORKER_CAPABILITY", capability)
+    monkeypatch.setattr(worker, "_LOG_READ_CHARS", 5)
+
+    output, timed_out = worker._run_logged_command(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import os, sys; "
+                "sys.stdout.buffer.write(b'bad=\\xff value='); "
+                "sys.stdout.buffer.write("
+                "os.environ['HARBOR_HF_WORKER_CAPABILITY'].encode()); "
+                "sys.stdout.buffer.flush()"
+            ),
+        ],
+        10,
+    )
+
+    logged = capsys.readouterr().out
+    assert timed_out is False
+    assert capability not in logged
+    assert capability not in output
+    assert "\ufffd" in output
+    assert "<redacted>" in output
+
+
+def test_stops_descendant_that_keeps_output_pipe_open(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(worker, "_LOG_DRAIN_SECONDS", 0.1)
+    started = time.monotonic()
+
+    output, timed_out = worker._run_logged_command(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import subprocess, sys; "
+                "subprocess.Popen("
+                "[sys.executable, '-c', 'import time; time.sleep(30)']); "
+                "print('parent-finished', flush=True)"
+            ),
+        ],
+        10,
     )
 
     assert timed_out is False
-    assert "applied" in output
+    assert time.monotonic() - started < 3
+    assert "parent-finished" in output
+    assert "parent-finished" in capsys.readouterr().out
+
+
+def test_stops_descendant_that_closes_output_pipe(tmp_path: Path) -> None:
+    marker = tmp_path / "descendant-survived"
+    output, timed_out = worker._run_logged_command(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import subprocess, sys; "
+                "subprocess.Popen([sys.executable, '-c', "
+                "'import os, sys, time; os.close(1); os.close(2); "
+                'time.sleep(1); open(sys.argv[1], "w").write("survived")\', '
+                "sys.argv[1]]); "
+                "print('parent-finished', flush=True)"
+            ),
+            str(marker),
+        ],
+        10,
+    )
+
+    time.sleep(1.2)
+    assert timed_out is False
+    assert "parent-finished" in output
+    assert marker.exists() is False
+
+
+def test_detects_sensitive_values_across_evidence_read_boundaries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sensitive = "sensitive-boundary-value"
+    trial_file = tmp_path / "trial.log"
+    trial_file.write_text(f"{'x' * 5}{sensitive}{'y' * 5}")
+    monkeypatch.setattr(worker, "_LOG_READ_CHARS", 7)
+
+    assert worker._path_contains_sensitive_value(trial_file, (sensitive,)) is True
+
+
+def test_detects_sensitive_values_in_evidence_path_and_symlink_metadata(
+    tmp_path: Path,
+) -> None:
+    sensitive = "sensitive-metadata-value"
+    named = tmp_path / f"trial-{sensitive}.log"
+    named.write_text("safe")
+    linked = tmp_path / "linked"
+    linked.symlink_to(f"target-{sensitive}")
+
+    assert (
+        worker._path_metadata_contains_sensitive_value(tmp_path, named, (sensitive,))
+        is True
+    )
+    assert (
+        worker._path_metadata_contains_sensitive_value(tmp_path, linked, (sensitive,))
+        is True
+    )

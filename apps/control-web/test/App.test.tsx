@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -35,7 +35,7 @@ function session(username = "test-user"): SessionResponse {
   };
 }
 
-function system(writeMode: "disabled" | "canary" | "enabled" = "canary") {
+function system(writeMode: "disabled" | "enabled" = "enabled") {
   return {
     source_revision: "revision-0123456789abcdef",
     write_mode: writeMode,
@@ -110,14 +110,18 @@ function launchProfiles() {
   };
 }
 
-function stubLaunchPage() {
+function stubLaunchPage(onSubmit?: (value: Record<string, unknown>) => void) {
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path.includes("auth/session")) return json(session());
       if (path.includes("/system")) return json(system());
+      if (path.endsWith("/api/v1/campaigns") && init?.method === "POST") {
+        onSubmit?.(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Promise<Response>(() => undefined);
+      }
       if (path.includes("/campaigns")) return json({ items: [], next_cursor: null });
       if (path.includes("/profiles")) return json(launchProfiles());
       throw new Error(`unexpected request: ${path}`);
@@ -600,15 +604,29 @@ describe("control web", () => {
     ).toBeInTheDocument();
   });
 
-  it("requires confirmation before starting a run", async () => {
-    stubLaunchPage();
+  it("requires confirmation and submits the selected promoted launch policy", async () => {
+    let submission: Record<string, unknown> | undefined;
+    stubLaunchPage((value) => {
+      submission = value;
+    });
     renderApp("/campaigns");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Start a run" }));
+    const launchPolicy = screen.getByRole("combobox", { name: "Launch policy" });
+    expect(launchPolicy).toHaveValue("");
+    await user.selectOptions(launchPolicy, "control-smoke");
+    expect(launchPolicy).toHaveValue("control-smoke");
     const create = screen.getByRole("button", { name: "Start run" });
     expect(create).toBeDisabled();
     await user.click(screen.getByRole("checkbox"));
     expect(create).toBeEnabled();
+    await user.selectOptions(launchPolicy, "tb21-diagnostic-1");
+    expect(create).toBeDisabled();
+    await user.selectOptions(launchPolicy, "control-smoke");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(create);
+    await waitFor(() => expect(submission).toBeDefined());
+    expect(submission?.launch_policy).toBe("control-smoke");
   });
 
   it("shows the full run name instead of a truncated campaign id", async () => {
@@ -965,6 +983,6 @@ describe("control web", () => {
       "https://huggingface.co/buckets/example-org/artifacts/tree/results/schema%3Dv1/publications/publication-one",
     );
     expect(screen.getByText("task-a")).toBeInTheDocument();
-    expect(screen.getByText("Benchmark timeout")).toBeInTheDocument();
+    expect(screen.getByText("Timed out")).toBeInTheDocument();
   });
 });

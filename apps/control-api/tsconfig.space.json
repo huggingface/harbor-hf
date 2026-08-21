@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "dist/space.tsbuildinfo"
+  },
+  "exclude": ["src/generate-openapi.ts"]
+}
