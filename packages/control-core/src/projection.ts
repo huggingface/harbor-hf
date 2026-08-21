@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import type {
   ActionAdvanced,
   ActionDispatch,
+  ActionDisposition,
   ActionIntent,
   ActionReceipt,
   AttemptReceipt,
@@ -20,6 +21,8 @@ import type {
 import {
   canonicalJson,
   ContractValidationError,
+  deterministicId,
+  sandboxActionResultPath,
   sha256,
   validateControlRecord,
 } from "@harbor-hf/contracts";
@@ -59,6 +62,28 @@ interface ActionRow {
   observed_state: string | null;
   resource_id: string | null;
   created_at: string;
+}
+
+interface DispositionRow {
+  action_id: string;
+  campaign_id: string;
+  task_id: string;
+  record_id: string;
+  source_receipt_id: string;
+  source_receipt_digest: string;
+  close_action_id: string;
+  close_receipt_id: string;
+  close_receipt_digest: string;
+  batch_id: string;
+  batch_digest: string;
+  batch_size: number;
+  effective_outcome: string;
+  effective_observed_state: string;
+  effective_error_code: string;
+  reason_code: string;
+  reason: string;
+  created_at: string;
+  body: string;
 }
 
 interface DispatchRow {
@@ -164,6 +189,7 @@ interface DatabaseSchema {
   objects: ObjectRow;
   campaigns: CampaignRow;
   actions: ActionRow;
+  dispositions: DispositionRow;
   dispatches: DispatchRow;
   advancements: AdvancementRow;
   tasks: TaskRow;
@@ -191,6 +217,23 @@ export interface CampaignView {
   cleanup_pending: boolean;
 }
 
+export interface ActionDispositionView {
+  action_id: string;
+  campaign_id: string;
+  task_id: string;
+  recorded_outcome: string;
+  recorded_observed_state: string;
+  effective_outcome: string;
+  effective_observed_state: string;
+  effective_error_code: string;
+  reason_code: string;
+  corrected_at: string;
+  actor_role: string;
+  disposition_record_id: string;
+  batch_id: string;
+  batch_size: number;
+}
+
 export interface SystemView {
   ready: boolean;
   rebuilding: boolean;
@@ -202,6 +245,15 @@ export interface SystemView {
 }
 
 export class ProjectionIntegrityError extends Error {}
+
+const terminalSandboxStates = new Set([
+  "CANCELED",
+  "CANCELLED",
+  "COMPLETED",
+  "DELETED",
+  "ERROR",
+  "STOPPED",
+]);
 
 function body(value: unknown): string {
   return canonicalJson(value).trimEnd();
@@ -345,6 +397,29 @@ export class Projection {
       .addColumn("created_at", "text", (column) => column.notNull())
       .execute();
     await this.db.schema
+      .createTable("dispositions")
+      .ifNotExists()
+      .addColumn("action_id", "text", (column) => column.primaryKey())
+      .addColumn("campaign_id", "text", (column) => column.notNull())
+      .addColumn("task_id", "text", (column) => column.notNull())
+      .addColumn("record_id", "text", (column) => column.notNull().unique())
+      .addColumn("source_receipt_id", "text", (column) => column.notNull())
+      .addColumn("source_receipt_digest", "text", (column) => column.notNull())
+      .addColumn("close_action_id", "text", (column) => column.notNull())
+      .addColumn("close_receipt_id", "text", (column) => column.notNull())
+      .addColumn("close_receipt_digest", "text", (column) => column.notNull())
+      .addColumn("batch_id", "text", (column) => column.notNull())
+      .addColumn("batch_digest", "text", (column) => column.notNull())
+      .addColumn("batch_size", "integer", (column) => column.notNull())
+      .addColumn("effective_outcome", "text", (column) => column.notNull())
+      .addColumn("effective_observed_state", "text", (column) => column.notNull())
+      .addColumn("effective_error_code", "text", (column) => column.notNull())
+      .addColumn("reason_code", "text", (column) => column.notNull())
+      .addColumn("reason", "text", (column) => column.notNull())
+      .addColumn("created_at", "text", (column) => column.notNull())
+      .addColumn("body", "text", (column) => column.notNull())
+      .execute();
+    await this.db.schema
       .createTable("dispatches")
       .ifNotExists()
       .addColumn("action_id", "text", (column) => column.primaryKey())
@@ -458,6 +533,12 @@ export class Projection {
     await sql`CREATE INDEX IF NOT EXISTS actions_campaign_idx ON actions(campaign_id, created_at)`.execute(
       this.db,
     );
+    await sql`CREATE INDEX IF NOT EXISTS dispositions_campaign_task_idx ON dispositions(campaign_id, task_id, created_at)`.execute(
+      this.db,
+    );
+    await sql`CREATE INDEX IF NOT EXISTS dispositions_batch_idx ON dispositions(batch_id)`.execute(
+      this.db,
+    );
     await sql`CREATE INDEX IF NOT EXISTS attempts_task_idx ON attempts(campaign_id, task_id, created_at)`.execute(
       this.db,
     );
@@ -479,6 +560,7 @@ export class Projection {
       "tasks",
       "advancements",
       "dispatches",
+      "dispositions",
       "actions",
       "campaigns",
       "objects",
@@ -508,7 +590,7 @@ export class Projection {
         await verifyAttemptEvidence(store, record);
         await this.apply(entry, record);
       }
-      await this.verifyInvariants();
+      await this.verifyInvariants(store);
       this.state = {
         ready: true,
         rebuilding: false,
@@ -559,7 +641,7 @@ export class Projection {
         await this.apply(entry, record);
         ingested += 1;
       }
-      if (ingested > 0) await this.verifyInvariants();
+      await this.verifyInvariants(store);
       this.state = {
         ...this.state,
         ready: true,
@@ -586,10 +668,11 @@ export class Projection {
     key: string,
     digest: string,
     record: HarborHFControlRecordV1,
+    store: ImmutableObjectStore,
   ): Promise<void> {
     const entry = { key, digest, size: canonicalJson(record).length };
     await this.apply(entry, record);
-    await this.verifyInvariants();
+    await this.verifyInvariants(store);
     this.state = {
       ...this.state,
       object_count: this.state.object_count + 1,
@@ -628,6 +711,9 @@ export class Projection {
         break;
       case "action.receipt":
         await this.applyActionReceipt(record);
+        break;
+      case "action.disposition":
+        await this.applyActionDisposition(record);
         break;
       case "action.advanced":
         await this.applyActionAdvanced(record);
@@ -787,6 +873,33 @@ export class Projection {
         resource_id: record.resource_id ?? null,
       })
       .where("action_id", "=", record.action_id)
+      .execute();
+  }
+
+  private async applyActionDisposition(record: ActionDisposition): Promise<void> {
+    await this.db
+      .insertInto("dispositions")
+      .values({
+        action_id: record.action_id,
+        campaign_id: record.campaign_id,
+        task_id: record.task_id,
+        record_id: record.record_id,
+        source_receipt_id: record.source_receipt_id,
+        source_receipt_digest: record.source_receipt_digest,
+        close_action_id: record.close_action_id,
+        close_receipt_id: record.close_receipt_id,
+        close_receipt_digest: record.close_receipt_digest,
+        batch_id: record.batch_id,
+        batch_digest: record.batch_digest,
+        batch_size: record.batch_size,
+        effective_outcome: record.effective_outcome,
+        effective_observed_state: record.effective_observed_state,
+        effective_error_code: record.effective_error_code,
+        reason_code: record.reason_code,
+        reason: record.reason,
+        created_at: record.created_at,
+        body: body(record),
+      })
       .execute();
   }
 
@@ -956,7 +1069,212 @@ export class Projection {
       .execute();
   }
 
-  private async verifyInvariants(): Promise<void> {
+  private async verifyDispositionInvariants(
+    store: ImmutableObjectStore,
+  ): Promise<void> {
+    const dispositions = await this.db
+      .selectFrom("dispositions")
+      .selectAll()
+      .orderBy("created_at")
+      .orderBy("record_id")
+      .execute();
+    const batches = new Map<
+      string,
+      {
+        digest: string;
+        size: number;
+        campaignId: string;
+        taskId: string;
+        reasonCode: string;
+        reason: string;
+        actionIds: string[];
+        count: number;
+      }
+    >();
+    for (const row of dispositions) {
+      const record = JSON.parse(row.body) as ActionDisposition;
+      if (record.actor.role !== "operator")
+        throw new ProjectionIntegrityError(
+          `disposition actor is not an operator: ${record.record_id}`,
+        );
+      if (record.record_id !== deterministicId("disposition", record.action_id))
+        throw new ProjectionIntegrityError(
+          `disposition identity mismatch: ${record.record_id}`,
+        );
+      const action = await this.db
+        .selectFrom("actions")
+        .selectAll()
+        .where("action_id", "=", record.action_id)
+        .executeTakeFirst();
+      if (!action || action.campaign_id !== record.campaign_id)
+        throw new ProjectionIntegrityError(
+          `disposition action mismatch: ${record.record_id}`,
+        );
+      const task = await this.db
+        .selectFrom("tasks")
+        .select("task_id")
+        .where("campaign_id", "=", record.campaign_id)
+        .where("task_id", "=", record.task_id)
+        .executeTakeFirst();
+      if (!task)
+        throw new ProjectionIntegrityError(
+          `disposition task mismatch: ${record.record_id}`,
+        );
+      const intent = JSON.parse(action.intent_body) as ActionIntent;
+      const sourceReceipt = action.receipt_body
+        ? (JSON.parse(action.receipt_body) as ActionReceipt)
+        : null;
+      if (
+        action.action_kind !== "sandbox.exec" ||
+        intent.payload.task_id !== record.task_id ||
+        !sourceReceipt ||
+        sourceReceipt.record_id !== record.source_receipt_id ||
+        sha256(canonicalJson(sourceReceipt)) !== record.source_receipt_digest ||
+        sourceReceipt.outcome !== "completed" ||
+        sourceReceipt.observed_state !== "suppressed-sandbox-cleanup-ambiguous" ||
+        (sourceReceipt.error_code ?? null) !== null
+      )
+        throw new ProjectionIntegrityError(
+          `disposition source receipt mismatch: ${record.record_id}`,
+        );
+      const dispatch = await this.db
+        .selectFrom("dispatches")
+        .select("operation")
+        .where("action_id", "=", record.action_id)
+        .executeTakeFirst();
+      const advanced = await this.db
+        .selectFrom("advancements")
+        .select("action_id")
+        .where("action_id", "=", record.action_id)
+        .executeTakeFirst();
+      if (dispatch?.operation !== "execute" || !advanced)
+        throw new ProjectionIntegrityError(
+          `disposition action fence mismatch: ${record.record_id}`,
+        );
+      const createActionId = intent.payload.sandbox_create_action_id;
+      const resourceId = intent.payload.resource_id;
+      if (typeof createActionId !== "string" || typeof resourceId !== "string")
+        throw new ProjectionIntegrityError(
+          `disposition ownership is incomplete: ${record.record_id}`,
+        );
+      const create = await this.db
+        .selectFrom("actions")
+        .selectAll()
+        .where("action_id", "=", createActionId)
+        .executeTakeFirst();
+      if (
+        !create ||
+        create.campaign_id !== record.campaign_id ||
+        create.action_kind !== "sandbox.create" ||
+        create.resource_id !== resourceId
+      )
+        throw new ProjectionIntegrityError(
+          `disposition create action mismatch: ${record.record_id}`,
+        );
+      const createIntent = JSON.parse(create.intent_body) as ActionIntent;
+      if (createIntent.payload.task_id !== record.task_id)
+        throw new ProjectionIntegrityError(
+          `disposition create task mismatch: ${record.record_id}`,
+        );
+      const closeRows = await this.db
+        .selectFrom("actions")
+        .selectAll()
+        .where("campaign_id", "=", record.campaign_id)
+        .where("action_kind", "=", "sandbox.close")
+        .where("receipt_body", "is not", null)
+        .execute();
+      const eligibleCloses: Array<{
+        actionId: string;
+        receipt: ActionReceipt;
+      }> = [];
+      for (const close of closeRows) {
+        const closeIntent = JSON.parse(close.intent_body) as ActionIntent;
+        const closeReceipt = JSON.parse(close.receipt_body as string) as ActionReceipt;
+        if (
+          closeIntent.payload.task_id !== record.task_id ||
+          closeIntent.payload.sandbox_create_action_id !== createActionId ||
+          closeIntent.payload.resource_id !== resourceId ||
+          closeReceipt.resource_id !== resourceId ||
+          closeReceipt.outcome !== "completed" ||
+          !terminalSandboxStates.has(closeReceipt.observed_state.toUpperCase())
+        )
+          continue;
+        const closeAdvanced = await this.db
+          .selectFrom("advancements")
+          .select("action_id")
+          .where("action_id", "=", close.action_id)
+          .executeTakeFirst();
+        if (closeAdvanced)
+          eligibleCloses.push({ actionId: close.action_id, receipt: closeReceipt });
+      }
+      eligibleCloses.sort(
+        (left, right) =>
+          left.receipt.created_at.localeCompare(right.receipt.created_at) ||
+          left.actionId.localeCompare(right.actionId),
+      );
+      const selectedClose = eligibleCloses[0];
+      if (
+        !selectedClose ||
+        selectedClose.actionId !== record.close_action_id ||
+        selectedClose.receipt.record_id !== record.close_receipt_id ||
+        sha256(canonicalJson(selectedClose.receipt)) !== record.close_receipt_digest
+      )
+        throw new ProjectionIntegrityError(
+          `disposition close proof mismatch: ${record.record_id}`,
+        );
+      const resultPath = sandboxActionResultPath(record.campaign_id, record.action_id);
+      const resultPrefix = resultPath.slice(0, -"/result.json".length);
+      if ((await store.list(resultPrefix)).some((entry) => entry.key === resultPath))
+        throw new ProjectionIntegrityError(
+          `disposition action has a durable result: ${record.record_id}`,
+        );
+      const batch = batches.get(record.batch_id);
+      if (
+        batch &&
+        (batch.digest !== record.batch_digest ||
+          batch.size !== record.batch_size ||
+          batch.campaignId !== record.campaign_id ||
+          batch.taskId !== record.task_id ||
+          batch.reasonCode !== record.reason_code ||
+          batch.reason !== record.reason)
+      )
+        throw new ProjectionIntegrityError(
+          `disposition batch conflict: ${record.batch_id}`,
+        );
+      batches.set(record.batch_id, {
+        digest: record.batch_digest,
+        size: record.batch_size,
+        campaignId: record.campaign_id,
+        taskId: record.task_id,
+        reasonCode: record.reason_code,
+        reason: record.reason,
+        actionIds: [...(batch?.actionIds ?? []), record.action_id],
+        count: (batch?.count ?? 0) + 1,
+      });
+    }
+    for (const [batchId, batch] of batches) {
+      if (batch.count > batch.size)
+        throw new ProjectionIntegrityError(
+          `disposition batch exceeds declared size: ${batchId}`,
+        );
+      if (
+        batch.count === batch.size &&
+        sha256(
+          canonicalJson({
+            action_ids: [...batch.actionIds].sort(),
+            reason_code: batch.reasonCode,
+            reason: batch.reason,
+          }),
+        ) !== batch.digest
+      )
+        throw new ProjectionIntegrityError(
+          `disposition batch digest mismatch: ${batchId}`,
+        );
+    }
+  }
+
+  private async verifyInvariants(store: ImmutableObjectStore): Promise<void> {
+    await this.verifyDispositionInvariants(store);
     const profileRows = await this.db
       .selectFrom("profiles")
       .select(["profile_id", "profile_kind"])
@@ -1369,6 +1687,78 @@ export class Projection {
     };
   }
 
+  async actionDisposition(actionId: string): Promise<ActionDisposition | null> {
+    const row = await this.db
+      .selectFrom("dispositions")
+      .select("body")
+      .where("action_id", "=", actionId)
+      .executeTakeFirst();
+    return row ? (JSON.parse(row.body) as ActionDisposition) : null;
+  }
+
+  async actionDispositionsByBatch(batchId: string): Promise<ActionDisposition[]> {
+    const rows = await this.db
+      .selectFrom("dispositions")
+      .select("body")
+      .where("batch_id", "=", batchId)
+      .orderBy("action_id")
+      .execute();
+    return rows.map((row) => JSON.parse(row.body) as ActionDisposition);
+  }
+
+  async actionDispositionViews(
+    campaignId: string,
+    taskId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<ActionDispositionView[]> {
+    const rows = await this.db
+      .selectFrom("dispositions")
+      .innerJoin("actions", "actions.action_id", "dispositions.action_id")
+      .select([
+        "dispositions.action_id",
+        "dispositions.campaign_id",
+        "dispositions.task_id",
+        "dispositions.record_id",
+        "dispositions.effective_outcome",
+        "dispositions.effective_observed_state",
+        "dispositions.effective_error_code",
+        "dispositions.reason_code",
+        "dispositions.batch_id",
+        "dispositions.batch_size",
+        "dispositions.created_at",
+        "dispositions.body",
+        "actions.outcome",
+        "actions.observed_state",
+      ])
+      .where("dispositions.campaign_id", "=", campaignId)
+      .where("dispositions.task_id", "=", taskId)
+      .orderBy("dispositions.created_at")
+      .orderBy("dispositions.action_id")
+      .limit(limit)
+      .offset(offset)
+      .execute();
+    return rows.map((row) => {
+      const disposition = JSON.parse(row.body) as ActionDisposition;
+      return {
+        action_id: row.action_id,
+        campaign_id: row.campaign_id,
+        task_id: row.task_id,
+        recorded_outcome: row.outcome ?? "unknown",
+        recorded_observed_state: row.observed_state ?? "unknown",
+        effective_outcome: row.effective_outcome,
+        effective_observed_state: row.effective_observed_state,
+        effective_error_code: row.effective_error_code,
+        reason_code: row.reason_code,
+        corrected_at: row.created_at,
+        actor_role: disposition.actor.role,
+        disposition_record_id: row.record_id,
+        batch_id: row.batch_id,
+        batch_size: row.batch_size,
+      };
+    });
+  }
+
   async actions(limit = 100): Promise<Selectable<ActionRow>[]> {
     return this.db
       .selectFrom("actions")
@@ -1571,16 +1961,50 @@ export class Projection {
       .orderBy("key")
       .limit(limit)
       .execute();
-    return rows.map((row) => ({
-      id: eventCursor(row.created_at, row.key),
-      type: row.kind,
-      occurred_at: row.created_at,
-      data: {
+    const dispositionActionIds = rows
+      .filter((row) => row.kind === "action.disposition")
+      .map((row) => (JSON.parse(row.body) as ActionDisposition).action_id);
+    const recordedActions =
+      dispositionActionIds.length > 0
+        ? await this.db
+            .selectFrom("actions")
+            .select(["action_id", "outcome", "observed_state"])
+            .where("action_id", "in", dispositionActionIds)
+            .execute()
+        : [];
+    const recordedByAction = new Map(
+      recordedActions.map((action) => [action.action_id, action]),
+    );
+    return rows.map((row) => {
+      const data: Record<string, unknown> = {
         key: row.key,
         digest: row.digest,
         record_id: row.record_id,
-      },
-    }));
+      };
+      if (row.kind === "action.disposition") {
+        const disposition = JSON.parse(row.body) as ActionDisposition;
+        const recorded = recordedByAction.get(disposition.action_id);
+        Object.assign(data, {
+          campaign_id: disposition.campaign_id,
+          task_id: disposition.task_id,
+          action_id: disposition.action_id,
+          batch_id: disposition.batch_id,
+          corrected: true,
+          recorded_outcome: recorded?.outcome ?? "unknown",
+          recorded_observed_state: recorded?.observed_state ?? "unknown",
+          effective_outcome: disposition.effective_outcome,
+          effective_observed_state: disposition.effective_observed_state,
+          effective_error_code: disposition.effective_error_code,
+          reason_code: disposition.reason_code,
+        });
+      }
+      return {
+        id: eventCursor(row.created_at, row.key),
+        type: row.kind,
+        occurred_at: row.created_at,
+        data,
+      };
+    });
   }
 
   async close(): Promise<void> {

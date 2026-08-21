@@ -1,6 +1,6 @@
 /* Generated from JSON Schema. Do not edit. */
 
-export type HarborHFControlRecordV1 = (ProfileObject | ProfilePromotion | OperatorAcl | CampaignRequest | CampaignLock | PreparedTrial | PreparedJob | ActionIntent | ActionDispatch | ActionReceipt | ActionAdvanced | AttemptReceipt | TerminalSelection | BudgetEvent | EndpointResource | PublicationReceipt | MigrationRecord)
+export type HarborHFControlRecordV1 = (ProfileObject | ProfilePromotion | OperatorAcl | CampaignRequest | CampaignLock | PreparedTrial | PreparedJob | ActionIntent | ActionDispatch | ActionReceipt | ActionDisposition | ActionAdvanced | AttemptReceipt | TerminalSelection | BudgetEvent | EndpointResource | PublicationReceipt | MigrationRecord)
 export type ProfileObject = (BenchmarkProfileObject | ModelProfileObject | HarnessProfileObject | DeploymentProfileObject | LaunchPolicyProfileObject)
 export type BenchmarkProfileObject = (Base & {
 schema_version: "v1"
@@ -329,6 +329,32 @@ resource_id?: (string | null)
 ready_replicas?: (number | null)
 active_hourly_cost_microusd?: (number | null)
 cost_microusd?: (number | null)
+})
+export type ActionDisposition = (Base & {
+schema_version: "v1"
+kind: "action.disposition"
+record_id: Id
+created_at: Timestamp
+actor: (Actor & {
+role?: "operator"
+[k: string]: unknown
+})
+campaign_id: Id
+task_id: Id
+action_id: Id
+source_receipt_id: Id
+source_receipt_digest: Digest
+close_action_id: Id
+close_receipt_id: Id
+close_receipt_digest: Digest
+batch_id: Id
+batch_digest: Digest
+batch_size: number
+effective_outcome: "failed"
+effective_observed_state: "AMBIGUOUS"
+effective_error_code: "sandbox_external_outcome_unknown"
+reason_code: "historical_non_replay_safe_command_ambiguity"
+reason: string
 })
 export type ActionAdvanced = (Base & {
 schema_version: "v1"

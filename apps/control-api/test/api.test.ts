@@ -1475,6 +1475,94 @@ describe("control API", () => {
     await app.close();
   });
 
+  it("keeps historical disposition correction operator-scoped and redacted", async () => {
+    const { runtime, app } = await setup("enabled");
+    const correct = vi
+      .spyOn(runtime.service, "correctHistoricalSandboxAmbiguities")
+      .mockResolvedValue({
+        batch_id: "disposition-batch-safe",
+        batch_digest: `sha256:${"a".repeat(64)}`,
+        items: [
+          {
+            action_id: "action-safe",
+            disposition_record_id: "disposition-action-safe",
+            created: true,
+          },
+        ],
+      });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/campaign-safe/tasks/task-safe/action-dispositions",
+      headers: { "idempotency-key": "disposition-request-key" },
+      payload: {
+        action_ids: ["action-safe"],
+        reason: "correct a proved historical observation",
+        confirmed: true,
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toEqual({
+      batch_id: "disposition-batch-safe",
+      batch_digest: `sha256:${"a".repeat(64)}`,
+      items: [
+        {
+          action_id: "action-safe",
+          disposition_record_id: "disposition-action-safe",
+          created: true,
+        },
+      ],
+    });
+    expect(correct).toHaveBeenCalledWith(
+      "campaign-safe",
+      "task-safe",
+      {
+        action_ids: ["action-safe"],
+        reason: "correct a proved historical observation",
+        confirmed: true,
+      },
+      "disposition-request-key",
+      expect.objectContaining({ role: "operator" }),
+    );
+    expect(JSON.stringify(response.json())).not.toContain("close_action_id");
+    expect(JSON.stringify(response.json())).not.toContain("resource_id");
+
+    vi.spyOn(runtime.projection, "actionDispositionViews").mockResolvedValue([
+      {
+        action_id: "action-safe",
+        campaign_id: "campaign-safe",
+        task_id: "task-safe",
+        recorded_outcome: "completed",
+        recorded_observed_state: "suppressed-sandbox-cleanup-ambiguous",
+        effective_outcome: "failed",
+        effective_observed_state: "AMBIGUOUS",
+        effective_error_code: "sandbox_external_outcome_unknown",
+        reason_code: "historical_non_replay_safe_command_ambiguity",
+        corrected_at: "2026-08-21T00:00:00Z",
+        actor_role: "operator",
+        disposition_record_id: "disposition-action-safe",
+        batch_id: "disposition-batch-safe",
+        batch_size: 1,
+      },
+    ]);
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/campaign-safe/tasks/task-safe/action-dispositions",
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toMatchObject({
+      items: [
+        {
+          recorded_outcome: "completed",
+          effective_outcome: "failed",
+          effective_observed_state: "AMBIGUOUS",
+        },
+      ],
+      next_cursor: null,
+    });
+    expect(JSON.stringify(listed.json())).not.toContain("receipt_digest");
+    await app.close();
+  });
+
   it("returns a client error for an unknown profile alias", async () => {
     const { app } = await setup("enabled");
     const response = await app.inject({

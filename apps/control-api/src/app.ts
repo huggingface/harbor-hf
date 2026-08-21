@@ -25,6 +25,7 @@ import {
   PolicyError,
   ProfileResolutionError,
   SandboxActionAmbiguousError,
+  type ActionDispositionCorrectionInput,
   type ControlEvent,
   type WorkerCapability,
   type WorkerOperation,
@@ -45,6 +46,9 @@ import Fastify, {
 } from "fastify";
 import {
   acceptedSchema,
+  actionDispositionCorrectionResultSchema,
+  actionDispositionCorrectionSchema,
+  actionDispositionViewSchema,
   actionSchema,
   attemptAcceptedSchema,
   auditSchema,
@@ -1670,6 +1674,65 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           created_at: attempt.created_at,
         })),
       };
+    },
+  );
+
+  app.get(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id/action-dispositions",
+    {
+      schema: {
+        tags: ["campaigns", "audit"],
+        querystring: paginationQuerySchema,
+        response: { 200: itemList(actionDispositionViewSchema) },
+      },
+    },
+    async (request) => {
+      const { campaign_id, task_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+      };
+      const query = request.query as { cursor?: string; limit?: number };
+      const limit = query.limit ?? 50;
+      const offset = cursorOffset(query.cursor);
+      const items = await runtime.projection.actionDispositionViews(
+        campaign_id,
+        task_id,
+        limit + 1,
+        offset,
+      );
+      return offsetPage(items, offset, limit);
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns/:campaign_id/tasks/:task_id/action-dispositions",
+    {
+      schema: {
+        tags: ["campaigns", "audit"],
+        body: actionDispositionCorrectionSchema,
+        response: {
+          200: actionDispositionCorrectionResultSchema,
+          201: actionDispositionCorrectionResultSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (runtime.config.write_mode === "disabled")
+        throw new ControlNotReadyError("campaign writes are disabled before cutover");
+      const { campaign_id, task_id } = request.params as {
+        campaign_id: string;
+        task_id: string;
+      };
+      const result = await runtime.service.correctHistoricalSandboxAmbiguities(
+        campaign_id,
+        task_id,
+        request.body as ActionDispositionCorrectionInput,
+        idempotencyKey(request),
+        domainActor(request),
+      );
+      return reply
+        .code(result.items.some((item) => item.created) ? 201 : 200)
+        .send(result);
     },
   );
 

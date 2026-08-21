@@ -34,6 +34,9 @@
       "$ref": "#/$defs/ActionReceipt"
     },
     {
+      "$ref": "#/$defs/ActionDisposition"
+    },
+    {
       "$ref": "#/$defs/ActionAdvanced"
     },
     {
@@ -625,6 +628,121 @@
               "type": ["integer", "null"],
               "minimum": 0,
               "maximum": 1000000000000
+            }
+          }
+        }
+      ]
+    },
+    "ActionDisposition": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "task_id",
+            "action_id",
+            "source_receipt_id",
+            "source_receipt_digest",
+            "close_action_id",
+            "close_receipt_id",
+            "close_receipt_digest",
+            "batch_id",
+            "batch_digest",
+            "batch_size",
+            "effective_outcome",
+            "effective_observed_state",
+            "effective_error_code",
+            "reason_code",
+            "reason"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "action.disposition"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/Actor"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "const": "operator"
+                    }
+                  }
+                }
+              ]
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "task_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "action_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "source_receipt_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "source_receipt_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "close_action_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "close_receipt_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "close_receipt_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "batch_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "batch_digest": {
+              "$ref": "#/$defs/Digest"
+            },
+            "batch_size": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "effective_outcome": {
+              "const": "failed"
+            },
+            "effective_observed_state": {
+              "const": "AMBIGUOUS"
+            },
+            "effective_error_code": {
+              "const": "sandbox_external_outcome_unknown"
+            },
+            "reason_code": {
+              "const": "historical_non_replay_safe_command_ambiguity"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
             }
           }
         }

@@ -140,6 +140,87 @@ def test_campaign_pause_endpoint_uses_confirmed_control_action(
     }
 
 
+def test_campaign_correct_action_dispositions_sends_sorted_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure(monkeypatch)
+    observed: dict[str, object] = {}
+
+    def request(method: str, url: str, **kwargs: object) -> httpx.Response:
+        observed.update({"method": method, "url": url, **kwargs})
+        return response(
+            201,
+            {
+                "batch_id": "disposition-batch-one",
+                "batch_digest": "sha256:" + "a" * 64,
+                "items": [],
+            },
+        )
+
+    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
+    result = runner.invoke(
+        app,
+        [
+            "campaign",
+            "correct-action-dispositions",
+            "campaign-one",
+            "--task",
+            "task-one",
+            "--action",
+            "action-two",
+            "--action",
+            "action-one",
+            "--reason",
+            "correct proved historical observations",
+            "--idempotency-key",
+            "disposition-request-one",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert observed["method"] == "POST"
+    assert observed["url"] == (
+        "https://control.example/api/v1/campaigns/campaign-one/tasks/"
+        "task-one/action-dispositions"
+    )
+    assert observed["json"] == {
+        "action_ids": ["action-one", "action-two"],
+        "reason": "correct proved historical observations",
+        "confirmed": True,
+    }
+    headers = cast(dict[str, str], observed["headers"])
+    assert headers["Idempotency-Key"] == "disposition-request-one"
+    assert "test-token" not in result.stdout
+
+
+def test_campaign_correct_action_dispositions_rejects_duplicates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure(monkeypatch)
+    result = runner.invoke(
+        app,
+        [
+            "campaign",
+            "correct-action-dispositions",
+            "campaign-one",
+            "--task",
+            "task-one",
+            "--action",
+            "action-one",
+            "--action",
+            "action-one",
+            "--reason",
+            "duplicate",
+            "--idempotency-key",
+            "disposition-request-one",
+            "--yes",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "must be unique" in result.output
+
+
 def test_cli_reports_safe_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
     configure(monkeypatch)
     monkeypatch.setattr(

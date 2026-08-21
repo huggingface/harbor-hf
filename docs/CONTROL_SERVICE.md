@@ -228,10 +228,13 @@ Collection routes use opaque cursor pagination and bounded page sizes. All
 timestamps use UTC RFC 3339 strings. Responses distinguish observed state,
 recommended action, and approved action.
 
-Mutating requests require an `Idempotency-Key`. A successful mutation writes
-its immutable intent to the Bucket before the API returns `202 Accepted`. The
-response contains the deterministic action ID and a link to its current state.
-A local SQLite write cannot authorize or acknowledge a remote side effect.
+Mutating requests require an `Idempotency-Key`. A mutation that can cause a
+remote side effect writes its immutable intent to the Bucket before the API
+returns `202 Accepted`. The response contains the deterministic action ID and a
+link to its current state. The historical disposition route causes no remote
+side effect. It validates the complete batch, appends disposition records, and
+returns created or adopted status. A local SQLite write cannot authorize or
+acknowledge a remote side effect.
 
 Errors use one JSON envelope with a stable code, human-readable message,
 request ID, and optional field errors. Raw provider bodies and dependency error
@@ -285,6 +288,83 @@ the same failed ambiguous receipt and advancement. It does not replay the
 command, create a result, change an attempt, or scan another campaign.
 `action.advanced` ends the control action; it does not prove that the external
 command did not run.
+
+### Historical action dispositions
+
+A release can record the wrong terminal meaning before the current ambiguity
+rules are deployed. The service corrects that history with a separate
+`action.disposition` record. It never changes or replaces the original intent,
+dispatch, receipt, advancement, result, attempt, selection, budget, cleanup, or
+publication record.
+
+The first v1 disposition class is deliberately narrow. It applies only to a
+dispatched `sandbox.exec` whose original receipt has all of these values:
+
+- `outcome=completed`;
+- `observed_state=suppressed-sandbox-cleanup-ambiguous`; and
+- a null error code.
+
+The effective disposition is fixed to `outcome=failed`,
+`observed_state=AMBIGUOUS`, and
+`error_code=sandbox_external_outcome_unknown`. The record also has the fixed
+reason code `historical_non_replay_safe_command_ambiguity`. The schema does not
+accept another action kind, original state, effective state, or reason code.
+
+Each disposition identifies one campaign, task, and target action. It binds the
+original receipt and one matching terminal Sandbox close receipt by record ID
+and canonical SHA-256 digest. The close must belong to the same campaign, task,
+Sandbox create action, and resource identity, and both the target action and
+close action must be advanced. The durable Sandbox result path must be absent.
+Close proves that the Sandbox cannot create a later effect. It does not prove
+whether the command ran before close.
+
+A disposition has one deterministic record ID derived from the target action
+and one path under the existing action prefix:
+`zzz-disposition.json`. A target action can have at most one disposition.
+Correction requests are bounded to one campaign and task. The service sorts and
+locks all target action IDs, validates the complete batch, then appends each
+disposition. Every record carries a batch ID derived from the campaign, task,
+and hashed idempotency key, plus a batch digest derived from the sorted action
+IDs, fixed reason code, and bounded operator reason. The raw idempotency key is
+never stored.
+
+A process exit can leave a prefix of a batch. Repeating the exact request adopts
+that prefix and writes only the missing dispositions. Reusing a batch identity
+with a different action set, reason, receipt digest, close digest, or effective
+state is an integrity conflict. Concurrent matching requests produce one record
+per action and preserve the first actor and creation time.
+
+The local projection stores dispositions in a separate table. Action rows keep
+the recorded receipt outcome and state and add explicit effective outcome,
+state, error code, correction flag, and disposition record ID. Authenticated
+audit views show recorded and effective values together. Safe list responses do
+not expose command bodies, resource identities, proof action IDs or digests,
+result paths, credentials, or topology.
+
+Projection replay accepts dispositions in any Bucket listing order. After all
+records are loaded, an integrity pass checks the source receipt digest, intent,
+dispatch, advancement, create and resource ownership, terminal close receipt
+digest, close advancement, fixed fields, and result-object absence. A missing
+or conflicting fact keeps projection readiness false. A later result object for
+a corrected action is also an integrity error.
+
+Operators submit an explicit, confirmed batch through
+`POST /api/v1/campaigns/:campaignId/tasks/:taskId/action-dispositions` or the
+`harbor-hf campaign correct-action-dispositions` CLI wrapper. The route requires
+an idempotency key and returns only the batch ID, disposition record IDs, and
+created or adopted status. The matching authenticated `GET` route lists safe
+recorded and effective fields with bounded pagination. There is no automatic
+scan or backfill.
+
+A disposition has no lifecycle authority. It does not change pending-action or
+command counts, retry eligibility, reservations, observed spend, attempts,
+task selection, cleanup, publication, profile promotion, or resource state. It
+cannot start a Job, Sandbox, Endpoint, inference request, or publication. Sample
+acceptance and any later paid launch remain separate reviewed decisions.
+
+Stores without disposition records keep their current v1 meaning. This is an
+in-place schema addition, not a fallback reader, second format, or dual-write
+path.
 
 The control service launches the Sandbox server from its read-only public server
 Bucket mount. It derives a per-Sandbox HMAC token and sends only that token plus,
@@ -350,7 +430,7 @@ The React application provides:
 | `/endpoints` | Endpoint ownership, requested state, observed state, active cost, and cleanup. |
 | `/results` | Normalized results, comparisons, publication evidence, and provenance. |
 | `/profiles` | Immutable profiles, aliases, promotions, approval state, and resolved locks. |
-| `/audit` | Action intents, receipts, actors, integrity failures, and policy stops. |
+| `/audit` | Recorded receipts, effective dispositions, actors, integrity failures, and policy stops. |
 
 The interface supports keyboard navigation, narrow viewports, light and dark
 color schemes, visible focus, and reduced motion. Tables virtualize only when a
@@ -581,7 +661,12 @@ Acceptance requires these failure tests:
 - read-only user mutation rejection;
 - endpoint cleanup after control-process termination;
 - publication retry without trial execution;
-- full projection rebuild on an empty local filesystem.
+- full projection rebuild on an empty local filesystem;
+- valid historical action disposition with recorded and effective state;
+- disposition rejection for wrong action, receipt, result, ownership, or close;
+- partial and concurrent disposition batch adoption;
+- disposition proof failure during shuffled projection replay; and
+- disposition correction with no retry, budget, attempt, publication, or resource side effect.
 
 ## Deployment and replacement
 

@@ -1,6 +1,7 @@
 import type {
   ActionAdvanced,
   ActionDispatch,
+  ActionDisposition,
   BenchmarkProfileSpec,
   ActionIntent,
   ActionReceipt,
@@ -101,6 +102,22 @@ export interface PreparedJobSubmissionResult {
   record_id: string;
   digest: string;
   adopted: boolean;
+}
+
+export interface ActionDispositionCorrectionInput {
+  action_ids: string[];
+  reason: string;
+  confirmed: boolean;
+}
+
+export interface ActionDispositionCorrectionResult {
+  batch_id: string;
+  batch_digest: string;
+  items: Array<{
+    action_id: string;
+    disposition_record_id: string;
+    created: boolean;
+  }>;
 }
 
 export class ControlNotReadyError extends Error {}
@@ -258,6 +275,7 @@ export class ControlService {
   private submitQueue: Promise<void> = Promise.resolve();
   private preparationQueue: Promise<void> = Promise.resolve();
   private sandboxAdmissionQueue: Promise<void> = Promise.resolve();
+  private dispositionQueue: Promise<void> = Promise.resolve();
   private sandboxActionFinalizationQueues = new Map<string, Promise<void>>();
 
   constructor(
@@ -322,7 +340,7 @@ export class ControlService {
     if (projected && projected !== result.digest)
       throw new IdempotencyConflictError(`projection digest conflict at ${key}`);
     if (!projected) {
-      await this.projection.ingest(key, result.digest, record);
+      await this.projection.ingest(key, result.digest, record, this.store);
       const eventData: Record<string, unknown> = {
         key,
         digest: result.digest,
@@ -1237,6 +1255,235 @@ export class ControlService {
     const path = sandboxActionResultPath(campaignId, actionId);
     const prefix = path.slice(0, -"/result.json".length);
     return (await this.store.list(prefix)).some((entry) => entry.key === path);
+  }
+
+  private async withSandboxActionFinalizations<T>(
+    actionIds: readonly string[],
+    operation: () => Promise<T>,
+    index = 0,
+  ): Promise<T> {
+    const actionId = actionIds[index];
+    if (!actionId) return operation();
+    return this.withSandboxActionFinalization(actionId, () =>
+      this.withSandboxActionFinalizations(actionIds, operation, index + 1),
+    );
+  }
+
+  async correctHistoricalSandboxAmbiguities(
+    campaignId: string,
+    taskId: string,
+    input: ActionDispositionCorrectionInput,
+    idempotencyKey: string,
+    actor: Actor,
+  ): Promise<ActionDispositionCorrectionResult> {
+    this.assertReady();
+    if (!input.confirmed)
+      throw new ConfirmationRequiredError(
+        "action disposition correction requires explicit confirmation",
+      );
+    if (actor.role !== "operator")
+      throw new PolicyError("action disposition correction requires an operator");
+    if (
+      input.reason.length < 1 ||
+      input.reason.length > 1_000 ||
+      input.reason.trim() !== input.reason
+    )
+      throw new PolicyError("action disposition correction reason is invalid");
+    if (idempotencyKey.length < 1 || idempotencyKey.length > 512)
+      throw new PolicyError("action disposition idempotency key is invalid");
+    if (
+      input.action_ids.length < 1 ||
+      input.action_ids.length > 100 ||
+      !input.action_ids.every((actionId) => typeof actionId === "string")
+    )
+      throw new PolicyError("action disposition batch size is invalid");
+    const actionIds = [...input.action_ids].sort();
+    if (new Set(actionIds).size !== actionIds.length)
+      throw new PolicyError("action disposition action IDs must be unique");
+    const operation = this.dispositionQueue.then(() =>
+      this.withSandboxActionFinalizations(actionIds, () =>
+        this.correctHistoricalSandboxAmbiguitiesSerialized(
+          campaignId,
+          taskId,
+          actionIds,
+          input.reason,
+          idempotencyKey,
+          actor,
+        ),
+      ),
+    );
+    this.dispositionQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  private async correctHistoricalSandboxAmbiguitiesSerialized(
+    campaignId: string,
+    taskId: string,
+    actionIds: readonly string[],
+    reason: string,
+    idempotencyKey: string,
+    actor: Actor,
+  ): Promise<ActionDispositionCorrectionResult> {
+    if (!(await this.projection.campaign(campaignId)))
+      throw new PolicyError("action disposition campaign does not exist");
+    if (!(await this.projection.task(campaignId, taskId)))
+      throw new PolicyError("action disposition task does not exist");
+    const reasonCode = "historical_non_replay_safe_command_ambiguity" as const;
+    const batchId = deterministicId(
+      "disposition-batch",
+      campaignId,
+      taskId,
+      sha256(idempotencyKey),
+    );
+    const batchDigest = sha256(
+      canonicalJson({ action_ids: actionIds, reason_code: reasonCode, reason }),
+    );
+    const existingBatch = await this.projection.actionDispositionsByBatch(batchId);
+    if (
+      existingBatch.some(
+        (record) =>
+          record.campaign_id !== campaignId ||
+          record.task_id !== taskId ||
+          record.batch_digest !== batchDigest ||
+          record.batch_size !== actionIds.length,
+      )
+    )
+      throw new IdempotencyConflictError("action disposition batch identity conflict");
+    const campaignActions = await this.projection.campaignActions(campaignId);
+    const candidates: ActionDisposition[] = [];
+    for (const actionId of actionIds) {
+      const action = await this.projection.action(actionId);
+      if (
+        !action ||
+        action.campaign_id !== campaignId ||
+        action.action_kind !== "sandbox.exec" ||
+        !action.receipt_body
+      )
+        throw new PolicyError("action disposition target is not eligible");
+      const intent = JSON.parse(action.intent_body) as ActionIntent;
+      const sourceReceipt = JSON.parse(action.receipt_body) as ActionReceipt;
+      if (
+        intent.payload.task_id !== taskId ||
+        sourceReceipt.outcome !== "completed" ||
+        sourceReceipt.observed_state !== "suppressed-sandbox-cleanup-ambiguous" ||
+        (sourceReceipt.error_code ?? null) !== null
+      )
+        throw new PolicyError("action disposition source receipt is not eligible");
+      const dispatch = await this.projection.actionDispatch(actionId);
+      if (dispatch?.operation !== "execute")
+        throw new PolicyError("action disposition target has no execute dispatch");
+      if (!(await this.projection.actionAdvanced(actionId)))
+        throw new PolicyError("action disposition target is not advanced");
+      if (await this.hasSandboxResult(campaignId, actionId))
+        throw new PolicyError("action disposition target has a durable result");
+      const createActionId = intent.payload.sandbox_create_action_id;
+      const resourceId = intent.payload.resource_id;
+      if (typeof createActionId !== "string" || typeof resourceId !== "string")
+        throw new PolicyError("action disposition ownership is incomplete");
+      const create = await this.projection.action(createActionId);
+      if (
+        !create ||
+        create.campaign_id !== campaignId ||
+        create.action_kind !== "sandbox.create" ||
+        create.resource_id !== resourceId
+      )
+        throw new PolicyError("action disposition create action does not match");
+      const createIntent = JSON.parse(create.intent_body) as ActionIntent;
+      if (createIntent.payload.task_id !== taskId)
+        throw new PolicyError("action disposition create task does not match");
+      const eligibleCloses: Array<{
+        actionId: string;
+        receipt: ActionReceipt;
+      }> = [];
+      for (const close of campaignActions) {
+        if (close.action_kind !== "sandbox.close" || !close.receipt_body) continue;
+        const closeIntent = JSON.parse(close.intent_body) as ActionIntent;
+        const closeReceipt = JSON.parse(close.receipt_body) as ActionReceipt;
+        if (
+          closeIntent.payload.task_id !== taskId ||
+          closeIntent.payload.sandbox_create_action_id !== createActionId ||
+          closeIntent.payload.resource_id !== resourceId ||
+          closeReceipt.resource_id !== resourceId ||
+          closeReceipt.outcome !== "completed" ||
+          !terminalSandboxStates.has(closeReceipt.observed_state.toUpperCase()) ||
+          !(await this.projection.actionAdvanced(close.action_id))
+        )
+          continue;
+        eligibleCloses.push({ actionId: close.action_id, receipt: closeReceipt });
+      }
+      eligibleCloses.sort(
+        (left, right) =>
+          left.receipt.created_at.localeCompare(right.receipt.created_at) ||
+          left.actionId.localeCompare(right.actionId),
+      );
+      const selectedClose = eligibleCloses[0];
+      if (!selectedClose)
+        throw new PolicyError("action disposition has no terminal Sandbox close");
+      const candidate: ActionDisposition = {
+        schema_version: "v1",
+        kind: "action.disposition",
+        record_id: deterministicId("disposition", actionId),
+        created_at: this.clock.now().toISOString(),
+        actor: { ...actor, role: "operator" },
+        campaign_id: campaignId,
+        task_id: taskId,
+        action_id: actionId,
+        source_receipt_id: sourceReceipt.record_id,
+        source_receipt_digest: sha256(canonicalJson(sourceReceipt)),
+        close_action_id: selectedClose.actionId,
+        close_receipt_id: selectedClose.receipt.record_id,
+        close_receipt_digest: sha256(canonicalJson(selectedClose.receipt)),
+        batch_id: batchId,
+        batch_digest: batchDigest,
+        batch_size: actionIds.length,
+        effective_outcome: "failed",
+        effective_observed_state: "AMBIGUOUS",
+        effective_error_code: "sandbox_external_outcome_unknown",
+        reason_code: reasonCode,
+        reason,
+      };
+      const existing = await this.projection.actionDisposition(actionId);
+      if (existing) {
+        const {
+          created_at: _existingAt,
+          actor: _existingActor,
+          ...existingSemantics
+        } = existing;
+        const {
+          created_at: _candidateAt,
+          actor: _candidateActor,
+          ...candidateSemantics
+        } = candidate;
+        if (canonicalJson(existingSemantics) !== canonicalJson(candidateSemantics))
+          throw new IdempotencyConflictError("action disposition identity conflict");
+      }
+      candidates.push(candidate);
+    }
+    const items: ActionDispositionCorrectionResult["items"] = [];
+    for (const candidate of candidates) {
+      const appended = await this.appendAdopting(candidate, (recorded) => {
+        const {
+          created_at: _recordedAt,
+          actor: _recordedActor,
+          ...recordedSemantics
+        } = recorded;
+        const {
+          created_at: _candidateAt,
+          actor: _candidateActor,
+          ...candidateSemantics
+        } = candidate;
+        return canonicalJson(recordedSemantics) === canonicalJson(candidateSemantics);
+      });
+      items.push({
+        action_id: candidate.action_id,
+        disposition_record_id: appended.record.record_id,
+        created: appended.created,
+      });
+    }
+    return { batch_id: batchId, batch_digest: batchDigest, items };
   }
 
   async settleClosedSandboxAmbiguities(

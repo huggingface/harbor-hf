@@ -187,6 +187,40 @@ def campaign_retry_infrastructure(
     )
 
 
+@campaign_app.command("correct-action-dispositions")
+def campaign_correct_action_dispositions(
+    campaign_id: Annotated[str, typer.Argument()],
+    task_id: Annotated[str, typer.Option("--task")],
+    action_ids: Annotated[list[str], typer.Option("--action")],
+    reason: Annotated[str, typer.Option("--reason")],
+    idempotency_key: Annotated[str, typer.Option("--idempotency-key")],
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    """Correct proved historical Sandbox command dispositions."""
+    if not action_ids:
+        raise typer.BadParameter("provide at least one --action")
+    ordered = sorted(action_ids)
+    if len(set(ordered)) != len(ordered):
+        raise typer.BadParameter("--action values must be unique")
+    if not yes:
+        typer.confirm(
+            f"Correct {len(ordered)} historical action dispositions?",
+            abort=True,
+        )
+    _echo(
+        _request(
+            "POST",
+            f"/api/v1/campaigns/{campaign_id}/tasks/{task_id}/action-dispositions",
+            payload={
+                "action_ids": ordered,
+                "reason": reason,
+                "confirmed": True,
+            },
+            idempotency_key=idempotency_key,
+        )
+    )
+
+
 @campaign_app.command("pause-endpoint")
 def campaign_pause_endpoint(
     campaign_id: Annotated[str, typer.Argument()],

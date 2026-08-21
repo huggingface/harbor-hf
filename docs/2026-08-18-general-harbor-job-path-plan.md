@@ -194,6 +194,27 @@ automatic infrastructure retries use the same recovery gate before reservation
 or replacement launch. No command is replayed and no historical record is
 changed.
 
+An older release may already have written a completed/suppressed receipt for the
+unknown command. That receipt remains immutable. A separate
+`action.disposition` record binds the exact source receipt and one matching
+advanced terminal close receipt by canonical digest. Its only allowed effective
+state is `failed/AMBIGUOUS/sandbox_external_outcome_unknown`, with the fixed
+historical ambiguity reason code. The durable result must be absent, and the
+campaign, task, create action, resource identity, dispatch, and advancements
+must match.
+
+Operators submit a bounded campaign and task batch through the authenticated
+control service. The batch sorts and locks target actions, validates every item
+before append, and carries a deterministic batch ID and digest. The same request
+adopts a partial batch after a process exit. A changed action set, reason, or
+proof conflicts. There is no automatic scan or backfill.
+
+Projection keeps the recorded receipt and effective disposition separate. A
+final integrity pass checks every proof after replay and keeps the service
+unready on a mismatch or later result object. Correction changes no attempt,
+selection, budget, publication, cleanup, or resource state and cannot authorize
+execution. Sample acceptance remains a separate review.
+
 ## Verification
 
 Local checks must prove:
@@ -215,6 +236,14 @@ Local checks must prove:
   fail closed;
 - retry and cancellation drain only close-fenced ambiguous commands and never
   scan another campaign;
+- a historical disposition requires the exact legacy receipt, no result,
+  matching ownership, and an advanced terminal close;
+- recorded and effective action states remain visible together after shuffled
+  replay and an empty-filesystem rebuild;
+- matching partial and concurrent correction batches adopt, while a changed
+  action set, reason, or proof conflicts;
+- correction changes no lifecycle counter or record and cannot schedule a retry,
+  publication, Job, Sandbox, or Endpoint action;
 - retries cannot replace the prepared lock;
 - task-specific resources come from Harbor and remain within deployment limits;
 - capabilities separate preparation from execution and Sandbox operations;
@@ -293,22 +322,31 @@ identities, counts, spend, and attempt state stay in the private launch record.
 The failed attempt, evidence, spend, and consumed attempt count remain
 immutable.
 
-Paid work stops until a reviewed control-only repair makes new post-dispatch
-errors terminally ambiguous and lets the existing retry operation settle
-close-fenced commands. Command completion and settlement use the same
-action-specific finalization fence, and settlement checks the durable result and
-receipt again while it holds that fence. The control release must pass source,
-readiness, write, projection, resource, profile, and zero-Endpoint checks before
-recovery. The existing retry operation may then use only the remaining attempt
-allowed by the locked policy for the same unsealed task. It cannot reset spend,
-change the lock, or run a sealed valid task. A repeated control failure stops the
-campaign without another execution.
+Paid work stops until both historical receipt states and the selected sample are
+reviewed. Deploy the exact disposition release to the existing control Space
+without changing resources. Verify source, readiness, writes, projection,
+profiles, Bucket privacy, zero running Jobs, and zero active Endpoint replicas.
+Then prepare one private batch from durable receipt and close evidence and submit
+it once. Rebuild from the Bucket and prove that recorded receipts remain
+completed/suppressed while effective states are failed/AMBIGUOUS. Campaign,
+attempt, selection, reward, publication, spend, cleanup, Job, Sandbox, and
+Endpoint state must remain unchanged.
 
-Use the preserved valid sample and the valid replacement sample for a private
-measured launch review. Record raw duration, token, cost, and reward values, and
-label any p50 or p95 value with its sample count. Include setup, bounded retries,
-and cleanup in the high estimate. The hosted control plane must admit the
-worst-case next action within the approved cumulative ceiling before launch.
+No replacement attempt remains. Do not unseal or rerun the task and do not create
+another replacement campaign. Run a separate read-only acceptance review for
+the existing selected attempt. Check its final Pi event, tokens, provider and
+worker provenance, credential isolation, evidence hashes, benchmark-timeout and
+reward, diagnostic publication, cost, close, Jobs, Sandboxes, and Endpoints. The
+correction itself does not make the sample valid.
+
+Only after that review passes, use the preserved valid sample and the accepted
+replacement sample for a private measured launch review. Record raw duration,
+token, cost, and reward values, and label any p50 or p95 value with its sample
+count. Include setup, bounded retries, and cleanup in the high estimate. Apply
+the practical-significance and paid-compute gates. The hosted control plane must
+admit the worst-case next action within the approved cumulative ceiling before
+launch. If the sample review fails, stop because no third attempt or replacement
+campaign is authorized.
 
 The current Terminal-Bench 2.1 run has exactly 89 logical tasks and one trial
 per task. Its benchmark profile is the exact trial-1 projection of the official
@@ -337,8 +375,10 @@ The work is complete when:
   a Harbor agent plugin;
 - every campaign execution is bound to one verified Harbor lock;
 - the merged implementation is deployed and verified through hosted canaries;
-- the provider-error replacement canary reruns only the invalid task and proves
-  a successful final Pi event, evidence, isolation, publication, and cleanup;
+- reviewed historical dispositions preserve original receipts, expose effective
+  ambiguity, rebuild cleanly, and change no lifecycle state;
+- the existing provider-error replacement sample passes the separate final Pi,
+  token, provenance, evidence, isolation, publication, cost, and cleanup review;
 - the 89-task, one-trial Terminal-Bench 2.1 diagnostic campaign is complete and
   published without a five-trial claim;
 - all 89 logical tasks are sealed, no action or cleanup is pending, cumulative

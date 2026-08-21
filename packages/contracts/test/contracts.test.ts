@@ -169,6 +169,51 @@ describe("canonical contracts", () => {
     );
   });
 
+  it("validates fixed historical action dispositions", () => {
+    const digest = `sha256:${"a".repeat(64)}`;
+    const record = {
+      schema_version: "v1",
+      kind: "action.disposition",
+      record_id: "disposition-action-test",
+      created_at: "2026-08-21T00:00:00Z",
+      actor: { subject: "operator", role: "operator" },
+      campaign_id: "campaign-test",
+      task_id: "task-test",
+      action_id: "action-test",
+      source_receipt_id: "receipt-action-test",
+      source_receipt_digest: digest,
+      close_action_id: "action-close-test",
+      close_receipt_id: "receipt-close-test",
+      close_receipt_digest: digest,
+      batch_id: "disposition-batch-test",
+      batch_digest: digest,
+      batch_size: 2,
+      effective_outcome: "failed",
+      effective_observed_state: "AMBIGUOUS",
+      effective_error_code: "sandbox_external_outcome_unknown",
+      reason_code: "historical_non_replay_safe_command_ambiguity",
+      reason: "correct a proved historical observation",
+    } as const;
+
+    expect(validateControlRecord(record)).toEqual(record);
+    expect(controlRecordPath(record)).toBe(
+      "control/schema=v1/campaigns/campaign-test/actions/action-test/zzz-disposition.json",
+    );
+    for (const changed of [
+      { effective_outcome: "completed" },
+      { effective_observed_state: "COMPLETED" },
+      { effective_error_code: "another_error" },
+      { reason_code: "operator_override" },
+      { source_receipt_digest: "sha256:invalid" },
+      { batch_size: 101 },
+      { actor: { subject: "reader", role: "reader" } },
+      { undocumented: true },
+    ])
+      expect(() => validateControlRecord({ ...record, ...changed })).toThrow(
+        ContractValidationError,
+      );
+  });
+
   it("requires a reviewed root bootstrap for inference-enabled Sandboxes", () => {
     const sandbox = {
       image: `registry.example/sandbox@sha256:${"a".repeat(64)}`,

@@ -57,6 +57,84 @@ export const acceptedSchema = {
   },
 } as const;
 
+export const actionDispositionCorrectionSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["action_ids", "reason", "confirmed"],
+  properties: {
+    action_ids: {
+      type: "array",
+      minItems: 1,
+      maxItems: 100,
+      uniqueItems: true,
+      items: { type: "string", pattern: "^[a-z0-9][a-z0-9._-]{1,159}$" },
+    },
+    reason: { type: "string", minLength: 1, maxLength: 1000 },
+    confirmed: { const: true },
+  },
+} as const;
+
+export const actionDispositionCorrectionResultSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["batch_id", "batch_digest", "items"],
+  properties: {
+    batch_id: { type: "string" },
+    batch_digest: { type: "string" },
+    items: {
+      type: "array",
+      maxItems: 100,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["action_id", "disposition_record_id", "created"],
+        properties: {
+          action_id: { type: "string" },
+          disposition_record_id: { type: "string" },
+          created: { type: "boolean" },
+        },
+      },
+    },
+  },
+} as const;
+
+export const actionDispositionViewSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "action_id",
+    "campaign_id",
+    "task_id",
+    "recorded_outcome",
+    "recorded_observed_state",
+    "effective_outcome",
+    "effective_observed_state",
+    "effective_error_code",
+    "reason_code",
+    "corrected_at",
+    "actor_role",
+    "disposition_record_id",
+    "batch_id",
+    "batch_size",
+  ],
+  properties: {
+    action_id: { type: "string" },
+    campaign_id: { type: "string" },
+    task_id: { type: "string" },
+    recorded_outcome: { type: "string" },
+    recorded_observed_state: { type: "string" },
+    effective_outcome: { type: "string" },
+    effective_observed_state: { type: "string" },
+    effective_error_code: { type: "string" },
+    reason_code: { type: "string" },
+    corrected_at: { type: "string", format: "date-time" },
+    actor_role: { type: "string" },
+    disposition_record_id: { type: "string" },
+    batch_id: { type: "string" },
+    batch_size: integer,
+  },
+} as const;
+
 export const evidenceUploadSchema = {
   type: "object",
   additionalProperties: false,

@@ -1026,6 +1026,122 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/campaigns/{campaign_id}/tasks/{task_id}/action-dispositions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    campaign_id: string;
+                    task_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                action_id: string;
+                                campaign_id: string;
+                                task_id: string;
+                                recorded_outcome: string;
+                                recorded_observed_state: string;
+                                effective_outcome: string;
+                                effective_observed_state: string;
+                                effective_error_code: string;
+                                reason_code: string;
+                                /** Format: date-time */
+                                corrected_at: string;
+                                actor_role: string;
+                                disposition_record_id: string;
+                                batch_id: string;
+                                batch_size: number;
+                            }[];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    campaign_id: string;
+                    task_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        action_ids: string[];
+                        reason: string;
+                        /** @enum {unknown} */
+                        confirmed: true;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            batch_id: string;
+                            batch_digest: string;
+                            items: {
+                                action_id: string;
+                                disposition_record_id: string;
+                                created: boolean;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            batch_id: string;
+                            batch_digest: string;
+                            items: {
+                                action_id: string;
+                                disposition_record_id: string;
+                                created: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/campaigns/{campaign_id}/actions": {
         parameters: {
             query?: never;
