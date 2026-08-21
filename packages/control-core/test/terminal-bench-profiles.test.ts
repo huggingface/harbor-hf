@@ -9,8 +9,8 @@ import {
 import { describe, expect, it } from "vitest";
 import { loadBuiltInProfiles } from "../src/profiles.js";
 
-const WORKER_REVISION = "eec0829abf75e8d3f271c8114462a2ffc3dfecbf";
-const PREVIOUS_WORKER_REVISION = "422cf445ce04cfc8f331ddeebfd88f6bc2c5eae9";
+const WORKER_REVISION = "c5ffef26652129bc3354be5b3bc9c9ba8110629b";
+const PREVIOUS_WORKER_REVISION = "eec0829abf75e8d3f271c8114462a2ffc3dfecbf";
 const BRIDGE_DIGESTS = [
   "a67e6442b5a9be11591699aaf8a861c021ac1e49c10bcd09992ab562098ea2eb",
   "ec80056b2eba539040bd411848b8e09f5dfce2066f715f814f40c8d909222da4",
