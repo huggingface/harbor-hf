@@ -199,8 +199,15 @@ unknown command. That receipt remains immutable. A separate
 `action.disposition` record binds the exact source receipt and one matching
 advanced terminal close receipt by canonical digest. Its only allowed effective
 state is `failed/AMBIGUOUS/sandbox_external_outcome_unknown`, with the fixed
-historical ambiguity reason code. The durable result must be absent, and the
-campaign, task, create action, resource identity, dispatch, and advancements
+historical ambiguity reason code.
+
+The source receipt resource can be null in this fixed legacy class because the
+old suppression writer omitted the observation. If it is non-null, it must
+exactly equal the mandatory command intent resource. A conflicting non-null
+value fails closed. One control-core predicate applies this rule during service
+admission and projection replay. The intent, create receipt, and terminal close
+intent and receipt must still identify the same resource in the same campaign
+and task. The durable result must be absent, and the dispatch and advancements
 must match.
 
 Operators submit a bounded campaign and task batch through the authenticated
@@ -236,12 +243,18 @@ Local checks must prove:
   fail closed;
 - retry and cancellation drain only close-fenced ambiguous commands and never
   scan another campaign;
-- a historical disposition requires the exact legacy receipt, no result,
-  matching ownership, and an advanced terminal close;
+- a historical disposition accepts a null source receipt resource only for the
+  exact legacy state and only when the intent, create receipt, and advanced
+  terminal close bind the same resource;
+- a matching non-null source receipt resource remains valid, while a conflicting
+  non-null value fails before append and during rebuild;
+- service admission and projection replay use the same resource predicate;
 - recorded and effective action states remain visible together after shuffled
   replay and an empty-filesystem rebuild;
 - matching partial and concurrent correction batches adopt, while a changed
   action set, reason, or proof conflicts;
+- a read-only preflight uses the exact deployed predicate on the private target
+  set and rejects a synthetic conflicting non-null resource before any write;
 - correction changes no lifecycle counter or record and cannot schedule a retry,
   publication, Job, Sandbox, or Endpoint action;
 - retries cannot replace the prepared lock;

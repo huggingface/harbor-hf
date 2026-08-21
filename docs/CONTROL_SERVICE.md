@@ -304,6 +304,14 @@ dispatched `sandbox.exec` whose original receipt has all of these values:
 - `observed_state=suppressed-sandbox-cleanup-ambiguous`; and
 - a null error code.
 
+For this fixed legacy class, the source receipt can have a null `resource_id`.
+The old suppression writer used null when it did not record the resource
+observation. A null value does not identify another Sandbox and does not prove
+that the command did not run. If the source receipt has a non-null resource, it
+must exactly match the `sandbox.exec` intent resource. A conflicting non-null
+value fails closed. One control-core predicate applies this rule during both
+correction admission and projection replay.
+
 The effective disposition is fixed to `outcome=failed`,
 `observed_state=AMBIGUOUS`, and
 `error_code=sandbox_external_outcome_unknown`. The record also has the fixed
@@ -312,11 +320,12 @@ accept another action kind, original state, effective state, or reason code.
 
 Each disposition identifies one campaign, task, and target action. It binds the
 original receipt and one matching terminal Sandbox close receipt by record ID
-and canonical SHA-256 digest. The close must belong to the same campaign, task,
-Sandbox create action, and resource identity, and both the target action and
-close action must be advanced. The durable Sandbox result path must be absent.
-Close proves that the Sandbox cannot create a later effect. It does not prove
-whether the command ran before close.
+and canonical SHA-256 digest. The intent must contain a resource identity. The
+Sandbox create receipt and terminal close intent and receipt must match that
+identity in the same campaign and task. Both the target action and close action
+must be advanced. The durable Sandbox result path must be absent. Close proves
+that the Sandbox cannot create a later effect. It does not prove whether the
+command ran before close.
 
 A disposition has one deterministic record ID derived from the target action
 and one path under the existing action prefix:
@@ -342,11 +351,11 @@ not expose command bodies, resource identities, proof action IDs or digests,
 result paths, credentials, or topology.
 
 Projection replay accepts dispositions in any Bucket listing order. After all
-records are loaded, an integrity pass checks the source receipt digest, intent,
-dispatch, advancement, create and resource ownership, terminal close receipt
-digest, close advancement, fixed fields, and result-object absence. A missing
-or conflicting fact keeps projection readiness false. A later result object for
-a corrected action is also an integrity error.
+records are loaded, an integrity pass checks the source receipt digest, shared
+source-resource predicate, intent, dispatch, advancement, create and resource
+ownership, terminal close receipt digest, close advancement, fixed fields, and
+result-object absence. A missing or conflicting fact keeps projection readiness
+false. A later result object for a corrected action is also an integrity error.
 
 Operators submit an explicit, confirmed batch through
 `POST /api/v1/campaigns/:campaignId/tasks/:taskId/action-dispositions` or the

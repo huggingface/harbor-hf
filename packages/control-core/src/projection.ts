@@ -28,6 +28,7 @@ import {
 } from "@harbor-hf/contracts";
 import Database from "better-sqlite3";
 import { Kysely, type Selectable, SqliteDialect, sql } from "kysely";
+import { historicalDispositionResourceMatches } from "./disposition-policy.js";
 import { type ControlEvent, decodeEventCursor, eventCursor } from "./events.js";
 import { verifyEvidenceReference, verifyWorkerEvidence } from "./evidence.js";
 import type { PromotedProfile } from "./profiles.js";
@@ -1157,7 +1158,7 @@ export class Projection {
         throw new ProjectionIntegrityError(
           `disposition ownership is incomplete: ${record.record_id}`,
         );
-      if (sourceReceipt.resource_id !== resourceId)
+      if (!historicalDispositionResourceMatches(sourceReceipt.resource_id, resourceId))
         throw new ProjectionIntegrityError(
           `disposition source resource mismatch: ${record.record_id}`,
         );

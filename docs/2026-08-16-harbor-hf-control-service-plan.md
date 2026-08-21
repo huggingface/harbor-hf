@@ -484,11 +484,18 @@ durable result. Its effective state is fixed to
 free-form outcome or reason-code extension.
 
 The record binds the exact source receipt and one matching terminal close
-receipt by record ID and canonical digest. Validation also checks campaign,
-task, create action, resource identity, and both advancements. If more than one
-close qualifies, sort by receipt time and action ID and bind the first. The
-close prevents future effects from that Sandbox. Earlier command effects remain
-unknown.
+receipt by record ID and canonical digest. The source receipt resource can be
+null in this fixed legacy class because the old suppression writer omitted the
+observation. If it is non-null, it must exactly equal the mandatory
+`sandbox.exec` intent resource. A conflicting non-null value fails closed. One
+pure control-core predicate applies this rule in service admission, projection
+replay, tests, and the private preflight.
+
+Validation still checks the same campaign, task, create action, intent resource,
+create receipt resource, dispatch, both advancements, terminal close intent and
+receipt resource, and result absence. If more than one close qualifies, sort by
+receipt time and action ID and bind the first. The close prevents future effects
+from that Sandbox. Earlier command effects remain unknown.
 
 One target action has one deterministic disposition record at
 `zzz-disposition.json`. A campaign and task correction request carries a bounded
@@ -516,29 +523,33 @@ publication, or resources. They cannot start execution or inference. Stores
 without dispositions keep their current meaning, and no global scan or backfill
 runs.
 
-Implementation and rollout use this order:
+The disposition contract, API, CLI, path, projection table, and batch handling
+are already deployed. The null-resource repair uses this order:
 
-1. preserve the private hash-checked post-deployment snapshot and every source
-   object digest;
-2. add the fixed disposition schema, deterministic path and batch identity,
-   projection table, final integrity pass, service validation, operator API,
-   CLI, redacted audit fields, and generated artifacts;
-3. test proof validation, action-finalization races, partial and concurrent
-   batches, restart, shuffled rebuild, historical compatibility, safe output,
-   and zero lifecycle side effects;
-4. confirm the worker revision, all profile files, workload settings, attempt
-   limits, publication role, and ceilings remain unchanged;
-5. pass local, generated, image, privacy, review, and CI gates;
-6. deploy the exact correction merge to the existing control Space and verify
+1. preserve the private hash-checked deployment blocker snapshot and every
+   source proof digest;
+2. add one shared source-resource predicate and use it in service admission and
+   projection integrity;
+3. test null acceptance, exact non-null acceptance, conflicting non-null
+   rejection, missing intent rejection, rebuild parity, and zero lifecycle side
+   effects;
+4. leave JSON Schema, generated artifacts, API, CLI, paths, batch identity,
+   worker revision, profiles, workload settings, attempt limits, publication
+   role, and ceilings unchanged;
+5. update the canonical proof text and pass local, generated, image, privacy,
+   review, and CI gates;
+6. deploy the exact repair merge to the existing control Space and verify
    health, projection, profiles, Bucket privacy, resource counts, zero running
    Jobs, and zero active Endpoint replicas;
-7. prepare one private reviewed batch from durable evidence and submit it once
-   through the authenticated service;
-8. rebuild from the Bucket and prove that original receipt hashes are unchanged,
-   recorded and effective states are both visible, and campaign, attempts,
-   selection, publication, spend, cleanup, Jobs, Sandboxes, and Endpoints did
-   not change; and
-9. perform a separate read-only sample acceptance review.
+7. run the exact deployed predicate over the private reviewed target set and
+   require a synthetic conflicting non-null value to fail before any write;
+8. submit the existing private reviewed batch once through the authenticated
+   service;
+9. restart only the existing Space, rebuild from the Bucket, and prove that
+   original receipt hashes are unchanged, recorded and effective states are both
+   visible, and campaign, attempts, selection, publication, spend, cleanup,
+   Jobs, Sandboxes, and Endpoints did not change; and
+10. perform a separate read-only sample acceptance review.
 
 The correction does not authorize another replacement attempt or a new
 campaign. The sealed task remains sealed, its existing benchmark-timeout outcome

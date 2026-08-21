@@ -36,6 +36,7 @@ import {
   validatePreparedJobSubmission,
   workerEvidenceObjectPath,
 } from "@harbor-hf/contracts";
+import { historicalDispositionResourceMatches } from "./disposition-policy.js";
 import { EventBus, eventCursor } from "./events.js";
 import {
   EvidenceIntegrityError,
@@ -1383,7 +1384,7 @@ export class ControlService {
       const resourceId = intent.payload.resource_id;
       if (typeof createActionId !== "string" || typeof resourceId !== "string")
         throw new PolicyError("action disposition ownership is incomplete");
-      if (sourceReceipt.resource_id !== resourceId)
+      if (!historicalDispositionResourceMatches(sourceReceipt.resource_id, resourceId))
         throw new PolicyError("action disposition source resource does not match");
       const create = await this.projection.action(createActionId);
       if (

@@ -158,7 +158,7 @@ async function appendLegacySuppressedSandboxCommand(
   campaignId: string,
   taskId: string,
   label: string,
-  receiptResourceId?: string | null,
+  receiptResourceId: string | null = null,
 ): Promise<{ command: ActionIntent; receipt: ActionReceipt }> {
   const command = await appendClosedSandboxAmbiguity(
     control,
@@ -169,13 +169,57 @@ async function appendLegacySuppressedSandboxCommand(
   const receipt = await control.service.receipt(command, {
     outcome: "completed",
     observed_state: "suppressed-sandbox-cleanup-ambiguous",
-    resource_id:
-      receiptResourceId === undefined
-        ? (command.payload.resource_id as string)
-        : receiptResourceId,
+    resource_id: receiptResourceId,
   });
   await control.service.markAdvanced(command, receipt);
   return { command, receipt };
+}
+
+function dispositionForTest(input: {
+  campaignId: string;
+  taskId: string;
+  actionId: string;
+  sourceReceipt: ActionReceipt;
+  closeActionId: string;
+  closeReceipt: ActionReceipt;
+  idempotencyKey: string;
+  reason: string;
+}): ActionDisposition {
+  const reasonCode = "historical_non_replay_safe_command_ambiguity" as const;
+  return {
+    schema_version: "v1",
+    kind: "action.disposition",
+    record_id: deterministicId("disposition", input.actionId),
+    created_at: "2026-08-21T00:00:00.000Z",
+    actor: operator,
+    campaign_id: input.campaignId,
+    task_id: input.taskId,
+    action_id: input.actionId,
+    source_receipt_id: input.sourceReceipt.record_id,
+    source_receipt_digest: sha256(canonicalJson(input.sourceReceipt)),
+    close_action_id: input.closeActionId,
+    close_receipt_id: input.closeReceipt.record_id,
+    close_receipt_digest: sha256(canonicalJson(input.closeReceipt)),
+    batch_id: deterministicId(
+      "disposition-batch",
+      input.campaignId,
+      input.taskId,
+      sha256(input.idempotencyKey),
+    ),
+    batch_digest: sha256(
+      canonicalJson({
+        action_ids: [input.actionId],
+        reason_code: reasonCode,
+        reason: input.reason,
+      }),
+    ),
+    batch_size: 1,
+    effective_outcome: "failed",
+    effective_observed_state: "AMBIGUOUS",
+    effective_error_code: "sandbox_external_outcome_unknown",
+    reason_code: reasonCode,
+    reason: input.reason,
+  };
 }
 
 async function putWorkerEvidence(
@@ -2301,6 +2345,8 @@ describe("control service", () => {
 
     expect(corrected.items).toHaveLength(2);
     expect(corrected.items.every((item) => item.created)).toBe(true);
+    expect(first.receipt.resource_id).toBeNull();
+    expect(second.receipt.resource_id).toBeNull();
     const repeated = await control.service.correctHistoricalSandboxAmbiguities(
       result.campaign_id,
       "task-001",
@@ -2406,6 +2452,53 @@ describe("control service", () => {
       integrity_error: expect.stringContaining("durable result"),
     });
     await conflicting.close();
+  });
+
+  it("accepts a matching non-null source resource disposition", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "matching-source-resource-campaign-key",
+      operator,
+    );
+    const legacy = await appendLegacySuppressedSandboxCommand(
+      control,
+      result.campaign_id,
+      "task-001",
+      "matching-source-resource",
+      "sandbox-resource-matching-source-resource",
+    );
+
+    const corrected = await control.service.correctHistoricalSandboxAmbiguities(
+      result.campaign_id,
+      "task-001",
+      {
+        action_ids: [legacy.command.action_id],
+        reason: "accept matching source resource evidence",
+        confirmed: true,
+      },
+      "matching-source-resource-key",
+      operator,
+    );
+    expect(corrected.items).toMatchObject([
+      { action_id: legacy.command.action_id, created: true },
+    ]);
+
+    const rebuilt = await Projection.open(
+      `${control.root}/matching-source-resource.sqlite`,
+    );
+    await rebuilt.rebuild(control.store);
+    expect(
+      await rebuilt.actionDispositionViews(result.campaign_id, "task-001"),
+    ).toMatchObject([
+      {
+        recorded_outcome: "completed",
+        effective_outcome: "failed",
+        effective_observed_state: "AMBIGUOUS",
+      },
+    ]);
+    await rebuilt.close();
   });
 
   it("adopts concurrent historical disposition correction", async () => {
@@ -2604,6 +2697,81 @@ describe("control service", () => {
     ).toEqual([]);
   });
 
+  it("rejects disposition proof without an intent resource", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "missing-intent-resource-campaign-key",
+      operator,
+    );
+    const reference = await appendLegacySuppressedSandboxCommand(
+      control,
+      result.campaign_id,
+      "task-001",
+      "missing-intent-resource-reference",
+    );
+    const { resource_id: _resourceId, ...payloadWithoutResource } =
+      reference.command.payload;
+    const command = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.exec",
+      "sandbox-command-missing-intent-resource",
+      0,
+      payloadWithoutResource,
+    );
+    await control.service.writeAction(command);
+    await control.service.dispatchAction(command, "2026-08-20T00:00:00.000Z");
+    const receipt = await control.service.receipt(command, {
+      outcome: "completed",
+      observed_state: "suppressed-sandbox-cleanup-ambiguous",
+    });
+    await control.service.markAdvanced(command, receipt);
+
+    await expect(
+      control.service.correctHistoricalSandboxAmbiguities(
+        result.campaign_id,
+        "task-001",
+        {
+          action_ids: [command.action_id],
+          reason: "reject missing intent resource evidence",
+          confirmed: true,
+        },
+        "missing-intent-resource-key",
+        operator,
+      ),
+    ).rejects.toThrow("ownership is incomplete");
+
+    const close = (await control.projection.campaignActions(result.campaign_id)).find(
+      (action) => action.action_kind === "sandbox.close",
+    );
+    if (!close?.receipt_body) throw new Error("test close receipt is missing");
+    const disposition = dispositionForTest({
+      campaignId: result.campaign_id,
+      taskId: "task-001",
+      actionId: command.action_id,
+      sourceReceipt: receipt,
+      closeActionId: close.action_id,
+      closeReceipt: JSON.parse(close.receipt_body) as ActionReceipt,
+      idempotencyKey: "missing-intent-resource-key",
+      reason: "reject missing intent resource evidence",
+    });
+    await expect(control.service.append(disposition)).rejects.toThrow(
+      "ownership is incomplete",
+    );
+    const rebuilt = await Projection.open(
+      `${control.root}/missing-intent-resource.sqlite`,
+    );
+    await expect(rebuilt.rebuild(control.store)).rejects.toThrow(
+      "ownership is incomplete",
+    );
+    expect(rebuilt.system()).toMatchObject({
+      ready: false,
+      integrity_error: expect.stringContaining("ownership is incomplete"),
+    });
+    await rebuilt.close();
+  });
+
   it("rejects disposition proof with a mismatched source resource", async () => {
     const control = await createTestControl();
     controls.push(control);
@@ -2648,43 +2816,16 @@ describe("control service", () => {
     );
     if (!close?.receipt_body) throw new Error("test close receipt is missing");
     const closeReceipt = JSON.parse(close.receipt_body) as ActionReceipt;
-    const reason = "reject inconsistent source and close evidence";
-    const reasonCode = "historical_non_replay_safe_command_ambiguity" as const;
-    const batchId = deterministicId(
-      "disposition-batch",
-      result.campaign_id,
-      "task-001",
-      sha256("mismatched-source-resource-key"),
-    );
-    const disposition: ActionDisposition = {
-      schema_version: "v1",
-      kind: "action.disposition",
-      record_id: deterministicId("disposition", legacy.command.action_id),
-      created_at: "2026-08-21T00:00:00.000Z",
-      actor: operator,
-      campaign_id: result.campaign_id,
-      task_id: "task-001",
-      action_id: legacy.command.action_id,
-      source_receipt_id: legacy.receipt.record_id,
-      source_receipt_digest: sha256(canonicalJson(legacy.receipt)),
-      close_action_id: close.action_id,
-      close_receipt_id: closeReceipt.record_id,
-      close_receipt_digest: sha256(canonicalJson(closeReceipt)),
-      batch_id: batchId,
-      batch_digest: sha256(
-        canonicalJson({
-          action_ids: [legacy.command.action_id],
-          reason_code: reasonCode,
-          reason,
-        }),
-      ),
-      batch_size: 1,
-      effective_outcome: "failed",
-      effective_observed_state: "AMBIGUOUS",
-      effective_error_code: "sandbox_external_outcome_unknown",
-      reason_code: reasonCode,
-      reason,
-    };
+    const disposition = dispositionForTest({
+      campaignId: result.campaign_id,
+      taskId: "task-001",
+      actionId: legacy.command.action_id,
+      sourceReceipt: legacy.receipt,
+      closeActionId: close.action_id,
+      closeReceipt,
+      idempotencyKey: "mismatched-source-resource-key",
+      reason: "reject inconsistent source and close evidence",
+    });
     await expect(control.service.append(disposition)).rejects.toThrow(
       "source resource mismatch",
     );
