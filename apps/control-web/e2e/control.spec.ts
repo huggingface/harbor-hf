@@ -172,17 +172,21 @@ test("shows campaign failures as errors rather than missing data", async ({ page
     route.fulfill({ json: session }),
   );
   await page.route("**/api/v1/system", (route) => route.fulfill({ json: system() }));
-  await page.route("**/api/v1/campaigns/campaign-error", (route) =>
-    route.fulfill({
-      status: 403,
-      json: {
-        error: {
-          code: "access_denied",
-          message: "access denied",
-          request_id: "browser-request-id",
-        },
+  const forbidden = {
+    status: 403,
+    json: {
+      error: {
+        code: "access_denied",
+        message: "access denied",
+        request_id: "browser-request-id",
       },
-    }),
+    },
+  };
+  await page.route("**/api/v1/campaigns/campaign-error", (route) =>
+    route.fulfill(forbidden),
+  );
+  await page.route("**/api/v1/campaigns/campaign-error/capacity", (route) =>
+    route.fulfill(forbidden),
   );
   await page.route("**/api/v1/campaigns/campaign-error/tasks**", (route) =>
     route.fulfill({ json: { items: [], next_cursor: null } }),
