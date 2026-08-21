@@ -87,8 +87,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
       await auth.initialize();
       await projection.rebuild(store);
       await service.initialize(profiles);
-      if (config.write_mode !== "disabled" && config.node_env === "production")
-        service.requireCapacityProfile();
+      if (config.write_mode !== "disabled") service.requireCapacityProfile();
       if (
         !(await projection.latestAcl()) &&
         config.bootstrap_operator_subjects.length > 0

@@ -746,7 +746,7 @@ export class ControlService {
         row.action_kind === "sandbox.create" &&
         dispatchedActionIds.has(row.action_id) &&
         !grantedActionIds.has(row.action_id) &&
-        row.outcome !== "failed" &&
+        !(row.receipt_body && !row.resource_id) &&
         !closedCreates.has(row.action_id),
     );
   }
@@ -844,6 +844,26 @@ export class ControlService {
       };
     }
     const existingGrant = await this.projection.sandboxAdmission(intent.action_id);
+    if (
+      capacity &&
+      existingGrant &&
+      !(await this.projection.actionDispatch(intent.action_id)) &&
+      (await this.projection.hasCampaignAction(intent.campaign_id, "campaign.cancel"))
+    ) {
+      const receipt = await this.receipt(intent, {
+        outcome: "failed",
+        observed_state: "admission-rejected",
+        error_code: "campaign_cancelled",
+      });
+      await this.markAdvanced(intent, receipt);
+      return {
+        status: "rejected",
+        dispatch_created: false,
+        action_id: intent.action_id,
+        limiting_factor: "campaign_cancelled",
+        not_before: null,
+      };
+    }
     if (capacity && !existingGrant) {
       const activeGrants = await this.projection.activeSandboxAdmissions(
         this.namespace,

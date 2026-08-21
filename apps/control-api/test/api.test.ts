@@ -41,6 +41,8 @@ async function setup(
 }> {
   const root = await mkdtemp(join(tmpdir(), "hhf-api-"));
   roots.push(root);
+  const selectedCapacityAlias =
+    capacityProfileAlias ?? (writeMode === "disabled" ? null : "capacity-test");
   const bucket = join(root, "bucket");
   await mkdir(bucket);
   const config: AppConfig = {
@@ -53,7 +55,7 @@ async function setup(
     projection_path: join(root, "projection.sqlite"),
     auth_path: join(root, "auth.sqlite"),
     profiles_root: resolve("profiles"),
-    capacity_profile_alias: capacityProfileAlias,
+    capacity_profile_alias: selectedCapacityAlias,
     web_root: join(root, "web"),
     auth_mode: "development",
     write_mode: writeMode,
@@ -68,6 +70,12 @@ async function setup(
     bootstrap_operator_subjects: [],
   };
   const runtime = await createRuntime(config);
+  if (selectedCapacityAlias)
+    for (const record of capacityRecords())
+      await runtime.store.create(
+        controlRecordPath(record),
+        new TextEncoder().encode(canonicalJson(record)),
+      );
   if (seed) await seed(runtime);
   runtimes.push(runtime);
   const app = await buildApp(runtime);
@@ -1225,7 +1233,7 @@ describe("control API", () => {
   });
 
   it("queues capacity-controlled Sandbox creates and reports the limiting state", async () => {
-    const records = [...sandboxDeploymentRecords(), ...capacityRecords()];
+    const records = sandboxDeploymentRecords();
     const { runtime, app } = await setup(
       "enabled",
       async (seedRuntime) => {
@@ -1338,6 +1346,7 @@ describe("control API", () => {
           new TextEncoder().encode(canonicalJson(record)),
         );
     });
+    runtime.service.configureCapacityProfile(null);
     const submission = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns",
@@ -1649,6 +1658,7 @@ describe("control API", () => {
           new TextEncoder().encode(canonicalJson(record)),
         );
     });
+    runtime.service.configureCapacityProfile(null);
     const submission = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns",

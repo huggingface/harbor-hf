@@ -930,6 +930,119 @@ describe("control service", () => {
     });
   });
 
+  it("suppresses a granted create when cancellation arrives before dispatch", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    await configureCapacity(control, { maximum: 1, hardwareMaximum: 1, burst: 1 });
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 1_000 },
+      "capacity-cancel-before-dispatch",
+      operator,
+    );
+    const policy: SandboxPolicy = {
+      image: `registry.example/sandbox@sha256:${"d".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 3_600,
+      idle_timeout_seconds: 600,
+      inference_token: "forbidden",
+      reservation_microusd: 100,
+      active_hourly_cost_microusd: 0,
+      max_sandboxes: 1,
+      max_commands: 8,
+      max_command_seconds: 600,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/logs"],
+    };
+    const create = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.create",
+      "task-001",
+      0,
+      { task_id: "task-001", sandbox: policy },
+    );
+    await expect(control.service.admitSandboxCreate(create, 1)).resolves.toEqual(
+      expect.objectContaining({ status: "admitted", dispatch_created: false }),
+    );
+    const cancel = control.service.actionIntent(
+      result.campaign_id,
+      "campaign.cancel",
+      "campaign",
+      0,
+      { reason: "test cancellation" },
+    );
+    await control.service.writeAction(cancel);
+
+    await expect(control.service.admitSandboxCreate(create, 1)).resolves.toEqual(
+      expect.objectContaining({
+        status: "rejected",
+        limiting_factor: "campaign_cancelled",
+      }),
+    );
+    expect(await control.projection.actionDispatch(create.action_id)).toBeNull();
+    expect(
+      await control.projection.sandboxCapacityRelease(create.action_id),
+    ).toMatchObject({ release_reason: "create_failed" });
+  });
+
+  it("does not count a definitive no-resource legacy create as active", async () => {
+    const control = await createTestControl(2);
+    controls.push(control);
+    await configureCapacity(control, { maximum: 1, hardwareMaximum: 1, burst: 1 });
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 1_000 },
+      "capacity-legacy-no-resource",
+      operator,
+    );
+    const policy: SandboxPolicy = {
+      image: `registry.example/sandbox@sha256:${"d".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 3_600,
+      idle_timeout_seconds: 600,
+      inference_token: "forbidden",
+      reservation_microusd: 100,
+      active_hourly_cost_microusd: 0,
+      max_sandboxes: 1,
+      max_commands: 8,
+      max_command_seconds: 600,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/logs"],
+    };
+    control.service.configureCapacityProfile(null);
+    const legacy = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.create",
+      "task-001",
+      0,
+      { task_id: "task-001", sandbox: policy },
+    );
+    await control.service.writeAction(legacy);
+    await control.service.reserveSandbox(
+      result.campaign_id,
+      legacy.action_id,
+      legacy.created_at,
+      policy.reservation_microusd,
+    );
+    await control.service.dispatchAction(legacy, legacy.created_at);
+    const receipt = await control.service.receipt(legacy, {
+      outcome: "completed",
+      observed_state: "suppressed-cancelled-not-found",
+      resource_id: null,
+    });
+    await control.service.markAdvanced(legacy, receipt);
+    control.service.configureCapacityProfile("current");
+    const next = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.create",
+      "task-002",
+      0,
+      { task_id: "task-002", sandbox: policy },
+    );
+
+    await expect(control.service.admitSandboxCreate(next, 1)).resolves.toEqual(
+      expect.objectContaining({ status: "admitted" }),
+    );
+  });
+
   it("serializes namespace admission and releases capacity after verified close", async () => {
     const control = await createTestControl(2);
     controls.push(control);
