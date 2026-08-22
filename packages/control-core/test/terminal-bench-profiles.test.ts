@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { loadBuiltInProfiles } from "../src/profiles.js";
 
 const WORKER_REVISION = "e9b18497bbc2840f13525f62693917dfad8a5b30";
+const DEEPSEEK_WORKER_REVISION = "ccfe82fdeeaaa257750496e43ce1a15bd41335cb";
 const BRIDGE_REVISION = "c5ffef26652129bc3354be5b3bc9c9ba8110629b";
 const BRIDGE_DIGESTS = [
   "a67e6442b5a9be11591699aaf8a861c021ac1e49c10bcd09992ab562098ea2eb",
@@ -170,7 +171,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
       [replacement, 1, 1, 1],
       [diagnostic, 89, 8, 16],
     ] as const) {
-      expect(spec.worker_revision).toBe(WORKER_REVISION);
+      expect(spec.worker_revision).toBe(DEEPSEEK_WORKER_REVISION);
       expect(spec.harbor_version).toBe("0.22.0");
       expect(spec.worker_max_tasks_per_job).toBe(capacity);
       expect(spec.worker_concurrency).toBe(concurrency);
@@ -180,7 +181,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
       const sandbox = record(spec.sandbox_template);
       const bootstrapCommand = (sandbox.root_bootstrap_command as string[]).join("\n");
       for (const command of [preparationCommand, jobCommand]) {
-        expect(command).toContain(WORKER_REVISION);
+        expect(command).toContain(DEEPSEEK_WORKER_REVISION);
         expect(command).not.toContain(BRIDGE_REVISION);
       }
       expect(bootstrapCommand).toContain(BRIDGE_REVISION);

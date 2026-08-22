@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-b092a095a082fc6317cf3a6a",
+  "record_id": "profile-54e23cb99124bdf32236b3bd",
   "created_at": "2026-08-21T16:00:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
@@ -17,12 +17,12 @@
     "preparation_job_command": [
       "/bin/sh",
       "-lc",
-      "exec uv run --no-project --python 3.12 --with harbor==0.22.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/e9b18497bbc2840f13525f62693917dfad8a5b30.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_prepare_worker"
+      "exec uv run --no-project --python 3.12 --with harbor==0.22.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/ccfe82fdeeaaa257750496e43ce1a15bd41335cb.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_prepare_worker"
     ],
     "job_command": [
       "/bin/sh",
       "-lc",
-      "exec uv run --no-project --python 3.12 --with harbor==0.22.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/e9b18497bbc2840f13525f62693917dfad8a5b30.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_campaign_worker"
+      "exec uv run --no-project --python 3.12 --with harbor==0.22.0 --with \"harbor-hf-agents @ https://github.com/huggingface/harbor-hf/archive/ccfe82fdeeaaa257750496e43ce1a15bd41335cb.zip#subdirectory=packages/harbor-hf-agents\" python -m harbor_hf_agents.support.control_campaign_worker"
     ],
     "hardware": "cpu-upgrade",
     "active_hourly_cost_microusd": 30000,
@@ -88,7 +88,7 @@
     "input_price_microusd_per_million_tokens": 140000,
     "output_price_microusd_per_million_tokens": 280000,
     "harbor_version": "0.22.0",
-    "worker_revision": "e9b18497bbc2840f13525f62693917dfad8a5b30",
+    "worker_revision": "ccfe82fdeeaaa257750496e43ce1a15bd41335cb",
     "context_window": 131072,
     "timeout_seconds": 604800,
     "preparation_timeout_seconds": 7200,
