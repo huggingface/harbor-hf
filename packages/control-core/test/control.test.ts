@@ -1024,6 +1024,112 @@ describe("control service", () => {
     });
   });
 
+  it("defers an invalid active attempt replacement while paused", async () => {
+    const control = await createTestControl(1, 2, 6, false, "forbidden", undefined, [
+      "input_tokens",
+      "output_tokens",
+    ]);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 12 },
+      "pause-invalid-attempt-key",
+      operator,
+    );
+    let launches = 0;
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.launch") {
+          launches += 1;
+          return {
+            outcome: "created",
+            observed_state: "RUNNING",
+            resource_id: `pause-invalid-job-${launches}`,
+          };
+        }
+        if (intent.action_kind === "job.observe") {
+          const launchActionId = String(intent.payload.launch_action_id);
+          if (
+            !(await control.projection.attemptForActionTask(launchActionId, "task-001"))
+          ) {
+            const evidence = await putEvidenceReference(
+              control,
+              `pause-invalid-evidence-${launches}`,
+            );
+            await control.service.attempt({
+              campaign_id: result.campaign_id,
+              task_id: "task-001",
+              attempt_id: `pause-invalid-attempt-${launches}`,
+              action_id: launchActionId,
+              outcome: launches === 1 ? "agent" : "complete",
+              replacement_eligible: false,
+              ...evidence,
+              cost_microusd: 0,
+              metrics:
+                launches === 1
+                  ? { input_tokens: 0, output_tokens: 0 }
+                  : { input_tokens: 8, output_tokens: 2, reward: 1 },
+              completed_at: `2026-08-16T00:00:0${launches}.000Z`,
+            });
+          }
+          return {
+            outcome: "completed",
+            observed_state: "COMPLETED",
+            resource_id: `pause-invalid-job-${launches}`,
+          };
+        }
+        return new NoopActions().execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 2);
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "pause", confirmed: true },
+      "pause-invalid-boundary-key",
+      operator,
+    );
+    await settle(reconciler, 6);
+
+    expect(launches).toBe(1);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "paused",
+      paused: true,
+      terminal_tasks: 0,
+      reserved_microusd: 6,
+      pending_actions: 0,
+    });
+    expect(
+      (await control.projection.campaignActions(result.campaign_id)).filter(
+        (action) =>
+          action.action_kind === "job.launch" &&
+          JSON.parse(action.intent_body).payload.prior_attempt_id,
+      ),
+    ).toHaveLength(0);
+
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "resume", confirmed: true },
+      "resume-invalid-attempt-key",
+      operator,
+    );
+    await settle(reconciler, 10);
+
+    expect(launches).toBe(2);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      admissible_tasks: 1,
+      reserved_microusd: 12,
+      publication_status: "published",
+    });
+  });
+
   it("does not cancel a remote Job that is already in ERROR", async () => {
     const control = await createTestControl();
     controls.push(control);

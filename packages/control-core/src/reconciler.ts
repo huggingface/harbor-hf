@@ -1153,6 +1153,7 @@ export class Reconciler {
         );
         return;
       }
+      if (await this.projection.campaignPaused(attempt.campaign_id)) return;
       const reservation = scalar<number>(
         source.payload,
         "reservation_microusd",
