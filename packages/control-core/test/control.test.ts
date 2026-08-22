@@ -10,6 +10,7 @@ import type {
   ProfileObject,
   ProfilePromotion,
   SandboxPolicy,
+  TerminalSelection,
 } from "@harbor-hf/contracts";
 import {
   canonicalJson,
@@ -1903,6 +1904,71 @@ describe("control service", () => {
     expect(
       await control.projection.taskExhaustion(result.campaign_id, "task-001"),
     ).toMatchObject({ attempt_count: 2 });
+  });
+
+  it("replays a historical zero-token selection as completed-invalid", async () => {
+    const control = await createTestControl(1, 1, 0, false, "forbidden", undefined, [
+      "input_tokens",
+      "output_tokens",
+    ]);
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "historical-invalid-selection-key",
+      operator,
+    );
+    const launch = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "task-001",
+      0,
+      { task_ids: ["task-001"] },
+    );
+    await control.service.writeAction(launch);
+    const evidence = await putEvidenceReference(
+      control,
+      "historical-invalid-selection-evidence",
+    );
+    const attempt = await control.service.attempt({
+      campaign_id: result.campaign_id,
+      task_id: "task-001",
+      attempt_id: "historical-invalid-attempt",
+      action_id: launch.action_id,
+      outcome: "agent",
+      replacement_eligible: false,
+      ...evidence,
+      cost_microusd: 0,
+      metrics: { input_tokens: 0, output_tokens: 0 },
+      completed_at: "2026-08-16T00:00:01.000Z",
+    });
+    const selection: TerminalSelection = {
+      schema_version: "v1",
+      kind: "terminal.selection",
+      record_id: deterministicId("terminal", attempt.attempt_id),
+      created_at: "2026-08-16T00:00:02.000Z",
+      actor: { subject: "historical-import", role: "migration" },
+      campaign_id: result.campaign_id,
+      task_id: "task-001",
+      attempt_id: attempt.attempt_id,
+      outcome: attempt.outcome,
+      reason: "historical selection retained for audit",
+    };
+    await control.store.create(
+      controlRecordPath(selection),
+      new TextEncoder().encode(canonicalJson(selection)),
+    );
+    const rebuilt = await Projection.open(`${control.root}/historical-invalid.sqlite`);
+
+    await rebuilt.rebuild(control.store);
+
+    expect(await rebuilt.campaign(result.campaign_id)).toMatchObject({
+      status: "completed-invalid",
+      terminal_tasks: 1,
+      admissible_tasks: 0,
+      invalid_selected_tasks: 1,
+      publication_status: null,
+    });
+    await rebuilt.close();
   });
 
   it("retries a worker-reported cancellation without selecting it", async () => {
@@ -4034,7 +4100,7 @@ describe("control service", () => {
     );
     expect(newPublication?.status).toBe("published");
 
-    await control.service.campaignAction(
+    const supersedeAction = await control.service.campaignAction(
       newCampaign.campaign_id,
       {
         action: "supersede",
@@ -4045,7 +4111,26 @@ describe("control service", () => {
       "supersede-publication-key",
       operator,
     );
-    await settle(reconciler, 3);
+    await reconciler.tick();
+    expect(
+      (await control.projection.action(supersedeAction.action_id))?.receipt_body,
+    ).not.toBeNull();
+    const repeated = await control.service.writePublicationSupersession(
+      newCampaign.campaign_id,
+      newPublication?.publication_id ?? "missing-publication",
+      oldCampaign.campaign_id,
+      oldPublication?.publication_id ?? "missing-publication",
+      "replacement publication validated",
+    );
+    expect(repeated.record_id).toMatch(/^publication-supersession-/);
+    await settle(reconciler, 2);
+    expect(canonicalJson(repeated).trimEnd()).toBe(
+      (
+        await control.projection.publicationSupersession(
+          oldPublication?.publication_id ?? "missing-publication",
+        )
+      )?.body,
+    );
 
     expect(await control.projection.publicationSupersessions()).toMatchObject([
       {
@@ -4057,6 +4142,26 @@ describe("control service", () => {
     expect(
       (await control.projection.campaignPublication(oldCampaign.campaign_id))?.body,
     ).toBe(oldBody);
+
+    const laterCampaign = await control.service.submit(
+      submission,
+      "supersession-later-campaign",
+      operator,
+    );
+    await settle(reconciler, 8);
+    await expect(
+      control.service.campaignAction(
+        laterCampaign.campaign_id,
+        {
+          action: "supersede",
+          publication_id: oldPublication?.publication_id,
+          reason: "second replacement must fail",
+          confirmed: true,
+        },
+        "duplicate-supersession-key",
+        operator,
+      ),
+    ).rejects.toThrow("publication is already superseded");
   });
 
   it("recovers publication after a crash between terminal selection and intent", async () => {

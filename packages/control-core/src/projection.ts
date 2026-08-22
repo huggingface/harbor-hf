@@ -1208,20 +1208,6 @@ export class Projection {
         `terminal selection does not match attempt: ${record.record_id}`,
       );
     }
-    const lock = await this.campaignLock(record.campaign_id);
-    if (!lock)
-      throw new ProjectionIntegrityError(
-        `terminal selection has no campaign lock: ${record.record_id}`,
-      );
-    const required = requiredPositiveMetrics(lock);
-    if (required.length > 0 && record.outcome !== "cancelled") {
-      const parsed = JSON.parse(attempt.body) as AttemptReceipt;
-      const validity = attemptAdmissibility(parsed, required);
-      if (!validity.admissible)
-        throw new ProjectionIntegrityError(
-          `terminal selection is not admissible: ${record.record_id}`,
-        );
-    }
     const result = await this.db
       .updateTable("tasks")
       .set({ terminal_outcome: record.outcome, selected_attempt_id: record.attempt_id })
@@ -2117,6 +2103,18 @@ export class Projection {
       .selectAll()
       .orderBy("created_at")
       .execute();
+  }
+
+  async publicationSupersession(
+    supersededPublicationId: string,
+  ): Promise<Selectable<SupersessionRow> | null> {
+    return (
+      (await this.db
+        .selectFrom("publication_supersessions")
+        .selectAll()
+        .where("superseded_publication_id", "=", supersededPublicationId)
+        .executeTakeFirst()) ?? null
+    );
   }
 
   async campaignPaused(campaignId: string): Promise<boolean> {

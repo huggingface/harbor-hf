@@ -2227,6 +2227,25 @@ export class ControlService {
     supersededPublicationId: string,
     reason: string,
   ): Promise<PublicationSupersession> {
+    const existing = await this.projection.publicationSupersession(
+      supersededPublicationId,
+    );
+    if (existing) {
+      const record = JSON.parse(existing.body) as PublicationSupersession;
+      if (
+        record.campaign_id !== campaignId ||
+        record.publication_id !== publicationId ||
+        record.superseded_campaign_id !== supersededCampaignId ||
+        record.reason !== reason
+      )
+        throw new IdempotencyConflictError(
+          "publication supersession conflicts with durable state",
+        );
+      return record;
+    }
+    const publication = await this.projection.publication(publicationId);
+    if (publication?.campaign_id !== campaignId)
+      throw new PolicyError("replacement publication does not exist");
     const record: PublicationSupersession = {
       schema_version: "v1",
       kind: "publication.supersession",
@@ -2235,7 +2254,7 @@ export class ControlService {
         supersededPublicationId,
         publicationId,
       ),
-      created_at: this.clock.now().toISOString(),
+      created_at: publication.created_at,
       actor: serviceActor(),
       campaign_id: campaignId,
       publication_id: publicationId,
@@ -2789,6 +2808,8 @@ export class ControlService {
       const previous = await this.projection.publication(input.publication_id);
       if (previous?.status !== "published")
         throw new PolicyError("superseded publication does not exist");
+      if (await this.projection.publicationSupersession(input.publication_id))
+        throw new PolicyError("publication is already superseded");
       if (previous.campaign_id === campaignId)
         throw new PolicyError("publication cannot supersede itself");
       kind = "publication.supersede";
