@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import { loadBuiltInProfiles } from "../src/profiles.js";
 
 const WORKER_REVISION = "e9b18497bbc2840f13525f62693917dfad8a5b30";
-const DEEPSEEK_WORKER_REVISION = "ccfe82fdeeaaa257750496e43ce1a15bd41335cb";
+const DEEPSEEK_WORKER_REVISION = "3a6af70769288614b58fc10ca764c528305bf496";
 const BRIDGE_REVISION = "c5ffef26652129bc3354be5b3bc9c9ba8110629b";
 const BRIDGE_DIGESTS = [
   "a67e6442b5a9be11591699aaf8a861c021ac1e49c10bcd09992ab562098ea2eb",
