@@ -224,6 +224,14 @@ Each concurrency field has one meaning:
 - budget admission limits work through the campaign's immutable reservations
   and ceiling.
 
+A Job reservation is active only while that Job can still spend money. A
+terminal Job observation or a launch suppressed before dispatch appends a
+release for the full Job reservation. Observed cost remains recorded
+independently. Before a paused campaign reserves resumed work, the service also
+reconciles missing releases for historical terminal and suppressed Job actions.
+The release records are deterministic and append-only. Sandbox reservations
+remain separate and close through the Sandbox capacity path.
+
 The namespace capacity profile is service policy. It uses the existing profile
 object and promotion records, but it is not a campaign profile reference and is
 not part of a campaign lock. Every admission grant records the exact capacity

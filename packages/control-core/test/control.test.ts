@@ -35,7 +35,11 @@ import {
   Reconciler,
 } from "../src/reconciler.js";
 import { runIdentity, runUnique } from "../src/run-id.js";
-import { type AttemptInput, ControlService } from "../src/service.js";
+import {
+  type AttemptInput,
+  ControlService,
+  executionReservationCategory,
+} from "../src/service.js";
 
 const controls: TestControl[] = [];
 afterEach(async () =>
@@ -919,7 +923,7 @@ describe("control service", () => {
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       terminal_tasks: 1,
       paused: false,
-      reserved_microusd: 6,
+      reserved_microusd: 0,
     });
 
     await control.service.campaignAction(
@@ -945,7 +949,7 @@ describe("control service", () => {
     expect(launches).toEqual([["task-001"]]);
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       status: "paused",
-      reserved_microusd: 6,
+      reserved_microusd: 0,
       pending_actions: 0,
     });
     await control.service.campaignAction(
@@ -961,8 +965,93 @@ describe("control service", () => {
       status: "completed",
       terminal_tasks: 3,
       admissible_tasks: 3,
-      reserved_microusd: 12,
+      reserved_microusd: 0,
       publication_status: "published",
+    });
+  });
+
+  it("reconciles a historical terminal Job reservation before resume", async () => {
+    const control = await createTestControl(1, 1, 6);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 6, start_paused: true },
+      "historical-job-reservation-key",
+      operator,
+    );
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    await settle(reconciler, 3);
+    const generation = 7;
+    const createdAt = "2026-08-22T12:00:00.000Z";
+    await control.service.append({
+      schema_version: "v1",
+      kind: "budget.event",
+      record_id: deterministicId(
+        "budget",
+        result.campaign_id,
+        executionReservationCategory(["task-001"]),
+        String(generation),
+      ),
+      created_at: createdAt,
+      actor: { subject: "harbor-hf-control", role: "service" },
+      campaign_id: result.campaign_id,
+      event_kind: "reserve",
+      amount_microusd: 6,
+    });
+    const launch = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      "task-001",
+      generation,
+      {
+        worker_role: "execution",
+        task_ids: ["task-001"],
+        reservation_microusd: 6,
+      },
+    );
+    await control.service.writeAction(launch);
+    const launchReceipt = await control.service.receipt(launch, {
+      outcome: "created",
+      observed_state: "RUNNING",
+      resource_id: "historical-job",
+    });
+    await control.service.markAdvanced(launch, launchReceipt);
+    const observe = control.service.actionIntent(
+      result.campaign_id,
+      "job.observe",
+      "historical-job",
+      0,
+      {
+        worker_role: "execution",
+        task_ids: ["task-001"],
+        launch_action_id: launch.action_id,
+      },
+    );
+    await control.service.writeAction(observe);
+    const observeReceipt = await control.service.receipt(observe, {
+      outcome: "completed",
+      observed_state: "COMPLETED",
+      resource_id: "historical-job",
+    });
+    await control.service.markAdvanced(observe, observeReceipt);
+
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "resume", task_limit: 1, confirmed: true },
+      "historical-job-reservation-resume-key",
+      operator,
+    );
+    expect(
+      await control.service.reconcileTerminalJobReservations(result.campaign_id),
+    ).toBe(0);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      reserved_microusd: 6,
+      pending_actions: 1,
     });
   });
 
@@ -1006,7 +1095,7 @@ describe("control service", () => {
     expect(await control.projection.campaignPaused(result.campaign_id)).toBe(false);
   });
 
-  it("rejects resumed work before it exceeds the campaign ceiling", async () => {
+  it("reuses released Job reservations within the campaign ceiling", async () => {
     const control = await createTestControl(2, 1, 6);
     controls.push(control);
     const result = await control.service.submit(
@@ -1046,20 +1135,19 @@ describe("control service", () => {
     );
     await settle(reconciler, 3);
 
-    await expect(
-      control.service.campaignAction(
-        result.campaign_id,
-        { action: "resume", confirmed: true },
-        "paused-ceiling-second-resume-key",
-        operator,
-      ),
-    ).rejects.toThrow("resumed execution would exceed the campaign ceiling");
-    expect(launches).toEqual([["task-001"]]);
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "resume", confirmed: true },
+      "paused-ceiling-second-resume-key",
+      operator,
+    );
+    await settle(reconciler, 10);
+    expect(launches).toEqual([["task-001"], ["task-002"]]);
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
-      status: "paused",
-      paused: true,
-      terminal_tasks: 1,
-      reserved_microusd: 6,
+      status: "completed",
+      paused: false,
+      terminal_tasks: 2,
+      reserved_microusd: 0,
       pending_actions: 0,
     });
   });
@@ -1142,7 +1230,7 @@ describe("control service", () => {
       status: "paused",
       paused: true,
       terminal_tasks: 0,
-      reserved_microusd: 6,
+      reserved_microusd: 0,
       pending_actions: 0,
     });
     expect(
@@ -1165,7 +1253,7 @@ describe("control service", () => {
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       status: "completed",
       admissible_tasks: 1,
-      reserved_microusd: 12,
+      reserved_microusd: 0,
       publication_status: "published",
     });
   });
@@ -3875,7 +3963,7 @@ describe("control service", () => {
     });
   });
 
-  it("does not launch a replacement Job without another budget reservation", async () => {
+  it("releases each failed Job reservation before reserving its replacement", async () => {
     const control = await createTestControl(1, 2, 6);
     controls.push(control);
     const result = await control.service.submit(
@@ -3906,10 +3994,10 @@ describe("control service", () => {
 
     await settle(reconciler, 12);
 
-    expect(launches).toBe(1);
+    expect(launches).toBe(2);
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       status: "failed",
-      reserved_microusd: 6,
+      reserved_microusd: 0,
       terminal_tasks: 1,
       exhausted_tasks: 1,
     });

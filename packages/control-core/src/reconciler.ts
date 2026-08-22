@@ -503,13 +503,16 @@ export class Reconciler {
         break;
       case "job.launch":
         if (receipt.observed_state.startsWith("suppressed-")) {
-          await this.releaseSuppressedExecutionReservation(intent, receipt.created_at);
+          await this.service.releaseJobAction(intent, receipt.created_at);
           break;
         }
         if (receipt.outcome === "failed") {
           if (intent.payload.worker_role === "preparation")
             await this.handlePreparationTerminal(intent, receipt, "ERROR");
-          else await this.completeTasksFromJob(intent, receipt, "infrastructure");
+          else {
+            await this.service.releaseJobAction(intent, receipt.created_at);
+            await this.completeTasksFromJob(intent, receipt, "infrastructure");
+          }
         } else await this.observeJob(intent, receipt);
         break;
       case "job.observe":
@@ -702,25 +705,18 @@ export class Reconciler {
     }));
   }
 
-  private async releaseSuppressedExecutionReservation(
+  private async releaseObservedJobReservation(
     intent: ActionIntent,
     createdAt: string,
   ): Promise<void> {
-    if (intent.payload.worker_role !== "execution") return;
-    const taskIds = stringArray(intent.payload, "task_ids");
-    const reservation = scalar<number>(
-      intent.payload,
-      "reservation_microusd",
-      "number",
+    const launchActionId = scalar<string>(intent.payload, "launch_action_id", "string");
+    const launch = await this.projection.action(launchActionId);
+    if (launch?.action_kind !== "job.launch")
+      throw new PolicyError("Job observation has no launch action");
+    await this.service.releaseJobAction(
+      JSON.parse(launch.intent_body) as ActionIntent,
+      createdAt,
     );
-    await this.service.releaseJobActions(intent.campaign_id, [
-      {
-        category: executionReservationCategory(taskIds),
-        generation: intent.generation,
-        created_at: createdAt,
-        amount_microusd: reservation,
-      },
-    ]);
   }
 
   private async launchExecution(
@@ -903,6 +899,7 @@ export class Reconciler {
       await this.handlePreparationTerminal(intent, receipt, state);
       return;
     }
+    await this.releaseObservedJobReservation(intent, receipt.created_at);
     if (state === "STOPPED" || state === "COMPLETED") {
       const successful = scalar<boolean>(
         intent.payload,

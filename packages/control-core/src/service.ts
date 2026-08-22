@@ -188,6 +188,12 @@ function objectValue(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function stringArrayValue(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string"))
+    throw new PolicyError(`${label} must be a string array`);
+  return value as string[];
+}
+
 function subsetMatches(expected: unknown, actual: unknown): boolean {
   if (Array.isArray(expected))
     return (
@@ -332,6 +338,18 @@ export function executionTaskBatches(
 export function executionReservationCategory(taskIds: readonly string[]): string {
   const batchKey = sha256(canonicalJson(taskIds)).slice(7, 23);
   return `execution-${batchKey}`;
+}
+
+const terminalJobStates = new Set([
+  "STOPPED",
+  "COMPLETED",
+  "CANCELLED",
+  "CANCELED",
+  "ERROR",
+]);
+
+function jobStateIsTerminal(state: string | null): boolean {
+  return state !== null && terminalJobStates.has(state.toUpperCase());
 }
 
 export class ControlService {
@@ -2358,6 +2376,74 @@ export class ControlService {
     return true;
   }
 
+  private async releaseBudgetReservationSerialized(
+    campaignId: string,
+    reserveId: string,
+    createdAt: string,
+    amountMicrousd: number,
+  ): Promise<boolean> {
+    const existingReserve = await this.projection.budget(reserveId);
+    if (!existingReserve) return false;
+    if (
+      existingReserve.campaign_id !== campaignId ||
+      existingReserve.event_kind !== "reserve" ||
+      existingReserve.amount_microusd !== amountMicrousd
+    )
+      throw new IdempotencyConflictError(
+        "Job budget release does not match its reservation",
+      );
+    const releaseId = deterministicId("budget", campaignId, "job-release", reserveId);
+    const existingRelease = await this.projection.budget(releaseId);
+    if (existingRelease) {
+      if (
+        existingRelease.event_kind !== "release" ||
+        existingRelease.amount_microusd !== amountMicrousd
+      )
+        throw new IdempotencyConflictError(
+          "Job budget release conflicts with durable state",
+        );
+      return false;
+    }
+    await this.append({
+      schema_version: "v1",
+      kind: "budget.event",
+      record_id: releaseId,
+      created_at: createdAt,
+      actor: serviceActor(),
+      campaign_id: campaignId,
+      event_kind: "release",
+      amount_microusd: amountMicrousd,
+    });
+    return true;
+  }
+
+  private async releaseJobActionSerialized(
+    intent: ActionIntent,
+    createdAt: string,
+  ): Promise<boolean> {
+    if (intent.action_kind !== "job.launch") return false;
+    const amountMicrousd = intent.payload.reservation_microusd;
+    if (typeof amountMicrousd !== "number" || amountMicrousd <= 0) return false;
+    const priorAttemptId = intent.payload.prior_attempt_id;
+    const reserveId =
+      typeof priorAttemptId === "string"
+        ? deterministicId("budget", intent.campaign_id, "replacement", priorAttemptId)
+        : deterministicId(
+            "budget",
+            intent.campaign_id,
+            executionReservationCategory(
+              stringArrayValue(intent.payload.task_ids, "Job action task IDs"),
+            ),
+            String(intent.generation),
+          );
+    return this.releaseBudgetReservationSerialized(
+      intent.campaign_id,
+      reserveId,
+      createdAt,
+      amountMicrousd,
+    );
+  }
+
   async releaseJobActions(
     campaignId: string,
     reservations: readonly JobBudgetReservation[],
@@ -2371,43 +2457,12 @@ export class ControlService {
           reservation.category,
           String(reservation.generation),
         );
-        const existingReserve = await this.projection.budget(reserveId);
-        if (!existingReserve) continue;
-        if (
-          existingReserve.campaign_id !== campaignId ||
-          existingReserve.event_kind !== "reserve" ||
-          existingReserve.amount_microusd !== reservation.amount_microusd
-        )
-          throw new IdempotencyConflictError(
-            "Job budget release does not match its reservation",
-          );
-        const releaseId = deterministicId(
-          "budget",
+        await this.releaseBudgetReservationSerialized(
           campaignId,
-          "job-release",
           reserveId,
+          reservation.created_at,
+          reservation.amount_microusd,
         );
-        const existingRelease = await this.projection.budget(releaseId);
-        if (existingRelease) {
-          if (
-            existingRelease.event_kind !== "release" ||
-            existingRelease.amount_microusd !== reservation.amount_microusd
-          )
-            throw new IdempotencyConflictError(
-              "Job budget release conflicts with durable state",
-            );
-          continue;
-        }
-        await this.append({
-          schema_version: "v1",
-          kind: "budget.event",
-          record_id: releaseId,
-          created_at: reservation.created_at,
-          actor: serviceActor(),
-          campaign_id: campaignId,
-          event_kind: "release",
-          amount_microusd: reservation.amount_microusd,
-        });
       }
     });
     this.budgetQueue = operation.then(
@@ -2415,6 +2470,88 @@ export class ControlService {
       () => undefined,
     );
     await operation;
+  }
+
+  async releaseJobAction(intent: ActionIntent, createdAt: string): Promise<void> {
+    const operation = this.budgetQueue.then(() =>
+      this.releaseJobActionSerialized(intent, createdAt),
+    );
+    this.budgetQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    await operation;
+  }
+
+  async reconcileTerminalJobReservations(campaignId: string): Promise<number> {
+    const operation = this.budgetQueue.then(async () => {
+      const actions = await this.projection.campaignActions(campaignId);
+      const terminalLaunchIds = new Set<string>();
+      for (const action of actions) {
+        if (action.action_kind !== "job.observe" || action.receipt_body === null)
+          continue;
+        const intent = JSON.parse(action.intent_body) as ActionIntent;
+        const receipt = JSON.parse(action.receipt_body) as ActionReceipt;
+        const launchActionId = intent.payload.launch_action_id;
+        if (
+          receipt.outcome !== "failed" &&
+          typeof launchActionId === "string" &&
+          jobStateIsTerminal(receipt.observed_state)
+        )
+          terminalLaunchIds.add(launchActionId);
+      }
+
+      let released = 0;
+      const replacementActions = new Set<string>();
+      for (const action of actions) {
+        if (action.action_kind !== "job.launch") continue;
+        const intent = JSON.parse(action.intent_body) as ActionIntent;
+        if (intent.payload.worker_role !== "execution") continue;
+        const priorAttemptId = intent.payload.prior_attempt_id;
+        if (typeof priorAttemptId === "string") replacementActions.add(priorAttemptId);
+        const receipt =
+          action.receipt_body === null
+            ? null
+            : (JSON.parse(action.receipt_body) as ActionReceipt);
+        const terminal =
+          receipt !== null &&
+          (receipt.outcome === "failed" ||
+            receipt.observed_state.startsWith("suppressed-") ||
+            terminalLaunchIds.has(action.action_id));
+        if (
+          terminal &&
+          (await this.releaseJobActionSerialized(intent, receipt.created_at))
+        )
+          released += 1;
+      }
+
+      for (const attempt of await this.projection.campaignAttempts(campaignId)) {
+        if (replacementActions.has(attempt.attempt_id)) continue;
+        const reserveId = deterministicId(
+          "budget",
+          campaignId,
+          "replacement",
+          attempt.attempt_id,
+        );
+        const reserve = await this.projection.budget(reserveId);
+        if (
+          reserve?.event_kind === "reserve" &&
+          (await this.releaseBudgetReservationSerialized(
+            campaignId,
+            reserveId,
+            attempt.created_at,
+            reserve.amount_microusd,
+          ))
+        )
+          released += 1;
+      }
+      return released;
+    });
+    this.budgetQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
   }
 
   async reserveReplacement(
@@ -2794,6 +2931,7 @@ export class ControlService {
       if (!campaign.paused) throw new PolicyError("campaign is not paused");
       if (campaign.pending_actions > 0)
         throw new PolicyError("campaign cannot resume while actions are pending");
+      await this.reconcileTerminalJobReservations(campaignId);
       const deployment = profileSpec<DeploymentProfileSpec>(
         lock.profiles,
         "deployment",
