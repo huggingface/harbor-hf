@@ -91,14 +91,19 @@ export class HuggingFaceBucketStore implements ImmutableObjectStore {
   async read(key: string): Promise<Uint8Array> {
     const cached = this.cache.get(key);
     if (cached) return Uint8Array.from(cached);
-    let blob: Blob | null = null;
+    let bytes: Uint8Array | null = null;
     for (let attempt = 0; ; attempt += 1) {
       try {
-        blob = await downloadFile({
+        const blob = await downloadFile({
           repo: this.repo,
           path: key,
           ...this.credentials,
         });
+        if (!blob)
+          throw Object.assign(new Error(`object not found: ${key}`), {
+            code: "ENOENT",
+          });
+        bytes = new Uint8Array(await blob.arrayBuffer());
         break;
       } catch (error) {
         const delay = this.retryDelaysMs[attempt];
@@ -106,9 +111,7 @@ export class HuggingFaceBucketStore implements ImmutableObjectStore {
         await sleep(delay);
       }
     }
-    if (!blob)
-      throw Object.assign(new Error(`object not found: ${key}`), { code: "ENOENT" });
-    const bytes = new Uint8Array(await blob.arrayBuffer());
+    if (!bytes) throw new Error(`object download produced no bytes: ${key}`);
     if (!key.startsWith("evidence/")) this.cache.set(key, bytes);
     return Uint8Array.from(bytes);
   }

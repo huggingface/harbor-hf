@@ -97,6 +97,21 @@ describe("HuggingFaceBucketStore", () => {
     expect(hub.downloadFile).toHaveBeenCalledTimes(3);
   });
 
+  it("retries transient failures while materializing a lazy Blob", async () => {
+    hub.downloadFile
+      .mockResolvedValueOnce({
+        arrayBuffer: async () => {
+          throw new TypeError("fetch failed");
+        },
+      })
+      .mockResolvedValueOnce(new Blob(["payload"]));
+
+    await expect(
+      store({ retryDelaysMs: [0] }).read("control/v1/object.json"),
+    ).resolves.toEqual(new TextEncoder().encode("payload"));
+    expect(hub.downloadFile).toHaveBeenCalledTimes(2);
+  });
+
   it("does not retry non-transient download failures", async () => {
     hub.downloadFile.mockRejectedValue(new Error("authorization failed"));
 
