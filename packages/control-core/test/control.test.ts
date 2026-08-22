@@ -4285,6 +4285,61 @@ describe("control service", () => {
     ).rejects.toThrow("publication is already superseded");
   });
 
+  it("rebuilds supersession after publications regardless of object path order", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    const published: Array<{ campaign_id: string; publication_id: string }> = [];
+    for (const key of ["ordered-supersession-a", "ordered-supersession-b"]) {
+      const campaign = await control.service.submit(submission, key, operator);
+      await settle(reconciler, 8);
+      const publication = await control.projection.campaignPublication(
+        campaign.campaign_id,
+      );
+      if (!publication) throw new Error("publication is missing");
+      published.push({
+        campaign_id: campaign.campaign_id,
+        publication_id: publication.publication_id,
+      });
+    }
+    const [replacement, previous] = published.sort((left, right) =>
+      left.campaign_id.localeCompare(right.campaign_id),
+    );
+    if (!replacement || !previous) throw new Error("test publications are missing");
+    await control.service.campaignAction(
+      replacement.campaign_id,
+      {
+        action: "supersede",
+        publication_id: previous.publication_id,
+        reason: "verify replay order independence",
+        confirmed: true,
+      },
+      "ordered-supersession-action",
+      operator,
+    );
+    await settle(reconciler, 3);
+    expect(replacement.campaign_id < previous.campaign_id).toBe(true);
+    const rebuilt = await Projection.open(`${control.root}/supersession-order.sqlite`);
+
+    await rebuilt.rebuild(control.store);
+
+    expect(await rebuilt.publicationSupersessions()).toMatchObject([
+      {
+        campaign_id: replacement.campaign_id,
+        publication_id: replacement.publication_id,
+        superseded_campaign_id: previous.campaign_id,
+        superseded_publication_id: previous.publication_id,
+      },
+    ]);
+    await rebuilt.close();
+  });
+
   it("recovers publication after a crash between terminal selection and intent", async () => {
     const control = await createTestControl();
     controls.push(control);

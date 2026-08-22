@@ -741,12 +741,20 @@ export class Projection {
         left.key.localeCompare(right.key),
       );
       await this.clear();
+      const supersessions: Array<{
+        entry: ObjectEntry;
+        record: PublicationSupersession;
+      }> = [];
       for (const entry of entries) {
         const bytes = await store.read(entry.key);
         const record = parseRecord(bytes, entry);
         await verifyAttemptEvidence(store, record);
-        await this.apply(entry, record);
+        if (record.kind === "publication.supersession")
+          supersessions.push({ entry, record });
+        else await this.apply(entry, record);
       }
+      for (const deferred of supersessions)
+        await this.apply(deferred.entry, deferred.record);
       await this.verifyInvariants(store);
       this.state = {
         ready: true,
@@ -779,6 +787,10 @@ export class Projection {
         left.key.localeCompare(right.key),
       );
       const seen = new Set<string>();
+      const supersessions: Array<{
+        entry: ObjectEntry;
+        record: PublicationSupersession;
+      }> = [];
       let ingested = 0;
       for (const entry of entries) {
         if (seen.has(entry.key))
@@ -795,9 +807,13 @@ export class Projection {
         const bytes = await store.read(entry.key);
         const record = parseRecord(bytes, entry);
         await verifyAttemptEvidence(store, record);
-        await this.apply(entry, record);
+        if (record.kind === "publication.supersession")
+          supersessions.push({ entry, record });
+        else await this.apply(entry, record);
         ingested += 1;
       }
+      for (const deferred of supersessions)
+        await this.apply(deferred.entry, deferred.record);
       await this.verifyInvariants(store);
       this.state = {
         ...this.state,
