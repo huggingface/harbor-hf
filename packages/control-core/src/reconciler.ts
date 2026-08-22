@@ -22,6 +22,7 @@ import {
   executionTaskBatches,
   PolicyError,
   type ControlService,
+  type JobBudgetReservation,
 } from "./service.js";
 
 export interface ExternalActionResult {
@@ -496,7 +497,10 @@ export class Reconciler {
         await this.admit(intent, receipt);
         break;
       case "job.launch":
-        if (receipt.observed_state.startsWith("suppressed-")) break;
+        if (receipt.observed_state.startsWith("suppressed-")) {
+          await this.releaseSuppressedExecutionReservation(intent, receipt.created_at);
+          break;
+        }
         if (receipt.outcome === "failed") {
           if (intent.payload.worker_role === "preparation")
             await this.handlePreparationTerminal(intent, receipt, "ERROR");
@@ -519,13 +523,26 @@ export class Reconciler {
             ? intent.payload.task_limit
             : tasks.length;
         const taskIds = tasks.slice(0, limit).map((task) => task.task_id);
-        if (taskIds.length > 0)
-          await this.launchExecution(
-            lock,
-            receipt.created_at,
-            intent.generation,
-            taskIds,
-          );
+        if (taskIds.length > 0) {
+          if (await this.projection.campaignPaused(intent.campaign_id)) {
+            await this.service.releaseJobActions(
+              intent.campaign_id,
+              this.executionReservations(
+                lock,
+                taskIds,
+                intent.generation,
+                receipt.created_at,
+              ),
+            );
+          } else {
+            await this.launchExecution(
+              lock,
+              receipt.created_at,
+              intent.generation,
+              taskIds,
+            );
+          }
+        }
         break;
       }
       case "campaign.pause":
@@ -654,6 +671,51 @@ export class Reconciler {
       },
     );
     await this.service.writeAction(intent);
+  }
+
+  private executionReservations(
+    lock: CampaignLock,
+    taskIds: readonly string[],
+    generation: number,
+    createdAt: string,
+  ): JobBudgetReservation[] {
+    const deployment = profile(lock, "deployment") as DeploymentProfileSpec;
+    if (deployment.route !== "hf_job")
+      throw new PolicyError("imported deployments cannot reserve execution Jobs");
+    const maximumTasks = deployment.worker_max_tasks_per_job ?? taskIds.length;
+    const policy = profile(lock, "launch_policy");
+    const amountMicrousd = profileScalar<number>(
+      policy,
+      "reservation_microusd",
+      "number",
+    );
+    return executionTaskBatches(taskIds, maximumTasks).map((batch) => ({
+      category: executionReservationCategory(batch),
+      generation,
+      created_at: createdAt,
+      amount_microusd: amountMicrousd,
+    }));
+  }
+
+  private async releaseSuppressedExecutionReservation(
+    intent: ActionIntent,
+    createdAt: string,
+  ): Promise<void> {
+    if (intent.payload.worker_role !== "execution") return;
+    const taskIds = stringArray(intent.payload, "task_ids");
+    const reservation = scalar<number>(
+      intent.payload,
+      "reservation_microusd",
+      "number",
+    );
+    await this.service.releaseJobActions(intent.campaign_id, [
+      {
+        category: executionReservationCategory(taskIds),
+        generation: intent.generation,
+        created_at: createdAt,
+        amount_microusd: reservation,
+      },
+    ]);
   }
 
   private async launchExecution(

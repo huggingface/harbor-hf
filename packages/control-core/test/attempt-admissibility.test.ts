@@ -49,6 +49,12 @@ describe("attempt admissibility", () => {
     });
   });
 
+  it("ignores token metrics that the locked policy does not require", () => {
+    expect(
+      attemptAdmissibility({ outcome: "complete", metrics: { input_tokens: 0 } }, []),
+    ).toEqual({ admissible: true, reason: null });
+  });
+
   it("rejects infrastructure and cancelled outcomes", () => {
     expect(
       attemptAdmissibility(

@@ -320,7 +320,8 @@ function profileString(
 }
 
 const localPublicationSections = [
-  "tasks",
+  "runs",
+  "trials",
   "executions",
   "metrics",
   "artifacts",

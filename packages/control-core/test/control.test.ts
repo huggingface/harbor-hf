@@ -931,6 +931,25 @@ describe("control service", () => {
     await control.service.campaignAction(
       result.campaign_id,
       { action: "resume", confirmed: true },
+      "resume-then-pause-key",
+      operator,
+    );
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "pause", confirmed: true },
+      "pause-before-resume-dispatch-key",
+      operator,
+    );
+    await settle(reconciler, 5);
+    expect(launches).toEqual([["task-001"]]);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "paused",
+      reserved_microusd: 6,
+      pending_actions: 0,
+    });
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "resume", confirmed: true },
       "resume-remaining-key",
       operator,
     );

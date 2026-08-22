@@ -2339,6 +2339,65 @@ export class ControlService {
     return true;
   }
 
+  async releaseJobActions(
+    campaignId: string,
+    reservations: readonly JobBudgetReservation[],
+  ): Promise<void> {
+    const operation = this.budgetQueue.then(async () => {
+      for (const reservation of reservations) {
+        if (reservation.amount_microusd <= 0) continue;
+        const reserveId = deterministicId(
+          "budget",
+          campaignId,
+          reservation.category,
+          String(reservation.generation),
+        );
+        const existingReserve = await this.projection.budget(reserveId);
+        if (!existingReserve) continue;
+        if (
+          existingReserve.campaign_id !== campaignId ||
+          existingReserve.event_kind !== "reserve" ||
+          existingReserve.amount_microusd !== reservation.amount_microusd
+        )
+          throw new IdempotencyConflictError(
+            "Job budget release does not match its reservation",
+          );
+        const releaseId = deterministicId(
+          "budget",
+          campaignId,
+          "job-release",
+          reserveId,
+        );
+        const existingRelease = await this.projection.budget(releaseId);
+        if (existingRelease) {
+          if (
+            existingRelease.event_kind !== "release" ||
+            existingRelease.amount_microusd !== reservation.amount_microusd
+          )
+            throw new IdempotencyConflictError(
+              "Job budget release conflicts with durable state",
+            );
+          continue;
+        }
+        await this.append({
+          schema_version: "v1",
+          kind: "budget.event",
+          record_id: releaseId,
+          created_at: reservation.created_at,
+          actor: serviceActor(),
+          campaign_id: campaignId,
+          event_kind: "release",
+          amount_microusd: reservation.amount_microusd,
+        });
+      }
+    });
+    this.budgetQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    await operation;
+  }
+
   async reserveReplacement(
     campaignId: string,
     priorAttemptId: string,

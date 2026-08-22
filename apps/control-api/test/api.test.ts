@@ -1143,6 +1143,7 @@ describe("control API", () => {
         `sha256:${"2".repeat(64)}`,
         `sha256:${"3".repeat(64)}`,
         `sha256:${"4".repeat(64)}`,
+        `sha256:${"5".repeat(64)}`,
       ],
       catalog_digest: catalogDigest,
       error_code: null,

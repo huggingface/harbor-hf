@@ -12,7 +12,14 @@ export interface AttemptAdmissibility {
 export function requiredPositiveMetrics(lock: CampaignLock): readonly string[] {
   const policy = lock.profiles.find((profile) => profile.kind === "launch_policy")
     ?.spec as LaunchPolicySpec | undefined;
-  return policy?.required_positive_metrics ?? [];
+  if (policy?.required_positive_metrics) return policy.required_positive_metrics;
+  const harness = lock.profiles.find((profile) => profile.kind === "harness")?.spec as
+    | { required_evidence?: unknown }
+    | undefined;
+  return Array.isArray(harness?.required_evidence) &&
+    harness.required_evidence.includes("provider-usage")
+    ? ["input_tokens", "output_tokens"]
+    : [];
 }
 
 export function attemptAdmissibility(
@@ -24,12 +31,7 @@ export function attemptAdmissibility(
   if (attempt.outcome === "cancelled")
     return { admissible: false, reason: "cancelled outcome" };
 
-  const names = new Set(requiredMetrics);
-  if ("input_tokens" in attempt.metrics || "output_tokens" in attempt.metrics) {
-    names.add("input_tokens");
-    names.add("output_tokens");
-  }
-  for (const name of names) {
+  for (const name of new Set(requiredMetrics)) {
     const value = attempt.metrics[name];
     if (typeof value !== "number")
       return { admissible: false, reason: `missing required metric: ${name}` };
