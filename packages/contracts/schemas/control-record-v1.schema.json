@@ -52,6 +52,9 @@
       "$ref": "#/$defs/TerminalSelection"
     },
     {
+      "$ref": "#/$defs/TaskExhaustion"
+    },
+    {
       "$ref": "#/$defs/BudgetEvent"
     },
     {
@@ -59,6 +62,9 @@
     },
     {
       "$ref": "#/$defs/PublicationReceipt"
+    },
+    {
+      "$ref": "#/$defs/PublicationSupersession"
     },
     {
       "$ref": "#/$defs/MigrationRecord"
@@ -372,6 +378,9 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 1000000000000
+            },
+            "start_paused": {
+              "type": "boolean"
             }
           }
         }
@@ -439,6 +448,9 @@
             },
             "source_revision": {
               "$ref": "#/$defs/Digest"
+            },
+            "start_paused": {
+              "type": "boolean"
             }
           }
         }
@@ -502,7 +514,10 @@
                 "sandbox.read",
                 "sandbox.close",
                 "publication.publish",
-                "campaign.cancel"
+                "campaign.cancel",
+                "campaign.pause",
+                "campaign.resume",
+                "publication.supersede"
               ]
             },
             "generation": {
@@ -598,19 +613,35 @@
             "previous_grant_id"
           ],
           "properties": {
-            "schema_version": { "const": "v1" },
-            "kind": { "const": "sandbox.admission" },
-            "record_id": { "$ref": "#/$defs/Id" },
-            "created_at": { "$ref": "#/$defs/Timestamp" },
-            "actor": { "$ref": "#/$defs/Actor" },
-            "action_id": { "$ref": "#/$defs/Id" },
-            "campaign_id": { "$ref": "#/$defs/Id" },
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "sandbox.admission"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "action_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
             "namespace": {
               "type": "string",
               "minLength": 1,
               "maxLength": 160
             },
-            "capacity_profile_id": { "$ref": "#/$defs/Digest" },
+            "capacity_profile_id": {
+              "$ref": "#/$defs/Digest"
+            },
             "hardware": {
               "type": "string",
               "minLength": 1,
@@ -626,9 +657,18 @@
               "minimum": 0,
               "maximum": 1024
             },
-            "refill_cursor_at": { "$ref": "#/$defs/Timestamp" },
+            "refill_cursor_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
             "previous_grant_id": {
-              "oneOf": [{ "$ref": "#/$defs/Id" }, { "type": "null" }]
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/Id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         }
@@ -655,18 +695,36 @@
             "evidence_record_id"
           ],
           "properties": {
-            "schema_version": { "const": "v1" },
-            "kind": { "const": "sandbox.capacity-release" },
-            "record_id": { "$ref": "#/$defs/Id" },
-            "created_at": { "$ref": "#/$defs/Timestamp" },
-            "actor": { "$ref": "#/$defs/Actor" },
-            "action_id": { "$ref": "#/$defs/Id" },
-            "campaign_id": { "$ref": "#/$defs/Id" },
-            "grant_id": { "$ref": "#/$defs/Id" },
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "sandbox.capacity-release"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "action_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "grant_id": {
+              "$ref": "#/$defs/Id"
+            },
             "release_reason": {
               "enum": ["create_failed", "sandbox_closed"]
             },
-            "evidence_record_id": { "$ref": "#/$defs/Id" }
+            "evidence_record_id": {
+              "$ref": "#/$defs/Id"
+            }
           }
         }
       ]
@@ -1919,6 +1977,15 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 16
+        },
+        "required_positive_metrics": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,79}$"
+          }
         }
       }
     },
@@ -2186,6 +2253,23 @@
           "type": "string",
           "minLength": 7,
           "maxLength": 160
+        },
+        "task_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "publication_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "required_positive_metrics": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,79}$"
+          }
         }
       }
     },
@@ -2538,14 +2622,30 @@
             "spec"
           ],
           "properties": {
-            "schema_version": { "const": "v1" },
-            "kind": { "const": "profile.object" },
-            "record_id": { "$ref": "#/$defs/Id" },
-            "created_at": { "$ref": "#/$defs/Timestamp" },
-            "actor": { "$ref": "#/$defs/Actor" },
-            "profile_kind": { "const": "capacity" },
-            "name": { "$ref": "#/$defs/Id" },
-            "spec": { "$ref": "#/$defs/CapacityProfileSpec" }
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "capacity"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/CapacityProfileSpec"
+            }
           }
         }
       ]
@@ -2997,6 +3097,122 @@
               "inference_timeout_seconds": {},
               "inference_max_output_tokens": {},
               "root_bootstrap_command": {}
+            }
+          }
+        }
+      ]
+    },
+    "TaskExhaustion": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "task_id",
+            "last_attempt_id",
+            "attempt_count",
+            "reason"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "task.exhaustion"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "task_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "last_attempt_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "attempt_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          }
+        }
+      ]
+    },
+    "PublicationSupersession": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "campaign_id",
+            "publication_id",
+            "superseded_campaign_id",
+            "superseded_publication_id",
+            "reason"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "publication.supersession"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "publication_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "superseded_campaign_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "superseded_publication_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
             }
           }
         }

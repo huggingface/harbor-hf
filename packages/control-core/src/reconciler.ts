@@ -13,6 +13,7 @@ import {
   deterministicId,
   sha256,
 } from "@harbor-hf/contracts";
+import { attemptAdmissibility } from "./attempt-admissibility.js";
 import { preparationRequired } from "./profiles.js";
 import type { ResultPublisher } from "./publication.js";
 import type { Projection } from "./projection.js";
@@ -114,6 +115,14 @@ function optionalHourlyCost(
   if (!("active_hourly_cost_microusd" in spec)) return undefined;
   const value = spec.active_hourly_cost_microusd;
   return typeof value === "number" ? value : undefined;
+}
+
+function optionalProfileStrings(spec: Record<string, unknown>, key: string): string[] {
+  const value = spec[key];
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string"))
+    throw new PolicyError(`profile ${key} must be an array of strings`);
+  return value;
 }
 
 function profileStrings(
@@ -285,19 +294,49 @@ export class Reconciler {
         observed_state: receipt.publication_state,
         resource_id: receipt.publication_id,
       };
+    } else if (intent.action_kind === "publication.supersede") {
+      const current = await this.projection.campaignPublication(intent.campaign_id);
+      const previousId = intent.payload.publication_id;
+      const previous =
+        typeof previousId === "string"
+          ? await this.projection.publication(previousId)
+          : null;
+      if (!current || !previous || typeof previousId !== "string")
+        throw new PolicyError("supersession publication is missing");
+      const record = await this.service.writePublicationSupersession(
+        intent.campaign_id,
+        current.publication_id,
+        previous.campaign_id,
+        previousId,
+        typeof intent.payload.reason === "string"
+          ? intent.payload.reason
+          : "replacement publication validated",
+      );
+      result = {
+        outcome: "completed",
+        observed_state: "superseded",
+        resource_id: record.record_id,
+      };
     } else if (intent.action_kind === "campaign.cancel") {
       result = { outcome: "completed", observed_state: "cancelled" };
+    } else if (intent.action_kind === "campaign.pause") {
+      result = { outcome: "completed", observed_state: "paused" };
+    } else if (intent.action_kind === "campaign.resume") {
+      result = { outcome: "completed", observed_state: "running" };
     } else if (intent.action_kind === "job.launch") {
       const cancelled = await this.projection.hasCampaignAction(
         intent.campaign_id,
         "campaign.cancel",
       );
       const terminal = await this.allActionTasksTerminal(intent);
-      const suppression: "cancelled" | "terminal" | null = cancelled
+      const paused = await this.projection.campaignPaused(intent.campaign_id);
+      const suppression: "cancelled" | "paused" | "terminal" | null = cancelled
         ? "cancelled"
-        : terminal
-          ? "terminal"
-          : null;
+        : paused
+          ? "paused"
+          : terminal
+            ? "terminal"
+            : null;
       const dispatch = suppression
         ? await this.projection.actionDispatch(intent.action_id)
         : null;
@@ -407,7 +446,7 @@ export class Reconciler {
 
   private async executeJobLaunch(
     intent: ActionIntent,
-    suppression: "cancelled" | "terminal" | null = null,
+    suppression: "cancelled" | "paused" | "terminal" | null = null,
   ): Promise<ExternalActionResult | null> {
     const dispatch = await this.projection.actionDispatch(intent.action_id);
     if (dispatch) {
@@ -464,6 +503,28 @@ export class Reconciler {
         break;
       case "job.cancel":
         await this.continueCancellation(intent.campaign_id);
+        break;
+      case "campaign.resume": {
+        const lock = await this.requiredLock(intent.campaign_id);
+        const tasks = (await this.projection.tasks(intent.campaign_id)).filter(
+          (task) => !task.terminal_outcome,
+        );
+        const limit =
+          typeof intent.payload.task_limit === "number"
+            ? intent.payload.task_limit
+            : tasks.length;
+        const taskIds = tasks.slice(0, limit).map((task) => task.task_id);
+        if (taskIds.length > 0)
+          await this.launchExecution(
+            lock,
+            receipt.created_at,
+            intent.generation,
+            taskIds,
+          );
+        break;
+      }
+      case "campaign.pause":
+      case "publication.supersede":
         break;
       case "endpoint.resume":
       case "endpoint.pause":
@@ -683,6 +744,10 @@ export class Reconciler {
           "max_infrastructure_attempts",
           "number",
         ),
+        required_positive_metrics: optionalProfileStrings(
+          policy,
+          "required_positive_metrics",
+        ),
         reservation_microusd: reservation,
         trusted_worker: deployment.trusted_worker,
         ...(hourly !== undefined ? { active_hourly_cost_microusd: hourly } : {}),
@@ -778,10 +843,12 @@ export class Reconciler {
         intent.campaign_id,
         "campaign.cancel",
       );
+      const paused = await this.projection.campaignPaused(intent.campaign_id);
       if (
         !successful &&
         !workerAttemptsPresent &&
         !cancelling &&
+        !paused &&
         typeof deadline !== "string" &&
         graceMs > 0
       ) {
@@ -825,7 +892,8 @@ export class Reconciler {
       const lock = await this.requiredLock(intent.campaign_id);
       if (prepared.campaign_lock_digest !== sha256(canonicalJson(lock)))
         throw new PolicyError("prepared job does not match the campaign lock");
-      await this.launchExecution(lock, receipt.created_at, 0);
+      if (!(await this.projection.campaignPaused(intent.campaign_id)))
+        await this.launchExecution(lock, receipt.created_at, 0);
       return;
     }
     const graceMs = this.options.worker_receipt_grace_ms ?? 0;
@@ -890,6 +958,7 @@ export class Reconciler {
   ): Promise<void> {
     const tasks = stringArray(intent.payload, "task_ids");
     const known = await this.projection.campaignAttempts(intent.campaign_id);
+    const paused = await this.projection.campaignPaused(intent.campaign_id);
     for (const taskId of tasks) {
       const task = await this.projection.task(intent.campaign_id, taskId);
       if (!task || task.task.terminal_outcome) continue;
@@ -908,6 +977,7 @@ export class Reconciler {
         await this.finishAttempt(parsed, intent);
         continue;
       }
+      if (paused) continue;
       const attemptId = deterministicId(
         "attempt",
         intent.campaign_id,
@@ -953,83 +1023,100 @@ export class Reconciler {
     attempt: AttemptReceipt,
     source: ActionIntent,
   ): Promise<void> {
-    if (attempt.outcome === "infrastructure" && attempt.replacement_eligible) {
-      await this.service.withInfrastructureRetryAdmission(async () => {
-        if (
-          await this.projection.retryActionForAttempt(
-            attempt.campaign_id,
-            attempt.attempt_id,
-          )
-        )
-          return;
-        if (await this.ensureSandboxCleanup(attempt.campaign_id, attempt.task_id)) {
-          await this.deferRetryUntilSandboxCleanup(source);
-          return;
-        }
-        const settlement = await this.service.settleClosedSandboxAmbiguities(
-          attempt.campaign_id,
-          attempt.task_id,
-        );
-        const unresolved = await this.projection.pendingDispatchedSandboxExecActions(
-          attempt.campaign_id,
-          attempt.task_id,
-        );
-        if (settlement.unresolved > 0 || unresolved.length > 0) return;
-        const attempts = (
-          await this.projection.campaignAttempts(attempt.campaign_id)
-        ).filter((item) => item.task_id === attempt.task_id);
-        const maxAttempts = scalar<number>(
-          source.payload,
-          "max_infrastructure_attempts",
-          "number",
-        );
-        if (attempts.length < maxAttempts) {
-          const reservation = scalar<number>(
-            source.payload,
-            "reservation_microusd",
-            "number",
-          );
-          if (
-            !(await this.service.reserveReplacement(
-              attempt.campaign_id,
-              attempt.attempt_id,
-              attempt.created_at,
-              reservation,
-            ))
-          ) {
-            await this.service.selectTerminal(
-              attempt,
-              "replacement Job would exceed the campaign ceiling",
-            );
-            return;
-          }
-          const retry = this.service.actionIntent(
-            attempt.campaign_id,
-            "job.launch",
-            attempt.task_id,
-            attempts.length,
-            {
-              ...source.payload,
-              task_ids: [attempt.task_id],
-              prior_attempt_id: attempt.attempt_id,
-            },
-          );
-          await this.service.writeAction(retry);
-          return;
-        }
-        await this.service.selectTerminal(
-          attempt,
-          "infrastructure retry budget exhausted",
-        );
-      });
+    if (attempt.outcome === "cancelled") {
+      await this.service.selectTerminal(attempt, "operator cancellation");
       return;
     }
-    await this.service.selectTerminal(
-      attempt,
-      attempt.outcome === "infrastructure"
-        ? "non-retryable infrastructure outcome"
-        : "valid terminal worker outcome",
-    );
+    const required = Array.isArray(source.payload.required_positive_metrics)
+      ? source.payload.required_positive_metrics
+      : [];
+    const validity = attemptAdmissibility(attempt, required);
+    if (source.payload.worker_role === "preparation") {
+      const attempts = (
+        await this.projection.campaignAttempts(attempt.campaign_id)
+      ).filter((item) => item.task_id === attempt.task_id);
+      await this.service.exhaustTask(
+        attempt,
+        `campaign preparation exhausted: ${validity.reason}`,
+        attempts.length,
+      );
+      return;
+    }
+    if (validity.admissible) {
+      await this.service.selectTerminal(attempt, "valid terminal worker outcome");
+      return;
+    }
+
+    await this.service.withInfrastructureRetryAdmission(async () => {
+      if (
+        await this.projection.retryActionForAttempt(
+          attempt.campaign_id,
+          attempt.attempt_id,
+        )
+      )
+        return;
+      if (await this.ensureSandboxCleanup(attempt.campaign_id, attempt.task_id)) {
+        await this.deferRetryUntilSandboxCleanup(source);
+        return;
+      }
+      const settlement = await this.service.settleClosedSandboxAmbiguities(
+        attempt.campaign_id,
+        attempt.task_id,
+      );
+      const unresolved = await this.projection.pendingDispatchedSandboxExecActions(
+        attempt.campaign_id,
+        attempt.task_id,
+      );
+      if (settlement.unresolved > 0 || unresolved.length > 0) return;
+      const attempts = (
+        await this.projection.campaignAttempts(attempt.campaign_id)
+      ).filter((item) => item.task_id === attempt.task_id);
+      const maxAttempts = scalar<number>(
+        source.payload,
+        "max_infrastructure_attempts",
+        "number",
+      );
+      if (attempts.length >= maxAttempts) {
+        await this.service.exhaustTask(
+          attempt,
+          `attempt limit exhausted: ${validity.reason}`,
+          attempts.length,
+        );
+        return;
+      }
+      const reservation = scalar<number>(
+        source.payload,
+        "reservation_microusd",
+        "number",
+      );
+      if (
+        !(await this.service.reserveReplacement(
+          attempt.campaign_id,
+          attempt.attempt_id,
+          attempt.created_at,
+          reservation,
+        ))
+      ) {
+        await this.service.exhaustTask(
+          attempt,
+          `campaign ceiling blocks replacement: ${validity.reason}`,
+          attempts.length,
+        );
+        return;
+      }
+      const retry = this.service.actionIntent(
+        attempt.campaign_id,
+        "job.launch",
+        attempt.task_id,
+        attempts.length,
+        {
+          ...source.payload,
+          task_ids: [attempt.task_id],
+          prior_attempt_id: attempt.attempt_id,
+        },
+      );
+      await this.service.writeAction(retry);
+    });
   }
 
   private async ensureSandboxCleanup(
@@ -1290,6 +1377,11 @@ export class Reconciler {
     if (await this.ensureEndpointCleanup(campaignId)) return true;
     const refreshed = await this.projection.campaign(campaignId);
     if (!refreshed || refreshed.pending_actions > 0 || refreshed.cleanup_pending)
+      return false;
+    if (
+      refreshed.admissible_tasks !== refreshed.total_tasks ||
+      refreshed.exhausted_tasks > 0
+    )
       return false;
     if (await this.projection.campaignPublication(campaignId)) return false;
     if (await this.projection.hasCampaignAction(campaignId, "publication.publish"))

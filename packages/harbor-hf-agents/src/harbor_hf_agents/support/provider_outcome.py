@@ -77,7 +77,7 @@ def _has_valid_usage(message: Mapping[str, object]) -> bool:
         return False
     for key in ("input", "output"):
         value = usage.get(key)
-        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
             return False
     return True
 

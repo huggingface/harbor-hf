@@ -6,6 +6,10 @@ import type {
 } from "@harbor-hf/contracts";
 import { canonicalJson, deterministicId, sha256 } from "@harbor-hf/contracts";
 import { type BasicType, parquetWriteBuffer } from "hyparquet-writer";
+import {
+  attemptAdmissibility,
+  requiredPositiveMetrics,
+} from "./attempt-admissibility.js";
 import { refreshLeaderboardSnapshot } from "./leaderboard.js";
 import type { Projection } from "./projection.js";
 import type { ControlService } from "./service.js";
@@ -53,7 +57,11 @@ export class ResultPublisher {
     if (
       !campaign ||
       campaign.terminal_tasks !== campaign.total_tasks ||
-      campaign.total_tasks === 0
+      campaign.admissible_tasks !== campaign.total_tasks ||
+      campaign.exhausted_tasks > 0 ||
+      campaign.total_tasks === 0 ||
+      campaign.pending_actions > 1 ||
+      campaign.cleanup_pending
     ) {
       throw new Error("campaign is not ready for publication");
     }
@@ -65,13 +73,26 @@ export class ResultPublisher {
         JSON.parse(attempt.body) as AttemptReceipt,
       ]),
     );
-    const selectedAttempts = tasks
-      .map((task) =>
-        task.selected_attempt_id
-          ? attemptsById.get(task.selected_attempt_id)
-          : undefined,
+    const lock = await this.projection.campaignLock(campaignId);
+    if (!lock) throw new Error("campaign lock is missing for publication");
+    const required = requiredPositiveMetrics(lock);
+    const selectedAttempts = tasks.map((task) => {
+      if (!task.selected_attempt_id)
+        throw new Error(`task has no selected attempt: ${task.task_id}`);
+      const attempt = attemptsById.get(task.selected_attempt_id);
+      if (
+        !attempt ||
+        attempt.campaign_id !== campaignId ||
+        attempt.task_id !== task.task_id
       )
-      .filter((attempt): attempt is AttemptReceipt => Boolean(attempt));
+        throw new Error(`selected attempt does not match task: ${task.task_id}`);
+      const validity = attemptAdmissibility(attempt, required);
+      if (!validity.admissible)
+        throw new Error(`selected attempt is not admissible: ${task.task_id}`);
+      return attempt;
+    });
+    if (selectedAttempts.length !== campaign.total_tasks)
+      throw new Error("publication selection coverage is incomplete");
     const metricRows = selectedAttempts.flatMap((attempt) =>
       Object.entries(attempt.metrics).map(([name, value]) => ({
         owner_type: "task",
@@ -211,8 +232,6 @@ export class ResultPublisher {
       ]),
     ]);
     const publicationId = deterministicId("publication", campaignId);
-    const lock = await this.projection.campaignLock(campaignId);
-    if (!lock) throw new Error("campaign lock is missing during publication");
     const resolvedProfile = (kind: string) =>
       lock.profiles.find((profile) => profile.kind === kind);
     const profileValue = (kind: string, key: string): string | null => {
@@ -290,11 +309,6 @@ export class ResultPublisher {
     };
     const catalogBytes = new TextEncoder().encode(canonicalJson(catalog));
     const catalogDigest = sha256(catalogBytes);
-    await this.store.create(
-      `results/schema=v1/catalog/records/${catalog.record_id}.json`,
-      catalogBytes,
-    );
-    await refreshLeaderboardSnapshot(this.store, this.projection);
     const receipt: PublicationReceipt = {
       schema_version: "v1",
       kind: "publication.receipt",
@@ -309,11 +323,21 @@ export class ResultPublisher {
       error_code: null,
     };
     const receiptBytes = new TextEncoder().encode(canonicalJson(receipt));
-    await this.store.create(
-      `results/schema=v1/publications/${publicationId}/receipt.json`,
-      receiptBytes,
-    );
+    const receiptPath = `results/schema=v1/publications/${publicationId}/receipt.json`;
+    await this.store.create(receiptPath, receiptBytes);
+    for (const object of objects) {
+      const stored = await this.store.read(object.key);
+      if (sha256(stored) !== object.digest)
+        throw new Error(`published object readback failed: ${object.key}`);
+    }
+    if (sha256(await this.store.read(receiptPath)) !== sha256(receiptBytes))
+      throw new Error("publication receipt readback failed");
+    const catalogPath = `results/schema=v1/catalog/records/${catalog.record_id}.json`;
+    await this.store.create(catalogPath, catalogBytes);
+    if (sha256(await this.store.read(catalogPath)) !== catalogDigest)
+      throw new Error("publication catalog readback failed");
     await this.service.writePublication(receipt);
+    await refreshLeaderboardSnapshot(this.store, this.projection);
     return receipt;
   }
 }

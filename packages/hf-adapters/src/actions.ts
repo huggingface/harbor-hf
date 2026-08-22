@@ -186,7 +186,10 @@ export class HuggingFaceActions implements ExternalActionPort {
             "Sandbox data action requires an idempotent worker retry",
           );
         case "campaign.cancel":
+        case "campaign.pause":
+        case "campaign.resume":
         case "publication.publish":
+        case "publication.supersede":
           return { outcome: "completed", observed_state: "handled_locally" };
       }
     } catch (error) {

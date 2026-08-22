@@ -321,11 +321,15 @@ export interface paths {
                                 observed_microusd: number;
                                 total_tasks: number;
                                 terminal_tasks: number;
+                                admissible_tasks: number;
+                                invalid_selected_tasks: number;
+                                exhausted_tasks: number;
                                 successful_tasks: number;
                                 pending_actions: number;
                                 publication_status: string | null;
                                 cleanup_pending: boolean;
                                 cancellation_requested: boolean;
+                                paused: boolean;
                             }[];
                             next_cursor: string | null;
                         };
@@ -351,6 +355,8 @@ export interface paths {
                         launch_policy: string;
                         ceiling_microusd: number;
                         confirmed: boolean;
+                        /** @default false */
+                        start_paused?: boolean;
                     };
                 };
             };
@@ -411,11 +417,15 @@ export interface paths {
                             observed_microusd: number;
                             total_tasks: number;
                             terminal_tasks: number;
+                            admissible_tasks: number;
+                            invalid_selected_tasks: number;
+                            exhausted_tasks: number;
                             successful_tasks: number;
                             pending_actions: number;
                             publication_status: string | null;
                             cleanup_pending: boolean;
                             cancellation_requested: boolean;
+                            paused: boolean;
                         };
                     };
                 };
@@ -1086,6 +1096,13 @@ export interface paths {
                                 /** Format: date-time */
                                 created_at: string;
                             }[];
+                            exhaustion: null | {
+                                last_attempt_id: string;
+                                attempt_count: number;
+                                reason: string;
+                                /** Format: date-time */
+                                created_at: string;
+                            };
                         };
                     };
                 };
@@ -1255,10 +1272,12 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** @enum {unknown} */
-                        action: "cancel" | "retry_infrastructure" | "publish" | "pause_endpoint";
+                        action: "cancel" | "retry_infrastructure" | "publish" | "pause_endpoint" | "pause" | "resume" | "supersede";
                         task_id?: string | null;
                         reason?: string | null;
                         confirmed: boolean;
+                        task_limit?: number | null;
+                        publication_id?: string | null;
                     };
                 };
             };
@@ -1670,6 +1689,7 @@ export interface paths {
                                 agent?: string | null;
                                 source_revision?: string | null;
                                 catalog_source_digest?: string | null;
+                                superseded_by_publication_id?: string | null;
                                 profile_ids?: {
                                     [key: string]: string;
                                 };
@@ -1768,6 +1788,7 @@ export interface paths {
                             agent?: string | null;
                             source_revision?: string | null;
                             catalog_source_digest?: string | null;
+                            superseded_by_publication_id?: string | null;
                             profile_ids?: {
                                 [key: string]: string;
                             };

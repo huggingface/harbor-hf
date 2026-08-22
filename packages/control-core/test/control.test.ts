@@ -804,7 +804,7 @@ describe("control service", () => {
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       status: "cancelled",
       terminal_tasks: 1,
-      publication_status: "published",
+      publication_status: null,
     });
   });
 
@@ -869,6 +869,76 @@ describe("control service", () => {
       status: "cancelled",
       terminal_tasks: 1,
       pending_actions: 0,
+      publication_status: null,
+    });
+  });
+
+  it("starts paused and resumes only unresolved tasks", async () => {
+    const control = await createTestControl(3);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, start_paused: true },
+      "paused-campaign-key",
+      operator,
+    );
+    const launches: string[][] = [];
+    const noop = new NoopActions();
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.launch")
+          launches.push([...(intent.payload.task_ids ?? [])]);
+        return noop.execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 6);
+    expect(launches).toEqual([]);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "paused",
+      paused: true,
+      terminal_tasks: 0,
+    });
+
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "resume", task_limit: 1, confirmed: true },
+      "resume-one-task-key",
+      operator,
+    );
+    await settle(reconciler, 8);
+    expect(launches).toEqual([["task-001"]]);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      terminal_tasks: 1,
+      paused: false,
+    });
+
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "pause", confirmed: true },
+      "pause-after-canary-key",
+      operator,
+    );
+    await settle(reconciler, 3);
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "resume", confirmed: true },
+      "resume-remaining-key",
+      operator,
+    );
+    await settle(reconciler, 10);
+
+    expect(launches).toEqual([["task-001"], ["task-002", "task-003"]]);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      terminal_tasks: 3,
+      admissible_tasks: 3,
       publication_status: "published",
     });
   });
@@ -1668,10 +1738,91 @@ describe("control service", () => {
       [{ outcome: "infrastructure", replacement_eligible: 1 }],
     );
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
-      status: "completed",
+      status: "failed",
       terminal_tasks: 1,
-      publication_status: "published",
+      exhausted_tasks: 1,
+      publication_status: null,
     });
+  });
+
+  it("retries zero-token outcomes and fails closed after the attempt limit", async () => {
+    const control = await createTestControl(1, 2, 0, false, "forbidden", undefined, [
+      "input_tokens",
+      "output_tokens",
+    ]);
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "zero-token-attempts-key",
+      operator,
+    );
+    let launches = 0;
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.launch") {
+          launches += 1;
+          return {
+            outcome: "created",
+            observed_state: "RUNNING",
+            resource_id: `job-zero-${launches}`,
+          };
+        }
+        if (intent.action_kind === "job.observe") {
+          const launchActionId = String(intent.payload.launch_action_id);
+          if (
+            !(await control.projection.attemptForActionTask(launchActionId, "task-001"))
+          ) {
+            const evidence = await putEvidenceReference(
+              control,
+              `zero-token-evidence-${launches}`,
+            );
+            await control.service.attempt({
+              campaign_id: result.campaign_id,
+              task_id: "task-001",
+              attempt_id: `zero-token-attempt-${launches}`,
+              action_id: launchActionId,
+              outcome: launches === 1 ? "agent" : "benchmark_timeout",
+              replacement_eligible: false,
+              ...evidence,
+              cost_microusd: 0,
+              metrics: { input_tokens: 0, output_tokens: 0 },
+              completed_at: `2026-08-16T00:00:0${launches}.000Z`,
+            });
+          }
+          return {
+            outcome: "completed",
+            observed_state: "COMPLETED",
+            resource_id: `job-zero-${launches}`,
+          };
+        }
+        return new NoopActions().execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 20);
+
+    expect(launches).toBe(2);
+    expect(await control.projection.campaignAttempts(result.campaign_id)).toHaveLength(
+      2,
+    );
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "failed",
+      terminal_tasks: 1,
+      admissible_tasks: 0,
+      invalid_selected_tasks: 0,
+      exhausted_tasks: 1,
+      publication_status: null,
+    });
+    expect(
+      await control.projection.taskExhaustion(result.campaign_id, "task-001"),
+    ).toMatchObject({ attempt_count: 2 });
   });
 
   it("closes and settles Sandbox commands before automatic retry", async () => {
@@ -3384,9 +3535,10 @@ describe("control service", () => {
 
     expect(launches).toBe(1);
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
-      status: "completed",
+      status: "failed",
       reserved_microusd: 6,
       terminal_tasks: 1,
+      exhausted_tasks: 1,
     });
   });
 
@@ -3686,6 +3838,64 @@ describe("control service", () => {
       }),
     ).rejects.toThrow("worker attempt cost exceeds the campaign ceiling");
     expect(await control.projection.attemptById("over-budget-attempt")).toBeNull();
+  });
+
+  it("records publication supersession without changing either publication", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    const oldCampaign = await control.service.submit(
+      submission,
+      "supersession-old-campaign",
+      operator,
+    );
+    await settle(reconciler, 8);
+    const oldPublication = await control.projection.campaignPublication(
+      oldCampaign.campaign_id,
+    );
+    expect(oldPublication?.status).toBe("published");
+    const oldBody = oldPublication?.body;
+
+    const newCampaign = await control.service.submit(
+      submission,
+      "supersession-new-campaign",
+      operator,
+    );
+    await settle(reconciler, 8);
+    const newPublication = await control.projection.campaignPublication(
+      newCampaign.campaign_id,
+    );
+    expect(newPublication?.status).toBe("published");
+
+    await control.service.campaignAction(
+      newCampaign.campaign_id,
+      {
+        action: "supersede",
+        publication_id: oldPublication?.publication_id,
+        reason: "replacement publication validated",
+        confirmed: true,
+      },
+      "supersede-publication-key",
+      operator,
+    );
+    await settle(reconciler, 3);
+
+    expect(await control.projection.publicationSupersessions()).toMatchObject([
+      {
+        publication_id: newPublication?.publication_id,
+        superseded_campaign_id: oldCampaign.campaign_id,
+        superseded_publication_id: oldPublication?.publication_id,
+      },
+    ]);
+    expect(
+      (await control.projection.campaignPublication(oldCampaign.campaign_id))?.body,
+    ).toBe(oldBody);
   });
 
   it("recovers publication after a crash between terminal selection and intent", async () => {

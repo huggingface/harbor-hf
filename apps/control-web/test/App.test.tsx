@@ -727,7 +727,7 @@ describe("control web", () => {
     expect(screen.getByText("Scored success").className).toContain("emerald");
     expect(screen.getByText("Timed out").className).toContain("amber");
     expect(screen.getByText("Sandbox capacity")).toBeInTheDocument();
-    expect(screen.getByText("Namespace Sandbox Capacity")).toBeInTheDocument();
+    expect(await screen.findByText("Namespace Sandbox Capacity")).toBeInTheDocument();
     expect(screen.getByText("3/8 active")).toBeInTheDocument();
   });
 
@@ -1008,6 +1008,6 @@ describe("control web", () => {
       "https://huggingface.co/buckets/example-org/artifacts/tree/results/schema%3Dv1/publications/publication-one",
     );
     expect(screen.getByText("task-a")).toBeInTheDocument();
-    expect(screen.getByText("Benchmark Timeout")).toBeInTheDocument();
+    expect(await screen.findByText("Benchmark Timeout")).toBeInTheDocument();
   });
 });

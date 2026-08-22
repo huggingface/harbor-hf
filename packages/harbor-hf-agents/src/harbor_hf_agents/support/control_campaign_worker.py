@@ -484,6 +484,8 @@ def _submit_attempt(
 ) -> None:
     outcome, replacement = _exception_outcome(result, stderr, timed_out=timed_out)
     metrics, _ = _metrics(result)
+    if metrics.get("input_tokens", 0) <= 0 or metrics.get("output_tokens", 0) <= 0:
+        replacement = True
     client = _ControlClient(config.campaign_id, task.task_id)
     client.request(
         "POST",
@@ -607,7 +609,7 @@ def _run_task(config: WorkerConfig, task: LockedTask, root: Path) -> str:
     return task.task_id
 
 
-def _campaign_cancelled(config: WorkerConfig) -> bool:
+def _campaign_stopped(config: WorkerConfig) -> bool:
     client = _ControlClient(config.campaign_id, config.tasks[0].task_id)
     try:
         campaign = client.request(
@@ -619,7 +621,7 @@ def _campaign_cancelled(config: WorkerConfig) -> bool:
     except RuntimeError:
         _log({"status": "campaign_state_unavailable"})
         return True
-    return bool(campaign.get("cancellation_requested"))
+    return bool(campaign.get("cancellation_requested") or campaign.get("paused"))
 
 
 def _fill_available_slots(
@@ -630,9 +632,9 @@ def _fill_available_slots(
     root: Path,
     width: int,
 ) -> None:
-    if _campaign_cancelled(config):
-        return
     while len(futures) < width:
+        if _campaign_stopped(config):
+            return
         try:
             task = next(pending)
         except StopIteration:

@@ -106,6 +106,7 @@ def campaign_submit(
     launch_policy: Annotated[str, typer.Option("--launch-policy")],
     deployment: Annotated[str | None, typer.Option("--deployment")] = None,
     idempotency_key: Annotated[str | None, typer.Option("--idempotency-key")] = None,
+    start_paused: Annotated[bool, typer.Option("--start-paused")] = False,
     yes: Annotated[
         bool,
         typer.Option("--yes", help="Confirm the resolved launch and cost ceiling."),
@@ -130,6 +131,8 @@ def campaign_submit(
         "ceiling_microusd": ceiling_microusd,
         "confirmed": True,
     }
+    if start_paused:
+        payload["start_paused"] = True
     _echo(_request("POST", "/api/v1/campaigns", payload=payload, idempotency_key=key))
 
 
@@ -139,6 +142,8 @@ def _campaign_action(
     *,
     task_id: str | None = None,
     reason: str | None = None,
+    task_limit: int | None = None,
+    publication_id: str | None = None,
     yes: bool,
 ) -> None:
     if not yes:
@@ -150,16 +155,21 @@ def _campaign_action(
         typer.confirm(prompt, abort=True)
     key = str(uuid4())
     typer.echo(json.dumps({"idempotency_key": key}), err=True)
+    payload: dict[str, object] = {
+        "action": action,
+        "task_id": task_id,
+        "reason": reason,
+        "confirmed": True,
+    }
+    if task_limit is not None:
+        payload["task_limit"] = task_limit
+    if publication_id is not None:
+        payload["publication_id"] = publication_id
     _echo(
         _request(
             "POST",
             f"/api/v1/campaigns/{campaign_id}/actions",
-            payload={
-                "action": action,
-                "task_id": task_id,
-                "reason": reason,
-                "confirmed": True,
-            },
+            payload=payload,
             idempotency_key=key,
         )
     )
@@ -173,6 +183,50 @@ def campaign_cancel(
 ) -> None:
     """Cancel a run's open logical tasks without deleting evidence."""
     _campaign_action(campaign_id, "cancel", reason=reason, yes=yes)
+
+
+@campaign_app.command("pause")
+def campaign_pause(
+    campaign_id: Annotated[str, typer.Argument()],
+    reason: Annotated[str | None, typer.Option("--reason")] = None,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    """Stop new task admission at the next durable task boundary."""
+    _campaign_action(campaign_id, "pause", reason=reason, yes=yes)
+
+
+@campaign_app.command("resume")
+def campaign_resume(
+    campaign_id: Annotated[str, typer.Argument()],
+    task_limit: Annotated[int | None, typer.Option("--task-limit", min=1)] = None,
+    reason: Annotated[str | None, typer.Option("--reason")] = None,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    """Resume unresolved tasks without repeating completed tasks."""
+    _campaign_action(
+        campaign_id,
+        "resume",
+        task_limit=task_limit,
+        reason=reason,
+        yes=yes,
+    )
+
+
+@campaign_app.command("supersede")
+def campaign_supersede(
+    campaign_id: Annotated[str, typer.Argument()],
+    publication_id: Annotated[str, typer.Option("--publication")],
+    reason: Annotated[str, typer.Option("--reason")],
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    """Mark an older publication superseded after this campaign publishes."""
+    _campaign_action(
+        campaign_id,
+        "supersede",
+        publication_id=publication_id,
+        reason=reason,
+        yes=yes,
+    )
 
 
 @campaign_app.command("retry-infrastructure")

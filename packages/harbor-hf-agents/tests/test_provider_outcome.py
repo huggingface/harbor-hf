@@ -106,6 +106,8 @@ def test_harbor_preserves_stable_failure_type_and_safe_message() -> None:
             }
         ),
         _event("toolUse", input_tokens=1, output_tokens=1),
+        _event("stop", input_tokens=0, output_tokens=1),
+        _event("stop", input_tokens=1, output_tokens=0),
     ],
 )
 def test_missing_or_malformed_terminal_state_fails_closed(output: str) -> None:

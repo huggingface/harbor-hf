@@ -16,11 +16,15 @@ export const campaignViewSchema = {
     "observed_microusd",
     "total_tasks",
     "terminal_tasks",
+    "admissible_tasks",
+    "invalid_selected_tasks",
+    "exhausted_tasks",
     "successful_tasks",
     "pending_actions",
     "publication_status",
     "cleanup_pending",
     "cancellation_requested",
+    "paused",
   ],
   properties: {
     campaign_id: { type: "string" },
@@ -31,11 +35,15 @@ export const campaignViewSchema = {
     observed_microusd: integer,
     total_tasks: integer,
     terminal_tasks: integer,
+    admissible_tasks: integer,
+    invalid_selected_tasks: integer,
+    exhausted_tasks: integer,
     successful_tasks: integer,
     pending_actions: integer,
     publication_status: nullableString,
     cleanup_pending: { type: "boolean" },
     cancellation_requested: { type: "boolean" },
+    paused: { type: "boolean" },
   },
 } as const;
 
@@ -271,10 +279,26 @@ export const attemptSchema = {
 export const taskDetailSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["task", "attempts"],
+  required: ["task", "attempts", "exhaustion"],
   properties: {
     task: taskSchema,
     attempts: { type: "array", items: attemptSchema },
+    exhaustion: {
+      anyOf: [
+        { type: "null" },
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["last_attempt_id", "attempt_count", "reason", "created_at"],
+          properties: {
+            last_attempt_id: { type: "string" },
+            attempt_count: integer,
+            reason: { type: "string" },
+            created_at: { type: "string", format: "date-time" },
+          },
+        },
+      ],
+    },
   },
 } as const;
 
@@ -484,6 +508,7 @@ export const publicationSchema = {
     agent: nullableString,
     source_revision: nullableString,
     catalog_source_digest: nullableString,
+    superseded_by_publication_id: nullableString,
     profile_ids: {
       type: "object",
       additionalProperties: { type: "string" },

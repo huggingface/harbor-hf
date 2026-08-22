@@ -7,6 +7,7 @@ import type {
   AttemptSubmissionV1,
   CampaignSubmissionV1,
   HarborHFResultCatalogV1,
+  PublicationReceipt,
   SandboxPolicy,
 } from "@harbor-hf/contracts";
 import {
@@ -15,6 +16,7 @@ import {
   sandboxActionResultPath,
   schemas,
   sha256,
+  validateControlRecord,
   validateResultCatalog,
 } from "@harbor-hf/contracts";
 import {
@@ -319,17 +321,22 @@ function profileString(
 
 async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]> {
   const publications = await runtime.projection.publications();
+  const projectedById = new Map(
+    publications.map((publication) => [publication.publication_id, publication]),
+  );
   const byId = new Map<string, Record<string, unknown>>(
-    publications.map((publication) => [
-      publication.publication_id,
-      {
-        publication_id: publication.publication_id,
-        campaign_id: publication.campaign_id,
-        status: publication.status,
-        catalog_digest: publication.catalog_digest,
-        published_at: publication.created_at,
-      },
-    ]),
+    publications
+      .filter((publication) => publication.status !== "published")
+      .map((publication) => [
+        publication.publication_id,
+        {
+          publication_id: publication.publication_id,
+          campaign_id: publication.campaign_id,
+          status: publication.status,
+          catalog_digest: publication.catalog_digest,
+          published_at: publication.created_at,
+        },
+      ]),
   );
   const catalogs = await runtime.store.list("results/schema=v1/catalog");
   for (const object of catalogs) {
@@ -339,6 +346,39 @@ async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]>
     );
     const catalog = validateResultCatalog<HarborHFResultCatalogV1>(parsed);
     for (const entry of catalog.entries) {
+      const projected = projectedById.get(entry.publication_id);
+      if (!projected) {
+        if (await runtime.projection.campaign(entry.campaign_id)) continue;
+        byId.set(entry.publication_id, {
+          ...entry,
+          status: "published",
+          catalog_digest: object.digest,
+          catalog_source_digest: catalog.source_digest,
+        });
+        continue;
+      }
+      if (
+        projected.status !== "published" ||
+        projected.catalog_digest !== object.digest
+      )
+        continue;
+      let receipt: PublicationReceipt;
+      try {
+        const receiptValue = JSON.parse(
+          new TextDecoder().decode(await runtime.store.read(entry.result_path)),
+        );
+        receipt = validateControlRecord<PublicationReceipt>(receiptValue);
+      } catch {
+        continue;
+      }
+      if (
+        receipt.kind !== "publication.receipt" ||
+        receipt.publication_id !== entry.publication_id ||
+        receipt.campaign_id !== entry.campaign_id ||
+        receipt.publication_state !== "published" ||
+        receipt.catalog_digest !== object.digest
+      )
+        continue;
       byId.set(entry.publication_id, {
         ...entry,
         status: "published",
@@ -346,6 +386,12 @@ async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]>
         catalog_source_digest: catalog.source_digest,
       });
     }
+  }
+  for (const supersession of await runtime.projection.publicationSupersessions()) {
+    const previous = byId.get(supersession.superseded_publication_id);
+    if (!previous) continue;
+    previous.status = "superseded";
+    previous.superseded_by_publication_id = supersession.publication_id;
   }
   for (const item of byId.values()) {
     const campaignId = typeof item.campaign_id === "string" ? item.campaign_id : null;
@@ -367,6 +413,8 @@ async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]>
       typeof item.publication_id === "string" ? item.publication_id : null;
     if (!publicationId) continue;
     const campaign = campaignId ? await runtime.projection.campaign(campaignId) : null;
+    if (campaign?.status === "completed-invalid" && item.status === "published")
+      item.status = "invalid";
     const projectedTasks = campaignId ? await runtime.projection.tasks(campaignId) : [];
     const projectedAttempts = campaignId
       ? await runtime.projection.campaignAttempts(campaignId)
@@ -1786,6 +1834,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
             request_id: request.id,
           },
         });
+      const exhaustion = await runtime.projection.taskExhaustion(campaign_id, task_id);
       return {
         task: detail.task,
         attempts: detail.attempts.map((attempt) => ({
@@ -1799,6 +1848,14 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           metrics: attempt.metrics,
           created_at: attempt.created_at,
         })),
+        exhaustion: exhaustion
+          ? {
+              last_attempt_id: exhaustion.last_attempt_id,
+              attempt_count: exhaustion.attempt_count,
+              reason: exhaustion.reason,
+              created_at: exhaustion.created_at,
+            }
+          : null,
       };
     },
   );

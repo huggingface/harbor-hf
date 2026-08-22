@@ -245,15 +245,33 @@ def test_stops_new_work_when_campaign_state_is_unavailable(
 
     monkeypatch.setattr(worker, "_ControlClient", UnavailableClient)
 
-    assert worker._campaign_cancelled(config) is True
+    assert worker._campaign_stopped(config) is True
     assert "campaign_state_unavailable" in capsys.readouterr().out
+
+
+def test_stops_new_work_when_campaign_is_paused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure(monkeypatch)
+    config = worker._locked_config(_lock())
+
+    class PausedClient:
+        def __init__(self, _campaign_id: str, _task_id: str) -> None:
+            pass
+
+        def request(self, *_args, **_kwargs):
+            return {"paused": True, "cancellation_requested": False}
+
+    monkeypatch.setattr(worker, "_ControlClient", PausedClient)
+
+    assert worker._campaign_stopped(config) is True
 
 
 def _scheduler_config(
     monkeypatch: pytest.MonkeyPatch, *, task_count: int = 3
 ) -> worker.WorkerConfig:
     _configure(monkeypatch)
-    monkeypatch.setattr(worker, "_campaign_cancelled", lambda _config: False)
+    monkeypatch.setattr(worker, "_campaign_stopped", lambda _config: False)
     config = worker._locked_config(_lock())
     task = config.tasks[0]
     tasks = tuple(replace(task, task_id=f"task-{index}") for index in range(task_count))
@@ -300,10 +318,10 @@ def test_stops_refilling_after_campaign_cancellation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     config = _scheduler_config(monkeypatch)
-    cancellation_checks = iter([False, True, True])
+    cancellation_checks = iter([False, False, True, True])
     monkeypatch.setattr(
         worker,
-        "_campaign_cancelled",
+        "_campaign_stopped",
         lambda _config: next(cancellation_checks, True),
     )
     third_started = Event()

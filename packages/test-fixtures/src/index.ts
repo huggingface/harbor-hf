@@ -35,6 +35,7 @@ export function smokeProfiles(
   successWithoutWorkerReceipt = true,
   inferenceToken: "forbidden" | "required" = "forbidden",
   maxCampaignCeilingMicrousd?: number,
+  requiredPositiveMetrics: string[] = [],
 ): LoadedProfile[] {
   if (taskCount < 1) throw new Error("test campaign needs at least one task");
   const taskIds = Array.from(
@@ -89,6 +90,7 @@ export function smokeProfiles(
         : { max_campaign_ceiling_microusd: maxCampaignCeilingMicrousd }),
       success_without_worker_receipt: successWithoutWorkerReceipt,
       publication_role: "diagnostic",
+      required_positive_metrics: requiredPositiveMetrics,
     }),
   ];
 }
@@ -204,6 +206,7 @@ export async function createTestControl(
   successWithoutWorkerReceipt = true,
   inferenceToken: "forbidden" | "required" = "forbidden",
   maxCampaignCeilingMicrousd?: number,
+  requiredPositiveMetrics: string[] = [],
 ): Promise<TestControl> {
   const root = await mkdtemp(join(tmpdir(), "harbor-hf-control-test-"));
   const bucket = join(root, "bucket");
@@ -217,6 +220,7 @@ export async function createTestControl(
     successWithoutWorkerReceipt,
     inferenceToken,
     maxCampaignCeilingMicrousd,
+    requiredPositiveMetrics,
   );
   const service = new ControlService("test", store, projection, profiles);
   await projection.rebuild(store);

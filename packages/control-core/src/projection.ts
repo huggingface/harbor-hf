@@ -16,8 +16,10 @@ import type {
   ProfileObject,
   ProfilePromotion,
   PublicationReceipt,
+  PublicationSupersession,
   SandboxAdmissionGrant,
   SandboxCapacityRelease,
+  TaskExhaustion,
   TerminalSelection,
 } from "@harbor-hf/contracts";
 import {
@@ -30,6 +32,10 @@ import {
 } from "@harbor-hf/contracts";
 import Database from "better-sqlite3";
 import { Kysely, type Selectable, SqliteDialect, sql } from "kysely";
+import {
+  attemptAdmissibility,
+  requiredPositiveMetrics,
+} from "./attempt-admissibility.js";
 import { historicalDispositionResourceMatches } from "./disposition-policy.js";
 import { type ControlEvent, decodeEventCursor, eventCursor } from "./events.js";
 import { verifyEvidenceReference, verifyWorkerEvidence } from "./evidence.js";
@@ -152,6 +158,17 @@ interface AttemptRow {
   body: string;
 }
 
+interface ExhaustionRow {
+  record_id: string;
+  campaign_id: string;
+  task_id: string;
+  last_attempt_id: string;
+  attempt_count: number;
+  reason: string;
+  created_at: string;
+  body: string;
+}
+
 interface BudgetRow {
   record_id: string;
   campaign_id: string;
@@ -179,6 +196,17 @@ interface PublicationRow {
   catalog_digest: string | null;
   body: string;
   created_at: string;
+}
+
+interface SupersessionRow {
+  record_id: string;
+  campaign_id: string;
+  publication_id: string;
+  superseded_campaign_id: string;
+  superseded_publication_id: string;
+  reason: string;
+  created_at: string;
+  body: string;
 }
 
 interface ProfileRow {
@@ -223,9 +251,11 @@ interface DatabaseSchema {
   advancements: AdvancementRow;
   tasks: TaskRow;
   attempts: AttemptRow;
+  task_exhaustions: ExhaustionRow;
   budgets: BudgetRow;
   endpoints: EndpointRow;
   publications: PublicationRow;
+  publication_supersessions: SupersessionRow;
   profiles: ProfileRow;
   promotions: PromotionRow;
   acls: AclRow;
@@ -241,11 +271,15 @@ export interface CampaignView {
   observed_microusd: number;
   total_tasks: number;
   terminal_tasks: number;
+  admissible_tasks: number;
+  invalid_selected_tasks: number;
+  exhausted_tasks: number;
   successful_tasks: number;
   pending_actions: number;
   publication_status: string | null;
   cleanup_pending: boolean;
   cancellation_requested: boolean;
+  paused: boolean;
 }
 
 export interface ActionDispositionView {
@@ -548,6 +582,18 @@ export class Projection {
       .addColumn("body", "text", (column) => column.notNull())
       .execute();
     await this.db.schema
+      .createTable("task_exhaustions")
+      .ifNotExists()
+      .addColumn("record_id", "text", (column) => column.primaryKey())
+      .addColumn("campaign_id", "text", (column) => column.notNull())
+      .addColumn("task_id", "text", (column) => column.notNull())
+      .addColumn("last_attempt_id", "text", (column) => column.notNull())
+      .addColumn("attempt_count", "integer", (column) => column.notNull())
+      .addColumn("reason", "text", (column) => column.notNull())
+      .addColumn("created_at", "text", (column) => column.notNull())
+      .addColumn("body", "text", (column) => column.notNull())
+      .execute();
+    await this.db.schema
       .createTable("budgets")
       .ifNotExists()
       .addColumn("record_id", "text", (column) => column.primaryKey())
@@ -578,6 +624,20 @@ export class Projection {
       .addColumn("catalog_digest", "text")
       .addColumn("body", "text", (column) => column.notNull())
       .addColumn("created_at", "text", (column) => column.notNull())
+      .execute();
+    await this.db.schema
+      .createTable("publication_supersessions")
+      .ifNotExists()
+      .addColumn("record_id", "text", (column) => column.primaryKey())
+      .addColumn("campaign_id", "text", (column) => column.notNull())
+      .addColumn("publication_id", "text", (column) => column.notNull())
+      .addColumn("superseded_campaign_id", "text", (column) => column.notNull())
+      .addColumn("superseded_publication_id", "text", (column) =>
+        column.notNull().unique(),
+      )
+      .addColumn("reason", "text", (column) => column.notNull())
+      .addColumn("created_at", "text", (column) => column.notNull())
+      .addColumn("body", "text", (column) => column.notNull())
       .execute();
     await this.db.schema
       .createTable("profiles")
@@ -635,6 +695,9 @@ export class Projection {
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS attempts_action_task_idx ON attempts(action_id, task_id)`.execute(
       this.db,
     );
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS task_exhaustions_task_idx ON task_exhaustions(campaign_id, task_id)`.execute(
+      this.db,
+    );
   }
 
   private async clear(): Promise<void> {
@@ -643,9 +706,11 @@ export class Projection {
       "acls",
       "promotions",
       "profiles",
+      "publication_supersessions",
       "publications",
       "endpoints",
       "budgets",
+      "task_exhaustions",
       "attempts",
       "tasks",
       "advancements",
@@ -822,6 +887,9 @@ export class Projection {
       case "terminal.selection":
         await this.applyTerminal(record);
         break;
+      case "task.exhaustion":
+        await this.applyTaskExhaustion(record);
+        break;
       case "budget.event":
         await this.applyBudget(record);
         break;
@@ -830,6 +898,9 @@ export class Projection {
         break;
       case "publication.receipt":
         await this.applyPublication(record);
+        break;
+      case "publication.supersession":
+        await this.applyPublicationSupersession(record);
         break;
       case "profile.object":
         await this.applyProfile(record, entry.digest);
@@ -1137,9 +1208,61 @@ export class Projection {
         `terminal selection does not match attempt: ${record.record_id}`,
       );
     }
+    const lock = await this.campaignLock(record.campaign_id);
+    if (!lock)
+      throw new ProjectionIntegrityError(
+        `terminal selection has no campaign lock: ${record.record_id}`,
+      );
+    const required = requiredPositiveMetrics(lock);
+    if (required.length > 0 && record.outcome !== "cancelled") {
+      const parsed = JSON.parse(attempt.body) as AttemptReceipt;
+      const validity = attemptAdmissibility(parsed, required);
+      if (!validity.admissible)
+        throw new ProjectionIntegrityError(
+          `terminal selection is not admissible: ${record.record_id}`,
+        );
+    }
     const result = await this.db
       .updateTable("tasks")
       .set({ terminal_outcome: record.outcome, selected_attempt_id: record.attempt_id })
+      .where("campaign_id", "=", record.campaign_id)
+      .where("task_id", "=", record.task_id)
+      .where("terminal_outcome", "is", null)
+      .executeTakeFirst();
+    if (Number(result.numUpdatedRows) !== 1)
+      throw new ProjectionIntegrityError(`task is already terminal: ${record.task_id}`);
+  }
+
+  private async applyTaskExhaustion(record: TaskExhaustion): Promise<void> {
+    const attempt = await this.db
+      .selectFrom("attempts")
+      .select(["campaign_id", "task_id"])
+      .where("attempt_id", "=", record.last_attempt_id)
+      .executeTakeFirst();
+    if (
+      !attempt ||
+      attempt.campaign_id !== record.campaign_id ||
+      attempt.task_id !== record.task_id
+    )
+      throw new ProjectionIntegrityError(
+        `task exhaustion does not match attempt: ${record.record_id}`,
+      );
+    await this.db
+      .insertInto("task_exhaustions")
+      .values({
+        record_id: record.record_id,
+        campaign_id: record.campaign_id,
+        task_id: record.task_id,
+        last_attempt_id: record.last_attempt_id,
+        attempt_count: record.attempt_count,
+        reason: record.reason,
+        created_at: record.created_at,
+        body: body(record),
+      })
+      .execute();
+    const result = await this.db
+      .updateTable("tasks")
+      .set({ terminal_outcome: "invalid", selected_attempt_id: null })
       .where("campaign_id", "=", record.campaign_id)
       .where("task_id", "=", record.task_id)
       .where("terminal_outcome", "is", null)
@@ -1188,6 +1311,41 @@ export class Projection {
         catalog_digest: record.catalog_digest,
         body: body(record),
         created_at: record.created_at,
+      })
+      .execute();
+  }
+
+  private async applyPublicationSupersession(
+    record: PublicationSupersession,
+  ): Promise<void> {
+    const current = await this.db
+      .selectFrom("publications")
+      .select(["campaign_id"])
+      .where("publication_id", "=", record.publication_id)
+      .executeTakeFirst();
+    const previous = await this.db
+      .selectFrom("publications")
+      .select(["campaign_id"])
+      .where("publication_id", "=", record.superseded_publication_id)
+      .executeTakeFirst();
+    if (
+      current?.campaign_id !== record.campaign_id ||
+      previous?.campaign_id !== record.superseded_campaign_id
+    )
+      throw new ProjectionIntegrityError(
+        `publication supersession does not match publications: ${record.record_id}`,
+      );
+    await this.db
+      .insertInto("publication_supersessions")
+      .values({
+        record_id: record.record_id,
+        campaign_id: record.campaign_id,
+        publication_id: record.publication_id,
+        superseded_campaign_id: record.superseded_campaign_id,
+        superseded_publication_id: record.superseded_publication_id,
+        reason: record.reason,
+        created_at: record.created_at,
+        body: body(record),
       })
       .execute();
   }
@@ -1930,6 +2088,16 @@ export class Projection {
       .execute();
   }
 
+  async publication(publicationId: string): Promise<Selectable<PublicationRow> | null> {
+    return (
+      (await this.db
+        .selectFrom("publications")
+        .selectAll()
+        .where("publication_id", "=", publicationId)
+        .executeTakeFirst()) ?? null
+    );
+  }
+
   async campaignPublication(
     campaignId: string,
   ): Promise<Selectable<PublicationRow> | null> {
@@ -1939,6 +2107,40 @@ export class Projection {
         .selectAll()
         .where("campaign_id", "=", campaignId)
         .orderBy("created_at", "desc")
+        .executeTakeFirst()) ?? null
+    );
+  }
+
+  async publicationSupersessions(): Promise<Selectable<SupersessionRow>[]> {
+    return this.db
+      .selectFrom("publication_supersessions")
+      .selectAll()
+      .orderBy("created_at")
+      .execute();
+  }
+
+  async campaignPaused(campaignId: string): Promise<boolean> {
+    const lifecycle = await this.db
+      .selectFrom("actions")
+      .select(["action_kind"])
+      .where("campaign_id", "=", campaignId)
+      .where("action_kind", "in", ["campaign.pause", "campaign.resume"])
+      .orderBy("created_at", "desc")
+      .orderBy("action_id", "desc")
+      .executeTakeFirst();
+    return lifecycle?.action_kind === "campaign.pause";
+  }
+
+  async taskExhaustion(
+    campaignId: string,
+    taskId: string,
+  ): Promise<Selectable<ExhaustionRow> | null> {
+    return (
+      (await this.db
+        .selectFrom("task_exhaustions")
+        .selectAll()
+        .where("campaign_id", "=", campaignId)
+        .where("task_id", "=", taskId)
         .executeTakeFirst()) ?? null
     );
   }
@@ -2017,11 +2219,46 @@ export class Projection {
     const cleanupPending = [...latestEndpoints.values()].some(
       (endpoint) => endpoint.cleanup_verified === 0,
     );
+    const taskRows = await this.db
+      .selectFrom("tasks")
+      .selectAll()
+      .where("campaign_id", "=", row.campaign_id)
+      .execute();
+    const attemptRows = await this.db
+      .selectFrom("attempts")
+      .select(["attempt_id", "body"])
+      .where("campaign_id", "=", row.campaign_id)
+      .execute();
+    const attemptsById = new Map(
+      attemptRows.map((attempt) => [
+        attempt.attempt_id,
+        JSON.parse(attempt.body) as AttemptReceipt,
+      ]),
+    );
+    const lock = row.lock_body ? (JSON.parse(row.lock_body) as CampaignLock) : null;
+    const required = lock ? requiredPositiveMetrics(lock) : [];
+    const selected = taskRows.flatMap((task) => {
+      const attempt = task.selected_attempt_id
+        ? attemptsById.get(task.selected_attempt_id)
+        : undefined;
+      return attempt ? [attempt] : [];
+    });
+    const admissible = selected.filter(
+      (attempt) => attemptAdmissibility(attempt, required).admissible,
+    ).length;
+    const invalidSelected = selected.length - admissible;
+    const exhaustionCount = await this.db
+      .selectFrom("task_exhaustions")
+      .select(({ fn }) => fn.countAll<number>().as("count"))
+      .where("campaign_id", "=", row.campaign_id)
+      .executeTakeFirstOrThrow();
+    const exhausted = Number(exhaustionCount.count);
     const total = Number(taskCounts.total);
     const terminal = Number(taskCounts.terminal);
     const successful = Number(successCounts.successful);
     const pending = Number(actionCounts.pending);
     const cancelled = await this.hasCampaignAction(row.campaign_id, "campaign.cancel");
+    const paused = await this.campaignPaused(row.campaign_id);
     const reserved = budgets.reduce(
       (sum, item) =>
         item.event_kind === "reserve"
@@ -2039,12 +2276,16 @@ export class Projection {
         .reduce((sum, item) => Math.max(sum, item.amount_microusd), 0),
     );
     let status = "queued";
-    if (terminal === total && total > 0)
-      status = cancelled
-        ? "cancelled"
-        : publication?.status === "published" && !cleanupPending
-          ? "completed"
-          : "publishing";
+    if (cancelled) status = "cancelled";
+    else if (exhausted > 0) status = "failed";
+    else if (terminal === total && total > 0) {
+      if (admissible !== total || invalidSelected > 0) status = "completed-invalid";
+      else
+        status =
+          publication?.status === "published" && !cleanupPending
+            ? "completed"
+            : "publishing";
+    } else if (paused) status = "paused";
     else if (pending > 0 || terminal > 0) status = "active";
     return {
       campaign_id: row.campaign_id,
@@ -2055,11 +2296,15 @@ export class Projection {
       observed_microusd: observed,
       total_tasks: total,
       terminal_tasks: terminal,
+      admissible_tasks: admissible,
+      invalid_selected_tasks: invalidSelected,
+      exhausted_tasks: exhausted,
       successful_tasks: successful,
       pending_actions: pending,
       publication_status: publication?.status ?? null,
       cleanup_pending: cleanupPending,
       cancellation_requested: cancelled,
+      paused,
     };
   }
 

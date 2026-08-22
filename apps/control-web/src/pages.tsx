@@ -108,10 +108,14 @@ function campaignHasSealedFailures(campaign: CampaignRow): boolean {
 }
 
 function campaignResultStatus(campaign: CampaignRow): string {
+  if (campaign.status === "failed") return "error";
+  if (campaign.status === "completed-invalid") return "warning";
   return campaignHasSealedFailures(campaign) ? "warning" : campaign.status;
 }
 
 function campaignStatusLabel(campaign: CampaignRow): string {
+  if (campaign.status === "completed-invalid") return "Completed with invalid results";
+  if (campaign.status === "failed") return "Failed safely";
   return campaignHasSealedFailures(campaign)
     ? "Completed with failures"
     : humanize(campaign.status);
@@ -125,6 +129,10 @@ function campaignStatusNote(campaign: CampaignRow): string {
     const cancelled = campaign.total_tasks - campaign.successful_tasks;
     return `${publication}. ${cancelled} sealed ${cancelled === 1 ? "task" : "tasks"} cancelled.`;
   }
+  if (campaign.status === "failed")
+    return `${publication}. ${campaign.exhausted_tasks} exhausted ${campaign.exhausted_tasks === 1 ? "task" : "tasks"}.`;
+  if (campaign.status === "completed-invalid")
+    return `${publication}. ${campaign.invalid_selected_tasks} invalid selected ${campaign.invalid_selected_tasks === 1 ? "attempt" : "attempts"}.`;
   if (campaign.status !== "completed") return publication;
   if (campaign.successful_tasks === campaign.total_tasks) return publication;
   const failed = campaign.total_tasks - campaign.successful_tasks;
@@ -1221,7 +1229,7 @@ export function CampaignPage() {
         <Stat
           label="Logical tasks"
           value={`${item.terminal_tasks}/${item.total_tasks}`}
-          note={`${item.pending_actions} pending actions`}
+          note={`${item.admissible_tasks} valid, ${item.exhausted_tasks} exhausted, ${item.pending_actions} pending actions`}
           icon={Clock3}
           hint={hints.campaign.logicalTasks}
         />
@@ -1240,6 +1248,15 @@ export function CampaignPage() {
           hint={hints.campaign.endpointCleanup}
         />
       </div>
+      {item.invalid_selected_tasks > 0 || item.exhausted_tasks > 0 ? (
+        <Card className="my-6 border-amber-800 bg-amber-950/30">
+          <p className="text-sm text-amber-200">
+            This campaign cannot publish a valid result. It has{" "}
+            {item.invalid_selected_tasks} invalid selected attempts and{" "}
+            {item.exhausted_tasks} exhausted tasks.
+          </p>
+        </Card>
+      ) : null}
       <Card className="my-6">
         <Progress
           label="Terminal logical outcomes"
@@ -1930,6 +1947,10 @@ export function ResultPage() {
           <ResultField label="Outcome" value={item.run_outcome} />
           <ResultField label="Quality" value={item.quality} />
           <ResultField label="Status" value={item.status} />
+          <ResultField
+            label="Superseded by"
+            value={item.superseded_by_publication_id}
+          />
           <ResultField label="Model revision" value={item.model_revision} />
           <ResultField label="Benchmark revision" value={item.benchmark_revision} />
           <ResultField label="Harness revision" value={item.harness_revision} />

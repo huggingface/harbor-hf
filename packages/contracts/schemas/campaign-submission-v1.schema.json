@@ -43,7 +43,17 @@
       "minLength": 2,
       "maxLength": 160
     },
-    "ceiling_microusd": { "type": "integer", "minimum": 0, "maximum": 1000000000000 },
-    "confirmed": { "type": "boolean" }
+    "ceiling_microusd": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "confirmed": {
+      "type": "boolean"
+    },
+    "start_paused": {
+      "type": "boolean",
+      "default": false
+    }
   }
 }

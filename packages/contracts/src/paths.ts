@@ -80,12 +80,16 @@ export function controlRecordPath(record: RecordIdentity): string {
       return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/tasks/${required(record.task_id, "task_id")}/attempts/${required(record.attempt_id, "attempt_id")}/receipt.json`;
     case "terminal.selection":
       return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/tasks/${required(record.task_id, "task_id")}/terminal/${record.record_id}.json`;
+    case "task.exhaustion":
+      return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/tasks/${required(record.task_id, "task_id")}/exhaustion/${record.record_id}.json`;
     case "budget.event":
       return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/budgets/${record.record_id}.json`;
     case "endpoint.resource":
       return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/resources/endpoints/${required(record.action_id, "action_id")}.json`;
     case "publication.receipt":
       return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/publications/${required(record.publication_id, "publication_id")}.json`;
+    case "publication.supersession":
+      return `${root}/campaigns/${required(record.campaign_id, "campaign_id")}/publications/supersessions/${record.record_id}.json`;
     case "migration.record":
       return `${root}/migrations/${record.record_id}.json`;
     default:

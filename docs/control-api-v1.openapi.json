@@ -354,11 +354,15 @@
                           "observed_microusd",
                           "total_tasks",
                           "terminal_tasks",
+                          "admissible_tasks",
+                          "invalid_selected_tasks",
+                          "exhausted_tasks",
                           "successful_tasks",
                           "pending_actions",
                           "publication_status",
                           "cleanup_pending",
-                          "cancellation_requested"
+                          "cancellation_requested",
+                          "paused"
                         ],
                         "properties": {
                           "campaign_id": {
@@ -386,6 +390,15 @@
                           "terminal_tasks": {
                             "type": "integer"
                           },
+                          "admissible_tasks": {
+                            "type": "integer"
+                          },
+                          "invalid_selected_tasks": {
+                            "type": "integer"
+                          },
+                          "exhausted_tasks": {
+                            "type": "integer"
+                          },
                           "successful_tasks": {
                             "type": "integer"
                           },
@@ -406,6 +419,9 @@
                             "type": "boolean"
                           },
                           "cancellation_requested": {
+                            "type": "boolean"
+                          },
+                          "paused": {
                             "type": "boolean"
                           }
                         }
@@ -489,6 +505,10 @@
                   },
                   "confirmed": {
                     "type": "boolean"
+                  },
+                  "start_paused": {
+                    "type": "boolean",
+                    "default": false
                   }
                 }
               }
@@ -562,11 +582,15 @@
                     "observed_microusd",
                     "total_tasks",
                     "terminal_tasks",
+                    "admissible_tasks",
+                    "invalid_selected_tasks",
+                    "exhausted_tasks",
                     "successful_tasks",
                     "pending_actions",
                     "publication_status",
                     "cleanup_pending",
-                    "cancellation_requested"
+                    "cancellation_requested",
+                    "paused"
                   ],
                   "properties": {
                     "campaign_id": {
@@ -594,6 +618,15 @@
                     "terminal_tasks": {
                       "type": "integer"
                     },
+                    "admissible_tasks": {
+                      "type": "integer"
+                    },
+                    "invalid_selected_tasks": {
+                      "type": "integer"
+                    },
+                    "exhausted_tasks": {
+                      "type": "integer"
+                    },
                     "successful_tasks": {
                       "type": "integer"
                     },
@@ -614,6 +647,9 @@
                       "type": "boolean"
                     },
                     "cancellation_requested": {
+                      "type": "boolean"
+                    },
+                    "paused": {
                       "type": "boolean"
                     }
                   }
@@ -1769,7 +1805,8 @@
                   "additionalProperties": false,
                   "required": [
                     "task",
-                    "attempts"
+                    "attempts",
+                    "exhaustion"
                   ],
                   "properties": {
                     "task": {
@@ -1864,6 +1901,38 @@
                           }
                         }
                       }
+                    },
+                    "exhaustion": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "last_attempt_id",
+                            "attempt_count",
+                            "reason",
+                            "created_at"
+                          ],
+                          "properties": {
+                            "last_attempt_id": {
+                              "type": "string"
+                            },
+                            "attempt_count": {
+                              "type": "integer"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "created_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      ]
                     }
                   }
                 }
@@ -2250,7 +2319,10 @@
                       "cancel",
                       "retry_infrastructure",
                       "publish",
-                      "pause_endpoint"
+                      "pause_endpoint",
+                      "pause",
+                      "resume",
+                      "supersede"
                     ]
                   },
                   "task_id": {
@@ -2271,6 +2343,23 @@
                   },
                   "confirmed": {
                     "type": "boolean"
+                  },
+                  "task_limit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  "publication_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "minLength": 3,
+                    "maxLength": 160
                   }
                 }
               }
@@ -3618,6 +3707,16 @@
                               }
                             ]
                           },
+                          "superseded_by_publication_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "profile_ids": {
                             "type": "object",
                             "additionalProperties": {
@@ -4100,6 +4199,16 @@
                       ]
                     },
                     "catalog_source_digest": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "superseded_by_publication_id": {
                       "anyOf": [
                         {
                           "type": "string"

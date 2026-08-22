@@ -8,4 +8,5 @@ deployment?: (string | null)
 launch_policy: string
 ceiling_microusd: number
 confirmed: boolean
+start_paused?: boolean
 }

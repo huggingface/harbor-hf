@@ -22,9 +22,11 @@ import type {
   PreparedJobSubmissionV1,
   PreparedTrial,
   PublicationReceipt,
+  PublicationSupersession,
   ResolvedProfile,
   SandboxAdmissionGrant,
   SandboxCapacityRelease,
+  TaskExhaustion,
   TerminalSelection,
 } from "@harbor-hf/contracts";
 import {
@@ -39,6 +41,10 @@ import {
   validatePreparedJobSubmission,
   workerEvidenceObjectPath,
 } from "@harbor-hf/contracts";
+import {
+  attemptAdmissibility,
+  requiredPositiveMetrics,
+} from "./attempt-admissibility.js";
 import { historicalDispositionResourceMatches } from "./disposition-policy.js";
 import { EventBus, eventCursor } from "./events.js";
 import {
@@ -1251,6 +1257,7 @@ export class ControlService {
         idempotency_key_digest: keyDigest,
         profiles: refs as CampaignRequest["profiles"],
         ceiling_microusd: input.ceiling_microusd,
+        start_paused: input.start_paused ?? false,
       } satisfies CampaignRequest);
     const lock: CampaignLock =
       existingLock ??
@@ -1265,6 +1272,7 @@ export class ControlService {
         tasks: tasks as CampaignLock["tasks"],
         ceiling_microusd: input.ceiling_microusd,
         source_revision: this.resolver.sourceRevision(),
+        start_paused: input.start_paused ?? false,
       } satisfies CampaignLock);
     const budget: BudgetEvent = {
       schema_version: "v1",
@@ -1290,6 +1298,20 @@ export class ControlService {
     await this.append(request);
     await this.append(budget);
     await this.append(intent);
+    if (input.start_paused) {
+      const pausedAt = new Date(Date.parse(timestamp) + 1).toISOString();
+      await this.writeAction(
+        this.actionIntent(
+          campaignId,
+          "campaign.pause",
+          "campaign",
+          0,
+          { reason: "campaign submitted in paused state" },
+          recordActor,
+          pausedAt,
+        ),
+      );
+    }
     return {
       campaign_id: campaignId,
       action_id: actionId,
@@ -1340,7 +1362,8 @@ export class ControlService {
       selected.harness === input.harness &&
       deploymentMatches &&
       selected.launch_policy === input.launch_policy &&
-      request.ceiling_microusd === input.ceiling_microusd;
+      request.ceiling_microusd === input.ceiling_microusd &&
+      (request.start_paused ?? false) === (input.start_paused ?? false);
     if (!matches)
       throw new IdempotencyConflictError(
         "idempotency key already belongs to a different campaign request",
@@ -1364,7 +1387,8 @@ export class ControlService {
       selected.harness === input.harness &&
       deploymentMatches &&
       selected.launch_policy === input.launch_policy &&
-      lock.ceiling_microusd === input.ceiling_microusd;
+      lock.ceiling_microusd === input.ceiling_microusd &&
+      (lock.start_paused ?? false) === (input.start_paused ?? false);
     if (!matches)
       throw new IdempotencyConflictError(
         "idempotency key already belongs to a different campaign request",
@@ -2116,6 +2140,11 @@ export class ControlService {
     attempt: AttemptReceipt,
     reason: string,
   ): Promise<TerminalSelection> {
+    const lock = await this.projection.campaignLock(attempt.campaign_id);
+    if (!lock) throw new PolicyError("terminal selection has no campaign lock");
+    const validity = attemptAdmissibility(attempt, requiredPositiveMetrics(lock));
+    if (!validity.admissible && attempt.outcome !== "cancelled")
+      throw new PolicyError(`attempt is not selectable: ${validity.reason}`);
     const record: TerminalSelection = {
       schema_version: "v1",
       kind: "terminal.selection",
@@ -2137,8 +2166,61 @@ export class ControlService {
     return record;
   }
 
+  async exhaustTask(
+    attempt: AttemptReceipt,
+    reason: string,
+    attemptCount: number,
+  ): Promise<TaskExhaustion> {
+    const record: TaskExhaustion = {
+      schema_version: "v1",
+      kind: "task.exhaustion",
+      record_id: deterministicId(
+        "task-exhaustion",
+        attempt.campaign_id,
+        attempt.task_id,
+        attempt.attempt_id,
+      ),
+      created_at: this.clock.now().toISOString(),
+      actor: serviceActor(),
+      campaign_id: attempt.campaign_id,
+      task_id: attempt.task_id,
+      last_attempt_id: attempt.attempt_id,
+      attempt_count: attemptCount,
+      reason,
+    };
+    await this.append(record);
+    return record;
+  }
+
   async writePublication(record: PublicationReceipt): Promise<void> {
     await this.append(record);
+  }
+
+  async writePublicationSupersession(
+    campaignId: string,
+    publicationId: string,
+    supersededCampaignId: string,
+    supersededPublicationId: string,
+    reason: string,
+  ): Promise<PublicationSupersession> {
+    const record: PublicationSupersession = {
+      schema_version: "v1",
+      kind: "publication.supersession",
+      record_id: deterministicId(
+        "publication-supersession",
+        supersededPublicationId,
+        publicationId,
+      ),
+      created_at: this.clock.now().toISOString(),
+      actor: serviceActor(),
+      campaign_id: campaignId,
+      publication_id: publicationId,
+      superseded_campaign_id: supersededCampaignId,
+      superseded_publication_id: supersededPublicationId,
+      reason,
+    };
+    await this.append(record);
+    return record;
   }
 
   async reserveReplacement(
@@ -2458,9 +2540,37 @@ export class ControlService {
         await this.settleClosedSandboxAmbiguities(campaignId, taskId, actor);
       kind = "campaign.cancel";
       payload = { task_id: input.task_id ?? null, reason: input.reason ?? null };
+    } else if (input.action === "pause") {
+      if (campaign.status === "completed" || campaign.status === "failed")
+        throw new PolicyError("terminal campaign cannot be paused");
+      kind = "campaign.pause";
+      payload = { reason: input.reason ?? null };
+    } else if (input.action === "resume") {
+      if (!campaign.paused) throw new PolicyError("campaign is not paused");
+      if (campaign.pending_actions > 0)
+        throw new PolicyError("campaign cannot resume while actions are pending");
+      if (
+        preparationRequired(
+          profileSpec<DeploymentProfileSpec>(lock.profiles, "deployment"),
+        )
+      ) {
+        const prepared = await this.preparedJob(campaignId);
+        if (!prepared) throw new PolicyError("campaign preparation is incomplete");
+      }
+      kind = "campaign.resume";
+      payload = {
+        reason: input.reason ?? null,
+        ...(input.task_limit ? { task_limit: input.task_limit } : {}),
+      };
     } else if (input.action === "publish") {
-      if (campaign.terminal_tasks !== campaign.total_tasks)
-        throw new PolicyError("campaign cannot publish before every task is terminal");
+      if (
+        campaign.terminal_tasks !== campaign.total_tasks ||
+        campaign.admissible_tasks !== campaign.total_tasks ||
+        campaign.exhausted_tasks > 0
+      )
+        throw new PolicyError(
+          "campaign cannot publish before every task has an admissible selection",
+        );
       if (campaign.pending_actions > 0 || campaign.cleanup_pending)
         throw new PolicyError(
           "campaign cannot publish while actions or endpoint cleanup are pending",
@@ -2470,6 +2580,23 @@ export class ControlService {
       kind = "publication.publish";
       target = "results";
       payload = {};
+    } else if (input.action === "supersede") {
+      if (!input.publication_id)
+        throw new PolicyError("supersession requires the old publication ID");
+      const current = await this.projection.campaignPublication(campaignId);
+      if (current?.status !== "published")
+        throw new PolicyError("replacement campaign is not published");
+      const previous = await this.projection.publication(input.publication_id);
+      if (previous?.status !== "published")
+        throw new PolicyError("superseded publication does not exist");
+      if (previous.campaign_id === campaignId)
+        throw new PolicyError("publication cannot supersede itself");
+      kind = "publication.supersede";
+      target = input.publication_id;
+      payload = {
+        publication_id: input.publication_id,
+        reason: input.reason ?? null,
+      };
     } else if (input.action === "pause_endpoint") {
       const endpoints = (await this.projection.endpoints()).filter(
         (endpoint) => endpoint.campaign_id === campaignId && !endpoint.cleanup_verified,
@@ -2552,6 +2679,7 @@ export class ControlService {
         timeout_seconds: deployment.timeout_seconds,
         success_without_worker_receipt: policy.success_without_worker_receipt,
         max_infrastructure_attempts: policy.max_infrastructure_attempts,
+        required_positive_metrics: policy.required_positive_metrics ?? [],
         reservation_microusd: policy.reservation_microusd,
         trusted_worker: deployment.trusted_worker,
         ...(deployment.route === "hf_job" &&

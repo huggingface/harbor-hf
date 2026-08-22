@@ -104,6 +104,119 @@ def test_campaign_submit_sends_profile_references(
     assert headers["Idempotency-Key"] == "request-key-0001"
 
 
+def test_campaign_submit_can_start_paused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure(monkeypatch)
+    observed: dict[str, object] = {}
+
+    def request(method: str, url: str, **kwargs: object) -> httpx.Response:
+        observed.update({"method": method, "url": url, **kwargs})
+        return response(202, {"campaign_id": "campaign-one", "action_id": "action-one"})
+
+    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
+    result = runner.invoke(
+        app,
+        [
+            "campaign",
+            "submit",
+            "--benchmark",
+            "control-smoke",
+            "--model",
+            "control-smoke",
+            "--harness",
+            "control-smoke",
+            "--deployment",
+            "hf-cpu-smoke",
+            "--launch-policy",
+            "control-smoke",
+            "--ceiling-microusd",
+            "0",
+            "--idempotency-key",
+            "request-key-0002",
+            "--start-paused",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = cast(dict[str, object], observed["json"])
+    assert payload["start_paused"] is True
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        (
+            ["pause", "campaign-one", "--reason", "canary boundary", "--yes"],
+            {
+                "action": "pause",
+                "task_id": None,
+                "reason": "canary boundary",
+                "confirmed": True,
+            },
+        ),
+        (
+            [
+                "resume",
+                "campaign-one",
+                "--task-limit",
+                "1",
+                "--reason",
+                "run canary",
+                "--yes",
+            ],
+            {
+                "action": "resume",
+                "task_id": None,
+                "reason": "run canary",
+                "confirmed": True,
+                "task_limit": 1,
+            },
+        ),
+        (
+            [
+                "supersede",
+                "campaign-one",
+                "--publication",
+                "publication-old",
+                "--reason",
+                "valid replacement",
+                "--yes",
+            ],
+            {
+                "action": "supersede",
+                "task_id": None,
+                "reason": "valid replacement",
+                "confirmed": True,
+                "publication_id": "publication-old",
+            },
+        ),
+    ],
+)
+def test_campaign_lifecycle_actions_use_control_api(
+    monkeypatch: pytest.MonkeyPatch,
+    arguments: list[str],
+    expected: dict[str, object],
+) -> None:
+    configure(monkeypatch)
+    observed: dict[str, object] = {}
+
+    def request(method: str, url: str, **kwargs: object) -> httpx.Response:
+        observed.update({"method": method, "url": url, **kwargs})
+        return response(202, {"campaign_id": "campaign-one", "action_id": "action-one"})
+
+    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
+    result = runner.invoke(app, ["campaign", *arguments])
+
+    assert result.exit_code == 0
+    assert observed["method"] == "POST"
+    assert observed["url"] == (
+        "https://control.example/api/v1/campaigns/campaign-one/actions"
+    )
+    assert observed["json"] == expected
+
+
 def test_campaign_pause_endpoint_uses_confirmed_control_action(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
