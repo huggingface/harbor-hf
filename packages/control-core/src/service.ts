@@ -2692,13 +2692,18 @@ export class ControlService {
     const generation =
       Number.parseInt(sha256(idempotencyKey).slice(-8), 16) % 1_000_001;
     if (
+      input.action === "pause" ||
       input.action === "resume" ||
       (input.action === "supersede" && input.publication_id)
     ) {
       const actionKind =
-        input.action === "resume" ? "campaign.resume" : "publication.supersede";
+        input.action === "pause"
+          ? "campaign.pause"
+          : input.action === "resume"
+            ? "campaign.resume"
+            : "publication.supersede";
       const actionTarget =
-        input.action === "resume" ? "campaign" : (input.publication_id as string);
+        input.action === "supersede" ? (input.publication_id as string) : "campaign";
       const expectedActionId = deterministicId(
         "action",
         campaignId,
@@ -2710,15 +2715,17 @@ export class ControlService {
       if (existing) {
         const recorded = JSON.parse(existing.intent_body) as ActionIntent;
         const expectedPayload: ActionIntent["payload"] =
-          input.action === "resume"
-            ? {
-                reason: input.reason ?? null,
-                ...(input.task_limit ? { task_limit: input.task_limit } : {}),
-              }
-            : {
-                publication_id: actionTarget,
-                reason: input.reason ?? null,
-              };
+          input.action === "pause"
+            ? { reason: input.reason ?? null }
+            : input.action === "resume"
+              ? {
+                  reason: input.reason ?? null,
+                  ...(input.task_limit ? { task_limit: input.task_limit } : {}),
+                }
+              : {
+                  publication_id: actionTarget,
+                  reason: input.reason ?? null,
+                };
         if (
           recorded.action_kind !== actionKind ||
           recorded.target !== actionTarget ||
@@ -2982,6 +2989,21 @@ export class ControlService {
       ))
     )
       throw new PolicyError("replacement Job would exceed the campaign ceiling");
+    let actionTimestamp = this.clock.now().toISOString();
+    if (kind === "campaign.pause" || kind === "campaign.resume") {
+      const latestLifecycle = (await this.projection.campaignActions(campaignId)).find(
+        (action) =>
+          action.action_kind === "campaign.pause" ||
+          action.action_kind === "campaign.resume",
+      );
+      if (
+        latestLifecycle &&
+        Date.parse(latestLifecycle.created_at) >= Date.parse(actionTimestamp)
+      )
+        actionTimestamp = new Date(
+          Date.parse(latestLifecycle.created_at) + 1,
+        ).toISOString();
+    }
     const intent = this.actionIntent(
       campaignId,
       kind,
@@ -2989,6 +3011,7 @@ export class ControlService {
       generation,
       payload,
       actor,
+      actionTimestamp,
     );
     const adopted = Boolean(await this.projection.action(intent.action_id));
     await this.writeAction(intent);

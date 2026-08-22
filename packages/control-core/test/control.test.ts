@@ -966,6 +966,46 @@ describe("control service", () => {
     });
   });
 
+  it("orders same-millisecond pause and resume actions causally", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "same-millisecond-lifecycle-campaign",
+      operator,
+    );
+    const fixed = new Date("2026-08-22T12:00:00.000Z");
+    const clock = vi.spyOn(control.service.clock, "now").mockReturnValue(fixed);
+    const pause = await control.service.campaignAction(
+      result.campaign_id,
+      { action: "pause", confirmed: true },
+      "same-millisecond-pause",
+      operator,
+    );
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    await settle(reconciler, 3);
+    const resume = await control.service.campaignAction(
+      result.campaign_id,
+      { action: "resume", confirmed: true },
+      "same-millisecond-resume",
+      operator,
+    );
+    clock.mockRestore();
+    const pauseRow = await control.projection.action(pause.action_id);
+    const resumeRow = await control.projection.action(resume.action_id);
+
+    expect(Date.parse(resumeRow?.created_at ?? "")).toBeGreaterThan(
+      Date.parse(pauseRow?.created_at ?? ""),
+    );
+    expect(await control.projection.campaignPaused(result.campaign_id)).toBe(false);
+  });
+
   it("rejects resumed work before it exceeds the campaign ceiling", async () => {
     const control = await createTestControl(2, 1, 6);
     controls.push(control);
