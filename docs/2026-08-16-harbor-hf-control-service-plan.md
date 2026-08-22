@@ -893,6 +893,83 @@ The implementation is ready only when all of these pass:
 - The local quality, mutation, schema, documentation, dependency, browser, and
   Space build gates pass.
 
+## Valid-result implementation and rollout
+
+Merge the reviewed Sandbox admission work before changing result validity. That
+work keeps the rolling worker scheduler and adds durable campaign, namespace,
+hardware, provider, start-rate, and budget admission. Its local checks, relevant
+CI, and Pi Reviewer must pass before merge.
+
+Implement the remaining work from a fresh branch and worktree based on the updated
+main branch. The change must:
+
+- add a profile-owned evidence policy for required attempt metrics;
+- require finite positive input and output token counts for the selected Pi
+  provider workload;
+- make bounded replacement depend on evidence validity rather than an outcome
+  name;
+- record task exhaustion without selecting the final invalid receipt;
+- require exact valid selection coverage before campaign completion;
+- repeat those checks before publication;
+- add cooperative pause and exact resume at durable task boundaries;
+- write and verify result objects before the catalog makes them visible; and
+- append publication supersession without changing historical evidence.
+
+Update the `v1` contracts in place. New writers use only the new selection,
+exhaustion, lifecycle, publication, and supersession forms. Historical immutable
+records remain readable for audit, but there is no old-format writer or second
+active path. Rebuild a local projection from a read-only view of the Bucket before
+deployment. The rebuild must preserve every historical object and expose any old
+invalid selection as derived state.
+
+Run contract, projection, reconciler, worker, API, browser, CLI, normalization,
+publication, interruption, and replay tests. Reproduce zero-token agent, timeout,
+provider, infrastructure, missing-result, and fallback attempts. Prove that none
+can complete or publish and that exhaustion stops safely. Run Pi Reviewer against
+the correct base until no P0 or P1 finding remains, address valid review comments,
+and require the relevant local and pull-request checks to pass before merge.
+
+Deploy only the reviewed merged revision to the existing control Space. Keep the
+existing Space, Bucket, credentials, and resource boundaries. Verify the deployed
+revision, health, write mode, promoted capacity profile, projection rebuild, and an
+unpaid control-path smoke test before any inference work.
+
+The next Terminal-Bench diagnostic is a new full campaign, not a repair of the old
+campaign. This explicit new campaign may run the full locked task set again so it
+can produce one homogeneous result and test the sliding-window scheduler. Keep the
+benchmark, model, model revision, Pi version and reasoning, provider route,
+hardware, task inputs, timeouts, and one-trial setting unchanged. Record the new
+Harbor-HF implementation revision separately.
+
+Before launch, update the private paid launch review from the completed campaign's
+measured costs and current prices. Compare a fresh run with stopping and with reuse,
+record the reservation envelope and worst-case next action, and verify durable
+control-plane authorization. Use the existing 300,000,000 microusd campaign ceiling
+only when that authorization covers the new campaign and admission proves that
+`max(reserved, observed)` plus the next action fits. Otherwise stop before launch.
+Private campaign identifiers, costs, and authorization records do not belong in
+this public plan.
+
+Use the first admitted task as the real paid pause-resume canary when the final
+control contract can do so truthfully. Require a durable valid receipt, pause new
+admission, verify Job and Sandbox cleanup, then resume the same campaign. Admit the
+remaining tasks at worker concurrency eight. The sliding window must refill each
+free slot while tasks and approved capacity remain. Existing control actions and
+Sandbox state provide this evidence; do not add a monitoring-specific API.
+
+Stop new admission for a deterministic shared defect. Keep each valid receipt as
+saved work and allow only bounded transient replacement. Publish only after every
+logical task has one valid selected receipt and normalized rows, provenance,
+receipts, and catalog objects verify. A valid terminal outcome does not need a
+benchmark score, but it must satisfy the locked evidence policy.
+
+Append supersession only after the new publication commits. The old campaign,
+attempts, publication, catalog objects, and digests remain unchanged and directly
+readable. Completion also requires spend within the enforced ceiling, no pending
+action or cleanup, no active campaign Job or Sandbox, and every campaign-owned
+Endpoint paused with zero ready replicas. The result remains diagnostic and makes
+no model-promotion or official five-trial claim. Reports must not invent an ETA.
+
 ## Verification
 
 Keep the current Python checks while the CLI and remote workers remain. Once

@@ -674,6 +674,68 @@ closes the refill gate through the existing control API. The worker starts no
 new task after cancellation becomes visible. Tasks already running continue to
 their evidence and cleanup boundary. Harbor internals are not patched.
 
+## Valid attempts and campaign completion
+
+An attempt receipt is durable evidence. It is not automatically a valid result.
+Each campaign lock includes an evidence policy that names the metrics required for
+selection. A provider-backed Pi workload requires finite positive integer values
+for both `input_tokens` and `output_tokens`. Other workloads must state their own
+requirements in the lock. Control code must not branch on a benchmark, model, or
+harness name.
+
+The control service evaluates the policy before every terminal selection. Worker
+outcome names and worker-supplied replacement flags cannot make an invalid receipt
+selectable. A zero, missing, negative, fractional, or non-finite required metric
+makes the attempt invalid for selection.
+
+An invalid attempt remains in the Bucket with its evidence and cost. If the lock
+permits another attempt, the reconciler waits for cleanup and schedules the bounded
+replacement. If the attempt limit, reservation, or campaign ceiling prevents
+another attempt, the service writes an exhausted-task record. It does not select
+the last invalid receipt.
+
+A campaign is complete only when every locked logical task has exactly one selected
+attempt and every selection passes the locked evidence policy. A task with exhausted
+attempts makes the campaign failed. It cannot become a valid completed campaign and
+cannot publish. Historical records remain byte-for-byte unchanged. Projection
+replay may label an old campaign `completed-invalid` when its historical selection
+does not pass the current read-only audit.
+
+## Cooperative pause and resume
+
+Pause and resume use the existing control API, reconciler, Job, Sandbox, and Bucket.
+A pause request is durable. Once the request exists, the service and workers stop
+admitting new task slots. Active tasks may finish, write their evidence and attempt
+receipt, and close their Sandboxes. The execution Job then ends at that durable task
+boundary.
+
+Resume creates one idempotent execution action for unresolved tasks. It does not
+rerun a task that already has a valid selected attempt. Repeated pause or resume
+requests adopt the existing action. A restart of the Space or worker must produce
+the same unresolved task set and next action.
+
+A sliding-window worker checks campaign lifecycle and Sandbox admission inside the
+same slot-fill boundary. While a campaign is running, a free worker slot is refilled
+when pending work and capacity remain. Once pause or cancellation is visible, no new
+slot is admitted.
+
+## Safe publication and supersession
+
+Publication repeats the selection checks independently of campaign completion. It
+requires one selected receipt for every logical task, valid required metrics,
+matching task and campaign identities, matching provenance, complete normalized
+coverage, and no pending action or cleanup.
+
+The publisher writes immutable row objects and receipt evidence first. It reads them
+back and verifies their digests before it writes the catalog object that makes the
+publication visible. A partial write is not a published result. Every step uses
+deterministic keys so a retry adopts matching objects and rejects conflicting bytes.
+
+A replacement publication does not edit or delete an older publication. After the
+new publication commits, the service may append one supersession record that binds
+the old and new publication digests. Result views derive `current` and `superseded`
+state from that record. Direct historical reads remain available for audit.
+
 ## Reconciler
 
 The reconciler runs in the Fastify process and executes bounded work cycles. It

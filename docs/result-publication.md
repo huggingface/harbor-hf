@@ -25,6 +25,43 @@ visibility differs and never changes repository privacy automatically. Private
 programs use a dedicated private index so no private publication enters a shared
 public catalog.
 
+## Valid selection and publication commit
+
+An attempt receipt is evidence, not proof that a task has a valid result. Bucket
+publication requires exactly one selected receipt for every locked logical task.
+Each selection must pass the evidence policy in the campaign lock, match its task
+and campaign, and bind the recorded provenance. A provider-backed Pi policy may
+require finite positive `input_tokens` and `output_tokens`. The outcome name does
+not override that rule.
+
+The publisher must reject a campaign with a missing selection, duplicate selection,
+invalid required metric, exhausted task, incomplete normalized coverage, pending
+action, or pending cleanup. Campaign completion and publication run the same pure
+selection check independently so one faulty state transition cannot publish an
+invalid result.
+
+For the Bucket path, the publisher writes content-addressed normalized objects and
+receipt evidence before it makes the result visible. It reads those objects back and
+verifies their bytes and digests. The catalog record is the last public commit. A
+catalog reader exposes an entry only when its result objects, publication receipt,
+catalog digest, and control record agree. Retries adopt matching immutable objects
+and reject conflicting bytes. An interrupted write before the catalog commit leaves
+no published result.
+
+## Publication supersession
+
+A corrected publication never edits or deletes an older publication. Once the new
+publication commits and passes the full readback check, the control service appends
+a deterministic supersession record that binds the old and new publication IDs and
+digests. The old publication remains directly readable. Result views derive which
+publication is current and which is superseded from the append-only record.
+
+Projection replay may report an old campaign or publication as invalid when its
+historical selected attempt does not pass the read-only evidence audit. This derived
+state does not rewrite the historical campaign, attempt, receipt, result, or catalog
+object. A supersession retry adopts the existing matching record and cannot point to
+a different replacement.
+
 ## Completed campaigns from before the visibility cutover
 
 Do not edit an immutable campaign request or rerun an accepted agent to repair

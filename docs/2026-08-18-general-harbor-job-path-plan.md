@@ -470,6 +470,57 @@ A shared deterministic defect stops affected work. Policy, provenance,
 credential, budget, or cleanup failures stop the campaign instead of changing
 the protected contract.
 
+## Fresh diagnostic rerun
+
+The earlier single-trial diagnostic remains immutable evidence. Sealing a task is
+not enough when its selected receipt has zero required tokens. The control service
+must derive the old publication as invalid until an append-only supersession record
+points to a later valid publication. It must not edit the old campaign, attempts,
+result objects, receipt, or catalog.
+
+The selected recovery is a new full 89-task campaign from the same prepared Harbor
+workload, not a task repair inside the old campaign. This is an explicit exception
+to the normal rule against rerunning a valid logical task. The exception applies
+only to this separately approved fresh campaign because it must produce one
+homogeneous result and test the corrected parallel scheduler. It does not authorize
+retries in the old campaign.
+
+Keep the benchmark and model revisions, Pi 0.84.2 with high reasoning, provider
+route, hardware, task inputs, timeouts, one trial per task, and credentials unchanged.
+Pin and record the new reviewed Harbor-HF implementation revision separately. The
+new run remains diagnostic and cannot support a model-promotion or official
+five-trial claim.
+
+The worker uses concurrency eight and the rolling sliding window. Sandbox admission
+must permit eight active tasks for the campaign. When one task becomes durable and a
+pending task remains, the worker fills the free slot without waiting for the other
+active tasks. Verify refill through normal control actions and Sandbox state. Do not
+add a monitoring-only API or schema.
+
+Use the first admitted task as the real paid pause-resume canary if the final control
+contract can preserve the same logical campaign. The task must write a positive-token
+receipt before pause. Pause stops new admission, lets active work reach durable
+boundaries, closes Sandboxes, and ends the Job. Resume schedules only unresolved
+tasks. If that proof is unavailable or fails, stop before the full ramp.
+
+Every selected attempt must have finite positive input and output token counts.
+Evidence validity, rather than the worker outcome name, controls bounded replacement.
+If an invalid task exhausts its attempt, reservation, or campaign limit, record
+exhaustion and fail the campaign without selection or publication. A deterministic
+shared defect stops new admission for affected work.
+
+Update the private launch review before paid work. Verify current prices, the locked
+hardware, measured low and high costs, cheaper choices, the reservation envelope,
+and the worst-case next action. The 300,000,000 microusd ceiling applies only when a
+durable authorization covers this new campaign and the control service admits every
+action within it. Keep private cost and campaign records out of public Git.
+
+Publication requires exactly 89 selected valid receipts, complete normalized
+coverage, matching provenance, no pending action or cleanup, and verified immutable
+objects. Write and read back result and receipt evidence before the catalog becomes
+visible. After the new publication commits, append one supersession record for the
+old degraded publication. Keep both publications directly auditable.
+
 ## Completion criteria
 
 The work is complete when:
@@ -487,11 +538,19 @@ The work is complete when:
   ambiguity, rebuild cleanly, and change no lifecycle state;
 - the existing provider-error replacement sample passes the separate final Pi,
   token, provenance, evidence, isolation, publication, cost, and cleanup review;
-- the 89-task, one-trial Terminal-Bench 2.1 diagnostic campaign is complete and
-  published without a five-trial claim;
-- all 89 logical tasks are sealed, no action or cleanup is pending, cumulative
-  spend is within the enforced ceiling, all Sandboxes are closed, and every
-  owned Endpoint is paused with zero ready replicas;
+- the fresh 89-task, one-trial Terminal-Bench 2.1 diagnostic campaign is
+  complete and published without a five-trial claim;
+- all 89 logical tasks have one selected receipt with finite positive input and
+  output tokens;
+- the first-task pause-resume canary preserves its durable receipt and resumes
+  only unresolved tasks;
+- worker concurrency eight refills free slots while pending tasks and admitted
+  Sandbox capacity remain;
+- normalized rows, provenance, publication receipts, and catalog objects verify
+  before append-only supersession marks the old publication as superseded;
+- no action or cleanup is pending, cumulative spend is within the enforced
+  ceiling, all campaign Sandboxes and Jobs are closed, and every campaign-owned
+  Endpoint is paused with zero ready replicas;
 - every new Sandbox create has one durable admission grant before dispatch;
 - write-enabled startup requires a reviewed promoted capacity profile, while
   read-only historical replay remains available without one;
