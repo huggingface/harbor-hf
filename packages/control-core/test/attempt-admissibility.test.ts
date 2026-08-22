@@ -1,5 +1,9 @@
+import type { CampaignLock } from "@harbor-hf/contracts";
 import { describe, expect, it } from "vitest";
-import { attemptAdmissibility } from "../src/attempt-admissibility.js";
+import {
+  attemptAdmissibility,
+  requiredPositiveMetrics,
+} from "../src/attempt-admissibility.js";
 
 const required = ["input_tokens", "output_tokens"];
 
@@ -53,6 +57,23 @@ describe("attempt admissibility", () => {
     expect(
       attemptAdmissibility({ outcome: "complete", metrics: { input_tokens: 0 } }, []),
     ).toEqual({ admissible: true, reason: null });
+  });
+
+  it("derives provider usage requirements from a historical harness lock", () => {
+    const lock = {
+      profiles: [
+        {
+          kind: "launch_policy",
+          spec: {},
+        },
+        {
+          kind: "harness",
+          spec: { required_evidence: ["provider-usage"] },
+        },
+      ],
+    } as unknown as CampaignLock;
+
+    expect(requiredPositiveMetrics(lock)).toEqual(["input_tokens", "output_tokens"]);
   });
 
   it("rejects infrastructure and cancelled outcomes", () => {

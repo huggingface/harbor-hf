@@ -13,7 +13,10 @@ import {
   deterministicId,
   sha256,
 } from "@harbor-hf/contracts";
-import { attemptAdmissibility } from "./attempt-admissibility.js";
+import {
+  attemptAdmissibility,
+  requiredPositiveMetrics,
+} from "./attempt-admissibility.js";
 import { preparationRequired } from "./profiles.js";
 import type { ResultPublisher } from "./publication.js";
 import type { Projection } from "./projection.js";
@@ -1098,10 +1101,8 @@ export class Reconciler {
       (await this.projection.hasCampaignAction(attempt.campaign_id, "campaign.cancel"))
     )
       return;
-    const required = Array.isArray(source.payload.required_positive_metrics)
-      ? source.payload.required_positive_metrics
-      : [];
-    const validity = attemptAdmissibility(attempt, required);
+    const lock = await this.requiredLock(attempt.campaign_id);
+    const validity = attemptAdmissibility(attempt, requiredPositiveMetrics(lock));
     if (source.payload.worker_role === "preparation") {
       const attempts = (
         await this.projection.campaignAttempts(attempt.campaign_id)
