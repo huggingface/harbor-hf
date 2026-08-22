@@ -319,6 +319,31 @@ function profileString(
   return typeof value === "string" ? value : null;
 }
 
+const localPublicationSections = [
+  "tasks",
+  "executions",
+  "metrics",
+  "artifacts",
+] as const;
+
+async function publicationObjectsMatch(
+  runtime: Runtime,
+  receipt: PublicationReceipt,
+): Promise<boolean> {
+  if (receipt.object_digests.length !== localPublicationSections.length) return false;
+  for (const [index, digest] of receipt.object_digests.entries()) {
+    const section = localPublicationSections[index];
+    if (!section || !digest.startsWith("sha256:")) return false;
+    const key = `results/schema=v1/rows/${section}/${digest.slice("sha256:".length)}.parquet`;
+    try {
+      if (sha256(await runtime.store.read(key)) !== digest) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]> {
   const publications = await runtime.projection.publications();
   const projectedById = new Map(
@@ -377,6 +402,19 @@ async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]>
         receipt.campaign_id !== entry.campaign_id ||
         receipt.publication_state !== "published" ||
         receipt.catalog_digest !== object.digest
+      )
+        continue;
+      let projectedReceipt: PublicationReceipt;
+      try {
+        projectedReceipt = validateControlRecord<PublicationReceipt>(
+          JSON.parse(projected.body),
+        );
+      } catch {
+        continue;
+      }
+      if (
+        canonicalJson(projectedReceipt) !== canonicalJson(receipt) ||
+        !(await publicationObjectsMatch(runtime, receipt))
       )
         continue;
       byId.set(entry.publication_id, {

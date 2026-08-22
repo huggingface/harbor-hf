@@ -17,7 +17,12 @@ import { attemptAdmissibility } from "./attempt-admissibility.js";
 import { preparationRequired } from "./profiles.js";
 import type { ResultPublisher } from "./publication.js";
 import type { Projection } from "./projection.js";
-import { PolicyError, type ControlService } from "./service.js";
+import {
+  executionReservationCategory,
+  executionTaskBatches,
+  PolicyError,
+  type ControlService,
+} from "./service.js";
 
 export interface ExternalActionResult {
   outcome: ActionReceipt["outcome"];
@@ -595,7 +600,8 @@ export class Reconciler {
     const deployment = profile(lock, "deployment") as DeploymentProfileSpec;
     if (preparationRequired(deployment))
       await this.launchPreparation(lock, receipt.created_at, 0);
-    else await this.launchExecution(lock, receipt.created_at, 0);
+    else if (!(await this.projection.campaignPaused(lock.campaign_id)))
+      await this.launchExecution(lock, receipt.created_at, 0);
   }
 
   private async launchPreparation(
@@ -660,14 +666,10 @@ export class Reconciler {
     if (deployment.route !== "hf_job")
       throw new PolicyError("imported deployments cannot launch execution Jobs");
     const maximumTasks = deployment.worker_max_tasks_per_job ?? taskIds.length;
-    if (taskIds.length > maximumTasks) {
-      for (let offset = 0; offset < taskIds.length; offset += maximumTasks)
-        await this.launchExecution(
-          lock,
-          createdAt,
-          generation,
-          taskIds.slice(offset, offset + maximumTasks),
-        );
+    const batches = executionTaskBatches(taskIds, maximumTasks);
+    if (batches.length > 1) {
+      for (const batch of batches)
+        await this.launchExecution(lock, createdAt, generation, batch);
       return;
     }
     const batchKey = sha256(canonicalJson(taskIds)).slice(7, 23);
@@ -677,13 +679,17 @@ export class Reconciler {
         : `campaign-tasks-${batchKey}`;
     const policy = profile(lock, "launch_policy");
     const reservation = profileScalar<number>(policy, "reservation_microusd", "number");
-    await this.reserveInitialAction(
-      lock.campaign_id,
-      `execution-${batchKey}`,
-      generation,
-      reservation,
-      createdAt,
-    );
+    if (
+      !(await this.service.reserveJobActions(lock.campaign_id, [
+        {
+          category: executionReservationCategory(taskIds),
+          generation,
+          created_at: createdAt,
+          amount_microusd: reservation,
+        },
+      ]))
+    )
+      throw new PolicyError("execution Job would exceed the campaign ceiling");
     const inferenceToken = profileInferenceToken(
       deployment as unknown as Record<string, unknown>,
     );
@@ -1023,10 +1029,11 @@ export class Reconciler {
     attempt: AttemptReceipt,
     source: ActionIntent,
   ): Promise<void> {
-    if (attempt.outcome === "cancelled") {
-      await this.service.selectTerminal(attempt, "operator cancellation");
+    if (
+      attempt.outcome === "cancelled" &&
+      (await this.projection.hasCampaignAction(attempt.campaign_id, "campaign.cancel"))
+    )
       return;
-    }
     const required = Array.isArray(source.payload.required_positive_metrics)
       ? source.payload.required_positive_metrics
       : [];

@@ -873,11 +873,11 @@ describe("control service", () => {
     });
   });
 
-  it("starts paused and resumes only unresolved tasks", async () => {
-    const control = await createTestControl(3);
+  it("starts paused and reserves each resumed execution within the ceiling", async () => {
+    const control = await createTestControl(3, 1, 6);
     controls.push(control);
     const result = await control.service.submit(
-      { ...submission, start_paused: true },
+      { ...submission, ceiling_microusd: 12, start_paused: true },
       "paused-campaign-key",
       operator,
     );
@@ -904,6 +904,7 @@ describe("control service", () => {
       status: "paused",
       paused: true,
       terminal_tasks: 0,
+      reserved_microusd: 0,
     });
 
     await control.service.campaignAction(
@@ -917,6 +918,7 @@ describe("control service", () => {
     expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
       terminal_tasks: 1,
       paused: false,
+      reserved_microusd: 6,
     });
 
     await control.service.campaignAction(
@@ -939,7 +941,66 @@ describe("control service", () => {
       status: "completed",
       terminal_tasks: 3,
       admissible_tasks: 3,
+      reserved_microusd: 12,
       publication_status: "published",
+    });
+  });
+
+  it("rejects resumed work before it exceeds the campaign ceiling", async () => {
+    const control = await createTestControl(2, 1, 6);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 6, start_paused: true },
+      "paused-ceiling-campaign-key",
+      operator,
+    );
+    const launches: string[][] = [];
+    const noop = new NoopActions();
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      {
+        execute: async (intent): Promise<ExternalActionResult> => {
+          if (intent.action_kind === "job.launch")
+            launches.push([...(intent.payload.task_ids ?? [])]);
+          return noop.execute(intent);
+        },
+      },
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 4);
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "resume", task_limit: 1, confirmed: true },
+      "paused-ceiling-canary-key",
+      operator,
+    );
+    await settle(reconciler, 8);
+    await control.service.campaignAction(
+      result.campaign_id,
+      { action: "pause", confirmed: true },
+      "paused-ceiling-pause-key",
+      operator,
+    );
+    await settle(reconciler, 3);
+
+    await expect(
+      control.service.campaignAction(
+        result.campaign_id,
+        { action: "resume", confirmed: true },
+        "paused-ceiling-second-resume-key",
+        operator,
+      ),
+    ).rejects.toThrow("resumed execution would exceed the campaign ceiling");
+    expect(launches).toEqual([["task-001"]]);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "paused",
+      paused: true,
+      terminal_tasks: 1,
+      reserved_microusd: 6,
+      pending_actions: 0,
     });
   });
 
@@ -1823,6 +1884,87 @@ describe("control service", () => {
     expect(
       await control.projection.taskExhaustion(result.campaign_id, "task-001"),
     ).toMatchObject({ attempt_count: 2 });
+  });
+
+  it("retries a worker-reported cancellation without selecting it", async () => {
+    const control = await createTestControl(1, 2, 0, false, "forbidden", undefined, [
+      "input_tokens",
+      "output_tokens",
+    ]);
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "worker-cancelled-attempt-key",
+      operator,
+    );
+    let launches = 0;
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.launch") {
+          launches += 1;
+          return {
+            outcome: "created",
+            observed_state: "RUNNING",
+            resource_id: `job-cancelled-${launches}`,
+          };
+        }
+        if (intent.action_kind === "job.observe") {
+          const launchActionId = String(intent.payload.launch_action_id);
+          if (
+            !(await control.projection.attemptForActionTask(launchActionId, "task-001"))
+          ) {
+            const evidence = await putEvidenceReference(
+              control,
+              `worker-cancelled-evidence-${launches}`,
+            );
+            await control.service.attempt({
+              campaign_id: result.campaign_id,
+              task_id: "task-001",
+              attempt_id: `worker-cancelled-attempt-${launches}`,
+              action_id: launchActionId,
+              outcome: launches === 1 ? "cancelled" : "complete",
+              replacement_eligible: false,
+              ...evidence,
+              cost_microusd: 0,
+              metrics:
+                launches === 1
+                  ? { input_tokens: 0, output_tokens: 0 }
+                  : { input_tokens: 10, output_tokens: 2, reward: 1 },
+              completed_at: `2026-08-16T00:00:0${launches}.000Z`,
+            });
+          }
+          return {
+            outcome: "completed",
+            observed_state: "COMPLETED",
+            resource_id: `job-cancelled-${launches}`,
+          };
+        }
+        return new NoopActions().execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 20);
+
+    expect(launches).toBe(2);
+    const task = await control.projection.task(result.campaign_id, "task-001");
+    expect(task?.task.selected_attempt_id).toBe("worker-cancelled-attempt-2");
+    expect(task?.attempts).toMatchObject([
+      { outcome: "cancelled", replacement_eligible: 0 },
+      { outcome: "complete", replacement_eligible: 0 },
+    ]);
+    expect(await control.projection.campaign(result.campaign_id)).toMatchObject({
+      status: "completed",
+      admissible_tasks: 1,
+      invalid_selected_tasks: 0,
+      publication_status: "published",
+    });
   });
 
   it("closes and settles Sandbox commands before automatic retry", async () => {

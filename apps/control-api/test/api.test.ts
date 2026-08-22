@@ -5,6 +5,7 @@ import type {
   OperatorAcl,
   ProfileObject,
   ProfilePromotion,
+  PublicationReceipt,
 } from "@harbor-hf/contracts";
 import {
   canonicalJson,
@@ -1085,6 +1086,81 @@ describe("control API", () => {
     });
     expect(detail.statusCode).toBe(200);
     expect(detail.json()).toMatchObject({ publication_id: "publication-one" });
+    await app.close();
+  });
+
+  it("hides a local publication when its committed row objects are missing", async () => {
+    const { runtime, app } = await setup();
+    const submission = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: { "idempotency-key": "missing-publication-rows-campaign" },
+      payload: input,
+    });
+    const campaignId = submission.json().campaign_id as string;
+    const publicationId = deterministicId("publication", campaignId);
+    const resultPath = `results/schema=v1/publications/${publicationId}/receipt.json`;
+    const catalog = {
+      schema_version: "v1",
+      kind: "result.catalog",
+      record_id: deterministicId("result-catalog", publicationId),
+      created_at: "2026-08-16T00:00:01.000Z",
+      source_digest: `sha256:${"b".repeat(64)}`,
+      entries: [
+        {
+          publication_id: publicationId,
+          campaign_id: campaignId,
+          run_id: campaignId,
+          published_at: "2026-08-16T00:00:01.000Z",
+          benchmark: "control-smoke",
+          model: "control-smoke",
+          harness: "control-smoke",
+          inference_provider: "test-provider",
+          run_outcome: "complete",
+          quality: "clean",
+          publication_role: "diagnostic",
+          task_count: 1,
+          scored_task_count: 1,
+          strict_pass_count: 1,
+          primary_metric: { name: "mean_reward", value: 1, unit: "score" },
+          result_path: resultPath,
+        },
+      ],
+    };
+    const catalogBytes = new TextEncoder().encode(canonicalJson(catalog));
+    const catalogDigest = sha256(catalogBytes);
+    const receipt: PublicationReceipt = {
+      schema_version: "v1",
+      kind: "publication.receipt",
+      record_id: deterministicId("publication-receipt", publicationId),
+      created_at: "2026-08-16T00:00:01.000Z",
+      actor: { subject: "harbor-hf-control", role: "service" },
+      campaign_id: campaignId,
+      publication_id: publicationId,
+      publication_state: "published",
+      object_digests: [
+        `sha256:${"1".repeat(64)}`,
+        `sha256:${"2".repeat(64)}`,
+        `sha256:${"3".repeat(64)}`,
+        `sha256:${"4".repeat(64)}`,
+      ],
+      catalog_digest: catalogDigest,
+      error_code: null,
+    };
+    await runtime.store.create(
+      resultPath,
+      new TextEncoder().encode(canonicalJson(receipt)),
+    );
+    await runtime.store.create(
+      `results/schema=v1/catalog/records/${catalog.record_id}.json`,
+      catalogBytes,
+    );
+    await runtime.service.writePublication(receipt);
+
+    const response = await app.inject({ method: "GET", url: "/api/v1/results" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().items).toEqual([]);
     await app.close();
   });
 

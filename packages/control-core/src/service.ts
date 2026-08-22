@@ -310,6 +310,30 @@ function validatePreparedEnvironment(
     throw new PolicyError("prepared Harbor environment does not match control policy");
 }
 
+export interface JobBudgetReservation {
+  category: string;
+  generation: number;
+  created_at: string;
+  amount_microusd: number;
+}
+
+export function executionTaskBatches(
+  taskIds: readonly string[],
+  maximumTasks: number,
+): string[][] {
+  if (!Number.isInteger(maximumTasks) || maximumTasks <= 0)
+    throw new PolicyError("execution Job capacity must be a positive integer");
+  const batches: string[][] = [];
+  for (let offset = 0; offset < taskIds.length; offset += maximumTasks)
+    batches.push(taskIds.slice(offset, offset + maximumTasks));
+  return batches;
+}
+
+export function executionReservationCategory(taskIds: readonly string[]): string {
+  const batchKey = sha256(canonicalJson(taskIds)).slice(7, 23);
+  return `execution-${batchKey}`;
+}
+
 export class ControlService {
   readonly resolver: ProfileResolver;
   private appendQueue: Promise<void> = Promise.resolve();
@@ -2223,6 +2247,98 @@ export class ControlService {
     return record;
   }
 
+  async reserveJobActions(
+    campaignId: string,
+    reservations: readonly JobBudgetReservation[],
+  ): Promise<boolean> {
+    const operation = this.budgetQueue.then(() =>
+      this.reserveJobActionsSerialized(campaignId, reservations),
+    );
+    this.budgetQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  private async reserveJobActionsSerialized(
+    campaignId: string,
+    reservations: readonly JobBudgetReservation[],
+  ): Promise<boolean> {
+    const pending: Array<JobBudgetReservation & { recordId: string }> = [];
+    for (const reservation of reservations) {
+      if (reservation.amount_microusd <= 0) continue;
+      const recordId = deterministicId(
+        "budget",
+        campaignId,
+        reservation.category,
+        String(reservation.generation),
+      );
+      const existing = await this.projection.budget(recordId);
+      if (existing) {
+        if (
+          existing.campaign_id !== campaignId ||
+          existing.event_kind !== "reserve" ||
+          existing.amount_microusd !== reservation.amount_microusd
+        )
+          throw new IdempotencyConflictError(
+            "Job budget reservation conflicts with durable state",
+          );
+        continue;
+      }
+      pending.push({ ...reservation, recordId });
+    }
+    if (pending.length === 0) return true;
+
+    const campaign = await this.projection.campaign(campaignId);
+    if (!campaign) throw new PolicyError("campaign does not exist");
+    const additionalMicrousd = pending.reduce(
+      (sum, reservation) => sum + reservation.amount_microusd,
+      0,
+    );
+    const committedMicrousd = Math.max(
+      campaign.reserved_microusd,
+      campaign.observed_microusd,
+    );
+    if (committedMicrousd + additionalMicrousd > campaign.ceiling_microusd)
+      return false;
+
+    const observedOverage = Math.max(
+      0,
+      campaign.observed_microusd - campaign.reserved_microusd,
+    );
+    if (observedOverage > 0) {
+      await this.append({
+        schema_version: "v1",
+        kind: "budget.event",
+        record_id: deterministicId(
+          "budget",
+          campaignId,
+          "job-observed-overage",
+          pending.map((reservation) => reservation.recordId).join(","),
+        ),
+        created_at: pending[0]?.created_at ?? this.clock.now().toISOString(),
+        actor: serviceActor(),
+        campaign_id: campaignId,
+        event_kind: "reserve",
+        amount_microusd: observedOverage,
+      });
+    }
+    for (const reservation of pending) {
+      await this.append({
+        schema_version: "v1",
+        kind: "budget.event",
+        record_id: reservation.recordId,
+        created_at: reservation.created_at,
+        actor: serviceActor(),
+        campaign_id: campaignId,
+        event_kind: "reserve",
+        amount_microusd: reservation.amount_microusd,
+      });
+    }
+    return true;
+  }
+
   async reserveReplacement(
     campaignId: string,
     priorAttemptId: string,
@@ -2549,14 +2665,39 @@ export class ControlService {
       if (!campaign.paused) throw new PolicyError("campaign is not paused");
       if (campaign.pending_actions > 0)
         throw new PolicyError("campaign cannot resume while actions are pending");
-      if (
-        preparationRequired(
-          profileSpec<DeploymentProfileSpec>(lock.profiles, "deployment"),
-        )
-      ) {
+      const deployment = profileSpec<DeploymentProfileSpec>(
+        lock.profiles,
+        "deployment",
+      );
+      if (deployment.route !== "hf_job")
+        throw new PolicyError("imported campaigns cannot resume execution Jobs");
+      if (preparationRequired(deployment)) {
         const prepared = await this.preparedJob(campaignId);
         if (!prepared) throw new PolicyError("campaign preparation is incomplete");
       }
+      const unresolvedTasks = (await this.projection.tasks(campaignId)).filter(
+        (task) => !task.terminal_outcome,
+      );
+      const unresolvedTaskIds = (
+        input.task_limit ? unresolvedTasks.slice(0, input.task_limit) : unresolvedTasks
+      ).map((task) => task.task_id);
+      if (unresolvedTaskIds.length === 0)
+        throw new PolicyError("campaign has no unresolved tasks to resume");
+      const maximumTasks =
+        deployment.worker_max_tasks_per_job ?? unresolvedTaskIds.length;
+      const policy = this.resolvedProfile<LaunchPolicySpec>(lock, "launch_policy");
+      const reservationCreatedAt = this.clock.now().toISOString();
+      const reserved = await this.reserveJobActions(
+        campaignId,
+        executionTaskBatches(unresolvedTaskIds, maximumTasks).map((taskIds) => ({
+          category: executionReservationCategory(taskIds),
+          generation,
+          created_at: reservationCreatedAt,
+          amount_microusd: policy.reservation_microusd,
+        })),
+      );
+      if (!reserved)
+        throw new PolicyError("resumed execution would exceed the campaign ceiling");
       kind = "campaign.resume";
       payload = {
         reason: input.reason ?? null,
