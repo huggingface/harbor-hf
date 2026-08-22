@@ -101,7 +101,11 @@ describe("HuggingFaceBucketStore", () => {
     hub.downloadFile
       .mockResolvedValueOnce({
         arrayBuffer: async () => {
-          throw new TypeError("fetch failed");
+          throw new TypeError("terminated", {
+            cause: Object.assign(new Error("socket closed"), {
+              code: "UND_ERR_SOCKET",
+            }),
+          });
         },
       })
       .mockResolvedValueOnce(new Blob(["payload"]));

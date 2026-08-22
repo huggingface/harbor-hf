@@ -19,13 +19,21 @@ export interface HuggingFaceBucketStoreOptions {
 
 function transientDownloadError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  if (error.name === "TypeError" && error.message === "fetch failed") return true;
+  if (
+    error.name === "TypeError" &&
+    (error.message === "fetch failed" || error.message === "terminated")
+  )
+    return true;
   const code = (error as NodeJS.ErrnoException).code;
   if (
     code === "ECONNRESET" ||
     code === "ETIMEDOUT" ||
     code === "EAI_AGAIN" ||
-    code === "ENETUNREACH"
+    code === "ENETUNREACH" ||
+    code === "UND_ERR_SOCKET" ||
+    code === "UND_ERR_CONNECT_TIMEOUT" ||
+    code === "UND_ERR_HEADERS_TIMEOUT" ||
+    code === "UND_ERR_BODY_TIMEOUT"
   )
     return true;
   return transientDownloadError(error.cause);
