@@ -2691,6 +2691,50 @@ export class ControlService {
     if (!lock) throw new PolicyError("campaign lock does not exist");
     const generation =
       Number.parseInt(sha256(idempotencyKey).slice(-8), 16) % 1_000_001;
+    if (
+      input.action === "resume" ||
+      (input.action === "supersede" && input.publication_id)
+    ) {
+      const actionKind =
+        input.action === "resume" ? "campaign.resume" : "publication.supersede";
+      const actionTarget =
+        input.action === "resume" ? "campaign" : (input.publication_id as string);
+      const expectedActionId = deterministicId(
+        "action",
+        campaignId,
+        actionKind,
+        actionTarget,
+        String(generation),
+      );
+      const existing = await this.projection.action(expectedActionId);
+      if (existing) {
+        const recorded = JSON.parse(existing.intent_body) as ActionIntent;
+        const expectedPayload: ActionIntent["payload"] =
+          input.action === "resume"
+            ? {
+                reason: input.reason ?? null,
+                ...(input.task_limit ? { task_limit: input.task_limit } : {}),
+              }
+            : {
+                publication_id: actionTarget,
+                reason: input.reason ?? null,
+              };
+        if (
+          recorded.action_kind !== actionKind ||
+          recorded.target !== actionTarget ||
+          canonicalJson(recorded.payload) !== canonicalJson(expectedPayload)
+        )
+          throw new IdempotencyConflictError(
+            `idempotency key belongs to a different ${input.action} action`,
+          );
+        return {
+          campaign_id: campaignId,
+          action_id: expectedActionId,
+          status_url: `/api/v1/campaigns/${campaignId}`,
+          adopted: true,
+        };
+      }
+    }
     if (input.action === "retry_infrastructure" && input.task_id) {
       const expectedActionId = deterministicId(
         "action",

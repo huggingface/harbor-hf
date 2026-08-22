@@ -335,7 +335,9 @@ export class Reconciler {
         "campaign.cancel",
       );
       const terminal = await this.allActionTasksTerminal(intent);
-      const paused = await this.projection.campaignPaused(intent.campaign_id);
+      const paused =
+        intent.payload.worker_role !== "preparation" &&
+        (await this.projection.campaignPaused(intent.campaign_id));
       const suppression: "cancelled" | "paused" | "terminal" | null = cancelled
         ? "cancelled"
         : paused

@@ -398,6 +398,99 @@ describe("prepared Harbor jobs", () => {
     expect(execution?.payload.prepared_job_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
+  it("prepares a start-paused campaign and adopts its repeated resume", async () => {
+    const { service, projection } = await setup();
+    const submitted = await service.submit(
+      {
+        benchmark: "prepared-benchmark",
+        model: "prepared-model",
+        harness: "prepared-harness",
+        deployment: "prepared-deployment",
+        launch_policy: "prepared-policy",
+        ceiling_microusd: 1_000_000,
+        start_paused: true,
+        confirmed: true,
+      },
+      "prepared-paused-campaign",
+      { subject: "operator", role: "operator" },
+    );
+    const actions = new PreparationActions();
+    const reconciler = new Reconciler(
+      service,
+      projection,
+      actions,
+      new ResultPublisher(service.store, projection, service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        worker_receipt_grace_ms: 0,
+        batch_size: 16,
+      },
+    );
+    await settle(reconciler, 5);
+    const lock = await projection.campaignLock(submitted.campaign_id);
+    if (!lock) throw new Error("campaign lock is missing");
+    const preparation = (await projection.campaignActions(submitted.campaign_id))
+      .map((row) => JSON.parse(row.intent_body) as ActionIntent)
+      .find(
+        (intent) =>
+          intent.action_kind === "job.launch" &&
+          intent.payload.worker_role === "preparation",
+      );
+    if (!preparation) throw new Error("preparation launch is missing");
+    const task = lock.tasks[0];
+    if (!task) throw new Error("campaign task is missing");
+    await service.submitPreparedJob(
+      submitted.campaign_id,
+      preparation.action_id,
+      trialPayload(task.input_digest),
+    );
+    await service.submitPreparedJob(
+      submitted.campaign_id,
+      preparation.action_id,
+      finalizePayload(lock.created_at),
+    );
+    actions.prepared = true;
+    await settle(reconciler, 5);
+
+    expect(await service.preparedJob(submitted.campaign_id)).not.toBeNull();
+    expect(await projection.campaign(submitted.campaign_id)).toMatchObject({
+      status: "paused",
+      paused: true,
+      terminal_tasks: 0,
+    });
+    expect(
+      actions.intents.filter(
+        (intent) =>
+          intent.action_kind === "job.launch" &&
+          intent.payload.worker_role === "execution",
+      ),
+    ).toHaveLength(0);
+
+    const first = await service.campaignAction(
+      submitted.campaign_id,
+      { action: "resume", task_limit: 1, confirmed: true },
+      "prepared-paused-resume",
+      { subject: "operator", role: "operator" },
+    );
+    const repeated = await service.campaignAction(
+      submitted.campaign_id,
+      { action: "resume", task_limit: 1, confirmed: true },
+      "prepared-paused-resume",
+      { subject: "operator", role: "operator" },
+    );
+    expect(repeated).toMatchObject({ action_id: first.action_id, adopted: true });
+    await settle(reconciler, 4);
+
+    expect(
+      actions.intents.filter(
+        (intent) =>
+          intent.action_kind === "job.launch" &&
+          intent.payload.worker_role === "execution",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("stops preparation after its configured attempt limit", async () => {
     const { service, projection } = await setup();
     const submitted = await service.submit(

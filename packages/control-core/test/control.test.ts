@@ -4248,6 +4248,21 @@ describe("control service", () => {
     expect(
       (await control.projection.campaignPublication(oldCampaign.campaign_id))?.body,
     ).toBe(oldBody);
+    const adoptedSupersession = await control.service.campaignAction(
+      newCampaign.campaign_id,
+      {
+        action: "supersede",
+        publication_id: oldPublication?.publication_id,
+        reason: "replacement publication validated",
+        confirmed: true,
+      },
+      "supersede-publication-key",
+      operator,
+    );
+    expect(adoptedSupersession).toMatchObject({
+      action_id: supersedeAction.action_id,
+      adopted: true,
+    });
 
     const laterCampaign = await control.service.submit(
       submission,
