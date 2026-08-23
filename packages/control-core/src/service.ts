@@ -1595,11 +1595,15 @@ export class ControlService {
     intent: ActionIntent,
     actor: Actor,
   ): Promise<ActionReceipt> {
-    if (intent.action_kind !== "sandbox.exec")
-      throw new PolicyError("only Sandbox commands can be marked ambiguous");
+    if (
+      intent.action_kind !== "sandbox.exec" &&
+      intent.action_kind !== "sandbox.write" &&
+      intent.action_kind !== "sandbox.read"
+    )
+      throw new PolicyError("only Sandbox I/O actions can be marked ambiguous");
     const resourceId = intent.payload.resource_id;
     if (typeof resourceId !== "string")
-      throw new PolicyError("ambiguous Sandbox command has no resource identity");
+      throw new PolicyError("ambiguous Sandbox I/O action has no resource identity");
     const receipt: ActionReceipt = {
       schema_version: "v1",
       kind: "action.receipt",
@@ -2004,12 +2008,12 @@ export class ControlService {
     taskId: string,
     actor: Actor = serviceActor(),
   ): Promise<{ settled: number; unresolved: number }> {
-    const candidates = await this.projection.pendingDispatchedSandboxExecActions(
+    const candidates = await this.projection.pendingDispatchedSandboxCommandActions(
       campaignId,
       taskId,
     );
     if (candidates.length >= 1_025)
-      throw new PolicyError("too many ambiguous Sandbox commands for one task");
+      throw new PolicyError("too many ambiguous Sandbox I/O actions for one task");
     const campaignActions = await this.projection.campaignActions(campaignId);
     let settled = 0;
     let unresolved = 0;
@@ -2024,7 +2028,7 @@ export class ControlService {
           const createActionId = intent.payload.sandbox_create_action_id;
           const resourceId = intent.payload.resource_id;
           if (typeof createActionId !== "string" || typeof resourceId !== "string")
-            throw new PolicyError("ambiguous Sandbox command has invalid ownership");
+            throw new PolicyError("ambiguous Sandbox I/O action has invalid ownership");
           const create = await this.projection.action(createActionId);
           if (
             !create ||
@@ -2033,11 +2037,13 @@ export class ControlService {
             create.resource_id !== resourceId
           )
             throw new PolicyError(
-              "ambiguous Sandbox command has invalid create action",
+              "ambiguous Sandbox I/O action has invalid create action",
             );
           const createIntent = JSON.parse(create.intent_body) as ActionIntent;
           if (createIntent.payload.task_id !== taskId)
-            throw new PolicyError("ambiguous Sandbox command belongs to another task");
+            throw new PolicyError(
+              "ambiguous Sandbox I/O action belongs to another task",
+            );
           const close = campaignActions.find((action) => {
             if (action.action_kind !== "sandbox.close" || !action.receipt_body)
               return false;
@@ -2934,7 +2940,7 @@ export class ControlService {
         task.task_id,
         actor,
       );
-      const unresolved = await this.projection.pendingDispatchedSandboxExecActions(
+      const unresolved = await this.projection.pendingDispatchedSandboxCommandActions(
         campaignId,
         task.task_id,
       );
@@ -3322,13 +3328,13 @@ export class ControlService {
         input.task_id,
         actor,
       );
-      const unresolved = await this.projection.pendingDispatchedSandboxExecActions(
+      const unresolved = await this.projection.pendingDispatchedSandboxCommandActions(
         campaignId,
         input.task_id,
       );
       if (settlement.unresolved > 0 || unresolved.length > 0)
         throw new PolicyError(
-          "infrastructure retry requires terminal Sandbox command recovery",
+          "infrastructure retry requires terminal Sandbox I/O action recovery",
         );
       const sandboxAuthorized = Boolean(
         deployment.sandbox || deployment.sandbox_template,

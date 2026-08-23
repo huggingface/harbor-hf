@@ -135,6 +135,7 @@ async function appendClosedSandboxAmbiguity(
   taskId: string,
   label: string,
   closeMode: "historical" | "service" | "none" = "historical",
+  commandKind: "sandbox.exec" | "sandbox.read" | "sandbox.write" = "sandbox.exec",
 ): Promise<ActionIntent> {
   const policy: SandboxPolicy = {
     image: `registry.example/sandbox@sha256:${"f".repeat(64)}`,
@@ -165,20 +166,28 @@ async function appendClosedSandboxAmbiguity(
     resource_id: resourceId,
   });
   await control.service.markAdvanced(create, createReceipt);
+  const commandPayload = {
+    task_id: taskId,
+    sandbox_create_action_id: create.action_id,
+    resource_id: resourceId,
+    sandbox: policy,
+    ...(commandKind === "sandbox.exec"
+      ? { command: ["true"] as [string], cwd: "/app", timeout_seconds: 30 }
+      : commandKind === "sandbox.read"
+        ? { path: "/tmp/result.json" }
+        : {
+            path: "/tmp/input.json",
+            content_digest: sha256("sandbox input"),
+            content_size: 13,
+            mode: "0600",
+          }),
+  };
   const command = control.service.actionIntent(
     campaignId,
-    "sandbox.exec",
+    commandKind,
     `sandbox-command-${label}`,
     0,
-    {
-      task_id: taskId,
-      sandbox_create_action_id: create.action_id,
-      resource_id: resourceId,
-      sandbox: policy,
-      command: ["true"],
-      cwd: "/app",
-      timeout_seconds: 30,
-    },
+    commandPayload,
   );
   await control.service.writeAction(command);
   await control.service.dispatchAction(command, "2026-08-20T00:00:00.000Z");
@@ -3066,7 +3075,43 @@ describe("control service", () => {
     });
     expect(await control.projection.actionAdvanced(command.action_id)).toBe(true);
     expect(
-      await control.projection.pendingDispatchedSandboxExecActions(
+      await control.projection.pendingDispatchedSandboxCommandActions(
+        result.campaign_id,
+        "task-001",
+      ),
+    ).toEqual([]);
+  });
+
+  it("settles dispatched Sandbox reads and writes when their Sandboxes close", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "close-settles-file-actions-campaign-key",
+      operator,
+    );
+
+    for (const [label, actionKind] of [
+      ["read", "sandbox.read"],
+      ["write", "sandbox.write"],
+    ] as const) {
+      const action = await appendClosedSandboxAmbiguity(
+        control,
+        result.campaign_id,
+        "task-001",
+        label,
+        "service",
+        actionKind,
+      );
+      expect(await control.projection.action(action.action_id)).toMatchObject({
+        outcome: "failed",
+        observed_state: "AMBIGUOUS",
+      });
+      expect(await control.projection.actionAdvanced(action.action_id)).toBe(true);
+    }
+
+    expect(
+      await control.projection.pendingDispatchedSandboxCommandActions(
         result.campaign_id,
         "task-001",
       ),
@@ -3145,7 +3190,7 @@ describe("control service", () => {
     });
     const pendingQuery = vi.spyOn(
       control.projection,
-      "pendingDispatchedSandboxExecActions",
+      "pendingDispatchedSandboxCommandActions",
     );
     let closeCompleted = false;
     const closeCompletion = control.service
@@ -3165,7 +3210,7 @@ describe("control service", () => {
     });
     expect(await control.projection.actionAdvanced(command.action_id)).toBe(true);
     expect(
-      await control.projection.pendingDispatchedSandboxExecActions(
+      await control.projection.pendingDispatchedSandboxCommandActions(
         result.campaign_id,
         "task-001",
       ),
@@ -3329,7 +3374,7 @@ describe("control service", () => {
       "retry",
     );
     expect(
-      await control.projection.pendingDispatchedSandboxExecActions(
+      await control.projection.pendingDispatchedSandboxCommandActions(
         result.campaign_id,
         "task-001",
       ),
@@ -3356,7 +3401,7 @@ describe("control service", () => {
     });
     expect(await control.projection.actionAdvanced(command.action_id)).toBe(true);
     expect(
-      await control.projection.pendingDispatchedSandboxExecActions(
+      await control.projection.pendingDispatchedSandboxCommandActions(
         result.campaign_id,
         "task-001",
       ),
@@ -3392,7 +3437,10 @@ describe("control service", () => {
       observed_state: "AMBIGUOUS",
     });
     expect(
-      await rebuilt.pendingDispatchedSandboxExecActions(result.campaign_id, "task-001"),
+      await rebuilt.pendingDispatchedSandboxCommandActions(
+        result.campaign_id,
+        "task-001",
+      ),
     ).toEqual([]);
     await rebuilt.close();
   });

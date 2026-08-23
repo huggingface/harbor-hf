@@ -1896,7 +1896,7 @@ export class Projection {
     }));
   }
 
-  async pendingDispatchedSandboxExecActions(
+  async pendingDispatchedSandboxCommandActions(
     campaignId: string,
     taskId?: string,
     limit = 1_025,
@@ -1906,7 +1906,11 @@ export class Projection {
       .innerJoin("dispatches", "dispatches.action_id", "actions.action_id")
       .select("actions.intent_body")
       .where("actions.campaign_id", "=", campaignId)
-      .where("actions.action_kind", "=", "sandbox.exec")
+      .where("actions.action_kind", "in", [
+        "sandbox.exec",
+        "sandbox.write",
+        "sandbox.read",
+      ])
       .where("actions.receipt_body", "is", null)
       .$if(taskId !== undefined, (query) =>
         query.where(

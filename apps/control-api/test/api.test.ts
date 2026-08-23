@@ -1933,7 +1933,7 @@ describe("control API", () => {
     const resultPrefix = resultPath.slice(0, -"/result.json".length);
     expect(await runtime.store.list(resultPrefix)).toEqual([]);
     expect(
-      await runtime.projection.pendingDispatchedSandboxExecActions(
+      await runtime.projection.pendingDispatchedSandboxCommandActions(
         campaignId,
         "control-smoke-task",
       ),

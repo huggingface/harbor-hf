@@ -174,13 +174,13 @@ describe("projection replay", () => {
     await control.service.writeAction(undispatched);
 
     expect(
-      await control.projection.pendingDispatchedSandboxExecActions(
+      await control.projection.pendingDispatchedSandboxCommandActions(
         submitted.campaign_id,
         "task-001",
       ),
     ).toEqual([command]);
     expect(
-      await control.projection.pendingDispatchedSandboxExecActions(
+      await control.projection.pendingDispatchedSandboxCommandActions(
         submitted.campaign_id,
         "another-task",
       ),
@@ -211,7 +211,7 @@ describe("projection replay", () => {
       "Sandbox command count exceeds immutable policy",
     );
     expect(
-      await control.projection.pendingDispatchedSandboxExecActions(
+      await control.projection.pendingDispatchedSandboxCommandActions(
         submitted.campaign_id,
         "task-001",
       ),

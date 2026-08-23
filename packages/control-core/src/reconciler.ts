@@ -1160,7 +1160,7 @@ export class Reconciler {
         attempt.campaign_id,
         attempt.task_id,
       );
-      const unresolved = await this.projection.pendingDispatchedSandboxExecActions(
+      const unresolved = await this.projection.pendingDispatchedSandboxCommandActions(
         attempt.campaign_id,
         attempt.task_id,
       );
