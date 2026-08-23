@@ -1709,7 +1709,7 @@ describe("control API", () => {
           "idempotency-key": "sandbox-command-key",
         },
         payload: {
-          command: ["python", "worker.py"],
+          command: ["python", "x".repeat(5_000)],
           cwd: "/app",
           timeout_seconds: 60,
         },

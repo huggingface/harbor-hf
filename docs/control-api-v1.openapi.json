@@ -1459,7 +1459,7 @@
                     "maxItems": 128,
                     "items": {
                       "type": "string",
-                      "maxLength": 4096
+                      "maxLength": 1048576
                     }
                   },
                   "cwd": {

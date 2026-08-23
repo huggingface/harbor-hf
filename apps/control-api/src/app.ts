@@ -95,6 +95,7 @@ const embeddedCookiePolicy = {
   sameSite: "none",
   secure: true,
 } as const;
+const sandboxRequestBodyLimit = 1024 * 1024;
 
 function hubJobInspectUrl(namespace: string, jobId: string): string {
   return `https://huggingface.co/jobs/${encodeURIComponent(namespace)}/${encodeURIComponent(jobId)}`;
@@ -1584,7 +1585,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.post(
     "/api/v1/campaigns/:campaign_id/tasks/:task_id/sandboxes/:sandbox_id/exec",
     {
-      bodyLimit: 1024 * 1024,
+      bodyLimit: sandboxRequestBodyLimit,
       schema: {
         tags: ["campaigns"],
         body: {
@@ -1596,7 +1597,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
               type: "array",
               minItems: 1,
               maxItems: 128,
-              items: { type: "string", maxLength: 4096 },
+              items: { type: "string", maxLength: sandboxRequestBodyLimit },
             },
             cwd: { type: "string", minLength: 1, maxLength: 512 },
             timeout_seconds: { type: "integer", minimum: 1, maximum: 86400 },
