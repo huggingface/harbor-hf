@@ -92,4 +92,4 @@ async def test_install_creates_isolated_agent_user(temp_dir) -> None:
         call.kwargs["command"] for call in mock_env.exec.call_args_list
     )
     assert "https://fx.sh/setup.sh" in commands
-    assert "bash -s -- 0.0.5" in commands
+    assert "v0.0.5" in commands
