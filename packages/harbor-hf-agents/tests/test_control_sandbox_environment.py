@@ -146,6 +146,59 @@ async def test_routes_harbor_operations_through_worker_capability(
 
 
 @pytest.mark.asyncio
+async def test_keeps_an_idle_sandbox_alive_through_observation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    FakeClient.calls.clear()
+    FakeClient.idempotency_keys.clear()
+    for key, value in {
+        "HARBOR_HF_CONTROL_URL": "https://control.example",
+        "HARBOR_HF_WORKER_CAPABILITY": "capability",
+        "HARBOR_HF_CAMPAIGN_ID": "campaign-1",
+        "HARBOR_HF_ACTION_ID": "action-attempt-1",
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(control, "_ControlClient", FakeClient)
+    environment_dir = tmp_path / "environment"
+    environment_dir.mkdir()
+    environment = control.ControlSandboxEnvironment(
+        environment_dir=environment_dir,
+        environment_name="source-task",
+        session_id="trial-1__env",
+        trial_paths=TrialPaths(tmp_path / "trial"),
+        task_env_config=EnvironmentConfig(
+            docker_image="example.invalid/task:tag",
+            workdir="/app",
+        ),
+        control_task_id="source-task-trial-1",
+        control_max_command_seconds=900,
+    )
+    environment._keepalive_seconds = 0.01
+    monkeypatch.setattr(environment, "_upload_environment_dir_after_start", _noop)
+
+    await environment.start(force_build=False)
+    for _ in range(100):
+        observations = [
+            call
+            for call in FakeClient.calls
+            if call[0] == "POST" and call[1].endswith("/observe")
+        ]
+        if len(observations) >= 2:
+            break
+        await control.asyncio.sleep(0.01)
+    await environment.stop(delete=True)
+
+    observation_keys = [
+        key
+        for call, key in zip(FakeClient.calls, FakeClient.idempotency_keys, strict=True)
+        if call[0] == "POST" and call[1].endswith("/observe")
+    ]
+    assert len(observation_keys) >= 2
+    assert len(set(observation_keys)) == len(observation_keys)
+
+
+@pytest.mark.asyncio
 async def test_waits_for_queued_sandbox_admission_with_one_idempotency_key(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

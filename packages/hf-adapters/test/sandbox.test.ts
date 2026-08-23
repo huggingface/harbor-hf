@@ -204,21 +204,21 @@ describe("HuggingFaceSandboxGateway", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("reports RUNNING only after the Sandbox health check passes", async () => {
+  it("reports RUNNING only after an authenticated Sandbox keepalive passes", async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       if (String(url).includes("/api/jobs/"))
         return new Response(JSON.stringify(rawJob()), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      expect(String(url)).toMatch(/--49983\.hf\.jobs\/health$/);
-      expect(new Headers(init?.headers).get("Authorization")).toBe(
-        `Bearer ${controlToken}`,
-      );
-      return new Response(
-        JSON.stringify({ status: "ok", version: "0.5.0", uptime_ms: 12 }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      );
+      expect(String(url)).toMatch(/--49983\.hf\.jobs\/v1\/processes$/);
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Authorization")).toBe(`Bearer ${controlToken}`);
+      expect(headers.get("X-Sandbox-Token")).toMatch(/^[0-9a-f]{64}$/);
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
     const gateway = new HuggingFaceSandboxGateway({

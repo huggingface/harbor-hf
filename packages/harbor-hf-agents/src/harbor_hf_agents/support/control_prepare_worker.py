@@ -239,6 +239,7 @@ def _execution_trial_lock(
     lock: TrialLock,
     task_id: str,
     max_command_seconds: int,
+    keepalive_seconds: int,
 ) -> TrialLock:
     environment = EnvironmentConfig.model_validate(
         {
@@ -252,6 +253,7 @@ def _execution_trial_lock(
             "kwargs": {
                 "control_task_id": task_id,
                 "control_max_command_seconds": max_command_seconds,
+                "control_keepalive_seconds": keepalive_seconds,
             },
         }
     )
@@ -292,10 +294,16 @@ def _trial_body(
             harbor_lock.timeout_multiplier,
         ),
     }
+    max_command_seconds = max(phase_timeouts.values())
+    idle_timeout_seconds = min(
+        sum(phase_timeouts.values()) + int(template["lifetime_overhead_seconds"]),
+        max_command_seconds + int(template["idle_timeout_overhead_seconds"]),
+    )
     prepared_lock = _execution_trial_lock(
         harbor_lock,
         expected.task_id,
-        max(phase_timeouts.values()),
+        max_command_seconds,
+        max(1, min(300, idle_timeout_seconds // 2)),
     )
     return prepared_lock, {
         "phase": "trial",

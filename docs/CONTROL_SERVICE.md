@@ -306,11 +306,14 @@ and requests within those limits.
 
 Sandbox policies lock the digest-pinned image, hardware, lifetime, idle timeout,
 reservation, hourly cost, command count, command timeout, transfer size and
-filesystem roots. The control service writes a dispatch fence before every
-Sandbox side effect. Create and close are remotely adoptable. File writes repeat
-only with identical content-addressed bytes. Results are stored immutably outside
-the projection prefix before the action receipt, so restart recovery cannot
-duplicate a completed operation.
+filesystem roots. While Harbor can wait outside the Sandbox between commands,
+the execution worker submits periodic observe actions. Each observation uses an
+authenticated Sandbox process-list request, which verifies readiness and refreshes
+the Sandbox idle watchdog without starting a command. The control service writes
+a dispatch fence before every Sandbox side effect. Create and close are remotely
+adoptable. File writes repeat only with identical content-addressed bytes. Results
+are stored immutably outside the projection prefix before the action receipt, so
+restart recovery cannot duplicate a completed operation.
 
 `sandbox.exec` is not replay-safe. If its external call fails after dispatch, the
 service writes no result. It writes an action receipt with `outcome=failed`,

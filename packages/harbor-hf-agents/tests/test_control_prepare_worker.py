@@ -115,11 +115,12 @@ def test_locks_the_prepared_command_limit_into_the_environment() -> None:
         }
     )
 
-    prepared = worker._execution_trial_lock(source, "task-a-trial-1", 900)
+    prepared = worker._execution_trial_lock(source, "task-a-trial-1", 900, 300)
 
     assert prepared.environment.kwargs == {
         "control_task_id": "task-a-trial-1",
         "control_max_command_seconds": 900,
+        "control_keepalive_seconds": 300,
     }
 
 

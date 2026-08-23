@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import json
 import os
@@ -26,6 +27,7 @@ from harbor.models.task.config import EnvironmentConfig
 from harbor.models.trial.paths import TrialPaths
 
 _CHUNK_BYTES = 16 * 1024 * 1024
+_SANDBOX_KEEPALIVE_SECONDS = 300.0
 _TERMINAL_STATES = {"CANCELED", "CANCELLED", "COMPLETED", "DELETED", "ERROR", "STOPPED"}
 
 
@@ -143,6 +145,7 @@ class ControlSandboxEnvironment(BaseEnvironment):
         *args: Any,  # noqa: ANN401 -- Harbor environment API
         control_task_id: str,
         control_max_command_seconds: int,
+        control_keepalive_seconds: int = int(_SANDBOX_KEEPALIVE_SECONDS),
         **kwargs: Any,  # noqa: ANN401 -- Harbor environment API
     ) -> None:
         if not control_task_id:
@@ -153,12 +156,21 @@ class ControlSandboxEnvironment(BaseEnvironment):
             or control_max_command_seconds < 1
         ):
             raise ValueError("control_max_command_seconds must be a positive integer")
+        if (
+            not isinstance(control_keepalive_seconds, int)
+            or isinstance(control_keepalive_seconds, bool)
+            or control_keepalive_seconds < 1
+        ):
+            raise ValueError("control_keepalive_seconds must be a positive integer")
         self._campaign_id = _required("HARBOR_HF_CAMPAIGN_ID")
         self._action_id = _required("HARBOR_HF_ACTION_ID")
         self._task_id = control_task_id
         self._max_command_seconds = control_max_command_seconds
+        self._keepalive_seconds = float(control_keepalive_seconds)
         self._client = _ControlClient(self._campaign_id, self._task_id)
         self._sandbox_id: str | None = None
+        self._keepalive_task: asyncio.Task[None] | None = None
+        self._keepalive_terminal_state: str | None = None
         self._operation = 0
         super().__init__(
             environment_dir=environment_dir,
@@ -276,6 +288,7 @@ class ControlSandboxEnvironment(BaseEnvironment):
                 except BaseException:
                     await self.stop(delete=True)
                     raise
+                self._start_keepalive()
                 return
             if state in _TERMINAL_STATES:
                 raise RuntimeError(
@@ -285,9 +298,53 @@ class ControlSandboxEnvironment(BaseEnvironment):
         await self.stop(delete=True)
         raise RuntimeError("control Sandbox start timed out")
 
+    def _start_keepalive(self) -> None:
+        if self._keepalive_task is not None:
+            raise RuntimeError("control Sandbox keepalive is already running")
+        self._keepalive_terminal_state = None
+        self._keepalive_task = asyncio.create_task(self._keepalive_loop())
+
+    async def _keepalive_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self._keepalive_seconds)
+            sandbox_id = self._sandbox_id
+            if not sandbox_id:
+                return
+            try:
+                value = await asyncio.to_thread(
+                    self._client.request,
+                    "POST",
+                    self._sandbox_path("/observe"),
+                    idempotency_key=self._key("keepalive"),
+                    timeout=60.0,
+                )
+            except Exception:
+                continue
+            state = str(value.get("state", "UNKNOWN")).upper()
+            if state in _TERMINAL_STATES:
+                self._keepalive_terminal_state = state
+                return
+
+    async def _stop_keepalive(self) -> None:
+        task = self._keepalive_task
+        self._keepalive_task = None
+        if task is None:
+            return
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    def _require_running_sandbox(self) -> None:
+        if self._keepalive_terminal_state:
+            raise RuntimeError(
+                "control Sandbox became terminal while idle: "
+                f"{self._keepalive_terminal_state}"
+            )
+
     @override
     async def stop(self, delete: bool) -> None:
         del delete
+        await self._stop_keepalive()
         if not self._sandbox_id:
             return
         try:
@@ -313,6 +370,7 @@ class ControlSandboxEnvironment(BaseEnvironment):
         timeout_sec: int | None = None,
         user: str | int | None = None,
     ) -> ExecResult:
+        self._require_running_sandbox()
         merged = self._merge_env(env)
         script = command
         if merged:
@@ -364,6 +422,7 @@ class ControlSandboxEnvironment(BaseEnvironment):
     async def _write(
         self, target_path: str, content: bytes, mode: str | None = None
     ) -> None:
+        self._require_running_sandbox()
         body: dict[str, Any] = {
             "path": target_path,
             "content_digest": _digest(content),
@@ -381,6 +440,7 @@ class ControlSandboxEnvironment(BaseEnvironment):
         )
 
     async def _read(self, source_path: str) -> bytes:
+        self._require_running_sandbox()
         value = await asyncio.to_thread(
             self._client.request,
             "POST",

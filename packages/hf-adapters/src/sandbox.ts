@@ -451,18 +451,19 @@ export class HuggingFaceSandboxGateway {
     );
     if (!baseUrl) return false;
     const proxyUrl = verifiedProxyUrl(baseUrl);
+    const nonce = job.labels?.["hf-sandbox-nonce"];
+    if (!nonce) return false;
     try {
-      const response = await fetch(`${proxyUrl}/health`, {
-        headers: { Authorization: `Bearer ${this.config.accessToken}` },
+      const response = await fetch(`${proxyUrl}/v1/processes`, {
+        headers: {
+          Authorization: `Bearer ${this.config.accessToken}`,
+          "X-Sandbox-Token": sandboxToken(this.config.accessToken, nonce),
+        },
         signal: AbortSignal.timeout(5_000),
       });
       if (!response.ok) return false;
-      const bytes = await readBounded(response, 4_096);
-      const health = JSON.parse(new TextDecoder().decode(bytes)) as Record<
-        string,
-        unknown
-      >;
-      return health.status === "ok" && typeof health.version === "string";
+      JSON.parse(new TextDecoder().decode(await readBounded(response, 64 * 1_024)));
+      return true;
     } catch {
       return false;
     }
