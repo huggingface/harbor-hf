@@ -3118,6 +3118,50 @@ describe("control service", () => {
     ).toEqual([]);
   });
 
+  it("reconciles a dispatched Sandbox file action after its Sandbox closed", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "reconcile-closed-file-action-campaign-key",
+      operator,
+    );
+    const action = await appendClosedSandboxAmbiguity(
+      control,
+      result.campaign_id,
+      "task-001",
+      "reconcile-read",
+      "historical",
+      "sandbox.read",
+    );
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      new ResultPublisher(control.store, control.projection, control.service),
+      {
+        interval_ms: 100,
+        observation_interval_ms: 0,
+        batch_size: 16,
+        dispatch_adoption_delay_ms: 0,
+      },
+    );
+
+    await settle(reconciler);
+
+    expect(await control.projection.action(action.action_id)).toMatchObject({
+      outcome: "failed",
+      observed_state: "AMBIGUOUS",
+    });
+    expect(await control.projection.actionAdvanced(action.action_id)).toBe(true);
+    expect(
+      await control.projection.pendingDispatchedSandboxCommandActions(
+        result.campaign_id,
+        "task-001",
+      ),
+    ).toEqual([]);
+  });
+
   it("serializes Sandbox close settlement with command completion", async () => {
     const control = await createTestControl();
     controls.push(control);

@@ -398,6 +398,10 @@ export class Reconciler {
       intent.action_kind === "sandbox.write" ||
       intent.action_kind === "sandbox.read"
     ) {
+      const taskId = intent.payload.task_id;
+      if (typeof taskId !== "string")
+        throw new PolicyError("Sandbox I/O action is missing its task identity");
+      await this.service.settleClosedSandboxAmbiguities(intent.campaign_id, taskId);
       return;
     } else if (
       intent.action_kind === "sandbox.create" ||
