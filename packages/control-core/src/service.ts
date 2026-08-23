@@ -298,16 +298,19 @@ function validatePreparedEnvironment(
   value: unknown,
   taskId: string,
   maxCommandSeconds: number,
+  keepaliveSeconds: number,
 ): void {
   const environment = objectValue(value, "prepared Harbor environment lock");
   const kwargs = objectValue(environment.kwargs, "prepared Harbor environment kwargs");
+  const configuredKeepalive = kwargs.control_keepalive_seconds;
   if (
     environment.import_path !==
       "harbor_hf_agents.support.control_sandbox_environment:ControlSandboxEnvironment" ||
     environment.delete !== true ||
     kwargs.control_task_id !== taskId ||
     kwargs.control_max_command_seconds !== maxCommandSeconds ||
-    Object.keys(kwargs).length !== 2 ||
+    (configuredKeepalive !== undefined && configuredKeepalive !== keepaliveSeconds) ||
+    Object.keys(kwargs).length !== (configuredKeepalive === undefined ? 2 : 3) ||
     (Array.isArray(environment.mounts) && environment.mounts.length > 0) ||
     (environment.env &&
       objectValue(environment.env, "prepared Harbor environment variables") &&
@@ -630,15 +633,31 @@ export class ControlService {
         !subsetMatches(harness.harbor_agent, agent)
       )
         throw new PolicyError("prepared Harbor agent does not match selected profiles");
+      const phaseTimeouts = [
+        input.agent_timeout_seconds,
+        input.verifier_timeout_seconds,
+        input.environment_build_timeout_seconds,
+        input.agent_setup_timeout_seconds,
+      ];
+      const maxCommandSeconds = Math.max(...phaseTimeouts);
+      const deployment = this.resolvedProfile<DeploymentProfileSpec>(
+        lock,
+        "deployment",
+      );
+      if (deployment.route !== "hf_job" || !deployment.sandbox_template)
+        throw new PolicyError("prepared campaign has no Sandbox deployment");
+      const timeoutSeconds =
+        phaseTimeouts.reduce((total, value) => total + value, 0) +
+        deployment.sandbox_template.lifetime_overhead_seconds;
+      const idleTimeoutSeconds = Math.min(
+        timeoutSeconds,
+        maxCommandSeconds + deployment.sandbox_template.idle_timeout_overhead_seconds,
+      );
       validatePreparedEnvironment(
         trialLock.environment,
         input.task_id,
-        Math.max(
-          input.agent_timeout_seconds,
-          input.verifier_timeout_seconds,
-          input.environment_build_timeout_seconds,
-          input.agent_setup_timeout_seconds,
-        ),
+        maxCommandSeconds,
+        Math.max(1, Math.min(300, Math.floor(idleTimeoutSeconds / 2))),
       );
       const existing = await this.preparedTrial(campaignId, input.task_id);
       const createdAt = existing?.created_at ?? this.clock.now().toISOString();

@@ -190,6 +190,7 @@ function trialPayload(inputDigest: string) {
         kwargs: {
           control_task_id: "task-001-trial-1",
           control_max_command_seconds: 900,
+          control_keepalive_seconds: 300,
         },
       },
       verifier: { disable: false },
@@ -554,6 +555,20 @@ describe("prepared Harbor jobs", () => {
     ).rejects.toThrow("task source does not match");
   });
 
+  it("accepts a historical prepared environment without explicit keepalive", async () => {
+    const { service } = await setup();
+    const { campaignId, lock, launch } = await campaign(service);
+    const task = lock.tasks[0];
+    if (!task) throw new Error("campaign task is missing");
+    const payload = trialPayload(task.input_digest);
+    delete (payload.trial_lock.environment.kwargs as Record<string, unknown>)
+      .control_keepalive_seconds;
+
+    await expect(
+      service.submitPreparedJob(campaignId, launch.action_id, payload),
+    ).resolves.toMatchObject({ phase: "trial", adopted: false });
+  });
+
   it("rejects a prepared command limit that differs from task timeouts", async () => {
     const { service } = await setup();
     const { campaignId, lock, launch } = await campaign(service);
@@ -563,6 +578,21 @@ describe("prepared Harbor jobs", () => {
     (
       payload.trial_lock.environment.kwargs as Record<string, unknown>
     ).control_max_command_seconds = 899;
+
+    await expect(
+      service.submitPreparedJob(campaignId, launch.action_id, payload),
+    ).rejects.toThrow("environment does not match control policy");
+  });
+
+  it("rejects a prepared keepalive that differs from task timeouts", async () => {
+    const { service } = await setup();
+    const { campaignId, lock, launch } = await campaign(service);
+    const task = lock.tasks[0];
+    if (!task) throw new Error("campaign task is missing");
+    const payload = trialPayload(task.input_digest);
+    (
+      payload.trial_lock.environment.kwargs as Record<string, unknown>
+    ).control_keepalive_seconds = 299;
 
     await expect(
       service.submitPreparedJob(campaignId, launch.action_id, payload),

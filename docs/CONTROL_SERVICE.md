@@ -307,9 +307,12 @@ and requests within those limits.
 Sandbox policies lock the digest-pinned image, hardware, lifetime, idle timeout,
 reservation, hourly cost, command count, command timeout, transfer size and
 filesystem roots. While Harbor can wait outside the Sandbox between commands,
-the execution worker submits periodic observe actions. Each observation uses an
-authenticated Sandbox process-list request, which verifies readiness and refreshes
-the Sandbox idle watchdog without starting a command. The control service writes
+the execution worker submits periodic observe actions. Preparation locks the
+interval into the Harbor environment, and the service validates it against the
+prepared phase limits. Historical prepared locks without the field retain the
+behavior of their pinned worker. Each observation uses an authenticated Sandbox
+process-list request, which verifies readiness and refreshes the Sandbox idle
+watchdog without starting a command. The control service writes
 a dispatch fence before every Sandbox side effect. Create and close are remotely
 adoptable. File writes repeat only with identical content-addressed bytes. Results
 are stored immutably outside the projection prefix before the action receipt, so
