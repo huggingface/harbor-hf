@@ -1926,6 +1926,126 @@ describe("control service", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("closes admitted Sandboxes after one task becomes terminal", async () => {
+    const control = await createTestControl(2);
+    controls.push(control);
+    await configureCapacity(control, { maximum: 2, hardwareMaximum: 2 });
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 1_000 },
+      "terminal-task-sandbox-cleanup-key",
+      operator,
+    );
+    const admissionRow = await control.projection.action(result.action_id);
+    if (!admissionRow) throw new Error("admission action is missing");
+    const admission = JSON.parse(admissionRow.intent_body) as ActionIntent;
+    const admissionReceipt = await control.service.receipt(admission, {
+      outcome: "completed",
+      observed_state: "admitted",
+    });
+    await control.service.markAdvanced(admission, admissionReceipt);
+    const taskId = "task-001";
+    const policy: SandboxPolicy = {
+      image: `registry.example/sandbox@sha256:${"f".repeat(64)}`,
+      hardware: "cpu-basic",
+      timeout_seconds: 600,
+      idle_timeout_seconds: 300,
+      inference_token: "forbidden",
+      reservation_microusd: 100,
+      active_hourly_cost_microusd: 100,
+      max_sandboxes: 2,
+      max_commands: 8,
+      max_command_seconds: 300,
+      max_transfer_bytes: 1_048_576,
+      allowed_roots: ["/app", "/tmp"],
+    };
+    const create = control.service.actionIntent(
+      result.campaign_id,
+      "sandbox.create",
+      taskId,
+      0,
+      { task_id: taskId, sandbox: policy },
+    );
+    await expect(control.service.admitSandboxCreate(create, 2)).resolves.toEqual(
+      expect.objectContaining({ status: "admitted" }),
+    );
+    const createReceipt = await control.service.receipt(create, {
+      outcome: "created",
+      observed_state: "RUNNING",
+      resource_id: "terminal-task-sandbox-resource",
+    });
+    await control.service.markAdvanced(create, createReceipt);
+
+    const launch = control.service.actionIntent(
+      result.campaign_id,
+      "job.launch",
+      taskId,
+      0,
+      { task_ids: [taskId] },
+    );
+    await control.service.writeAction(launch);
+    const launchReceipt = await control.service.receipt(launch, {
+      outcome: "completed",
+      observed_state: "imported",
+    });
+    await control.service.markAdvanced(launch, launchReceipt);
+    const evidence = await putEvidenceReference(
+      control,
+      "terminal-task-sandbox-cleanup-evidence",
+    );
+    const attempt = await control.service.attempt({
+      campaign_id: result.campaign_id,
+      task_id: taskId,
+      attempt_id: "terminal-task-sandbox-cleanup-attempt",
+      action_id: launch.action_id,
+      outcome: "complete",
+      replacement_eligible: false,
+      ...evidence,
+      cost_microusd: 0,
+      metrics: { reward: 1 },
+      completed_at: "2026-08-23T00:00:00.000Z",
+    });
+    await control.service.selectTerminal(attempt, "valid worker outcome");
+
+    const observed: string[] = [];
+    const noop = new NoopActions();
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        observed.push(intent.action_kind);
+        if (intent.action_kind === "sandbox.close")
+          return {
+            outcome: "completed",
+            observed_state: "CANCELED",
+            resource_id: "terminal-task-sandbox-resource",
+            cost_microusd: 25,
+          };
+        return noop.execute(intent);
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 8);
+
+    expect(observed).toContain("sandbox.close");
+    expect(await control.projection.activeSandboxAdmissions("test")).toHaveLength(0);
+    expect(
+      await control.projection.sandboxCapacityRelease(create.action_id),
+    ).toMatchObject({ release_reason: "sandbox_closed" });
+    const campaign = await control.projection.campaign(result.campaign_id);
+    expect(campaign).toMatchObject({
+      terminal_tasks: 1,
+      reserved_microusd: 0,
+    });
+    expect(campaign?.observed_microusd).toBeLessThanOrEqual(
+      policy.reservation_microusd,
+    );
+  });
+
   it("closes active Sandboxes before normal publication", async () => {
     const control = await createTestControl();
     controls.push(control);

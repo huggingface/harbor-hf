@@ -284,10 +284,37 @@ export class Reconciler {
       await this.handle(intent);
       handled += 1;
     }
+    handled += await this.cleanupTerminalTaskSandboxes();
     for (const campaign of await this.projection.campaigns(10_000)) {
       if (await this.maybePublish(campaign.campaign_id)) handled += 1;
     }
     return handled;
+  }
+
+  private async cleanupTerminalTaskSandboxes(): Promise<number> {
+    const tasks = new Map<string, { campaignId: string; taskId: string }>();
+    for (const grant of await this.projection.activeSandboxAdmissions(
+      this.service.namespace,
+    )) {
+      const action = await this.projection.action(grant.action_id);
+      if (action?.action_kind !== "sandbox.create")
+        throw new PolicyError("active Sandbox admission has no create action");
+      const intent = JSON.parse(action.intent_body) as ActionIntent;
+      const taskId = intent.payload.task_id;
+      if (typeof taskId !== "string")
+        throw new PolicyError("active Sandbox admission has no task identity");
+      const task = await this.projection.task(grant.campaign_id, taskId);
+      if (!task?.task.terminal_outcome) continue;
+      tasks.set(`${grant.campaign_id}\u0000${taskId}`, {
+        campaignId: grant.campaign_id,
+        taskId,
+      });
+    }
+    let pending = 0;
+    for (const task of tasks.values()) {
+      if (await this.ensureSandboxCleanup(task.campaignId, task.taskId)) pending += 1;
+    }
+    return pending;
   }
 
   private async fairSandboxCreates(intents: ActionIntent[]): Promise<ActionIntent[]> {
