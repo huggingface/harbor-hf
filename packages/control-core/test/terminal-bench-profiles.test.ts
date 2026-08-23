@@ -376,7 +376,9 @@ describe("Terminal-Bench 2.1 profiles", () => {
       expect(jobCommand).toContain(HARBOR_SOURCE);
       expect(jobCommand).not.toContain("harbor==");
     }
-    const fx = record((await profile("deployment", "tb21-gpt-oss-20b-fx-providers")).spec);
+    const fx = record(
+      (await profile("deployment", "tb21-gpt-oss-20b-fx-providers")).spec,
+    );
     expect(fx.models).toEqual(["gpt-oss-20b"]);
     expect(fx.harnesses).toEqual(["fx"]);
     expect(fx.worker_revision).toBe(FX_WORKER_REVISION);
