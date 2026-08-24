@@ -300,6 +300,7 @@ def test_image_config_rejects_authority_environment(tmp_path: Path) -> None:
 
 
 def test_rootfs_mapping_strips_setid_bits_and_adds_owner_write(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     rootfs = tmp_path / "rootfs"
@@ -308,6 +309,8 @@ def test_rootfs_mapping_strips_setid_bits_and_adds_owner_write(
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     executable.chmod(0o6755)
     rootfs.chmod(0o555)
+    monkeypatch.setattr(runtime.os, "chown", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runtime, "_remove_file_capability", lambda _path: None)
 
     runtime._sanitize_rootfs(rootfs, os.getuid(), os.getgid())
 
@@ -316,10 +319,15 @@ def test_rootfs_mapping_strips_setid_bits_and_adds_owner_write(
     assert stat.S_IMODE(rootfs.stat().st_mode) & 0o700 == 0o700
 
 
-def test_rootfs_mapping_rejects_special_files(tmp_path: Path) -> None:
+def test_rootfs_mapping_rejects_special_files(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     rootfs = tmp_path / "rootfs"
     rootfs.mkdir()
     os.mkfifo(rootfs / "pipe")
+    monkeypatch.setattr(runtime.os, "chown", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runtime, "_remove_file_capability", lambda _path: None)
 
     with pytest.raises(OciImageIntegrityError, match="special file"):
         runtime._sanitize_rootfs(rootfs, os.getuid(), os.getgid())

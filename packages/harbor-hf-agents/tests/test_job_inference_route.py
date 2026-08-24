@@ -160,6 +160,23 @@ async def test_job_bridge_stop_kills_host_before_copying_log(
     assert bridge.hf_inference_bridge_is_active(agent) is False  # type: ignore[arg-type]
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="requires a non-root test owner")
+def test_job_bridge_handle_rejects_non_root_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    handle_path = tmp_path / "handle.json"
+    handle_path.write_text(
+        json.dumps({"schema_version": "v1", "pid": 2, "start_time": 1}) + "\n",
+        encoding="utf-8",
+    )
+    handle_path.chmod(0o600)
+    monkeypatch.setattr(bridge, "_JOB_BRIDGE_HANDLE", handle_path)
+
+    with pytest.raises(RuntimeError, match="not root-owned"):
+        bridge._read_job_bridge_handle()
+
+
 @pytest.mark.skipif(
     sys.platform != "linux" or not hasattr(os, "pidfd_open"),
     reason="requires Linux pidfds",
@@ -186,6 +203,11 @@ def test_linux_host_bridge_stop_kills_and_awaits_exact_pid(
     handle_path.chmod(0o600)
     monkeypatch.setattr(bridge, "_JOB_BRIDGE_ROUTE", route_path)
     monkeypatch.setattr(bridge, "_JOB_BRIDGE_HANDLE", handle_path)
+    monkeypatch.setattr(
+        bridge,
+        "_read_job_bridge_handle",
+        lambda: (process.pid, bridge._process_start_time(process.pid)),
+    )
     try:
         bridge._stop_job_root_bridge()
         process.wait(timeout=5)
