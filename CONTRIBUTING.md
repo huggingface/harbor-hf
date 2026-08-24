@@ -72,9 +72,10 @@ dependencies. Generated
 JSON Schema types, OpenAPI output, and the browser client must be current.
 
 The slower mutation suite is available as an explicit local command and a
-manually dispatched GitHub Actions workflow. It is not part of the pull-request
-critical path. The checked-in Slophammer baseline records that deliberate
-exception and still rejects every new finding:
+manually dispatched GitHub Actions workflow. It does not run for each commit or
+pull request. Package publication calls the same workflow and waits for it to
+pass before uploading a release. The checked-in Slophammer baseline records
+that deliberate exception and still rejects every new finding:
 
 ```bash
 uv run python scripts/check_mutation.py --min-kill-rate 90
