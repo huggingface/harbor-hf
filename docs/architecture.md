@@ -2,10 +2,12 @@
 
 ## Purpose
 
-`harbor-hf` is the control plane around Harbor. Harbor owns tasks, agents,
-environments, verification, trajectories, and trial results. `harbor-hf` owns
-experiment expansion, Hugging Face resource lifecycle, reproducibility
-metadata, raw artifact retention, and result publication.
+`harbor-hf` is the control plane around Harbor. Harbor owns task definitions,
+agents, environments, verification, trajectories and trial execution.
+`harbor-hf` campaigns own the durable state of each logical task, including its
+assignments, attempts, saved results, cost, selection and cleanup. `harbor-hf`
+also owns experiment expansion, Hugging Face resource lifecycle,
+reproducibility metadata, raw artifact retention and result publication.
 
 The package must remain useful as an independent Harbor plugin and be shaped so
 that it could later move into a Harbor monorepo package without architectural
@@ -56,7 +58,7 @@ protected public control Space
    +--> private Bucket
    |      control records, profiles, evidence, results, catalog
    |
-   +--> HF Jobs --> Harbor trials --> HF Sandboxes
+   +--> HF Jobs supervise Harbor trials in HF Sandboxes
    |
    +--> HF Endpoints and Inference Providers
 ```
@@ -64,6 +66,41 @@ protected public control Space
 The browser never reads the Bucket or receives service credentials. API
 mutations write immutable intent before the reconciler performs a remote side
 effect. SQLite may be deleted and rebuilt from Bucket records.
+
+### Task ownership
+
+The campaign is the durable owner of each logical task. Each active task has one
+saved assignment and one Sandbox. A Worker Job is temporary capacity that may
+supervise several task Sandboxes. Several Worker Jobs may serve one campaign.
+Neither a Worker Job nor a Sandbox owns the permanent task result.
+
+```text
+campaign
+  |-- task A -- Sandbox A <-- Worker Job 1
+  |-- task B -- Sandbox B <-- Worker Job 1
+  |-- task C -- Sandbox C <-- Worker Job 2
+  `-- task N -- Sandbox N <-- Worker Job 2
+```
+
+The saved assignment binds the task and physical attempt to its controlling
+action, Worker Job, Sandbox, scoped authority and cleanup state. The task also
+has independent attempt, actual cost, pending exposure, result and selection
+state. These facts rebuild from immutable Bucket records.
+
+A task result remains valid after its Sandbox or Worker Job ends. If a Worker
+Job dies, the controller preserves every saved result, waits for bounded late
+results and moves only unfinished eligible work to available capacity. A task
+failure cannot cancel a sibling, consume a sibling attempt or create a sibling
+result.
+
+Task concurrency is configuration. The same task rules apply with one or many
+Worker Jobs, one or many tasks per Job and every supported positive concurrency
+value. The controller may change capacity without changing correctness.
+
+Pause stops new task assignments. Cancellation preserves accepted results and
+cleans active task resources. Actual cost and pending worst-case exposure stay
+separate and settle for each task. Historical task results, campaign locks and
+publications remain unchanged.
 
 The current production path remains in place until the replacement gates pass:
 

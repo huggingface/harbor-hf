@@ -2,6 +2,7 @@
 title: General Harbor job path plan
 author: Harbor-HF maintainers
 date: 2026-08-18
+updated: 2026-08-24
 tags: [harbor, jobs, campaigns]
 ---
 
@@ -32,6 +33,131 @@ The work includes:
 - removal or generalization of benchmark-specific executable code that remains
   in Harbor-HF.
 
+## Durable task execution
+
+The campaign owns the durable state of every logical task. Harbor owns the task
+definition and trial execution. Harbor-HF owns the task assignment, physical
+attempts, saved results, cost, selection and cleanup state around the trial.
+
+Each active task has one durable assignment and one Sandbox. The assignment
+identifies the campaign, task, physical attempt, controlling action, Worker Job,
+Sandbox, scoped authority, execution state and cleanup state. It is stored in the
+existing Bucket and must rebuild to the same projection after a restart.
+
+Worker Jobs are temporary capacity. One Worker Job may supervise several task
+Sandboxes, and one campaign may use several Worker Jobs. Saved task results do
+not belong to a Worker Job. If a Worker Job stops or disappears, the controller
+preserves all saved results, waits for bounded late delivery, cleans the affected
+resources and assigns only unfinished eligible work to available capacity.
+
+A task failure affects only that task. An exception, timeout, malformed result,
+Sandbox loss, evidence failure or unknown remote outcome cannot cancel a
+sibling, consume a sibling attempt, invalidate a sibling result or create a
+result for work that did not start. Aggregate Job status cannot replace missing
+task evidence.
+
+Task concurrency is a validated positive deployment setting. The number of
+Worker Jobs, assignments per Job and active tasks may change without changing
+result, retry, pause, cancellation, cost or cleanup semantics. No worker or
+controller branch may depend on a benchmark, model, provider, hardware or fixed
+concurrency value.
+
+Actual cost and pending worst-case exposure are separate task facts. Terminal
+task handling records actual cost and releases unused exposure after cleanup. A
+projection rebuild must recover a missing release from durable terminal evidence
+instead of leaving a clean campaign blocked by stale bookkeeping.
+
+### Implementation sequence
+
+1. Inspect current source, recent commits and open pull requests. Add an exact
+   regression for one failed task beside healthy siblings. If current code
+   already satisfies part of this plan, keep it and change only missing behavior.
+2. Add or extend the durable task assignment contract. Keep the existing Bucket
+   as the permanent record. Projection replay must adopt the same task and
+   attempt identities and must not start duplicate work.
+3. Give each active task one Sandbox. Supervise task commands, results, evidence
+   and failures independently inside every Worker Job.
+4. Save each truthful task result independently. Accept repeated delivery once.
+   Leave only the affected task unresolved when result delivery cannot be
+   proved.
+5. Reconcile every terminal or missing Worker Job by task. Preserve known
+   results, allow bounded late delivery and move only unfinished eligible tasks.
+6. Make pause stop new assignments. Make cancellation preserve accepted results,
+   stop new starts, revoke active authority and clean each task resource without
+   synthetic task results.
+7. Settle actual cost and pending exposure for each task. Keep cost admission,
+   retries and cleanup under the existing campaign ceiling.
+8. Validate concurrency as a positive bounded profile value and use it only to
+   limit active tasks. Run the same scheduling and failure rules for every
+   supported value.
+9. Update the control specification, architecture, Harbor contract and operator
+   guidance. Keep historical records readable without a second writer or
+   compatibility mode.
+10. Run all repository checks, review against the base branch and pull-request
+    CI before deployment. Publish the contribution as a ready pull request. This
+    implementation run does not merge, release, deploy or launch paid work.
+
+### Verification
+
+The implementation must pass these checks:
+
+- The exact current-revision failure test runs several tasks, fails one and
+  records the expected healthy, failed, missing, retried and cleaned counts.
+- One task failure at each worker and Sandbox boundary leaves all healthy
+  siblings running and selectable.
+- Sandbox loss affects only its task.
+- Worker Job loss preserves saved results and moves only unfinished tasks.
+- A late result racing with reassignment produces one accepted result and no
+  duplicate task execution.
+- Pause and cancellation behave correctly before dispatch, after assignment,
+  during execution, after result save and during cleanup.
+- Controller restart, missed callback, ambiguous remote response and full
+  projection rebuild converge on the same state.
+- Attempt limits and retry eligibility remain task-scoped.
+- Actual cost and pending exposure settle for each task and enforce the campaign
+  ceiling.
+- One active task maps to one Sandbox. Active task count never exceeds the
+  locked concurrency.
+- The same fault suite passes at concurrency one, intermediate values and the
+  maximum supported test value.
+- Python, TypeScript, generated-contract, browser, Docker, privacy, coverage,
+  Slophammer, audit, review and CI checks pass.
+
+### Rollout and rollback
+
+Deploy the controller changes before the worker changes when the new controller
+can safely read old worker results. Verify projection rebuild and old-worker
+smoke behavior. Then promote a deployment profile pinned to the reviewed worker
+revision and unchanged workload settings.
+
+Run a deterministic remote failure canary before parallel benchmark work. It
+must show one failed task, unaffected sibling results, exact retry accounting and
+complete cleanup. Run a representative pilot at the intended profile capacity.
+Correctness, evidence, cost and cleanup failures veto promotion regardless of
+speed.
+
+Rollback restores the previous control revision and deployment profile. Durable
+task results and historical records remain valid under both revisions. A locked
+campaign does not change worker or control provenance in place. It may use the
+new behavior only through a supported cutover. Otherwise it stays on its pinned
+revision or uses a separately approved successor campaign without rewriting or
+rerunning valid historical work.
+
+### Failure handling
+
+If the shared Worker Job runtime cannot contain a child failure, keep the same
+durable task contract and spread active tasks across more Worker Jobs. Do not
+weaken task isolation to preserve one-Job efficiency.
+
+If a task result cannot be proved, leave that task unresolved until bounded
+reconciliation ends. If a late valid result appears first, accept it. If no
+result appears, apply only the existing truthful infrastructure outcome for that
+task. Unknown integrity, capability or provenance failures remain fail-closed.
+
+A deterministic shared defect stops affected admission. Saved sibling results
+remain durable. Cleanup continues. No campaign-specific script, new persistent
+resource, evidence rewrite or automatic publication is allowed as a workaround.
+
 ## Non-goals
 
 - Do not change Harbor core.
@@ -39,7 +165,10 @@ The work includes:
 - Do not add a compatibility campaign path.
 - Do not run benchmark tasks or inference in the control Space.
 - Do not make preparation output or private task evidence available to browsers.
-- Do not delete historical campaign records or legacy remote resources.
+- Do not rewrite or delete historical campaign locks, task results, publications,
+  cost records or legacy remote resources.
+- Do not launch paid benchmark work during repository implementation and review.
+- Do not merge or release the implementation without separate authorization.
 
 ## Campaign flow
 
@@ -394,7 +523,7 @@ than changing the historical canary or official five-trial profiles:
 - `terminal-bench-2-1-diagnostic-1` contains the 89 trial-1 tuples from the
   official profile in the same order;
 - `tb21-deepseek-v4-flash-replacement` runs one task;
-- `tb21-deepseek-v4-flash-diagnostic-1` runs 89 tasks at concurrency eight;
+- `tb21-deepseek-v4-flash-diagnostic-1` runs 89 tasks at its locked profile concurrency;
 - `tb21-replacement` and `tb21-diagnostic-1` require worker receipts, keep two
   preparation and infrastructure attempts, and publish as diagnostic evidence.
 
@@ -491,7 +620,7 @@ Pin and record the new reviewed Harbor-HF implementation revision separately. Th
 new run remains diagnostic and cannot support a model-promotion or official
 five-trial claim.
 
-The worker uses concurrency eight and the rolling sliding window. Sandbox admission
+The worker uses the locked positive concurrency and the rolling sliding window. Sandbox admission
 must permit eight active tasks for the campaign. When one task becomes durable and a
 pending task remains, the worker fills the free slot without waiting for the other
 active tasks. Verify refill through normal control actions and Sandbox state. Do not
@@ -544,8 +673,9 @@ The work is complete when:
   output tokens;
 - the first-task pause-resume canary preserves its durable receipt and resumes
   only unresolved tasks;
-- worker concurrency eight refills free slots while pending tasks and admitted
-  Sandbox capacity remain;
+- the locked worker concurrency refills free slots while pending tasks and
+  admitted Sandbox capacity remain, and the same correctness tests pass at every
+  supported positive concurrency;
 - normalized rows, provenance, publication receipts, and catalog objects verify
   before append-only supersession marks the old publication as superseded;
 - no action or cleanup is pending, cumulative spend is within the enforced

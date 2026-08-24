@@ -2,6 +2,7 @@
 title: Harbor-HF Control Service Plan
 author: Harbor-HF maintainers
 date: 2026-08-16
+updated: 2026-08-24
 tags: [harbor, hugging-face, campaigns, control, storage]
 ---
 
@@ -101,6 +102,35 @@ and compiled React application. Existing Python benchmark workers may remain as
 pinned remote Job artifacts, but Python must not retain a second shared control
 or reconciliation path. The [control service specification](CONTROL_SERVICE.md)
 defines the runtime and web application contract.
+
+### Task ownership and temporary compute
+
+The campaign is the durable owner of every logical task. Each active task has
+one assignment, one Sandbox, one bounded physical attempt, independent cost and
+cleanup state and one independently accepted result. Harbor owns the task
+definition and trial behavior. Harbor-HF owns the durable state around that
+trial.
+
+Worker Jobs are temporary capacity. One Job may supervise several task
+Sandboxes, and several Jobs may serve one campaign. A Job does not own task
+completion. If it ends, the service preserves all saved task results, reconciles
+late delivery and moves only unfinished eligible tasks to another Job.
+
+Task failures stay local to the task. They cannot cancel siblings, consume a
+sibling attempt, invalidate a saved sibling result or create a result for work
+that did not start. Aggregate Job state is resource evidence. It is not a
+replacement for task state.
+
+Task concurrency is a validated deployment value rather than a correctness
+rule. The same assignment, result, retry, pause, cancellation, cost and cleanup
+rules apply for every supported number of Jobs, tasks per Job and active tasks.
+Actual cost and pending worst-case exposure are recorded separately and settle
+for each task.
+
+The change uses the existing control Space, Bucket, Jobs, Sandboxes and worker
+capability path. Historical locks, attempts, results, reservations and
+publications remain immutable. No second writer, store, service, credential path
+or campaign-specific execution path is added.
 
 ## Decision evidence
 
@@ -817,6 +847,17 @@ coordination Dataset. Historical audit tools may continue to read it.
 
 - Change controller and wave workers to report physical attempt receipts rather
   than shared Git events.
+- Store one durable assignment for each active task. Bind it to the campaign,
+  task, attempt, controlling action, Worker Job, Sandbox, scoped authority and
+  cleanup state.
+- Run each active task in one Sandbox and supervise sibling tasks independently.
+- Preserve every accepted task result when a Sandbox or Worker Job ends.
+- Wait for bounded late delivery, then move only unfinished eligible tasks to
+  available Worker Job capacity.
+- Reconcile actual cost and pending worst-case exposure for each task and
+  release unused exposure after terminal cleanup.
+- Make Worker Job count, tasks per Job and active-task concurrency configurable
+  without changing task correctness.
 - Require each in-repository agent plugin to prove its final event before a
   worker can report a complete attempt.
 - Carry stable provider failure classes through Harbor's existing
@@ -953,8 +994,9 @@ this public plan.
 Use the first admitted task as the real paid pause-resume canary when the final
 control contract can do so truthfully. Require a durable valid receipt, pause new
 admission, verify Job and Sandbox cleanup, then resume the same campaign. Admit the
-remaining tasks at worker concurrency eight. The sliding window must refill each
-free slot while tasks and approved capacity remain. Existing control actions and
+remaining tasks at the validated concurrency in the locked deployment profile.
+The sliding window must refill each free slot while tasks and approved capacity
+remain. Correctness must be the same at every supported positive concurrency. Existing control actions and
 Sandbox state provide this evidence; do not add a monitoring-specific API.
 
 Stop new admission for a deterministic shared defect. Keep each valid receipt as

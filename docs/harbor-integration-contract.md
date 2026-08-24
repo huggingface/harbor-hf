@@ -12,13 +12,15 @@ config, trial execution, locks, results, verifier rewards, exceptions, timing,
 token usage, and trial artifact inventory. Workers install Harbor from a pinned
 `harbor-framework/harbor` git commit. Upstream Harbor remains unchanged.
 
-`harbor-hf` owns campaign and physical execution identity, Hugging Face
-infrastructure, immutable request storage, endpoint cleanup, infrastructure
-retries, policy checks, evidence publication, and normalized result rows. The
-planned TypeScript service owns shared campaign decisions. Pinned Python workers
-continue to call Harbor and write attempt evidence, but they do not become a
-second control authority. See the [control service
-specification](CONTROL_SERVICE.md).
+`harbor-hf` owns campaign and physical execution identity, the durable state of
+each logical task, Hugging Face infrastructure, immutable request storage,
+endpoint cleanup, infrastructure retries, policy checks, evidence publication
+and normalized result rows. Harbor resolves and runs each trial. The Harbor-HF
+campaign owns the task assignment, physical attempts, saved results, cost,
+selection and cleanup state around that trial. The TypeScript service owns
+shared campaign decisions. Pinned Python workers continue to call Harbor and
+write attempt evidence, but they do not become a second control authority. See
+the [control service specification](CONTROL_SERVICE.md).
 
 The hosted control path calls Harbor through two generic workers. The
 preparation worker resolves the job. The execution worker runs its prepared
@@ -43,12 +45,27 @@ service checks the task against the campaign lock and selects compatible Hugging
 Face Sandbox hardware from the deployment profile. The deployment profile sets
 limits and prices but contains no benchmark task catalog.
 
-An execution worker receives only the tasks assigned to its physical Job. It
-fetches their prepared records, reconstructs a one-attempt Harbor `JobConfig`,
-and lets Harbor fetch each exact Git or package task. It does not read a dataset
-manifest or select tasks again. Harbor's internal retry count remains zero.
-After a trial, the worker compares Harbor's emitted `TrialLock` with the
-prepared lock before it can submit evidence or an outcome.
+An execution worker receives only the durable task assignments attached to its
+physical Job. Each assignment binds one campaign task and physical attempt to
+one Sandbox, the controlling action and scoped authority. The assignment remains
+a campaign record when the Worker Job ends. It is not owned by the Job.
+
+The worker fetches the prepared records, reconstructs a one-attempt Harbor
+`JobConfig`, and lets Harbor fetch each exact Git or package task. It does not
+read a dataset manifest or select tasks again. Harbor's internal retry count
+remains zero. After a trial, the worker compares Harbor's emitted `TrialLock`
+with the prepared lock before it can submit evidence or an outcome.
+
+Each active task uses one Sandbox and saves its result independently. A task
+failure, malformed result, timeout, Sandbox loss or evidence failure cannot end
+a sibling trial or change its attempt. Aggregate Job status cannot replace a
+missing task fact or invalidate a saved sibling result.
+
+If a Worker Job ends, Harbor-HF preserves every accepted task result and waits
+for bounded late delivery. Only unfinished tasks may receive another assignment,
+and only under the locked attempt, retry, provenance and cost rules. The number
+of Worker Jobs, tasks per Job and total active tasks is deployment configuration;
+it does not change this contract.
 
 Both workers install the reviewed Harbor-HF agent package at its immutable
 revision and use the pinned Harbor git commit. The preparation worker has

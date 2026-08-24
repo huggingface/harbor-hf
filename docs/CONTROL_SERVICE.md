@@ -48,6 +48,68 @@ The Bucket is the permanent record. SQLite contains only indexes and derived
 views. Deleting the local database and replaying Bucket records must restore the
 same campaign states and next actions.
 
+## Task ownership and temporary compute
+
+A campaign owns every logical task and its durable state. Harbor still owns the
+task definition, trial execution and verifier result. Harbor-HF owns the task's
+assignment, physical attempts, saved results, cost, selection and cleanup state.
+A Worker Job and a Sandbox are temporary resources. Their loss must not remove or
+change durable task facts.
+
+Each active task has one durable assignment and one Sandbox. The assignment binds
+the campaign, logical task, physical attempt, controlling action, Worker Job,
+Sandbox, scoped worker authority, current state and cleanup state. Assignment
+records live in the existing Bucket and rebuild into SQLite with the rest of the
+campaign. Repeated admission or replay must adopt the same assignment instead of
+starting the same attempt again.
+
+```text
+campaign
+  |-- task A -- Sandbox A <-- Worker Job 1
+  |-- task B -- Sandbox B <-- Worker Job 1
+  |-- task C -- Sandbox C <-- Worker Job 2
+  `-- task N -- Sandbox N <-- Worker Job 2
+```
+
+Worker Jobs supply temporary execution capacity. One Worker Job may supervise
+several task Sandboxes, and a campaign may use several Worker Jobs. A Worker Job
+does not own task completion. The number of Worker Jobs, tasks assigned to one
+Job and total active tasks may change without changing task or result semantics.
+
+Each task saves its result independently. A valid result or a truthful classified
+failure is accepted once for its task and attempt. If the service cannot prove a
+result, that task stays unresolved during bounded reconciliation. Aggregate Job
+status cannot invalidate a known task result, create a result for work that did
+not start or change a sibling attempt.
+
+When a Worker Job stops or disappears, the reconciler first loads all saved task
+results. It preserves them, waits for bounded late delivery and cleans the Job and
+its task Sandboxes. Only still-unresolved tasks may move to another Worker Job,
+and only when the existing attempt, retry, provenance and cost rules permit it.
+A task-local exception, timeout, malformed result, Sandbox loss or evidence
+failure affects only that task.
+
+Pause stops new assignments. Active tasks may reach a saved result and cleanup
+boundary. Cancellation stops new starts, preserves accepted results, revokes
+active authority and cleans each task resource. Neither action creates a result
+for an undispatched task.
+
+Task cost has two separate values: actual cost already observed and pending
+worst-case exposure for work that can still spend money. Terminal task handling
+settles actual cost and releases unused exposure. Rebuild and reconciliation must
+repair a missing release from durable terminal evidence so stale bookkeeping does
+not block a clean campaign.
+
+Task concurrency is a validated positive deployment setting. It limits active
+tasks but does not define their failure domain. Worker scheduling, result
+acceptance, retry, replay and cleanup must behave the same for every supported
+concurrency value.
+
+Historical campaign locks, attempts, saved results, publications and budget
+records remain immutable and readable. New behavior uses reviewed worker and
+control revisions. It does not add a service, store, repository, credential path
+or parallel compatibility writer.
+
 ## Source layout
 
 The implementation uses npm workspaces and one root npm lockfile. Python
