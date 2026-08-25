@@ -1081,7 +1081,7 @@ def _task_process_ids() -> set[int]:
     return processes
 
 
-def _task_process_is_stopped(pid: int) -> bool:
+def _task_process_is_quiescent(pid: int) -> bool:
     state = _status_values(pid)
     if not state:
         return False
@@ -1091,7 +1091,8 @@ def _task_process_is_stopped(pid: int) -> bool:
         raise OciRuntimeUnavailableError(
             f"cannot inspect process state: {pid}"
         ) from error
-    return code in {"T", "t"}
+    # Zombies and dead processes cannot execute or mutate the task filesystem.
+    return code in {"T", "t", "Z", "X", "x"}
 
 
 def _stop_task_processes_until_stable() -> set[int]:
@@ -1106,13 +1107,13 @@ def _stop_task_processes_until_stable() -> set[int]:
             except ProcessLookupError:
                 continue
         observed = _task_process_ids()
-        all_stopped = all(_task_process_is_stopped(pid) for pid in observed)
-        if all_stopped and observed == previous:
+        all_quiescent = all(_task_process_is_quiescent(pid) for pid in observed)
+        if all_quiescent and observed == previous:
             stable_passes += 1
             if stable_passes >= 2:
                 final = _task_process_ids()
                 if final == observed and all(
-                    _task_process_is_stopped(pid) for pid in final
+                    _task_process_is_quiescent(pid) for pid in final
                 ):
                     return final
         else:
@@ -1152,7 +1153,7 @@ def _paused_task_processes() -> Iterator[None]:
     stopped = _stop_task_processes_until_stable()
     try:
         if stopped != _task_process_ids() or not all(
-            _task_process_is_stopped(pid) for pid in stopped
+            _task_process_is_quiescent(pid) for pid in stopped
         ):
             raise OciRuntimeUnavailableError(
                 "task process set changed after the verified UID freeze"

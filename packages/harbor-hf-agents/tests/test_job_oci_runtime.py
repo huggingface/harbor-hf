@@ -607,7 +607,7 @@ def test_setpriv_launcher_removes_every_task_privilege() -> None:
     ]
 
 
-def test_uid_freeze_waits_until_proc_reports_stopped(
+def test_uid_freeze_waits_until_proc_reports_quiescent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     state_reads = 0
@@ -618,12 +618,34 @@ def test_uid_freeze_waits_until_proc_reports_stopped(
         return state_reads > 1
 
     monkeypatch.setattr(runtime, "_task_process_ids", lambda: {123})
-    monkeypatch.setattr(runtime, "_task_process_is_stopped", process_state)
+    monkeypatch.setattr(runtime, "_task_process_is_quiescent", process_state)
     monkeypatch.setattr(os, "kill", lambda _pid, _signal: None)
     monkeypatch.setattr(time, "sleep", lambda _seconds: None)
 
     assert runtime._stop_task_processes_until_stable() == {123}
     assert state_reads >= 4
+
+
+@pytest.mark.parametrize(
+    "state", ["T (stopped)", "t (tracing stop)", "Z (zombie)", "X (dead)"]
+)
+def test_task_process_quiescence_accepts_nonexecuting_states(
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+) -> None:
+    monkeypatch.setattr(runtime, "_status_values", lambda _pid: {"State": state})
+
+    assert runtime._task_process_is_quiescent(123)
+
+
+@pytest.mark.parametrize("state", ["R (running)", "S (sleeping)", "D (disk sleep)"])
+def test_task_process_quiescence_rejects_executable_states(
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+) -> None:
+    monkeypatch.setattr(runtime, "_status_values", lambda _pid: {"State": state})
+
+    assert not runtime._task_process_is_quiescent(123)
 
 
 def test_upload_rechecks_task_parents_after_uid_freeze(
