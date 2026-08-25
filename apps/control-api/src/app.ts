@@ -387,6 +387,11 @@ async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]>
   const projectedById = new Map(
     publications.map((publication) => [publication.publication_id, publication]),
   );
+  const projectedCatalogDigests = new Set(
+    publications
+      .filter((publication) => publication.status === "published")
+      .map((publication) => publication.catalog_digest),
+  );
   const byId = new Map<string, Record<string, unknown>>(
     publications
       .filter((publication) => publication.status !== "published")
@@ -408,8 +413,14 @@ async function resultItems(runtime: Runtime): Promise<Record<string, unknown>[]>
     if (bytes.byteLength !== object.size)
       throw new Error(`Result catalog size mismatch at ${object.key}`);
     const digest = sha256(bytes);
-    const parsed = JSON.parse(new TextDecoder().decode(bytes));
-    const catalog = validateResultCatalog<HarborHFResultCatalogV1>(parsed);
+    let catalog: HarborHFResultCatalogV1;
+    try {
+      const parsed = JSON.parse(new TextDecoder().decode(bytes));
+      catalog = validateResultCatalog<HarborHFResultCatalogV1>(parsed);
+    } catch (error) {
+      if (projectedCatalogDigests.has(digest)) throw error;
+      continue;
+    }
     for (const entry of catalog.entries) {
       const projected = projectedById.get(entry.publication_id);
       if (!projected) {

@@ -1876,6 +1876,20 @@ describe("control API", () => {
     await app.close();
   });
 
+  it("ignores invalid result catalogs that no current publication references", async () => {
+    const { runtime, app } = await setup();
+    await runtime.store.create(
+      "results/schema=v1/catalog/retired-invalid.json",
+      new TextEncoder().encode(canonicalJson({ retired: true })),
+    );
+
+    const response = await app.inject({ method: "GET", url: "/api/v1/results" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ items: [], next_cursor: null });
+    await app.close();
+  });
+
   it("serves validated imported result catalogs", async () => {
     const { runtime, app } = await setup();
     const catalog = {
