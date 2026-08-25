@@ -8,6 +8,7 @@ import os
 import platform
 import pwd
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -646,6 +647,20 @@ def test_task_process_quiescence_rejects_executable_states(
     monkeypatch.setattr(runtime, "_status_values", lambda _pid: {"State": state})
 
     assert not runtime._task_process_is_quiescent(123)
+
+
+def test_task_cleanup_accepts_zombie_after_sigkill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signals: list[tuple[int, signal.Signals]] = []
+    monkeypatch.setattr(runtime, "_stop_task_processes_until_stable", lambda: {123})
+    monkeypatch.setattr(runtime, "_task_process_ids", lambda: {123})
+    monkeypatch.setattr(runtime, "_task_process_is_dead", lambda _pid: True)
+    monkeypatch.setattr(os, "kill", lambda pid, sig: signals.append((pid, sig)))
+
+    runtime._kill_task_processes()
+
+    assert signals == [(123, signal.SIGKILL)]
 
 
 def test_upload_rechecks_task_parents_after_uid_freeze(

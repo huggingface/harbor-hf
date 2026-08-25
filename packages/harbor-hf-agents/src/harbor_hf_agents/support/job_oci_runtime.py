@@ -1081,18 +1081,25 @@ def _task_process_ids() -> set[int]:
     return processes
 
 
-def _task_process_is_quiescent(pid: int) -> bool:
+def _task_process_state(pid: int) -> str | None:
     state = _status_values(pid)
     if not state:
-        return False
+        return None
     try:
-        code = state["State"].split(maxsplit=1)[0]
+        return state["State"].split(maxsplit=1)[0]
     except (KeyError, IndexError) as error:
         raise OciRuntimeUnavailableError(
             f"cannot inspect process state: {pid}"
         ) from error
+
+
+def _task_process_is_dead(pid: int) -> bool:
+    return _task_process_state(pid) in {"Z", "X", "x"}
+
+
+def _task_process_is_quiescent(pid: int) -> bool:
     # Zombies and dead processes cannot execute or mutate the task filesystem.
-    return code in {"T", "t", "Z", "X", "x"}
+    return _task_process_state(pid) in {"T", "t", "Z", "X", "x"}
 
 
 def _stop_task_processes_until_stable() -> set[int]:
@@ -1134,7 +1141,9 @@ def _kill_task_processes() -> None:
             continue
     deadline = time.monotonic() + _PROCESS_CLEANUP_SECONDS
     while time.monotonic() < deadline:
-        remaining = _task_process_ids()
+        remaining = {
+            pid for pid in _task_process_ids() if not _task_process_is_dead(pid)
+        }
         if not remaining:
             return
         for pid in remaining:
