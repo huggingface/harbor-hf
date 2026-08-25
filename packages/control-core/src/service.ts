@@ -621,7 +621,7 @@ export class ControlService {
     return { ...result, key };
   }
 
-  async syncProjection(prefix = "control/schema=v1"): Promise<number> {
+  async syncProjection(prefix?: string): Promise<number> {
     const operation = this.appendQueue.then(async () => {
       const events = await this.projection.sync(this.store, prefix);
       for (const event of events) this.events.publish(event);

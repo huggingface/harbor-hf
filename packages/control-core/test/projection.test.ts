@@ -43,11 +43,13 @@ class ListingStore implements ImmutableObjectStore {
 }
 
 class ReadCountingStore implements ImmutableObjectStore {
+  readonly listedPrefixes: string[] = [];
   readonly readKeys: string[] = [];
 
   constructor(private readonly source: ImmutableObjectStore) {}
 
   list(prefix: string): Promise<readonly ObjectEntry[]> {
+    this.listedPrefixes.push(prefix);
     return this.source.list(prefix);
   }
 
@@ -99,6 +101,32 @@ class ConcurrentReadStore implements ImmutableObjectStore {
 }
 
 describe("projection replay", () => {
+  it("reads only Run-native control trees by default", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const legacyKey = "control/schema=v1/campaigns/legacy-record.json";
+    await control.store.create(legacyKey, new TextEncoder().encode("not-json"));
+    const store = new ReadCountingStore(control.store);
+    const projection = await Projection.open(`${control.root}/run-native.sqlite`);
+
+    await projection.rebuild(store);
+    await projection.sync(store);
+
+    expect(store.listedPrefixes).toEqual([
+      "control/schema=v1/migrations/",
+      "control/schema=v1/operators/",
+      "control/schema=v1/profiles/",
+      "control/schema=v1/runs/",
+      "control/schema=v1/migrations/",
+      "control/schema=v1/operators/",
+      "control/schema=v1/profiles/",
+      "control/schema=v1/runs/",
+    ]);
+    expect(store.readKeys).not.toContain(legacyKey);
+    expect(projection.system()).toMatchObject({ ready: true, integrity_error: null });
+    await projection.close();
+  });
+
   it("prefetches rebuild objects with bounded concurrency", async () => {
     const control = await createTestControl();
     controls.push(control);
@@ -275,7 +303,7 @@ describe("projection replay", () => {
       operators: ["operator"],
       readers: [],
     } as const;
-    const firstKey = "control/schema=v1/auth/operator-acl-first.json";
+    const firstKey = "control/schema=v1/operators/operator-acl-first.json";
     const firstBytes = new TextEncoder().encode(canonicalJson(first));
     await control.store.create(firstKey, firstBytes);
     const rebuildKeys = (await control.store.list("control/schema=v1")).map(
@@ -298,7 +326,7 @@ describe("projection replay", () => {
       created_at: "2026-08-24T00:00:01.000Z",
       readers: ["reader"],
     } as const;
-    const secondKey = "control/schema=v1/auth/operator-acl-second.json";
+    const secondKey = "control/schema=v1/operators/operator-acl-second.json";
     const secondBytes = new TextEncoder().encode(canonicalJson(second));
     await control.store.create(secondKey, secondBytes);
 
@@ -381,7 +409,7 @@ describe("projection replay", () => {
       operators: ["operator"],
       readers: [],
     } as const;
-    const firstKey = `control/schema=v1/auth/${first.record_id}.json`;
+    const firstKey = `control/schema=v1/operators/${first.record_id}.json`;
     const firstBytes = new TextEncoder().encode(canonicalJson(first));
     await control.store.create(firstKey, firstBytes);
     const identity = (changed: boolean) => `xet:${(changed ? "b" : "a").repeat(64)}`;

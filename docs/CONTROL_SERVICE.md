@@ -45,8 +45,11 @@ than one process would create competing reconcilers and violate the single
 writer rule.
 
 The Bucket is the permanent record. SQLite contains only indexes and derived
-views. Deleting the local database and replaying Bucket records must restore the
-same run states and next actions.
+views. Deleting the local database and replaying current Run-native control
+records must restore the same run states and next actions. The projection lists
+only the `migrations`, `operators`, `profiles`, and `runs` record trees. Retired
+control trees remain immutable evidence in the Bucket, but normal startup and
+sync do not read or reinterpret them.
 
 ## Source layout
 

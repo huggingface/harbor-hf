@@ -28,7 +28,9 @@ Query. The Bucket stores control records, normalized result rows, and the global
 catalog. Real resource names remain in private deployment configuration.
 
 This is a hard new-write switch with no dual-write mode. Historical Dataset
-commits and Bucket evidence remain immutable. Python may remain in pinned remote
+commits and Bucket evidence remain immutable. The Run-native projection reads
+only current migration, operator, profile, and run records. It does not replay
+retired campaign trees during startup or sync. Python may remain in pinned remote
 benchmark workers, but it does not remain as a parallel shared control path.
 Hub resources are shared namespace infrastructure. A run, repair, profile,
 lease, status record, or result subset must not create its own repository,

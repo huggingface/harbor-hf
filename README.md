@@ -143,8 +143,10 @@ Publication is independent of execution. A publication retry rebuilds determinis
 
 The one-time reset tool deletes only reviewed Run-derived Bucket prefixes and
 fails on every unknown path. It preserves benchmark bundles, profiles,
-promotions, capacity policy, operator ACLs, and migration records. The default
-mode only writes a local, secret-free manifest:
+promotions, capacity policy, operator ACLs, and migration records. Normal
+control startup does not require this destructive reset: the Run-native
+projection ignores retired control trees while their objects remain in the
+Bucket. The default reset mode only writes a local, secret-free manifest:
 
 ```bash
 uv run python scripts/reset_run_data.py \

@@ -294,6 +294,12 @@ export interface SystemView {
 export class ProjectionIntegrityError extends Error {}
 
 const REBUILD_IO_CONCURRENCY = 16;
+const RUN_NATIVE_CONTROL_PREFIXES = [
+  "control/schema=v1/migrations/",
+  "control/schema=v1/operators/",
+  "control/schema=v1/profiles/",
+  "control/schema=v1/runs/",
+] as const;
 
 function body(value: unknown): string {
   return canonicalJson(value).trimEnd();
@@ -335,6 +341,14 @@ async function verifyAttemptEvidence(
   if (record.actor.subject === "harbor-hf-control")
     await verifyEvidenceReference(store, record.evidence_path, record.evidence_digest);
   else await verifyWorkerEvidence(store, record);
+}
+
+async function listProjectionEntries(
+  store: ImmutableObjectStore,
+  prefix?: string,
+): Promise<ObjectEntry[]> {
+  const prefixes = prefix ? [prefix] : RUN_NATIVE_CONTROL_PREFIXES;
+  return (await Promise.all(prefixes.map((value) => store.list(value)))).flat();
 }
 
 async function readRebuildObjects(
@@ -871,10 +885,7 @@ export class Projection {
     }
   }
 
-  async rebuild(
-    store: ImmutableObjectStore,
-    prefix = "control/schema=v1",
-  ): Promise<void> {
+  async rebuild(store: ImmutableObjectStore, prefix?: string): Promise<void> {
     // Local row order is rebuilt from immutable objects. A new epoch makes
     // clients with a prior cursor replay instead of skipping an object.
     this.eventEpoch = randomUUID();
@@ -885,7 +896,7 @@ export class Projection {
       integrity_error: null,
     };
     try {
-      const entries = [...(await store.list(prefix))].sort((left, right) =>
+      const entries = (await listProjectionEntries(store, prefix)).sort((left, right) =>
         left.key.localeCompare(right.key),
       );
       const seen = new Set<string>();
@@ -943,12 +954,9 @@ export class Projection {
     }
   }
 
-  async sync(
-    store: ImmutableObjectStore,
-    prefix = "control/schema=v1",
-  ): Promise<ControlEvent[]> {
+  async sync(store: ImmutableObjectStore, prefix?: string): Promise<ControlEvent[]> {
     try {
-      const entries = [...(await store.list(prefix))].sort((left, right) =>
+      const entries = (await listProjectionEntries(store, prefix)).sort((left, right) =>
         left.key.localeCompare(right.key),
       );
       const seen = new Set<string>();
