@@ -660,11 +660,34 @@ def test_runs_harbor_exactly_once(
     assert len(calls) == 1
 
 
+def test_missing_harbor_result_is_a_typed_worker_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = _config(monkeypatch)
+    monkeypatch.setattr(
+        worker,
+        "_run_logged_command",
+        lambda _command, _timeout, _env: ("", False),
+    )
+    monkeypatch.setattr(worker, "_result_path", lambda _root, _task: None)
+
+    with pytest.raises(
+        worker.MissingHarborResultError,
+        match="Harbor did not write a trial result",
+    ):
+        worker._run_harbor(config, tmp_path, tmp_path / "config.json")
+
+
 @pytest.mark.parametrize(
     ("error", "expected"),
     [
         (worker.PreparedDataError("digest mismatch"), ("invalid", False)),
         (worker.WorkerEvidenceError("invalid evidence"), ("invalid", False)),
+        (
+            worker.MissingHarborResultError("missing result"),
+            ("infrastructure", True),
+        ),
         (worker.ProviderPolicyError(), ("policy", False)),
         (
             worker.ControlClientTransientError("control unavailable"),

@@ -129,8 +129,10 @@ worker without effective `CAP_SYS_PTRACE`, and an unused dedicated UID/GID. A
 probe running with the final task identity must have empty capability fields,
 `no_new_privs`, and no access to the worker's `/proc/<pid>/environ` or a
 root-owned mode-0600 file. A missing runtime feature or failed denial probe is
-a replacement-eligible infrastructure failure. There is no namespace or
-same-UID fallback.
+a replacement-eligible infrastructure failure. A Harbor process that exits
+without its required trial result is also replacement-eligible because the
+worker has no truthful benchmark outcome to seal. Other evidence-integrity
+failures remain non-retryable. There is no namespace or same-UID fallback.
 
 Deployment profiles contain Hugging Face infrastructure and safety limits. They
 do not contain copies of benchmark task catalogs. A new Harbor-supported

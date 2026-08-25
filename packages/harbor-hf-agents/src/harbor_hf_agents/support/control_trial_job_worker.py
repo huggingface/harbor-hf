@@ -80,6 +80,10 @@ class WorkerEvidenceError(RuntimeError):
     """Raised when task-controlled evidence violates worker limits or integrity."""
 
 
+class MissingHarborResultError(RuntimeError):
+    """Raised when Harbor exits without its required trial result."""
+
+
 @dataclass(frozen=True)
 class LockedTask:
     """One prepared physical Harbor trial assigned to this HF Job."""
@@ -906,6 +910,7 @@ def _worker_failure_outcome(error: BaseException) -> tuple[str, bool]:
             ControlClientTransientError,
             InferenceUsageError,
             JobEnvironmentPreflightError,
+            MissingHarborResultError,
         ),
     ):
         return "infrastructure", True
@@ -1002,7 +1007,7 @@ def _run_harbor(
     )
     result_path = _result_path(root, task)
     if result_path is None:
-        raise WorkerEvidenceError("Harbor did not write a trial result")
+        raise MissingHarborResultError("Harbor did not write a trial result")
     return output, timed_out, result_path
 
 
