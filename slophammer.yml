@@ -1,3 +1,7 @@
+rules:
+  py.mutation-required:
+    disabled: true
+    reason: Mutation testing runs manually and as a required package publication preflight.
 python:
   coverage:
     threshold: 85

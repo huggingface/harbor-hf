@@ -435,7 +435,7 @@ dev = [
     { name = "pytest", specifier = ">=8.4.0" },
     { name = "pytest-cov", specifier = ">=6.2.0" },
     { name = "ruff", specifier = ">=0.15.21" },
-    { name = "slophammer-py", specifier = "==0.4.0" },
+    { name = "slophammer-py", specifier = "==0.5.0" },
     { name = "ty", specifier = ">=0.0.59" },
 ]
 
@@ -1320,14 +1320,14 @@ wheels = [
 
 [[package]]
 name = "slophammer-py"
-version = "0.4.0"
+version = "0.5.0"
 source = { registry = "https://pypi.registries.huggingface.tech/" }
 dependencies = [
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/51/b9/8589a5167a557a74de3c998c41e8ddfd48886b308b5eb00d5c491c6a4fdf/slophammer_py-0.4.0.tar.gz", hash = "sha256:d330f9a500250ef098430ebaa9dcbfffb28e84e15a90f605fe0fb7db9a4ac178", size = 137877, upload-time = "2026-06-13T05:46:18.771Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/dc/793db3178a8676660a180184b9218d54cecd2ea2ec447ba787db6391706a/slophammer_py-0.5.0.tar.gz", hash = "sha256:26758510fcb2c719927b11f642520dedd1d5777e71c2553b72fddefaecb923de", size = 139771, upload-time = "2026-08-25T09:45:02.102Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/02/68ad505e81b8371b3d1e2ab97a123df317499cda4be894ab069e5d39b29b/slophammer_py-0.4.0-py3-none-any.whl", hash = "sha256:a2a93c56a2786c064de68cf083923d9ffba8be4a7a0a6b21d02e23cdf9cbcfbc", size = 43685, upload-time = "2026-06-13T05:46:17.743Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/dc/4ba8369e3cfcdf6d826d920c7dac5a1065b4c9fdd9fb67c5a7538aae1f26/slophammer_py-0.5.0-py3-none-any.whl", hash = "sha256:2e68819704013d60ea7bc1c07f363faa1ed52c9bc415402fe0c6a4c565192ae1", size = 44359, upload-time = "2026-08-25T09:45:01.014Z" },
 ]
 
 [[package]]

@@ -40,7 +40,7 @@ jobs:
       - run: docker build --platform linux/amd64 -f deploy/control-space/Dockerfile .
       - run: uv run slophammer-py dry .
       - run: uv run pip-audit
-      - run: uv run slophammer-py check . --baseline
+      - run: uv run slophammer-py check .
       - run: uv sync --all-groups --locked
         working-directory: packages/harbor-hf-agents
       - run: uv run ruff check .

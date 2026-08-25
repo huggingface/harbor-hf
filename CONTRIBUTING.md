@@ -63,7 +63,7 @@ npm run test:e2e
 docker build --platform linux/amd64 -f deploy/control-space/Dockerfile .
 uv run slophammer-py dry .
 uv run pip-audit
-uv run slophammer-py check . --baseline
+uv run slophammer-py check .
 ```
 
 Run TypeScript formatting and linting from the repository root. Run type and
@@ -74,8 +74,8 @@ JSON Schema types, OpenAPI output, and the browser client must be current.
 The slower mutation suite is available as an explicit local command and a
 manually dispatched GitHub Actions workflow. It does not run for each commit or
 pull request. Package publication calls the same workflow and waits for it to
-pass before uploading a release. The checked-in Slophammer baseline records
-that deliberate exception and still rejects every new finding:
+pass before uploading a release. The Slophammer config records the reason for
+this exception. All enabled rules still reject new findings:
 
 ```bash
 uv run python scripts/check_mutation.py --min-kill-rate 90
