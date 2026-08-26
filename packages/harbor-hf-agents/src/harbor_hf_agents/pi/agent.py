@@ -512,7 +512,7 @@ fs.chmodSync(destination, 0o600);
                     "pi --print --mode json --session-dir /logs/agent/pi/sessions "
                     f"{model_args}"
                     f"{cli_flags}"
-                    f"{escaped_instruction} "
+                    f"-- {escaped_instruction} "
                     "2>&1 </dev/null | "
                     'grep -v \'"type":"message_update"\' | '
                     f"stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}"
