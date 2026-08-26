@@ -289,19 +289,98 @@ def test_copied_layout_preserves_locked_layers_and_config_semantics(
         )
 
 
-def test_skopeo_copy_converts_docker_manifests_to_oci(tmp_path: Path) -> None:
-    arguments = runtime._skopeo_copy_arguments(
+def test_skopeo_uses_one_remote_copy_before_local_oci_conversion(
+    tmp_path: Path,
+) -> None:
+    source = runtime._skopeo_source_copy_arguments(
         tmp_path / "auth.json",
         "docker://example.invalid/task@sha256:" + ("a" * 64),
+        tmp_path / "source",
+    )
+    conversion = runtime._skopeo_oci_copy_arguments(
+        tmp_path / "auth.json",
+        tmp_path / "source",
         tmp_path / "image",
     )
 
-    assert arguments[0:2] == ["skopeo", "copy"]
-    assert arguments[arguments.index("--format") : arguments.index("--format") + 2] == [
-        "--format",
-        "oci",
+    assert source[0:2] == ["skopeo", "copy"]
+    assert source[-1] == f"dir:{tmp_path / 'source'}"
+    assert "--format" not in source
+    assert conversion[0:2] == ["skopeo", "copy"]
+    format_index = conversion.index("--format")
+    assert conversion[format_index : format_index + 2] == ["--format", "oci"]
+    assert conversion[-2:] == [
+        f"dir:{tmp_path / 'source'}",
+        f"oci:{tmp_path / 'image'}:task",
     ]
-    assert "--preserve-digests" not in arguments
+
+
+def test_remote_copy_stops_after_bounded_directory_growth(tmp_path: Path) -> None:
+    destination = tmp_path / "source"
+    destination.mkdir()
+    script = (
+        "import pathlib, sys, time; "
+        "pathlib.Path(sys.argv[1]).write_bytes(b'x' * 4096); time.sleep(10)"
+    )
+
+    with pytest.raises(OciImageIntegrityError, match="bounded compressed byte"):
+        runtime._run_checked_with_directory_limit(
+            [sys.executable, "-c", script, str(destination / "blob")],
+            environment=dict(os.environ),
+            label="test copy",
+            directory=destination,
+            max_bytes=1024,
+        )
+
+
+def test_copied_concrete_manifest_needs_no_remote_inspection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = {"architecture": "arm64", "os": "linux"}
+    raw_config = json.dumps(config, separators=(",", ":")).encode()
+    config_digest = f"sha256:{hashlib.sha256(raw_config).hexdigest()}"
+    raw_manifest = json.dumps(
+        {
+            "schemaVersion": 2,
+            "config": {
+                "digest": config_digest,
+                "size": len(raw_config),
+            },
+            "layers": [],
+        },
+        separators=(",", ":"),
+    ).encode()
+    manifest_digest = f"sha256:{hashlib.sha256(raw_manifest).hexdigest()}"
+    labels: list[str] = []
+
+    def fake_run(
+        arguments: list[str],
+        *,
+        environment: dict[str, str],
+        label: str,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del environment
+        labels.append(label)
+        output = raw_config if "--config" in arguments else raw_manifest
+        return subprocess.CompletedProcess(arguments, 0, output, b"")
+
+    monkeypatch.setattr(runtime, "_run_checked", fake_run)
+
+    manifest, copied_config = runtime._copied_source_image(
+        tmp_path / "source",
+        f"example.invalid/task@{manifest_digest}",
+        tmp_path / "auth.json",
+        {},
+        _image_limits(),
+    )
+
+    assert manifest.config.digest == config_digest
+    assert copied_config == config
+    assert labels == [
+        "local task image manifest inspection",
+        "local task image config inspection",
+    ]
 
 
 def test_layer_scan_rejects_expansion_before_extraction(tmp_path: Path) -> None:

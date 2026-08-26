@@ -74,6 +74,8 @@ _TASK_UID = 60_000
 _TASK_GID = 60_000
 _CAP_SYS_PTRACE = 19
 _PROCESS_CLEANUP_SECONDS = 10.0
+_IMAGE_COPY_OVERHEAD_BYTES = 16 * 1024 * 1024
+_IMAGE_COPY_POLL_SECONDS = 0.1
 _MINIMUM_PROOT_VERSION = (5, 3, 0)
 _PROOT_VERSION = re.compile(rb"\bv([0-9]+)\.([0-9]+)\.([0-9]+)\b")
 _PREFLIGHT_ENVIRONMENT = {
@@ -232,6 +234,59 @@ def _run_checked(
     return result
 
 
+def _directory_regular_bytes(path: Path) -> int:
+    total = 0
+    for root, _directories, files in os.walk(path):
+        for name in files:
+            try:
+                metadata = (Path(root) / name).stat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISREG(metadata.st_mode):
+                total += metadata.st_size
+    return total
+
+
+def _run_checked_with_directory_limit(
+    arguments: list[str],
+    *,
+    environment: dict[str, str],
+    label: str,
+    directory: Path,
+    max_bytes: int,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run one copy while bounding bytes written before manifest validation."""
+    try:
+        process = subprocess.Popen(
+            arguments,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+            start_new_session=True,
+        )
+    except OSError as error:
+        raise OciRuntimeUnavailableError(f"failed to start {label}: {error}") from error
+    exceeded = False
+    while process.poll() is None:
+        if _directory_regular_bytes(directory) > max_bytes:
+            exceeded = True
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            break
+        time.sleep(_IMAGE_COPY_POLL_SECONDS)
+    stdout, stderr = process.communicate()
+    if exceeded or _directory_regular_bytes(directory) > max_bytes:
+        raise OciImageIntegrityError(
+            "task image copy exceeded the bounded compressed byte allowance"
+        )
+    if process.returncode != 0:
+        detail = stderr.decode(errors="replace").strip()
+        raise OciRuntimeUnavailableError(
+            f"{label} failed with code {process.returncode}: {detail}"
+        )
+    return subprocess.CompletedProcess(arguments, process.returncode, stdout, stderr)
+
+
 def _run_preflight_command(
     arguments: list[str],
     label: str,
@@ -303,12 +358,28 @@ def _docker_reference(image: str) -> str:
     return f"docker://{registry}/{repository}@{digest}"
 
 
-def _skopeo_copy_arguments(
+def _skopeo_source_copy_arguments(
     auth_file: Path,
     source: str,
+    source_directory: Path,
+) -> list[str]:
+    """Copy the locked remote image once without changing its manifest."""
+    return [
+        "skopeo",
+        "copy",
+        "--authfile",
+        str(auth_file),
+        source,
+        f"dir:{source_directory}",
+    ]
+
+
+def _skopeo_oci_copy_arguments(
+    auth_file: Path,
+    source_directory: Path,
     image_layout: Path,
 ) -> list[str]:
-    """Build a copy command that always produces an OCI-compliant manifest."""
+    """Convert a validated local source image to an OCI image layout."""
     return [
         "skopeo",
         "copy",
@@ -316,7 +387,7 @@ def _skopeo_copy_arguments(
         str(auth_file),
         "--format",
         "oci",
-        source,
+        f"dir:{source_directory}",
         f"oci:{image_layout}:task",
     ]
 
@@ -487,6 +558,54 @@ def _image_manifest(
         config=config,
         layers=_layer_descriptors(layer_values, config.size, limits),
     )
+
+
+def _copied_source_image(
+    source_directory: Path,
+    task_image: str,
+    auth_file: Path,
+    environment: dict[str, str],
+    limits: ImageLimits,
+) -> tuple[_ImageManifest, dict[str, object]]:
+    """Validate the exact manifest and config produced by one remote copy."""
+    raw_manifest = _run_checked(
+        ["skopeo", "inspect", "--raw", f"dir:{source_directory}"],
+        environment=environment,
+        label="local task image manifest inspection",
+    ).stdout
+    selected_digest = f"sha256:{hashlib.sha256(raw_manifest).hexdigest()}"
+    locked_digest = task_image.rsplit("@", 1)[1]
+    if selected_digest != locked_digest:
+        raw_index = _run_checked(
+            [
+                "skopeo",
+                "inspect",
+                "--authfile",
+                str(auth_file),
+                "--raw",
+                _docker_reference(task_image),
+            ],
+            environment=environment,
+            label="task image index inspection",
+        ).stdout
+        _source, expected_selected_digest = _selected_manifest(
+            task_image,
+            raw_index,
+        )
+        if selected_digest != expected_selected_digest:
+            raise OciImageIntegrityError(
+                "copied task image manifest does not match the locked image"
+            )
+    manifest = _image_manifest(raw_manifest, selected_digest, limits)
+    config = _manifest_object(
+        _run_checked(
+            ["skopeo", "inspect", "--config", f"dir:{source_directory}"],
+            environment=environment,
+            label="local task image config inspection",
+        ).stdout,
+        "selected task image config",
+    )
+    return manifest, config
 
 
 def _blob_path(image_layout: Path, digest: str) -> Path:
@@ -1520,62 +1639,43 @@ class IsolatedOciRuntime:
         auth_file = self.workspace / "auth.json"
         auth_file.write_text('{"auths":{}}\n', encoding="utf-8")
         auth_file.chmod(0o600)
-        raw = _run_checked(
-            [
-                "skopeo",
-                "inspect",
-                "--authfile",
-                str(auth_file),
-                "--raw",
-                _docker_reference(self.task_image),
-            ],
-            environment=self._environment,
-            label="task image manifest inspection",
-        ).stdout
-        source, manifest_digest = _selected_manifest(self.task_image, raw)
-        selected_raw = _run_checked(
-            [
-                "skopeo",
-                "inspect",
-                "--authfile",
-                str(auth_file),
-                "--raw",
-                source,
-            ],
-            environment=self._environment,
-            label="selected task image manifest inspection",
-        ).stdout
-        manifest = _image_manifest(
-            selected_raw,
-            manifest_digest,
-            self.image_limits,
-        )
-        source_config = _manifest_object(
-            _run_checked(
-                [
-                    "skopeo",
-                    "inspect",
-                    "--authfile",
-                    str(auth_file),
-                    "--config",
-                    source,
-                ],
-                environment=self._environment,
-                label="selected task image config inspection",
-            ).stdout,
-            "selected task image config",
-        )
-        # Skopeo can need both its final blobs and temporary transfer space.
+        # One remote copy avoids consuming separate registry pulls for manifest,
+        # config, and blob requests. The source manifest and config are then
+        # inspected locally before conversion to the OCI layout used by umoci.
         _require_free_space(
             self.workspace,
-            manifest.compressed_bytes * 2,
+            self.image_limits.max_bytes * 2,
             "copy",
+        )
+        source_directory = self.workspace / "source"
+        source_directory.mkdir(mode=0o700)
+        _run_checked_with_directory_limit(
+            _skopeo_source_copy_arguments(
+                auth_file,
+                _docker_reference(self.task_image),
+                source_directory,
+            ),
+            environment=self._environment,
+            label="task image copy",
+            directory=source_directory,
+            max_bytes=self.image_limits.max_bytes + _IMAGE_COPY_OVERHEAD_BYTES,
+        )
+        manifest, source_config = _copied_source_image(
+            source_directory,
+            self.task_image,
+            auth_file,
+            self._environment,
+            self.image_limits,
         )
         image_layout = self.workspace / "image"
         _run_checked(
-            _skopeo_copy_arguments(auth_file, source, image_layout),
+            _skopeo_oci_copy_arguments(
+                auth_file,
+                source_directory,
+                image_layout,
+            ),
             environment=self._environment,
-            label="task image copy",
+            label="local task image OCI conversion",
         )
         copied_manifest = _validate_copied_oci_manifest(
             image_layout,
@@ -1583,6 +1683,7 @@ class IsolatedOciRuntime:
             source_config,
             self.image_limits,
         )
+        shutil.rmtree(source_directory)
         archive_stats = _inspect_image_layout(
             image_layout,
             copied_manifest,
