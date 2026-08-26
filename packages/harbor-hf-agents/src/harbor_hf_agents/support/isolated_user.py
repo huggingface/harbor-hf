@@ -26,7 +26,7 @@ class IsolatedProviderAgent(BaseInstalledAgent):
                 f"useradd --create-home --home-dir {_AGENT_HOME} "
                 f"--shell /bin/bash {AGENT_USER}; fi; "
                 f"install -d -m 0750 -o {AGENT_USER} -g {AGENT_USER} "
-                f"{_AGENT_HOME} /logs/agent; "
+                f"{_AGENT_HOME} /logs/agent /app; "
                 f"chown -R {AGENT_USER}:{AGENT_USER} "
                 f"/app /logs/agent {_AGENT_HOME}; "
                 "if [ -d /app/data ]; then "
