@@ -108,6 +108,52 @@ describe("Terminal-Bench 2.1 profiles", () => {
     expect(kwargs.thinking).toBe("high");
   });
 
+  it("lock the DeepInfra model, Pi harness, and deployment", async () => {
+    const model = record(
+      (await profile("model", "deepseek-v4-flash-0731-deepinfra")).spec,
+    );
+    const harness = record(
+      (await profile("harness", "pi-0-84-2-high-deepseek-v4-flash-0731-deepinfra"))
+        .spec,
+    );
+    const deployment = record(
+      (await profile("deployment", "tb21-deepseek-v4-flash-deepinfra-diagnostic-1"))
+        .spec,
+    );
+    const harborAgent = record(harness.harbor_agent);
+    const kwargs = record(harborAgent.kwargs);
+    const modelsJson = record(kwargs.models_json);
+    const providers = record(modelsJson.providers);
+    const openai = record(providers.openai);
+    const configuredModel = record((openai.models as unknown[])[0]);
+    const cost = record(configuredModel.cost);
+    const trialJob = record(deployment.trial_job_template);
+
+    expect(model.model_id).toBe("deepseek-ai/DeepSeek-V4-Flash-0731");
+    expect(model.harbor_model_name).toBe(
+      "openai/deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra",
+    );
+    expect(harborAgent.model_name).toBe(model.harbor_model_name);
+    expect(configuredModel.id).toBe("deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra");
+    expect(cost).toEqual({
+      input: 0.08,
+      output: 0.18,
+      cacheRead: 0.016,
+      cacheWrite: 0.08,
+    });
+    expect(deployment.models).toEqual(["deepseek-v4-flash-0731-deepinfra"]);
+    expect(deployment.harnesses).toEqual([
+      "pi-0-84-2-high-deepseek-v4-flash-0731-deepinfra",
+    ]);
+    expect(deployment.inference_provider).toBe("deepinfra");
+    expect(deployment.input_price_microusd_per_million_tokens).toBe(80_000);
+    expect(deployment.output_price_microusd_per_million_tokens).toBe(180_000);
+    expect(trialJob.inference_model).toBe(
+      "deepseek-ai/DeepSeek-V4-Flash-0731:deepinfra",
+    );
+    expect(trialJob.max_jobs).toBe(16);
+  });
+
   it("derive the replacement and diagnostic task sets from locked profiles", async () => {
     const canary = record(
       (await profile("benchmark", "terminal-bench-2-1-canary")).spec,
@@ -390,6 +436,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
       "tb21-deepseek-v4-flash-official-5",
       "tb21-deepseek-v4-flash-replacement",
       "tb21-deepseek-v4-flash-diagnostic-1",
+      "tb21-deepseek-v4-flash-deepinfra-diagnostic-1",
       "tb21-deepseek-v4-flash-dsh-providers",
       "tb21-gpt-oss-20b-dsh-providers",
       "tb21-gpt-oss-20b-opencode-providers",
