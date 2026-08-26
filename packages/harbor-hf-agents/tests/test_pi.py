@@ -196,9 +196,7 @@ class TestPiAgent:
         assert "pi.txt" in run_cmd
 
     @pytest.mark.asyncio
-    async def test_run_terminates_options_before_leading_hyphen_instruction(
-        self, temp_dir
-    ):
+    async def test_run_preserves_leading_hyphen_instruction(self, temp_dir):
         agent = PiAgent(logs_dir=temp_dir, model_name="my-provider/my-model")
         mock_env = AsyncMock()
         mock_env.exec.return_value = _exec_result()
@@ -206,8 +204,8 @@ class TestPiAgent:
         await agent.run("- leading instruction", mock_env, AsyncMock())
 
         run_command = mock_env.exec.call_args_list[-1].kwargs["command"]
-        assert "--model my-model --" in run_command
-        assert "- leading instruction" in run_command
+        assert "--model my-model --" not in run_command
+        assert "\n- leading instruction" in run_command
 
     @pytest.mark.asyncio
     async def test_run_no_model(self, temp_dir):

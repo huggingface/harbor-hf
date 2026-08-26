@@ -398,7 +398,11 @@ fs.chmodSync(destination, 0o600);
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        escaped_instruction = shlex.quote(instruction)
+        # Pi 0.84.2 parses a leading hyphen as an option and does not accept
+        # the later `--` terminator. A leading newline keeps the prompt text
+        # intact while making the positional argument unambiguous.
+        prompt = f"\n{instruction}" if instruction.startswith("-") else instruction
+        escaped_instruction = shlex.quote(prompt)
 
         if not self.model_name or "/" not in self.model_name:
             raise ValueError("Model name must be in the format provider/model_name")
@@ -512,7 +516,7 @@ fs.chmodSync(destination, 0o600);
                     "pi --print --mode json --session-dir /logs/agent/pi/sessions "
                     f"{model_args}"
                     f"{cli_flags}"
-                    f"-- {escaped_instruction} "
+                    f"{escaped_instruction} "
                     "2>&1 </dev/null | "
                     'grep -v \'"type":"message_update"\' | '
                     f"stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}"
