@@ -482,13 +482,23 @@ describe("control service", () => {
       publisher,
       { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
     );
+    const list = control.store.list.bind(control.store);
+    const catalogReads = vi
+      .spyOn(control.store, "list")
+      .mockImplementation(async (prefix) => {
+        if (prefix === "results/schema=v1/catalog/records/")
+          throw new Error("diagnostic publication read leaderboard catalogs");
+        return list(prefix);
+      });
     await settle(reconciler);
+    expect(catalogReads).not.toHaveBeenCalledWith("results/schema=v1/catalog/records/");
     expect(await control.projection.run(first.run_id)).toMatchObject({
       status: "completed",
       terminal_tasks: 1,
       successful_tasks: 1,
       total_tasks: 1,
       publication_status: "published",
+      pending_actions: 0,
     });
     const resultObjects = await control.store.list("results/schema=v1");
     expect(resultObjects.some((entry) => entry.key.endsWith(".parquet"))).toBe(true);
@@ -4777,6 +4787,76 @@ describe("control service", () => {
       (await rebuilt.runAttempts(result.run_id)).map((attempt) => attempt.attempt_id),
     ).toEqual(["attempt-a", "attempt-z"]);
     await rebuilt.close();
+  });
+
+  it("adopts a durable diagnostic publication without reading leaderboard catalogs", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "diagnostic-publication-adoption-key",
+      operator,
+    );
+    const publisher = new ResultPublisher(
+      control.store,
+      control.projection,
+      control.service,
+    );
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      publisher,
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    const receipt = control.service.receipt.bind(control.service);
+    const receiptWrite = vi
+      .spyOn(control.service, "receipt")
+      .mockImplementation(async (intent, actionResult) => {
+        if (intent.action_kind === "publication.publish")
+          throw new Error("simulated action receipt interruption");
+        return receipt(intent, actionResult);
+      });
+
+    await expect(settle(reconciler)).rejects.toThrow(
+      "simulated action receipt interruption",
+    );
+    receiptWrite.mockRestore();
+    expect(await control.projection.run(result.run_id)).toMatchObject({
+      publication_status: "published",
+      pending_actions: 1,
+    });
+    const action = (await control.projection.runActions(result.run_id)).find(
+      (candidate) => candidate.action_kind === "publication.publish",
+    );
+    expect(action?.receipt_body).toBeNull();
+    if (!action) throw new Error("publication action is missing");
+
+    const list = control.store.list.bind(control.store);
+    const catalogReads = vi
+      .spyOn(control.store, "list")
+      .mockImplementation(async (prefix) => {
+        if (prefix === "results/schema=v1/catalog/records/")
+          throw new Error("adopted diagnostic publication read leaderboard catalogs");
+        return list(prefix);
+      });
+    await reconciler.tick();
+
+    expect(catalogReads).not.toHaveBeenCalledWith("results/schema=v1/catalog/records/");
+    expect(await control.projection.action(action.action_id)).toMatchObject({
+      outcome: "completed",
+      observed_state: "published",
+    });
+    expect(await control.projection.run(result.run_id)).toMatchObject({
+      publication_status: "published",
+      pending_actions: 0,
+    });
+    const actionRecords = await control.store.list(
+      `control/schema=v1/runs/${result.run_id}/actions/${action.action_id}`,
+    );
+    const actionKeys = actionRecords.map((record) => record.key);
+    expect(actionKeys.some((key) => key.endsWith("/receipt.json"))).toBe(true);
+    expect(actionKeys.some((key) => key.endsWith("/zz-advanced.json"))).toBe(true);
   });
 
   it("recovers publication after a crash between terminal selection and intent", async () => {

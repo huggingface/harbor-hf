@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RunLock, HarborHFResultCatalogV1 } from "@harbor-hf/contracts";
+import type { HarborHFResultCatalogV1, RunLock } from "@harbor-hf/contracts";
 import {
   canonicalJson,
   deterministicId,
@@ -16,7 +16,7 @@ import {
   type TestControl,
 } from "@harbor-hf/test-fixtures";
 import Database from "better-sqlite3";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   configurationDigest,
   configurationDigestFields,
@@ -338,6 +338,35 @@ describe("leaderboard sqlite snapshot", () => {
       publication_status: "published",
     });
     expect(await control.store.list(LEADERBOARD_SNAPSHOT_PREFIX)).toEqual([]);
+  });
+
+  it("refreshes the snapshot after a final publication", async () => {
+    const control = await createControl(leaderboardProfiles());
+    controls.push(control);
+    const submitted = await control.service.submit(
+      submission,
+      "final-publication-key",
+      operator,
+    );
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      new NoopActions(),
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+    const list = control.store.list.bind(control.store);
+    const catalogReads = vi
+      .spyOn(control.store, "list")
+      .mockImplementation((prefix) => list(prefix));
+
+    await settle(reconciler);
+
+    expect(await control.projection.run(submitted.run_id)).toMatchObject({
+      publication_status: "published",
+      pending_actions: 0,
+    });
+    expect(catalogReads).toHaveBeenCalledWith("results/schema=v1/catalog/records/");
   });
 
   it("writes a bucket sqlite snapshot for a final clean scored run", async () => {

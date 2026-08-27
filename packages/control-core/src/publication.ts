@@ -3,6 +3,7 @@ import type {
   AttemptReceipt,
   HarborHFResultCatalogV1,
   PublicationReceipt,
+  RunLock,
 } from "@harbor-hf/contracts";
 import { canonicalJson, deterministicId, sha256 } from "@harbor-hf/contracts";
 import { type BasicType, parquetWriteBuffer } from "hyparquet-writer";
@@ -42,6 +43,18 @@ function serviceActor(): Actor {
   return { subject: "harbor-hf-control", role: "service" };
 }
 
+type PublicationRole = HarborHFResultCatalogV1["entries"][number]["publication_role"];
+
+function publicationRole(lock: RunLock): PublicationRole {
+  const policy = lock.profiles.find((profile) => profile.kind === "launch_policy");
+  const role = policy
+    ? (policy.spec as unknown as Record<string, unknown>).publication_role
+    : null;
+  if (role !== "final" && role !== "component" && role !== "diagnostic")
+    throw new Error("run launch policy has no publication role");
+  return role;
+}
+
 export class ResultPublisher {
   constructor(
     private readonly store: ImmutableObjectStore,
@@ -50,10 +63,14 @@ export class ResultPublisher {
   ) {}
 
   async publish(runId: string): Promise<PublicationReceipt> {
+    const lock = await this.projection.runLock(runId);
+    if (!lock) throw new Error("run lock is missing for publication");
+    const role = publicationRole(lock);
     const existing = await this.projection.runPublication(runId);
     if (existing?.status === "published") {
       const receipt = JSON.parse(existing.body) as PublicationReceipt;
-      await refreshLeaderboardSnapshot(this.store, this.projection);
+      if (role === "final")
+        await refreshLeaderboardSnapshot(this.store, this.projection);
       return receipt;
     }
     const run = await this.projection.run(runId);
@@ -76,8 +93,6 @@ export class ResultPublisher {
         JSON.parse(attempt.body) as AttemptReceipt,
       ]),
     );
-    const lock = await this.projection.runLock(runId);
-    if (!lock) throw new Error("run lock is missing for publication");
     const required = requiredPositiveMetrics(lock);
     const selectedAttempts = tasks.map((task) => {
       if (!task.selected_attempt_id)
@@ -239,16 +254,6 @@ export class ResultPublisher {
       const value = (profile.spec as unknown as Record<string, unknown>)[key];
       return typeof value === "string" ? value : profile.name;
     };
-    const policy = resolvedProfile("launch_policy");
-    const publicationRole = policy
-      ? (policy.spec as unknown as Record<string, unknown>).publication_role
-      : null;
-    if (
-      publicationRole !== "final" &&
-      publicationRole !== "component" &&
-      publicationRole !== "diagnostic"
-    )
-      throw new Error("run launch policy has no publication role");
     const createdAt =
       selectedAttempts
         .map((attempt) => attempt.created_at)
@@ -286,7 +291,7 @@ export class ResultPublisher {
           quality: tasks.every((task) => task.terminal_outcome === "complete")
             ? "clean"
             : "degraded",
-          publication_role: publicationRole,
+          publication_role: role,
           task_count: run.total_tasks,
           scored_task_count: rewardValues.length,
           strict_pass_count: strictValues.length
@@ -335,7 +340,7 @@ export class ResultPublisher {
     if (sha256(await this.store.read(catalogPath)) !== catalogDigest)
       throw new Error("publication catalog readback failed");
     await this.service.writePublication(receipt);
-    await refreshLeaderboardSnapshot(this.store, this.projection);
+    if (role === "final") await refreshLeaderboardSnapshot(this.store, this.projection);
     return receipt;
   }
 }
