@@ -37,9 +37,8 @@ Change only these implementation files:
 - `packages/harbor-hf-agents/tests/test_opencode.py`
 
 Keep this plan and the Harbor compatibility contract accurate as the work
-proceeds. Review all changes against `origin/feat/tb21-reliability-matrix`.
-Commit and push the existing `fix/opencode-worker-canary` branch after all
-checks pass.
+proceeds. Review all changes against the approved comparison base. Commit and
+push only the existing task branch after all checks pass.
 
 ## Contracts
 
@@ -136,8 +135,8 @@ uv run python scripts/check_mutation.py --min-kill-rate 90
 ```
 
 Run any generated-contract or npm check required by the final changed-file set.
-Run Pi Reviewer against `origin/feat/tb21-reliability-matrix` until it reports no
-P0 or P1 finding.
+Run Pi Reviewer against the approved comparison base until it reports no P0 or
+P1 finding.
 
 Before commit and push, inspect the complete diff and public metadata, then run:
 
