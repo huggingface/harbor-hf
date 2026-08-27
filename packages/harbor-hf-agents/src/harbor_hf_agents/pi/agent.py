@@ -44,6 +44,7 @@ _PI_PACKAGE_RENAME_VERSION = Version("0.74.0")
 _AGENT_TIMEOUT_ENV = "HARBOR_HF_AGENT_TIMEOUT_SECONDS"
 _AGENT_TIMEOUT_HEADROOM_SECONDS = 5
 _AGENT_TIMEOUT_MARKER = "harbor_hf_pi_execution_timeout"
+_PI_HTTP_IDLE_TIMEOUT_ENV = "HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS"
 
 
 def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
@@ -360,42 +361,80 @@ class PiAgent(IsolatedProviderAgent):
         )
 
     @staticmethod
-    def _materialize_models_command() -> str:
-        """Build Pi's runtime model file using its guaranteed Node runtime."""
+    def _materialize_runtime_config_command() -> str:
+        """Build Pi's runtime files using its guaranteed Node runtime."""
         script = """
 const fs = require("node:fs");
 const path = require("node:path");
 
-const source = "/logs/agent/pi.models.template.json";
 const home = process.env.HOME;
 if (!home) {
-  throw new Error("HOME is required to materialize Pi models");
+  throw new Error("HOME is required to materialize Pi configuration");
 }
-const destination = path.join(home, ".pi", "agent", "models.json");
-const value = JSON.parse(fs.readFileSync(source, "utf8"));
-for (const provider of Object.values(value.providers)) {
-  const baseUrl = provider.baseUrl;
-  let environmentName = null;
-  if (baseUrl.startsWith("${") && baseUrl.endsWith("}")) {
-    environmentName = baseUrl.slice(2, -1);
-  } else if (baseUrl.startsWith("$")) {
-    environmentName = baseUrl.slice(1);
+const configDirectory = path.join(home, ".pi", "agent");
+fs.mkdirSync(configDirectory, { recursive: true });
+
+const modelSource = "/logs/agent/pi.models.template.json";
+if (fs.existsSync(modelSource)) {
+  const modelDestination = path.join(configDirectory, "models.json");
+  const value = JSON.parse(fs.readFileSync(modelSource, "utf8"));
+  for (const provider of Object.values(value.providers)) {
+    const baseUrl = provider.baseUrl;
+    let environmentName = null;
+    if (baseUrl.startsWith("${") && baseUrl.endsWith("}")) {
+      environmentName = baseUrl.slice(2, -1);
+    } else if (baseUrl.startsWith("$")) {
+      environmentName = baseUrl.slice(1);
+    }
+    if (environmentName === null) {
+      continue;
+    }
+    const resolved = process.env[environmentName];
+    if (!resolved) {
+      throw new Error(`required Pi model environment ${environmentName} is missing`);
+    }
+    provider.baseUrl = resolved;
   }
-  if (environmentName === null) {
-    continue;
-  }
-  const resolved = process.env[environmentName];
-  if (!resolved) {
-    throw new Error(`required Pi model environment ${environmentName} is missing`);
-  }
-  provider.baseUrl = resolved;
+  fs.writeFileSync(modelDestination, `${JSON.stringify(value, null, 2)}\\n`);
+  fs.chmodSync(modelDestination, 0o600);
 }
-fs.mkdirSync(path.dirname(destination), { recursive: true });
-fs.writeFileSync(destination, `${JSON.stringify(value, null, 2)}\\n`);
-fs.chmodSync(destination, 0o600);
+
+const timeoutRaw = process.env.HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS;
+if (timeoutRaw) {
+  const timeout = Number(timeoutRaw);
+  if (!Number.isSafeInteger(timeout) || timeout < 1) {
+    throw new Error("Pi HTTP idle timeout is invalid");
+  }
+  const settingsDestination = path.join(configDirectory, "settings.json");
+  fs.writeFileSync(
+    settingsDestination,
+    `${JSON.stringify({ httpIdleTimeoutMs: timeout }, null, 2)}\\n`,
+  );
+  fs.chmodSync(settingsDestination, 0o600);
+}
 """.strip()
         node_command = "node -e " + shlex.quote(script)
         return "bash -lc " + shlex.quote(f". ~/.nvm/nvm.sh; {node_command}")
+
+    def _http_idle_timeout_ms(self) -> int | None:
+        """Fit Pi's HTTP idle timeout inside the locked task budget."""
+        candidates: list[int] = []
+        inference_timeout = self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS")
+        if inference_timeout is not None:
+            if re.fullmatch(r"[1-9][0-9]*", inference_timeout) is None:
+                raise RuntimeError("locked inference timeout is invalid")
+            candidates.append(int(inference_timeout))
+        agent_timeout = os.environ.get(_AGENT_TIMEOUT_ENV)
+        if agent_timeout is not None:
+            if re.fullmatch(r"[1-9][0-9]*", agent_timeout) is None:
+                raise RuntimeError("locked Pi agent timeout is invalid")
+            agent_budget = int(agent_timeout) - 2 * _AGENT_TIMEOUT_HEADROOM_SECONDS
+            if agent_budget < 1:
+                raise RuntimeError("locked Pi agent timeout is too small")
+            candidates.append(agent_budget)
+        if not candidates:
+            return None
+        return min(candidates) * 1000
 
     @staticmethod
     def _execution_command(command: str) -> str:
@@ -476,6 +515,10 @@ fs.chmodSync(destination, 0o600);
             if val:
                 env[key] = val
 
+        http_idle_timeout_ms = self._http_idle_timeout_ms()
+        if http_idle_timeout_ms is not None:
+            env[_PI_HTTP_IDLE_TIMEOUT_ENV] = str(http_idle_timeout_ms)
+
         allowed_model = self.model_name.split("/", 1)[1]
         bridged = False
         if provider == "openai":
@@ -529,9 +572,10 @@ fs.chmodSync(destination, 0o600);
                     template,
                     f"/logs/agent/{self._MODELS_TEMPLATE_FILENAME}",
                 )
+        if self._models_json is not None or http_idle_timeout_ms is not None:
             await self.exec_as_agent(
                 environment,
-                command=self._materialize_models_command(),
+                command=self._materialize_runtime_config_command(),
                 env=env,
             )
 
@@ -562,10 +606,15 @@ fs.chmodSync(destination, 0o600);
                 result.stdout if isinstance(result.stdout, str) else ""
             )
         finally:
-            if self._models_json is not None and not timed_out:
+            if (
+                self._models_json is not None or http_idle_timeout_ms is not None
+            ) and not timed_out:
                 await self.exec_as_agent(
                     environment,
-                    command="rm -f $HOME/.pi/agent/models.json",
+                    command=(
+                        "rm -f $HOME/.pi/agent/models.json "
+                        "$HOME/.pi/agent/settings.json"
+                    ),
                     env=env,
                 )
 

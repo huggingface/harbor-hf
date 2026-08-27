@@ -222,16 +222,61 @@ class TestPiAgent:
         ):
             await agent.run("Fix the bug", mock_env, AsyncMock())
 
-        run_command = mock_env.exec.call_args_list[-1].kwargs["command"]
+        commands = [call.kwargs["command"] for call in mock_env.exec.call_args_list]
+        run_command = next(command for command in commands if "pi --print" in command)
         assert "timeout --signal=TERM --kill-after=2s 1795s" in run_command
         assert "harbor_hf_pi_execution_timeout" in run_command
+        materialize = next(
+            call
+            for call in mock_env.exec.call_args_list
+            if "httpIdleTimeoutMs" in call.kwargs["command"]
+        )
+        assert materialize.kwargs["env"]["HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS"] == (
+            "1790000"
+        )
+        assert "settings.json" in commands[-1]
+
+    @pytest.mark.asyncio
+    async def test_run_bounds_http_idle_timeout_by_inference_and_agent_budgets(
+        self, temp_dir
+    ):
+        agent = PiAgent(logs_dir=temp_dir, model_name="my-provider/my-model")
+        mock_env = AsyncMock()
+        mock_env.exec.return_value = _exec_result()
+
+        with patch.dict(
+            os.environ,
+            {
+                "HARBOR_HF_AGENT_TIMEOUT_SECONDS": "900",
+                "HARBOR_HF_INFERENCE_TIMEOUT_SECONDS": "1800",
+            },
+            clear=False,
+        ):
+            await agent.run("Fix the bug", mock_env, AsyncMock())
+
+        materialize = next(
+            call
+            for call in mock_env.exec.call_args_list
+            if "httpIdleTimeoutMs" in call.kwargs["command"]
+        )
+        assert materialize.kwargs["env"]["HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS"] == (
+            "890000"
+        )
+        assert "Number.isSafeInteger" in materialize.kwargs["command"]
 
     @pytest.mark.asyncio
     async def test_run_reports_locked_agent_timeout(self, temp_dir):
         agent = PiAgent(logs_dir=temp_dir, model_name="my-provider/my-model")
         mock_env = AsyncMock()
-        mock_env.exec.return_value = _exec_result("harbor_hf_pi_execution_timeout")
-        mock_env.exec.return_value.return_code = 124
+        timeout_result = _exec_result("harbor_hf_pi_execution_timeout")
+        timeout_result.return_code = 124
+
+        def execute(*_args, **kwargs):
+            if "pi --print" in kwargs.get("command", ""):
+                return timeout_result
+            return _exec_result()
+
+        mock_env.exec.side_effect = execute
 
         with (
             patch.dict(
