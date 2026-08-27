@@ -550,6 +550,43 @@ describe("Terminal-Bench 2.1 profiles", () => {
     }
   });
 
+  it("pins the GPT-OSS 120B Together substitute matrix", async () => {
+    const model = record((await profile("model", "gpt-oss-120b-together")).spec);
+    const deployment = record(
+      (await profile("deployment", "tb21-gpt-oss-120b-together-matrix")).spec,
+    );
+    const template = record(deployment.trial_job_template);
+    const harnesses = [
+      ["pi-gpt-oss-120b-together", "pi"],
+      ["mini-swe-agent-gpt-oss-120b-together", "mini-swe-agent"],
+      ["hermes-gpt-oss-120b-together", "hermes"],
+      ["kimi-code-gpt-oss-120b-together", "kimi-code"],
+      ["qwen-code-gpt-oss-120b-together", "qwen-code"],
+    ] as const;
+
+    expect(model.model_id).toBe("openai/gpt-oss-120b");
+    expect(model.revision).toBe("b5c939de8f754692c1647ca79fbf85e8c1e70f8a");
+    expect(model.harbor_model_name).toBe("openai/openai/gpt-oss-120b:together");
+    expect(deployment.models).toEqual(["gpt-oss-120b-together"]);
+    expect(deployment.harnesses).toEqual(harnesses.map(([name]) => name));
+    expect(deployment.inference_provider).toBe("together");
+    expect(deployment.input_price_microusd_per_million_tokens).toBe(150_000);
+    expect(deployment.output_price_microusd_per_million_tokens).toBe(600_000);
+    expect(deployment.context_window).toBe(131_072);
+    expect(template.inference_model).toBe("openai/gpt-oss-120b:together");
+    expect(template.inference_api).toBe("chat-completions");
+    expect(template.inference_max_output_tokens).toBe(32_768);
+    expect(template.inference_max_total_concurrency).toBe(16);
+    expect(template.max_jobs).toBe(16);
+
+    for (const [name, agent] of harnesses) {
+      const harness = record((await profile("harness", name)).spec);
+      const harborAgent = record(harness.harbor_agent);
+      expect(harness.agent).toBe(agent);
+      expect(harborAgent.model_name).toBe(model.harbor_model_name);
+    }
+  });
+
   it("uses self-contained workers for every Terminal-Bench deployment", async () => {
     const names = [
       "tb21-deepseek-v4-flash-canary",
@@ -560,6 +597,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
       "tb21-deepseek-v4-flash-deepinfra-diagnostic-1",
       "tb21-deepseek-v4-flash-dsh-providers",
       "tb21-deepseek-v4-flash-0731-together-matrix",
+      "tb21-gpt-oss-120b-together-matrix",
       "tb21-gpt-oss-20b-dsh-providers",
       "tb21-gpt-oss-20b-opencode-providers",
       "tb21-gpt-oss-20b-qwen-code-providers",
