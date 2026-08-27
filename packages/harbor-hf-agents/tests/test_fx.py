@@ -28,16 +28,17 @@ async def test_job_route_injects_loopback_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def use_route(_agent, _environment, env, **kwargs):
-        assert kwargs["base_url_key"] == "AI_GATEWAY_BASE_URL"
+        assert kwargs["base_url_key"] == "FX_GATEWAY_BASE_URL"
         assert kwargs["api_key_key"] == "AI_GATEWAY_API_KEY"
         assert kwargs["api"] == "chat-completions"
         assert kwargs["allowed_model"] == "openai/gpt-oss-20b:together"
-        env["AI_GATEWAY_BASE_URL"] = "http://127.0.0.1:18080/v1"
+        env["FX_GATEWAY_BASE_URL"] = "http://127.0.0.1:18080/v1"
         env["AI_GATEWAY_API_KEY"] = "harbor-local-inference-bridge"
         return True
 
     monkeypatch.setattr(_ROUTE, use_route)
     monkeypatch.delenv("AI_GATEWAY_API_KEY", raising=False)
+    monkeypatch.delenv("FX_GATEWAY_BASE_URL", raising=False)
     monkeypatch.delenv("AI_GATEWAY_BASE_URL", raising=False)
     agent = FxAgent(
         logs_dir=temp_dir,
@@ -53,7 +54,8 @@ async def test_job_route_injects_loopback_env(
     assert "solve the task" in run_call.kwargs["command"]
     assert "fx ask --yolo --json --" in run_call.kwargs["command"]
     env = run_call.kwargs["env"]
-    assert env["AI_GATEWAY_BASE_URL"] == "http://127.0.0.1:18080/v1"
+    assert env["FX_GATEWAY_BASE_URL"] == "http://127.0.0.1:18080/v1"
+    assert "AI_GATEWAY_BASE_URL" not in env
     assert env["AI_GATEWAY_API_KEY"] == "harbor-local-inference-bridge"
     assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:18080/v1"
     assert env["OPENAI_API_KEY"] == "harbor-local-inference-bridge"
