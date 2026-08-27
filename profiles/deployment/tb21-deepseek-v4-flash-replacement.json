@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-b2a13c007e0e3018031fcab4",
+  "record_id": "profile-bc1b4e114ec890aeda3aa4a6",
   "created_at": "2026-08-21T14:40:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
@@ -13,7 +13,7 @@
     "route": "hf_job",
     "models": ["deepseek-v4-flash-0731-together"],
     "harnesses": ["pi-0-84-2-high-deepseek-v4-flash-0731-together"],
-    "job_image": "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:92654bff3fe6b4c340c33a52ab1c91084818525750f41b997f6d96633615792b",
+    "job_image": "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:076f5c19bd94e5cecbb61dde0375b7651ef608fb12201bd7e949450b175bdcea",
     "preparation_job_command": [
       "python",
       "-m",
@@ -33,7 +33,7 @@
     "input_price_microusd_per_million_tokens": 140000,
     "output_price_microusd_per_million_tokens": 280000,
     "harbor_version": "0.22.0",
-    "worker_revision": "bf9f303aa03732405b4022dde2b6559490855927",
+    "worker_revision": "15800cfec881e7e7fd244ac33c2c496e713a7fee",
     "context_window": 131072,
     "timeout_seconds": 14400,
     "preparation_timeout_seconds": 3600,
