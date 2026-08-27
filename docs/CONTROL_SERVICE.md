@@ -337,6 +337,27 @@ immutable lock digest, launch action, task, operation set, and expiration. It
 authorizes only the assigned lock read, evidence upload, and attempt submission,
 and it is never copied into the task rootfs or task environment.
 
+### Inference model route binding
+
+Provider-backed custom agents use two model strings for different interfaces.
+`harbor_agent.model_name` is the Harbor-facing name. It starts with the Harbor
+provider segment, such as `openai/<Hub-model>:<inference-provider>`.
+`trial_job_template.inference_model` is the root-bridge route. It removes exactly
+the first Harbor provider segment and keeps the complete Hub model path and
+inference-provider suffix, such as `<Hub-model>:<inference-provider>`.
+
+Checked-in profiles must keep these two forms aligned. Their profile tests load
+the bound harness and deployment records, confirm the expected Harbor provider
+segment, remove that segment once, and compare the result with the bridge route.
+A mismatch is an infrastructure failure because the root bridge cannot accept a
+model outside its lock. A shared mismatch stops affected new submissions until
+the profile is repaired and deployed.
+
+A built-in profile change produces a new content-derived profile record ID. New
+runs resolve the new ID. Existing run locks keep their original profile IDs and
+digests and remain readable without a compatibility writer or historical
+rewrite.
+
 Each execution Job runs one physical Harbor trial. The deployment profile locks
 the digest-pinned trusted worker image, hardware, timeout, resource limits,
 inference limits, and root bootstrap. The prepared trial separately locks the

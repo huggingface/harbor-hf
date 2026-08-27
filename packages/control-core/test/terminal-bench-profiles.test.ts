@@ -487,7 +487,11 @@ describe("Terminal-Bench 2.1 profiles", () => {
         item.outputPrice,
       );
       expect(deployment.context_window).toBe(item.contextWindow);
-      expect(template.inference_model).toBe(item.harborModel);
+      const harborProviderPrefix = "openai/";
+      expect(item.harborModel.startsWith(harborProviderPrefix)).toBe(true);
+      expect(template.inference_model).toBe(
+        item.harborModel.slice(harborProviderPrefix.length),
+      );
       expect(template.inference_api).toBe("chat-completions");
       expect(template.inference_max_output_tokens).toBe(32_768);
       expect(template.max_jobs).toBe(16);
