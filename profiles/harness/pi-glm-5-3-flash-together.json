@@ -1,0 +1,60 @@
+{
+  "schema_version": "v1",
+  "kind": "profile.object",
+  "record_id": "profile-3e50a20fbb1f2c6e1224afe7",
+  "created_at": "2026-08-27T09:30:00.000Z",
+  "actor": {
+    "subject": "harbor-hf-source",
+    "role": "service"
+  },
+  "profile_kind": "harness",
+  "name": "pi-glm-5-3-flash-together",
+  "spec": {
+    "agent": "pi",
+    "revision": "0.84.2",
+    "reasoning_effort": "off",
+    "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
+    "harbor_agent": {
+      "import_path": "harbor_hf_agents.pi.agent:PiAgent",
+      "model_name": "openai/zai-org/GLM-5.3-Flash:together",
+      "kwargs": {
+        "version": "0.84.2",
+        "thinking": "off",
+        "models_json": {
+          "providers": {
+            "openai": {
+              "baseUrl": "$OPENAI_BASE_URL",
+              "api": "openai-completions",
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "maxTokensField": "max_tokens"
+              },
+              "models": [
+                {
+                  "id": "openai/zai-org/GLM-5.3-Flash:together",
+                  "name": "openai/zai-org/GLM-5.3-Flash:together",
+                  "reasoning": false,
+                  "input": ["text"],
+                  "contextWindow": 1048576,
+                  "maxTokens": 32768,
+                  "cost": {
+                    "input": 0.15,
+                    "output": 0.5,
+                    "cacheRead": 0.15,
+                    "cacheWrite": 0.15
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "provider_runtime": {
+          "api": "chat-completions",
+          "timeout_seconds": 1800,
+          "max_attempts": 1
+        }
+      }
+    }
+  }
+}

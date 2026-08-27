@@ -1,0 +1,25 @@
+{
+  "schema_version": "v1",
+  "kind": "profile.object",
+  "record_id": "profile-2d5e6833c1075d3fab66df9a",
+  "created_at": "2026-08-27T09:30:00.000Z",
+  "actor": {
+    "subject": "harbor-hf-source",
+    "role": "service"
+  },
+  "profile_kind": "harness",
+  "name": "mini-swe-agent-qwen3-8-27b-deepinfra",
+  "spec": {
+    "agent": "mini-swe-agent",
+    "revision": "2.4.6",
+    "reasoning_effort": "off",
+    "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
+    "harbor_agent": {
+      "import_path": "harbor_hf_agents.mini_swe.agent:MiniSweAgent",
+      "model_name": "openai/Qwen/Qwen3.8-27B:deepinfra",
+      "kwargs": {
+        "version": "2.4.6"
+      }
+    }
+  }
+}

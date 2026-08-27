@@ -1,0 +1,25 @@
+{
+  "schema_version": "v1",
+  "kind": "profile.object",
+  "record_id": "profile-08adb1b41898430990b14755",
+  "created_at": "2026-08-27T09:30:00.000Z",
+  "actor": {
+    "subject": "harbor-hf-source",
+    "role": "service"
+  },
+  "profile_kind": "harness",
+  "name": "opencode-glm-5-3-flash-together",
+  "spec": {
+    "agent": "opencode",
+    "revision": "1.18.20",
+    "reasoning_effort": "off",
+    "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
+    "harbor_agent": {
+      "import_path": "harbor_hf_agents.opencode.agent:OpenCodeAgent",
+      "model_name": "openai/zai-org/GLM-5.3-Flash:together",
+      "kwargs": {
+        "version": "1.18.20"
+      }
+    }
+  }
+}

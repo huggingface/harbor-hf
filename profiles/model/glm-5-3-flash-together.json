@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "kind": "profile.object",
+  "record_id": "profile-92794ad72b63e32cb7f218ce",
+  "created_at": "2026-08-27T09:30:00.000Z",
+  "actor": {
+    "subject": "harbor-hf-source",
+    "role": "service"
+  },
+  "profile_kind": "model",
+  "name": "glm-5-3-flash-together",
+  "spec": {
+    "model_id": "zai-org/GLM-5.3-Flash",
+    "revision": "3f1971b7b5f7a528c9c4ef6212c8785298a8c24a",
+    "harbor_model_name": "openai/zai-org/GLM-5.3-Flash:together"
+  }
+}

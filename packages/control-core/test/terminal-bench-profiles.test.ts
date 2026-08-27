@@ -436,6 +436,73 @@ describe("Terminal-Bench 2.1 profiles", () => {
     expect(fx.job_command).toEqual(EXECUTION_COMMAND);
   });
 
+  it("pins the two-model reliability matrix to live provider routes", async () => {
+    const cases = [
+      {
+        model: "qwen3-8-27b-deepinfra",
+        modelId: "Qwen/Qwen3.8-27B",
+        revision: "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+        harborModel: "openai/Qwen/Qwen3.8-27B:deepinfra",
+        provider: "deepinfra",
+        inputPrice: 400_000,
+        outputPrice: 3_000_000,
+        contextWindow: 262_144,
+      },
+      {
+        model: "glm-5-3-flash-together",
+        modelId: "zai-org/GLM-5.3-Flash",
+        revision: "3f1971b7b5f7a528c9c4ef6212c8785298a8c24a",
+        harborModel: "openai/zai-org/GLM-5.3-Flash:together",
+        provider: "together",
+        inputPrice: 150_000,
+        outputPrice: 500_000,
+        contextWindow: 1_048_576,
+      },
+    ] as const;
+    const harnesses = [
+      ["pi", "pi"],
+      ["mini-swe-agent", "mini-swe-agent"],
+      ["fx", "fx"],
+      ["openhands", "openhands"],
+      ["opencode", "opencode"],
+    ] as const;
+
+    for (const item of cases) {
+      const model = record((await profile("model", item.model)).spec);
+      const deployment = record(
+        (await profile("deployment", `tb21-${item.model}-providers`)).spec,
+      );
+      const template = record(deployment.trial_job_template);
+
+      expect(model.model_id).toBe(item.modelId);
+      expect(model.revision).toBe(item.revision);
+      expect(model.harbor_model_name).toBe(item.harborModel);
+      expect(deployment.models).toEqual([item.model]);
+      expect(deployment.harnesses).toEqual(
+        harnesses.map(([name]) => `${name}-${item.model}`),
+      );
+      expect(deployment.inference_provider).toBe(item.provider);
+      expect(deployment.input_price_microusd_per_million_tokens).toBe(item.inputPrice);
+      expect(deployment.output_price_microusd_per_million_tokens).toBe(
+        item.outputPrice,
+      );
+      expect(deployment.context_window).toBe(item.contextWindow);
+      expect(template.inference_model).toBe(item.harborModel);
+      expect(template.inference_api).toBe("chat-completions");
+      expect(template.inference_max_output_tokens).toBe(32_768);
+      expect(template.max_jobs).toBe(16);
+
+      for (const [name, agent] of harnesses) {
+        const harness = record(
+          (await profile("harness", `${name}-${item.model}`)).spec,
+        );
+        const harborAgent = record(harness.harbor_agent);
+        expect(harness.agent).toBe(agent);
+        expect(harborAgent.model_name).toBe(item.harborModel);
+      }
+    }
+  });
+
   it("uses self-contained workers for every Terminal-Bench deployment", async () => {
     const names = [
       "tb21-deepseek-v4-flash-canary",
@@ -455,6 +522,8 @@ describe("Terminal-Bench 2.1 profiles", () => {
       "tb21-gpt-oss-20b-hermes-providers",
       "tb21-gpt-oss-20b-openhands-providers",
       "tb21-gpt-oss-20b-openclaw-providers",
+      "tb21-qwen3-8-27b-deepinfra-providers",
+      "tb21-glm-5-3-flash-together-providers",
     ];
     for (const name of names) {
       const deployment = record((await profile("deployment", name)).spec);
