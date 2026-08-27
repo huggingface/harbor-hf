@@ -158,6 +158,81 @@ def test_docker_reference_removes_tag_before_digest() -> None:
     )
 
 
+def test_docker_source_references_prefer_mirror_for_docker_hub() -> None:
+    digest = f"sha256:{'a' * 64}"
+
+    assert runtime._docker_source_references(f"alexgshaw/task@{digest}") == (
+        f"docker://mirror.gcr.io/alexgshaw/task@{digest}",
+        f"docker://docker.io/alexgshaw/task@{digest}",
+    )
+    assert runtime._docker_source_references(
+        f"registry.example/team/task@{digest}"
+    ) == (f"docker://registry.example/team/task@{digest}",)
+
+
+def test_task_image_copy_falls_back_to_docker_hub_origin(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    digest = f"sha256:{'a' * 64}"
+    sources: list[str] = []
+
+    def fake_copy(
+        arguments: list[str],
+        *,
+        environment: dict[str, str],
+        label: str,
+        directory: Path,
+        max_bytes: int,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del environment, label, directory, max_bytes
+        source = arguments[-2]
+        sources.append(source)
+        if "mirror.gcr.io" in source:
+            raise OciRuntimeUnavailableError("mirror does not contain image")
+        return subprocess.CompletedProcess(arguments, 0, b"", b"")
+
+    monkeypatch.setattr(runtime, "_run_checked_with_directory_limit", fake_copy)
+
+    runtime._copy_task_image(
+        tmp_path / "auth.json",
+        f"alexgshaw/task@{digest}",
+        tmp_path / "source",
+        {},
+        1024,
+    )
+
+    assert sources == [
+        f"docker://mirror.gcr.io/alexgshaw/task@{digest}",
+        f"docker://docker.io/alexgshaw/task@{digest}",
+    ]
+
+
+def test_task_image_copy_does_not_bypass_integrity_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def fake_copy(*_args: object, **_kwargs: object) -> None:
+        nonlocal calls
+        calls += 1
+        raise OciImageIntegrityError("bounded compressed byte allowance")
+
+    monkeypatch.setattr(runtime, "_run_checked_with_directory_limit", fake_copy)
+
+    with pytest.raises(OciImageIntegrityError, match="bounded compressed byte"):
+        runtime._copy_task_image(
+            tmp_path / "auth.json",
+            f"alexgshaw/task@sha256:{'a' * 64}",
+            tmp_path / "source",
+            {},
+            1024,
+        )
+
+    assert calls == 1
+
+
 def test_multiarch_manifest_selects_only_native_linux_image(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
