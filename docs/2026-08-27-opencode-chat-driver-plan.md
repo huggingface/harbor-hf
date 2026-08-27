@@ -26,8 +26,8 @@ bridge route.
 ## Goal
 
 Make every compatible OpenCode Chat Completions configuration select OpenCode's
-documented OpenAI-compatible driver. Preserve the locked model identity,
-loopback route, one-API bridge, and unrelated caller configuration.
+documented OpenAI-compatible driver. Preserve the locked model identity and
+loopback route. Keep the one-API bridge and unrelated caller configuration unchanged.
 
 ## Scope
 
@@ -52,14 +52,16 @@ The generated OpenCode provider entry must declare:
 
 This field selects Chat Completions behavior for the adapter's existing Job
 route. The adapter continues to derive the provider and complete nested model ID
-from the generic Harbor model string. The Harbor-facing model string, adapter
-import path, OpenCode version, allowed bridge model, provider identity, route
-URL, evidence records, and outcome rules stay unchanged.
+from the generic Harbor model string. Keep the Harbor-facing model string and
+adapter import path unchanged. Keep the OpenCode version and allowed bridge model
+unchanged. Provider identity and route URL also stay unchanged. Evidence records
+and outcome rules stay unchanged.
 
 Caller `opencode_config` remains supported. The adapter copies it before adding
-the route-owned provider fields. Unrelated provider options, model entries, and
-top-level settings survive the merge. The adapter-owned npm driver, loopback
-`baseURL`, and locked model registration replace conflicting caller values.
+the route-owned provider fields. Unrelated provider options and model entries
+survive the merge. Top-level settings also survive. The adapter-owned npm driver
+and loopback `baseURL` replace conflicting caller values. The locked model
+registration also replaces a conflicting value.
 
 The root bridge remains fail-closed on the one API selected by the immutable
 route. It does not accept a Responses request for a Chat Completions route and
