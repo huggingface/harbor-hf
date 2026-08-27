@@ -231,9 +231,8 @@ class TestPiAgent:
             for call in mock_env.exec.call_args_list
             if "httpIdleTimeoutMs" in call.kwargs["command"]
         )
-        assert materialize.kwargs["env"]["HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS"] == (
-            "1790000"
-        )
+        assert "const timeout = 1790000;" in materialize.kwargs["command"]
+        assert "HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS" not in materialize.kwargs["env"]
         assert "settings.json" in commands[-1]
 
     @pytest.mark.asyncio
@@ -259,9 +258,8 @@ class TestPiAgent:
             for call in mock_env.exec.call_args_list
             if "httpIdleTimeoutMs" in call.kwargs["command"]
         )
-        assert materialize.kwargs["env"]["HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS"] == (
-            "890000"
-        )
+        assert "const timeout = 890000;" in materialize.kwargs["command"]
+        assert "HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS" not in materialize.kwargs["env"]
         assert "Number.isSafeInteger" in materialize.kwargs["command"]
 
     @pytest.mark.asyncio

@@ -44,7 +44,6 @@ _PI_PACKAGE_RENAME_VERSION = Version("0.74.0")
 _AGENT_TIMEOUT_ENV = "HARBOR_HF_AGENT_TIMEOUT_SECONDS"
 _AGENT_TIMEOUT_HEADROOM_SECONDS = 5
 _AGENT_TIMEOUT_MARKER = "harbor_hf_pi_execution_timeout"
-_PI_HTTP_IDLE_TIMEOUT_ENV = "HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS"
 
 
 def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
@@ -361,7 +360,9 @@ class PiAgent(IsolatedProviderAgent):
         )
 
     @staticmethod
-    def _materialize_runtime_config_command() -> str:
+    def _materialize_runtime_config_command(
+        http_idle_timeout_ms: int | None,
+    ) -> str:
         """Build Pi's runtime files using its guaranteed Node runtime."""
         script = """
 const fs = require("node:fs");
@@ -399,9 +400,8 @@ if (fs.existsSync(modelSource)) {
   fs.chmodSync(modelDestination, 0o600);
 }
 
-const timeoutRaw = process.env.HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS;
-if (timeoutRaw) {
-  const timeout = Number(timeoutRaw);
+const timeout = __HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS__;
+if (timeout !== null) {
   if (!Number.isSafeInteger(timeout) || timeout < 1) {
     throw new Error("Pi HTTP idle timeout is invalid");
   }
@@ -412,7 +412,10 @@ if (timeoutRaw) {
   );
   fs.chmodSync(settingsDestination, 0o600);
 }
-""".strip()
+""".strip().replace(
+            "__HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS__",
+            "null" if http_idle_timeout_ms is None else str(http_idle_timeout_ms),
+        )
         node_command = "node -e " + shlex.quote(script)
         return "bash -lc " + shlex.quote(f". ~/.nvm/nvm.sh; {node_command}")
 
@@ -516,8 +519,6 @@ if (timeoutRaw) {
                 env[key] = val
 
         http_idle_timeout_ms = self._http_idle_timeout_ms()
-        if http_idle_timeout_ms is not None:
-            env[_PI_HTTP_IDLE_TIMEOUT_ENV] = str(http_idle_timeout_ms)
 
         allowed_model = self.model_name.split("/", 1)[1]
         bridged = False
@@ -575,7 +576,7 @@ if (timeoutRaw) {
         if self._models_json is not None or http_idle_timeout_ms is not None:
             await self.exec_as_agent(
                 environment,
-                command=self._materialize_runtime_config_command(),
+                command=self._materialize_runtime_config_command(http_idle_timeout_ms),
                 env=env,
             )
 
