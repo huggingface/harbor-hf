@@ -507,6 +507,49 @@ describe("Terminal-Bench 2.1 profiles", () => {
     }
   });
 
+  it("pins the DeepSeek V4 Flash Together substitute matrix", async () => {
+    const model = record(
+      (await profile("model", "deepseek-v4-flash-0731-together")).spec,
+    );
+    const deployment = record(
+      (await profile("deployment", "tb21-deepseek-v4-flash-0731-together-matrix")).spec,
+    );
+    const template = record(deployment.trial_job_template);
+    const harnesses = [
+      ["pi-0-84-2-high-deepseek-v4-flash-0731-together", "pi"],
+      ["mini-swe-agent-deepseek-v4-flash-0731-together", "mini-swe-agent"],
+      ["fx-deepseek-v4-flash-0731-together", "fx"],
+      ["openhands-deepseek-v4-flash-0731-together", "openhands"],
+      ["opencode-deepseek-v4-flash-0731-together", "opencode"],
+    ] as const;
+
+    expect(model.model_id).toBe("deepseek-ai/DeepSeek-V4-Flash-0731");
+    expect(model.revision).toBe("7872f01b1d1fe23eabc4c98b48bffcef5a386062");
+    expect(model.harbor_model_name).toBe(
+      "openai/deepseek-ai/DeepSeek-V4-Flash-0731:together",
+    );
+    expect(deployment.models).toEqual(["deepseek-v4-flash-0731-together"]);
+    expect(deployment.harnesses).toEqual(harnesses.map(([name]) => name));
+    expect(deployment.inference_provider).toBe("together");
+    expect(deployment.input_price_microusd_per_million_tokens).toBe(140_000);
+    expect(deployment.output_price_microusd_per_million_tokens).toBe(280_000);
+    expect(deployment.context_window).toBe(131_072);
+    expect(template.inference_model).toBe(
+      "deepseek-ai/DeepSeek-V4-Flash-0731:together",
+    );
+    expect(template.inference_api).toBe("chat-completions");
+    expect(template.inference_max_output_tokens).toBe(32_768);
+    expect(template.inference_max_total_concurrency).toBe(16);
+    expect(template.max_jobs).toBe(16);
+
+    for (const [name, agent] of harnesses) {
+      const harness = record((await profile("harness", name)).spec);
+      const harborAgent = record(harness.harbor_agent);
+      expect(harness.agent).toBe(agent);
+      expect(harborAgent.model_name).toBe(model.harbor_model_name);
+    }
+  });
+
   it("uses self-contained workers for every Terminal-Bench deployment", async () => {
     const names = [
       "tb21-deepseek-v4-flash-canary",
@@ -516,6 +559,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
       "tb21-deepseek-v4-flash-diagnostic-2",
       "tb21-deepseek-v4-flash-deepinfra-diagnostic-1",
       "tb21-deepseek-v4-flash-dsh-providers",
+      "tb21-deepseek-v4-flash-0731-together-matrix",
       "tb21-gpt-oss-20b-dsh-providers",
       "tb21-gpt-oss-20b-opencode-providers",
       "tb21-gpt-oss-20b-qwen-code-providers",
