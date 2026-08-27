@@ -77,6 +77,15 @@ requirement, and retry taxonomy. This registry is Python data, not another
 serialized protocol. Generic Harbor request, worker, and evidence code perform
 a registry lookup and contain no agent-name branches.
 
+Each agent module selects a runtime driver that matches its registered wire API.
+For an OpenCode Chat Completions route, the adapter-generated provider entry
+declares `npm: "@ai-sdk/openai-compatible"`. The same entry registers the exact
+locked model and the loopback bridge base URL. The adapter applies these
+route-owned fields after it copies caller `opencode_config`, so unrelated caller
+settings remain while conflicting driver, model, and base URL values are
+replaced. The bridge continues to reject Responses requests on a Chat
+Completions route.
+
 The existing pinned worker revision identifies the package implementation. The
 agent profile identifies the custom import path and exact underlying agent
 revision. Package-backed agents use exact numeric versions; Git-backed agents
