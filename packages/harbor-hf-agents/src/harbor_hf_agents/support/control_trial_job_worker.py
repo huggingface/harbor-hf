@@ -74,6 +74,7 @@ _HARBOR_CHILD_ENVIRONMENT = frozenset(
         "ALL_PROXY",
         "CURL_CA_BUNDLE",
         "HARBOR_HF_ACTION_ID",
+        "HARBOR_HF_AGENT_TIMEOUT_SECONDS",
         "HARBOR_HF_CONTROL_URL",
         "HARBOR_HF_JOB_IMAGE",
         "HARBOR_HF_MAX_IMAGE_BYTES",
@@ -151,6 +152,7 @@ class LockedTask:
     trial_index: int
     input_digest: str
     image: str
+    agent_timeout_seconds: int
     timeout_seconds: int
     trial_lock: TrialLock
 
@@ -424,6 +426,7 @@ def _locked_config(  # noqa: C901 -- immutable binding validation is explicit
             trial_index=int(value["trial_index"]),
             input_digest=str(value["input_digest"]),
             image=task_image,
+            agent_timeout_seconds=int(value["agent_timeout_seconds"]),
             timeout_seconds=timeout,
             trial_lock=harbor_lock,
         ),
@@ -1068,12 +1071,19 @@ def _redact_text(value: str, *, limit: int) -> str:
 
 def _harbor_child_environment(
     environment: Mapping[str, str] = os.environ,
+    *,
+    agent_timeout_seconds: int | None = None,
 ) -> dict[str, str]:
-    return {
+    child_environment = {
         name: value
         for name, value in environment.items()
         if name in _HARBOR_CHILD_ENVIRONMENT
     }
+    if agent_timeout_seconds is not None:
+        child_environment["HARBOR_HF_AGENT_TIMEOUT_SECONDS"] = str(
+            agent_timeout_seconds
+        )
+    return child_environment
 
 
 def _log_harbor_exception(task: LockedTask, result: dict[str, Any]) -> None:
@@ -1209,7 +1219,9 @@ def _run_harbor(
     output, timed_out = _run_logged_command(
         ["harbor", "run", "--config", str(path), "--yes"],
         task.timeout_seconds + 600,
-        _harbor_child_environment(),
+        _harbor_child_environment(
+            agent_timeout_seconds=task.agent_timeout_seconds,
+        ),
     )
     result_path = _result_path(root, task)
     if result_path is None:

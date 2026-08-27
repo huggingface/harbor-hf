@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import shlex
 from collections.abc import Mapping
@@ -6,7 +7,11 @@ from pathlib import Path
 from typing import Any, cast, override
 from urllib.parse import urlsplit
 
-from harbor.agents.installed.base import CliFlag, with_prompt_template
+from harbor.agents.installed.base import (
+    CliFlag,
+    NonZeroAgentExitCodeError,
+    with_prompt_template,
+)
 from harbor.agents.installed.node_install import nvm_node_install_snippet
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
@@ -36,6 +41,9 @@ from harbor_hf_agents.support.provider_outcome import validate_pi_terminal_outpu
 _CURRENT_PI_PACKAGE = "@earendil-works/pi-coding-agent"
 _LEGACY_PI_PACKAGE = "@mariozechner/pi-coding-agent"
 _PI_PACKAGE_RENAME_VERSION = Version("0.74.0")
+_AGENT_TIMEOUT_ENV = "HARBOR_HF_AGENT_TIMEOUT_SECONDS"
+_AGENT_TIMEOUT_HEADROOM_SECONDS = 5
+_AGENT_TIMEOUT_MARKER = "harbor_hf_pi_execution_timeout"
 
 
 def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
@@ -389,6 +397,26 @@ fs.chmodSync(destination, 0o600);
         node_command = "node -e " + shlex.quote(script)
         return "bash -lc " + shlex.quote(f". ~/.nvm/nvm.sh; {node_command}")
 
+    @staticmethod
+    def _execution_command(command: str) -> str:
+        raw_timeout = os.environ.get(_AGENT_TIMEOUT_ENV)
+        if raw_timeout is None:
+            return "bash -lc " + shlex.quote(command)
+        if re.fullmatch(r"[1-9][0-9]*", raw_timeout) is None:
+            raise RuntimeError("locked Pi agent timeout is invalid")
+        timeout_seconds = int(raw_timeout) - _AGENT_TIMEOUT_HEADROOM_SECONDS
+        if timeout_seconds < 1:
+            raise RuntimeError("locked Pi agent timeout is too small")
+        wrapped = (
+            f"timeout --signal=TERM --kill-after=2s {timeout_seconds}s "
+            f"bash -lc {shlex.quote(command)}; "
+            "status=$?; "
+            'if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then '
+            f"echo {_AGENT_TIMEOUT_MARKER} >&2; exit 124; fi; "
+            'exit "$status"'
+        )
+        return "bash -lc " + shlex.quote(wrapped)
+
     @override
     @with_prompt_template
     @with_job_inference_bridge_cleanup
@@ -507,27 +535,34 @@ fs.chmodSync(destination, 0o600);
                 env=env,
             )
 
+        timed_out = False
         try:
-            result = await self.exec_as_agent(
-                environment,
-                command="bash -lc "
-                + shlex.quote(
-                    ". ~/.nvm/nvm.sh; "
-                    "pi --print --mode json --session-dir /logs/agent/pi/sessions "
-                    f"{model_args}"
-                    f"{cli_flags}"
-                    f"{escaped_instruction} "
-                    "2>&1 </dev/null | "
-                    'grep -v \'"type":"message_update"\' | '
-                    f"stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}"
-                ),
-                env=env,
+            command = (
+                ". ~/.nvm/nvm.sh; "
+                "pi --print --mode json --session-dir /logs/agent/pi/sessions "
+                f"{model_args}"
+                f"{cli_flags}"
+                f"{escaped_instruction} "
+                "2>&1 </dev/null | "
+                'grep -v \'"type":"message_update"\' | '
+                f"stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}"
             )
+            try:
+                result = await self.exec_as_agent(
+                    environment,
+                    command=self._execution_command(command),
+                    env=env,
+                )
+            except NonZeroAgentExitCodeError as error:
+                if _AGENT_TIMEOUT_MARKER not in str(error):
+                    raise
+                timed_out = True
+                raise TimeoutError("Pi reached the locked agent timeout") from error
             validate_pi_terminal_output(
                 result.stdout if isinstance(result.stdout, str) else ""
             )
         finally:
-            if self._models_json is not None:
+            if self._models_json is not None and not timed_out:
                 await self.exec_as_agent(
                     environment,
                     command="rm -f $HOME/.pi/agent/models.json",

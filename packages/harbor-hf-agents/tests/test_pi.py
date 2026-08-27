@@ -210,6 +210,40 @@ class TestPiAgent:
         assert "\n- leading instruction" in run_command
 
     @pytest.mark.asyncio
+    async def test_run_enforces_locked_agent_timeout(self, temp_dir):
+        agent = PiAgent(logs_dir=temp_dir, model_name="my-provider/my-model")
+        mock_env = AsyncMock()
+        mock_env.exec.return_value = _exec_result()
+
+        with patch.dict(
+            os.environ,
+            {"HARBOR_HF_AGENT_TIMEOUT_SECONDS": "1800"},
+            clear=False,
+        ):
+            await agent.run("Fix the bug", mock_env, AsyncMock())
+
+        run_command = mock_env.exec.call_args_list[-1].kwargs["command"]
+        assert "timeout --signal=TERM --kill-after=2s 1795s" in run_command
+        assert "harbor_hf_pi_execution_timeout" in run_command
+
+    @pytest.mark.asyncio
+    async def test_run_reports_locked_agent_timeout(self, temp_dir):
+        agent = PiAgent(logs_dir=temp_dir, model_name="my-provider/my-model")
+        mock_env = AsyncMock()
+        mock_env.exec.return_value = _exec_result("harbor_hf_pi_execution_timeout")
+        mock_env.exec.return_value.return_code = 124
+
+        with (
+            patch.dict(
+                os.environ,
+                {"HARBOR_HF_AGENT_TIMEOUT_SECONDS": "1800"},
+                clear=False,
+            ),
+            pytest.raises(TimeoutError, match="locked agent timeout"),
+        ):
+            await agent.run("Fix the bug", mock_env, AsyncMock())
+
+    @pytest.mark.asyncio
     async def test_run_no_model(self, temp_dir):
         agent = PiAgent(logs_dir=temp_dir)
         mock_env = AsyncMock()

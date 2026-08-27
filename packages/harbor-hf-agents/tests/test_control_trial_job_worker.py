@@ -233,6 +233,7 @@ def test_reads_one_prepared_worker_configuration(
         "control_declared_task_image": DECLARED_TASK_IMAGE,
         "control_task_image": TASK_IMAGE,
     }
+    assert config.task.agent_timeout_seconds == 900
     assert config.task.timeout_seconds == 2_460
 
 
@@ -607,11 +608,15 @@ def test_harbor_child_environment_is_allowlisted() -> None:
         "ARBITRARY_VALUE": "must-not-enter",
     }
 
-    assert worker._harbor_child_environment(environment) == {
+    assert worker._harbor_child_environment(
+        environment,
+        agent_timeout_seconds=900,
+    ) == {
         "PATH": "/usr/bin",
         "HOME": "/tmp/home",
         "HARBOR_HF_RUN_ID": "run-1",
         "HARBOR_HF_WORKER_CAPABILITY": "private-capability",
+        "HARBOR_HF_AGENT_TIMEOUT_SECONDS": "900",
     }
 
 
