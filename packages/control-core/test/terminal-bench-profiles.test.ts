@@ -518,9 +518,9 @@ describe("Terminal-Bench 2.1 profiles", () => {
     const harnesses = [
       ["pi-0-84-2-high-deepseek-v4-flash-0731-together", "pi"],
       ["mini-swe-agent-deepseek-v4-flash-0731-together", "mini-swe-agent"],
-      ["fx-deepseek-v4-flash-0731-together", "fx"],
-      ["openhands-deepseek-v4-flash-0731-together", "openhands"],
-      ["opencode-deepseek-v4-flash-0731-together", "opencode"],
+      ["hermes-deepseek-v4-flash-0731-together", "hermes"],
+      ["kimi-code-deepseek-v4-flash-0731-together", "kimi-code"],
+      ["qwen-code-deepseek-v4-flash-0731-together", "qwen-code"],
     ] as const;
 
     expect(model.model_id).toBe("deepseek-ai/DeepSeek-V4-Flash-0731");
