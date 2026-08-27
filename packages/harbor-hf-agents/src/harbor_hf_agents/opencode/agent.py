@@ -21,6 +21,7 @@ class OpenCodeAgent(JobChatCompletionsAgent, OpenCode):
     route_base_url_key = "OPENAI_BASE_URL"
     route_api_key_key = "OPENAI_API_KEY"
     route_label = "OpenCode"
+    _provider_npm = "@ai-sdk/openai-compatible"
 
     def _provider_model(self) -> tuple[str, str]:
         if not self.model_name or "/" not in self.model_name:
@@ -41,9 +42,11 @@ class OpenCodeAgent(JobChatCompletionsAgent, OpenCode):
             {
                 "provider": {
                     provider: {
+                        "npm": self._provider_npm,
                         "models": {model_id: {}},
                         "options": {"baseURL": self._route_env["OPENAI_BASE_URL"]},
                     }
                 }
             },
         )
+        self._opencode_config["provider"][provider]["models"][model_id] = {}
