@@ -266,6 +266,24 @@ describe("Terminal-Bench 2.1 profiles", () => {
     expect(record(execution.harbor_agent?.kwargs).thinking_format).toBe("deepseek");
   });
 
+  it("preserves OpenClaw provider timeout and attempts", async () => {
+    const resolver = new ProfileResolver(await loadBuiltInProfiles("profiles"));
+    const execution = composeExecutionContract(
+      resolver.resolve({
+        benchmark: "terminal-bench-2-1-canary",
+        model: "gpt-oss-20b-together",
+        harness: "openclaw",
+        deployment: "tb21-gpt-oss-20b-openclaw-providers",
+        launch_policy: "tb21-canary",
+      }),
+    );
+    expect(record(execution.harbor_agent?.kwargs).provider_runtime).toEqual({
+      api: "chat-completions",
+      timeout_seconds: 1800,
+      max_attempts: 1,
+    });
+  });
+
   it("keeps provider and execution policy in deployments without route copies", async () => {
     const matrix = [
       {
