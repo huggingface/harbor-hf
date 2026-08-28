@@ -215,6 +215,37 @@ cannot substitute for isolation.
 
 ## Agent Requirements
 
+### Install-time interpreter contract
+
+An installed-agent plugin can declare immutable environment values for its
+installation. `JobChatCompletionsAgent` applies these values only while it runs
+`install_runtime_packages` and the public Harbor `install` method. The state is
+local to one agent instance and is cleared in a `finally` block after a
+successful or failed installation. A declared value takes precedence over a
+value supplied by the installation caller.
+
+Normal agent commands do not inherit the install environment. An agent that
+does not opt in receives no install environment. Route configuration and
+loopback credentials remain separate from this contract.
+
+The mini-swe-agent plugin declares `UV_PYTHON=3.12`. The public Harbor installer
+continues to own the `uv tool install` command, the exact mini-swe-agent package
+version, and its installation smoke check. Harbor-HF does not copy that command,
+pin a second dependency set, or patch Harbor internals. If uv cannot provide
+Python 3.12, installation fails as infrastructure setup. It does not fall back
+to an older task-image Python.
+
+The shared contract is implemented in
+`packages/harbor-hf-agents/src/harbor_hf_agents/support/job_chat_completions.py`.
+The plugin declaration is in
+`packages/harbor-hf-agents/src/harbor_hf_agents/mini_swe/agent.py`. Focused tests
+belong in `packages/harbor-hf-agents/tests/test_job_chat_completions.py` and
+`packages/harbor-hf-agents/tests/test_mini_swe.py`.
+
+This change does not add a schema, API, profile field, run-lock field, evidence
+format, retry rule, or publication rule. The private evidence that justified
+the interpreter requirement stays outside the public repository.
+
 ### Hermes
 
 Hermes is installed from commit
@@ -277,6 +308,7 @@ execution under the same logical trial:
 
 - immutable source preparation failure.
 - custom-agent package installation failure unrelated to its locked content.
+- failure to provision a plugin's declared install-time interpreter.
 - private ingress startup or authentication failure.
 - provider transport failure covered by the locked retry policy.
 - missing terminal evidence caused by worker or Job loss.
@@ -313,6 +345,12 @@ This is a hard replacement for new provider runs:
 No new provider run may use the old path after step 5. Historical evidence
 remains readable but cannot select the removed writer.
 
+The install-time interpreter contract is a hard cutover for future worker
+builds. Existing runs, attempts, exhaustion records, evidence, worker images,
+and deployment profiles do not change. No data migration is required. This
+change does not publish a worker image, update a profile, deploy the service,
+retry work, create a successor run, or verify live infrastructure.
+
 ## Verification matrix
 
 Local validation must cover:
@@ -321,6 +359,11 @@ Local validation must cover:
 - full-commit and exact-package revision enforcement;
 - deterministic run and run digests;
 - dependency-free `uv --with` installation without Harbor lock drift;
+- install environment delivery only to plugins that opt in;
+- install-state cleanup after successful and failed installation;
+- deterministic precedence for declared install environment values;
+- `UV_PYTHON=3.12` on mini-swe-agent installation and no later run command;
+- no interpreter override for an unaffected agent plugin;
 - custom-agent loading through unmodified Harbor;
 - registry rejection of unknown agents and unsupported APIs;
 - strict per-agent configuration validation;
@@ -339,3 +382,18 @@ Local validation must cover:
 Paid canaries must retain and verify the Harbor result, compatibility bundle,
 provider evidence, judge evidence, redacted session, ATIF trajectory, workspace,
 checksums, source revisions, model identity, and a zero-finding secret scan.
+
+For an interpreter-contract change, first run the focused and complete agent
+package tests. Then run its locked sync, Ruff check and format check, ty check,
+and mutation gate with a minimum 90% kill rate. Run the applicable root checks
+from `CONTRIBUTING.md`, including the public privacy check, Python coverage of at
+least 85%, TypeScript and browser checks, generated-file checks, dependency
+audits, the control-Space Docker build, Slophammer, and the root mutation gate.
+Do not run a benchmark, model inference, remote integration test, Job, Endpoint,
+deployment, or release as part of this local change.
+
+Before publication of the source branch, inspect the complete diff and public
+metadata, run the public privacy check again, and create only the intended
+Conventional Commit. Push the existing task branch, then verify that its local
+and remote heads match. Do not open a pull request or merge as part of this
+change.

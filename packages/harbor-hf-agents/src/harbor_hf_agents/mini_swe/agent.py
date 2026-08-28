@@ -26,6 +26,7 @@ class MiniSweAgent(JobChatCompletionsAgent, HarborMiniSweAgent):
         "passwd",
         "util-linux",
     )
+    install_environment = (("UV_PYTHON", "3.12"),)
     inject_route_into_process = True
 
     def extend_route_env(self, env: dict[str, str]) -> None:
