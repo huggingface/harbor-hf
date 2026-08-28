@@ -367,12 +367,21 @@ describe("Terminal-Bench 2.1 profiles", () => {
     ]);
   });
 
-  it("loads every built-in profile with resolvable catalog references", async () => {
+  it("loads every built-in profile with unique specs and resolvable catalog references", async () => {
     const loaded = await loadBuiltInProfiles("profiles");
     const resolver = new ProfileResolver(loaded);
-    expect(loaded).toHaveLength(52);
+    const specOwners = new Map<string, string>();
+    expect(loaded).toHaveLength(51);
     expect(new Set(loaded.map((item) => item.profile_id)).size).toBe(loaded.length);
     for (const item of loaded) {
+      const specKey = `${item.profile.profile_kind}:${sha256(
+        canonicalJson(item.profile.spec),
+      )}`;
+      expect(
+        specOwners.get(specKey),
+        `${item.profile.name} duplicates another ${item.profile.profile_kind} profile`,
+      ).toBeUndefined();
+      specOwners.set(specKey, item.profile.name);
       if (item.profile.profile_kind !== "deployment") continue;
       for (const model of item.profile.spec.models)
         expect(() => resolver.get("model", model)).not.toThrow();
