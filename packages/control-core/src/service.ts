@@ -377,8 +377,10 @@ const terminalJobStates = new Set([
   "ERROR",
 ]);
 
-function jobStateIsTerminal(state: string | null): boolean {
-  return state !== null && terminalJobStates.has(state.toUpperCase());
+export function jobStateIsTerminal(state: string | null): boolean {
+  if (state === null) return false;
+  const normalized = state.toUpperCase();
+  return terminalJobStates.has(normalized) || normalized.startsWith("SUPPRESSED-");
 }
 
 export function infrastructureSealReplaceable(terminalOutcome: string | null): boolean {

@@ -29,7 +29,11 @@ import {
   Reconciler,
 } from "../src/reconciler.js";
 import { runIdentity, runUnique } from "../src/run-id.js";
-import { ControlService, executionReservationCategory } from "../src/service.js";
+import {
+  ControlService,
+  executionReservationCategory,
+  jobStateIsTerminal,
+} from "../src/service.js";
 
 const controls: TestControl[] = [];
 afterEach(async () => {
@@ -47,6 +51,16 @@ const submission = {
   confirmed: true,
 } as const;
 const operator = { subject: "operator-1", role: "operator" as const };
+
+describe("profile cutover Job classification", () => {
+  it("treats suppressed launch outcomes as terminal", () => {
+    expect(jobStateIsTerminal("suppressed-paused")).toBe(true);
+    expect(jobStateIsTerminal("suppressed-cancelled")).toBe(true);
+    expect(jobStateIsTerminal("COMPLETED")).toBe(true);
+    expect(jobStateIsTerminal("RUNNING")).toBe(false);
+    expect(jobStateIsTerminal(null)).toBe(false);
+  });
+});
 
 async function settle(reconciler: Reconciler, rounds = 8): Promise<void> {
   for (let index = 0; index < rounds; index += 1) await reconciler.tick();
