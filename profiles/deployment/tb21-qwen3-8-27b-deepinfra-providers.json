@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-8db07cf0e13dc6eaedbbef61",
+  "record_id": "profile-563cfb303ae632f5e454c2d8",
   "created_at": "2026-08-27T09:30:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
@@ -12,13 +12,7 @@
   "spec": {
     "route": "hf_job",
     "models": ["qwen3-8-27b-deepinfra"],
-    "harnesses": [
-      "pi-qwen3-8-27b-deepinfra",
-      "mini-swe-agent-qwen3-8-27b-deepinfra",
-      "fx-qwen3-8-27b-deepinfra",
-      "openhands-qwen3-8-27b-deepinfra",
-      "opencode-qwen3-8-27b-deepinfra"
-    ],
+    "harnesses": ["pi-off", "mini-swe-agent", "fx", "openhands", "opencode", "pi"],
     "job_image": "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:1bbd594ace63d8a30fcdc728235d405ee47c92b4ee53e11dbb20408b819bc2fa",
     "preparation_job_command": [
       "python",
@@ -64,7 +58,6 @@
       ],
       "inference_token": "required",
       "inference_upstream": "https://router.huggingface.co/v1",
-      "inference_model": "Qwen/Qwen3.8-27B:deepinfra",
       "inference_api": "chat-completions",
       "inference_max_requests": 512,
       "inference_max_concurrency": 1,
@@ -84,6 +77,9 @@
       "max_image_bytes": 21474836480,
       "max_image_entries": 500000,
       "max_jobs": 16
-    }
+    },
+    "contract_version": "v1",
+    "cache_read_price_microusd_per_million_tokens": 400000,
+    "cache_write_price_microusd_per_million_tokens": 400000
   }
 }

@@ -3,10 +3,9 @@ import { join } from "node:path";
 import type {
   BenchmarkProfileSpec,
   DeploymentProfileSpec,
-  HarnessProfileSpec,
-  ModelProfileSpec,
   PreparedTrial,
   ProfileObject,
+  ResolvedExecutionContract,
   ResolvedProfile,
   TaskLock,
   TrialJobTemplate,
@@ -45,6 +44,7 @@ export async function loadBuiltInProfiles(root: string): Promise<LoadedProfile[]
     const value = validateControlRecord<ProfileObject>(JSON.parse(raw));
     if (value.kind !== "profile.object")
       throw new Error(`built-in profile is not a profile object: ${path}`);
+    assertActiveProfile(value, path);
     const expectedRecordId = deterministicId(
       "profile",
       value.profile_kind,
@@ -59,6 +59,25 @@ export async function loadBuiltInProfiles(root: string): Promise<LoadedProfile[]
 }
 
 export class ProfileResolutionError extends Error {}
+
+function activeProfile(profile: ProfileObject): boolean {
+  if (
+    profile.profile_kind !== "model" &&
+    profile.profile_kind !== "harness" &&
+    profile.profile_kind !== "deployment"
+  )
+    return true;
+  return (
+    (profile.spec as unknown as { contract_version?: string }).contract_version === "v1"
+  );
+}
+
+function assertActiveProfile(profile: ProfileObject, source: string): void {
+  if (!activeProfile(profile))
+    throw new ProfileResolutionError(
+      `historical profile cannot enter the active catalog: ${source}`,
+    );
+}
 
 function objectValue(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -95,12 +114,11 @@ export function preparationRequired(deployment: DeploymentProfileSpec): boolean 
 }
 
 export function validatePreparedRunProfiles(
-  deployment: DeploymentProfileSpec,
+  execution: ResolvedExecutionContract,
   benchmark: BenchmarkProfileSpec,
-  model: ModelProfileSpec,
-  harness: HarnessProfileSpec,
   tasks: readonly TaskLock[],
 ): void {
+  const deployment = execution.deployment;
   if (!preparationRequired(deployment)) return;
   if (!objectValue(benchmark.harbor_job))
     throw new ProfileResolutionError(
@@ -130,15 +148,15 @@ export function validatePreparedRunProfiles(
       );
     sourceTrials.add(sourceTrial);
   }
-  if (!model.harbor_model_name)
+  if (!execution.harbor_agent)
     throw new ProfileResolutionError(
-      "prepared runs require a Harbor model name in the model profile",
+      "prepared runs require a composed Harbor agent in the execution contract",
     );
-  if (!objectValue(harness.harbor_agent))
+  if (!execution.inference)
     throw new ProfileResolutionError(
-      "prepared runs require a Harbor agent in the harness profile",
+      "prepared runs require composed inference settings in the execution contract",
     );
-  if (deployment.route !== "hf_job" || !deployment.trial_job_template)
+  if (!deployment.trial_job_template)
     throw new ProfileResolutionError("prepared runs require an HF trial Job template");
 }
 
@@ -189,10 +207,11 @@ export interface PreparedTrialJobLaunch {
 }
 
 export function preparedTrialJobLaunch(
-  deployment: DeploymentProfileSpec,
+  execution: ResolvedExecutionContract,
   trial: PreparedTrial,
 ): PreparedTrialJobLaunch {
-  if (deployment.route !== "hf_job" || !deployment.trial_job_template)
+  const deployment = execution.deployment;
+  if (!deployment.trial_job_template)
     throw new ProfileResolutionError("deployment has no prepared trial Job template");
   const template = deployment.trial_job_template;
   const flavor = selectFlavor(template, trial);
@@ -228,11 +247,13 @@ export function preparedTrialJobLaunch(
     max_image_bytes: template.max_image_bytes,
     max_image_entries: template.max_image_entries,
     inference_token: template.inference_token ?? "forbidden",
-    ...(template.inference_upstream
-      ? { inference_upstream: template.inference_upstream }
+    ...(execution.inference
+      ? {
+          inference_upstream: execution.inference.upstream,
+          inference_model: execution.inference.bridge_model,
+          inference_api: execution.inference.api,
+        }
       : {}),
-    ...(template.inference_model ? { inference_model: template.inference_model } : {}),
-    ...(template.inference_api ? { inference_api: template.inference_api } : {}),
     ...(template.inference_max_requests
       ? { inference_max_requests: template.inference_max_requests }
       : {}),
@@ -280,16 +301,36 @@ function indexProfiles<T extends LoadedProfile>(
   return output;
 }
 
+function indexBuiltInProfiles(
+  profiles: readonly LoadedProfile[],
+): Map<string, LoadedProfile> {
+  const output = indexProfiles(profiles, (item) => item.profile.name);
+  for (const item of profiles) {
+    const aliases = (item.profile.spec as { aliases?: readonly string[] }).aliases;
+    for (const alias of aliases ?? []) {
+      const key = profileKey(item.profile.profile_kind, alias);
+      const existing = output.get(key);
+      if (existing && existing.profile_id !== item.profile_id)
+        throw new ProfileResolutionError(`conflicting profile alias: ${key}`);
+      output.set(key, item);
+    }
+  }
+  return output;
+}
+
 export class ProfileResolver {
   private readonly builtInProfiles: Map<string, LoadedProfile>;
   private promotedProfiles = new Map<string, LoadedProfile>();
 
   constructor(profiles: readonly LoadedProfile[]) {
-    this.builtInProfiles = indexProfiles(profiles, (item) => item.profile.name);
+    this.builtInProfiles = indexBuiltInProfiles(profiles);
   }
 
   replacePromotedProfiles(profiles: readonly PromotedProfile[]): void {
-    this.promotedProfiles = indexProfiles(profiles, (item) => item.alias);
+    this.promotedProfiles = indexProfiles(
+      profiles.filter((item) => activeProfile(item.profile)),
+      (item) => item.alias,
+    );
   }
 
   /**
@@ -446,7 +487,7 @@ export class ProfileResolver {
 }
 
 export function profileSpec<T>(
-  profiles: readonly ResolvedProfile[],
+  profiles: readonly { kind: string; spec: unknown }[],
   kind: ResolvedProfile["kind"],
 ): T {
   const profile = profiles.find((item) => item.kind === kind);

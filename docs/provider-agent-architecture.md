@@ -104,36 +104,54 @@ Harbor remains the unmodified benchmark engine. `harbor-hf` uses only its public
 configuration and custom-agent import APIs, together with its execution,
 result, and trajectory APIs.
 
-## Existing schemas
+## Run-native execution contract
 
-This design does not introduce another execution contract or runtime manifest.
-The existing records already cover the required identities:
+The Run-native control service selects independent model, harness, and
+deployment profiles. A harness profile is an agent template. It contains the
+custom import path, exact agent revision, reasoning mode, capabilities, stable
+non-secret settings, and evidence requirements. It does not contain the
+selected model or provider route.
 
-| Existing record | Authority |
+The model profile is the only checked-in owner of the canonical Harbor model
+route. The deployment profile owns provider and execution policy. Before any
+paid action, the TypeScript resolver checks compatibility and writes a complete
+resolved execution contract into the run lock. That contract contains the exact
+Harbor `AgentConfig`, bridge route, runtime limits, worker provenance, and source
+profile IDs.
+
+The preparation worker consumes the locked `AgentConfig` and does not bind a
+model for new runs. A later profile change cannot alter a locked run. Pi creates
+its private model registry from typed model runtime data in the contract. DSH
+uses typed model reasoning-format data only when its harness capability permits
+that format.
+
+The public Pi constructor accepts the older `models_json` input for the first
+release that contains this cutover. Active control profiles do not use it. The
+following minor release removes that input, while historical locks remain
+read-only.
+
+Older `ExperimentSpec`, `ExecutionLock`, and compatibility records remain the
+authority for their historical runs. They are not converted to the new form.
+The legacy reader can project and audit old locks, but old locks cannot create
+new work after the profile cutover.
+
+The active record authorities are:
+
+| Record | Authority |
 | --- | --- |
-| `ExperimentSpec` | Requested execution policy and its agent, model, provider, and source. |
-| `ExecutionLock` and run locks | Immutable resolved configuration and source revisions. |
-| `HarborExecutionRequest` | Exact Harbor job configuration and independent verification policy. |
+| Model profile | Model ID, revision, canonical Harbor route, and model compatibility. |
+| Harness profile | Agent implementation, revision, capabilities, stable settings, and evidence requirements. |
+| Deployment profile | Provider, API, prices, limits, hardware, worker provenance, and Harbor version. |
+| Run lock execution contract | Complete resolved agent and inference configuration before admission. |
+| Prepared Harbor records | Exact task and Harbor job locks derived from the resolved contract. |
 | Harbor `result.json` | Observed agent and model identity, usage, rewards, and exceptions. |
 | `HarborCompatibilityBundle` | Typed, checksummed compatibility view of Harbor output. |
-| Trial evidence manifest | Required workspace, session, trajectory, judge evidence, and logs. |
-| `private-artifacts.json` | Typed private artifact inventory. |
-| `checksums.json` | Content integrity for retained execution evidence. |
+| Trial evidence and checksum records | Required private artifacts and content integrity. |
 
-The only manifest changes are fields needed to select a custom agent through the
-existing `AgentProfile`:
-
-- `import_path`: the Harbor custom-agent class; and
-- `revision_kind: git` for an underlying agent pinned by a full Git commit.
-
-The custom-agent implementation itself is already pinned by
-`remote.worker.revision`. A Git agent revision must be a full commit. Package
-agents continue to use exact numeric versions. `HarborVerificationPolicy`
-records the expected import path in addition to the existing logical agent name
-and version, so config drift is rejected before output is accepted.
-
-These fields extend the current pre-release schema in place. They do not create
-a second lock, manifest, or identity system.
+Profiles remain complete and have no inheritance. The resolver uses fixed typed
+rules rather than placeholders or arbitrary binding expressions. The
+[reusable harness profile plan](2026-08-28-reusable-harness-profiles-plan.md)
+defines the schema migration and verification work.
 
 ## Generic agent registry
 

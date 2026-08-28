@@ -1,26 +1,29 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-a8ff7a8d6e1ec1c2832f16e5",
+  "record_id": "profile-4813e7f920a5c02a2f3341cf",
   "created_at": "2026-08-21T16:00:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
     "role": "service"
   },
   "profile_kind": "harness",
-  "name": "dsh-high-deepseek-v4-flash-0731-together",
+  "name": "dsh-off",
   "spec": {
     "agent": "dsh",
     "revision": "0.1.0-rc.7",
-    "reasoning_effort": "high",
+    "reasoning_effort": "off",
     "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
     "harbor_agent": {
       "import_path": "harbor_hf_agents.dsh.agent:DshAgent",
-      "model_name": "openai/deepseek-ai/DeepSeek-V4-Flash-0731:together",
       "kwargs": {
-        "version": "0.1.0-rc.7",
-        "thinking_format": "deepseek"
+        "version": "0.1.0-rc.7"
       }
-    }
+    },
+    "contract_version": "v1",
+    "capabilities": {
+      "inference_apis": ["chat-completions"]
+    },
+    "aliases": ["dsh"]
   }
 }

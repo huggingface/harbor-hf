@@ -32,10 +32,20 @@ historical evidence tools.
 
 ## Execution Input
 
-A run first locks its approved profiles and expected logical tasks. A
-secret-free preparation Job runs the pinned Harbor git commit and builds one
-normal `JobConfig`. Harbor resolves the dataset and task sources through its
-public `JobPlan` API. The preparation worker then writes:
+A new run first locks its approved profiles, expected logical tasks, and one
+complete resolved execution contract. The TypeScript control service builds the
+contract before reservation or admission. It contains the exact Harbor
+`AgentConfig`, selected model route, derived root bridge route, provider API,
+limits, worker provenance, Harbor version, and source profile IDs.
+
+The model profile supplies the canonical Harbor route. The harness profile
+supplies a model-independent custom-agent template and capabilities. The
+deployment profile supplies provider and execution policy without another model
+route. The resolver checks the combination and derives the final values. A
+secret-free preparation Job consumes those locked values, runs the pinned Harbor
+git commit, and builds one normal `JobConfig`. It does not bind the model again.
+Harbor resolves the dataset and task sources through its public `JobPlan` API.
+The preparation worker then writes:
 
 - one immutable `prepared.trial` record per logical task;
 - one final `prepared.job` record that binds the ordered trials;
@@ -44,7 +54,13 @@ public `JobPlan` API. The preparation worker then writes:
 Each prepared trial contains the exact Harbor `TrialLock`, source task digest,
 container image digest, resource request, and phase time limits. The control
 service checks the task against the run lock and selects compatible Hugging
-Face Job hardware from the deployment profile. The deployment profile sets
+Face Job hardware from the locked execution contract. Prepared and executed
+agent, route, API, limit, and worker values must match that contract exactly.
+
+Historical locks without the resolved execution contract remain readable and
+immutable. After the profile cutover, they cannot create, resume, or retry
+work. The [reusable harness profile plan](2026-08-28-reusable-harness-profiles-plan.md)
+defines the cutover and rollback gates. The deployment profile sets
 limits and prices but contains no benchmark task catalog.
 
 An execution worker receives the one task assigned to its physical Job. It

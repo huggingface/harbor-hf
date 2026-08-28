@@ -1,12 +1,16 @@
 import type {
   BenchmarkProfileSpec,
-  DeploymentProfileSpec,
+  HFJobDeploymentProfileSpec,
   HarnessProfileSpec,
   ModelProfileSpec,
   PreparedTrial,
+  ResolvedExecutionContract,
+  ResolvedProfile,
   TaskLock,
 } from "@harbor-hf/contracts";
+import { canonicalJson } from "@harbor-hf/contracts";
 import { describe, expect, it } from "vitest";
+import { composeExecutionContract } from "../src/execution-contract.js";
 import {
   preparedTrialJobLaunch,
   ProfileResolutionError,
@@ -39,24 +43,29 @@ const benchmark: BenchmarkProfileSpec = {
   harbor_job: { datasets: [{ name: "example/tasks", version: "1" }] },
 };
 const model: ModelProfileSpec = {
+  contract_version: "v1",
   model_id: "example/model",
   revision: "abcdef0",
   harbor_model_name: "openai/example/model:provider",
+  compatibility: { reasoning: false },
 };
 const harness: HarnessProfileSpec = {
+  contract_version: "v1",
   agent: "example-agent",
   revision: "1.0.0",
   required_evidence: ["workspace"],
+  capabilities: { inference_apis: ["chat-completions"] },
   harbor_agent: {
     import_path: "example.agent:Agent",
-    model_name: "openai/example/model:provider",
+    kwargs: { version: "1.0.0" },
   },
 };
 
-function deployment(): DeploymentProfileSpec {
+function deployment(): HFJobDeploymentProfileSpec {
   return {
+    contract_version: "v1",
     route: "hf_job",
-    models: ["model"],
+    models: ["model", "other-model"],
     harnesses: ["harness"],
     job_image: `example.invalid/worker@${digest}`,
     job_command: ["run-worker"],
@@ -89,7 +98,6 @@ function deployment(): DeploymentProfileSpec {
       ],
       inference_token: "required",
       inference_upstream: "https://router.huggingface.co",
-      inference_model: "example/model:provider",
       inference_api: "chat-completions",
       inference_max_requests: 256,
       inference_max_concurrency: 1,
@@ -109,10 +117,43 @@ function deployment(): DeploymentProfileSpec {
     inference_provider: "provider",
     input_price_microusd_per_million_tokens: 100_000,
     output_price_microusd_per_million_tokens: 200_000,
+    cache_read_price_microusd_per_million_tokens: 50_000,
+    cache_write_price_microusd_per_million_tokens: 75_000,
     harbor_version: "0.21.0",
     worker_revision: "abcdef0",
     context_window: 131_072,
   };
+}
+
+function resolved(
+  selectedModel: ModelProfileSpec = model,
+  modelName = "model",
+  selectedDeployment: HFJobDeploymentProfileSpec = deployment(),
+): ResolvedProfile[] {
+  return [
+    {
+      kind: "model",
+      name: modelName,
+      profile_id: `sha256:${"b".repeat(64)}`,
+      spec: selectedModel,
+    },
+    {
+      kind: "harness",
+      name: "harness",
+      profile_id: `sha256:${"c".repeat(64)}`,
+      spec: harness,
+    },
+    {
+      kind: "deployment",
+      name: "deployment",
+      profile_id: `sha256:${"d".repeat(64)}`,
+      spec: selectedDeployment,
+    },
+  ];
+}
+
+function execution(): ResolvedExecutionContract {
+  return composeExecutionContract(resolved());
 }
 
 function preparedTrial(): PreparedTrial {
@@ -129,28 +170,100 @@ function preparedTrial(): PreparedTrial {
     source_task_id: "task-a",
     trial_index: 1,
     input_digest: digest,
-    trial_lock: { schema_version: 2, task: { digest } },
+    trial_lock: { schema_version: "1.0" },
     trial_lock_digest: digest,
-    declared_image: "example.invalid/task:release",
+    declared_image: `example.invalid/task:tag@${digest}`,
     image: `example.invalid/task@${digest}`,
     cpus: 4,
-    memory_mb: 8_192,
-    storage_mb: 10_240,
+    memory_mb: 20_000,
+    storage_mb: 30_000,
     gpus: 0,
-    agent_timeout_seconds: 900,
+    agent_timeout_seconds: 1_200,
     verifier_timeout_seconds: 600,
-    environment_build_timeout_seconds: 600,
+    environment_build_timeout_seconds: 300,
     agent_setup_timeout_seconds: 360,
   };
 }
 
-describe("prepared run profiles", () => {
-  it("resolves one immutable trial Job launch from prepared resources", () => {
-    const value = deployment();
+describe("resolved execution profiles", () => {
+  it("composes one reusable harness with multiple models", () => {
+    const first = execution();
+    const second = composeExecutionContract(
+      resolved(
+        {
+          ...model,
+          model_id: "example/other",
+          revision: "abcdef1",
+          harbor_model_name: "openai/example/other:provider",
+        },
+        "other-model",
+      ),
+    );
+
+    expect(first.source_profiles.harness).toEqual(second.source_profiles.harness);
+    expect(first.harbor_agent?.model_name).toBe("openai/example/model:provider");
+    expect(second.harbor_agent?.model_name).toBe("openai/example/other:provider");
+    expect(first.inference?.bridge_model).toBe("example/model:provider");
+    expect(second.inference?.bridge_model).toBe("example/other:provider");
+  });
+
+  it("produces a byte-stable immutable execution contract", () => {
+    expect(canonicalJson(execution())).toBe(canonicalJson(execution()));
+  });
+
+  it("rejects route, provider, API, and compatibility mismatches", () => {
     expect(() =>
-      validatePreparedRunProfiles(value, benchmark, model, harness, tasks),
+      composeExecutionContract(
+        resolved({ ...model, harbor_model_name: "openai/example/model:other" }),
+      ),
+    ).toThrow("provider suffix");
+    expect(() =>
+      composeExecutionContract(
+        resolved(model, "model", {
+          ...deployment(),
+          trial_job_template: {
+            ...(deployment().trial_job_template as NonNullable<
+              HFJobDeploymentProfileSpec["trial_job_template"]
+            >),
+            inference_api: "responses",
+          },
+        }),
+      ),
+    ).toThrow("does not support");
+    expect(() =>
+      composeExecutionContract([
+        ...resolved().filter((profile) => profile.kind !== "harness"),
+        {
+          kind: "harness",
+          name: "harness",
+          profile_id: `sha256:${"c".repeat(64)}`,
+          spec: {
+            ...harness,
+            capabilities: {
+              ...harness.capabilities,
+              requires_reasoning: true,
+            },
+          },
+        },
+      ]),
+    ).toThrow("requires reasoning");
+  });
+
+  it("validates prepared task mappings against the composed contract", () => {
+    expect(() =>
+      validatePreparedRunProfiles(execution(), benchmark, tasks),
     ).not.toThrow();
-    expect(preparedTrialJobLaunch(value, preparedTrial())).toMatchObject({
+    expect(() =>
+      validatePreparedRunProfiles(
+        execution(),
+        { ...benchmark, source_task_ids: ["task-a"] },
+        tasks,
+      ),
+    ).toThrow(ProfileResolutionError);
+  });
+
+  it("resolves one immutable trial Job launch from locked values", () => {
+    expect(preparedTrialJobLaunch(execution(), preparedTrial())).toMatchObject({
       job_image: `example.invalid/worker@${digest}`,
       task_image: `example.invalid/task@${digest}`,
       job_command: [
@@ -174,26 +287,14 @@ describe("prepared run profiles", () => {
     });
   });
 
-  it("allows an inference credential on prepared execution Jobs", () => {
-    const value = {
-      ...deployment(),
-      inference_token: "required" as const,
-      inference_max_requests: 64,
-      inference_max_concurrency: 1,
-      inference_timeout_seconds: 600,
-      inference_max_output_tokens: 32_768,
-    };
-    expect(() =>
-      validatePreparedRunProfiles(value, benchmark, model, harness, tasks),
-    ).not.toThrow();
-  });
-
-  it("quotes bootstrap and worker arguments in the composed shell command", () => {
+  it("quotes bootstrap and worker arguments in the locked shell command", () => {
     const value = deployment();
     value.job_command = ["run worker", "it's-locked"];
+    if (!value.trial_job_template) throw new Error("trial template is missing");
     value.trial_job_template.root_bootstrap_command = ["/root setup", "first"];
+    const composed = composeExecutionContract(resolved(model, "model", value));
 
-    expect(preparedTrialJobLaunch(value, preparedTrial()).job_command).toEqual([
+    expect(preparedTrialJobLaunch(composed, preparedTrial()).job_command).toEqual([
       "/bin/sh",
       "-c",
       [
@@ -203,33 +304,5 @@ describe("prepared run profiles", () => {
         `exec 'run worker' 'it'"'"'s-locked'`,
       ].join("\n"),
     ]);
-  });
-
-  it("rejects incomplete benchmark source mappings", () => {
-    expect(() =>
-      validatePreparedRunProfiles(
-        deployment(),
-        { ...benchmark, source_task_ids: ["task-a"] },
-        model,
-        harness,
-        tasks,
-      ),
-    ).toThrow(ProfileResolutionError);
-  });
-
-  it("rejects duplicate source trial identities", () => {
-    const duplicate = [tasks[0] as TaskLock, { ...tasks[1], source_task_id: "task-a" }];
-    expect(() =>
-      validatePreparedRunProfiles(
-        deployment(),
-        {
-          ...benchmark,
-          source_task_ids: duplicate.map((task) => task.source_task_id as string),
-        },
-        model,
-        harness,
-        duplicate,
-      ),
-    ).toThrow("duplicate benchmark source trial");
   });
 });

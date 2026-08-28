@@ -9,13 +9,13 @@ import type {
   BudgetEvent,
   CapacityProfileObject,
   CapacityProfileSpec,
+  CurrentRunLock,
   DeploymentProfileSpec,
   HarborHFControlRecordV1,
   HarnessProfileSpec,
   JobAdmissionGrant,
   JobCapacityRelease,
   LaunchPolicySpec,
-  ModelProfileSpec,
   PreparedJob,
   PreparedJobSubmissionV1,
   PreparedTrial,
@@ -52,6 +52,7 @@ import {
   verifyEvidenceReference,
   verifyWorkerEvidence,
 } from "./evidence.js";
+import { composeExecutionContract, isCurrentRunLock } from "./execution-contract.js";
 import {
   decideJobAdmission,
   type JobAdmissionDecision,
@@ -407,8 +408,47 @@ export class ControlService {
   }
 
   async initialize(builtInProfiles: readonly LoadedProfile[]): Promise<void> {
+    await this.assertLegacyCutoverReady();
     for (const item of builtInProfiles) await this.append(item.profile);
     await this.refreshProfileResolver();
+  }
+
+  private async assertLegacyCutoverReady(): Promise<void> {
+    const pageSize = 100;
+    for (let offset = 0; ; offset += pageSize) {
+      const runs = await this.projection.runs(pageSize, offset);
+      for (const run of runs) {
+        const lock = await this.projection.runLock(run.run_id);
+        if (!lock || isCurrentRunLock(lock)) continue;
+        if (
+          !runStatusIsTerminal(run.status) ||
+          run.pending_actions > 0 ||
+          run.cleanup_pending
+        )
+          throw new PolicyError(
+            `historical run is not ready for the profile cutover: ${run.run_id}`,
+          );
+        const jobs = await this.projection.jobs(null, 0, run.run_id);
+        if (jobs.some((job) => !jobStateIsTerminal(job.observed_state)))
+          throw new PolicyError(
+            `historical run still has an active Job: ${run.run_id}`,
+          );
+      }
+      if (runs.length < pageSize) break;
+    }
+    const endpoints = await this.projection.endpoints(1_000_000);
+    const legacyRunIds = new Set<string>();
+    for (const endpoint of endpoints) {
+      if (endpoint.cleanup_verified) continue;
+      const lock = await this.projection.runLock(endpoint.run_id);
+      if (lock && !isCurrentRunLock(lock)) legacyRunIds.add(endpoint.run_id);
+    }
+    if (legacyRunIds.size > 0)
+      throw new PolicyError(
+        `historical runs still require Endpoint cleanup: ${[...legacyRunIds].join(
+          ", ",
+        )}`,
+      );
   }
 
   async refreshProfileResolver(): Promise<void> {
@@ -816,6 +856,11 @@ export class ControlService {
     const input = validatePreparedJobSubmission<PreparedJobSubmissionV1>(raw);
     const lock = await this.projection.runLock(runId);
     if (!lock) throw new PolicyError("prepared job run lock does not exist");
+    if (!isCurrentRunLock(lock))
+      throw new PolicyError(
+        "historical run locks cannot submit prepared work after the profile cutover",
+      );
+    const execution = lock.execution;
     const lockDigest = sha256(canonicalJson(lock));
     const preparationId = deterministicId("preparation", runId);
     if (input.phase === "trial") {
@@ -842,19 +887,13 @@ export class ControlService {
         );
       if (imageRepository(input.declared_image) !== imageRepository(input.image))
         throw new PolicyError("prepared task image repository does not match");
-      const model = this.resolvedProfile<ModelProfileSpec>(lock, "model");
-      const harness = this.resolvedProfile<HarnessProfileSpec>(lock, "harness");
       const agent = objectValue(trialLock.agent, "prepared Harbor agent lock");
-      if (
-        agent.model_name !== model.harbor_model_name ||
-        !subsetMatches(harness.harbor_agent, agent)
-      )
-        throw new PolicyError("prepared Harbor agent does not match selected profiles");
-      const deployment = this.resolvedProfile<DeploymentProfileSpec>(
-        lock,
-        "deployment",
-      );
-      if (deployment.route !== "hf_job" || !deployment.trial_job_template)
+      if (!execution.harbor_agent || !subsetMatches(execution.harbor_agent, agent))
+        throw new PolicyError(
+          "prepared Harbor agent does not match the locked execution contract",
+        );
+      const deployment = execution.deployment;
+      if (!deployment.trial_job_template)
         throw new PolicyError("prepared run has no trial Job deployment");
       const timeoutSeconds =
         input.agent_timeout_seconds +
@@ -925,27 +964,28 @@ export class ControlService {
       trials: preparedTrials.map((trial) => trial.trial_lock),
     };
     const harborLockDigest = sha256(canonicalJson(harborLock));
-    const deployment = this.resolvedProfile<DeploymentProfileSpec>(lock, "deployment");
-    if (
-      deployment.route !== "hf_job" ||
-      deployment.harbor_version !== input.harbor_version
-    )
-      throw new PolicyError("prepared Harbor version does not match the deployment");
+    const deployment = execution.deployment;
+    if (deployment.harbor_version !== input.harbor_version)
+      throw new PolicyError(
+        "prepared Harbor version does not match the locked execution contract",
+      );
     const harborInfo = objectValue(header.harbor, "prepared Harbor version lock");
     if (harborInfo.version !== input.harbor_version)
       throw new PolicyError("prepared Harbor lock reports a different version");
     const benchmark = this.resolvedProfile<BenchmarkProfileSpec>(lock, "benchmark");
     if (!subsetMatches(benchmark.harbor_job, input.job_config))
       throw new PolicyError("prepared Harbor job does not match the benchmark profile");
-    const harness = this.resolvedProfile<HarnessProfileSpec>(lock, "harness");
     const jobConfig = objectValue(input.job_config, "prepared Harbor job config");
     const agents = jobConfig.agents;
     if (
+      !execution.harbor_agent ||
       !Array.isArray(agents) ||
       agents.length !== 1 ||
-      !subsetMatches(harness.harbor_agent, agents[0])
+      !subsetMatches(execution.harbor_agent, agents[0])
     )
-      throw new PolicyError("prepared Harbor agent does not match the harness profile");
+      throw new PolicyError(
+        "prepared Harbor agent does not match the locked execution contract",
+      );
     const retry = objectValue(jobConfig.retry, "prepared Harbor retry policy");
     if (retry.max_retries !== 0)
       throw new PolicyError("prepared Harbor job must disable internal retries");
@@ -1184,7 +1224,9 @@ export class ControlService {
   async jobCapacityView(runId: string): Promise<JobCapacityView> {
     const lock = await this.projection.runLock(runId);
     if (!lock) throw new PolicyError("run lock is missing");
-    const deployment = profileSpec<DeploymentProfileSpec>(lock.profiles, "deployment");
+    const deployment = isCurrentRunLock(lock)
+      ? lock.execution.deployment
+      : profileSpec<DeploymentProfileSpec>(lock.profiles, "deployment");
     const capacity = this.capacityProfile();
     const active = await this.projection.activeJobAdmissions(this.namespace);
     const runActive = active.filter((grant) => grant.run_id === runId);
@@ -1299,8 +1341,16 @@ export class ControlService {
     const existingLock = await this.projection.runLock(runId);
     if (existingRequest) this.assertMatchingRequest(existingRequest, input, actor);
     if (existingLock) this.assertMatchingSubmission(existingLock, input);
+    if (existingLock && !isCurrentRunLock(existingLock))
+      throw new PolicyError(
+        "historical run locks cannot be resubmitted after the profile cutover",
+      );
+    const currentExistingLock =
+      existingLock && isCurrentRunLock(existingLock) ? existingLock : null;
 
-    const profiles = existingLock?.profiles ?? this.resolver.resolve(input);
+    const profiles = currentExistingLock?.profiles ?? this.resolver.resolve(input);
+    const execution =
+      currentExistingLock?.execution ?? composeExecutionContract(profiles);
     const deployment = profileSpec<DeploymentProfileSpec>(profiles, "deployment");
     if (deployment.route !== "hf_job")
       throw new PolicyError("imported deployment profiles cannot launch runs");
@@ -1321,10 +1371,8 @@ export class ControlService {
     if (initialReservation > input.ceiling_microusd)
       throw new PolicyError("launch reservation exceeds the run ceiling");
     const benchmark = profileSpec<BenchmarkProfileSpec>(profiles, "benchmark");
-    const model = profileSpec<ModelProfileSpec>(profiles, "model");
-    const harness = profileSpec<HarnessProfileSpec>(profiles, "harness");
     try {
-      validatePreparedRunProfiles(deployment, benchmark, model, harness, tasks);
+      validatePreparedRunProfiles(execution, benchmark, tasks);
     } catch (error) {
       throw new PolicyError(
         error instanceof Error ? error.message : "prepared run profile is invalid",
@@ -1353,8 +1401,8 @@ export class ControlService {
         ceiling_microusd: input.ceiling_microusd,
         start_paused: input.start_paused ?? false,
       } satisfies RunRequest);
-    const lock: RunLock =
-      existingLock ??
+    const lock: CurrentRunLock =
+      currentExistingLock ??
       ({
         schema_version: "v1",
         kind: "run.lock",
@@ -1362,12 +1410,13 @@ export class ControlService {
         created_at: timestamp,
         actor: recordActor,
         run_id: runId,
-        profiles: profiles as RunLock["profiles"],
-        tasks: tasks as RunLock["tasks"],
+        profiles: profiles as CurrentRunLock["profiles"],
+        tasks: tasks as CurrentRunLock["tasks"],
         ceiling_microusd: input.ceiling_microusd,
         source_revision: this.resolver.sourceRevision(),
+        execution,
         start_paused: input.start_paused ?? false,
-      } satisfies RunLock);
+      } satisfies CurrentRunLock);
     const budget: BudgetEvent = {
       schema_version: "v1",
       kind: "budget.event",
@@ -1714,6 +1763,11 @@ export class ControlService {
     expectedDigest: string,
     bytes: Uint8Array,
   ): Promise<EvidenceUploadResult> {
+    const lock = await this.projection.runLock(runId);
+    if (!lock || !isCurrentRunLock(lock))
+      throw new PolicyError(
+        "historical run locks cannot accept evidence after the profile cutover",
+      );
     const action = await this.projection.action(actionId);
     if (!action || action.run_id !== runId || action.action_kind !== "job.launch")
       throw new PolicyError("evidence upload has no eligible Job launch");
@@ -1821,6 +1875,11 @@ export class ControlService {
         `action already has an attempt for task: ${input.action_id}/${input.task_id}`,
       );
     }
+    const lock = await this.projection.runLock(input.run_id);
+    if (!lock || !isCurrentRunLock(lock))
+      throw new PolicyError(
+        "historical run locks cannot accept attempts after the profile cutover",
+      );
     const task = await this.projection.task(input.run_id, input.task_id);
     if (!task) throw new PolicyError(`task does not exist: ${input.task_id}`);
     if (!infrastructureSealReplaceable(task.task.terminal_outcome))
@@ -1837,6 +1896,10 @@ export class ControlService {
   ): Promise<TerminalSelection> {
     const lock = await this.projection.runLock(attempt.run_id);
     if (!lock) throw new PolicyError("terminal selection has no run lock");
+    if (!isCurrentRunLock(lock))
+      throw new PolicyError(
+        "historical run locks cannot select attempts after the profile cutover",
+      );
     const validity = attemptAdmissibility(attempt, requiredPositiveMetrics(lock));
     if (!validity.admissible && attempt.outcome !== "cancelled")
       throw new PolicyError(`attempt is not selectable: ${validity.reason}`);
@@ -2346,7 +2409,14 @@ export class ControlService {
     operation: () => Promise<T>,
   ): Promise<T> {
     const previous = this.runMutationQueues.get(runId) ?? Promise.resolve();
-    const queued = previous.then(operation);
+    const queued = previous.then(async () => {
+      const lock = await this.projection.runLock(runId);
+      if (lock && !isCurrentRunLock(lock))
+        throw new PolicyError(
+          "historical run locks cannot create work after the profile cutover",
+        );
+      return operation();
+    });
     const settled = queued.then(
       () => undefined,
       () => undefined,
@@ -2715,6 +2785,10 @@ export class ControlService {
     if (!run) throw new PolicyError("run does not exist");
     const lock = await this.projection.runLock(runId);
     if (!lock) throw new PolicyError("run lock does not exist");
+    if (!isCurrentRunLock(lock))
+      throw new PolicyError(
+        "historical run locks cannot create actions after the profile cutover",
+      );
     if (!idempotencyKey || idempotencyKey.length > 256)
       throw new IdempotencyConflictError("a bounded idempotency key is required");
     const idempotency = {
@@ -2760,12 +2834,7 @@ export class ControlService {
       if (run.pending_actions > 0)
         throw new PolicyError("run cannot resume while actions are pending");
       await this.reconcileTerminalJobReservations(runId);
-      const deployment = profileSpec<DeploymentProfileSpec>(
-        lock.profiles,
-        "deployment",
-      );
-      if (deployment.route !== "hf_job")
-        throw new PolicyError("imported runs cannot resume execution Jobs");
+      const deployment = lock.execution.deployment;
       const needsPreparation =
         preparationRequired(deployment) && !(await this.preparedJob(runId));
       const unresolvedTasks = (await this.projection.tasks(runId)).filter(
@@ -2906,10 +2975,7 @@ export class ControlService {
         ))
       )
         throw new PolicyError("infrastructure retry is already recorded");
-      const deployment = this.resolvedProfile<DeploymentProfileSpec>(
-        lock,
-        "deployment",
-      );
+      const deployment = lock.execution.deployment;
       if (deployment.route !== "hf_job")
         throw new PolicyError("imported deployment profiles cannot launch retries");
       const policy = this.resolvedProfile<LaunchPolicySpec>(lock, "launch_policy");

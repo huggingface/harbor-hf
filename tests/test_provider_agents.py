@@ -103,6 +103,49 @@ def test_registry_accepts_only_the_locked_agent_contract(name: str, api: str) ->
         validate_provider_agent(agent, _target(wrong_api))
 
 
+def test_pi_accepts_typed_model_runtime_during_the_bounded_cutover() -> None:
+    agent = _agent("pi").model_copy(
+        update={
+            "parameters": {
+                "model_runtime": {
+                    "provider": "openai",
+                    "base_url": "$OPENAI_BASE_URL",
+                    "api": "openai-completions",
+                    "model_id": "example/model:together",
+                    "context_window": 131072,
+                    "max_tokens": 32768,
+                    "input_price": 0.1,
+                    "output_price": 0.2,
+                    "cache_read_price": 0.1,
+                    "cache_write_price": 0.1,
+                    "reasoning": False,
+                    "supports_developer_role": False,
+                    "supports_reasoning_effort": False,
+                    "max_tokens_field": "max_tokens",
+                }
+            }
+        }
+    )
+    validate_provider_agent(agent, _target())
+    with pytest.raises(ValueError, match="exactly one"):
+        validate_provider_agent(
+            agent.model_copy(update={"parameters": {}}),
+            _target(),
+        )
+    with pytest.raises(ValueError, match="exactly one"):
+        validate_provider_agent(
+            agent.model_copy(
+                update={
+                    "parameters": {
+                        **agent.parameters,
+                        "models_json": {"providers": {}},
+                    }
+                }
+            ),
+            _target(),
+        )
+
+
 def test_effective_parameters_add_only_the_generic_runtime_contract() -> None:
     agent = _agent("openclaw")
     target = _target()

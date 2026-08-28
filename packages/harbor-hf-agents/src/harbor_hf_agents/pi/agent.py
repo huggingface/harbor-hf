@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import re
 import shlex
@@ -215,14 +216,23 @@ class PiAgent(IsolatedProviderAgent):
     def __init__(
         self,
         *args: Any,  # noqa: ANN401 -- Harbor API
+        model_runtime: dict[str, Any] | None = None,
         models_json: dict[str, Any] | None = None,
         provider_runtime: dict[str, Any] | None = None,
         **kwargs: Any,  # noqa: ANN401 -- Harbor API
     ) -> None:
         super().__init__(*args, **kwargs)
-        self._models_json = models_json
-        if models_json is not None:
-            self._validate_models_json(models_json)
+        if model_runtime is not None and models_json is not None:
+            raise ValueError("Pi accepts only one model runtime source")
+        # models_json remains a one-release public-interface compatibility input.
+        # Active control profiles use only the typed model_runtime contract.
+        self._models_json = (
+            self._models_json_from_runtime(model_runtime)
+            if model_runtime is not None
+            else models_json
+        )
+        if self._models_json is not None:
+            self._validate_models_json(self._models_json)
         self._validate_provider_runtime(provider_runtime)
 
     @staticmethod
@@ -233,6 +243,109 @@ class PiAgent(IsolatedProviderAgent):
             raise ValueError("Pi requires the chat-completions API")
         if set(value) != {"api", "timeout_seconds", "max_attempts"}:
             raise ValueError("provider_runtime has unknown or missing fields")
+
+    @staticmethod
+    def _runtime_string(value: dict[str, Any], field: str) -> str:
+        item = value[field]
+        if not isinstance(item, str) or not item:
+            raise ValueError(f"Pi model_runtime {field} must be populated")
+        return item
+
+    @staticmethod
+    def _runtime_positive_integer(value: dict[str, Any], field: str) -> int:
+        item = value[field]
+        if not isinstance(item, int) or isinstance(item, bool) or item < 1:
+            raise ValueError(f"Pi model_runtime {field} must be a positive integer")
+        return item
+
+    @staticmethod
+    def _runtime_price(value: dict[str, Any], field: str) -> int | float:
+        item = value[field]
+        if (
+            not isinstance(item, (int, float))
+            or isinstance(item, bool)
+            or not math.isfinite(item)
+            or item < 0
+        ):
+            raise ValueError(f"Pi model_runtime {field} must be a non-negative number")
+        return item
+
+    @staticmethod
+    def _runtime_boolean(value: dict[str, Any], field: str) -> bool:
+        item = value[field]
+        if not isinstance(item, bool):
+            raise ValueError(f"Pi model_runtime {field} must be a boolean")
+        return item
+
+    @classmethod
+    def _models_json_from_runtime(cls, value: dict[str, Any]) -> dict[str, Any]:
+        required = {
+            "provider",
+            "base_url",
+            "api",
+            "model_id",
+            "context_window",
+            "max_tokens",
+            "input_price",
+            "output_price",
+            "cache_read_price",
+            "cache_write_price",
+            "reasoning",
+            "supports_developer_role",
+            "supports_reasoning_effort",
+            "max_tokens_field",
+        }
+        if set(value) != required:
+            raise ValueError("Pi model_runtime has unknown or missing fields")
+        provider = cls._runtime_string(value, "provider")
+        base_url = cls._runtime_string(value, "base_url")
+        api = cls._runtime_string(value, "api")
+        model_id = cls._runtime_string(value, "model_id")
+        if api != "openai-completions":
+            raise ValueError("Pi model_runtime requires the openai-completions API")
+        context_window = cls._runtime_positive_integer(value, "context_window")
+        max_tokens = cls._runtime_positive_integer(value, "max_tokens")
+        input_price = cls._runtime_price(value, "input_price")
+        output_price = cls._runtime_price(value, "output_price")
+        cache_read_price = cls._runtime_price(value, "cache_read_price")
+        cache_write_price = cls._runtime_price(value, "cache_write_price")
+        reasoning = cls._runtime_boolean(value, "reasoning")
+        supports_developer_role = cls._runtime_boolean(value, "supports_developer_role")
+        supports_reasoning_effort = cls._runtime_boolean(
+            value, "supports_reasoning_effort"
+        )
+        max_tokens_field = cls._runtime_string(value, "max_tokens_field")
+        if max_tokens_field != "max_tokens":
+            raise ValueError("Pi model_runtime max_tokens_field is unsupported")
+        return {
+            "providers": {
+                provider: {
+                    "baseUrl": base_url,
+                    "api": api,
+                    "compat": {
+                        "supportsDeveloperRole": supports_developer_role,
+                        "supportsReasoningEffort": supports_reasoning_effort,
+                        "maxTokensField": max_tokens_field,
+                    },
+                    "models": [
+                        {
+                            "id": model_id,
+                            "name": model_id,
+                            "reasoning": reasoning,
+                            "input": ["text"],
+                            "contextWindow": context_window,
+                            "maxTokens": max_tokens,
+                            "cost": {
+                                "input": input_price,
+                                "output": output_price,
+                                "cacheRead": cache_read_price,
+                                "cacheWrite": cache_write_price,
+                            },
+                        }
+                    ],
+                }
+            }
+        }
 
     @classmethod
     def _validate_models_json(cls, value: dict[str, Any]) -> None:

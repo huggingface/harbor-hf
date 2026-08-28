@@ -83,8 +83,8 @@ PROVIDER_AGENTS: dict[str, ProviderAgentDefinition] = {
         name="pi",
         import_path="harbor_hf_agents.pi.agent:PiAgent",
         api="chat-completions",
-        required_parameters=frozenset({"models_json"}),
-        allowed_parameters=frozenset({"models_json", "thinking"}),
+        required_parameters=frozenset(),
+        allowed_parameters=frozenset({"model_runtime", "models_json", "thinking"}),
         revision_kind="package",
         session_required=False,
     ),
@@ -131,6 +131,10 @@ def validate_provider_agent(
         raise ValueError(
             f"provider agent {agent.name} has unsupported parameters: "
             + ", ".join(sorted(unexpected))
+        )
+    if agent.name == "pi" and len(keys & {"model_runtime", "models_json"}) != 1:
+        raise ValueError(
+            "provider agent pi requires exactly one model_runtime or models_json"
         )
     return definition
 

@@ -53,15 +53,26 @@ export function smokeProfiles(
       revision: sha256("benchmark"),
     }),
     profile("model", "control-smoke", {
+      contract_version: "v1",
       model_id: "control-smoke",
       revision: sha256("model"),
+      harbor_model_name:
+        inferenceToken === "required"
+          ? "openai/example/model:provider"
+          : "control-smoke",
+      compatibility: { reasoning: false },
     }),
     profile("harness", "control-smoke", {
+      contract_version: "v1",
       agent: "control-smoke",
       revision: sha256("harness"),
       required_evidence: ["job-status"],
+      capabilities: {
+        inference_apis: inferenceToken === "required" ? ["chat-completions"] : [],
+      },
     }),
     profile("deployment", "hf-cpu-smoke", {
+      contract_version: "v1",
       route: "hf_job",
       models: ["control-smoke"],
       harnesses: ["control-smoke"],
@@ -76,12 +87,19 @@ export function smokeProfiles(
       ...(inferenceToken === "required"
         ? {
             inference_upstream: "https://router.huggingface.co/v1",
-            inference_model: "control-smoke",
             inference_api: "chat-completions",
             inference_max_requests: 64,
             inference_max_concurrency: 4,
             inference_timeout_seconds: 600,
             inference_max_output_tokens: 32768,
+            inference_provider: "provider",
+            input_price_microusd_per_million_tokens: 100_000,
+            output_price_microusd_per_million_tokens: 200_000,
+            cache_read_price_microusd_per_million_tokens: 100_000,
+            cache_write_price_microusd_per_million_tokens: 100_000,
+            context_window: 131_072,
+            harbor_version: "0.21.0",
+            worker_revision: "abcdef0",
           }
         : {}),
     }),
@@ -127,20 +145,25 @@ export function preparedProfiles(taskCount = 1): LoadedProfile[] {
       },
     }),
     profile("model", "prepared-model", {
+      contract_version: "v1",
       model_id: "example/model",
       revision: sha256("prepared-model"),
       harbor_model_name: "openai/example/model:provider",
+      compatibility: { reasoning: false },
     }),
     profile("harness", "prepared-harness", {
+      contract_version: "v1",
       agent: "example-agent",
       revision: "1.0.0",
       required_evidence: ["workspace"],
+      capabilities: { inference_apis: ["chat-completions"] },
       harbor_agent: {
         import_path: "example.agent:Agent",
-        model_name: "openai/example/model:provider",
+        kwargs: {},
       },
     }),
     profile("deployment", "prepared-deployment", {
+      contract_version: "v1",
       route: "hf_job",
       models: ["prepared-model"],
       harnesses: ["prepared-harness"],
@@ -166,6 +189,13 @@ export function preparedProfiles(taskCount = 1): LoadedProfile[] {
             active_hourly_cost_microusd: 10000,
           },
         ],
+        inference_token: "required",
+        inference_upstream: "https://router.huggingface.co/v1",
+        inference_api: "chat-completions",
+        inference_max_requests: 64,
+        inference_max_concurrency: 1,
+        inference_timeout_seconds: 600,
+        inference_max_output_tokens: 32_768,
         root_bootstrap_command: ["/opt/worker/start-root-services"],
         max_jobs: 2,
         default_cpus: 1,
@@ -180,6 +210,8 @@ export function preparedProfiles(taskCount = 1): LoadedProfile[] {
       inference_provider: "provider",
       input_price_microusd_per_million_tokens: 100000,
       output_price_microusd_per_million_tokens: 200000,
+      cache_read_price_microusd_per_million_tokens: 100000,
+      cache_write_price_microusd_per_million_tokens: 100000,
       harbor_version: "0.21.0",
       worker_revision: "abcdef0",
       context_window: 131072,

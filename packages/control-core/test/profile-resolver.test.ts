@@ -3,12 +3,28 @@ import { profile } from "@harbor-hf/test-fixtures";
 import { ProfileResolver } from "../src/profiles.js";
 
 describe("ProfileResolver", () => {
+  it("resolves bounded checked-in compatibility aliases to one profile", () => {
+    const reusable = profile("harness", "pi-off", {
+      contract_version: "v1",
+      agent: "pi",
+      revision: "1.0.0",
+      required_evidence: [],
+      capabilities: { inference_apis: ["chat-completions"] },
+      aliases: ["pi"],
+    });
+    const resolver = new ProfileResolver([reusable]);
+    expect(resolver.get("harness", "pi").profile_id).toBe(reusable.profile_id);
+    expect(resolver.get("harness", "pi-off").profile_id).toBe(reusable.profile_id);
+  });
+
   it("keeps the deployed profile when a promotion is a stale digest of the same name", () => {
     const current = profile("deployment", "tb21-providers", {
+      contract_version: "v1",
       route: "hf_job",
       worker_revision: "current-revision",
     });
     const stale = profile("deployment", "tb21-providers", {
+      contract_version: "v1",
       route: "hf_job",
       worker_revision: "stale-revision",
     });
@@ -24,12 +40,18 @@ describe("ProfileResolver", () => {
 
   it("keeps a promotion that remaps a checked-in name to a different profile", () => {
     const builtIn = profile("model", "control-smoke", {
+      contract_version: "v1",
       model_id: "built-in",
       revision: "a",
+      harbor_model_name: "openai/example/built-in:provider",
+      compatibility: { reasoning: false },
     });
     const remapped = profile("model", "durable-model", {
+      contract_version: "v1",
       model_id: "durable",
       revision: "b",
+      harbor_model_name: "openai/example/durable:provider",
+      compatibility: { reasoning: false },
     });
     const resolver = new ProfileResolver([builtIn]);
     resolver.replacePromotedProfiles([{ ...remapped, alias: "control-smoke" }]);
@@ -37,8 +59,20 @@ describe("ProfileResolver", () => {
   });
 
   it("keeps a promotion that only exists as an extra alias", () => {
-    const builtIn = profile("harness", "opencode", { agent: "opencode" });
-    const extra = profile("harness", "opencode-canary", { agent: "opencode" });
+    const builtIn = profile("harness", "opencode", {
+      contract_version: "v1",
+      agent: "opencode",
+      revision: "1.0.0",
+      required_evidence: [],
+      capabilities: { inference_apis: ["chat-completions"] },
+    });
+    const extra = profile("harness", "opencode-canary", {
+      contract_version: "v1",
+      agent: "opencode",
+      revision: "1.0.0",
+      required_evidence: [],
+      capabilities: { inference_apis: ["chat-completions"] },
+    });
     const resolver = new ProfileResolver([builtIn]);
     resolver.replacePromotedProfiles([{ ...extra, alias: "opencode-canary" }]);
     expect(resolver.get("harness", "opencode").profile_id).toBe(builtIn.profile_id);

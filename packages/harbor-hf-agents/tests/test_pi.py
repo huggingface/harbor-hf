@@ -406,20 +406,26 @@ class TestPiAgent:
     async def test_custom_models_use_safe_template_and_runtime_materialization(
         self, temp_dir
     ):
-        models_json = {
-            "providers": {
-                "openai": {
-                    "baseUrl": "$OPENAI_BASE_URL",
-                    "api": "openai-completions",
-                    "apiKey": "$OPENAI_API_KEY",
-                    "models": [{"id": "moonshotai/Kimi-K3:together"}],
-                }
-            }
+        model_runtime = {
+            "provider": "openai",
+            "base_url": "$OPENAI_BASE_URL",
+            "api": "openai-completions",
+            "model_id": "moonshotai/Kimi-K3:together",
+            "context_window": 131072,
+            "max_tokens": 32768,
+            "input_price": 0.1,
+            "output_price": 0.2,
+            "cache_read_price": 0.1,
+            "cache_write_price": 0.1,
+            "reasoning": False,
+            "supports_developer_role": False,
+            "supports_reasoning_effort": False,
+            "max_tokens_field": "max_tokens",
         }
         agent = PiAgent(
             logs_dir=temp_dir,
             model_name="openai/moonshotai/Kimi-K3:together",
-            models_json=models_json,
+            model_runtime=model_runtime,
         )
         mock_env = AsyncMock()
         mock_env.exec.side_effect = _exec_with_empty_job_probe
@@ -435,7 +441,35 @@ class TestPiAgent:
         template = json.loads(
             (temp_dir / "pi.models.template.json").read_text(encoding="utf-8")
         )
-        assert template == models_json
+        assert template == {
+            "providers": {
+                "openai": {
+                    "baseUrl": "$OPENAI_BASE_URL",
+                    "api": "openai-completions",
+                    "compat": {
+                        "supportsDeveloperRole": False,
+                        "supportsReasoningEffort": False,
+                        "maxTokensField": "max_tokens",
+                    },
+                    "models": [
+                        {
+                            "id": "moonshotai/Kimi-K3:together",
+                            "name": "moonshotai/Kimi-K3:together",
+                            "reasoning": False,
+                            "input": ["text"],
+                            "contextWindow": 131072,
+                            "maxTokens": 32768,
+                            "cost": {
+                                "input": 0.1,
+                                "output": 0.2,
+                                "cacheRead": 0.1,
+                                "cacheWrite": 0.1,
+                            },
+                        }
+                    ],
+                }
+            }
+        }
         assert "scoped-token" not in json.dumps(template)
         assert "/scopes/private/" not in json.dumps(template)
         commands = [call.kwargs["command"] for call in mock_env.exec.call_args_list]
@@ -451,6 +485,57 @@ class TestPiAgent:
         )
         assert any("pi --print" in command for command in commands)
         assert "rm -f $HOME/.pi/agent/models.json" in commands[-1]
+
+    @pytest.mark.parametrize(
+        ("model_id", "context_window", "input_price", "reasoning"),
+        [
+            ("Qwen/Qwen3.8-27B:deepinfra", 262144, 0.4, False),
+            ("deepseek-ai/DeepSeek-V4-Flash-0731:together", 131072, 0.14, True),
+        ],
+    )
+    def test_model_runtime_builds_deterministic_models_json(
+        self,
+        temp_dir,
+        model_id,
+        context_window,
+        input_price,
+        reasoning,
+    ):
+        runtime = {
+            "provider": "openai",
+            "base_url": "$OPENAI_BASE_URL",
+            "api": "openai-completions",
+            "model_id": model_id,
+            "context_window": context_window,
+            "max_tokens": 32768,
+            "input_price": input_price,
+            "output_price": 3.0,
+            "cache_read_price": input_price,
+            "cache_write_price": input_price,
+            "reasoning": reasoning,
+            "supports_developer_role": False,
+            "supports_reasoning_effort": reasoning,
+            "max_tokens_field": "max_tokens",
+        }
+        agent = PiAgent(logs_dir=temp_dir, model_runtime=runtime)
+        provider = agent._models_json["providers"]["openai"]
+        assert provider["baseUrl"] == "$OPENAI_BASE_URL"
+        assert provider["models"] == [
+            {
+                "id": model_id,
+                "name": model_id,
+                "reasoning": reasoning,
+                "input": ["text"],
+                "contextWindow": context_window,
+                "maxTokens": 32768,
+                "cost": {
+                    "input": input_price,
+                    "output": 3.0,
+                    "cacheRead": input_price,
+                    "cacheWrite": input_price,
+                },
+            }
+        ]
 
     @pytest.mark.parametrize(
         ("models_json", "message"),

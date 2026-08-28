@@ -1,6 +1,6 @@
 /* Generated from JSON Schema. Do not edit. */
 
-export type HarborHFControlRecordV1 = (ProfileObject | ProfilePromotion | OperatorAcl | RunRequest | RunLock | PreparedTrial | PreparedJob | ActionIntent | ActionDispatch | JobAdmissionGrant | JobCapacityRelease | ActionReceipt | ActionAdvanced | AttemptReceipt | TerminalSelection | TaskExhaustion | TaskCancellation | BudgetEvent | EndpointResource | PublicationReceipt | PublicationSupersession | MigrationRecord)
+export type HarborHFControlRecordV1 = (ProfileObject | LegacyProfileObject | ProfilePromotion | OperatorAcl | RunRequest | RunLock | PreparedTrial | PreparedJob | ActionIntent | ActionDispatch | JobAdmissionGrant | JobCapacityRelease | ActionReceipt | ActionAdvanced | AttemptReceipt | TerminalSelection | TaskExhaustion | TaskCancellation | BudgetEvent | EndpointResource | PublicationReceipt | PublicationSupersession | MigrationRecord)
 export type ProfileObject = (BenchmarkProfileObject | ModelProfileObject | HarnessProfileObject | DeploymentProfileObject | LaunchPolicyProfileObject | CapacityProfileObject)
 export type BenchmarkProfileObject = (Base & {
 schema_version: "v1"
@@ -49,6 +49,7 @@ export type DeploymentProfileSpec = (HFJobDeploymentProfileSpec | ImportedDeploy
 export type HFJobDeploymentProfileSpec = ({
 [k: string]: unknown
 } & {
+contract_version: "v1"
 route: "hf_job"
 /**
  * @minItems 1
@@ -72,7 +73,6 @@ timeout_seconds: number
 trusted_worker: boolean
 inference_token?: ("forbidden" | "required")
 inference_upstream?: string
-inference_model?: string
 inference_api?: ("chat-completions" | "responses")
 inference_max_requests?: number
 inference_max_concurrency?: number
@@ -81,6 +81,8 @@ inference_max_output_tokens?: number
 inference_provider?: string
 input_price_microusd_per_million_tokens?: number
 output_price_microusd_per_million_tokens?: number
+cache_read_price_microusd_per_million_tokens?: number
+cache_write_price_microusd_per_million_tokens?: number
 harbor_version?: string
 worker_revision?: string
 context_window?: number
@@ -103,7 +105,6 @@ export type TrialJobTemplate = ({
 flavors: [TrialJobFlavor, ...(TrialJobFlavor)[]]
 inference_token?: ("forbidden" | "required")
 inference_upstream?: string
-inference_model?: string
 inference_api?: ("chat-completions" | "responses")
 inference_max_requests?: number
 inference_max_concurrency?: number
@@ -147,6 +148,37 @@ actor: Actor
 profile_kind: "capacity"
 name: Id
 spec: CapacityProfileSpec
+})
+export type LegacyProfileObject = (LegacyModelProfileObject | LegacyHarnessProfileObject | LegacyDeploymentProfileObject)
+export type LegacyModelProfileObject = (Base & {
+schema_version: "v1"
+kind: "profile.object"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+profile_kind: "model"
+name: Id
+spec: LegacyModelProfileSpec
+})
+export type LegacyHarnessProfileObject = (Base & {
+schema_version: "v1"
+kind: "profile.object"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+profile_kind: "harness"
+name: Id
+spec: LegacyHarnessProfileSpec
+})
+export type LegacyDeploymentProfileObject = (Base & {
+schema_version: "v1"
+kind: "profile.object"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+profile_kind: "deployment"
+name: Id
+spec: LegacyDeploymentProfileSpec
 })
 export type ProfilePromotion = (Base & {
 schema_version: "v1"
@@ -195,7 +227,8 @@ profiles: [ProfileRef, ProfileRef, ProfileRef, ProfileRef]|[ProfileRef, ProfileR
 ceiling_microusd: number
 start_paused?: boolean
 })
-export type RunLock = (Base & {
+export type RunLock = (CurrentRunLock | LegacyRunLock)
+export type CurrentRunLock = (Base & {
 schema_version: "v1"
 kind: "run.lock"
 record_id: Id
@@ -214,9 +247,32 @@ profiles: [ResolvedProfile, ResolvedProfile, ResolvedProfile, ResolvedProfile]|[
 tasks: [TaskLock, ...(TaskLock)[]]
 ceiling_microusd: number
 source_revision: Digest
+execution: ResolvedExecutionContract
 start_paused?: boolean
 })
 export type ResolvedProfile = (ResolvedBenchmarkProfile | ResolvedModelProfile | ResolvedHarnessProfile | ResolvedDeploymentProfile | ResolvedLaunchPolicyProfile)
+export type LegacyRunLock = (Base & {
+schema_version: "v1"
+kind: "run.lock"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+run_id: Id
+/**
+ * @minItems 4
+ * @maxItems 5
+ */
+profiles: [LegacyResolvedProfile, LegacyResolvedProfile, LegacyResolvedProfile, LegacyResolvedProfile]|[LegacyResolvedProfile, LegacyResolvedProfile, LegacyResolvedProfile, LegacyResolvedProfile, LegacyResolvedProfile]
+/**
+ * @minItems 1
+ * @maxItems 100000
+ */
+tasks: [TaskLock, ...(TaskLock)[]]
+ceiling_microusd: number
+source_revision: Digest
+start_paused?: boolean
+})
+export type LegacyResolvedProfile = (ResolvedBenchmarkProfile | LegacyResolvedModelProfile | LegacyResolvedHarnessProfile | LegacyResolvedDeploymentProfile | ResolvedLaunchPolicyProfile)
 export type PreparedTrial = (Base & {
 schema_version: "v1"
 kind: "prepared.trial"
@@ -507,11 +563,22 @@ harbor_job?: {
 }
 }
 export interface ModelProfileSpec {
+contract_version: "v1"
 model_id: string
 revision: string
-harbor_model_name?: string
+harbor_model_name: string
+compatibility: ModelCompatibility
+/**
+ * @maxItems 32
+ */
+aliases?: Id[]
+}
+export interface ModelCompatibility {
+reasoning: boolean
+reasoning_format?: "deepseek"
 }
 export interface HarnessProfileSpec {
+contract_version: "v1"
 agent: Id
 revision: string
 /**
@@ -519,9 +586,43 @@ revision: string
  */
 required_evidence: Id[]
 reasoning_effort?: ("off" | "minimal" | "low" | "medium" | "high" | "xhigh")
-harbor_agent?: {
+capabilities: HarnessCapabilities
+/**
+ * @maxItems 32
+ */
+aliases?: Id[]
+harbor_agent?: HarborAgentTemplate
+}
+export interface HarnessCapabilities {
+/**
+ * @maxItems 2
+ */
+inference_apis: []|[("chat-completions" | "responses")]|[("chat-completions" | "responses"), ("chat-completions" | "responses")]
+requires_reasoning?: boolean
+/**
+ * @maxItems 8
+ */
+reasoning_formats?: []|["deepseek"]|["deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek"]
+provider_runtime?: boolean
+model_registry?: "pi"
+reasoning_format_runtime?: "dsh"
+provider_max_attempts?: number
+}
+export interface HarborAgentTemplate {
+import_path: string
+kwargs: {
+model_name?: never
+models_json?: never
+model_runtime?: never
+provider_runtime?: never
+thinking_format?: never
+inference_model?: never
+context_window?: never
+input_price_microusd_per_million_tokens?: never
+output_price_microusd_per_million_tokens?: never
 [k: string]: unknown
 }
+override_setup_timeout_sec?: number
 }
 export interface TrialJobFlavor {
 hardware: string
@@ -532,6 +633,7 @@ gpus: number
 active_hourly_cost_microusd: number
 }
 export interface ImportedDeploymentProfileSpec {
+contract_version: "v1"
 route: "imported"
 /**
  * @minItems 1
@@ -581,6 +683,26 @@ start_refill_tokens: number
 start_refill_period_seconds: number
 max_active_jobs: number
 }
+export interface LegacyModelProfileSpec {
+contract_version?: never
+model_id: unknown
+revision: unknown
+[k: string]: unknown
+}
+export interface LegacyHarnessProfileSpec {
+contract_version?: never
+agent: unknown
+revision: unknown
+required_evidence: unknown
+[k: string]: unknown
+}
+export interface LegacyDeploymentProfileSpec {
+contract_version?: never
+route: unknown
+models: unknown
+harnesses: unknown
+[k: string]: unknown
+}
 export interface ProfileRef {
 kind: ("benchmark" | "model" | "harness" | "deployment" | "launch_policy")
 alias: Id
@@ -620,6 +742,68 @@ task_id: Id
 input_digest: Digest
 source_task_id?: Id
 trial_index?: number
+}
+export interface ResolvedExecutionContract {
+contract_version: "v1"
+source_profiles: ExecutionSourceProfiles
+model: ModelProfileSpec
+harness: HarnessProfileSpec
+deployment: HFJobDeploymentProfileSpec
+harbor_agent?: HarborAgentConfig
+inference?: ResolvedInferenceContract
+}
+export interface ExecutionSourceProfiles {
+model: ExecutionSourceProfile
+harness: ExecutionSourceProfile
+deployment: ExecutionSourceProfile
+}
+export interface ExecutionSourceProfile {
+name: Id
+profile_id: Digest
+}
+export interface HarborAgentConfig {
+import_path: string
+model_name: string
+kwargs?: {
+[k: string]: unknown
+}
+override_setup_timeout_sec?: number
+}
+export interface ResolvedInferenceContract {
+harbor_provider: "openai"
+provider: Id
+upstream: string
+agent_model: string
+bridge_model: string
+api: ("chat-completions" | "responses")
+max_requests: number
+max_concurrency: number
+max_total_concurrency?: number
+timeout_seconds: number
+max_output_tokens: number
+context_window: number
+input_price_microusd_per_million_tokens: number
+output_price_microusd_per_million_tokens: number
+cache_read_price_microusd_per_million_tokens: number
+cache_write_price_microusd_per_million_tokens: number
+}
+export interface LegacyResolvedModelProfile {
+kind: "model"
+profile_id: Digest
+name: Id
+spec: LegacyModelProfileSpec
+}
+export interface LegacyResolvedHarnessProfile {
+kind: "harness"
+profile_id: Digest
+name: Id
+spec: LegacyHarnessProfileSpec
+}
+export interface LegacyResolvedDeploymentProfile {
+kind: "deployment"
+profile_id: Digest
+name: Id
+spec: LegacyDeploymentProfileSpec
 }
 export interface PreparedTrialRef {
 task_id: Id

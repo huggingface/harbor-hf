@@ -254,6 +254,7 @@ describe("canonical contracts", () => {
         profile_kind: "deployment",
         name: "test-deployment",
         spec: {
+          contract_version: "v1",
           route: "hf_job",
           models: ["model-one"],
           harnesses: ["harness-one"],
@@ -271,6 +272,7 @@ describe("canonical contracts", () => {
         profile_kind: "deployment",
         name: "untrusted-deployment",
         spec: {
+          contract_version: "v1",
           route: "hf_job",
           models: ["model-one"],
           harnesses: ["harness-one"],
@@ -287,6 +289,7 @@ describe("canonical contracts", () => {
       profile_kind: "deployment",
       name: "inference-deployment",
       spec: {
+        contract_version: "v1",
         route: "hf_job",
         models: ["model-one"],
         harnesses: ["harness-one"],
@@ -297,12 +300,19 @@ describe("canonical contracts", () => {
         trusted_worker: true,
         inference_token: "required",
         inference_upstream: "https://router.huggingface.co/v1",
-        inference_model: "example/model",
         inference_api: "chat-completions",
         inference_max_requests: 64,
         inference_max_concurrency: 4,
         inference_timeout_seconds: 600,
         inference_max_output_tokens: 32768,
+        inference_provider: "provider",
+        input_price_microusd_per_million_tokens: 100_000,
+        output_price_microusd_per_million_tokens: 200_000,
+        cache_read_price_microusd_per_million_tokens: 100_000,
+        cache_write_price_microusd_per_million_tokens: 100_000,
+        context_window: 131_072,
+        harbor_version: "0.21.0",
+        worker_revision: "abcdef0",
       },
     };
     expect(validateControlRecord(inferenceDeployment)).toEqual(inferenceDeployment);
@@ -323,6 +333,54 @@ describe("canonical contracts", () => {
         generation: 0,
         target: "run",
         payload: { undocumented_provider_option: true },
+      }),
+    ).toThrow(ContractValidationError);
+  });
+
+  it("rejects model-owned data in active harness profiles", () => {
+    const profile = {
+      schema_version: "v1",
+      kind: "profile.object",
+      record_id: "profile-reusable-harness",
+      created_at: "2026-08-28T00:00:00Z",
+      actor: { subject: "test", role: "service" },
+      profile_kind: "harness",
+      name: "reusable-harness",
+      spec: {
+        contract_version: "v1",
+        agent: "example-agent",
+        revision: "1.0.0",
+        required_evidence: ["workspace"],
+        capabilities: { inference_apis: ["chat-completions"] },
+        harbor_agent: {
+          import_path: "example.agent:Agent",
+          kwargs: { version: "1.0.0" },
+        },
+      },
+    };
+    expect(validateControlRecord(profile)).toEqual(profile);
+    expect(() =>
+      validateControlRecord({
+        ...profile,
+        spec: {
+          ...profile.spec,
+          harbor_agent: {
+            ...profile.spec.harbor_agent,
+            model_name: "openai/example/model:provider",
+          },
+        },
+      }),
+    ).toThrow(ContractValidationError);
+    expect(() =>
+      validateControlRecord({
+        ...profile,
+        spec: {
+          ...profile.spec,
+          harbor_agent: {
+            ...profile.spec.harbor_agent,
+            kwargs: { models_json: { providers: {} } },
+          },
+        },
       }),
     ).toThrow(ContractValidationError);
   });

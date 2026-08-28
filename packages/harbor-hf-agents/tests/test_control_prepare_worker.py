@@ -24,6 +24,15 @@ def _run_lock() -> dict:
                 "input_digest": DIGEST,
             }
         ],
+        "execution": {
+            "contract_version": "v1",
+            "deployment": {"preparation": "required"},
+            "harbor_agent": {
+                "import_path": "example.agent:Agent",
+                "model_name": "openai/example/model:provider",
+                "kwargs": {"version": "1.0.0"},
+            },
+        },
         "profiles": [
             {
                 "kind": "benchmark",

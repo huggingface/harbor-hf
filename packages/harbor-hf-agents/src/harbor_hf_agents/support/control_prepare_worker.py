@@ -117,21 +117,24 @@ def _expected_tasks(lock: dict[str, Any]) -> tuple[ExpectedTask, ...]:
 
 def _job_config(lock: dict[str, Any]) -> JobConfig:
     benchmark = run_lock_profile(lock, "benchmark")
-    model = run_lock_profile(lock, "model")
-    harness = run_lock_profile(lock, "harness")
-    deployment = run_lock_profile(lock, "deployment")
+    execution = _optional(lock, "execution")
+    if not isinstance(execution, dict) or execution.get("contract_version") != "v1":
+        raise RuntimeError("historical run locks cannot create prepared work")
+    deployment = _optional(execution, "deployment")
+    raw_agent = _optional(execution, "harbor_agent")
     raw_job = _optional(benchmark, "harbor_job")
-    raw_agent = _optional(harness, "harbor_agent")
-    if not isinstance(raw_job, dict) or not isinstance(raw_agent, dict):
-        raise RuntimeError("prepared run profiles must contain Harbor job data")
-    if deployment["preparation"] != "required":
-        raise RuntimeError("deployment does not require Harbor preparation")
+    if (
+        not isinstance(deployment, dict)
+        or not isinstance(raw_job, dict)
+        or not isinstance(raw_agent, dict)
+    ):
+        raise RuntimeError("resolved execution contract is incomplete")
+    if deployment.get("preparation") != "required":
+        raise RuntimeError("locked deployment does not require Harbor preparation")
     for key in ("agents", "environment", "retry", "job_name", "jobs_dir"):
         if key in raw_job:
             raise RuntimeError(f"benchmark Harbor job cannot set control field {key}")
     agent = copy.deepcopy(raw_agent)
-    if agent["model_name"] != model["harbor_model_name"]:
-        raise RuntimeError("Harbor agent model does not match the model profile")
     value = copy.deepcopy(raw_job)
     value.update(
         {

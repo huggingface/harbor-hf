@@ -341,15 +341,19 @@ The profile kinds are:
 - benchmark;
 - launch policy.
 
-A harness profile binds the Harbor agent identity, custom-agent import path,
-package or source revision, worker revision, context requirements, tool
-capabilities, and required trajectory or session evidence. Pi, Hermes,
-OpenClaw, and other agents use the same profile contract.
+The current profile contract gives each profile kind one owner. A model profile
+owns model identity and the canonical Harbor route. A harness profile owns
+stable agent configuration and capabilities without a model route. A deployment
+profile owns provider and execution policy without a second route copy.
 
-Profiles combine complete records and have no inheritance. A launch selects one
-profile of each required kind. The resolver validates capability compatibility
-and writes every resolved field into `run.lock.json`. The lock never depends
-on a later catalog lookup.
+Profiles remain complete records and have no inheritance. A launch selects one
+profile of each required kind. Before admission, the resolver validates the
+selection, builds the complete Harbor agent and inference configuration, and
+writes that resolved execution contract into `run.lock.json`. The lock never
+depends on a later catalog lookup. Historical model-bound locks remain readable
+through a bounded read-only path. The
+[reusable harness profile plan](2026-08-28-reusable-harness-profiles-plan.md)
+defines the current implementation and cutover work.
 
 Friendly aliases may move only through a promotion receipt that identifies the
 immutable profile digest, actor, reason, and canary evidence. Candidate,
@@ -374,13 +378,13 @@ Submission follows this order:
 1. Authenticate the operator.
 2. Resolve aliases to immutable profile objects.
 3. Validate model, deployment, harness, benchmark, and policy compatibility.
-4. Resolve the complete task set and exact task digests.
-5. Calculate the plan, duration range, and cost ceiling.
-6. Require approval when the paid-compute policy requires it.
-7. Write the request and complete run lock to the Bucket.
-8. Write the first deterministic action intent.
-9. Return the run ID.
-10. Continue reconciliation in the Space.
+4. Build the complete resolved execution contract.
+5. Resolve the complete task set and exact task digests.
+6. Calculate the plan, duration range, and cost ceiling.
+7. Require approval when the paid-compute policy requires it.
+8. Write the request and complete run lock to the Bucket.
+9. Write the first deterministic action intent.
+10. Return the run ID and continue reconciliation in the Space.
 
 No Hub resource is created during submission.
 

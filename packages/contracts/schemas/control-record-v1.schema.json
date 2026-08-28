@@ -7,6 +7,9 @@
       "$ref": "#/$defs/ProfileObject"
     },
     {
+      "$ref": "#/$defs/LegacyProfileObject"
+    },
+    {
       "$ref": "#/$defs/ProfilePromotion"
     },
     {
@@ -153,6 +156,25 @@
         }
       ]
     },
+    "LegacyResolvedProfile": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ResolvedBenchmarkProfile"
+        },
+        {
+          "$ref": "#/$defs/LegacyResolvedModelProfile"
+        },
+        {
+          "$ref": "#/$defs/LegacyResolvedHarnessProfile"
+        },
+        {
+          "$ref": "#/$defs/LegacyResolvedDeploymentProfile"
+        },
+        {
+          "$ref": "#/$defs/ResolvedLaunchPolicyProfile"
+        }
+      ]
+    },
     "Base": {
       "type": "object",
       "required": ["schema_version", "kind", "record_id", "created_at", "actor"],
@@ -193,6 +215,19 @@
         },
         {
           "$ref": "#/$defs/CapacityProfileObject"
+        }
+      ]
+    },
+    "LegacyProfileObject": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LegacyModelProfileObject"
+        },
+        {
+          "$ref": "#/$defs/LegacyHarnessProfileObject"
+        },
+        {
+          "$ref": "#/$defs/LegacyDeploymentProfileObject"
         }
       ]
     },
@@ -387,6 +422,16 @@
       ]
     },
     "RunLock": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/CurrentRunLock"
+        },
+        {
+          "$ref": "#/$defs/LegacyRunLock"
+        }
+      ]
+    },
+    "CurrentRunLock": {
       "allOf": [
         {
           "$ref": "#/$defs/Base"
@@ -404,7 +449,8 @@
             "profiles",
             "tasks",
             "ceiling_microusd",
-            "source_revision"
+            "source_revision",
+            "execution"
           ],
           "properties": {
             "schema_version": {
@@ -449,12 +495,245 @@
             "source_revision": {
               "$ref": "#/$defs/Digest"
             },
+            "execution": {
+              "$ref": "#/$defs/ResolvedExecutionContract"
+            },
             "start_paused": {
               "type": "boolean"
             }
           }
         }
       ]
+    },
+    "LegacyRunLock": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "run_id",
+            "profiles",
+            "tasks",
+            "ceiling_microusd",
+            "source_revision"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "run.lock"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "run_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "profiles": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 5,
+              "items": {
+                "$ref": "#/$defs/LegacyResolvedProfile"
+              }
+            },
+            "tasks": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100000,
+              "items": {
+                "$ref": "#/$defs/TaskLock"
+              }
+            },
+            "ceiling_microusd": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            },
+            "source_revision": {
+              "$ref": "#/$defs/Digest"
+            },
+            "start_paused": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "ResolvedExecutionContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "source_profiles",
+        "model",
+        "harness",
+        "deployment"
+      ],
+      "properties": {
+        "contract_version": {
+          "const": "v1"
+        },
+        "source_profiles": {
+          "$ref": "#/$defs/ExecutionSourceProfiles"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelProfileSpec"
+        },
+        "harness": {
+          "$ref": "#/$defs/HarnessProfileSpec"
+        },
+        "deployment": {
+          "$ref": "#/$defs/HFJobDeploymentProfileSpec"
+        },
+        "harbor_agent": {
+          "$ref": "#/$defs/HarborAgentConfig"
+        },
+        "inference": {
+          "$ref": "#/$defs/ResolvedInferenceContract"
+        }
+      }
+    },
+    "ExecutionSourceProfiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "harness", "deployment"],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/ExecutionSourceProfile"
+        },
+        "harness": {
+          "$ref": "#/$defs/ExecutionSourceProfile"
+        },
+        "deployment": {
+          "$ref": "#/$defs/ExecutionSourceProfile"
+        }
+      }
+    },
+    "ExecutionSourceProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "profile_id"],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Digest"
+        }
+      }
+    },
+    "ResolvedInferenceContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "harbor_provider",
+        "provider",
+        "upstream",
+        "agent_model",
+        "bridge_model",
+        "api",
+        "max_requests",
+        "max_concurrency",
+        "timeout_seconds",
+        "max_output_tokens",
+        "context_window",
+        "input_price_microusd_per_million_tokens",
+        "output_price_microusd_per_million_tokens",
+        "cache_read_price_microusd_per_million_tokens",
+        "cache_write_price_microusd_per_million_tokens"
+      ],
+      "properties": {
+        "harbor_provider": {
+          "const": "openai"
+        },
+        "provider": {
+          "$ref": "#/$defs/Id"
+        },
+        "upstream": {
+          "type": "string",
+          "pattern": "^https://(?:router\\.huggingface\\.co|[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.endpoints\\.huggingface\\.cloud|[a-z0-9-]+\\.hf\\.jobs/scopes/[A-Za-z0-9._~/-]+)(?:/v1)?$",
+          "maxLength": 1024
+        },
+        "agent_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "bridge_model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "api": {
+          "enum": ["chat-completions", "responses"]
+        },
+        "max_requests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "max_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "max_total_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "context_window": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 4194304
+        },
+        "input_price_microusd_per_million_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "output_price_microusd_per_million_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "cache_read_price_microusd_per_million_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "cache_write_price_microusd_per_million_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        }
+      }
     },
     "ActionIntent": {
       "allOf": [
@@ -1177,8 +1456,17 @@
     "ModelProfileSpec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model_id", "revision"],
+      "required": [
+        "contract_version",
+        "model_id",
+        "revision",
+        "harbor_model_name",
+        "compatibility"
+      ],
       "properties": {
+        "contract_version": {
+          "const": "v1"
+        },
         "model_id": {
           "type": "string",
           "minLength": 1,
@@ -1193,14 +1481,47 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512
+        },
+        "compatibility": {
+          "$ref": "#/$defs/ModelCompatibility"
+        },
+        "aliases": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        }
+      }
+    },
+    "ModelCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reasoning"],
+      "properties": {
+        "reasoning": {
+          "type": "boolean"
+        },
+        "reasoning_format": {
+          "enum": ["deepseek"]
         }
       }
     },
     "HarnessProfileSpec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["agent", "revision", "required_evidence"],
+      "required": [
+        "contract_version",
+        "agent",
+        "revision",
+        "required_evidence",
+        "capabilities"
+      ],
       "properties": {
+        "contract_version": {
+          "const": "v1"
+        },
         "agent": {
           "$ref": "#/$defs/Id"
         },
@@ -1220,12 +1541,151 @@
         "reasoning_effort": {
           "enum": ["off", "minimal", "low", "medium", "high", "xhigh"]
         },
+        "capabilities": {
+          "$ref": "#/$defs/HarnessCapabilities"
+        },
+        "aliases": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
         "harbor_agent": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": true
+          "$ref": "#/$defs/HarborAgentTemplate"
         }
       }
+    },
+    "HarnessCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inference_apis"],
+      "properties": {
+        "inference_apis": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["chat-completions", "responses"]
+          }
+        },
+        "requires_reasoning": {
+          "type": "boolean"
+        },
+        "reasoning_formats": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["deepseek"]
+          }
+        },
+        "provider_runtime": {
+          "type": "boolean"
+        },
+        "model_registry": {
+          "enum": ["pi"]
+        },
+        "reasoning_format_runtime": {
+          "enum": ["dsh"]
+        },
+        "provider_max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      }
+    },
+    "HarborAgentTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["import_path", "kwargs"],
+      "properties": {
+        "import_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "kwargs": {
+          "type": "object",
+          "properties": {
+            "model_name": false,
+            "models_json": false,
+            "model_runtime": false,
+            "provider_runtime": false,
+            "thinking_format": false,
+            "inference_model": false,
+            "context_window": false,
+            "input_price_microusd_per_million_tokens": false,
+            "output_price_microusd_per_million_tokens": false
+          },
+          "additionalProperties": true
+        },
+        "override_setup_timeout_sec": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      }
+    },
+    "HarborAgentConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["import_path", "model_name"],
+      "properties": {
+        "import_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "model_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "kwargs": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "override_setup_timeout_sec": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      }
+    },
+    "LegacyModelProfileSpec": {
+      "type": "object",
+      "required": ["model_id", "revision"],
+      "properties": {
+        "contract_version": false,
+        "model_id": {},
+        "revision": {}
+      },
+      "additionalProperties": true
+    },
+    "LegacyHarnessProfileSpec": {
+      "type": "object",
+      "required": ["agent", "revision", "required_evidence"],
+      "properties": {
+        "contract_version": false,
+        "agent": {},
+        "revision": {},
+        "required_evidence": {}
+      },
+      "additionalProperties": true
+    },
+    "LegacyDeploymentProfileSpec": {
+      "type": "object",
+      "required": ["route", "models", "harnesses"],
+      "properties": {
+        "contract_version": false,
+        "route": {},
+        "models": {},
+        "harnesses": {}
+      },
+      "additionalProperties": true
     },
     "DeploymentProfileSpec": {
       "oneOf": [
@@ -1241,6 +1701,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "contract_version",
         "route",
         "models",
         "harnesses",
@@ -1251,6 +1712,9 @@
         "trusted_worker"
       ],
       "properties": {
+        "contract_version": {
+          "const": "v1"
+        },
         "route": {
           "const": "hf_job"
         },
@@ -1312,11 +1776,6 @@
           "pattern": "^https://(?:router\\.huggingface\\.co|[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.endpoints\\.huggingface\\.cloud|[a-z0-9-]+\\.hf\\.jobs/scopes/[A-Za-z0-9._~/-]+)(?:/v1)?$",
           "maxLength": 1024
         },
-        "inference_model": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 512
-        },
         "inference_api": {
           "enum": ["chat-completions", "responses"]
         },
@@ -1351,6 +1810,16 @@
           "maximum": 1000000000000
         },
         "output_price_microusd_per_million_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "cache_read_price_microusd_per_million_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "cache_write_price_microusd_per_million_tokens": {
           "type": "integer",
           "minimum": 0,
           "maximum": 1000000000000
@@ -1403,21 +1872,35 @@
           "then": {
             "required": [
               "inference_upstream",
-              "inference_model",
               "inference_api",
               "inference_max_requests",
               "inference_max_concurrency",
               "inference_timeout_seconds",
-              "inference_max_output_tokens"
+              "inference_max_output_tokens",
+              "inference_provider",
+              "input_price_microusd_per_million_tokens",
+              "output_price_microusd_per_million_tokens",
+              "cache_read_price_microusd_per_million_tokens",
+              "cache_write_price_microusd_per_million_tokens",
+              "context_window",
+              "harbor_version",
+              "worker_revision"
             ],
             "properties": {
               "inference_upstream": {},
-              "inference_model": {},
               "inference_api": {},
               "inference_max_requests": {},
               "inference_max_concurrency": {},
               "inference_timeout_seconds": {},
-              "inference_max_output_tokens": {}
+              "inference_max_output_tokens": {},
+              "inference_provider": {},
+              "input_price_microusd_per_million_tokens": {},
+              "output_price_microusd_per_million_tokens": {},
+              "cache_read_price_microusd_per_million_tokens": {},
+              "cache_write_price_microusd_per_million_tokens": {},
+              "context_window": {},
+              "harbor_version": {},
+              "worker_revision": {}
             }
           }
         },
@@ -1438,6 +1921,8 @@
               "inference_provider",
               "input_price_microusd_per_million_tokens",
               "output_price_microusd_per_million_tokens",
+              "cache_read_price_microusd_per_million_tokens",
+              "cache_write_price_microusd_per_million_tokens",
               "harbor_version",
               "worker_revision",
               "context_window"
@@ -1448,6 +1933,8 @@
               "inference_provider": {},
               "input_price_microusd_per_million_tokens": {},
               "output_price_microusd_per_million_tokens": {},
+              "cache_read_price_microusd_per_million_tokens": {},
+              "cache_write_price_microusd_per_million_tokens": {},
               "harbor_version": {},
               "worker_revision": {},
               "context_window": {},
@@ -1461,6 +1948,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "contract_version",
         "route",
         "models",
         "harnesses",
@@ -1468,6 +1956,9 @@
         "source_revisions"
       ],
       "properties": {
+        "contract_version": {
+          "const": "v1"
+        },
         "route": {
           "const": "imported"
         },
@@ -2126,6 +2617,204 @@
             },
             "spec": {
               "$ref": "#/$defs/DeploymentProfileSpec"
+            }
+          }
+        }
+      ]
+    },
+    "LegacyResolvedModelProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "profile_id", "name", "spec"],
+      "properties": {
+        "kind": {
+          "const": "model"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "spec": {
+          "$ref": "#/$defs/LegacyModelProfileSpec"
+        }
+      }
+    },
+    "LegacyResolvedHarnessProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "profile_id", "name", "spec"],
+      "properties": {
+        "kind": {
+          "const": "harness"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "spec": {
+          "$ref": "#/$defs/LegacyHarnessProfileSpec"
+        }
+      }
+    },
+    "LegacyResolvedDeploymentProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "profile_id", "name", "spec"],
+      "properties": {
+        "kind": {
+          "const": "deployment"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "name": {
+          "$ref": "#/$defs/Id"
+        },
+        "spec": {
+          "$ref": "#/$defs/LegacyDeploymentProfileSpec"
+        }
+      }
+    },
+    "LegacyModelProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "model"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/LegacyModelProfileSpec"
+            }
+          }
+        }
+      ]
+    },
+    "LegacyHarnessProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "harness"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/LegacyHarnessProfileSpec"
+            }
+          }
+        }
+      ]
+    },
+    "LegacyDeploymentProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "deployment"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/LegacyDeploymentProfileSpec"
             }
           }
         }
@@ -2870,11 +3559,6 @@
           "pattern": "^https://(?:router\\.huggingface\\.co|[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.endpoints\\.huggingface\\.cloud|[a-z0-9-]+\\.hf\\.jobs/scopes/[A-Za-z0-9._~/-]+)(?:/v1)?$",
           "maxLength": 1024
         },
-        "inference_model": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 512
-        },
         "inference_api": {
           "enum": ["chat-completions", "responses"]
         },
@@ -2972,7 +3656,6 @@
           "then": {
             "required": [
               "inference_upstream",
-              "inference_model",
               "inference_api",
               "inference_max_requests",
               "inference_max_concurrency",
@@ -2982,7 +3665,6 @@
             ],
             "properties": {
               "inference_upstream": {},
-              "inference_model": {},
               "inference_api": {},
               "inference_max_requests": {},
               "inference_max_concurrency": {},

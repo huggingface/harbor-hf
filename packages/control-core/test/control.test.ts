@@ -4,6 +4,7 @@ import type {
   AttemptReceipt,
   ProfileObject,
   ProfilePromotion,
+  RunLock,
   TerminalSelection,
 } from "@harbor-hf/contracts";
 import {
@@ -159,6 +160,97 @@ describe("control service", () => {
     expect(() => control.service.requireCapacityProfile()).toThrow(
       "unapproved capacity profile",
     );
+  });
+
+  it("keeps historical run locks readable but unable to create work", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const legacy: RunLock = {
+      schema_version: "v1",
+      kind: "run.lock",
+      record_id: "lock-legacy-read-only",
+      created_at: "2026-08-16T00:00:00.000Z",
+      actor: { subject: "migration", role: "migration" },
+      run_id: "run-legacy-read-only",
+      profiles: [
+        {
+          kind: "benchmark",
+          name: "control-smoke",
+          profile_id: `sha256:${"a".repeat(64)}`,
+          spec: {
+            benchmark: "control-smoke",
+            revision: "legacy",
+            task_ids: ["task-legacy"],
+            task_digests: [`sha256:${"b".repeat(64)}`],
+          },
+        },
+        {
+          kind: "model",
+          name: "control-smoke",
+          profile_id: `sha256:${"c".repeat(64)}`,
+          spec: { model_id: "control-smoke", revision: "legacy" },
+        },
+        {
+          kind: "harness",
+          name: "control-smoke",
+          profile_id: `sha256:${"d".repeat(64)}`,
+          spec: {
+            agent: "control-smoke",
+            revision: "legacy",
+            required_evidence: [],
+          },
+        },
+        {
+          kind: "deployment",
+          name: "hf-cpu-smoke",
+          profile_id: `sha256:${"e".repeat(64)}`,
+          spec: {
+            route: "hf_job",
+            models: ["control-smoke"],
+            harnesses: ["control-smoke"],
+          },
+        },
+        {
+          kind: "launch_policy",
+          name: "control-smoke",
+          profile_id: `sha256:${"f".repeat(64)}`,
+          spec: {
+            max_infrastructure_attempts: 1,
+            reservation_microusd: 0,
+            success_without_worker_receipt: true,
+            publication_role: "diagnostic",
+          },
+        },
+      ],
+      tasks: [
+        {
+          task_id: "task-legacy",
+          input_digest: `sha256:${"b".repeat(64)}`,
+        },
+      ],
+      ceiling_microusd: 0,
+      source_revision: `sha256:${"0".repeat(64)}`,
+    };
+    await control.service.append(legacy);
+
+    await expect(
+      control.service.runAction(
+        legacy.run_id,
+        { action: "pause", confirmed: true },
+        "legacy-pause",
+        operator,
+      ),
+    ).rejects.toThrow("historical run locks cannot create work");
+    const restarted = new ControlService(
+      "test",
+      control.store,
+      control.projection,
+      control.profiles,
+    );
+    await expect(restarted.initialize(control.profiles)).rejects.toThrow(
+      "historical run is not ready for the profile cutover",
+    );
+    expect(await control.projection.runLock(legacy.run_id)).toEqual(legacy);
   });
 
   it("replaces the promoted namespace Job cap and start pacing", async () => {
@@ -470,6 +562,21 @@ describe("control service", () => {
       /^run-control-smoke-control-smoke-off-none-[a-f0-9]{12}$/,
     );
     expect(second).toMatchObject({ run_id: first.run_id, adopted: true });
+    const runLock = await control.projection.runLock(first.run_id);
+    expect(runLock).toMatchObject({
+      execution: {
+        contract_version: "v1",
+        source_profiles: {
+          model: { name: "control-smoke" },
+          harness: { name: "control-smoke" },
+          deployment: { name: "hf-cpu-smoke" },
+        },
+        deployment: {
+          job_image:
+            "example.invalid/worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+      },
+    });
     const publisher = new ResultPublisher(
       control.store,
       control.projection,
@@ -878,7 +985,7 @@ describe("control service", () => {
     expect(JSON.parse(launch.intent_body).payload).toMatchObject({
       inference_token: "required",
       inference_upstream: "https://router.huggingface.co/v1",
-      inference_model: "control-smoke",
+      inference_model: "example/model:provider",
       inference_api: "chat-completions",
       inference_max_requests: 64,
       inference_max_concurrency: 4,

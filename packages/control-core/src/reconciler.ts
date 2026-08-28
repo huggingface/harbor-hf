@@ -3,6 +3,7 @@ import type {
   ActionIntent,
   ActionReceipt,
   AttemptReceipt,
+  CurrentRunLock,
   DeploymentProfileSpec,
   EndpointResource,
   RunLock,
@@ -17,6 +18,7 @@ import {
   attemptAdmissibility,
   requiredPositiveMetrics,
 } from "./attempt-admissibility.js";
+import { isCurrentRunLock } from "./execution-contract.js";
 import { preparationRequired, preparedTrialJobLaunch } from "./profiles.js";
 import type { Projection } from "./projection.js";
 import type { ResultPublisher } from "./publication.js";
@@ -718,7 +720,7 @@ export class Reconciler {
         break;
       case "run.resume": {
         const lock = await this.requiredLock(intent.run_id);
-        const deployment = profile(lock, "deployment") as DeploymentProfileSpec;
+        const deployment = lock.execution.deployment;
         if (
           preparationRequired(deployment) &&
           !(await this.service.preparedJob(lock.run_id))
@@ -819,7 +821,7 @@ export class Reconciler {
   private async admit(admission: ActionIntent, receipt: ActionReceipt): Promise<void> {
     const lock = await this.requiredLock(admission.run_id);
     if (await this.projection.runPaused(lock.run_id)) return;
-    const deployment = profile(lock, "deployment") as DeploymentProfileSpec;
+    const deployment = lock.execution.deployment;
     if (preparationRequired(deployment))
       await this.launchPreparation(lock, receipt.created_at, 0);
     else if (!(await this.projection.runPaused(lock.run_id)))
@@ -827,13 +829,13 @@ export class Reconciler {
   }
 
   private async launchPreparation(
-    lock: RunLock,
+    lock: CurrentRunLock,
     createdAt: string,
     attempt: number,
     generation = attempt,
     selectedTaskIds?: readonly string[],
   ): Promise<void> {
-    const deployment = profile(lock, "deployment");
+    const deployment = lock.execution.deployment;
     const policy = profile(lock, "launch_policy");
     const reservation =
       typeof policy.preparation_reservation_microusd === "number"
@@ -894,14 +896,11 @@ export class Reconciler {
   }
 
   private executionReservations(
-    lock: RunLock,
+    lock: CurrentRunLock,
     taskIds: readonly string[],
     generation: number,
     createdAt: string,
   ): JobBudgetReservation[] {
-    const deployment = profile(lock, "deployment") as DeploymentProfileSpec;
-    if (deployment.route !== "hf_job")
-      throw new PolicyError("imported deployments cannot reserve execution Jobs");
     const policy = profile(lock, "launch_policy");
     const amountMicrousd = profileScalar<number>(
       policy,
@@ -995,7 +994,7 @@ export class Reconciler {
   }
 
   private async launchExecution(
-    lock: RunLock,
+    lock: CurrentRunLock,
     createdAt: string,
     generation: number,
     taskIds = lock.tasks.map((task) => task.task_id),
@@ -1011,9 +1010,8 @@ export class Reconciler {
     }
     if (pendingTaskIds.length === 0) return;
 
-    const deployment = profile(lock, "deployment") as DeploymentProfileSpec;
-    if (deployment.route !== "hf_job")
-      throw new PolicyError("imported deployments cannot launch execution Jobs");
+    const execution = lock.execution;
+    const deployment = execution.deployment;
     const policy = profile(lock, "launch_policy");
     const reservation = profileScalar<number>(policy, "reservation_microusd", "number");
     const reservations = this.executionReservations(
@@ -1037,7 +1035,7 @@ export class Reconciler {
       if (prepared && !preparedTrial)
         throw new PolicyError(`prepared trial is missing: ${taskId}`);
       const launch = preparedTrial
-        ? preparedTrialJobLaunch(deployment, preparedTrial)
+        ? preparedTrialJobLaunch(execution, preparedTrial)
         : {
             job_image: deployment.job_image,
             job_command: deployment.job_command,
@@ -1046,14 +1044,12 @@ export class Reconciler {
             active_hourly_cost_microusd: deployment.active_hourly_cost_microusd ?? 0,
             max_jobs: 1,
             inference_token: deployment.inference_token ?? ("forbidden" as const),
-            ...(deployment.inference_upstream
-              ? { inference_upstream: deployment.inference_upstream }
-              : {}),
-            ...(deployment.inference_model
-              ? { inference_model: deployment.inference_model }
-              : {}),
-            ...(deployment.inference_api
-              ? { inference_api: deployment.inference_api }
+            ...(execution.inference
+              ? {
+                  inference_upstream: execution.inference.upstream,
+                  inference_model: execution.inference.bridge_model,
+                  inference_api: execution.inference.api,
+                }
               : {}),
             ...(deployment.inference_max_requests
               ? { inference_max_requests: deployment.inference_max_requests }
@@ -1714,9 +1710,13 @@ export class Reconciler {
     return true;
   }
 
-  private async requiredLock(runId: string): Promise<RunLock> {
+  private async requiredLock(runId: string): Promise<CurrentRunLock> {
     const lock = await this.projection.runLock(runId);
     if (!lock) throw new PolicyError(`run lock is missing: ${runId}`);
+    if (!isCurrentRunLock(lock))
+      throw new PolicyError(
+        `historical run lock is read-only after the profile cutover: ${runId}`,
+      );
     return lock;
   }
 }

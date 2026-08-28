@@ -144,17 +144,50 @@ result seals `benchmark_timeout` and does not permit replacement. Other
 evidence-integrity failures remain non-retryable. There is no namespace or
 same-UID fallback.
 
-Deployment profiles contain Hugging Face infrastructure and safety limits. They
-do not contain copies of benchmark task catalogs. A new Harbor-supported
-benchmark or compatible model requires configuration and immutable data only.
-The same rule applies to a supported harness. A new harness implementation
-belongs in a Harbor agent plugin behind the common agent interface. Missing
-behavior is added as a general capability at the correct Harbor, agent,
-provider, or Hugging Face adapter boundary. Harbor-HF does not add name-based
-special cases.
+## Profile ownership and run composition
 
-One-time migration programs do not define run behavior and do not become
-the path for adding run support.
+A model profile owns the model ID, exact revision, canonical Harbor model route,
+and typed model-family compatibility. A harness profile owns only stable agent
+configuration and capabilities. It cannot contain a model route, provider
+suffix, price, context limit, output limit, or generated model registry. A
+deployment profile owns Hugging Face infrastructure, provider policy, prices,
+limits, worker provenance, and safety settings. It cannot contain a second
+manually maintained model route.
+
+Before admission, the TypeScript resolver validates the selected model, harness,
+and deployment. It builds one complete resolved execution contract and stores it
+in the immutable run lock before any reservation or action is written. The
+contract contains the exact Harbor `AgentConfig`, agent and bridge routes,
+provider and API, prices and limits, worker image and revision, Harbor version,
+and source profile IDs. Its values do not depend on a later catalog lookup.
+
+The resolver derives the root bridge route from the canonical Harbor model
+route. It verifies the first Harbor provider segment and the provider suffix,
+then removes only that first segment. Preparation and trial workers consume the
+locked result and do not reconstruct the profile relationship.
+
+Pi receives typed locked model runtime data and creates its private
+`models.json` from that data. Model-family facts such as reasoning format belong
+to the model compatibility contract and are checked against harness
+capabilities before admission. Real harness variants remain separate by
+behavior, version, reasoning mode, or capability, never by exact model route
+alone. A bounded profile alias can preserve an established public name, but it
+resolves to the same active profile and has a documented removal release.
+
+New run locks use only this composed form. Historical locks remain immutable and
+readable through a bounded read-only branch, but they cannot create, resume, or
+retry work after the profile cutover. The cutover requires every old-format run
+to have no active resource, pending action, cleanup work, or unfinished
+publication. The [reusable harness profile plan](2026-08-28-reusable-harness-profiles-plan.md)
+defines the implementation, migration, and rollback checks.
+
+A new Harbor-supported benchmark or compatible model requires configuration and
+immutable data only. A new harness implementation belongs in a Harbor agent
+plugin behind the common agent interface. Missing behavior is added as a general
+capability at the correct Harbor, agent, provider, or Hugging Face adapter
+boundary. Harbor-HF does not add name-based special cases. One-time migration
+programs do not define run behavior and do not become the path for adding run
+support.
 
 ## Technology choices
 

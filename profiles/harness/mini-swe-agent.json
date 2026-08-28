@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-c473effa89bdf1c483215af3",
+  "record_id": "profile-f5b487a3e0470a70050ac7f9",
   "created_at": "2026-08-22T00:00:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
@@ -16,10 +16,13 @@
     "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
     "harbor_agent": {
       "import_path": "harbor_hf_agents.mini_swe.agent:MiniSweAgent",
-      "model_name": "openai/openai/gpt-oss-20b:together",
       "kwargs": {
         "version": "2.4.6"
       }
+    },
+    "contract_version": "v1",
+    "capabilities": {
+      "inference_apis": ["chat-completions"]
     }
   }
 }

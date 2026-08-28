@@ -41,6 +41,20 @@ import { verifyEvidenceReference, verifyWorkerEvidence } from "./evidence.js";
 import type { PromotedProfile } from "./profiles.js";
 import type { ImmutableObjectStore, ObjectEntry } from "./store.js";
 
+function activeProfileRecord(
+  record: Extract<HarborHFControlRecordV1, { kind: "profile.object" }>,
+): record is ProfileObject {
+  if (
+    record.profile_kind !== "model" &&
+    record.profile_kind !== "harness" &&
+    record.profile_kind !== "deployment"
+  )
+    return true;
+  return (
+    (record.spec as unknown as { contract_version?: string }).contract_version === "v1"
+  );
+}
+
 interface ObjectRow {
   key: string;
   digest: string;
@@ -1164,7 +1178,7 @@ export class Projection {
         await this.applyPublicationSupersession(record);
         break;
       case "profile.object":
-        await this.applyProfile(record, entry.digest);
+        if (activeProfileRecord(record)) await this.applyProfile(record, entry.digest);
         break;
       case "profile.promotion":
         await this.applyPromotion(record);
@@ -1733,6 +1747,18 @@ export class Projection {
   }
 
   private async applyPromotion(record: ProfilePromotion): Promise<void> {
+    const source = await this.db
+      .selectFrom("objects")
+      .select(["kind", "body"])
+      .where("digest", "=", record.profile_id)
+      .executeTakeFirst();
+    if (source?.kind === "profile.object") {
+      const profile = JSON.parse(source.body) as Extract<
+        HarborHFControlRecordV1,
+        { kind: "profile.object" }
+      >;
+      if (!activeProfileRecord(profile)) return;
+    }
     await this.db
       .insertInto("promotions")
       .values({

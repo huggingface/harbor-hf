@@ -1,5 +1,9 @@
 import { setImmediate as scheduleImmediate } from "node:timers";
-import type { AttemptReceipt } from "@harbor-hf/contracts";
+import type {
+  AttemptReceipt,
+  HarborHFControlRecordV1,
+  ProfilePromotion,
+} from "@harbor-hf/contracts";
 import { canonicalJson, deterministicId, sha256 } from "@harbor-hf/contracts";
 import { NoopActions } from "@harbor-hf/hf-adapters";
 import { createTestControl, type TestControl } from "@harbor-hf/test-fixtures";
@@ -128,6 +132,43 @@ class ConcurrentReadStore implements ImmutableObjectStore {
 }
 
 describe("projection replay", () => {
+  it("keeps legacy profile objects and promotions out of the active catalog", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const legacyProfile = {
+      schema_version: "v1",
+      kind: "profile.object",
+      record_id: "profile-legacy-model",
+      created_at: "2026-08-16T00:00:00.000Z",
+      actor: { subject: "migration", role: "migration" },
+      profile_kind: "model",
+      name: "legacy-model",
+      spec: { model_id: "example/legacy", revision: "legacy" },
+    } as const;
+    const profileId = sha256(canonicalJson(legacyProfile));
+    const promotion: ProfilePromotion = {
+      schema_version: "v1",
+      kind: "profile.promotion",
+      record_id: "promotion-legacy-model",
+      created_at: "2026-08-16T00:00:01.000Z",
+      actor: { subject: "migration", role: "migration" },
+      profile_kind: "model",
+      alias: "legacy-model",
+      profile_id: profileId,
+      promotion_state: "approved",
+      reason: "preserve historical profile metadata",
+      evidence: [],
+    };
+    await control.service.append(legacyProfile as unknown as HarborHFControlRecordV1);
+    await control.service.append(promotion);
+
+    const rebuilt = await Projection.open(`${control.root}/legacy-profiles.sqlite`);
+    await rebuilt.rebuild(control.store);
+    expect((await rebuilt.profiles()).some((row) => row.name === "legacy-model")).toBe(
+      false,
+    );
+    await rebuilt.close();
+  });
   it("reads only Run-native control trees by default", async () => {
     const control = await createTestControl();
     controls.push(control);

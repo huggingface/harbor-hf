@@ -1,25 +1,31 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-a46359354a559c2dbc1b3f33",
+  "record_id": "profile-14f8f47a63c084437a8c1a05",
   "created_at": "2026-08-21T16:00:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
     "role": "service"
   },
   "profile_kind": "harness",
-  "name": "dsh",
+  "name": "dsh-high",
   "spec": {
     "agent": "dsh",
     "revision": "0.1.0-rc.7",
-    "reasoning_effort": "off",
+    "reasoning_effort": "high",
     "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
     "harbor_agent": {
       "import_path": "harbor_hf_agents.dsh.agent:DshAgent",
-      "model_name": "openai/openai/gpt-oss-20b:together",
       "kwargs": {
         "version": "0.1.0-rc.7"
       }
+    },
+    "contract_version": "v1",
+    "capabilities": {
+      "inference_apis": ["chat-completions"],
+      "requires_reasoning": true,
+      "reasoning_formats": ["deepseek"],
+      "reasoning_format_runtime": "dsh"
     }
   }
 }

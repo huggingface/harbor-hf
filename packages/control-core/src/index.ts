@@ -2,6 +2,7 @@ export * from "./attempt-admissibility.js";
 export * from "./capability.js";
 export * from "./events.js";
 export * from "./evidence.js";
+export * from "./execution-contract.js";
 export * from "./leaderboard.js";
 export * from "./profiles.js";
 export * from "./projection.js";

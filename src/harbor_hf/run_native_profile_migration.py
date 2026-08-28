@@ -1908,6 +1908,24 @@ def _unique_target(records: Sequence[PlannedRecord]) -> tuple[PlannedRecord, ...
 
 
 def _is_current_record(value: JsonObject) -> bool:
+    if (
+        value.get("kind") == "profile.object"
+        and value.get("profile_kind") == "deployment"
+    ):
+        spec = value.get("spec")
+        if isinstance(spec, dict) and (
+            spec.get("route") == "sandbox"
+            or "sandbox" in spec
+            or any(
+                field in spec
+                for field in (
+                    "sandbox_template",
+                    "worker_concurrency",
+                    "worker_max_tasks_per_job",
+                )
+            )
+        ):
+            return False
     return not any(_validator().iter_errors(value))
 
 
