@@ -229,6 +229,26 @@ describe("HuggingFaceBucketStore", () => {
     expect(hub.downloadFile).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps retrying transient fetch failures during a long rebuild", async () => {
+    vi.useFakeTimers();
+    try {
+      hub.downloadFile
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockRejectedValueOnce(new TypeError("fetch failed"))
+        .mockResolvedValueOnce(new Blob(["payload"]));
+
+      const reading = store().read("control/v1/object.json");
+      await vi.runAllTimersAsync();
+      await expect(reading).resolves.toEqual(new TextEncoder().encode("payload"));
+      expect(hub.downloadFile).toHaveBeenCalledTimes(6);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("retries transient Hub API download failures", async () => {
     hub.downloadFile
       .mockRejectedValueOnce(

@@ -13,7 +13,9 @@ import {
   uploadFile,
 } from "@huggingface/hub";
 
-const defaultRetryDelaysMs = [250, 1_000, 3_000] as const;
+const defaultRetryDelaysMs = [
+  250, 1_000, 3_000, 10_000, 30_000, 60_000, 120_000,
+] as const;
 const defaultListTimeoutMs = 30_000;
 const xetHashPattern = /^[0-9a-f]{64}$/i;
 
