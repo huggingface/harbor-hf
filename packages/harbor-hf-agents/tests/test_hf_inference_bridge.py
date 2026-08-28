@@ -16,6 +16,8 @@ import pytest
 
 from harbor_hf_agents.support.hf_inference_bridge import (
     _bridge_script,
+    _fx_gateway_request,
+    _fx_gateway_response,
     _response_usage,
     _run_hf_inference_bridge,
     _upstream_request_path,
@@ -65,6 +67,207 @@ def test_upstream_request_path_has_one_api_version(
     expected: str,
 ) -> None:
     assert _upstream_request_path(upstream_path, request_path) == expected
+
+
+def test_fx_gateway_request_converts_messages_tools_and_limits() -> None:
+    request = _fx_gateway_request(
+        {
+            "prompt": [
+                {"role": "system", "content": "You are a coding agent."},
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Inspect the file."}],
+                },
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "I will inspect it."},
+                        {
+                            "type": "tool-call",
+                            "toolCallId": "call-1",
+                            "toolName": "read_file",
+                            "input": {"path": "README.md"},
+                        },
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "content": [
+                        {
+                            "type": "tool-result",
+                            "toolCallId": "call-1",
+                            "toolName": "read_file",
+                            "output": {"type": "text", "value": "contents"},
+                        }
+                    ],
+                },
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "read_file",
+                    "description": "Read one file.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                        "required": ["path"],
+                    },
+                }
+            ],
+            "toolChoice": {"type": "auto"},
+            "maxOutputTokens": 1024,
+        },
+        "Qwen/Qwen3.8-27B:deepinfra",
+        32768,
+    )
+
+    assert request["model"] == "Qwen/Qwen3.8-27B:deepinfra"
+    assert request["max_tokens"] == 1024
+    assert request["stream"] is False
+    assert request["tool_choice"] == "auto"
+    assert request["messages"] == [
+        {"role": "system", "content": "You are a coding agent."},
+        {"role": "user", "content": "Inspect the file."},
+        {
+            "role": "assistant",
+            "content": "I will inspect it.",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "read_file",
+                        "arguments": '{"path":"README.md"}',
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call-1", "content": "contents"},
+    ]
+    assert request["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": "Read one file.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}},
+                    "required": ["path"],
+                },
+            },
+        }
+    ]
+
+
+def test_fx_gateway_response_converts_text_tools_and_finish() -> None:
+    response = _fx_gateway_response(
+        json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "Done.",
+                            "tool_calls": [
+                                {
+                                    "id": "call-2",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "write_file",
+                                        "arguments": '{"path":"out.txt"}',
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 4},
+            }
+        ).encode()
+    ).decode()
+
+    assert '"type":"text-delta","id":"text-0","delta":"Done."' in response
+    assert '"type":"tool-call","toolCallId":"call-2"' in response
+    assert '"toolName":"write_file","input":{"path":"out.txt"}' in response
+    assert '"finishReason":{"unified":"tool-calls"}' in response
+    assert '"usage":{"inputTokens":{"total":12},"outputTokens":{"total":4}}' in response
+    assert response.endswith("data: [DONE]\n\n")
+
+
+def test_fx_gateway_response_emits_unknown_usage_shape() -> None:
+    response = _fx_gateway_response(
+        json.dumps(
+            {
+                "choices": [
+                    {
+                        "message": {"content": "Done.", "tool_calls": None},
+                        "finish_reason": "stop",
+                    }
+                ]
+            }
+        ).encode()
+    ).decode()
+
+    assert '"usage":{"inputTokens":{},"outputTokens":{}}' in response
+
+
+def test_fx_gateway_request_unwraps_structured_tool_results() -> None:
+    request = _fx_gateway_request(
+        {
+            "prompt": [
+                {
+                    "role": "tool",
+                    "content": [
+                        {
+                            "type": "tool-result",
+                            "toolCallId": "call-json",
+                            "toolName": "read_json",
+                            "output": {"type": "json", "value": {"ok": True}},
+                        },
+                        {
+                            "type": "tool-result",
+                            "toolCallId": "call-error",
+                            "toolName": "read_json",
+                            "output": {
+                                "type": "error-json",
+                                "value": {"error": "missing"},
+                            },
+                        },
+                    ],
+                }
+            ],
+            "tools": [],
+        },
+        "locked-model",
+        1024,
+    )
+
+    assert request["messages"] == [
+        {
+            "role": "tool",
+            "tool_call_id": "call-json",
+            "content": '{"ok":true}',
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call-error",
+            "content": '{"error":"missing"}',
+        },
+    ]
+
+
+def test_fx_gateway_rejects_output_limit_above_lock() -> None:
+    with pytest.raises(ValueError, match="output limit"):
+        _fx_gateway_request(
+            {
+                "prompt": [{"role": "user", "content": "hello"}],
+                "tools": [],
+                "maxOutputTokens": 1025,
+            },
+            "locked-model",
+            1024,
+        )
 
 
 def test_embedded_bridge_runs_without_module_globals(tmp_path: Path) -> None:

@@ -33,6 +33,12 @@ class FxAgent(JobChatCompletionsAgent, Fx):
         return self.allowed_model_id()
 
     def extend_route_env(self, env: dict[str, str]) -> None:
-        env["OPENAI_BASE_URL"] = env[self.route_base_url_key]
+        chat_completions_base = env[self.route_base_url_key].rstrip("/")
+        if not chat_completions_base.endswith("/v1"):
+            raise RuntimeError("FX Job inference route must end in /v1")
+        gateway_base = chat_completions_base[:-3]
+        env[self.route_base_url_key] = gateway_base
+        env["FX_GATEWAY_CHAT_URL"] = f"{gateway_base}/v3/ai/language-model"
+        env["OPENAI_BASE_URL"] = chat_completions_base
         env["OPENAI_API_KEY"] = env[self.route_api_key_key]
         env["VERCEL_AI_GATEWAY_API_KEY"] = env[self.route_api_key_key]

@@ -127,6 +127,251 @@ def _response_usage(response_body: bytes) -> tuple[int, int] | None:
     return final_usage
 
 
+def _fx_gateway_request(  # noqa: C901 -- strict protocol translation
+    payload: object,
+    allowed_model: str,
+    max_output_tokens: int,
+) -> dict[str, object]:
+    """Convert the FX AI SDK gateway request to OpenAI Chat Completions."""
+    import json
+
+    if not isinstance(payload, dict):
+        raise ValueError("FX gateway request must be an object")
+    prompt = payload.get("prompt")
+    if not isinstance(prompt, list) or not prompt:
+        raise ValueError("FX gateway prompt must be a non-empty array")
+
+    messages: list[dict[str, object]] = []
+    for raw_message in prompt:
+        if not isinstance(raw_message, dict):
+            raise ValueError("FX gateway message must be an object")
+        role = raw_message.get("role")
+        content = raw_message.get("content", "")
+        if role not in {"system", "user", "assistant", "tool"}:
+            raise ValueError("FX gateway message role is invalid")
+
+        if role == "tool":
+            parts = content if isinstance(content, list) else []
+            if not parts:
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": raw_message.get("toolCallId", ""),
+                        "content": content if isinstance(content, str) else "",
+                    }
+                )
+                continue
+            for part in parts:
+                if not isinstance(part, dict) or part.get("type") != "tool-result":
+                    raise ValueError("FX gateway tool content is invalid")
+                output = part.get("output", "")
+                if (
+                    isinstance(output, dict)
+                    and output.get("type")
+                    in {"text", "json", "error-text", "error-json"}
+                    and "value" in output
+                ):
+                    output = output["value"]
+                if not isinstance(output, str):
+                    output = json.dumps(
+                        output, separators=(",", ":"), ensure_ascii=False
+                    )
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": part.get("toolCallId", ""),
+                        "content": output,
+                    }
+                )
+            continue
+
+        text_parts: list[str] = []
+        tool_calls: list[dict[str, object]] = []
+        if isinstance(content, str):
+            text_parts.append(content)
+        elif isinstance(content, list):
+            for part in content:
+                if not isinstance(part, dict):
+                    raise ValueError("FX gateway content part is invalid")
+                part_type = part.get("type")
+                if part_type in {"text", "reasoning"}:
+                    text = part.get("text", "")
+                    if not isinstance(text, str):
+                        raise ValueError("FX gateway text part is invalid")
+                    if part_type == "text":
+                        text_parts.append(text)
+                elif part_type == "tool-call" and role == "assistant":
+                    tool_input = part.get("input", {})
+                    tool_calls.append(
+                        {
+                            "id": part.get("toolCallId", ""),
+                            "type": "function",
+                            "function": {
+                                "name": part.get("toolName", ""),
+                                "arguments": json.dumps(
+                                    tool_input,
+                                    separators=(",", ":"),
+                                    ensure_ascii=False,
+                                ),
+                            },
+                        }
+                    )
+                else:
+                    raise ValueError("FX gateway content type is unsupported")
+        else:
+            raise ValueError("FX gateway message content is invalid")
+
+        message: dict[str, object] = {
+            "role": role,
+            "content": "".join(text_parts),
+        }
+        if tool_calls:
+            message["tool_calls"] = tool_calls
+        messages.append(message)
+
+    request: dict[str, object] = {
+        "model": allowed_model,
+        "messages": messages,
+        "max_tokens": max_output_tokens,
+        "stream": False,
+    }
+    raw_limit = payload.get("maxOutputTokens")
+    if raw_limit is not None:
+        if (
+            isinstance(raw_limit, bool)
+            or not isinstance(raw_limit, int)
+            or raw_limit < 1
+            or raw_limit > max_output_tokens
+        ):
+            raise ValueError("FX gateway output limit is invalid")
+        request["max_tokens"] = raw_limit
+
+    raw_tools = payload.get("tools", [])
+    if not isinstance(raw_tools, list):
+        raise ValueError("FX gateway tools must be an array")
+    tools: list[dict[str, object]] = []
+    for raw_tool in raw_tools:
+        if not isinstance(raw_tool, dict) or raw_tool.get("type") != "function":
+            raise ValueError("FX gateway tool is invalid")
+        name = raw_tool.get("name")
+        schema = raw_tool.get("inputSchema")
+        if not isinstance(name, str) or not name or not isinstance(schema, dict):
+            raise ValueError("FX gateway tool definition is invalid")
+        function: dict[str, object] = {"name": name, "parameters": schema}
+        description = raw_tool.get("description")
+        if isinstance(description, str):
+            function["description"] = description
+        tools.append({"type": "function", "function": function})
+    if tools:
+        request["tools"] = tools
+        raw_choice = payload.get("toolChoice", {"type": "auto"})
+        if not isinstance(raw_choice, dict):
+            raise ValueError("FX gateway tool choice is invalid")
+        choice_type = raw_choice.get("type")
+        if choice_type in {"auto", "none", "required"}:
+            request["tool_choice"] = choice_type
+        elif choice_type == "tool" and isinstance(raw_choice.get("toolName"), str):
+            request["tool_choice"] = {
+                "type": "function",
+                "function": {"name": raw_choice["toolName"]},
+            }
+        else:
+            raise ValueError("FX gateway tool choice is invalid")
+    return request
+
+
+def _fx_gateway_response(  # noqa: C901 -- strict protocol translation
+    response_body: bytes,
+) -> bytes:
+    """Convert one OpenAI Chat Completions response to FX gateway SSE."""
+    import json
+
+    payload = json.loads(response_body)
+    if not isinstance(payload, dict):
+        raise ValueError("OpenAI response must be an object")
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise ValueError("OpenAI response choices are invalid")
+    choice = choices[0]
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        raise ValueError("OpenAI response message is invalid")
+
+    events: list[dict[str, object]] = []
+    content = message.get("content")
+    if isinstance(content, str) and content:
+        events.extend(
+            [
+                {"type": "text-start", "id": "text-0"},
+                {"type": "text-delta", "id": "text-0", "delta": content},
+                {"type": "text-end", "id": "text-0"},
+            ]
+        )
+    tool_calls = message.get("tool_calls", [])
+    if tool_calls is None:
+        tool_calls = []
+    if not isinstance(tool_calls, list):
+        raise ValueError("OpenAI response tool calls are invalid")
+    for raw_call in tool_calls:
+        if not isinstance(raw_call, dict):
+            raise ValueError("OpenAI tool call is invalid")
+        function = raw_call.get("function")
+        if not isinstance(function, dict):
+            raise ValueError("OpenAI tool function is invalid")
+        call_id = raw_call.get("id")
+        name = function.get("name")
+        arguments = function.get("arguments")
+        if (
+            not isinstance(call_id, str)
+            or not isinstance(name, str)
+            or not isinstance(arguments, str)
+        ):
+            raise ValueError("OpenAI tool call fields are invalid")
+        tool_input = json.loads(arguments)
+        if not isinstance(tool_input, dict):
+            raise ValueError("OpenAI tool input must be an object")
+        events.append(
+            {
+                "type": "tool-call",
+                "toolCallId": call_id,
+                "toolName": name,
+                "input": tool_input,
+            }
+        )
+
+    finish_reason = choice.get("finish_reason")
+    unified_reason = {
+        "stop": "stop",
+        "length": "length",
+        "tool_calls": "tool-calls",
+        "content_filter": "error",
+    }.get(finish_reason, "stop")
+    usage = _payload_usage(payload)
+    finish_usage: dict[str, dict[str, int]] = {
+        "inputTokens": {},
+        "outputTokens": {},
+    }
+    if usage is not None:
+        finish_usage = {
+            "inputTokens": {"total": usage[0]},
+            "outputTokens": {"total": usage[1]},
+        }
+    events.append(
+        {
+            "type": "finish",
+            "finishReason": {"unified": unified_reason},
+            "usage": finish_usage,
+        }
+    )
+    encoded = b"".join(
+        b"data: "
+        + json.dumps(event, separators=(",", ":"), ensure_ascii=False).encode()
+        + b"\n\n"
+        for event in events
+    )
+    return encoded + b"data: [DONE]\n\n"
+
+
 def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
     """Run as root inside the HF Job and inject the inference credential."""
     import http.client
@@ -260,7 +505,11 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
         def do_POST(self) -> None:  # noqa: C901 -- isolated bridge parser
             nonlocal request_count
             self.close_connection = True
-            if self.path != allowed_path:
+            fx_gateway_path = "/v3/ai/language-model"
+            is_fx_gateway = (
+                allowed_path == "/v1/chat/completions" and self.path == fx_gateway_path
+            )
+            if self.path != allowed_path and not is_fx_gateway:
                 self.send_error(404)
                 return
             if self.headers.get("Authorization") != f"Bearer {local_api_key}":
@@ -296,56 +545,71 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
             if not isinstance(request_body, dict):
                 self.send_error(400)
                 return
-            try:
-                requested_model = request_body["model"]
-            except KeyError:
-                requested_model = None
-            if requested_model != allowed_model:
-                self.send_error(403)
-                return
-            output_limit_present = False
-            for field in (
-                "max_tokens",
-                "max_completion_tokens",
-                "max_output_tokens",
-            ):
-                try:
-                    value = request_body[field]
-                except KeyError:
-                    continue
-                output_limit_present = True
-                if (
-                    isinstance(value, bool)
-                    or not isinstance(value, int)
-                    or value < 1
-                    or value > max_output_tokens
-                ):
+
+            if is_fx_gateway:
+                if self.headers.get("ai-language-model-id") != allowed_model:
                     self.send_error(403)
                     return
-            if not output_limit_present:
-                field = (
-                    "max_output_tokens"
-                    if allowed_path == "/v1/responses"
-                    else "max_tokens"
-                )
-                request_body[field] = max_output_tokens
-            if (
-                allowed_path == "/v1/chat/completions"
-                and "stream" in request_body
-                and request_body["stream"] is True
-            ):
-                if "stream_options" in request_body and not isinstance(
-                    request_body["stream_options"], dict
-                ):
+                try:
+                    request_body = _fx_gateway_request(
+                        request_body,
+                        allowed_model,
+                        max_output_tokens,
+                    )
+                except (TypeError, ValueError):
                     self.send_error(400)
                     return
-                stream_options = (
-                    dict(request_body["stream_options"])
-                    if "stream_options" in request_body
-                    else {}
-                )
-                stream_options["include_usage"] = True
-                request_body["stream_options"] = stream_options
+            else:
+                try:
+                    requested_model = request_body["model"]
+                except KeyError:
+                    requested_model = None
+                if requested_model != allowed_model:
+                    self.send_error(403)
+                    return
+                output_limit_present = False
+                for field in (
+                    "max_tokens",
+                    "max_completion_tokens",
+                    "max_output_tokens",
+                ):
+                    try:
+                        value = request_body[field]
+                    except KeyError:
+                        continue
+                    output_limit_present = True
+                    if (
+                        isinstance(value, bool)
+                        or not isinstance(value, int)
+                        or value < 1
+                        or value > max_output_tokens
+                    ):
+                        self.send_error(403)
+                        return
+                if not output_limit_present:
+                    field = (
+                        "max_output_tokens"
+                        if allowed_path == "/v1/responses"
+                        else "max_tokens"
+                    )
+                    request_body[field] = max_output_tokens
+                if (
+                    allowed_path == "/v1/chat/completions"
+                    and "stream" in request_body
+                    and request_body["stream"] is True
+                ):
+                    if "stream_options" in request_body and not isinstance(
+                        request_body["stream_options"], dict
+                    ):
+                        self.send_error(400)
+                        return
+                    stream_options = (
+                        dict(request_body["stream_options"])
+                        if "stream_options" in request_body
+                        else {}
+                    )
+                    stream_options["include_usage"] = True
+                    request_body["stream_options"] = stream_options
             body = json.dumps(
                 request_body,
                 separators=(",", ":"),
@@ -359,14 +623,17 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
             )
             headers = {
                 "Authorization": f"Bearer {token}",
-                "Content-Type": self.headers.get("Content-Type", "application/json"),
-                "Accept": self.headers.get("Accept", "application/json"),
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+                if is_fx_gateway
+                else self.headers.get("Accept", "application/json"),
             }
             response_started = False
             try:
+                request_path = allowed_path if is_fx_gateway else self.path
                 connection.request(
                     "POST",
-                    _upstream_request_path(upstream.path, self.path),
+                    _upstream_request_path(upstream.path, request_path),
                     body=body,
                     headers=headers,
                 )
@@ -379,16 +646,25 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
                 if 200 <= response.status < 300:
                     usage = _response_usage(bytes(response_body))
                     record_response(usage)
+                    if is_fx_gateway:
+                        response_body = bytearray(
+                            _fx_gateway_response(bytes(response_body))
+                        )
                 self.connection.settimeout(socket_timeout_seconds)
                 self.send_response(response.status)
                 for name, value in response.getheaders():
                     if name.lower() in {
-                        "content-type",
                         "cache-control",
                         "x-request-id",
                         "request-id",
                     }:
                         self.send_header(name, value)
+                self.send_header(
+                    "Content-Type",
+                    "text/event-stream"
+                    if is_fx_gateway and 200 <= response.status < 300
+                    else response.getheader("Content-Type", "application/json"),
+                )
                 self.send_header("Connection", "close")
                 self.send_header("Content-Length", str(len(response_body)))
                 self.end_headers()
@@ -405,6 +681,17 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
                 self.send_header("Connection", "close")
                 self.end_headers()
                 self.wfile.write(payload)
+            except (TypeError, ValueError):
+                if not response_started and not self.wfile.closed:
+                    payload = json.dumps(
+                        {"error": "inference bridge response conversion failed"}
+                    ).encode()
+                    self.send_response(502)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.wfile.write(payload)
             except (OSError, http.client.HTTPException):
                 if not response_started and not self.wfile.closed:
                     payload = json.dumps(
@@ -430,6 +717,8 @@ def _bridge_script() -> str:
     usage_pair = inspect.getsource(_usage_pair)
     payload_usage = inspect.getsource(_payload_usage)
     response_usage = inspect.getsource(_response_usage)
+    fx_gateway_request = inspect.getsource(_fx_gateway_request)
+    fx_gateway_response = inspect.getsource(_fx_gateway_response)
     path_helper = inspect.getsource(_upstream_request_path)
     body = inspect.getsource(_run_hf_inference_bridge)
     return (
@@ -439,6 +728,10 @@ def _bridge_script() -> str:
         + payload_usage
         + "\n"
         + response_usage
+        + "\n"
+        + fx_gateway_request
+        + "\n"
+        + fx_gateway_response
         + "\n"
         + path_helper
         + "\n"

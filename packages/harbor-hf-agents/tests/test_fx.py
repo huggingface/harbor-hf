@@ -54,7 +54,8 @@ async def test_job_route_injects_loopback_env(
     assert "solve the task" in run_call.kwargs["command"]
     assert "fx ask --yolo --json --" in run_call.kwargs["command"]
     env = run_call.kwargs["env"]
-    assert env["FX_GATEWAY_BASE_URL"] == "http://127.0.0.1:18080/v1"
+    assert env["FX_GATEWAY_BASE_URL"] == "http://127.0.0.1:18080"
+    assert env["FX_GATEWAY_CHAT_URL"] == ("http://127.0.0.1:18080/v3/ai/language-model")
     assert "AI_GATEWAY_BASE_URL" not in env
     assert env["AI_GATEWAY_API_KEY"] == "harbor-local-inference-bridge"
     assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:18080/v1"
