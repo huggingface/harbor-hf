@@ -557,11 +557,11 @@ describe("Terminal-Bench 2.1 profiles", () => {
     );
     const template = record(deployment.trial_job_template);
     const harnesses = [
-      ["pi-gpt-oss-120b-together", "pi"],
-      ["mini-swe-agent-gpt-oss-120b-together", "mini-swe-agent"],
       ["hermes-gpt-oss-120b-together", "hermes"],
       ["kimi-code-gpt-oss-120b-together", "kimi-code"],
       ["qwen-code-gpt-oss-120b-together", "qwen-code"],
+      ["fx-gpt-oss-120b-together", "fx"],
+      ["opencode-gpt-oss-120b-together", "opencode"],
     ] as const;
 
     expect(model.model_id).toBe("openai/gpt-oss-120b");
