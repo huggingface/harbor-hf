@@ -171,7 +171,7 @@ def _fx_gateway_request(  # noqa: C901 -- strict protocol translation
                     in {"text", "json", "error-text", "error-json"}
                     and "value" in output
                 ):
-                    output = output["value"]
+                    output = output.get("value")
                 if not isinstance(output, str):
                     output = json.dumps(
                         output, separators=(",", ":"), ensure_ascii=False
@@ -268,12 +268,13 @@ def _fx_gateway_request(  # noqa: C901 -- strict protocol translation
         if not isinstance(raw_choice, dict):
             raise ValueError("FX gateway tool choice is invalid")
         choice_type = raw_choice.get("type")
+        tool_name = raw_choice.get("toolName")
         if choice_type in {"auto", "none", "required"}:
             request["tool_choice"] = choice_type
-        elif choice_type == "tool" and isinstance(raw_choice.get("toolName"), str):
+        elif choice_type == "tool" and isinstance(tool_name, str):
             request["tool_choice"] = {
                 "type": "function",
-                "function": {"name": raw_choice["toolName"]},
+                "function": {"name": tool_name},
             }
         else:
             raise ValueError("FX gateway tool choice is invalid")
