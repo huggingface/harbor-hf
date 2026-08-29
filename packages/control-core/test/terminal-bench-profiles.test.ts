@@ -10,9 +10,9 @@ import { describe, expect, it } from "vitest";
 import { composeExecutionContract } from "../src/execution-contract.js";
 import { loadBuiltInProfiles, ProfileResolver } from "../src/profiles.js";
 
-const WORKER_REVISION = "45b7a7f69a220abe11859eb95b0acf312893ffd7";
+const WORKER_REVISION = "276453be627e9f14170a906c59fc37177cb2a644";
 const WORKER_IMAGE =
-  "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:5e93e4cb64ca8b15b9daffd206b1969c2507d5c14c016837174e268cd8df025c";
+  "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:d981669ae4e064625ae23218514092bdfe945b626f8ffb1da29cec316d1e2b31";
 const PREPARATION_COMMAND = [
   "python",
   "-m",
