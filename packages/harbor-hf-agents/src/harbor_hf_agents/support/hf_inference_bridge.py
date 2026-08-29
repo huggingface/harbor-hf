@@ -229,6 +229,12 @@ def _fx_gateway_request(  # noqa: C901 -- strict protocol translation
             message["tool_calls"] = tool_calls
         messages.append(message)
 
+    system_messages = [message for message in messages if message["role"] == "system"]
+    non_system_messages = [
+        message for message in messages if message["role"] != "system"
+    ]
+    messages = [*system_messages, *non_system_messages]
+
     request: dict[str, object] = {
         "model": allowed_model,
         "messages": messages,

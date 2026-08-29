@@ -166,6 +166,29 @@ def test_fx_gateway_request_converts_messages_and_filters_provider_tools() -> No
     ]
 
 
+def test_fx_gateway_request_moves_system_messages_before_conversation() -> None:
+    request = _fx_gateway_request(
+        {
+            "prompt": [
+                {"role": "user", "content": "Inspect the repository."},
+                {"role": "system", "content": "You are a coding agent."},
+                {"role": "assistant", "content": "I will inspect it."},
+                {"role": "system", "content": "Do not change generated files."},
+            ],
+            "tools": [],
+        },
+        "locked-model",
+        1024,
+    )
+
+    assert request["messages"] == [
+        {"role": "system", "content": "You are a coding agent."},
+        {"role": "system", "content": "Do not change generated files."},
+        {"role": "user", "content": "Inspect the repository."},
+        {"role": "assistant", "content": "I will inspect it."},
+    ]
+
+
 def test_fx_gateway_request_rejects_filtered_provider_tool_choice() -> None:
     with pytest.raises(ValueError, match="tool choice"):
         _fx_gateway_request(
