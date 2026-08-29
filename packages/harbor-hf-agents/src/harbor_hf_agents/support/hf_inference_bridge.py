@@ -250,8 +250,14 @@ def _fx_gateway_request(  # noqa: C901 -- strict protocol translation
     if not isinstance(raw_tools, list):
         raise ValueError("FX gateway tools must be an array")
     tools: list[dict[str, object]] = []
+    function_names: set[str] = set()
     for raw_tool in raw_tools:
-        if not isinstance(raw_tool, dict) or raw_tool.get("type") != "function":
+        if not isinstance(raw_tool, dict):
+            raise ValueError("FX gateway tool is invalid")
+        tool_type = raw_tool.get("type")
+        if tool_type == "provider":
+            continue
+        if tool_type != "function":
             raise ValueError("FX gateway tool is invalid")
         name = raw_tool.get("name")
         schema = raw_tool.get("inputSchema")
@@ -262,6 +268,7 @@ def _fx_gateway_request(  # noqa: C901 -- strict protocol translation
         if isinstance(description, str):
             function["description"] = description
         tools.append({"type": "function", "function": function})
+        function_names.add(name)
     if tools:
         request["tools"] = tools
         raw_choice = payload.get("toolChoice", {"type": "auto"})
@@ -271,7 +278,11 @@ def _fx_gateway_request(  # noqa: C901 -- strict protocol translation
         tool_name = raw_choice.get("toolName")
         if choice_type in {"auto", "none", "required"}:
             request["tool_choice"] = choice_type
-        elif choice_type == "tool" and isinstance(tool_name, str):
+        elif (
+            choice_type == "tool"
+            and isinstance(tool_name, str)
+            and tool_name in function_names
+        ):
             request["tool_choice"] = {
                 "type": "function",
                 "function": {"name": tool_name},

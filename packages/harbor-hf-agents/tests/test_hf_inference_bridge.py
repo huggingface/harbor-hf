@@ -69,7 +69,7 @@ def test_upstream_request_path_has_one_api_version(
     assert _upstream_request_path(upstream_path, request_path) == expected
 
 
-def test_fx_gateway_request_converts_messages_tools_and_limits() -> None:
+def test_fx_gateway_request_converts_messages_and_filters_provider_tools() -> None:
     request = _fx_gateway_request(
         {
             "prompt": [
@@ -104,6 +104,12 @@ def test_fx_gateway_request_converts_messages_tools_and_limits() -> None:
             ],
             "tools": [
                 {
+                    "type": "provider",
+                    "id": "gateway.perplexity_search",
+                    "name": "perplexity_search",
+                    "args": {"maxResults": 5},
+                },
+                {
                     "type": "function",
                     "name": "read_file",
                     "description": "Read one file.",
@@ -112,7 +118,7 @@ def test_fx_gateway_request_converts_messages_tools_and_limits() -> None:
                         "properties": {"path": {"type": "string"}},
                         "required": ["path"],
                     },
-                }
+                },
             ],
             "toolChoice": {"type": "auto"},
             "maxOutputTokens": 1024,
@@ -158,6 +164,30 @@ def test_fx_gateway_request_converts_messages_tools_and_limits() -> None:
             },
         }
     ]
+
+
+def test_fx_gateway_request_rejects_filtered_provider_tool_choice() -> None:
+    with pytest.raises(ValueError, match="tool choice"):
+        _fx_gateway_request(
+            {
+                "prompt": [{"role": "user", "content": "search"}],
+                "tools": [
+                    {
+                        "type": "provider",
+                        "id": "gateway.perplexity_search",
+                        "name": "perplexity_search",
+                    },
+                    {
+                        "type": "function",
+                        "name": "read_file",
+                        "inputSchema": {"type": "object"},
+                    },
+                ],
+                "toolChoice": {"type": "tool", "toolName": "perplexity_search"},
+            },
+            "locked-model",
+            1024,
+        )
 
 
 def test_fx_gateway_response_converts_text_tools_and_finish() -> None:
