@@ -166,7 +166,7 @@ def test_fx_gateway_request_converts_messages_and_filters_provider_tools() -> No
     ]
 
 
-def test_fx_gateway_request_moves_system_messages_before_conversation() -> None:
+def test_fx_gateway_request_merges_system_messages_before_conversation() -> None:
     request = _fx_gateway_request(
         {
             "prompt": [
@@ -182,8 +182,10 @@ def test_fx_gateway_request_moves_system_messages_before_conversation() -> None:
     )
 
     assert request["messages"] == [
-        {"role": "system", "content": "You are a coding agent."},
-        {"role": "system", "content": "Do not change generated files."},
+        {
+            "role": "system",
+            "content": "You are a coding agent.\n\nDo not change generated files.",
+        },
         {"role": "user", "content": "Inspect the repository."},
         {"role": "assistant", "content": "I will inspect it."},
     ]
