@@ -10,9 +10,9 @@ import { describe, expect, it } from "vitest";
 import { composeExecutionContract } from "../src/execution-contract.js";
 import { loadBuiltInProfiles, ProfileResolver } from "../src/profiles.js";
 
-const MATRIX_WORKER_REVISION = "9cb2d2d90c4c966919230087d54fae17b63782f7";
+const MATRIX_WORKER_REVISION = "d387ba96654509aae93a2f1a47a0be17be7bc6ed";
 const MATRIX_WORKER_IMAGE =
-  "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:6ccc393a0ce6967736d7263604e7dfe450d4aad4964da76004c89c7208861f75";
+  "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:a51548ea696bee62875acd9e5cf59d3d6067cef169bf7fcc0956dae7d2046ed9";
 const PREVIOUS_WORKER_REVISION = "8fa3b80ee9da16f989cbef5f532a54f2ef375197";
 const PREVIOUS_WORKER_IMAGE =
   "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:56aae633c6cc9137a0a2366ebf3e52abcc2a43006f293c2bee888a0086913a2b";

@@ -7,9 +7,9 @@ tags: [agents, codex, terminus, mini-swe-agent]
 
 # Add Terminus and standalone Codex harnesses
 
-**Status.** The Terminus startup repair is merged at
-`9cb2d2d90c4c966919230087d54fae17b63782f7`. The official worker image is
-`ghcr.io/huggingface/harbor-hf-trial-worker@sha256:6ccc393a0ce6967736d7263604e7dfe450d4aad4964da76004c89c7208861f75`.
+**Status.** The Codex Responses route repair is merged at
+`d387ba96654509aae93a2f1a47a0be17be7bc6ed`. The official worker image is
+`ghcr.io/huggingface/harbor-hf-trial-worker@sha256:a51548ea696bee62875acd9e5cf59d3d6067cef169bf7fcc0956dae7d2046ed9`.
 The profile repin must pass local checks, review, and CI before merge. Paid
 benchmark work remains a later action.
 
