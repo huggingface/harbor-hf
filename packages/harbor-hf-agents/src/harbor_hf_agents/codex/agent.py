@@ -2,7 +2,7 @@
 
 import shlex
 from contextlib import suppress
-from typing import override
+from typing import Any, override
 
 from harbor.agents.installed.base import with_prompt_template
 from harbor.agents.installed.codex import Codex as HarborCodex
@@ -19,6 +19,36 @@ from harbor_hf_agents.support.job_chat_completions import (
 
 class _FullModelCodex(HarborCodex):
     """Keep Harbor 0.22 Codex behavior while preserving namespaced model ids."""
+
+    @override
+    def _build_effective_config(
+        self, openai_base_url: str | None = None
+    ) -> dict[str, Any]:
+        config = super()._build_effective_config(None)
+        config.pop("openai_base_url", None)
+        config["web_search"] = "disabled"
+        if openai_base_url is None:
+            return config
+
+        providers = config.setdefault("model_providers", {})
+        if not isinstance(providers, dict):
+            raise ValueError(
+                "Invalid Codex config: model_providers must be a TOML table"
+            )
+        providers["harbor_hf"] = {
+            "name": "Harbor-HF loopback bridge",
+            "base_url": openai_base_url,
+            "env_key": "OPENAI_API_KEY",
+            "wire_api": "responses",
+            "supports_websockets": False,
+        }
+        config["model_provider"] = "harbor_hf"
+        return config
+
+    @override
+    def build_cli_flags(self) -> str:
+        self._resolved_flags["web_search"] = "disabled"
+        return super().build_cli_flags()
 
     @override
     @with_prompt_template

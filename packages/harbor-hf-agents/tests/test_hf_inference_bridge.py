@@ -19,6 +19,7 @@ from harbor_hf_agents.support.hf_inference_bridge import (
     _fx_gateway_request,
     _fx_gateway_response,
     _response_usage,
+    _responses_request,
     _run_hf_inference_bridge,
     _upstream_request_path,
     is_hf_inference_url,
@@ -46,6 +47,28 @@ def test_embedded_bridge_allows_bounded_streaming_overhead() -> None:
     assert "header_timeout_seconds = 10" in source
     assert "body_timeout_seconds = 30" in source
     assert "socket_timeout_seconds = 30" in source
+    assert "request_body = _responses_request(request_body)" in source
+    assert "def _responses_request" in _bridge_script()
+
+
+def test_responses_request_omits_null_reasoning() -> None:
+    payload = {
+        "model": "locked-model",
+        "reasoning": None,
+        "tools": [{"type": "function", "name": "shell"}],
+    }
+
+    assert _responses_request(payload) == {
+        "model": "locked-model",
+        "tools": [{"type": "function", "name": "shell"}],
+    }
+    assert payload["reasoning"] is None
+
+
+def test_responses_request_preserves_non_null_reasoning() -> None:
+    reasoning = {"effort": "low"}
+
+    assert _responses_request({"reasoning": reasoning}) == {"reasoning": reasoning}
 
 
 @pytest.mark.parametrize(

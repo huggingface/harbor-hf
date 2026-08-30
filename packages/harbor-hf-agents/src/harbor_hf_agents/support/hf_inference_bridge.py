@@ -58,6 +58,14 @@ def _upstream_request_path(upstream_path: str, request_path: str) -> str:
     return f"{base_path}{request_path}"
 
 
+def _responses_request(payload: dict[str, object]) -> dict[str, object]:
+    """Remove null optional fields rejected by the HF Responses router."""
+    request = dict(payload)
+    if request.get("reasoning") is None:
+        request.pop("reasoning", None)
+    return request
+
+
 def _usage_pair(value: object) -> tuple[int, int] | None:
     if not isinstance(value, dict):
         return None
@@ -622,6 +630,8 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
                         else "max_tokens"
                     )
                     request_body[field] = max_output_tokens
+                if allowed_path == "/v1/responses":
+                    request_body = _responses_request(request_body)
                 if (
                     allowed_path == "/v1/chat/completions"
                     and "stream" in request_body
@@ -633,7 +643,12 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
                         self.send_error(400)
                         return
                     stream_options = (
-                        dict(request_body["stream_options"])
+                        dict(
+                            cast(
+                                "dict[str, object]",
+                                request_body["stream_options"],
+                            )
+                        )
                         if "stream_options" in request_body
                         else {}
                     )
@@ -743,6 +758,7 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
 
 
 def _bridge_script() -> str:
+    responses_request = inspect.getsource(_responses_request)
     usage_pair = inspect.getsource(_usage_pair)
     payload_usage = inspect.getsource(_payload_usage)
     response_usage = inspect.getsource(_response_usage)
@@ -752,6 +768,8 @@ def _bridge_script() -> str:
     body = inspect.getsource(_run_hf_inference_bridge)
     return (
         "from typing import cast\n\n"
+        + responses_request
+        + "\n"
         + usage_pair
         + "\n"
         + payload_usage

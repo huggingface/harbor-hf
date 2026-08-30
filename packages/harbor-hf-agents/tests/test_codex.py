@@ -34,6 +34,55 @@ def test_keeps_standalone_codex_identity(temp_dir) -> None:
     assert agent.version() == "0.118.0"
 
 
+def test_uses_http_only_responses_provider_without_web_search(temp_dir) -> None:
+    agent = CodexAgent(
+        logs_dir=temp_dir,
+        model_name="openai/Qwen/Qwen3.8-27B:deepinfra",
+        version="0.118.0",
+        reasoning_effort="none",
+    )
+
+    config = agent._build_effective_config("http://127.0.0.1:18080/v1")
+
+    assert config["model_provider"] == "harbor_hf"
+    assert config["web_search"] == "disabled"
+    assert "openai_base_url" not in config
+    assert config["model_providers"] == {
+        "harbor_hf": {
+            "name": "Harbor-HF loopback bridge",
+            "base_url": "http://127.0.0.1:18080/v1",
+            "env_key": "OPENAI_API_KEY",
+            "wire_api": "responses",
+            "supports_websockets": False,
+        }
+    }
+
+
+def test_disables_web_search_without_a_route(temp_dir) -> None:
+    agent = CodexAgent(logs_dir=temp_dir, model_name="openai/model")
+
+    assert agent._build_effective_config() == {"web_search": "disabled"}
+
+
+def test_forces_web_search_disabled_in_cli_flags(temp_dir) -> None:
+    agent = CodexAgent(
+        logs_dir=temp_dir,
+        model_name="openai/model",
+        web_search="live",
+    )
+
+    assert agent.build_cli_flags().split().count("web_search=disabled") == 1
+    assert "web_search=live" not in agent.build_cli_flags()
+
+
+def test_rejects_invalid_model_provider_config(temp_dir) -> None:
+    agent = CodexAgent(logs_dir=temp_dir, model_name="openai/model")
+    agent._base_config = {"model_providers": []}
+
+    with pytest.raises(ValueError, match="model_providers must be a TOML table"):
+        agent._build_effective_config("http://127.0.0.1:18080/v1")
+
+
 @pytest.mark.asyncio
 async def test_uses_responses_route_and_preserves_full_model_id(
     temp_dir,
