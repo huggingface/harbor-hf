@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import type { ProfileObject } from "@harbor-hf/contracts";
+import type { DeploymentProfileSpec, ProfileObject } from "@harbor-hf/contracts";
 import {
   canonicalJson,
   deterministicId,
@@ -8,7 +8,11 @@ import {
 } from "@harbor-hf/contracts";
 import { describe, expect, it } from "vitest";
 import { composeExecutionContract } from "../src/execution-contract.js";
-import { loadBuiltInProfiles, ProfileResolver } from "../src/profiles.js";
+import {
+  type LoadedProfile,
+  loadBuiltInProfiles,
+  ProfileResolver,
+} from "../src/profiles.js";
 
 const WORKER_REVISION = "8fa3b80ee9da16f989cbef5f532a54f2ef375197";
 const WORKER_IMAGE =
@@ -152,6 +156,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
 
   it("keeps exactly the real reusable harness configurations", async () => {
     const expectedNames = [
+      "codex",
       "control-smoke",
       "dsh-high",
       "dsh-off",
@@ -165,6 +170,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
       "pi-high",
       "pi-off",
       "qwen-code",
+      "terminus",
     ];
     const names = (await readdir("profiles/harness"))
       .filter((name) => name.endsWith(".json"))
@@ -187,6 +193,33 @@ describe("Terminal-Bench 2.1 profiles", () => {
       model_registry: "pi",
       provider_max_attempts: 1,
     });
+    const miniSwe = record((await profile("harness", "mini-swe-agent")).spec);
+    expect(record(miniSwe.capabilities)).toMatchObject({
+      inference_apis: ["chat-completions"],
+      litellm_model_registry: true,
+    });
+    expect(record(record(miniSwe.harbor_agent).kwargs)).toMatchObject({
+      cost_limit: "0.25",
+      version: "2.4.6",
+    });
+    const terminus = record((await profile("harness", "terminus")).spec);
+    expect(terminus).toMatchObject({
+      agent: "terminus-2",
+      revision: "2.0.0",
+      aliases: ["terminus-2"],
+    });
+    expect(record(terminus.capabilities)).toMatchObject({
+      inference_apis: ["chat-completions"],
+      litellm_model_info: true,
+    });
+    const codex = record((await profile("harness", "codex")).spec);
+    expect(codex).toMatchObject({
+      agent: "codex",
+      revision: "0.118.0",
+    });
+    expect(record(codex.capabilities)).toEqual({
+      inference_apis: ["responses"],
+    });
     const dsh = record((await profile("harness", "dsh-high")).spec);
     expect(record(dsh.capabilities)).toMatchObject({
       requires_reasoning: true,
@@ -197,7 +230,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
 
   it("reuses Pi and FX profiles across the two reliability models", async () => {
     const resolver = new ProfileResolver(await loadBuiltInProfiles("profiles"));
-    for (const harness of ["pi-off", "fx"]) {
+    for (const harness of ["pi-off", "mini-swe-agent", "fx"]) {
       const qwen = composeExecutionContract(
         resolver.resolve({
           benchmark: "terminal-bench-2-1-canary",
@@ -233,7 +266,73 @@ describe("Terminal-Bench 2.1 profiles", () => {
           output_price: 0.5,
         });
       }
+      if (harness === "mini-swe-agent") {
+        expect(record(qwen.harbor_agent?.kwargs)).toMatchObject({
+          cost_limit: "0.25",
+          litellm_model_registry: {
+            "openai/Qwen/Qwen3.8-27B:deepinfra": {
+              litellm_provider: "openai",
+              mode: "chat",
+              max_input_tokens: 262_144,
+              max_output_tokens: 32_768,
+              input_cost_per_token: 0.0000004,
+              output_cost_per_token: 0.000003,
+              cache_read_input_token_cost: 0.0000004,
+              cache_creation_input_token_cost: 0.0000004,
+            },
+          },
+        });
+        expect(record(glm.harbor_agent?.kwargs)).toMatchObject({
+          cost_limit: "0.25",
+          litellm_model_registry: {
+            "openai/zai-org/GLM-5.3-Flash:together": {
+              max_input_tokens: 1_048_576,
+              max_output_tokens: 32_768,
+              input_cost_per_token: 0.00000015,
+              output_cost_per_token: 0.0000005,
+            },
+          },
+        });
+      }
     }
+  });
+
+  it("derives Terminus LiteLLM model information from the locked deployment", async () => {
+    const loaded = await loadBuiltInProfiles("profiles");
+    const source = loaded.find(
+      (item) =>
+        item.profile.profile_kind === "deployment" &&
+        item.profile.name === "tb21-qwen3-8-27b-deepinfra-providers",
+    );
+    if (!source) throw new Error("missing Qwen deployment fixture");
+    const deployment = structuredClone(source) as LoadedProfile;
+    const deploymentSpec = deployment.profile.spec as DeploymentProfileSpec;
+    deploymentSpec.harnesses = [...deploymentSpec.harnesses, "terminus"];
+    deployment.profile_id = "test-terminus-compatible-deployment";
+    const resolver = new ProfileResolver(
+      loaded.map((item) => (item === source ? deployment : item)),
+    );
+
+    const execution = composeExecutionContract(
+      resolver.resolve({
+        benchmark: "terminal-bench-2-1-canary",
+        model: "qwen3-8-27b-deepinfra",
+        harness: "terminus",
+        deployment: "tb21-qwen3-8-27b-deepinfra-providers",
+        launch_policy: "tb21-canary",
+      }),
+    );
+
+    expect(record(execution.harbor_agent?.kwargs).model_info).toEqual({
+      litellm_provider: "openai",
+      mode: "chat",
+      max_input_tokens: 262_144,
+      max_output_tokens: 32_768,
+      input_cost_per_token: 0.0000004,
+      output_cost_per_token: 0.000003,
+      cache_read_input_token_cost: 0.0000004,
+      cache_creation_input_token_cost: 0.0000004,
+    });
   });
 
   it("routes bounded public aliases through the composed contract", async () => {
@@ -371,7 +470,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
     const loaded = await loadBuiltInProfiles("profiles");
     const resolver = new ProfileResolver(loaded);
     const specOwners = new Map<string, string>();
-    expect(loaded).toHaveLength(51);
+    expect(loaded).toHaveLength(53);
     expect(new Set(loaded.map((item) => item.profile_id)).size).toBe(loaded.length);
     for (const item of loaded) {
       const specKey = `${item.profile.profile_kind}:${sha256(

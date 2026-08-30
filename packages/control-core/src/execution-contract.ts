@@ -195,6 +195,27 @@ function piModelRuntime(
   };
 }
 
+function litellmModelInfo(
+  inference: ResolvedInferenceContract,
+): Record<string, unknown> {
+  const perToken = (microusdPerMillionTokens: number): number =>
+    microusdPerMillionTokens / 1_000_000_000_000;
+  return {
+    litellm_provider: inference.harbor_provider,
+    mode: "chat",
+    max_input_tokens: inference.context_window,
+    max_output_tokens: inference.max_output_tokens,
+    input_cost_per_token: perToken(inference.input_price_microusd_per_million_tokens),
+    output_cost_per_token: perToken(inference.output_price_microusd_per_million_tokens),
+    cache_read_input_token_cost: perToken(
+      inference.cache_read_price_microusd_per_million_tokens,
+    ),
+    cache_creation_input_token_cost: perToken(
+      inference.cache_write_price_microusd_per_million_tokens,
+    ),
+  };
+}
+
 function composedAgent(
   model: ResolvedModelProfile,
   harness: ResolvedHarnessProfile,
@@ -218,6 +239,14 @@ function composedAgent(
       model.spec.compatibility.reasoning &&
         (harness.spec.reasoning_effort ?? "off") !== "off",
     );
+  }
+  if (capabilities.litellm_model_registry) {
+    kwargs.litellm_model_registry = {
+      [inference.agent_model]: litellmModelInfo(inference),
+    };
+  }
+  if (capabilities.litellm_model_info) {
+    kwargs.model_info = litellmModelInfo(inference);
   }
   if (capabilities.reasoning_format_runtime === "dsh") {
     const format = model.spec.compatibility.reasoning_format;

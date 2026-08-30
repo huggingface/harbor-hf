@@ -82,10 +82,9 @@ placeholder key.
 ## Custom Provider Agents
 
 Every provider-backed agent is loaded through Harbor's public
-`AgentConfig.import_path` field. Hermes, OpenClaw, OpenClaw Codex, Pi, DeepSeek
-Harness, OpenCode, and FX live in separate modules under the `harbor-hf-agents`
-package. New provider attempts do not select Harbor built-ins and have no
-fallback to them.
+`AgentConfig.import_path` field. Each custom adapter lives in a separate module
+under the `harbor-hf-agents` package. New provider attempts have no fallback to
+another harness or wire API.
 
 One internal registry validates the logical agent name, import path, required
 wire API, permitted non-secret parameters, trajectory schema, session
@@ -101,6 +100,24 @@ route-owned fields after it copies caller `opencode_config`, so unrelated caller
 settings remain while conflicting driver, model, and base URL values are
 replaced. The bridge continues to reject Responses requests on a Chat
 Completions route.
+
+The standalone Codex adapter uses Harbor's pinned Codex implementation and its
+native Responses API. It preserves the complete namespaced model ID after
+removing only Harbor's provider prefix. It runs under the isolated agent account
+and remains distinct from OpenClaw with the Codex runtime.
+
+The Terminus profile keeps the public profile name `terminus` and Harbor's
+`terminus-2` result identity. Terminus is trusted in-process Harbor code. It
+validates the root-owned Job route before execution, uses the locked Chat
+Completions loopback route, and always stops the bridge before verifier
+execution. Its LiteLLM model information comes from the immutable model and
+deployment profiles.
+
+mini-swe-agent receives a finite task cost limit and an exact LiteLLM model
+registry derived from the immutable inference contract. The registry preserves
+model identity, token limits, and input, output, cache-read, and cache-write
+prices. The adapter does not use an unpriced fallback or disable the tool's
+cost limit.
 
 The existing pinned worker revision identifies the package implementation. The
 agent profile identifies the custom import path and exact underlying agent

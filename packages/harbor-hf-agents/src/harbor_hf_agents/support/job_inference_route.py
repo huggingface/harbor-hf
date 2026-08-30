@@ -6,6 +6,7 @@ import json
 import os
 import stat
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
 from typing import TypeVar, cast
@@ -23,13 +24,19 @@ from harbor_hf_agents.support.hf_inference_bridge import (
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
 
-_AgentT = TypeVar("_AgentT", bound=IsolatedProviderAgent)
-_RunMethod = Callable[
-    [_AgentT, str, BaseEnvironment, AgentContext],
-    Awaitable[None],
-]
+_AgentT = TypeVar("_AgentT")
+_RunMethod = Callable[[_AgentT, str, BaseEnvironment, AgentContext], Awaitable[None]]
 _JOB_ROUTE_PATH = Path("/run/harbor-hf-inference.json")
 JOB_INFERENCE_MAX_OUTPUT_TOKENS_ENV = "JOB_INFERENCE_MAX_OUTPUT_TOKENS"
+
+
+@dataclass(frozen=True)
+class JobInferenceRoute:
+    """Validated non-secret route for the root-owned Job inference bridge."""
+
+    base_url: str
+    api_key: str
+    max_output_tokens: int
 
 
 def with_job_inference_bridge_cleanup(method: _RunMethod) -> _RunMethod:
@@ -80,20 +87,15 @@ def _load_job_route() -> dict[str, object] | None:
     return cast(dict[str, object], value)
 
 
-async def use_job_inference_route(
-    agent: IsolatedProviderAgent,
-    environment: BaseEnvironment,
-    env: dict[str, str],
+def load_job_inference_route(
     *,
-    base_url_key: str,
-    api_key_key: str,
     api: str,
     allowed_model: str,
-) -> bool:
-    """Use a locked loopback route when the Job root bridge provides one."""
+) -> JobInferenceRoute | None:
+    """Load and validate the locked loopback route for trusted host code."""
     value = _load_job_route()
     if value is None:
-        return False
+        return None
     if set(value) != {
         "schema_version",
         "api",
@@ -119,10 +121,31 @@ async def use_job_inference_route(
         or max_output_tokens <= 0
     ):
         raise RuntimeError("Job inference route does not match the locked execution")
+    return JobInferenceRoute(
+        base_url=base_url,
+        api_key=api_key,
+        max_output_tokens=max_output_tokens,
+    )
+
+
+async def use_job_inference_route(
+    agent: IsolatedProviderAgent,
+    environment: BaseEnvironment,
+    env: dict[str, str],
+    *,
+    base_url_key: str,
+    api_key_key: str,
+    api: str,
+    allowed_model: str,
+) -> bool:
+    """Use a locked loopback route when the Job root bridge provides one."""
+    route = load_job_inference_route(api=api, allowed_model=allowed_model)
+    if route is None:
+        return False
     bridge_pid = _job_bridge_pid()
-    env[base_url_key] = base_url
-    env[api_key_key] = api_key
-    env[JOB_INFERENCE_MAX_OUTPUT_TOKENS_ENV] = str(max_output_tokens)
+    env[base_url_key] = route.base_url
+    env[api_key_key] = route.api_key
+    env[JOB_INFERENCE_MAX_OUTPUT_TOKENS_ENV] = str(route.max_output_tokens)
     mark_hf_inference_bridge_active(agent, kind="job")
     await verify_hf_inference_isolation(
         agent,

@@ -1042,7 +1042,7 @@ async def prepare_hf_inference_bridge(
 
 
 def mark_hf_inference_bridge_active(
-    agent: BaseInstalledAgent,
+    agent: object,
     *,
     kind: Literal["environment", "job"],
 ) -> None:
@@ -1051,7 +1051,7 @@ def mark_hf_inference_bridge_active(
     setattr(agent, _BRIDGE_KIND_ATTRIBUTE, kind)
 
 
-def hf_inference_bridge_is_active(agent: BaseInstalledAgent) -> bool:
+def hf_inference_bridge_is_active(agent: object) -> bool:
     """Return whether the agent currently owns a root inference bridge."""
     return getattr(agent, _BRIDGE_ACTIVE_ATTRIBUTE, False) is True
 
@@ -1088,7 +1088,7 @@ async def verify_hf_inference_isolation(
 
 
 async def stop_hf_inference_bridge(
-    agent: BaseInstalledAgent,
+    agent: object,
     environment: BaseEnvironment,
 ) -> None:
     """Stop the trial-local bridge and remove its process handle."""
@@ -1111,7 +1111,10 @@ async def stop_hf_inference_bridge(
                 _JOB_BRIDGE_LOG.unlink(missing_ok=True)
                 _JOB_BRIDGE_TOKEN.unlink(missing_ok=True)
             return
-        await agent.exec_as_root(
+        installed_agent = cast("BaseInstalledAgent", agent)
+        if not hasattr(installed_agent, "exec_as_root"):
+            raise RuntimeError("environment bridge owner cannot execute as root")
+        await installed_agent.exec_as_root(
             environment,
             command=(
                 "set -euo pipefail; "

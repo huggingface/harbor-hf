@@ -61,6 +61,54 @@ async def test_job_route_injects_loopback_env(
 
 
 @pytest.mark.asyncio
+async def test_enforces_cost_limit_with_exact_model_registry(
+    temp_dir,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def use_route(_agent, _environment, env, **_kwargs):
+        env["OPENAI_BASE_URL"] = "http://127.0.0.1:18080/v1"
+        env["MSWEA_API_KEY"] = "harbor-local-inference-bridge"
+        return True
+
+    model = "openai/Qwen/Qwen3.8-27B:deepinfra"
+    registry = {
+        model: {
+            "litellm_provider": "openai",
+            "mode": "chat",
+            "max_input_tokens": 262144,
+            "max_output_tokens": 32768,
+            "input_cost_per_token": 0.0000004,
+            "output_cost_per_token": 0.000003,
+        }
+    }
+    monkeypatch.setattr(_ROUTE, use_route)
+    agent = MiniSweAgent(
+        logs_dir=temp_dir,
+        model_name=model,
+        version="2.4.6",
+        cost_limit="0.25",
+        litellm_model_registry=registry,
+    )
+    environment = AsyncMock()
+    environment.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+
+    await agent.run("solve", environment, AgentContext())
+
+    commands = [call.kwargs["command"] for call in environment.exec.call_args_list]
+    registry_command = next(
+        command for command in commands if "registry.json" in command
+    )
+    run_call = _run_call(environment.exec.call_args_list)
+    assert '"input_cost_per_token": 4e-07' in registry_command
+    assert '"output_cost_per_token": 3e-06' in registry_command
+    assert "--cost-limit 0.25" in run_call.kwargs["command"]
+    assert (
+        "model.litellm_model_registry=/tmp/mswea-config/registry.json"
+        in run_call.kwargs["command"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_missing_job_route_fails(temp_dir) -> None:
     agent = MiniSweAgent(
         logs_dir=temp_dir,

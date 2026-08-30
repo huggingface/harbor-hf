@@ -1587,6 +1587,12 @@
         "model_registry": {
           "enum": ["pi"]
         },
+        "litellm_model_registry": {
+          "type": "boolean"
+        },
+        "litellm_model_info": {
+          "type": "boolean"
+        },
         "reasoning_format_runtime": {
           "enum": ["dsh"]
         },

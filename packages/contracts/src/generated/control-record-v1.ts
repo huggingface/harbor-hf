@@ -605,6 +605,8 @@ requires_reasoning?: boolean
 reasoning_formats?: []|["deepseek"]|["deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek"]|["deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek", "deepseek"]
 provider_runtime?: boolean
 model_registry?: "pi"
+litellm_model_registry?: boolean
+litellm_model_info?: boolean
 reasoning_format_runtime?: "dsh"
 provider_max_attempts?: number
 }

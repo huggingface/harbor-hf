@@ -1,30 +1,29 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-14a01107c92ed5decd6f612a",
-  "created_at": "2026-08-22T00:00:00.000Z",
+  "record_id": "profile-2771b5bd5b8f20ef2e68ebdb",
+  "created_at": "2026-08-30T00:00:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
     "role": "service"
   },
   "profile_kind": "harness",
-  "name": "mini-swe-agent",
+  "name": "codex",
   "spec": {
-    "agent": "mini-swe-agent",
-    "revision": "2.4.6",
+    "agent": "codex",
+    "revision": "0.118.0",
     "reasoning_effort": "off",
     "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
     "harbor_agent": {
-      "import_path": "harbor_hf_agents.mini_swe.agent:MiniSweAgent",
+      "import_path": "harbor_hf_agents.codex.agent:CodexAgent",
       "kwargs": {
-        "cost_limit": "0.25",
-        "version": "2.4.6"
+        "reasoning_effort": "none",
+        "version": "0.118.0"
       }
     },
     "contract_version": "v1",
     "capabilities": {
-      "inference_apis": ["chat-completions"],
-      "litellm_model_registry": true
+      "inference_apis": ["responses"]
     }
   }
 }

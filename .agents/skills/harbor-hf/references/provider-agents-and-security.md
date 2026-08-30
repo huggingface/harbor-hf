@@ -13,6 +13,8 @@ current package has separate modules for:
 - Hermes through Chat Completions;
 - embedded OpenClaw through Chat Completions;
 - OpenClaw with the genuine Codex runtime through Responses;
+- standalone Codex through Responses;
+- Terminus 2 through Chat Completions;
 - Pi through Chat Completions;
 - DeepSeek Harness through Chat Completions;
 - OpenCode through Chat Completions;
@@ -53,8 +55,10 @@ current working directory, or install a mutable package globally.
 
 Preserve each runtime's native API:
 
-- Hermes and Pi use Chat Completions. Embedded OpenClaw uses it too.
-- OpenClaw Codex uses Responses and must retain genuine Codex identity.
+- Hermes, Pi, Terminus, and embedded OpenClaw use Chat Completions.
+- OpenClaw Codex and standalone Codex use Responses.
+- Standalone Codex must retain the `codex` identity and the complete namespaced
+  model ID. It must not become OpenClaw Codex.
 
 The scoped proxy exposes one selected path and rejects the other. Rewriting a
 native Responses request into a different schema changes runtime provenance and
@@ -244,6 +248,26 @@ request or substitute embedded OpenClaw evidence.
 Verify the exact Pi package version, model configuration, Chat Completions
 route, reasoning setting, native Pi transcript, and ATIF identity. Keep Pi
 provider files inside the isolated agent home.
+
+### Standalone Codex
+
+Verify the exact Codex package version, native Responses route, complete model
+ID, isolated user, native sessions, and ATIF identity. Keep Codex credentials
+and configuration inside the isolated agent home, then remove temporary auth
+files after each run.
+
+### Terminus
+
+Verify the `terminus-2` Harbor identity, Chat Completions route, complete model
+ID, and model information derived from the immutable inference contract.
+Terminus is trusted in-process Harbor code, so it validates the root-owned Job
+route directly and still owns bridge cleanup before verifier execution.
+
+### mini-swe-agent
+
+Keep a finite per-task cost limit. Register the exact model, context and output
+limits, and token prices from the immutable inference contract with LiteLLM.
+Do not disable cost accounting or accept an unknown-price fallback.
 
 ### Capability-scoped Jobs
 

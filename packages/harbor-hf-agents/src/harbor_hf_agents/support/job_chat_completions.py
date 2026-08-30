@@ -57,6 +57,7 @@ class JobChatCompletionsAgent(IsolatedProviderAgent):
     )
     install_environment: ClassVar[tuple[tuple[str, str], ...]] = ()
     inject_route_into_process: ClassVar[bool] = False
+    inference_api: ClassVar[str] = "chat-completions"
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401 -- Harbor API
         super().__init__(*args, **kwargs)
@@ -90,7 +91,7 @@ class JobChatCompletionsAgent(IsolatedProviderAgent):
             env,
             base_url_key=self.route_base_url_key,
             api_key_key=self.route_api_key_key,
-            api="chat-completions",
+            api=self.inference_api,
             allowed_model=self.allowed_model_id(),
         )
         if not bridged:
