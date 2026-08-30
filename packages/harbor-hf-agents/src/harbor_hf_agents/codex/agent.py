@@ -10,6 +10,7 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.trial.paths import EnvironmentPaths
 
+from harbor_hf_agents.support.isolated_user import AGENT_USER
 from harbor_hf_agents.support.job_chat_completions import (
     JobChatCompletionsAgent,
     allowed_model_id,
@@ -58,11 +59,10 @@ class _FullModelCodex(HarborCodex):
         if auth_json_path:
             self.logger.debug("Codex auth: using auth.json from %s", auth_json_path)
             await environment.upload_file(auth_json_path, remote_auth_path)
-            if environment.default_user is not None:
-                await self.exec_as_root(
-                    environment,
-                    command=f"chown {environment.default_user} {remote_auth_path}",
-                )
+            await self.exec_as_root(
+                environment,
+                command=f"chown {AGENT_USER} {remote_auth_path}",
+            )
             setup_command = (
                 f'ln -sf {shlex.quote(remote_auth_path)} "$CODEX_HOME/auth.json"\n'
             )

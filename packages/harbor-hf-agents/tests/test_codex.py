@@ -100,7 +100,7 @@ async def test_preserves_harbor_auth_resume_and_skill_setup(
     monkeypatch.setattr(agent, "_build_register_skills_command", lambda: "add-skills")
     agent._load = True
     environment = AsyncMock()
-    environment.default_user = "harbor-agent"
+    environment.default_user = "task-user"
     environment.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
 
     await agent.run("resume", environment, AgentContext())
