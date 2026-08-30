@@ -211,6 +211,9 @@ describe("Terminal-Bench 2.1 profiles", () => {
       inference_apis: ["chat-completions"],
       litellm_model_info: true,
     });
+    expect(record(record(terminus.harbor_agent).kwargs)).toMatchObject({
+      record_terminal_session: false,
+    });
     const codex = record((await profile("harness", "codex")).spec);
     expect(codex).toMatchObject({
       agent: "codex",
