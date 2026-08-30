@@ -59,10 +59,23 @@ def _upstream_request_path(upstream_path: str, request_path: str) -> str:
 
 
 def _responses_request(payload: dict[str, object]) -> dict[str, object]:
-    """Remove null optional fields rejected by the HF Responses router."""
+    """Remove Responses fields rejected by the selected HF provider."""
     request = dict(payload)
     if request.get("reasoning") is None:
         request.pop("reasoning", None)
+
+    model = request.get("model")
+    input_items = request.get("input")
+    if (
+        isinstance(model, str)
+        and model.rpartition(":")[2] == "together"
+        and isinstance(input_items, list)
+    ):
+        request["input"] = [
+            item
+            for item in input_items
+            if not (isinstance(item, dict) and item.get("type") == "reasoning")
+        ]
     return request
 
 

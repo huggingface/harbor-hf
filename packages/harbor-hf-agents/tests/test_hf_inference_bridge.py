@@ -71,6 +71,53 @@ def test_responses_request_preserves_non_null_reasoning() -> None:
     assert _responses_request({"reasoning": reasoning}) == {"reasoning": reasoning}
 
 
+def test_responses_request_removes_together_reasoning_input_items() -> None:
+    payload = {
+        "model": "zai-org/GLM-5.3-Flash:together",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "inspect"}],
+            },
+            {
+                "type": "reasoning",
+                "id": "reasoning-1",
+                "content": [{"type": "reasoning_text", "text": "private"}],
+            },
+            {"type": "function_call", "name": "shell", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "call-1", "output": "ok"},
+        ],
+    }
+
+    assert _responses_request(payload) == {
+        "model": "zai-org/GLM-5.3-Flash:together",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "inspect"}],
+            },
+            {"type": "function_call", "name": "shell", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "call-1", "output": "ok"},
+        ],
+    }
+    assert len(payload["input"]) == 4
+
+
+def test_responses_request_preserves_reasoning_input_for_other_providers() -> None:
+    reasoning_item = {
+        "type": "reasoning",
+        "content": [{"type": "reasoning_text", "text": "private"}],
+    }
+    payload = {
+        "model": "Qwen/Qwen3.8-27B:deepinfra",
+        "input": [reasoning_item],
+    }
+
+    assert _responses_request(payload) == payload
+
+
 @pytest.mark.parametrize(
     ("upstream_path", "request_path", "expected"),
     [
