@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import type { DeploymentProfileSpec, ProfileObject } from "@harbor-hf/contracts";
+import type { ProfileObject } from "@harbor-hf/contracts";
 import {
   canonicalJson,
   deterministicId,
@@ -8,14 +8,13 @@ import {
 } from "@harbor-hf/contracts";
 import { describe, expect, it } from "vitest";
 import { composeExecutionContract } from "../src/execution-contract.js";
-import {
-  type LoadedProfile,
-  loadBuiltInProfiles,
-  ProfileResolver,
-} from "../src/profiles.js";
+import { loadBuiltInProfiles, ProfileResolver } from "../src/profiles.js";
 
-const WORKER_REVISION = "8fa3b80ee9da16f989cbef5f532a54f2ef375197";
-const WORKER_IMAGE =
+const MATRIX_WORKER_REVISION = "157443566ffb0e66886ea14e261a3ecf9135d101";
+const MATRIX_WORKER_IMAGE =
+  "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:d58dedb249a1e722bbc04496e0119842e6fe8ee025efbe7cc39d338ca05ac38b";
+const PREVIOUS_WORKER_REVISION = "8fa3b80ee9da16f989cbef5f532a54f2ef375197";
+const PREVIOUS_WORKER_IMAGE =
   "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:56aae633c6cc9137a0a2366ebf3e52abcc2a43006f293c2bee888a0086913a2b";
 const PREPARATION_COMMAND = [
   "python",
@@ -297,42 +296,91 @@ describe("Terminal-Bench 2.1 profiles", () => {
     }
   });
 
-  it("derives Terminus LiteLLM model information from the locked deployment", async () => {
-    const loaded = await loadBuiltInProfiles("profiles");
-    const source = loaded.find(
-      (item) =>
-        item.profile.profile_kind === "deployment" &&
-        item.profile.name === "tb21-qwen3-8-27b-deepinfra-providers",
-    );
-    if (!source) throw new Error("missing Qwen deployment fixture");
-    const deployment = structuredClone(source) as LoadedProfile;
-    const deploymentSpec = deployment.profile.spec as DeploymentProfileSpec;
-    deploymentSpec.harnesses = [...deploymentSpec.harnesses, "terminus"];
-    deployment.profile_id = "test-terminus-compatible-deployment";
-    const resolver = new ProfileResolver(
-      loaded.map((item) => (item === source ? deployment : item)),
-    );
-
-    const execution = composeExecutionContract(
-      resolver.resolve({
-        benchmark: "terminal-bench-2-1-canary",
+  it("derives Terminus model information from both locked matrix deployments", async () => {
+    const resolver = new ProfileResolver(await loadBuiltInProfiles("profiles"));
+    const matrix = [
+      {
         model: "qwen3-8-27b-deepinfra",
-        harness: "terminus",
         deployment: "tb21-qwen3-8-27b-deepinfra-providers",
-        launch_policy: "tb21-canary",
-      }),
-    );
+        bridgeModel: "Qwen/Qwen3.8-27B:deepinfra",
+        modelInfo: {
+          litellm_provider: "openai",
+          mode: "chat",
+          max_input_tokens: 262_144,
+          max_output_tokens: 32_768,
+          input_cost_per_token: 0.0000004,
+          output_cost_per_token: 0.000003,
+          cache_read_input_token_cost: 0.0000004,
+          cache_creation_input_token_cost: 0.0000004,
+        },
+      },
+      {
+        model: "glm-5-3-flash-together",
+        deployment: "tb21-glm-5-3-flash-together-providers",
+        bridgeModel: "zai-org/GLM-5.3-Flash:together",
+        modelInfo: {
+          litellm_provider: "openai",
+          mode: "chat",
+          max_input_tokens: 1_048_576,
+          max_output_tokens: 32_768,
+          input_cost_per_token: 0.00000015,
+          output_cost_per_token: 0.0000005,
+          cache_read_input_token_cost: 0.00000015,
+          cache_creation_input_token_cost: 0.00000015,
+        },
+      },
+    ] as const;
 
-    expect(record(execution.harbor_agent?.kwargs).model_info).toEqual({
-      litellm_provider: "openai",
-      mode: "chat",
-      max_input_tokens: 262_144,
-      max_output_tokens: 32_768,
-      input_cost_per_token: 0.0000004,
-      output_cost_per_token: 0.000003,
-      cache_read_input_token_cost: 0.0000004,
-      cache_creation_input_token_cost: 0.0000004,
-    });
+    for (const item of matrix) {
+      const execution = composeExecutionContract(
+        resolver.resolve({
+          benchmark: "terminal-bench-2-1-canary",
+          model: item.model,
+          harness: "terminus",
+          deployment: item.deployment,
+          launch_policy: "tb21-canary",
+        }),
+      );
+      expect(execution.source_profiles.harness.name).toBe("terminus");
+      expect(execution.inference?.api).toBe("chat-completions");
+      expect(execution.inference?.bridge_model).toBe(item.bridgeModel);
+      expect(record(execution.harbor_agent?.kwargs).model_info).toEqual(item.modelInfo);
+    }
+  });
+
+  it("composes standalone Codex with Responses for both matrix models", async () => {
+    const resolver = new ProfileResolver(await loadBuiltInProfiles("profiles"));
+    const matrix = [
+      {
+        model: "qwen3-8-27b-deepinfra",
+        deployment: "tb21-qwen3-8-27b-deepinfra-codex-providers",
+        agentModel: "openai/Qwen/Qwen3.8-27B:deepinfra",
+        bridgeModel: "Qwen/Qwen3.8-27B:deepinfra",
+      },
+      {
+        model: "glm-5-3-flash-together",
+        deployment: "tb21-glm-5-3-flash-together-codex-providers",
+        agentModel: "openai/zai-org/GLM-5.3-Flash:together",
+        bridgeModel: "zai-org/GLM-5.3-Flash:together",
+      },
+    ] as const;
+
+    for (const item of matrix) {
+      const execution = composeExecutionContract(
+        resolver.resolve({
+          benchmark: "terminal-bench-2-1-canary",
+          model: item.model,
+          harness: "codex",
+          deployment: item.deployment,
+          launch_policy: "tb21-canary",
+        }),
+      );
+      expect(execution.source_profiles.harness.name).toBe("codex");
+      expect(execution.inference?.api).toBe("responses");
+      expect(execution.inference?.bridge_model).toBe(item.bridgeModel);
+      expect(execution.inference?.agent_model).toBe(item.agentModel);
+      expect(execution.harbor_agent?.model_name).toBe(item.agentModel);
+    }
   });
 
   it("routes bounded public aliases through the composed contract", async () => {
@@ -388,7 +436,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
       {
         name: "tb21-qwen3-8-27b-deepinfra-providers",
         model: "qwen3-8-27b-deepinfra",
-        harnesses: ["pi-off", "mini-swe-agent", "fx", "openhands", "opencode", "pi"],
+        harnesses: ["pi-off", "mini-swe-agent", "terminus", "fx", "pi"],
         provider: "deepinfra",
         input: 400_000,
         output: 3_000_000,
@@ -397,7 +445,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
       {
         name: "tb21-glm-5-3-flash-together-providers",
         model: "glm-5-3-flash-together",
-        harnesses: ["pi-off", "mini-swe-agent", "fx", "openhands", "opencode", "pi"],
+        harnesses: ["pi-off", "mini-swe-agent", "terminus", "fx", "pi"],
         provider: "together",
         input: 150_000,
         output: 500_000,
@@ -418,9 +466,29 @@ describe("Terminal-Bench 2.1 profiles", () => {
       expect(template.inference_api).toBe("chat-completions");
       expect(template.inference_max_output_tokens).toBe(32_768);
       expect(hasKey(spec, "inference_model")).toBe(false);
-      expect(spec.job_image).toBe(WORKER_IMAGE);
-      expect(spec.worker_revision).toBe(WORKER_REVISION);
+      expect(spec.job_image).toBe(MATRIX_WORKER_IMAGE);
+      expect(spec.worker_revision).toBe(MATRIX_WORKER_REVISION);
       expect(spec.harbor_version).toBe("0.22.0");
+
+      const codexSpec = record(
+        (
+          await profile(
+            "deployment",
+            item.name.replace("-providers", "-codex-providers"),
+          )
+        ).spec,
+      );
+      const codexTemplate = record(codexSpec.trial_job_template);
+      expect(codexSpec.models).toEqual([item.model]);
+      expect(codexSpec.harnesses).toEqual(["codex"]);
+      expect(codexSpec.inference_provider).toBe(item.provider);
+      expect(codexSpec.input_price_microusd_per_million_tokens).toBe(item.input);
+      expect(codexSpec.output_price_microusd_per_million_tokens).toBe(item.output);
+      expect(codexSpec.context_window).toBe(item.context);
+      expect(codexTemplate.inference_api).toBe("responses");
+      expect(codexTemplate.inference_max_output_tokens).toBe(32_768);
+      expect(codexSpec.job_image).toBe(MATRIX_WORKER_IMAGE);
+      expect(codexSpec.worker_revision).toBe(MATRIX_WORKER_REVISION);
     }
   });
 
@@ -428,11 +496,21 @@ describe("Terminal-Bench 2.1 profiles", () => {
     const deploymentNames = (await readdir("profiles/deployment"))
       .filter((name) => name.startsWith("tb21-") && name.endsWith(".json"))
       .map((name) => name.replace(/\.json$/, ""));
+    const matrixNames = new Set([
+      "tb21-qwen3-8-27b-deepinfra-providers",
+      "tb21-qwen3-8-27b-deepinfra-codex-providers",
+      "tb21-glm-5-3-flash-together-providers",
+      "tb21-glm-5-3-flash-together-codex-providers",
+    ]);
     for (const name of deploymentNames) {
       const spec = record((await profile("deployment", name)).spec);
       const template = record(spec.trial_job_template);
-      expect(spec.job_image).toBe(WORKER_IMAGE);
-      expect(spec.worker_revision).toBe(WORKER_REVISION);
+      expect(spec.job_image).toBe(
+        matrixNames.has(name) ? MATRIX_WORKER_IMAGE : PREVIOUS_WORKER_IMAGE,
+      );
+      expect(spec.worker_revision).toBe(
+        matrixNames.has(name) ? MATRIX_WORKER_REVISION : PREVIOUS_WORKER_REVISION,
+      );
       expect(spec.preparation_job_command).toEqual(PREPARATION_COMMAND);
       expect(spec.job_command).toEqual(EXECUTION_COMMAND);
       expect(template.root_bootstrap_command).toEqual(ROOT_BRIDGE_COMMAND);
@@ -470,7 +548,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
     const loaded = await loadBuiltInProfiles("profiles");
     const resolver = new ProfileResolver(loaded);
     const specOwners = new Map<string, string>();
-    expect(loaded).toHaveLength(53);
+    expect(loaded).toHaveLength(55);
     expect(new Set(loaded.map((item) => item.profile_id)).size).toBe(loaded.length);
     for (const item of loaded) {
       const specKey = `${item.profile.profile_kind}:${sha256(

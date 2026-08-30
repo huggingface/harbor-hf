@@ -7,10 +7,11 @@ tags: [agents, codex, terminus, mini-swe-agent]
 
 # Add Terminus and standalone Codex harnesses
 
-**Status.** Approved implementation plan. Merge the source pull request only
-after local checks, review, and CI pass. A second reviewed profile change pins
-the published worker and enables the new deployment combinations. No paid
-benchmark work belongs to either source change.
+**Status.** The source change is merged at
+`157443566ffb0e66886ea14e261a3ecf9135d101`. The official worker image is
+`ghcr.io/huggingface/harbor-hf-trial-worker@sha256:d58dedb249a1e722bbc04496e0119842e6fe8ee025efbe7cc39d338ca05ac38b`.
+The profile change must pass local checks, review, and CI before merge. Paid
+benchmark work remains a later action.
 
 ## Goal
 
@@ -79,14 +80,14 @@ operation.
 
 ## Rollout
 
-After the source pull request is reviewed, green, and merged, wait for the
-official worker image. In a second focused pull request, pin the exact merged
-worker revision and image digest. Add separate Responses deployments for
-standalone Codex. Add Terminus to the existing compatible Chat Completions
-deployments and remove harnesses that are not part of the intended matrix.
-Regenerate deterministic profile IDs and rerun all profile and contract checks.
+Pin the two existing Chat Completions deployments to the exact merged worker
+revision and image digest. Their harness list is `pi-off`, `mini-swe-agent`,
+`terminus`, `fx`, and `pi`. Add one Responses-only `codex` deployment for each
+model. Preserve each model, provider, price, context limit, output limit, Job
+policy, and evidence contract. Regenerate deterministic profile IDs and rerun
+all profile and contract checks.
 
-Merge and deploy only after that second change is reviewed and green. Paid
+Merge and deploy only after the profile change is reviewed and green. Paid
 canaries are a later action. Run one exact cell at a time and require positive
 input and output tokens, valid receipts, exact provenance, publication, cost
 reconciliation, and cleanup. Stop if the same deterministic failure repeats
