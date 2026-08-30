@@ -4,12 +4,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 from harbor.agents.terminus_2 import Terminus2
+from harbor.environments.base import ExecResult
 from harbor.models.agent.context import AgentContext
 
 from harbor_hf_agents.support import job_inference_route
+from harbor_hf_agents.support.control_job_environment import ControlJobEnvironment
 from harbor_hf_agents.support.job_inference_route import JobInferenceRoute
 from harbor_hf_agents.terminus import agent as terminus_module
-from harbor_hf_agents.terminus.agent import TerminusAgent
+from harbor_hf_agents.terminus.agent import TerminusAgent, _JobTmuxSession
 
 
 def _agent(temp_dir) -> TerminusAgent:
@@ -24,8 +26,77 @@ def _agent(temp_dir) -> TerminusAgent:
             "max_input_tokens": 262144,
             "max_output_tokens": 32768,
         },
+        record_terminal_session=False,
         use_responses_api=False,
     )
+
+
+@pytest.mark.asyncio
+async def test_tmux_setup_returns_when_the_detached_session_is_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[str] = []
+
+    async def exec_command(command: str, **_kwargs: object) -> ExecResult:
+        commands.append(command)
+        return ExecResult(stdout="", stderr="", return_code=0)
+
+    environment = AsyncMock(spec=ControlJobEnvironment)
+    environment.exec.side_effect = exec_command
+    session = _JobTmuxSession(
+        session_name="terminus-2",
+        environment=environment,
+        logging_path="/logs/agent/terminus_2.pane",
+        local_asciinema_recording_path=None,
+        remote_asciinema_recording_path=None,
+        user="root",
+    )
+    monkeypatch.setattr(session, "_attempt_tmux_installation", AsyncMock())
+
+    await session.start()
+
+    environment.start_background.assert_awaited_once()
+    startup_command = environment.start_background.await_args.kwargs["command"]
+    assert "tmux new-session" in startup_command
+    assert "tmux has-session -t terminus-2" in commands
+    assert "tmux set-option -g history-limit 10000000" in commands
+
+
+@pytest.mark.asyncio
+async def test_tmux_setup_reports_a_startup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = AsyncMock(spec=ControlJobEnvironment)
+    environment.start_background.side_effect = RuntimeError("tmux failed")
+    session = _JobTmuxSession(
+        session_name="terminus-2",
+        environment=environment,
+        logging_path="/logs/agent/terminus_2.pane",
+        local_asciinema_recording_path=None,
+        remote_asciinema_recording_path=None,
+        user="root",
+    )
+    monkeypatch.setattr(session, "_attempt_tmux_installation", AsyncMock())
+
+    with pytest.raises(RuntimeError, match="tmux failed"):
+        await session.start()
+
+
+@pytest.mark.asyncio
+async def test_agent_setup_uses_the_detached_job_tmux_session(
+    temp_dir,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start = AsyncMock()
+    monkeypatch.setattr(_JobTmuxSession, "start", start)
+    environment = AsyncMock()
+    environment.default_user = "root"
+    agent = _agent(temp_dir)
+
+    await agent.setup(environment)
+
+    assert isinstance(agent._session, _JobTmuxSession)
+    start.assert_awaited_once_with()
 
 
 def test_keeps_public_terminus_identity(temp_dir) -> None:

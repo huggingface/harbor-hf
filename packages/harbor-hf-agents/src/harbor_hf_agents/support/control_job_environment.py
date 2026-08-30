@@ -239,6 +239,31 @@ class ControlJobEnvironment(BaseEnvironment):
         except OciRuntimeError as error:
             raise JobEnvironmentError(str(error)) from error
 
+    async def start_background(
+        self,
+        command: str,
+        *,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        user: str | int | None = None,
+    ) -> None:
+        """Start a command that is bounded by the task environment lifecycle."""
+        runtime = self._require_runtime()
+        child_environment = self._child_environment(env)
+        try:
+            await runtime.start_background(
+                command,
+                cwd=cwd,
+                environment=child_environment,
+                user=self._resolve_user(user),
+            )
+        except OciTransferError as error:
+            raise JobEnvironmentSecurityError(str(error)) from error
+        except OciRuntimeUnavailableError as error:
+            raise JobEnvironmentPreflightError(str(error)) from error
+        except OciRuntimeError as error:
+            raise JobEnvironmentError(str(error)) from error
+
     @override
     async def exec(
         self,

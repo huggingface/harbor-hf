@@ -46,6 +46,7 @@ class FakeRuntime:
         self.stopped = False
         self.quiesced = False
         self.exec_calls: list[dict[str, object]] = []
+        self.background_calls: list[dict[str, object]] = []
         self.transfer_calls: list[tuple[str, object, object]] = []
         type(self).instances.append(self)
 
@@ -62,6 +63,23 @@ class FakeRuntime:
 
     async def quiesce(self) -> None:
         self.quiesced = True
+
+    async def start_background(
+        self,
+        command: str,
+        *,
+        cwd: str | None,
+        environment: dict[str, str],
+        user: str | int | None,
+    ) -> None:
+        self.background_calls.append(
+            {
+                "command": command,
+                "cwd": cwd,
+                "environment": environment,
+                "user": user,
+            }
+        )
 
     async def exec(
         self,
@@ -267,6 +285,29 @@ async def test_transfers_use_the_isolated_runtime(tmp_path: Path) -> None:
         ("download_file", "/workspace/result", target),
         ("upload_dir", tmp_path, "/workspace/tree"),
         ("download_dir", "/workspace/tree", target),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_background_command_uses_the_task_lifecycle_without_a_timeout(
+    tmp_path: Path,
+) -> None:
+    environment = _environment(tmp_path, timeout=1)
+    await environment.start(force_build=False)
+
+    await environment.start_background(
+        "tmux new-session -d",
+        env={"VISIBLE_TASK_SETTING": "visible"},
+        user="root",
+    )
+
+    assert FakeRuntime.instances[-1].background_calls == [
+        {
+            "command": "tmux new-session -d",
+            "cwd": None,
+            "environment": {"VISIBLE_TASK_SETTING": "visible"},
+            "user": "root",
+        }
     ]
 
 

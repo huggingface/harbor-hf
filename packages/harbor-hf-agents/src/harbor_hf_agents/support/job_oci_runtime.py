@@ -1743,6 +1743,7 @@ class IsolatedOciRuntime:
         self._image_user = _ContainerUser(uid=0, gid=0, home="/root", name="root")
         self._image_cwd = "/"
         self._running = False
+        self._background_processes: set[asyncio.subprocess.Process] = set()
 
     @staticmethod
     def preflight() -> None:
@@ -1869,6 +1870,19 @@ class IsolatedOciRuntime:
         self.rootfs.rmdir()
         unpacked_rootfs.rename(self.rootfs)
 
+    async def _reap_background_processes(self) -> None:
+        processes = tuple(self._background_processes)
+        for process in processes:
+            if process.returncode is None:
+                with suppress(ProcessLookupError):
+                    process.kill()
+        if processes:
+            await asyncio.gather(
+                *(process.wait() for process in processes),
+                return_exceptions=True,
+            )
+        self._background_processes.clear()
+
     async def stop(self) -> None:
         """Stop every process with the dedicated UID, then remove task files."""
         if platform.system() == "Linux":
@@ -1877,6 +1891,7 @@ class IsolatedOciRuntime:
                     "trusted worker lost root before task cleanup"
                 )
             await asyncio.to_thread(_kill_task_processes)
+        await self._reap_background_processes()
         self._running = False
         shutil.rmtree(self.rootfs, ignore_errors=True)
         shutil.rmtree(self.workspace, ignore_errors=True)
@@ -1890,6 +1905,7 @@ class IsolatedOciRuntime:
                 "trusted worker cannot quiesce the dedicated task UID"
             )
         await asyncio.to_thread(_kill_task_processes)
+        await self._reap_background_processes()
 
     def _resolve_user(  # noqa: C901 -- strict passwd parsing
         self,
@@ -1982,6 +1998,39 @@ class IsolatedOciRuntime:
         arguments.extend(f"{name}={value}" for name, value in sorted(merged.items()))
         arguments.extend(["/bin/bash", "-lc", command])
         return arguments
+
+    async def start_background(
+        self,
+        command: str,
+        *,
+        cwd: str | None,
+        environment: dict[str, str],
+        user: str | int | None,
+    ) -> None:
+        """Start one lifecycle-owned command without a per-command timeout."""
+        if not self._running:
+            raise OciRuntimeError("task OCI runtime is not running")
+        arguments = self._proot_arguments(
+            command,
+            cwd=cwd,
+            environment=environment,
+            user=user,
+        )
+        process = await asyncio.create_subprocess_exec(
+            *_setpriv_arguments(arguments),
+            env=_PROOT_ENVIRONMENT,
+            start_new_session=True,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        self._background_processes.add(process)
+        await asyncio.sleep(0)
+        if process.returncode is not None:
+            await process.wait()
+            self._background_processes.discard(process)
+            if process.returncode != 0:
+                raise OciRuntimeError("background task command failed to start")
 
     async def exec(
         self,

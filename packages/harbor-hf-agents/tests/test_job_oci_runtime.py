@@ -17,6 +17,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -594,6 +595,56 @@ def test_rootfs_limits_reject_bytes_and_entries_before_mapping(tmp_path: Path) -
             rootfs,
             ImageLimits(max_bytes=10, max_entries=1),
         )
+
+
+@pytest.mark.asyncio
+async def test_background_process_is_lifecycle_owned_and_reaped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    isolated = IsolatedOciRuntime(
+        _TASK_IMAGE,
+        _limits(),
+        _image_limits(),
+        control_task_image_mirror_repository=_MIRROR_REPOSITORY,
+    )
+    process = Mock()
+    process.returncode = None
+    process.wait = AsyncMock(return_value=-9)
+    create_process = AsyncMock(return_value=process)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_process)
+    monkeypatch.setattr(
+        isolated,
+        "_proot_arguments",
+        lambda *_args, **_kwargs: ["proot", "command"],
+    )
+    monkeypatch.setattr(runtime, "_setpriv_arguments", lambda arguments: arguments)
+    isolated._running = True
+    try:
+        await isolated.start_background(
+            "tmux new-session -d",
+            cwd=None,
+            environment={},
+            user="root",
+        )
+
+        assert process in isolated._background_processes
+        create_process.assert_awaited_once_with(
+            "proot",
+            "command",
+            env=runtime._PROOT_ENVIRONMENT,
+            start_new_session=True,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+
+        await isolated._reap_background_processes()
+
+        process.kill.assert_called_once_with()
+        process.wait.assert_awaited_once_with()
+        assert isolated._background_processes == set()
+    finally:
+        _cleanup_runtime(isolated)
 
 
 @pytest.mark.asyncio
