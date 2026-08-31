@@ -7,11 +7,11 @@ tags: [agents, codex, terminus, mini-swe-agent]
 
 # Add Terminus and standalone Codex harnesses
 
-**Status.** The Together Responses continuation repair is merged at
-`63c74b8877962c792aae72d2de4d5a3c973c52dc`. The official worker image is
-`ghcr.io/huggingface/harbor-hf-trial-worker@sha256:246d82249495916bccfc2f9b122f6eade75143c9e542464fc3949dbe09b0a2c5`.
-The profile repin must pass local checks, review, and CI before merge. Paid
-benchmark work remains a later action.
+**Status.** The harnesses are implemented. The runnable matrix has nine cells.
+GLM-5.3-Flash through Together plus standalone Codex is an unsupported cell:
+Codex 0.118.0 requires Responses, while the Together route provides Chat
+Completions. The matrix skips this cell without a run or benchmark failure.
+Qwen3.8-27B through DeepInfra plus Codex remains a native Responses cell.
 
 ## Goal
 
@@ -48,7 +48,9 @@ can execute as root.
 
 Terminus and mini-swe-agent use Chat Completions. Standalone Codex uses
 Responses. The root bridge exposes only the selected API. There is no API
-translation or fallback to another harness.
+translation, payload normalization, or fallback to another harness. A cell is
+runnable only when the deployment's native API matches the harness capability.
+Unsupported cells are recorded and skipped before run admission.
 
 Models, providers, revisions, benchmark tasks, prices, context and output
 limits, evidence rules, publication rules, timeouts, concurrency, credentials,
@@ -82,10 +84,11 @@ operation.
 
 Pin the two existing Chat Completions deployments to the exact merged worker
 revision and image digest. Their harness list is `pi-off`, `mini-swe-agent`,
-`terminus`, `fx`, and `pi`. Add one Responses-only `codex` deployment for each
-model. Preserve each model, provider, price, context limit, output limit, Job
-policy, and evidence contract. Regenerate deterministic profile IDs and rerun
-all profile and contract checks.
+`terminus`, `fx`, and `pi`. Keep the Responses-only `codex` deployment for
+Qwen3.8-27B through DeepInfra. Do not create a Codex deployment for
+GLM-5.3-Flash through Together. Preserve each runnable model, provider, price,
+context limit, output limit, Job policy, and evidence contract. Regenerate
+deterministic profile IDs and rerun all profile and contract checks.
 
 Merge and deploy only after the profile change is reviewed and green. Paid
 canaries are a later action. Run one exact cell at a time and require positive
@@ -97,8 +100,8 @@ after this reviewed repair.
 
 Do not change upstream Harbor, Codex, Terminus, mini-swe-agent, providers,
 benchmark data, or external services. Do not add a compatibility fallback,
-model alias, API translation, new service, repository, credential, Endpoint,
-Space, Bucket, Dataset, or release.
+model alias, API or payload translation, new service, repository, credential,
+Endpoint, Space, Bucket, Dataset, or release.
 
 The source change does not publish a worker, edit active deployments, deploy the
 control service, launch a Job, call a provider, run a canary, merge before review

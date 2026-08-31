@@ -8,7 +8,11 @@ import {
 } from "@harbor-hf/contracts";
 import { describe, expect, it } from "vitest";
 import { composeExecutionContract } from "../src/execution-contract.js";
-import { loadBuiltInProfiles, ProfileResolver } from "../src/profiles.js";
+import {
+  loadBuiltInProfiles,
+  ProfileResolutionError,
+  ProfileResolver,
+} from "../src/profiles.js";
 
 const MATRIX_WORKER_REVISION = "63c74b8877962c792aae72d2de4d5a3c973c52dc";
 const MATRIX_WORKER_IMAGE =
@@ -351,39 +355,40 @@ describe("Terminal-Bench 2.1 profiles", () => {
     }
   });
 
-  it("composes standalone Codex with Responses for both matrix models", async () => {
+  it("composes standalone Codex only with a native Responses route", async () => {
     const resolver = new ProfileResolver(await loadBuiltInProfiles("profiles"));
-    const matrix = [
-      {
+    const execution = composeExecutionContract(
+      resolver.resolve({
+        benchmark: "terminal-bench-2-1-canary",
         model: "qwen3-8-27b-deepinfra",
+        harness: "codex",
         deployment: "tb21-qwen3-8-27b-deepinfra-codex-providers",
-        agentModel: "openai/Qwen/Qwen3.8-27B:deepinfra",
-        bridgeModel: "Qwen/Qwen3.8-27B:deepinfra",
-      },
-      {
-        model: "glm-5-3-flash-together",
-        deployment: "tb21-glm-5-3-flash-together-codex-providers",
-        agentModel: "openai/zai-org/GLM-5.3-Flash:together",
-        bridgeModel: "zai-org/GLM-5.3-Flash:together",
-      },
-    ] as const;
+        launch_policy: "tb21-canary",
+      }),
+    );
 
-    for (const item of matrix) {
-      const execution = composeExecutionContract(
-        resolver.resolve({
-          benchmark: "terminal-bench-2-1-canary",
-          model: item.model,
-          harness: "codex",
-          deployment: item.deployment,
-          launch_policy: "tb21-canary",
-        }),
-      );
-      expect(execution.source_profiles.harness.name).toBe("codex");
-      expect(execution.inference?.api).toBe("responses");
-      expect(execution.inference?.bridge_model).toBe(item.bridgeModel);
-      expect(execution.inference?.agent_model).toBe(item.agentModel);
-      expect(execution.harbor_agent?.model_name).toBe(item.agentModel);
-    }
+    expect(execution.source_profiles.harness.name).toBe("codex");
+    expect(execution.inference?.api).toBe("responses");
+    expect(execution.inference?.bridge_model).toBe("Qwen/Qwen3.8-27B:deepinfra");
+    expect(execution.inference?.agent_model).toBe("openai/Qwen/Qwen3.8-27B:deepinfra");
+    expect(execution.harbor_agent?.model_name).toBe(
+      "openai/Qwen/Qwen3.8-27B:deepinfra",
+    );
+  });
+
+  it("records GLM plus Codex as unsupported instead of selecting a route", async () => {
+    const resolver = new ProfileResolver(await loadBuiltInProfiles("profiles"));
+
+    expect(() =>
+      resolver.resolve({
+        benchmark: "terminal-bench-2-1-canary",
+        model: "glm-5-3-flash-together",
+        harness: "codex",
+        launch_policy: "tb21-canary",
+      }),
+    ).toThrowError(
+      new ProfileResolutionError("expected one compatible deployment, found 0"),
+    );
   });
 
   it("routes bounded public aliases through the composed contract", async () => {
@@ -472,27 +477,22 @@ describe("Terminal-Bench 2.1 profiles", () => {
       expect(spec.job_image).toBe(MATRIX_WORKER_IMAGE);
       expect(spec.worker_revision).toBe(MATRIX_WORKER_REVISION);
       expect(spec.harbor_version).toBe("0.22.0");
-
-      const codexSpec = record(
-        (
-          await profile(
-            "deployment",
-            item.name.replace("-providers", "-codex-providers"),
-          )
-        ).spec,
-      );
-      const codexTemplate = record(codexSpec.trial_job_template);
-      expect(codexSpec.models).toEqual([item.model]);
-      expect(codexSpec.harnesses).toEqual(["codex"]);
-      expect(codexSpec.inference_provider).toBe(item.provider);
-      expect(codexSpec.input_price_microusd_per_million_tokens).toBe(item.input);
-      expect(codexSpec.output_price_microusd_per_million_tokens).toBe(item.output);
-      expect(codexSpec.context_window).toBe(item.context);
-      expect(codexTemplate.inference_api).toBe("responses");
-      expect(codexTemplate.inference_max_output_tokens).toBe(32_768);
-      expect(codexSpec.job_image).toBe(MATRIX_WORKER_IMAGE);
-      expect(codexSpec.worker_revision).toBe(MATRIX_WORKER_REVISION);
     }
+
+    const codexSpec = record(
+      (await profile("deployment", "tb21-qwen3-8-27b-deepinfra-codex-providers")).spec,
+    );
+    const codexTemplate = record(codexSpec.trial_job_template);
+    expect(codexSpec.models).toEqual(["qwen3-8-27b-deepinfra"]);
+    expect(codexSpec.harnesses).toEqual(["codex"]);
+    expect(codexSpec.inference_provider).toBe("deepinfra");
+    expect(codexSpec.input_price_microusd_per_million_tokens).toBe(400_000);
+    expect(codexSpec.output_price_microusd_per_million_tokens).toBe(3_000_000);
+    expect(codexSpec.context_window).toBe(262_144);
+    expect(codexTemplate.inference_api).toBe("responses");
+    expect(codexTemplate.inference_max_output_tokens).toBe(32_768);
+    expect(codexSpec.job_image).toBe(MATRIX_WORKER_IMAGE);
+    expect(codexSpec.worker_revision).toBe(MATRIX_WORKER_REVISION);
   });
 
   it("keeps all Terminal-Bench workers self-contained and digest-pinned", async () => {
@@ -503,7 +503,6 @@ describe("Terminal-Bench 2.1 profiles", () => {
       "tb21-qwen3-8-27b-deepinfra-providers",
       "tb21-qwen3-8-27b-deepinfra-codex-providers",
       "tb21-glm-5-3-flash-together-providers",
-      "tb21-glm-5-3-flash-together-codex-providers",
     ]);
     for (const name of deploymentNames) {
       const spec = record((await profile("deployment", name)).spec);
@@ -551,7 +550,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
     const loaded = await loadBuiltInProfiles("profiles");
     const resolver = new ProfileResolver(loaded);
     const specOwners = new Map<string, string>();
-    expect(loaded).toHaveLength(55);
+    expect(loaded).toHaveLength(54);
     expect(new Set(loaded.map((item) => item.profile_id)).size).toBe(loaded.length);
     for (const item of loaded) {
       const specKey = `${item.profile.profile_kind}:${sha256(

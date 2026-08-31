@@ -106,6 +106,14 @@ native Responses API. It preserves the complete namespaced model ID after
 removing only Harbor's provider prefix. It runs under the isolated agent account
 and remains distinct from OpenClaw with the Codex runtime.
 
+A deployment is eligible only when its native inference API appears in the
+harness capability list. The control service rejects an incompatible explicit
+selection before launch, and automatic selection finds no deployment for an
+unsupported model-provider-harness combination. Matrix plans record that cell
+as unsupported and skip it without creating a run or treating it as a benchmark
+failure. Do not add request translation, response translation, fallback, or
+payload rewriting to force compatibility between different inference APIs.
+
 The Terminus profile keeps the public profile name `terminus` and Harbor's
 `terminus-2` result identity. Terminus is trusted in-process Harbor code. It
 validates the root-owned Job route before execution, uses the locked Chat
