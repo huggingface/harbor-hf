@@ -1503,6 +1503,14 @@
         "reasoning": {
           "type": "boolean"
         },
+        "inference_apis": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["chat-completions", "responses"]
+          }
+        },
         "reasoning_format": {
           "enum": ["deepseek"]
         }

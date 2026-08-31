@@ -71,6 +71,15 @@ function assertCompatibility(
   if (!inferenceRequired) return;
   const api = source.inference_api;
   if (!api) throw new ProfileResolutionError("deployment has no inference API");
+  const modelInferenceApis = model.spec.compatibility.inference_apis;
+  if (!modelInferenceApis)
+    throw new ProfileResolutionError(
+      `model provider route has no native inference API declaration: ${model.name}`,
+    );
+  if (!(modelInferenceApis as readonly string[]).includes(api))
+    throw new ProfileResolutionError(
+      `model provider route does not support deployment inference API: ${api}`,
+    );
   if (!(harness.spec.capabilities.inference_apis as readonly string[]).includes(api))
     throw new ProfileResolutionError(
       `harness does not support deployment inference API: ${api}`,

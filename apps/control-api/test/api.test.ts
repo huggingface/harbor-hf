@@ -1028,7 +1028,10 @@ describe("control API", () => {
       model_id: "example/durable-model",
       revision: sha256("durable-model-revision"),
       harbor_model_name: "openai/example/durable-model:provider",
-      compatibility: { reasoning: false },
+      compatibility: {
+        reasoning: false,
+        inference_apis: ["chat-completions"] as const,
+      },
     };
     const profile: ProfileObject = {
       schema_version: "v1",
@@ -1102,7 +1105,10 @@ describe("control API", () => {
       model_id: "example/replacement-model",
       revision: sha256("replacement-model-revision"),
       harbor_model_name: "openai/example/replacement-model:provider",
-      compatibility: { reasoning: false },
+      compatibility: {
+        reasoning: false,
+        inference_apis: ["chat-completions"] as const,
+      },
     };
     const replacementProfile: ProfileObject = {
       ...profile,

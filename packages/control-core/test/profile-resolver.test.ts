@@ -17,6 +17,47 @@ describe("ProfileResolver", () => {
     expect(resolver.get("harness", "pi-off").profile_id).toBe(reusable.profile_id);
   });
 
+  it("selects only deployments with a native model and harness API", () => {
+    const model = profile("model", "model", {
+      contract_version: "v1",
+      model_id: "example/model",
+      revision: "a",
+      harbor_model_name: "openai/example/model:provider",
+      compatibility: {
+        reasoning: false,
+        inference_apis: ["chat-completions"],
+      },
+    });
+    const harness = profile("harness", "harness", {
+      contract_version: "v1",
+      agent: "agent",
+      revision: "1.0.0",
+      required_evidence: [],
+      capabilities: { inference_apis: ["chat-completions"] },
+    });
+    const deployment = (name: string, api: "chat-completions" | "responses") =>
+      profile("deployment", name, {
+        contract_version: "v1",
+        route: "hf_job",
+        models: ["model"],
+        harnesses: ["harness"],
+        inference_token: "required",
+        inference_api: api,
+      });
+    const supported = deployment("supported", "chat-completions");
+    const unsupported = deployment("unsupported", "responses");
+
+    const resolver = new ProfileResolver([model, harness, supported, unsupported]);
+    expect(resolver.selectDeployment("model", "harness").profile_id).toBe(
+      supported.profile_id,
+    );
+
+    const unsupportedOnly = new ProfileResolver([model, harness, unsupported]);
+    expect(() => unsupportedOnly.selectDeployment("model", "harness")).toThrow(
+      "found 0",
+    );
+  });
+
   it("keeps the deployed profile when a promotion is a stale digest of the same name", () => {
     const current = profile("deployment", "tb21-providers", {
       contract_version: "v1",
@@ -44,14 +85,20 @@ describe("ProfileResolver", () => {
       model_id: "built-in",
       revision: "a",
       harbor_model_name: "openai/example/built-in:provider",
-      compatibility: { reasoning: false },
+      compatibility: {
+        reasoning: false,
+        inference_apis: ["chat-completions"],
+      },
     });
     const remapped = profile("model", "durable-model", {
       contract_version: "v1",
       model_id: "durable",
       revision: "b",
       harbor_model_name: "openai/example/durable:provider",
-      compatibility: { reasoning: false },
+      compatibility: {
+        reasoning: false,
+        inference_apis: ["chat-completions"],
+      },
     });
     const resolver = new ProfileResolver([builtIn]);
     resolver.replacePromotedProfiles([{ ...remapped, alias: "control-smoke" }]);

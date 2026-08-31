@@ -3,6 +3,8 @@ import { join } from "node:path";
 import type {
   BenchmarkProfileSpec,
   DeploymentProfileSpec,
+  HarnessProfileSpec,
+  ModelProfileSpec,
   PreparedTrial,
   ProfileObject,
   ResolvedExecutionContract,
@@ -282,6 +284,18 @@ function scalarArray(spec: ProfileObject["spec"], key: string): string[] {
   return value;
 }
 
+function deploymentInferenceApi(
+  spec: DeploymentProfileSpec,
+): "chat-completions" | "responses" | "" | null {
+  if (spec.route !== "hf_job") return null;
+  const source = spec.trial_job_template ?? spec;
+  const inferenceRequired =
+    spec.inference_token === "required" ||
+    spec.trial_job_template?.inference_token === "required";
+  if (!inferenceRequired) return null;
+  return source.inference_api ?? "";
+}
+
 function profileKey(kind: ProfileObject["profile_kind"], alias: string): string {
   return `${kind}:${alias}`;
 }
@@ -389,14 +403,30 @@ export class ProfileResolver {
     requested?: string | null,
   ): LoadedProfile {
     if (requested) return this.get("deployment", requested);
+    const modelProfile = this.get("model", model);
+    const harnessProfile = this.get("harness", harness);
+    const modelApis =
+      (modelProfile.profile.spec as ModelProfileSpec).compatibility.inference_apis ??
+      [];
+    const harnessApis = (harnessProfile.profile.spec as HarnessProfileSpec).capabilities
+      .inference_apis;
     const candidates = new Map<string, LoadedProfile>();
     for (const item of this.availableProfiles().values()) {
       if (item.profile.profile_kind !== "deployment") continue;
       if (
-        scalarArray(item.profile.spec, "models").includes(model) &&
-        scalarArray(item.profile.spec, "harnesses").includes(harness)
+        !scalarArray(item.profile.spec, "models").includes(model) ||
+        !scalarArray(item.profile.spec, "harnesses").includes(harness)
       )
-        candidates.set(item.profile_id, item);
+        continue;
+      const api = deploymentInferenceApi(item.profile.spec as DeploymentProfileSpec);
+      if (
+        api !== null &&
+        (!api ||
+          !(modelApis as readonly string[]).includes(api) ||
+          !(harnessApis as readonly string[]).includes(api))
+      )
+        continue;
+      candidates.set(item.profile_id, item);
     }
     if (candidates.size !== 1) {
       throw new ProfileResolutionError(

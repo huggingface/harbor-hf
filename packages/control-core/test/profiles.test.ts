@@ -47,7 +47,10 @@ const model: ModelProfileSpec = {
   model_id: "example/model",
   revision: "abcdef0",
   harbor_model_name: "openai/example/model:provider",
-  compatibility: { reasoning: false },
+  compatibility: {
+    reasoning: false,
+    inference_apis: ["chat-completions"],
+  },
 };
 const harness: HarnessProfileSpec = {
   contract_version: "v1",
@@ -219,6 +222,11 @@ describe("resolved execution profiles", () => {
     ).toThrow("provider suffix");
     expect(() =>
       composeExecutionContract(
+        resolved({ ...model, compatibility: { reasoning: false } }),
+      ),
+    ).toThrow("no native inference API declaration");
+    expect(() =>
+      composeExecutionContract(
         resolved(model, "model", {
           ...deployment(),
           trial_job_template: {
@@ -229,7 +237,21 @@ describe("resolved execution profiles", () => {
           },
         }),
       ),
-    ).toThrow("does not support");
+    ).toThrow("model provider route does not support");
+    expect(() =>
+      composeExecutionContract([
+        ...resolved().filter((profile) => profile.kind !== "harness"),
+        {
+          kind: "harness",
+          name: "harness",
+          profile_id: `sha256:${"b".repeat(64)}`,
+          spec: {
+            ...harness,
+            capabilities: { inference_apis: ["responses"] },
+          },
+        },
+      ]),
+    ).toThrow("harness does not support");
     expect(() =>
       composeExecutionContract([
         ...resolved().filter((profile) => profile.kind !== "harness"),

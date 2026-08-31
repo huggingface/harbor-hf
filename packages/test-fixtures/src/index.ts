@@ -60,7 +60,10 @@ export function smokeProfiles(
         inferenceToken === "required"
           ? "openai/example/model:provider"
           : "control-smoke",
-      compatibility: { reasoning: false },
+      compatibility: {
+        reasoning: false,
+        inference_apis: inferenceToken === "required" ? ["chat-completions"] : [],
+      },
     }),
     profile("harness", "control-smoke", {
       contract_version: "v1",
@@ -149,7 +152,10 @@ export function preparedProfiles(taskCount = 1): LoadedProfile[] {
       model_id: "example/model",
       revision: sha256("prepared-model"),
       harbor_model_name: "openai/example/model:provider",
-      compatibility: { reasoning: false },
+      compatibility: {
+        reasoning: false,
+        inference_apis: ["chat-completions"],
+      },
     }),
     profile("harness", "prepared-harness", {
       contract_version: "v1",

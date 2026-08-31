@@ -106,9 +106,10 @@ native Responses API. It preserves the complete namespaced model ID after
 removing only Harbor's provider prefix. It runs under the isolated agent account
 and remains distinct from OpenClaw with the Codex runtime.
 
-A deployment is eligible only when its native inference API appears in the
-harness capability list. The control service rejects an incompatible explicit
-selection before launch, and automatic selection finds no deployment for an
+A deployment is eligible only when its inference API appears in both the model
+provider route's native API list and the harness capability list. The control
+service rejects an incompatible explicit selection before launch, including a
+stale promoted deployment, and automatic selection finds no deployment for an
 unsupported model-provider-harness combination. Matrix plans record that cell
 as unsupported and skip it without creating a run or treating it as a benchmark
 failure. Do not add request translation, response translation, fallback, or

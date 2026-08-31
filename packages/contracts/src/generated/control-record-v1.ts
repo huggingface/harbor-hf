@@ -575,6 +575,10 @@ aliases?: Id[]
 }
 export interface ModelCompatibility {
 reasoning: boolean
+/**
+ * @maxItems 2
+ */
+inference_apis?: []|[("chat-completions" | "responses")]|[("chat-completions" | "responses"), ("chat-completions" | "responses")]
 reasoning_format?: "deepseek"
 }
 export interface HarnessProfileSpec {
