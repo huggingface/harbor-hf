@@ -58,6 +58,35 @@ def _upstream_request_path(upstream_path: str, request_path: str) -> str:
     return f"{base_path}{request_path}"
 
 
+def _is_empty_responses_assistant_message(item: object) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if item.get("type") != "message" or item.get("role") != "assistant":
+        return False
+    content = item.get("content")
+    if content is None or content == "" or content == []:
+        return True
+    if not isinstance(content, list):
+        return False
+    return all(
+        isinstance(part, dict)
+        and part.get("type") in ("output_text", "text")
+        and part.get("text") == ""
+        for part in content
+    )
+
+
+def _responses_call_ids(items: list[object], item_type: str) -> set[str]:
+    call_ids: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict) or item.get("type") != item_type:
+            continue
+        call_id = item.get("call_id")
+        if isinstance(call_id, str) and call_id:
+            call_ids.add(call_id)
+    return call_ids
+
+
 def _responses_request(payload: dict[str, object]) -> dict[str, object]:
     """Remove Responses fields rejected by the selected HF provider."""
     request = dict(payload)
@@ -71,11 +100,23 @@ def _responses_request(payload: dict[str, object]) -> dict[str, object]:
         and model.rpartition(":")[2] == "together"
         and isinstance(input_items, list)
     ):
-        request["input"] = [
+        normalized_items = [
             item
             for item in input_items
             if not (isinstance(item, dict) and item.get("type") == "reasoning")
         ]
+        function_call_ids = _responses_call_ids(normalized_items, "function_call")
+        function_output_ids = _responses_call_ids(
+            normalized_items, "function_call_output"
+        )
+        if function_call_ids & function_output_ids:
+            # Keep the call and its result adjacent for Responses-to-chat gateways.
+            normalized_items = [
+                item
+                for item in normalized_items
+                if not _is_empty_responses_assistant_message(item)
+            ]
+        request["input"] = normalized_items
     return request
 
 
@@ -771,6 +812,8 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
 
 
 def _bridge_script() -> str:
+    empty_assistant_message = inspect.getsource(_is_empty_responses_assistant_message)
+    responses_call_ids = inspect.getsource(_responses_call_ids)
     responses_request = inspect.getsource(_responses_request)
     usage_pair = inspect.getsource(_usage_pair)
     payload_usage = inspect.getsource(_payload_usage)
@@ -781,6 +824,10 @@ def _bridge_script() -> str:
     body = inspect.getsource(_run_hf_inference_bridge)
     return (
         "from typing import cast\n\n"
+        + empty_assistant_message
+        + "\n"
+        + responses_call_ids
+        + "\n"
         + responses_request
         + "\n"
         + usage_pair

@@ -48,7 +48,10 @@ def test_embedded_bridge_allows_bounded_streaming_overhead() -> None:
     assert "body_timeout_seconds = 30" in source
     assert "socket_timeout_seconds = 30" in source
     assert "request_body = _responses_request(request_body)" in source
-    assert "def _responses_request" in _bridge_script()
+    bridge_script = _bridge_script()
+    assert "def _responses_request" in bridge_script
+    assert "def _is_empty_responses_assistant_message" in bridge_script
+    assert "def _responses_call_ids" in bridge_script
 
 
 def test_responses_request_omits_null_reasoning() -> None:
@@ -103,6 +106,99 @@ def test_responses_request_removes_together_reasoning_input_items() -> None:
         ],
     }
     assert len(payload["input"]) == 4
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        None,
+        "",
+        [],
+        [{"type": "output_text", "text": ""}],
+        [{"type": "text", "text": ""}],
+    ],
+)
+def test_responses_request_removes_empty_together_assistant_tool_separator(
+    content: object,
+) -> None:
+    function_call = {
+        "type": "function_call",
+        "call_id": "call-1",
+        "name": "shell",
+        "arguments": "{}",
+    }
+    empty_assistant = {
+        "type": "message",
+        "role": "assistant",
+        "content": content,
+    }
+    function_output = {
+        "type": "function_call_output",
+        "call_id": "call-1",
+        "output": "ok",
+    }
+    reasoning = {
+        "type": "reasoning",
+        "summary": [],
+        "content": None,
+        "encrypted_content": None,
+    }
+    payload = {
+        "model": "zai-org/GLM-5.3-Flash:together",
+        "input": [reasoning, function_call, empty_assistant, function_output],
+    }
+
+    assert _responses_request(payload) == {
+        "model": "zai-org/GLM-5.3-Flash:together",
+        "input": [function_call, function_output],
+    }
+    assert payload["input"] == [
+        reasoning,
+        function_call,
+        empty_assistant,
+        function_output,
+    ]
+
+
+def test_responses_request_preserves_meaningful_together_assistant_message() -> None:
+    assistant_message = {
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": "I will inspect it."}],
+    }
+    payload = {
+        "model": "zai-org/GLM-5.3-Flash:together",
+        "input": [
+            {
+                "type": "function_call",
+                "call_id": "call-1",
+                "name": "shell",
+                "arguments": "{}",
+            },
+            assistant_message,
+            {
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "ok",
+            },
+        ],
+    }
+
+    assert assistant_message in _responses_request(payload)["input"]
+
+
+def test_responses_request_preserves_empty_assistant_without_tool_pair() -> None:
+    empty_assistant = {
+        "type": "message",
+        "role": "assistant",
+        "content": [],
+    }
+    payload = {
+        "model": "zai-org/GLM-5.3-Flash:together",
+        "input": [empty_assistant],
+    }
+
+    assert _responses_request(payload) == payload
 
 
 def test_responses_request_preserves_reasoning_input_for_other_providers() -> None:
