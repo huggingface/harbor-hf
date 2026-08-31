@@ -561,6 +561,7 @@ trial_indices?: [number, ...(number)[]]
 harbor_job?: {
 [k: string]: unknown
 }
+launch_policy_constraints_required?: boolean
 }
 export interface ModelProfileSpec {
 contract_version: "v1"
@@ -674,6 +675,29 @@ max_preparation_attempts?: number
  * @maxItems 64
  */
 required_positive_metrics?: string[]
+profile_constraints?: ProfileConstraints
+}
+export interface ProfileConstraints {
+/**
+ * @minItems 1
+ * @maxItems 256
+ */
+benchmarks: [Id, ...(Id)[]]
+/**
+ * @minItems 1
+ * @maxItems 256
+ */
+models: [Id, ...(Id)[]]
+/**
+ * @minItems 1
+ * @maxItems 256
+ */
+harnesses: [Id, ...(Id)[]]
+/**
+ * @minItems 1
+ * @maxItems 256
+ */
+deployments: [Id, ...(Id)[]]
 }
 export interface CapacityProfileSpec {
 namespace: string

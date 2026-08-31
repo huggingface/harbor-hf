@@ -78,7 +78,7 @@ function taskTuples(spec: Record<string, unknown>) {
 }
 
 describe("Terminal-Bench 2.1 profiles", () => {
-  it("locks the official and diagnostic task sets", async () => {
+  it("locks the official, diagnostic, and full task sets", async () => {
     const canary = record(
       (await profile("benchmark", "terminal-bench-2-1-canary")).spec,
     );
@@ -91,18 +91,23 @@ describe("Terminal-Bench 2.1 profiles", () => {
     const diagnostic = record(
       (await profile("benchmark", "terminal-bench-2-1-diagnostic-1")).spec,
     );
+    const full = record((await profile("benchmark", "terminal-bench-2-1-full")).spec);
 
     expect(official.task_ids).toHaveLength(445);
     expect(new Set(official.task_ids as string[]).size).toBe(445);
     expect(new Set(official.source_task_ids as string[]).size).toBe(89);
     expect(taskTuples(replacement)).toEqual([taskTuples(canary)[0]]);
-    expect(taskTuples(diagnostic)).toEqual(
-      taskTuples(official).filter((task) => task.trialIndex === 1),
-    );
-    expect(taskTuples(diagnostic)).toHaveLength(89);
+    const firstTrials = taskTuples(official).filter((task) => task.trialIndex === 1);
+    expect(taskTuples(diagnostic)).toEqual(firstTrials);
+    expect(taskTuples(full)).toEqual(firstTrials);
+    expect(taskTuples(full)).toHaveLength(89);
     expect(record(canary.harbor_job).agent_timeout_multiplier).toBe(4);
     expect(record(diagnostic.harbor_job).n_attempts).toBe(1);
     expect(record(diagnostic.harbor_job).n_concurrent_trials).toBe(8);
+    expect(record(full.harbor_job).n_attempts).toBe(1);
+    expect(record(full.harbor_job).n_concurrent_trials).toBe(16);
+    expect(full.launch_policy_constraints_required).toBe(true);
+    expect(diagnostic.launch_policy_constraints_required).toBeUndefined();
   });
 
   it("keeps one model profile as the only checked-in model-route owner", async () => {
@@ -391,6 +396,117 @@ describe("Terminal-Bench 2.1 profiles", () => {
     );
   });
 
+  it("resolves the nine runnable full matrix cells with their measured policies", async () => {
+    const resolver = new ProfileResolver(await loadBuiltInProfiles("profiles"));
+    const cells = [
+      [
+        "qwen3-8-27b-deepinfra",
+        "pi-off",
+        "tb21-qwen3-8-27b-deepinfra-providers",
+        "tb21-full-qwen-standard",
+      ],
+      [
+        "qwen3-8-27b-deepinfra",
+        "mini-swe-agent",
+        "tb21-qwen3-8-27b-deepinfra-providers",
+        "tb21-full-qwen-mini-swe-agent",
+      ],
+      [
+        "qwen3-8-27b-deepinfra",
+        "terminus",
+        "tb21-qwen3-8-27b-deepinfra-providers",
+        "tb21-full-qwen-terminus",
+      ],
+      [
+        "qwen3-8-27b-deepinfra",
+        "fx",
+        "tb21-qwen3-8-27b-deepinfra-providers",
+        "tb21-full-qwen-fx",
+      ],
+      [
+        "qwen3-8-27b-deepinfra",
+        "codex",
+        "tb21-qwen3-8-27b-deepinfra-codex-providers",
+        "tb21-full-qwen-standard",
+      ],
+      [
+        "glm-5-3-flash-together",
+        "pi-off",
+        "tb21-glm-5-3-flash-together-providers",
+        "tb21-full-glm-standard",
+      ],
+      [
+        "glm-5-3-flash-together",
+        "mini-swe-agent",
+        "tb21-glm-5-3-flash-together-providers",
+        "tb21-full-glm-mini-swe-agent",
+      ],
+      [
+        "glm-5-3-flash-together",
+        "terminus",
+        "tb21-glm-5-3-flash-together-providers",
+        "tb21-full-glm-standard",
+      ],
+      [
+        "glm-5-3-flash-together",
+        "fx",
+        "tb21-glm-5-3-flash-together-providers",
+        "tb21-full-glm-standard",
+      ],
+    ] as const;
+
+    for (const [model, harness, deployment, launchPolicy] of cells) {
+      const resolved = resolver.resolve({
+        benchmark: "terminal-bench-2-1-full",
+        model,
+        harness,
+        deployment,
+        launch_policy: launchPolicy,
+      });
+      const execution = composeExecutionContract(resolved);
+      expect(resolved.find((item) => item.kind === "benchmark")?.name).toBe(
+        "terminal-bench-2-1-full",
+      );
+      expect(resolved.find((item) => item.kind === "launch_policy")?.name).toBe(
+        launchPolicy,
+      );
+      expect(execution.source_profiles.model.name).toBe(model);
+      expect(execution.source_profiles.harness.name).toBe(harness);
+      expect(execution.source_profiles.deployment.name).toBe(deployment);
+    }
+  });
+
+  it("rejects generic and wrong-cell policies for the full benchmark", async () => {
+    const resolver = new ProfileResolver(await loadBuiltInProfiles("profiles"));
+
+    expect(() =>
+      resolver.resolve({
+        benchmark: "terminal-bench-2-1-full",
+        model: "qwen3-8-27b-deepinfra",
+        harness: "mini-swe-agent",
+        deployment: "tb21-qwen3-8-27b-deepinfra-providers",
+        launch_policy: "tb21-canary",
+      }),
+    ).toThrowError(
+      new ProfileResolutionError(
+        "benchmark requires a profile-constrained launch policy",
+      ),
+    );
+    expect(() =>
+      resolver.resolve({
+        benchmark: "terminal-bench-2-1-full",
+        model: "qwen3-8-27b-deepinfra",
+        harness: "mini-swe-agent",
+        deployment: "tb21-qwen3-8-27b-deepinfra-providers",
+        launch_policy: "tb21-full-glm-standard",
+      }),
+    ).toThrowError(
+      new ProfileResolutionError(
+        "launch policy is incompatible with the selected model",
+      ),
+    );
+  });
+
   it("routes bounded public aliases through the composed contract", async () => {
     const resolver = new ProfileResolver(await loadBuiltInProfiles("profiles"));
     const execution = composeExecutionContract(
@@ -522,7 +638,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
     }
   });
 
-  it("keeps replacement and diagnostic launch policies bounded", async () => {
+  it("keeps replacement, diagnostic, and full launch policies bounded", async () => {
     const canary = record((await profile("launch-policy", "tb21-canary")).spec);
     const miniSweCanary = record(
       (await profile("launch-policy", "tb21-mini-swe-canary")).spec,
@@ -552,13 +668,101 @@ describe("Terminal-Bench 2.1 profiles", () => {
       "input_tokens",
       "output_tokens",
     ]);
+
+    const fullPolicies = {
+      "tb21-full-qwen-standard": [
+        250_000,
+        44_700_000,
+        {
+          benchmarks: ["terminal-bench-2-1-full"],
+          models: ["qwen3-8-27b-deepinfra"],
+          harnesses: ["pi-off", "codex"],
+          deployments: [
+            "tb21-qwen3-8-27b-deepinfra-providers",
+            "tb21-qwen3-8-27b-deepinfra-codex-providers",
+          ],
+        },
+      ],
+      "tb21-full-qwen-mini-swe-agent": [
+        700_000,
+        124_800_000,
+        {
+          benchmarks: ["terminal-bench-2-1-full"],
+          models: ["qwen3-8-27b-deepinfra"],
+          harnesses: ["mini-swe-agent"],
+          deployments: ["tb21-qwen3-8-27b-deepinfra-providers"],
+        },
+      ],
+      "tb21-full-qwen-terminus": [
+        200_000,
+        35_800_000,
+        {
+          benchmarks: ["terminal-bench-2-1-full"],
+          models: ["qwen3-8-27b-deepinfra"],
+          harnesses: ["terminus"],
+          deployments: ["tb21-qwen3-8-27b-deepinfra-providers"],
+        },
+      ],
+      "tb21-full-qwen-fx": [
+        400_000,
+        71_400_000,
+        {
+          benchmarks: ["terminal-bench-2-1-full"],
+          models: ["qwen3-8-27b-deepinfra"],
+          harnesses: ["fx"],
+          deployments: ["tb21-qwen3-8-27b-deepinfra-providers"],
+        },
+      ],
+      "tb21-full-glm-standard": [
+        100_000,
+        18_000_000,
+        {
+          benchmarks: ["terminal-bench-2-1-full"],
+          models: ["glm-5-3-flash-together"],
+          harnesses: ["pi-off", "terminus", "fx"],
+          deployments: ["tb21-glm-5-3-flash-together-providers"],
+        },
+      ],
+      "tb21-full-glm-mini-swe-agent": [
+        500_000,
+        89_200_000,
+        {
+          benchmarks: ["terminal-bench-2-1-full"],
+          models: ["glm-5-3-flash-together"],
+          harnesses: ["mini-swe-agent"],
+          deployments: ["tb21-glm-5-3-flash-together-providers"],
+        },
+      ],
+    } as const;
+    for (const [name, [reservation, ceiling, constraints]] of Object.entries(
+      fullPolicies,
+    )) {
+      const spec = record((await profile("launch-policy", name)).spec);
+      expect(spec).toEqual({
+        max_infrastructure_attempts: 2,
+        reservation_microusd: reservation,
+        max_run_ceiling_microusd: ceiling,
+        preparation_reservation_microusd: 50_000,
+        max_preparation_attempts: 2,
+        success_without_worker_receipt: false,
+        publication_role: "final",
+        required_positive_metrics: ["input_tokens", "output_tokens"],
+        profile_constraints: constraints,
+      });
+      expect(178 * reservation + 200_000).toBe(ceiling);
+    }
+    const uniqueCeilings = Object.values(fullPolicies).reduce(
+      (sum, [, ceiling]) => sum + ceiling,
+      0,
+    );
+    expect(uniqueCeilings + 44_700_000 + 2 * 18_000_000).toBe(464_600_000);
   });
 
   it("loads every built-in profile with unique specs and resolvable catalog references", async () => {
     const loaded = await loadBuiltInProfiles("profiles");
     const resolver = new ProfileResolver(loaded);
     const specOwners = new Map<string, string>();
-    expect(loaded).toHaveLength(55);
+    expect(loaded).toHaveLength(62);
     expect(new Set(loaded.map((item) => item.profile_id)).size).toBe(loaded.length);
     for (const item of loaded) {
       const specKey = `${item.profile.profile_kind}:${sha256(

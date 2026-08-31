@@ -7,11 +7,12 @@ tags: [agents, codex, terminus, mini-swe-agent]
 
 # Add Terminus and standalone Codex harnesses
 
-**Status.** The harnesses are implemented. The runnable matrix has nine cells.
-GLM-5.3-Flash through Together plus standalone Codex is an unsupported cell:
-Codex 0.118.0 requires Responses, while the Together route provides Chat
-Completions. The matrix skips this cell without a run or benchmark failure.
-Qwen3.8-27B through DeepInfra plus Codex remains a native Responses cell.
+**Status.** The harnesses are implemented, and all nine runnable cells have a
+valid published two-task canary. GLM-5.3-Flash through Together plus standalone
+Codex is an unsupported cell: Codex 0.118.0 requires Responses, while the
+Together route provides Chat Completions. The matrix skips this cell without a
+run or benchmark failure. Qwen3.8-27B through DeepInfra plus Codex remains a
+native Responses cell. The next stage is nine one-trial, 89-task campaigns.
 
 ## Goal
 
@@ -66,9 +67,78 @@ limits, evidence rules, publication rules, timeouts, concurrency, credentials,
 and budget policy stay unchanged. The generated model information copies these
 values; it does not become another source of truth.
 
-The source pull request adds harness profiles only. It does not add Codex to a
-Chat Completions deployment or point an active deployment at source that its
-pinned worker does not contain.
+The original source pull request added harness profiles only. It did not add
+Codex to a Chat Completions deployment or point an active deployment at source
+that its pinned worker did not contain.
+
+## Full campaigns
+
+Add `terminal-bench-2-1-full` as the exact 89-task, one-trial benchmark profile.
+It uses the same revision, task IDs, task digests, source task IDs, and artifact
+contract as the first trial of `terminal-bench-2-1-official-5`. Set Harbor's
+requested task concurrency to 16. The shared namespace capacity remains the
+hard global limit, so two active Runs still share at most 16 physical Jobs.
+
+Use a measured launch policy for each runnable cell. Pi and Codex on Qwen share
+one policy, and Pi, Terminus, and FX on GLM share another, because their rounded
+reserves and ceilings are identical. The other cells use distinct policies. The
+measured low estimate scales the
+cell's complete two-task canary cost from 2 to 89 tasks. The per-attempt
+reservation is at least twice the higher canary task cost and is rounded up to a
+simple amount. The two mini-swe-agent policies instead cover the USD 0.25 agent
+limit, one final maximum-size request, and CPU time at each model's locked
+prices. Each immutable ceiling matches the launch form's generated bound: two
+times 89 trial reservations plus two preparation reservations. This equals 178
+trial reservations plus four USD 0.05 preparation reservations.
+
+Mark the full benchmark as requiring a profile-constrained launch policy. Each
+full policy lists its allowed benchmark, model, harnesses, and deployments. The
+resolver rejects a generic policy or a policy from another cell before run
+admission. This prevents a low-cost policy from being selected for a higher-cost
+cell.
+
+| Cell | Canary cost | Measured low | Attempt reserve | Run ceiling |
+| --- | ---: | ---: | ---: | ---: |
+| Qwen plus Pi | USD 0.148153 | USD 6.592809 | USD 0.25 | USD 44.70 |
+| Qwen plus mini-swe-agent | USD 0.351956 | USD 15.662042 | USD 0.70 | USD 124.80 |
+| Qwen plus Terminus | USD 0.159101 | USD 7.079994 | USD 0.20 | USD 35.80 |
+| Qwen plus FX | USD 0.245204 | USD 10.911578 | USD 0.40 | USD 71.40 |
+| Qwen plus Codex | USD 0.123175 | USD 5.481288 | USD 0.25 | USD 44.70 |
+| GLM plus Pi | USD 0.046113 | USD 2.052029 | USD 0.10 | USD 18.00 |
+| GLM plus mini-swe-agent | USD 0.022520 | USD 1.002140 | USD 0.50 | USD 89.20 |
+| GLM plus Terminus | USD 0.047060 | USD 2.094170 | USD 0.10 | USD 18.00 |
+| GLM plus FX | USD 0.068910 | USD 3.066495 | USD 0.10 | USD 18.00 |
+
+The policy mapping is:
+
+- Qwen plus Pi and Qwen plus Codex: `tb21-full-qwen-standard`;
+- Qwen plus mini-swe-agent: `tb21-full-qwen-mini-swe-agent`;
+- Qwen plus Terminus: `tb21-full-qwen-terminus`;
+- Qwen plus FX: `tb21-full-qwen-fx`;
+- GLM plus Pi, GLM plus Terminus, and GLM plus FX:
+  `tb21-full-glm-standard`;
+- GLM plus mini-swe-agent: `tb21-full-glm-mini-swe-agent`.
+
+The measured low estimates total USD 53.942544. They are planning estimates
+from two tasks, not statistical confidence bounds. The nine immutable ceilings
+total USD 464.60. These are not money spent. Before each launch, the operator
+must add observed campaign cost, active unsettled exposure, the complete next
+Run ceiling, and continued control-service runtime, then verify that the durable
+campaign limit still admits the action.
+
+Launch one full Run first. Treat its first admitted group as the representative
+pilot wave. Verify terminal receipts, positive tokens, observed task costs,
+durations, provenance, and durable partial output before a second campaign
+starts. If the first wave proves a deterministic shared defect, pause affected
+work at durable task boundaries. Otherwise allow at most two full Runs to remain
+active, with the global 16-Job capacity shared between them. A valid task never
+runs again, and only a receipt classified as an eligible infrastructure failure
+can use the second physical attempt.
+
+The full-profile change adds only the benchmark profile, six launch policies,
+focused profile tests, and this plan update. It does not change a model, harness,
+deployment, worker, provider, benchmark task, price, context limit, output
+limit, evidence rule, or publication rule. It does not launch paid work.
 
 ## Tests
 
@@ -81,6 +151,11 @@ Add focused tests that prove:
 - mini-swe-agent receives USD 0.25 and an exact model registry for both matrix
   models;
 - profile IDs remain deterministic and all profiles pass the generated schema;
+- the full benchmark contains exactly the 89 first-trial tasks and requests
+  concurrency 16;
+- the full benchmark rejects generic and wrong-cell launch policies;
+- every full policy ceiling equals 178 trial reservations plus four preparation
+  reservations, and all nine ceilings total USD 464.60;
 - existing installed-agent route and cleanup behavior remains unchanged.
 
 Run the complete agent-package suite and applicable repository checks from
@@ -99,11 +174,17 @@ GLM-5.3-Flash through Together. Preserve each runnable model, provider, price,
 context limit, output limit, Job policy, and evidence contract. Regenerate
 deterministic profile IDs and rerun all profile and contract checks.
 
-Merge and deploy only after the profile change is reviewed and green. Paid
-canaries are a later action. Run one exact cell at a time and require positive
-input and output tokens, valid receipts, exact provenance, publication, cost
-reconciliation, and cleanup. Stop if the same deterministic failure repeats
-after this reviewed repair.
+Merge and deploy the full profiles only after the change is reviewed and green.
+Verify the exact source revision, active profile IDs, task count, ceilings,
+write readiness, idle capacity, and zero managed Endpoints before admitting a
+full Run. Record a fresh private launch review before each paid action.
+
+Start with one full campaign and inspect its first wave. Then run staged batches
+with no more than two full campaigns active and no more than 16 physical Jobs in
+the shared namespace. Require positive input and output tokens, valid terminal
+receipts, exact provenance, durable partial outputs, final publication, cost
+reconciliation, and cleanup. Keep GLM plus Codex as unsupported and do not
+create a Run for it.
 
 ## Boundaries
 

@@ -1450,6 +1450,9 @@
           "type": "object",
           "minProperties": 1,
           "additionalProperties": true
+        },
+        "launch_policy_constraints_required": {
+          "type": "boolean"
         }
       }
     },
@@ -2018,6 +2021,49 @@
         }
       }
     },
+    "ProfileConstraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["benchmarks", "models", "harnesses", "deployments"],
+      "properties": {
+        "benchmarks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "harnesses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "deployments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        }
+      }
+    },
     "LaunchPolicySpec": {
       "type": "object",
       "additionalProperties": false,
@@ -2067,6 +2113,9 @@
             "type": "string",
             "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,79}$"
           }
+        },
+        "profile_constraints": {
+          "$ref": "#/$defs/ProfileConstraints"
         }
       }
     },

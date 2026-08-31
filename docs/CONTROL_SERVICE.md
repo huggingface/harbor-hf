@@ -272,6 +272,14 @@ visible but cannot authorize a run. A run lock retains the selected alias,
 immutable profile digest, and complete spec even when that alias later moves.
 Canonical migration preserves profile objects and promotion records.
 
+A benchmark profile may require a profile-constrained launch policy. A
+constrained policy lists the canonical benchmark, model, harness, and deployment
+profile names it permits. Resolution compares the selected canonical profiles
+with all four lists before creating a run lock or reserving spend. A missing or
+mismatched constraint rejects the request. This lets measured policies be shared
+between identical cells without allowing a lower-cost policy to authorize a
+different workload.
+
 ### Capacity contracts
 
 Each capacity field has one meaning:

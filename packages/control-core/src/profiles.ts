@@ -4,6 +4,7 @@ import type {
   BenchmarkProfileSpec,
   DeploymentProfileSpec,
   HarnessProfileSpec,
+  LaunchPolicySpec,
   ModelProfileSpec,
   PreparedTrial,
   ProfileObject,
@@ -284,6 +285,35 @@ function scalarArray(spec: ProfileObject["spec"], key: string): string[] {
   return value;
 }
 
+function validateLaunchPolicyConstraints(
+  benchmark: LoadedProfile,
+  model: LoadedProfile,
+  harness: LoadedProfile,
+  deployment: LoadedProfile,
+  launchPolicy: LoadedProfile,
+): void {
+  const benchmarkSpec = benchmark.profile.spec as BenchmarkProfileSpec;
+  const policySpec = launchPolicy.profile.spec as LaunchPolicySpec;
+  const constraints = policySpec.profile_constraints;
+  if (benchmarkSpec.launch_policy_constraints_required && !constraints)
+    throw new ProfileResolutionError(
+      "benchmark requires a profile-constrained launch policy",
+    );
+  if (!constraints) return;
+  const selected = {
+    benchmarks: benchmark.profile.name,
+    models: model.profile.name,
+    harnesses: harness.profile.name,
+    deployments: deployment.profile.name,
+  } as const;
+  for (const [kind, name] of Object.entries(selected)) {
+    if (!constraints[kind as keyof typeof constraints].includes(name))
+      throw new ProfileResolutionError(
+        `launch policy is incompatible with the selected ${kind.slice(0, -1)}`,
+      );
+  }
+}
+
 function deploymentInferenceApi(
   spec: DeploymentProfileSpec,
 ): "chat-completions" | "responses" | "" | null {
@@ -455,7 +485,11 @@ export class ProfileResolver {
       [deploymentProfile, input.deployment ?? deploymentProfile.profile.name],
       [this.get("launch_policy", input.launch_policy), input.launch_policy],
     ];
+    const benchmark = selected[0]?.[0] as LoadedProfile;
+    const model = selected[1]?.[0] as LoadedProfile;
+    const harness = selected[2]?.[0] as LoadedProfile;
     const deployment = selected[3]?.[0] as LoadedProfile;
+    const launchPolicy = selected[4]?.[0] as LoadedProfile;
     if (
       !scalarArray(deployment.profile.spec, "models").includes(input.model) ||
       !scalarArray(deployment.profile.spec, "harnesses").includes(input.harness)
@@ -464,6 +498,13 @@ export class ProfileResolver {
         "deployment is incompatible with the selected model or harness",
       );
     }
+    validateLaunchPolicyConstraints(
+      benchmark,
+      model,
+      harness,
+      deployment,
+      launchPolicy,
+    );
     return selected.map(
       ([item, alias]) =>
         ({
