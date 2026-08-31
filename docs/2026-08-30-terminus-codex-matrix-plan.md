@@ -38,6 +38,15 @@ registry from the immutable inference contract, including exact model identity,
 context and output limits, and input, output, cache-read, and cache-write prices.
 Do not disable the limit or use an unpriced fallback.
 
+Use the `tb21-mini-swe-canary` launch policy for mini-swe-agent canaries. Reserve
+USD 0.70 for each trial attempt because the agent checks its cost limit between
+requests, so one final maximum-size request can exceed the USD 0.25 threshold
+before the agent stops. The reservation covers that request, the locked cache
+prices, and the maximum CPU Job duration. Limit this canary Run to USD 3.00 so
+two tasks and their allowed infrastructure attempts fit inside one immutable
+ceiling without under-reserving exposure. Keep the shared canary and replacement
+policies unchanged because other harnesses do not have mini-swe-agent's cost cap.
+
 The route loader may expose a validated non-secret route object to trusted
 in-process code. Installed agents still perform the existing process-isolation
 check. Bridge ownership and cleanup may accept the trusted Terminus object for a

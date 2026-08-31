@@ -524,6 +524,9 @@ describe("Terminal-Bench 2.1 profiles", () => {
 
   it("keeps replacement and diagnostic launch policies bounded", async () => {
     const canary = record((await profile("launch-policy", "tb21-canary")).spec);
+    const miniSweCanary = record(
+      (await profile("launch-policy", "tb21-mini-swe-canary")).spec,
+    );
     const official = record((await profile("launch-policy", "tb21-official-5")).spec);
     const replacement = record(
       (await profile("launch-policy", "tb21-replacement")).spec,
@@ -531,6 +534,11 @@ describe("Terminal-Bench 2.1 profiles", () => {
     const diagnostic = record(
       (await profile("launch-policy", "tb21-diagnostic-1")).spec,
     );
+    expect(miniSweCanary).toEqual({
+      ...canary,
+      reservation_microusd: 700_000,
+      max_run_ceiling_microusd: 3_000_000,
+    });
     expect(replacement).toEqual({
       ...canary,
       max_run_ceiling_microusd: 180_000_000,
@@ -550,7 +558,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
     const loaded = await loadBuiltInProfiles("profiles");
     const resolver = new ProfileResolver(loaded);
     const specOwners = new Map<string, string>();
-    expect(loaded).toHaveLength(54);
+    expect(loaded).toHaveLength(55);
     expect(new Set(loaded.map((item) => item.profile_id)).size).toBe(loaded.length);
     for (const item of loaded) {
       const specKey = `${item.profile.profile_kind}:${sha256(
