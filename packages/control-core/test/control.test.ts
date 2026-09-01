@@ -3313,10 +3313,10 @@ describe("control service", () => {
   });
 
   it("pauses sibling tasks after a shared infrastructure failure repeats", async () => {
-    const control = await createTestControl(2);
+    const control = await createTestControl(2, 1, 6);
     controls.push(control);
     const result = await control.service.submit(
-      submission,
+      { ...submission, ceiling_microusd: 100 },
       "shared-failure-across-tasks-key",
       operator,
     );
@@ -3346,6 +3346,7 @@ describe("control service", () => {
     expect(launchesAtPause).toBeGreaterThanOrEqual(2);
     expect(await control.projection.run(result.run_id)).toMatchObject({
       status: "paused",
+      reserved_microusd: 0,
       terminal_tasks: 0,
       exhausted_tasks: 0,
     });
@@ -3369,6 +3370,7 @@ describe("control service", () => {
     expect(launches).toBeGreaterThan(launchesAtPause);
     expect(await control.projection.run(result.run_id)).toMatchObject({
       status: "paused",
+      reserved_microusd: 0,
       terminal_tasks: 0,
       exhausted_tasks: 0,
     });

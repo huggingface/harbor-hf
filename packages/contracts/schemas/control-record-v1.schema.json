@@ -2585,6 +2585,9 @@
         "prior_attempt_id": {
           "$ref": "#/$defs/Id"
         },
+        "replacement_reservation_key": {
+          "$ref": "#/$defs/Id"
+        },
         "endpoint_id": {
           "type": "string",
           "minLength": 1,

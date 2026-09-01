@@ -1195,6 +1195,9 @@ export class ControlService {
         priorAttemptId,
         intent.created_at,
         amount,
+        typeof intent.payload.replacement_reservation_key === "string"
+          ? intent.payload.replacement_reservation_key
+          : priorAttemptId,
       );
     const taskIds = stringArrayValue(intent.payload.task_ids, "Job action task IDs");
     const category =
@@ -2772,9 +2775,18 @@ export class ControlService {
     const amountMicrousd = intent.payload.reservation_microusd;
     if (typeof amountMicrousd !== "number" || amountMicrousd <= 0) return false;
     const priorAttemptId = intent.payload.prior_attempt_id;
+    const replacementReservationKey =
+      typeof intent.payload.replacement_reservation_key === "string"
+        ? intent.payload.replacement_reservation_key
+        : priorAttemptId;
     const reserveId =
-      typeof priorAttemptId === "string"
-        ? deterministicId("budget", intent.run_id, "replacement", priorAttemptId)
+      typeof replacementReservationKey === "string"
+        ? deterministicId(
+            "budget",
+            intent.run_id,
+            "replacement",
+            replacementReservationKey,
+          )
         : deterministicId(
             "budget",
             intent.run_id,
@@ -2898,14 +2910,15 @@ export class ControlService {
     priorAttemptId: string,
     priorAttemptCompletedAt: string,
     amountMicrousd: number,
+    reservationKey = priorAttemptId,
   ): Promise<boolean> {
     await this.reconcileTerminalJobReservations(runId);
     const operation = this.budgetQueue.then(() =>
       this.reserveReplacementSerialized(
         runId,
-        priorAttemptId,
         priorAttemptCompletedAt,
         amountMicrousd,
+        reservationKey,
       ),
     );
     this.budgetQueue = operation.then(
@@ -2917,12 +2930,12 @@ export class ControlService {
 
   private async reserveReplacementSerialized(
     runId: string,
-    priorAttemptId: string,
     priorAttemptCompletedAt: string,
     amountMicrousd: number,
+    reservationKey: string,
   ): Promise<boolean> {
     if (amountMicrousd <= 0) return true;
-    const recordId = deterministicId("budget", runId, "replacement", priorAttemptId);
+    const recordId = deterministicId("budget", runId, "replacement", reservationKey);
     const existing = await this.projection.budget(recordId);
     if (existing) {
       if (
@@ -2946,7 +2959,7 @@ export class ControlService {
       const catchUp: BudgetEvent = {
         schema_version: "v1",
         kind: "budget.event",
-        record_id: deterministicId("budget", runId, "observed-overage", priorAttemptId),
+        record_id: deterministicId("budget", runId, "observed-overage", reservationKey),
         created_at: priorAttemptCompletedAt,
         actor: serviceActor(),
         run_id: runId,
@@ -3197,6 +3210,11 @@ export class ControlService {
       if (sourceRow?.action_kind !== "job.launch")
         throw new PolicyError("bulk retry attempt has no physical Job launch");
       const source = JSON.parse(sourceRow.intent_body) as ActionIntent;
+      const replacementReservationKey = deterministicId(
+        "replacement-reservation",
+        attemptId,
+        String(command.generation),
+      );
       const child = this.actionIntent(
         command.run_id,
         "job.launch",
@@ -3207,6 +3225,7 @@ export class ControlService {
           task_id: taskId,
           task_ids: [taskId],
           prior_attempt_id: attemptId,
+          replacement_reservation_key: replacementReservationKey,
           reason: command.payload.reason ?? null,
         },
         command.actor,
@@ -3219,6 +3238,7 @@ export class ControlService {
           attemptId,
           attempt.created_at,
           reservation,
+          replacementReservationKey,
         ))
       )
         return { actionIds, complete: false };
@@ -3369,6 +3389,7 @@ export class ControlService {
       attemptId: string;
       completedAt: string;
       amountMicrousd: number;
+      reservationKey: string;
     } | null = null;
     if (input.action === "cancel") {
       if (runStatusIsTerminal(run.status))
@@ -3596,10 +3617,16 @@ export class ControlService {
       if (deployment.route !== "hf_job")
         throw new PolicyError("imported deployment profiles cannot launch retries");
       const policy = this.resolvedProfile<LaunchPolicySpec>(lock, "launch_policy");
+      const replacementReservationKey = deterministicId(
+        "replacement-reservation",
+        priorAttempt.attempt_id,
+        String(generation),
+      );
       retryReservation = {
         attemptId: priorAttempt.attempt_id,
         completedAt: priorAttempt.created_at,
         amountMicrousd: policy.reservation_microusd,
+        reservationKey: replacementReservationKey,
       };
       const sourceRow = await this.projection.action(priorAttempt.action_id);
       if (sourceRow?.action_kind !== "job.launch")
@@ -3612,6 +3639,7 @@ export class ControlService {
         task_ids: [input.task_id],
         reason: input.reason ?? null,
         prior_attempt_id: priorAttempt.attempt_id,
+        replacement_reservation_key: replacementReservationKey,
       };
     }
     payload = {
@@ -3626,6 +3654,7 @@ export class ControlService {
         retryReservation.attemptId,
         retryReservation.completedAt,
         retryReservation.amountMicrousd,
+        retryReservation.reservationKey,
       ))
     )
       throw new PolicyError("replacement Job would exceed the run ceiling");

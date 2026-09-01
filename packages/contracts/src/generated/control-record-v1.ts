@@ -933,6 +933,7 @@ launch_action_id?: Id
 not_before?: Timestamp
 worker_receipt_deadline?: Timestamp
 prior_attempt_id?: Id
+replacement_reservation_key?: Id
 endpoint_id?: string
 watchdog_verified?: boolean
 run_lock_digest?: Digest

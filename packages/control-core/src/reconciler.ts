@@ -1610,12 +1610,30 @@ export class Reconciler {
         "reservation_microusd",
         "number",
       );
+      const taskLaunches = (await this.projection.runActions(attempt.run_id)).filter(
+        (action) => {
+          if (action.action_kind !== "job.launch") return false;
+          const launch = JSON.parse(action.intent_body) as ActionIntent;
+          return launch.payload.task_id === attempt.task_id;
+        },
+      );
+      const retryGeneration =
+        taskLaunches.reduce(
+          (maximum, launch) => Math.max(maximum, launch.generation),
+          -1,
+        ) + 1;
+      const replacementReservationKey = deterministicId(
+        "replacement-reservation",
+        attempt.attempt_id,
+        String(retryGeneration),
+      );
       if (
         !(await this.service.reserveReplacement(
           attempt.run_id,
           attempt.attempt_id,
           attempt.created_at,
           reservation,
+          replacementReservationKey,
         ))
       ) {
         await this.service.exhaustTask(
@@ -1662,6 +1680,7 @@ export class Reconciler {
           task_id: attempt.task_id,
           task_ids: [attempt.task_id],
           prior_attempt_id: attempt.attempt_id,
+          replacement_reservation_key: replacementReservationKey,
         },
       );
       await this.service.writeAction(retry);
