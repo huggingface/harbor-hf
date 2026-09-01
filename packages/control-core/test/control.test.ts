@@ -4069,18 +4069,32 @@ describe("control service", () => {
       control,
       "retry-idempotency-evidence",
     );
-    await control.service.attempt({
+    const infrastructureAttemptInput = {
       run_id: result.run_id,
       task_id: "task-001",
       attempt_id: "attempt-retry-idempotency",
       action_id: launch.action_id,
-      outcome: "infrastructure",
+      outcome: "infrastructure" as const,
       replacement_eligible: true,
       ...retryEvidence,
       cost_microusd: 0,
       metrics: {},
       completed_at: "2026-08-16T00:00:01.000Z",
-    });
+    };
+    const infrastructureAttempt = await control.service.attempt(
+      infrastructureAttemptInput,
+    );
+    expect(infrastructureAttempt.failure_fingerprint).toBe(
+      sha256(
+        canonicalJson({
+          kind: "legacy-worker-infrastructure-failure",
+          worker_revision: "unknown",
+        }),
+      ),
+    );
+    await expect(
+      control.service.attemptWithStatus(infrastructureAttemptInput),
+    ).resolves.toMatchObject({ adopted: true });
     const action = {
       action: "retry_infrastructure",
       task_id: "task-001",
@@ -4780,6 +4794,21 @@ describe("control service", () => {
     await settle(reconciler, 12);
 
     expect(launches).toBe(2);
+    expect(await control.projection.run(result.run_id)).toMatchObject({
+      status: "paused",
+      reserved_microusd: 0,
+      terminal_tasks: 0,
+      exhausted_tasks: 0,
+    });
+
+    await control.service.runAction(
+      result.run_id,
+      { action: "resume", reason: "worker repair is ready", confirmed: true },
+      "resume-after-shared-defect-key",
+      operator,
+    );
+    await settle(reconciler, 10);
+    expect(launches).toBe(3);
     expect(await control.projection.run(result.run_id)).toMatchObject({
       status: "paused",
       reserved_microusd: 0,

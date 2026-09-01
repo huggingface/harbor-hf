@@ -2364,7 +2364,7 @@ export class ControlService {
     actor: Actor,
   ): Promise<{ receipt: AttemptReceipt; adopted: boolean }> {
     const { completed_at, ...fields } = input;
-    const candidate: AttemptReceipt = {
+    const submittedCandidate: AttemptReceipt = {
       schema_version: "v1",
       kind: "attempt.receipt",
       record_id: deterministicId("attempt-receipt", input.attempt_id),
@@ -2375,7 +2375,16 @@ export class ControlService {
     const existing = await this.projection.attemptById(input.attempt_id);
     if (existing) {
       const record = JSON.parse(existing.body) as AttemptReceipt;
-      if (canonicalJson(record) !== canonicalJson(candidate))
+      const { failure_fingerprint: storedFingerprint, ...storedWithoutFingerprint } =
+        record;
+      const matchesSynthesizedFingerprint =
+        !input.failure_fingerprint &&
+        Boolean(storedFingerprint) &&
+        canonicalJson(storedWithoutFingerprint) === canonicalJson(submittedCandidate);
+      if (
+        canonicalJson(record) !== canonicalJson(submittedCandidate) &&
+        !matchesSynthesizedFingerprint
+      )
         throw new IdempotencyConflictError(
           `attempt identity conflict: ${input.attempt_id}`,
         );
@@ -2391,6 +2400,21 @@ export class ControlService {
         `attempt does not reference an eligible run action: ${input.action_id}`,
       );
     const launch = JSON.parse(action.intent_body) as ActionIntent;
+    const fallbackFingerprint =
+      input.outcome === "infrastructure" &&
+      input.replacement_eligible &&
+      !input.failure_fingerprint
+        ? sha256(
+            canonicalJson({
+              kind: "legacy-worker-infrastructure-failure",
+              worker_revision: launch.payload.worker_revision ?? "unknown",
+            }),
+          )
+        : null;
+    const candidate: AttemptReceipt = {
+      ...submittedCandidate,
+      ...(fallbackFingerprint ? { failure_fingerprint: fallbackFingerprint } : {}),
+    };
     const launchTasks = stringArrayValue(
       launch.payload.task_ids,
       "attempt Job action task IDs",

@@ -1577,7 +1577,14 @@ export class Reconciler {
             receipt.failure_fingerprint === attempt.failure_fingerprint
           );
         });
-        if (matchingFailures.length >= 2) {
+        const resumedAfterAttempt = (
+          await this.projection.runActions(attempt.run_id)
+        ).some(
+          (action) =>
+            action.action_kind === "run.resume" &&
+            Date.parse(action.created_at) > Date.parse(attempt.created_at),
+        );
+        if (matchingFailures.length >= 2 && !resumedAfterAttempt) {
           await this.service.writeAction(
             this.service.actionIntent(
               attempt.run_id,
