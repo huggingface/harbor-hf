@@ -3351,6 +3351,27 @@ describe("control service", () => {
     });
     await settle(reconciler, 5);
     expect(launches).toBe(launchesAtPause);
+    expect(
+      (await control.projection.runActions(result.run_id)).some(
+        (action) =>
+          action.action_kind === "job.launch" &&
+          action.observed_state === "suppressed-paused",
+      ),
+    ).toBe(true);
+
+    await control.service.runAction(
+      result.run_id,
+      { action: "resume", reason: "shared worker repair", confirmed: true },
+      "resume-shared-failure-across-tasks-key",
+      operator,
+    );
+    await settle(reconciler, 12);
+    expect(launches).toBeGreaterThan(launchesAtPause);
+    expect(await control.projection.run(result.run_id)).toMatchObject({
+      status: "paused",
+      terminal_tasks: 0,
+      exhausted_tasks: 0,
+    });
   });
 
   it("keeps unresolved tasks active while their replacement Jobs run", async () => {
