@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import http.client
+import http.server
 import inspect
 import json
 import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -15,12 +18,14 @@ from types import SimpleNamespace
 import pytest
 
 from harbor_hf_agents.support.hf_inference_bridge import (
+    _bounded_response_body,
     _bridge_script,
     _fx_gateway_request,
     _fx_gateway_response,
     _response_usage,
     _responses_request,
     _run_hf_inference_bridge,
+    _stream_chunk_forwarder,
     _upstream_request_path,
     is_hf_inference_url,
     prepare_hf_inference_bridge,
@@ -41,6 +46,8 @@ def test_embedded_bridge_allows_bounded_streaming_overhead() -> None:
     assert "64 * 1024 * 1024" in source
     assert "request_body[field] = max_output_tokens" in source
     assert 'self.send_header("Content-Length", str(len(response_body)))' in source
+    assert "stream_response" in source
+    assert "_stream_chunk_forwarder" in source
     assert "inference bridge response limit exceeded" in source
     assert "BoundedThreadingHTTPServer" in source
     assert "BoundedSemaphore(max_concurrency)" in source
@@ -50,6 +57,203 @@ def test_embedded_bridge_allows_bounded_streaming_overhead() -> None:
     assert "request_body = _responses_request(request_body)" in source
     bridge_script = _bridge_script()
     assert "def _responses_request" in bridge_script
+    assert "def _bounded_response_body" in bridge_script
+    assert "def _stream_chunk_forwarder" in bridge_script
+    compile(bridge_script, "<inference-bridge>", "exec")
+
+
+def test_bounded_response_body_relays_each_available_chunk() -> None:
+    relayed: list[bytes] = []
+
+    class Response:
+        def __init__(self) -> None:
+            self.chunks = [b"first", b"second", b""]
+            self.index = 0
+
+        def read1(self, _size: int) -> bytes:
+            if self.index == 1:
+                assert relayed == [b"first"]
+            chunk = self.chunks[self.index]
+            self.index += 1
+            return chunk
+
+    body = _bounded_response_body(Response(), 32, relayed.append)
+
+    assert body == b"firstsecond"
+    assert relayed == [b"first", b"second"]
+
+
+def test_bounded_response_body_does_not_relay_overflowing_chunk() -> None:
+    relayed: list[bytes] = []
+
+    class Response:
+        def __init__(self) -> None:
+            self.chunks = [b"first", b"second"]
+
+        def read1(self, _size: int) -> bytes:
+            return self.chunks.pop(0)
+
+    with pytest.raises(OverflowError, match="response limit"):
+        _bounded_response_body(Response(), 8, relayed.append)
+
+    assert relayed == [b"first"]
+
+
+class StreamingUpstreamResponse:
+    status = 200
+    chunks: tuple[bytes, ...]
+    allow_final_chunk: threading.Event
+
+    def __init__(self) -> None:
+        self.index = 0
+
+    def read1(self, _size: int) -> bytes:
+        if self.index == 1 and not self.allow_final_chunk.wait(timeout=2):
+            raise TimeoutError("local client did not receive the first chunk")
+        chunk = self.chunks[self.index]
+        self.index += 1
+        return chunk
+
+    def getheaders(self) -> list[tuple[str, str]]:
+        return [("Content-Type", "text/event-stream")]
+
+    def getheader(self, name: str, default: str | None = None) -> str | None:
+        if name.lower() == "content-type":
+            return "text/event-stream"
+        return default
+
+
+class StreamingUpstreamConnection:
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        self.request_body: bytes | None = None
+
+    def request(
+        self,
+        _method: str,
+        _path: str,
+        *,
+        body: bytes,
+        headers: dict[str, str],
+    ) -> None:
+        del headers
+        self.request_body = body
+
+    def getresponse(self) -> StreamingUpstreamResponse:
+        return StreamingUpstreamResponse()
+
+    def close(self) -> None:
+        pass
+
+
+class OneRequestServer(http.server.HTTPServer):
+    server_ready: threading.Event
+
+    def server_activate(self) -> None:
+        super().server_activate()
+        self.server_ready.set()
+
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
+        del poll_interval
+        self.handle_request()
+        self.server_close()
+
+
+def test_stream_chunk_forwarder_drains_after_client_disconnect() -> None:
+    writes: list[bytes] = []
+    flushes = 0
+
+    class Response:
+        def __init__(self) -> None:
+            self.chunks = [b"first", b"second", b"third", b""]
+
+        def read1(self, _size: int) -> bytes:
+            return self.chunks.pop(0)
+
+    def write(chunk: bytes) -> None:
+        writes.append(chunk)
+        if chunk == b"second":
+            raise OSError("client disconnected")
+
+    def flush() -> None:
+        nonlocal flushes
+        flushes += 1
+
+    body = _bounded_response_body(
+        Response(),
+        32,
+        _stream_chunk_forwarder(write, flush),
+    )
+
+    assert body == b"firstsecondthird"
+    assert writes == [b"first", b"second"]
+    assert flushes == 1
+
+
+def test_bridge_relays_stream_before_upstream_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    first_chunk = b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+    final_chunk = (
+        b'data: {"choices":[{"finish_reason":"stop"}],'
+        b'"usage":{"prompt_tokens":3,"completion_tokens":2}}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    allow_final_chunk = threading.Event()
+    server_ready = threading.Event()
+    StreamingUpstreamResponse.chunks = (first_chunk, final_chunk, b"")
+    StreamingUpstreamResponse.allow_final_chunk = allow_final_chunk
+    OneRequestServer.server_ready = server_ready
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    usage_path = tmp_path / "usage.json"
+    monkeypatch.setattr(http.client, "HTTPSConnection", StreamingUpstreamConnection)
+    monkeypatch.setattr(http.server, "ThreadingHTTPServer", OneRequestServer)
+    monkeypatch.setenv("HARBOR_HF_INFERENCE_TOKEN", "test-token")
+    monkeypatch.setenv("HARBOR_HF_INFERENCE_LOCAL_PORT", str(port))
+    monkeypatch.setenv("HARBOR_HF_INFERENCE_ALLOWED_PATH", "/v1/chat/completions")
+    monkeypatch.setenv("HARBOR_HF_INFERENCE_ALLOWED_MODEL", "locked-model")
+    monkeypatch.setenv("HARBOR_HF_INFERENCE_MAX_REQUESTS", "4")
+    monkeypatch.setenv("HARBOR_HF_INFERENCE_MAX_CONCURRENCY", "1")
+    monkeypatch.setenv("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS", "10")
+    monkeypatch.setenv("HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS", "1024")
+    monkeypatch.setenv("HARBOR_HF_INFERENCE_USAGE_FILE", str(usage_path))
+    monkeypatch.setenv(
+        "HARBOR_HF_INFERENCE_UPSTREAM", "https://router.huggingface.co/v1"
+    )
+
+    server = threading.Thread(target=_run_hf_inference_bridge)
+    server.start()
+    assert server_ready.wait(timeout=2)
+
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+    connection.request(
+        "POST",
+        "/v1/chat/completions",
+        body=json.dumps({"model": "locked-model", "stream": True}),
+        headers={
+            "Authorization": "Bearer harbor-local-inference-bridge",
+            "Content-Type": "application/json",
+        },
+    )
+    response = connection.getresponse()
+    assert response.status == 200
+    assert response.read(len(first_chunk)) == first_chunk
+    allow_final_chunk.set()
+    assert response.read() == final_chunk
+    connection.close()
+    server.join(timeout=2)
+
+    assert not server.is_alive()
+    assert json.loads(usage_path.read_text()) == {
+        "input_tokens": 3,
+        "output_tokens": 2,
+        "requests": 1,
+        "schema_version": "v1",
+    }
 
 
 def test_responses_request_omits_null_reasoning() -> None:

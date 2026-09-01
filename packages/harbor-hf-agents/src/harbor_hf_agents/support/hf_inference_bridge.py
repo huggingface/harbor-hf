@@ -135,6 +135,50 @@ def _response_usage(response_body: bytes) -> tuple[int, int] | None:
     return final_usage
 
 
+def _bounded_response_body(
+    response: object,
+    max_bytes: int,
+    on_chunk: Callable[[bytes], None] | None = None,
+) -> bytes:
+    """Read a bounded upstream body and optionally relay each available chunk."""
+    reader = getattr(response, "read1", None)
+    if not callable(reader):
+        reader = getattr(response, "read", None)
+    if not callable(reader):
+        raise TypeError("inference bridge response is not readable")
+
+    response_body = bytearray()
+    while chunk := reader(64 * 1024):
+        if not isinstance(chunk, bytes):
+            raise TypeError("inference bridge response chunk is invalid")
+        if len(response_body) + len(chunk) > max_bytes:
+            raise OverflowError("inference bridge response limit exceeded")
+        response_body.extend(chunk)
+        if on_chunk is not None:
+            on_chunk(chunk)
+    return bytes(response_body)
+
+
+def _stream_chunk_forwarder(
+    write: Callable[[bytes], object],
+    flush: Callable[[], object],
+) -> Callable[[bytes], None]:
+    """Forward chunks until the client disconnects, then drain the upstream."""
+    client_connected = True
+
+    def forward(chunk: bytes) -> None:
+        nonlocal client_connected
+        if not client_connected:
+            return
+        try:
+            write(chunk)
+            flush()
+        except OSError:
+            client_connected = False
+
+    return forward
+
+
 def _fx_gateway_request(  # noqa: C901 -- strict protocol translation
     payload: object,
     allowed_model: str,
@@ -682,11 +726,43 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
                     headers=headers,
                 )
                 response = connection.getresponse()
-                response_body = bytearray()
-                while chunk := response.read(64 * 1024):
-                    response_body.extend(chunk)
-                    if len(response_body) > max_response_bytes:
-                        raise OverflowError("inference bridge response limit exceeded")
+                stream_response = (
+                    not is_fx_gateway
+                    and 200 <= response.status < 300
+                    and request_body.get("stream") is True
+                )
+                if stream_response:
+                    self.connection.settimeout(socket_timeout_seconds)
+                    self.send_response(response.status)
+                    for name, value in response.getheaders():
+                        if name.lower() in {
+                            "cache-control",
+                            "x-request-id",
+                            "request-id",
+                        }:
+                            self.send_header(name, value)
+                    self.send_header(
+                        "Content-Type",
+                        response.getheader("Content-Type", "text/event-stream"),
+                    )
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    response_started = True
+
+                    response_body = _bounded_response_body(
+                        response,
+                        max_response_bytes,
+                        _stream_chunk_forwarder(
+                            self.wfile.write,
+                            self.wfile.flush,
+                        ),
+                    )
+                    record_response(_response_usage(response_body))
+                    return
+
+                response_body = bytearray(
+                    _bounded_response_body(response, max_response_bytes)
+                )
                 if 200 <= response.status < 300:
                     usage = _response_usage(bytes(response_body))
                     record_response(usage)
@@ -716,15 +792,16 @@ def _run_hf_inference_bridge() -> None:  # noqa: C901 -- isolated bridge parser
                 self.wfile.write(response_body)
                 self.wfile.flush()
             except OverflowError:
-                payload = json.dumps(
-                    {"error": "inference bridge response limit exceeded"}
-                ).encode()
-                self.send_response(502)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(payload)))
-                self.send_header("Connection", "close")
-                self.end_headers()
-                self.wfile.write(payload)
+                if not response_started and not self.wfile.closed:
+                    payload = json.dumps(
+                        {"error": "inference bridge response limit exceeded"}
+                    ).encode()
+                    self.send_response(502)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.wfile.write(payload)
             except (TypeError, ValueError):
                 if not response_started and not self.wfile.closed:
                     payload = json.dumps(
@@ -762,11 +839,14 @@ def _bridge_script() -> str:
     usage_pair = inspect.getsource(_usage_pair)
     payload_usage = inspect.getsource(_payload_usage)
     response_usage = inspect.getsource(_response_usage)
+    bounded_response_body = inspect.getsource(_bounded_response_body)
+    stream_chunk_forwarder = inspect.getsource(_stream_chunk_forwarder)
     fx_gateway_request = inspect.getsource(_fx_gateway_request)
     fx_gateway_response = inspect.getsource(_fx_gateway_response)
     path_helper = inspect.getsource(_upstream_request_path)
     body = inspect.getsource(_run_hf_inference_bridge)
     return (
+        "from collections.abc import Callable\n"
         "from typing import cast\n\n"
         + responses_request
         + "\n"
@@ -775,6 +855,10 @@ def _bridge_script() -> str:
         + payload_usage
         + "\n"
         + response_usage
+        + "\n"
+        + bounded_response_body
+        + "\n"
+        + stream_chunk_forwarder
         + "\n"
         + fx_gateway_request
         + "\n"
