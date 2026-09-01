@@ -2179,6 +2179,7 @@
                           "task_id",
                           "outcome",
                           "replacement_eligible",
+                          "failure_fingerprint",
                           "cost_microusd",
                           "metrics",
                           "created_at",
@@ -2202,6 +2203,16 @@
                           },
                           "replacement_eligible": {
                             "type": "integer"
+                          },
+                          "failure_fingerprint": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "cost_microusd": {
                             "type": "integer"
@@ -2529,6 +2540,10 @@
                         "type": "boolean"
                       },
                       "evidence_digest": {
+                        "type": "string",
+                        "pattern": "^sha256:[0-9a-f]{64}$"
+                      },
+                      "failure_fingerprint": {
                         "type": "string",
                         "pattern": "^sha256:[0-9a-f]{64}$"
                       },

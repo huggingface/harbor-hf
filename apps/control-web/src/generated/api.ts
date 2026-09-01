@@ -1161,6 +1161,7 @@ export interface paths {
                                 task_id: string;
                                 outcome: string;
                                 replacement_eligible: number;
+                                failure_fingerprint: string | null;
                                 cost_microusd: number;
                                 metrics: {
                                     [key: string]: number;
@@ -1292,6 +1293,7 @@ export interface paths {
                         outcome: "complete" | "invalid" | "infrastructure" | "semantic" | "refusal" | "verifier" | "agent" | "benchmark_timeout" | "cancelled" | "policy";
                         replacement_eligible: boolean;
                         evidence_digest: string;
+                        failure_fingerprint?: string;
                         evidence_path: string;
                         cost_microusd: number;
                         /** Format: date-time */

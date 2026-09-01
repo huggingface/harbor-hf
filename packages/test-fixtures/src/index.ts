@@ -30,7 +30,7 @@ export function profile(
 
 export function smokeProfiles(
   taskCount = 1,
-  maxInfrastructureAttempts = 1,
+  _maxInfrastructureAttempts = 1,
   reservationMicrousd = 0,
   successWithoutWorkerReceipt = true,
   inferenceToken: "forbidden" | "required" = "forbidden",
@@ -107,7 +107,6 @@ export function smokeProfiles(
         : {}),
     }),
     profile("launch_policy", "control-smoke", {
-      max_infrastructure_attempts: maxInfrastructureAttempts,
       reservation_microusd: reservationMicrousd,
       ...(maxRunCeilingMicrousd === undefined
         ? {}
@@ -223,7 +222,6 @@ export function preparedProfiles(taskCount = 1): LoadedProfile[] {
       context_window: 131072,
     }),
     profile("launch_policy", "prepared-policy", {
-      max_infrastructure_attempts: 2,
       reservation_microusd: 100000,
       preparation_reservation_microusd: 10000,
       max_preparation_attempts: 2,

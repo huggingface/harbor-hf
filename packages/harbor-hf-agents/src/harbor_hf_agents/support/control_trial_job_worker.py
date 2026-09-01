@@ -784,6 +784,40 @@ def _outcome_with_usage(
     return outcome, replacement_eligible
 
 
+def _failure_fingerprint(
+    failure_class: str | None,
+    *,
+    replacement_eligible: bool,
+) -> str | None:
+    """Identify a repeatable worker failure without storing private error text."""
+    if not replacement_eligible or failure_class is None:
+        return None
+    return digest_json(
+        {
+            "schema_version": "v1",
+            "kind": "infrastructure.failure",
+            "failure_class": failure_class,
+            "worker_revision": os.environ.get("HARBOR_HF_WORKER_REVISION", "unknown"),
+        }
+    )
+
+
+def _result_failure_class(
+    result: dict[str, Any] | None,
+    usage: InferenceUsage | None,
+) -> str:
+    if usage is not None and (usage.requests == 0 or usage.input_tokens == 0):
+        return "missing-positive-inference-usage"
+    if result is None:
+        return "missing-harbor-result"
+    exception = result.get("exception_info")
+    if isinstance(exception, dict) and exception.get("exception_type"):
+        return str(exception["exception_type"])
+    if not _phase_started(result, "agent_execution"):
+        return "agent-execution-not-started"
+    return "unclassified-infrastructure-failure"
+
+
 def _agent_result(result: dict[str, Any] | None) -> dict[str, Any]:
     if result is None or "agent_result" not in result:
         return {}
@@ -1100,6 +1134,7 @@ def _submit_attempt(
     *,
     timed_out: bool = False,
     outcome_override: tuple[str, bool] | None = None,
+    failure_class_override: str | None = None,
 ) -> None:
     task = config.task
     usage = read_job_inference_usage()
@@ -1110,6 +1145,14 @@ def _submit_attempt(
     )
     outcome, replacement = _outcome_with_usage(outcome, replacement, usage)
     metrics = _metrics(result, usage)
+    failure_fingerprint = _failure_fingerprint(
+        (
+            failure_class_override or _result_failure_class(result, usage)
+            if outcome == "infrastructure"
+            else None
+        ),
+        replacement_eligible=replacement,
+    )
     client = _control_client(config.run_id)
     client.request_sync(
         "POST",
@@ -1118,6 +1161,11 @@ def _submit_attempt(
             "action_id": config.action_id,
             "outcome": outcome,
             "replacement_eligible": replacement,
+            **(
+                {"failure_fingerprint": failure_fingerprint}
+                if failure_fingerprint is not None
+                else {}
+            ),
             "evidence_digest": evidence_digest,
             "evidence_path": evidence_path,
             "cost_microusd": _cost_microusd(config, result, usage),
@@ -1139,6 +1187,10 @@ def _submit_failure_attempt(
 ) -> None:
     """Submit a bounded failure manifest without trusting prepared result data."""
     digest, evidence_path = _upload_failure_note(identity, error)
+    failure_fingerprint = _failure_fingerprint(
+        type(error).__name__ if outcome == "infrastructure" else None,
+        replacement_eligible=replacement_eligible,
+    )
     client = _control_client(identity.run_id)
     client.request_sync(
         "POST",
@@ -1147,6 +1199,11 @@ def _submit_failure_attempt(
             "action_id": identity.action_id,
             "outcome": outcome,
             "replacement_eligible": replacement_eligible,
+            **(
+                {"failure_fingerprint": failure_fingerprint}
+                if failure_fingerprint is not None
+                else {}
+            ),
             "evidence_digest": digest,
             "evidence_path": evidence_path,
             "cost_microusd": 0,
@@ -1497,6 +1554,7 @@ def _deliver_result(
     task = config.task
     archive = _archive_trial(root, task, result_path, output)
     outcome_override: tuple[str, bool] | None = None
+    failure_class_override: str | None = None
     try:
         digest, evidence_path = _upload_evidence(config, archive)
     except ControlClientError as error:
@@ -1507,6 +1565,7 @@ def _deliver_result(
         )
         digest, evidence_path = _upload_failure_note(_config_identity(config), error)
         outcome_override = _worker_failure_outcome(error)
+        failure_class_override = type(error).__name__
     _submit_attempt(
         config,
         result_value,
@@ -1515,6 +1574,7 @@ def _deliver_result(
         evidence_path,
         timed_out=timed_out,
         outcome_override=outcome_override,
+        failure_class_override=failure_class_override,
     )
 
 

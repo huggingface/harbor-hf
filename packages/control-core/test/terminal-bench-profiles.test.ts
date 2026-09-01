@@ -651,7 +651,7 @@ describe("Terminal-Bench 2.1 profiles", () => {
     }
   });
 
-  it("keeps replacement, diagnostic, and full launch policies bounded", async () => {
+  it("keeps replacement, diagnostic, and full launch policies cost bounded", async () => {
     const canary = record((await profile("launch-policy", "tb21-canary")).spec);
     const miniSweCanary = record(
       (await profile("launch-policy", "tb21-mini-swe-canary")).spec,
@@ -752,7 +752,6 @@ describe("Terminal-Bench 2.1 profiles", () => {
     )) {
       const spec = record((await profile("launch-policy", name)).spec);
       expect(spec).toEqual({
-        max_infrastructure_attempts: 2,
         reservation_microusd: reservation,
         max_run_ceiling_microusd: ceiling,
         preparation_reservation_microusd: 50_000,

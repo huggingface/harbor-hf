@@ -65,7 +65,7 @@ export const hints = {
     hardware:
       "Hugging Face Jobs flavor from the deployment profile, such as cpu-basic or cpu-upgrade.",
     attemptLimit:
-      "max_infrastructure_attempts from the launch policy. Extra attempts are only for infrastructure failures, never to rerun a scored outcome.",
+      "Unresolved infrastructure failures can receive another physical Job while the run remains active and passes pause, cancellation, admission, and cost checks. A valid selected result is never rerun.",
     estimatedReservation:
       "Launch-policy reservation times the expected execution Jobs, plus preparation Jobs when the deployment requires them. The hard ceiling must cover this amount.",
     hardCeiling: "The run spend cap you entered. Stored as integer microusd.",

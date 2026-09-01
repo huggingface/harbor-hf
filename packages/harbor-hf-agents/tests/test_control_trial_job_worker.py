@@ -1129,6 +1129,41 @@ def test_only_typed_transient_worker_failures_are_replaceable(
     assert worker._worker_failure_outcome(error) == expected
 
 
+def test_infrastructure_failure_fingerprint_is_stable_and_worker_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HARBOR_HF_WORKER_REVISION", "worker-a")
+    first = worker._failure_fingerprint(
+        "JobEnvironmentPreflightError",
+        replacement_eligible=True,
+    )
+    assert first == worker._failure_fingerprint(
+        "JobEnvironmentPreflightError",
+        replacement_eligible=True,
+    )
+    assert first != worker._failure_fingerprint(
+        "MissingHarborResultError",
+        replacement_eligible=True,
+    )
+    monkeypatch.setenv("HARBOR_HF_WORKER_REVISION", "worker-b")
+    assert first != worker._failure_fingerprint(
+        "JobEnvironmentPreflightError",
+        replacement_eligible=True,
+    )
+    assert (
+        worker._failure_fingerprint(
+            "JobEnvironmentPreflightError",
+            replacement_eligible=False,
+        )
+        is None
+    )
+
+
+def test_zero_provider_usage_has_a_stable_failure_class() -> None:
+    usage = worker.InferenceUsage(requests=0, input_tokens=0, output_tokens=0)
+    assert worker._result_failure_class({}, usage) == "missing-positive-inference-usage"
+
+
 def test_failure_evidence_uploads_note_then_canonical_manifest(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

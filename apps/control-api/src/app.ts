@@ -5,6 +5,7 @@ import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import type {
   Actor,
+  AttemptReceipt,
   AttemptSubmissionV1,
   HarborHFResultCatalogV1,
   PublicationReceipt,
@@ -1605,6 +1606,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         task: detail.task,
         attempts: detail.attempts.map((attempt) => {
           const job = jobsByLaunchAction.get(attempt.action_id);
+          const receipt = JSON.parse(attempt.body) as AttemptReceipt;
           return {
             attempt_id: attempt.attempt_id,
             action_id: attempt.action_id,
@@ -1612,6 +1614,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
             task_id: attempt.task_id,
             outcome: attempt.outcome,
             replacement_eligible: attempt.replacement_eligible,
+            failure_fingerprint: receipt.failure_fingerprint ?? null,
             cost_microusd: attempt.cost_microusd,
             metrics: attempt.metrics,
             created_at: attempt.created_at,
@@ -1747,6 +1750,9 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           action_id: input.action_id,
           outcome: input.outcome,
           replacement_eligible: input.replacement_eligible,
+          ...(input.failure_fingerprint
+            ? { failure_fingerprint: input.failure_fingerprint }
+            : {}),
           evidence_digest: input.evidence_digest,
           evidence_path: input.evidence_path,
           cost_microusd: input.cost_microusd,

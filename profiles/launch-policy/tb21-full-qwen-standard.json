@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-22a415b4e3db90c2a84affe6",
+  "record_id": "profile-692dbca2efc2f19f6dc89181",
   "created_at": "2026-08-31T00:00:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
@@ -10,7 +10,6 @@
   "profile_kind": "launch_policy",
   "name": "tb21-full-qwen-standard",
   "spec": {
-    "max_infrastructure_attempts": 2,
     "reservation_microusd": 250000,
     "max_run_ceiling_microusd": 44700000,
     "preparation_reservation_microusd": 50000,

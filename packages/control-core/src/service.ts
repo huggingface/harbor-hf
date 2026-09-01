@@ -109,6 +109,7 @@ export interface AttemptInput {
   action_id: string;
   outcome: AttemptReceipt["outcome"];
   replacement_eligible: boolean;
+  failure_fingerprint?: string;
   evidence_digest: string;
   evidence_path: string;
   cost_microusd: number;
@@ -3002,15 +3003,6 @@ export class ControlService {
     return prior;
   }
 
-  private consumedInfrastructureAttempts(
-    attempts: ReadonlyArray<{ outcome: string; replacement_eligible: number }>,
-  ): number {
-    return attempts.filter(
-      (attempt) =>
-        attempt.outcome === "infrastructure" && attempt.replacement_eligible === 1,
-    ).length;
-  }
-
   private launchStillRunning(
     launch: {
       action_id: string;
@@ -3102,8 +3094,6 @@ export class ControlService {
       const prior = this.selectedInfrastructureAttempt(detail);
       if (
         !prior ||
-        this.consumedInfrastructureAttempts(detail.attempts) >=
-          policy.max_infrastructure_attempts ||
         (await this.projection.retryActionForAttempt(runId, prior.attempt_id)) ||
         (await this.laterExecutionLaunchExists(runId, task.task_id, prior.action_id))
       )
@@ -3582,11 +3572,6 @@ export class ControlService {
       if (deployment.route !== "hf_job")
         throw new PolicyError("imported deployment profiles cannot launch retries");
       const policy = this.resolvedProfile<LaunchPolicySpec>(lock, "launch_policy");
-      if (
-        this.consumedInfrastructureAttempts(task.attempts) >=
-        policy.max_infrastructure_attempts
-      )
-        throw new PolicyError("infrastructure retry budget is exhausted");
       retryReservation = {
         attemptId: priorAttempt.attempt_id,
         completedAt: priorAttempt.created_at,

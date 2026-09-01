@@ -3261,7 +3261,7 @@ describe("control service", () => {
     });
   });
 
-  it("turns failed Job launches into bounded infrastructure attempts", async () => {
+  it("retries unresolved infrastructure failures without a fixed attempt limit", async () => {
     const control = await createTestControl();
     controls.push(control);
     const result = await control.service.submit(
@@ -3275,10 +3275,16 @@ describe("control service", () => {
         if (intent.action_kind !== "job.launch")
           return new NoopActions().execute(intent);
         launches += 1;
+        if (launches <= 3)
+          return {
+            outcome: "failed",
+            observed_state: `job-create-failed-${launches}`,
+            error_code: "jobs-api-unavailable",
+          };
         return {
-          outcome: "failed",
-          observed_state: "job-create-failed",
-          error_code: "jobs-api-unavailable",
+          outcome: "created",
+          observed_state: "RUNNING",
+          resource_id: "job-after-infrastructure-retries",
         };
       },
     };
@@ -3289,29 +3295,24 @@ describe("control service", () => {
       new ResultPublisher(control.store, control.projection, control.service),
       { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
     );
-    await settle(reconciler, 10);
-    expect(launches).toBe(1);
-    expect(await control.projection.unadvancedActions()).toHaveLength(0);
-    expect(await control.projection.runAttempts(result.run_id)).toMatchObject([
-      { outcome: "infrastructure", replacement_eligible: 1 },
-    ]);
+    await settle(reconciler, 16);
+    expect(launches).toBe(4);
+    expect(await control.projection.runAttempts(result.run_id)).toHaveLength(3);
     expect(await control.projection.run(result.run_id)).toMatchObject({
-      status: "failed",
-      terminal_tasks: 1,
-      exhausted_tasks: 1,
+      status: "active",
+      terminal_tasks: 0,
+      exhausted_tasks: 0,
       publication_status: null,
     });
     const detail = await control.projection.task(result.run_id, "task-001");
-    expect(detail?.attempts).toMatchObject([
-      { outcome: "infrastructure", replacement_eligible: 1 },
-    ]);
+    expect(detail?.attempts).toHaveLength(3);
     expect(detail?.task).toMatchObject({
-      terminal_outcome: "infrastructure",
+      terminal_outcome: null,
       selected_attempt_id: null,
     });
   });
 
-  it("keeps a run active when one task is exhausted and others remain", async () => {
+  it("keeps unresolved tasks active while their replacement Jobs run", async () => {
     const control = await createTestControl(2, 1, 0, true, "forbidden", undefined, []);
     controls.push(control);
     const result = await control.service.submit(
@@ -3353,16 +3354,16 @@ describe("control service", () => {
       { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
     );
     await settle(reconciler, 12);
-    expect(launches).toBe(2);
+    expect(launches).toBe(3);
     expect(await control.projection.run(result.run_id)).toMatchObject({
       status: "active",
-      terminal_tasks: 1,
-      exhausted_tasks: 1,
+      terminal_tasks: 0,
+      exhausted_tasks: 0,
       publication_status: null,
     });
     expect(
       (await control.projection.task(result.run_id, "task-001"))?.task.terminal_outcome,
-    ).toBe("infrastructure");
+    ).toBeNull();
     expect(
       (await control.projection.task(result.run_id, "task-002"))?.task.terminal_outcome,
     ).toBeNull();
@@ -3377,14 +3378,17 @@ describe("control service", () => {
       operator,
     );
     let failObservation = true;
+    let launchSequence = 0;
     const external: ExternalActionPort = {
       execute: async (intent): Promise<ExternalActionResult> => {
-        if (intent.action_kind === "job.launch")
+        if (intent.action_kind === "job.launch") {
+          launchSequence += 1;
           return {
             outcome: "created",
             observed_state: "SCHEDULING",
-            resource_id: "job-broken-observe-chain",
+            resource_id: `job-broken-observe-chain-${launchSequence}`,
           };
+        }
         if (intent.action_kind === "job.observe" && failObservation)
           return {
             outcome: "failed",
@@ -3395,7 +3399,7 @@ describe("control service", () => {
           return {
             outcome: "completed",
             observed_state: "ERROR",
-            resource_id: "job-broken-observe-chain",
+            resource_id: String(intent.payload.resource_id),
           };
         return new NoopActions().execute(intent);
       },
@@ -3422,7 +3426,7 @@ describe("control service", () => {
     await control.service.receipt(JSON.parse(observe?.intent_body ?? "null"), {
       outcome: "completed",
       observed_state: "SCHEDULING",
-      resource_id: "job-broken-observe-chain",
+      resource_id: "job-broken-observe-chain-1",
     });
     await settle(reconciler, 3);
     expect(
@@ -4744,7 +4748,7 @@ describe("control service", () => {
     });
   });
 
-  it("releases each failed Job reservation before reserving its replacement", async () => {
+  it("releases failed Job reservations before pausing a repeated defect", async () => {
     const control = await createTestControl(1, 2, 6);
     controls.push(control);
     const result = await control.service.submit(
@@ -4777,10 +4781,10 @@ describe("control service", () => {
 
     expect(launches).toBe(2);
     expect(await control.projection.run(result.run_id)).toMatchObject({
-      status: "failed",
+      status: "paused",
       reserved_microusd: 0,
-      terminal_tasks: 1,
-      exhausted_tasks: 1,
+      terminal_tasks: 0,
+      exhausted_tasks: 0,
     });
   });
 

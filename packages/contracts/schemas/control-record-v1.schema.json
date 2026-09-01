@@ -1280,6 +1280,9 @@
             "evidence_digest": {
               "$ref": "#/$defs/Digest"
             },
+            "failure_fingerprint": {
+              "$ref": "#/$defs/Digest"
+            },
             "evidence_path": {
               "type": "string",
               "minLength": 1,
@@ -2300,7 +2303,6 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "max_infrastructure_attempts",
         "reservation_microusd",
         "success_without_worker_receipt",
         "publication_role"

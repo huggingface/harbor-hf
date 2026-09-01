@@ -1217,11 +1217,6 @@ export class Reconciler {
             "success_without_worker_receipt",
             "boolean",
           ),
-          max_infrastructure_attempts: profileScalar<number>(
-            policy,
-            "max_infrastructure_attempts",
-            "number",
-          ),
           required_positive_metrics: optionalProfileStrings(
             policy,
             "required_positive_metrics",
@@ -1505,6 +1500,17 @@ export class Reconciler {
         action_id: launchActionId,
         outcome: fallback,
         replacement_eligible: replacementEligible,
+        ...(replacementEligible
+          ? {
+              failure_fingerprint: sha256(
+                canonicalJson({
+                  kind: "job-terminal-without-worker-receipt",
+                  observed_state: receipt.observed_state,
+                  worker_revision: intent.payload.worker_revision ?? "unknown",
+                }),
+              ),
+            }
+          : {}),
         evidence_digest: sha256(canonicalJson(receipt)),
         evidence_path: controlRecordPath(receipt),
         cost_microusd: 0,
@@ -1563,18 +1569,26 @@ export class Reconciler {
       const infrastructureAttempts = attempts.filter(
         (item) => item.outcome === "infrastructure",
       );
-      const maxAttempts = scalar<number>(
-        source.payload,
-        "max_infrastructure_attempts",
-        "number",
-      );
-      if (infrastructureAttempts.length >= maxAttempts) {
-        await this.service.exhaustTask(
-          attempt,
-          `attempt limit exhausted: ${validity.reason}`,
-          attempts.length,
-        );
-        return;
+      if (attempt.failure_fingerprint) {
+        const matchingFailures = attempts.filter((item) => {
+          const receipt = JSON.parse(item.body) as AttemptReceipt;
+          return (
+            receipt.outcome === "infrastructure" &&
+            receipt.failure_fingerprint === attempt.failure_fingerprint
+          );
+        });
+        if (matchingFailures.length >= 2) {
+          await this.service.writeAction(
+            this.service.actionIntent(
+              attempt.run_id,
+              "run.pause",
+              attempt.task_id,
+              infrastructureAttempts.length,
+              { reason: "repeated deterministic infrastructure failure" },
+            ),
+          );
+          return;
+        }
       }
       if (
         await this.service.laterExecutionLaunchExists(
