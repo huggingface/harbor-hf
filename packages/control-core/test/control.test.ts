@@ -33,6 +33,7 @@ import {
   ExternalActionNotFoundError,
   type ExternalActionPort,
   type ExternalActionResult,
+  nextAvailableActionGeneration,
   Reconciler,
 } from "../src/reconciler.js";
 import { runIdentity, runUnique } from "../src/run-id.js";
@@ -66,6 +67,12 @@ describe("profile cutover Job classification", () => {
     expect(jobStateIsTerminal("COMPLETED")).toBe(true);
     expect(jobStateIsTerminal("RUNNING")).toBe(false);
     expect(jobStateIsTerminal(null)).toBe(false);
+  });
+
+  it("selects an unused action generation without treating it as an ordinal", () => {
+    expect(nextAvailableActionGeneration([1_000_000])).toBe(0);
+    expect(nextAvailableActionGeneration([0, 2], 2)).toBe(1);
+    expect(nextAvailableActionGeneration([0, 1, 2], 2)).toBeNull();
   });
 });
 
@@ -3309,6 +3316,77 @@ describe("control service", () => {
     expect(detail?.task).toMatchObject({
       terminal_outcome: null,
       selected_attempt_id: null,
+    });
+  });
+
+  it("retries with a free generation after a hash-derived generation", async () => {
+    const control = await createTestControl(1, 2, 6);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 12 },
+      "retry-generation-gap-key",
+      operator,
+    );
+    const launchGenerations: number[] = [];
+    let sentinelWritten = false;
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        if (intent.action_kind === "job.observe")
+          return {
+            outcome: "completed",
+            observed_state: "RUNNING",
+            resource_id: String(intent.payload.resource_id),
+          };
+        if (intent.action_kind !== "job.launch")
+          return new NoopActions().execute(intent);
+        launchGenerations.push(intent.generation);
+        if (!sentinelWritten) {
+          sentinelWritten = true;
+          const sentinel = control.service.actionIntent(
+            result.run_id,
+            "job.launch",
+            "task-001",
+            1_000_000,
+            { ...intent.payload },
+          );
+          await control.service.writeAction(sentinel);
+          await control.service.markAdvanced(
+            sentinel,
+            await control.service.receipt(sentinel, {
+              outcome: "completed",
+              observed_state: "suppressed-generation-sentinel",
+            }),
+          );
+          return {
+            outcome: "failed",
+            observed_state: "job-create-failed",
+            error_code: "jobs-api-unavailable",
+          };
+        }
+        return {
+          outcome: "created",
+          observed_state: "RUNNING",
+          resource_id: "replacement-job",
+        };
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 12);
+
+    expect(launchGenerations).toHaveLength(2);
+    expect(launchGenerations[1]).not.toBe(1_000_000);
+    expect(launchGenerations[1]).not.toBe(launchGenerations[0]);
+    expect(await control.projection.run(result.run_id)).toMatchObject({
+      status: "active",
+      terminal_tasks: 0,
+      exhausted_tasks: 0,
     });
   });
 

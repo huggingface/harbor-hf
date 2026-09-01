@@ -75,6 +75,17 @@ interface ExecutableRun {
   source_lock: RunLock;
 }
 
+export function nextAvailableActionGeneration(
+  generations: readonly number[],
+  maximum = maximumActionGeneration,
+): number | null {
+  const used = new Set(generations);
+  for (let generation = 0; generation <= maximum; generation += 1) {
+    if (!used.has(generation)) return generation;
+  }
+  return null;
+}
+
 const terminalJobStates = new Set([
   "STOPPED",
   "COMPLETED",
@@ -1617,11 +1628,21 @@ export class Reconciler {
           return launch.payload.task_id === attempt.task_id;
         },
       );
-      const retryGeneration =
-        taskLaunches.reduce(
-          (maximum, launch) => Math.max(maximum, launch.generation),
-          -1,
-        ) + 1;
+      const retryGeneration = nextAvailableActionGeneration(
+        taskLaunches.map((launch) => launch.generation),
+      );
+      if (retryGeneration === null) {
+        await this.service.writeAction(
+          this.service.actionIntent(
+            attempt.run_id,
+            "run.pause",
+            `retry-generation-limit:${attempt.task_id}`,
+            maximumActionGeneration,
+            { reason: "automatic retry generation limit reached" },
+          ),
+        );
+        return;
+      }
       const replacementReservationKey = deterministicId(
         "replacement-reservation",
         attempt.attempt_id,
@@ -1647,9 +1668,6 @@ export class Reconciler {
       if (priorLaunch?.action_kind !== "job.launch")
         throw new PolicyError("attempt does not identify its physical Job launch");
       const launch = JSON.parse(priorLaunch.intent_body) as ActionIntent;
-      const retryGeneration = isCurrentRunLock(lock.source_lock)
-        ? infrastructureAttempts.length
-        : await this.projection.nextExecutionLaunchGeneration(attempt.run_id);
       const repair = isCurrentRunLock(lock.source_lock)
         ? null
         : await this.projection.runContinuationRepair(attempt.run_id);
