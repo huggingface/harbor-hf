@@ -14,9 +14,9 @@ import {
   ProfileResolver,
 } from "../src/profiles.js";
 
-const MATRIX_WORKER_REVISION = "a430d99ed7d6345917c3a477a89f03bd65a57d43";
+const MATRIX_WORKER_REVISION = "1d1346a2de44eac1a924d49da29459ccc0464bd0";
 const MATRIX_WORKER_IMAGE =
-  "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:d3d122523eea6853424d56ecad1f2fdd5f9f50517bc4b890c93c7b8fda707ec4";
+  "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:b0aa46621509a74be133e68c8858164b50dba57a48807353c0f3c7bd9a99d239";
 const PREVIOUS_WORKER_REVISION = "8fa3b80ee9da16f989cbef5f532a54f2ef375197";
 const PREVIOUS_WORKER_IMAGE =
   "ghcr.io/huggingface/harbor-hf-trial-worker@sha256:56aae633c6cc9137a0a2366ebf3e52abcc2a43006f293c2bee888a0086913a2b";
