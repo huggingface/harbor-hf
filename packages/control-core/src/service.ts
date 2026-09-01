@@ -2375,24 +2375,6 @@ export class ControlService {
       actor,
       ...fields,
     };
-    const existing = await this.projection.attemptById(input.attempt_id);
-    if (existing) {
-      const record = JSON.parse(existing.body) as AttemptReceipt;
-      const { failure_fingerprint: storedFingerprint, ...storedWithoutFingerprint } =
-        record;
-      const matchesSynthesizedFingerprint =
-        !input.failure_fingerprint &&
-        Boolean(storedFingerprint) &&
-        canonicalJson(storedWithoutFingerprint) === canonicalJson(submittedCandidate);
-      if (
-        canonicalJson(record) !== canonicalJson(submittedCandidate) &&
-        !matchesSynthesizedFingerprint
-      )
-        throw new IdempotencyConflictError(
-          `attempt identity conflict: ${input.attempt_id}`,
-        );
-      return { receipt: record, adopted: true };
-    }
     const action = await this.projection.action(input.action_id);
     if (
       !action ||
@@ -2418,6 +2400,22 @@ export class ControlService {
       ...submittedCandidate,
       ...(fallbackFingerprint ? { failure_fingerprint: fallbackFingerprint } : {}),
     };
+    const existing = await this.projection.attemptById(input.attempt_id);
+    if (existing) {
+      const record = JSON.parse(existing.body) as AttemptReceipt;
+      const matchesPreFingerprintRecord =
+        !input.failure_fingerprint &&
+        !record.failure_fingerprint &&
+        canonicalJson(record) === canonicalJson(submittedCandidate);
+      if (
+        canonicalJson(record) !== canonicalJson(candidate) &&
+        !matchesPreFingerprintRecord
+      )
+        throw new IdempotencyConflictError(
+          `attempt identity conflict: ${input.attempt_id}`,
+        );
+      return { receipt: record, adopted: true };
+    }
     const launchTasks = stringArrayValue(
       launch.payload.task_ids,
       "attempt Job action task IDs",

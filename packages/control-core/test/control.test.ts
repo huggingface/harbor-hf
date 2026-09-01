@@ -4108,6 +4108,51 @@ describe("control service", () => {
     }
   });
 
+  it("rejects a repeated attempt that omits an explicit failure fingerprint", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "explicit-fingerprint-idempotency-key",
+      operator,
+    );
+    const launch = control.service.actionIntent(
+      result.run_id,
+      "job.launch",
+      "task-001",
+      0,
+      {
+        task_id: "task-001",
+        task_ids: ["task-001"],
+        reservation_microusd: 0,
+      },
+    );
+    await control.service.writeAction(launch);
+    const evidence = await putEvidenceReference(
+      control,
+      "explicit-fingerprint-evidence",
+    );
+    const input = {
+      run_id: result.run_id,
+      task_id: "task-001",
+      attempt_id: "attempt-explicit-fingerprint",
+      action_id: launch.action_id,
+      outcome: "infrastructure" as const,
+      replacement_eligible: true,
+      failure_fingerprint: sha256("explicit-failure"),
+      ...evidence,
+      cost_microusd: 0,
+      metrics: {},
+      completed_at: "2026-08-16T00:00:01.000Z",
+    };
+    await control.service.attempt(input);
+    const { failure_fingerprint: _omitted, ...withoutFingerprint } = input;
+
+    await expect(control.service.attempt(withoutFingerprint)).rejects.toThrow(
+      "attempt identity conflict",
+    );
+  });
+
   it("adopts a repeated infrastructure retry request", async () => {
     const control = await createTestControl(1, 2);
     controls.push(control);
