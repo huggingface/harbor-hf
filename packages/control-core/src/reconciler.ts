@@ -1537,9 +1537,8 @@ export class Reconciler {
       attempt,
       requiredPositiveMetrics(lock.source_lock),
     );
-    const attempts = (await this.projection.runAttempts(attempt.run_id)).filter(
-      (item) => item.task_id === attempt.task_id,
-    );
+    const runAttempts = await this.projection.runAttempts(attempt.run_id);
+    const attempts = runAttempts.filter((item) => item.task_id === attempt.task_id);
     if (source.payload.worker_role === "preparation") {
       await this.service.exhaustTask(
         attempt,
@@ -1570,7 +1569,7 @@ export class Reconciler {
         (item) => item.outcome === "infrastructure",
       );
       if (attempt.failure_fingerprint) {
-        const matchingFailures = attempts.filter((item) => {
+        const matchingFailures = runAttempts.filter((item) => {
           const receipt = JSON.parse(item.body) as AttemptReceipt;
           return (
             receipt.outcome === "infrastructure" &&

@@ -3312,6 +3312,47 @@ describe("control service", () => {
     });
   });
 
+  it("pauses sibling tasks after a shared infrastructure failure repeats", async () => {
+    const control = await createTestControl(2);
+    controls.push(control);
+    const result = await control.service.submit(
+      submission,
+      "shared-failure-across-tasks-key",
+      operator,
+    );
+    let launches = 0;
+    const external: ExternalActionPort = {
+      execute: async (intent): Promise<ExternalActionResult> => {
+        if (intent.action_kind !== "job.launch")
+          return new NoopActions().execute(intent);
+        launches += 1;
+        return {
+          outcome: "failed",
+          observed_state: "shared-worker-failure",
+          error_code: "worker-start-failed",
+        };
+      },
+    };
+    const reconciler = new Reconciler(
+      control.service,
+      control.projection,
+      external,
+      new ResultPublisher(control.store, control.projection, control.service),
+      { interval_ms: 100, observation_interval_ms: 0, batch_size: 16 },
+    );
+
+    await settle(reconciler, 12);
+    const launchesAtPause = launches;
+    expect(launchesAtPause).toBeGreaterThanOrEqual(2);
+    expect(await control.projection.run(result.run_id)).toMatchObject({
+      status: "paused",
+      terminal_tasks: 0,
+      exhausted_tasks: 0,
+    });
+    await settle(reconciler, 5);
+    expect(launches).toBe(launchesAtPause);
+  });
+
   it("keeps unresolved tasks active while their replacement Jobs run", async () => {
     const control = await createTestControl(2, 1, 0, true, "forbidden", undefined, []);
     controls.push(control);
