@@ -3618,7 +3618,7 @@ export class ControlService {
       const replacementReservationKey = deterministicId(
         "replacement-reservation",
         priorAttempt.attempt_id,
-        String(generation),
+        idempotency.key_digest,
       );
       retryReservation = {
         attemptId: priorAttempt.attempt_id,

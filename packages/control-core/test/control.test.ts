@@ -4343,6 +4343,104 @@ describe("control service", () => {
     );
   });
 
+  it("reuses a manual retry reservation after an interrupted intent write", async () => {
+    const control = await createTestControl(1, 2, 6);
+    controls.push(control);
+    const result = await control.service.submit(
+      { ...submission, ceiling_microusd: 12 },
+      "interrupted-retry-intent-run-key",
+      operator,
+    );
+    const launch = control.service.actionIntent(
+      result.run_id,
+      "job.launch",
+      "task-001",
+      0,
+      {
+        task_id: "task-001",
+        task_ids: ["task-001"],
+        reservation_microusd: 6,
+      },
+    );
+    await control.service.writeAction(launch);
+    const evidence = await putEvidenceReference(
+      control,
+      "interrupted-retry-intent-evidence",
+    );
+    await control.service.attempt({
+      run_id: result.run_id,
+      task_id: "task-001",
+      attempt_id: "attempt-interrupted-retry-intent",
+      action_id: launch.action_id,
+      outcome: "infrastructure",
+      replacement_eligible: true,
+      ...evidence,
+      cost_microusd: 0,
+      metrics: {},
+      completed_at: "2026-08-16T00:00:01.000Z",
+    });
+    const action = {
+      action: "retry_infrastructure",
+      task_id: "task-001",
+      reason: "retry after interrupted intent write",
+      confirmed: true,
+    } as const;
+    const writeAction = control.service.writeAction.bind(control.service);
+    let interruptedIntent: ActionIntent | null = null;
+    const interruptedWrite = vi
+      .spyOn(control.service, "writeAction")
+      .mockImplementation(async (intent) => {
+        if (
+          intent.action_kind === "job.launch" &&
+          intent.payload.prior_attempt_id === "attempt-interrupted-retry-intent"
+        ) {
+          interruptedIntent = intent;
+          throw new Error("simulated retry intent write interruption");
+        }
+        return writeAction(intent);
+      });
+
+    await expect(
+      control.service.runAction(
+        result.run_id,
+        action,
+        "interrupted-retry-intent-key",
+        operator,
+      ),
+    ).rejects.toThrow("simulated retry intent write interruption");
+    interruptedWrite.mockRestore();
+    if (!interruptedIntent) throw new Error("interrupted retry intent is missing");
+    expect(await control.projection.run(result.run_id)).toMatchObject({
+      reserved_microusd: 6,
+    });
+    const collision = control.service.actionIntent(
+      result.run_id,
+      "publication.publish",
+      "generation-collision",
+      interruptedIntent.generation,
+      {},
+    );
+    await control.service.writeAction(collision);
+
+    const repeated = await control.service.runAction(
+      result.run_id,
+      action,
+      "interrupted-retry-intent-key",
+      operator,
+    );
+    const repeatedRow = await control.projection.action(repeated.action_id);
+    if (!repeatedRow) throw new Error("repeated retry intent is missing");
+    const repeatedIntent = JSON.parse(repeatedRow.intent_body) as ActionIntent;
+
+    expect(repeatedIntent.generation).not.toBe(interruptedIntent.generation);
+    expect(repeatedIntent.payload.replacement_reservation_key).toBe(
+      interruptedIntent.payload.replacement_reservation_key,
+    );
+    expect(await control.projection.run(result.run_id)).toMatchObject({
+      reserved_microusd: 6,
+    });
+  });
+
   it("serializes concurrent infrastructure retry admissions", async () => {
     const control = await createTestControl(1, 2, 6);
     controls.push(control);

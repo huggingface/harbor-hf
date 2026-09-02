@@ -1627,13 +1627,12 @@ export class Reconciler {
         "reservation_microusd",
         "number",
       );
-      const taskLaunches = (await this.projection.runActions(attempt.run_id)).filter(
-        (action) => {
-          if (action.action_kind !== "job.launch") return false;
-          const launch = JSON.parse(action.intent_body) as ActionIntent;
-          return launch.payload.task_id === attempt.task_id;
-        },
-      );
+      const runActions = await this.projection.runActions(attempt.run_id);
+      const taskLaunches = runActions.filter((action) => {
+        if (action.action_kind !== "job.launch") return false;
+        const launch = JSON.parse(action.intent_body) as ActionIntent;
+        return launch.payload.task_id === attempt.task_id;
+      });
       const retryGeneration = nextAvailableActionGeneration(
         taskLaunches.map((launch) => launch.generation),
       );
@@ -1649,10 +1648,22 @@ export class Reconciler {
         );
         return;
       }
+      const latestResume = runActions.find(
+        (action) =>
+          action.action_kind === "run.resume" &&
+          Date.parse(action.created_at) > Date.parse(attempt.created_at),
+      );
+      const repair = await this.projection.runContinuationRepair(attempt.run_id);
+      const successor = await this.projection.runContinuationRepairSuccessor(
+        attempt.run_id,
+      );
       const replacementReservationKey = deterministicId(
         "replacement-reservation",
         attempt.attempt_id,
-        String(retryGeneration),
+        latestResume?.action_id ??
+          successor?.record_id ??
+          repair?.record_id ??
+          "initial",
       );
       if (
         !(await this.service.reserveReplacement(
@@ -1674,12 +1685,6 @@ export class Reconciler {
       if (priorLaunch?.action_kind !== "job.launch")
         throw new PolicyError("attempt does not identify its physical Job launch");
       const launch = JSON.parse(priorLaunch.intent_body) as ActionIntent;
-      const repair = isCurrentRunLock(lock.source_lock)
-        ? null
-        : await this.projection.runContinuationRepair(attempt.run_id);
-      const successor = isCurrentRunLock(lock.source_lock)
-        ? null
-        : await this.projection.runContinuationRepairSuccessor(attempt.run_id);
       const retry = this.service.actionIntent(
         attempt.run_id,
         "job.launch",
