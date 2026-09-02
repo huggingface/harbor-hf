@@ -445,7 +445,7 @@ The successor also changes only the worker image and revision. It binds to both 
 
 ## Repair infrastructure failures
 
-Terminal benchmark outcomes stay sealed. Only a task recorded as an eligible infrastructure failure can receive a bounded replacement:
+Terminal benchmark outcomes stay sealed. Only a task recorded as an eligible infrastructure failure can receive a replacement:
 
 ```bash
 harbor-hf run retry-infrastructure <run-id> \
@@ -461,9 +461,9 @@ harbor-hf run retry-infrastructure <run-id> \
 
 The run page has the same control: **Retry infrastructure failures**. It only queues replacement Jobs for eligible infrastructure outcomes, including an infrastructure seal that should not have closed the logical task. Scored misses and other sealed outcomes stay sealed. A retry is a Job on the existing run. The run list does not add a second row. Each replacement receipt names the `job.launch` action that produced it.
 
-If a trial Job ends without a valid result for a reason other than its locked timeout, the control service records an infrastructure attempt and may launch one replacement Job for that task. A timed-out Harbor process with no result seals `benchmark_timeout` without replacement. The deployment profile's `max_infrastructure_attempts`, per-Run `max_jobs`, namespace Job capacity, start-rate policy, and cost ceiling bound replacements. A failed reconciliation cycle writes a structured error log and retries on the next cycle instead of stalling silently.
+If a trial Job ends without a valid result for a replacement-eligible infrastructure reason, the control service records an infrastructure attempt and may launch another Job for that task. A timed-out Harbor process with no result seals `benchmark_timeout` without replacement. Current runs have no policy attempt-count limit. Historical records may still contain `max_infrastructure_attempts`, but current retry admission does not enforce it. Per-Run `max_jobs`, namespace Job capacity, start-rate policy, the finite action-key space, pause and cancellation state, repeated-defect protection, and the cost ceiling still bound new work. A failed reconciliation cycle writes a structured error log and retries on the next cycle instead of stalling silently.
 
-Pausing stops preparation and execution dispatch without discarding terminal Job evidence. A resume task limit selects the first unresolved tasks in locked order and carries that selection through preparation into execution. Resume preserves the failed Job as `prior_attempt`, and bulk infrastructure retry adopts one durable ordered command when the same idempotency key is replayed. Actual receipts remain durable if observed spend crosses the ceiling; the Run becomes budget-exceeded and cannot reserve more work or publish.
+Pausing stops preparation and execution dispatch without discarding terminal Job evidence. A resume task limit selects the first unresolved tasks in locked order and carries that selection through preparation into execution. Resume preserves the failed Job as `prior_attempt`, and bulk infrastructure retry adopts one durable ordered command when the same idempotency key is replayed. A normal resume is not a reviewed worker repair. Repeated matching failures remain paused until a compatible immutable repair attachment is available. Actual receipts remain durable if observed spend crosses the ceiling; the Run becomes budget-exceeded and cannot reserve more work or publish.
 
 Cancellation also preserves existing evidence:
 

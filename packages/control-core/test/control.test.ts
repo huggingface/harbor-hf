@@ -3440,12 +3440,12 @@ describe("control service", () => {
 
     await control.service.runAction(
       result.run_id,
-      { action: "resume", reason: "shared worker repair", confirmed: true },
+      { action: "resume", reason: "no worker repair attached", confirmed: true },
       "resume-shared-failure-across-tasks-key",
       operator,
     );
     await settle(reconciler, 12);
-    expect(launches).toBeGreaterThan(launchesAtPause);
+    expect(launches).toBe(launchesAtPause);
     expect(await control.projection.run(result.run_id)).toMatchObject({
       status: "paused",
       reserved_microusd: 0,
@@ -4990,12 +4990,12 @@ describe("control service", () => {
 
     await control.service.runAction(
       result.run_id,
-      { action: "resume", reason: "worker repair is ready", confirmed: true },
+      { action: "resume", reason: "no worker repair attached", confirmed: true },
       "resume-after-shared-defect-key",
       operator,
     );
     await settle(reconciler, 10);
-    expect(launches).toBe(3);
+    expect(launches).toBe(2);
     expect(await control.projection.run(result.run_id)).toMatchObject({
       status: "paused",
       reserved_microusd: 0,

@@ -70,12 +70,13 @@ manifest or select tasks again. Harbor's internal retry count remains zero.
 After a trial, the worker compares Harbor's emitted `TrialLock` with the
 prepared lock before it can submit evidence or an outcome.
 
-A physical Job runs the prepared task from the beginning. If it ends without a
-valid task receipt, a later Job reconstructs the same one-attempt Harbor
-`JobConfig` and starts that task again. Harbor's internal retry count stays zero,
-and the infrastructure retry does not create another benchmark trial. The
-worker does not save or restore conversation, workspace, process or container
-state between Jobs.
+A physical Job runs the prepared task from the beginning. If it ends with a
+replacement-eligible infrastructure failure, a later Job reconstructs the same
+one-attempt Harbor `JobConfig` and starts that task again. A
+non-infrastructure terminal outcome is not retried automatically. Harbor's
+internal retry count stays zero, and the infrastructure retry does not create
+another benchmark trial. The worker does not save or restore conversation,
+workspace, process or container state between Jobs.
 
 Both workers install the reviewed Harbor-HF agent package at its immutable
 revision and use the pinned Harbor git commit. The preparation worker has no
@@ -86,11 +87,13 @@ inference is required, the Job receives only the inference credential for the
 root-owned bridge. The benchmark agent receives only its loopback route and
 placeholder key.
 
-A reviewed worker repair may retry an unresolved task with a new worker. Final
-evidence records every physical Job, worker and repair generation, usage and
-cost for the logical trial. Valid completed-task receipts stay selected, and
-recovery runs only unresolved tasks. A repeated deterministic shared failure
-pauses the affected fleet.
+A reviewed worker repair may retry an unresolved task with a new worker. A
+normal resume is not a repair. Historical retries bind the exact immutable
+continuation repair, and unsupported repair paths remain paused. Final evidence
+records every physical Job, worker and repair generation, usage and cost for the
+logical trial. Valid completed-task receipts stay selected, and recovery runs
+only unresolved tasks. A repeated deterministic shared failure pauses the
+affected fleet.
 
 ## Custom Provider Agents
 

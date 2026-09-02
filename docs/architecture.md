@@ -105,16 +105,18 @@ logs, trajectory, usage, cost and provenance. The control service selects a task
 only after it reads back the objects and verifies the manifest. A selected task
 is durable progress and later Jobs do not run it again.
 
-A physical Job that does not produce a valid task receipt leaves the task
-unresolved. The next execution starts that task again from the same prepared
-input. Harbor-HF does not save or restore the agent conversation, workspace,
-partial provider response, process memory or container state.
+A physical Job that ends with a replacement-eligible infrastructure failure
+leaves the task unresolved. The next execution starts that task again from the
+same prepared input. A non-infrastructure terminal outcome is not retried
+automatically. Harbor-HF does not save or restore the agent conversation,
+workspace, partial provider response, process memory or container state.
 
-Infrastructure executions have no fixed retry count. The reconciler can keep
-starting the unresolved task while the run remains active and each launch
-passes the existing admission and cost checks. Every failed physical Job and
-worker generation remains visible in result provenance. A repeated
-deterministic failure pauses affected work for repair. The [task result
+Infrastructure executions have no policy retry count. The reconciler can keep
+starting the unresolved task while the run remains active, the finite action-key
+space has capacity and each launch passes the existing admission and cost
+checks. Every failed physical Job and worker generation remains visible in
+result provenance. A repeated deterministic failure pauses affected work for a
+reviewed worker repair. A normal resume is not a repair. The [task result
 persistence and retry plan](2026-09-01-task-result-retry-plan.md) defines the
 implementation and remote checks.
 

@@ -75,6 +75,8 @@ interface ExecutableRun {
   source_lock: RunLock;
 }
 
+const maximumActionGeneration = 1_000_000;
+
 export function nextAvailableActionGeneration(
   generations: readonly number[],
   maximum = maximumActionGeneration,
@@ -1576,9 +1578,6 @@ export class Reconciler {
         await this.projection.retryActionForAttempt(attempt.run_id, attempt.attempt_id)
       )
         return;
-      const infrastructureAttempts = attempts.filter(
-        (item) => item.outcome === "infrastructure",
-      );
       if (attempt.failure_fingerprint) {
         const matchingFailures = runAttempts.filter((item) => {
           const receipt = JSON.parse(item.body) as AttemptReceipt;
@@ -1587,20 +1586,23 @@ export class Reconciler {
             receipt.failure_fingerprint === attempt.failure_fingerprint
           );
         });
-        const resumedAfterAttempt = (
-          await this.projection.runActions(attempt.run_id)
-        ).some(
-          (action) =>
-            action.action_kind === "run.resume" &&
-            Date.parse(action.created_at) > Date.parse(attempt.created_at),
-        );
-        if (matchingFailures.length >= 2 && !resumedAfterAttempt) {
+        const repair = await this.projection.runContinuationRepair(attempt.run_id);
+        const repairedAfterAttempt =
+          repair !== null &&
+          Date.parse(repair.created_at) > Date.parse(attempt.created_at);
+        if (matchingFailures.length >= 2 && !repairedAfterAttempt) {
+          const latestResume = (await this.projection.runActions(attempt.run_id)).find(
+            (action) =>
+              action.action_kind === "run.resume" &&
+              Date.parse(action.created_at) > Date.parse(attempt.created_at),
+          );
+          const pauseCycle = latestResume?.action_id ?? attempt.attempt_id;
           await this.service.writeAction(
             this.service.actionIntent(
               attempt.run_id,
               "run.pause",
-              attempt.task_id,
-              infrastructureAttempts.length,
+              `repeated-defect:${attempt.task_id}:${pauseCycle}`,
+              0,
               { reason: "repeated deterministic infrastructure failure" },
             ),
           );

@@ -18,9 +18,9 @@ count, but every new Job must still pass the run's cost, authorization and
 resource checks. This design does not save agent state after each model request
 or tool action.
 
-**Status.** Approved implementation plan. The feature is not implemented yet.
-This document records the corrected design. It replaces the earlier
-request-level checkpoint plan.
+**Status.** Implemented. This document records the corrected design and
+replaces the earlier request-level checkpoint plan. The remote rollout check
+still runs after the reviewed worker and control source are deployed.
 
 The [control service specification](CONTROL_SERVICE.md#task-result-persistence-and-retry)
 defines task selection and retry. [Architecture](architecture.md#task-result-persistence)
@@ -43,8 +43,10 @@ IDs without an arbitrary infrastructure retry counter.
 ## Goal
 
 A run finishes when every locked task has one valid selected receipt. Each
-selected receipt stays immutable and is never rerun. A task without a valid
-receipt stays unresolved and can receive another physical Job.
+selected receipt stays immutable and is never rerun. A task whose latest
+execution is a replacement-eligible infrastructure failure stays unresolved
+and can receive another physical Job. A non-infrastructure terminal outcome is
+not retried automatically.
 
 The retry starts from the task's original prepared input. It does not continue a
 conversation, restore a workspace or resume a provider stream. The retry remains
@@ -71,8 +73,10 @@ service restart must preserve that selection.
 
 A valid result can contain a zero verifier reward. A zero score is benchmark
 output, so it remains a finished task when the receipt and required evidence are
-valid. A missing result, invalid receipt or failed evidence policy leaves the
-task unresolved.
+valid. A missing or invalid result caused by a replacement-eligible
+infrastructure failure leaves the task unresolved. A completed worker-reported
+provider, agent, verifier or benchmark outcome that fails selection is terminal
+and is not an infrastructure retry.
 
 ## Infrastructure retry contract
 
@@ -81,7 +85,7 @@ the immutable run history. The reconciler waits for terminal observation and
 cleanup, then creates a new action for the same prepared task. The new Job starts
 the task from the beginning.
 
-Infrastructure retries have no fixed attempt-count limit. The reconciler keeps
+Infrastructure retries have no policy attempt-count limit. The reconciler keeps
 retrying an unresolved task while all of these conditions hold:
 
 - the run remains active
@@ -92,7 +96,9 @@ retrying an unresolved task while all of these conditions hold:
 
 Each retry uses a new physical Job and launch action. It keeps the same logical
 trial, prepared task lock and benchmark attempt identity. Every failed Job and
-its observed cost remain visible.
+its observed cost remain visible. The finite action-key schema remains a safety
+boundary. If all valid action generations for one task are used, the run pauses
+instead of exhausting the benchmark task or stranding a cost reservation.
 
 An infrastructure retry must not reset the run budget or erase earlier spend.
 Admission counts observed cost and active unsettled exposure before it permits
@@ -121,7 +127,12 @@ restart requests adopt the same action and cannot create duplicate Jobs.
 ## Worker repair
 
 A reviewed worker repair can be used for the next execution of an unresolved
-task. It does not alter valid completed receipts. The control record keeps:
+task. It does not alter valid completed receipts. A normal `run.resume` action
+is not a worker repair. A historical run can continue only through its
+immutable continuation-repair attachment, which changes only the reviewed
+worker image and revision. A run without a compatible repair attachment stays
+paused instead of retrying the unchanged broken worker. The control record
+keeps:
 
 - every physical Job
 - every worker generation

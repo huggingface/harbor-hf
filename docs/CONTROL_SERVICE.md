@@ -696,11 +696,13 @@ selectable. A zero, missing, negative, fractional, or non-finite required metric
 makes the attempt invalid for selection.
 
 An invalid physical execution remains in the Bucket with its evidence and cost.
-The logical task stays unresolved until it has a receipt that passes the locked
-evidence policy. After cleanup, the reconciler starts the task again from its
-original prepared input. Infrastructure retries have no fixed attempt-count
-limit and do not consume another benchmark trial. Cancellation, pause, an
-admission failure or the run cost ceiling can stop new Jobs. A repeated
+A replacement-eligible infrastructure failure leaves the logical task
+unresolved. After cleanup, the reconciler starts that task again from its
+original prepared input. A non-infrastructure terminal outcome that fails the
+locked evidence policy is exhausted and is not retried automatically.
+Infrastructure retries have no policy attempt-count limit and do not consume
+another benchmark trial. Cancellation, pause, an admission failure, the finite
+action-key space or the run cost ceiling can stop new Jobs. A repeated
 deterministic failure pauses the affected work for repair.
 
 A run is complete only when every locked logical task has exactly one selected
@@ -720,23 +722,26 @@ the existing private Bucket before the control service selects it. The service
 reads the objects back and verifies their digests. Once selected, that task is
 complete and later Jobs do not run it again.
 
-A physical Job that ends before it produces a valid task receipt leaves the task
-unresolved. After cleanup, the reconciler starts the same prepared task from the
-beginning in a new Job. It keeps every failed execution and its observed cost.
-The new Job does not restore conversation state, workspace state, a partial
-model response or a live process.
+A physical Job that ends with a replacement-eligible infrastructure failure
+leaves the task unresolved. After cleanup, the reconciler starts the same
+prepared task from the beginning in a new Job. It keeps every failed execution
+and its observed cost. The new Job does not restore conversation state,
+workspace state, a partial model response or a live process.
 
 Retry actions use deterministic identities. A repeated request adopts the same
 matching action and rejects conflicting bytes. Infrastructure retries have no
-fixed count. They continue while the run is active and admission remains within
-its approved cost and resource limits. Cancellation or pause stops new Jobs. A
-repeated deterministic shared failure pauses the affected fleet until a
+policy count. They continue while the run is active and admission remains
+within its approved cost and resource limits. Cancellation or pause stops new
+Jobs. Exhausting the finite action-key space pauses the run before reservation.
+A repeated deterministic shared failure also pauses the affected fleet until a
 reviewed repair is available.
 
-A reviewed worker repair may run an unresolved task with a new worker. Control
-records retain every physical Job, worker and repair generation, usage and cost.
-Valid completed-task receipts remain selected, so recovery schedules only the
-unresolved task IDs.
+A reviewed worker repair may run an unresolved task with a new worker. A normal
+resume is not a repair. Historical retries use the immutable continuation-repair
+attachment, and a run without a compatible attachment stays paused rather than
+retrying the unchanged broken worker. Control records retain every physical
+Job, worker and repair generation, usage and cost. Valid completed-task receipts
+remain selected, so recovery schedules only the unresolved task IDs.
 
 Final publication selects one valid receipt for every logical task and retains
 the complete physical Job, worker, usage, cost and repair history. The
