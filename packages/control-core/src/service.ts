@@ -152,6 +152,9 @@ export interface RunContinuationRepairSuccessorResult {
   adopted: boolean;
 }
 
+export const repeatedInfrastructureFailureReason =
+  "repeated deterministic infrastructure failure";
+
 export interface PreparedJobSubmissionResult {
   phase: PreparedJobSubmissionV1["phase"];
   record_id: string;
@@ -3420,6 +3423,23 @@ export class ControlService {
       const successor = historical
         ? await this.projection.runContinuationRepairSuccessor(runId)
         : null;
+      const repeatedDefectPause = (await this.projection.runActions(runId)).find(
+        (action) => {
+          if (action.action_kind !== "run.pause") return false;
+          const pause = JSON.parse(action.intent_body) as ActionIntent;
+          return pause.payload.reason === repeatedInfrastructureFailureReason;
+        },
+      );
+      const latestRepair = successor ?? repair;
+      if (
+        repeatedDefectPause &&
+        (!latestRepair ||
+          Date.parse(latestRepair.created_at) <=
+            Date.parse(repeatedDefectPause.created_at))
+      )
+        throw new PolicyError(
+          "repeated infrastructure failure requires a reviewed worker repair",
+        );
       if (!run.paused && !(historical && repair && run.status === "failed"))
         throw new PolicyError("run is not paused");
       if (run.pending_actions > 0)

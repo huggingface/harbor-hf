@@ -3438,11 +3438,20 @@ describe("control service", () => {
       ),
     ).toBe(true);
 
-    await control.service.runAction(
-      result.run_id,
-      { action: "resume", reason: "no worker repair attached", confirmed: true },
-      "resume-shared-failure-across-tasks-key",
-      operator,
+    await expect(
+      control.service.runAction(
+        result.run_id,
+        {
+          action: "resume",
+          reason: "no worker repair attached",
+          task_limit: 1,
+          confirmed: true,
+        },
+        "resume-shared-failure-across-tasks-key",
+        operator,
+      ),
+    ).rejects.toThrow(
+      "repeated infrastructure failure requires a reviewed worker repair",
     );
     await settle(reconciler, 12);
     expect(launches).toBe(launchesAtPause);
@@ -5086,11 +5095,15 @@ describe("control service", () => {
       exhausted_tasks: 0,
     });
 
-    await control.service.runAction(
-      result.run_id,
-      { action: "resume", reason: "no worker repair attached", confirmed: true },
-      "resume-after-shared-defect-key",
-      operator,
+    await expect(
+      control.service.runAction(
+        result.run_id,
+        { action: "resume", reason: "no worker repair attached", confirmed: true },
+        "resume-after-shared-defect-key",
+        operator,
+      ),
+    ).rejects.toThrow(
+      "repeated infrastructure failure requires a reviewed worker repair",
     );
     await settle(reconciler, 10);
     expect(launches).toBe(2);

@@ -29,6 +29,7 @@ import {
   infrastructureSealReplaceable,
   type JobBudgetReservation,
   PolicyError,
+  repeatedInfrastructureFailureReason,
 } from "./service.js";
 
 export interface ExternalActionResult {
@@ -1607,7 +1608,7 @@ export class Reconciler {
               "run.pause",
               `repeated-defect:${attempt.task_id}:${pauseCycle}`,
               0,
-              { reason: "repeated deterministic infrastructure failure" },
+              { reason: repeatedInfrastructureFailureReason },
             ),
           );
           return;
