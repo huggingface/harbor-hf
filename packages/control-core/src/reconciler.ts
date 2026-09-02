@@ -1587,9 +1587,13 @@ export class Reconciler {
           );
         });
         const repair = await this.projection.runContinuationRepair(attempt.run_id);
+        const successor = await this.projection.runContinuationRepairSuccessor(
+          attempt.run_id,
+        );
+        const latestRepair = successor ?? repair;
         const repairedAfterAttempt =
-          repair !== null &&
-          Date.parse(repair.created_at) > Date.parse(attempt.created_at);
+          latestRepair !== null &&
+          Date.parse(latestRepair.created_at) > Date.parse(attempt.created_at);
         if (matchingFailures.length >= 2 && !repairedAfterAttempt) {
           const latestResume = (await this.projection.runActions(attempt.run_id)).find(
             (action) =>
