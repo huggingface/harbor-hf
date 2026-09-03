@@ -192,6 +192,9 @@ export function prepareDirectJobConfig(
   if (!Array.isArray(agents) || agents.length !== 1)
     throw new Error("direct Harbor JobConfig must contain exactly one agent");
   const agent = record(agents[0], "agent");
+  const submittedAgentEnv = record(agent.env ?? {}, "agent env");
+  if (Object.keys(submittedAgentEnv).length > 0)
+    throw new Error("direct Harbor JobConfig cannot set agent env");
   if (Array.isArray(input.datasets)) {
     for (const [index, item] of input.datasets.entries()) {
       const dataset = record(item, `dataset ${index}`);
@@ -215,7 +218,6 @@ export function prepareDirectJobConfig(
       {
         ...clone(agent),
         env: {
-          ...record(agent.env ?? {}, "agent env"),
           OPENAI_BASE_URL: ROUTER_URL,
           OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
         },

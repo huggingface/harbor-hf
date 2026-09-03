@@ -206,6 +206,22 @@ describe("run submission", () => {
       service.submitConfig(
         {
           ...directInput,
+          agents: [
+            {
+              ...directInput.agents[0],
+              env: { CUSTOM_AUTH: "opaque-credential" },
+            },
+          ],
+        },
+        0.25,
+        "opaque-agent-env",
+        "test-subject",
+      ),
+    ).rejects.toThrow("cannot set agent env");
+    await expect(
+      service.submitConfig(
+        {
+          ...directInput,
           datasets: [{ path: "/data/local-tasks" }],
         },
         0.25,

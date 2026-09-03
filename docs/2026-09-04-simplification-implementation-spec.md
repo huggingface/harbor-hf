@@ -206,7 +206,8 @@ requires `--cost-ceiling-usd-per-trial`.
 
 The service validates the file with the pinned Harbor schema. It rejects
 multiple agents and any source job, user agent, local task path, local dataset
-path, credential literal, environment other than `hf-sandbox`, or jobs path.
+path, caller-supplied agent environment, credential literal, environment other
+than `hf-sandbox`, or jobs path.
 It sets `job_name`, `jobs_dir`, the labeled environment import path, and the
 router credential template. Other accepted fields stay unchanged. Direct runs
 are stored with role `diagnostic` and do not enter the leaderboard.
