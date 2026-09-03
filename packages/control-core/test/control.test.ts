@@ -155,6 +155,8 @@ describe("run submission", () => {
     for (const [key, modelId] of [
       ["preset-credential-token", `hf_${"x".repeat(24)}`],
       ["preset-credential-url", "https://user:password@example.test/model"],
+      ["preset-credential-query", "https://example.test/model?access_token=opaque"],
+      ["preset-credential-fragment", "https://example.test/model#signature=opaque"],
     ] as const) {
       await expect(
         service.submitPreset(
@@ -239,22 +241,22 @@ describe("run submission", () => {
         "test-subject",
       ),
     ).rejects.toThrow("cannot set agent env");
-    await expect(
-      service.submitConfig(
-        {
-          ...directInput,
-          datasets: [
-            {
-              ...directInput.datasets[0],
-              repo: "https://user:password@example.test/repository",
-            },
-          ],
-        },
-        0.25,
-        "credential-url",
-        "test-subject",
-      ),
-    ).rejects.toThrow("credential material");
+    for (const [key, repo] of [
+      ["credential-url", "https://user:password@example.test/repository"],
+      ["credential-query", "https://example.test/repository?token=opaque"],
+    ] as const) {
+      await expect(
+        service.submitConfig(
+          {
+            ...directInput,
+            datasets: [{ ...directInput.datasets[0], repo }],
+          },
+          0.25,
+          key,
+          "test-subject",
+        ),
+      ).rejects.toThrow("credential material");
+    }
     await expect(
       service.submitConfig(
         { ...directInput, ignored_by_harbor: true },
