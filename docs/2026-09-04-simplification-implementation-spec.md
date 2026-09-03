@@ -225,11 +225,11 @@ The parent reads `run.json` and validates `harbor_job_config`. It then calls
 `Job.create()` and `Job.run()` from Harbor. It does not implement a task loop,
 retry loop, resume rule, result writer, or lock writer.
 
-`LabeledHFSandboxEnvironment` subclasses Harbor's `HFSandboxEnvironment`. After
-Harbor creates a Sandbox, it adds the run label to the child Job through
-`HfApi.update_job_labels`. This small integration exists because
-`src/harbor/environments/hf_sandbox.py` at the pinned revision has no labels
-argument. It can be removed when Harbor exposes child labels.
+`LabeledHFSandboxEnvironment` subclasses Harbor's `HFSandboxEnvironment`. It
+adds ownership labels to the same `HfApi.run_job` call that creates the child.
+This prevents an unowned child if the parent stops during Sandbox startup. The
+small, context-scoped integration exists because the pinned Hub Sandbox API has
+no labels argument. It can be removed when that API exposes child labels.
 
 The parent adds one `on_trial_ended` callback. The callback reads the completed
 trial's Harbor cost. If that trial exceeds the per-trial ceiling, or the sum of

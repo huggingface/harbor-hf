@@ -186,6 +186,33 @@ describe("run submission", () => {
         "test-subject",
       ),
     ).rejects.toThrow("credential material");
+    await expect(
+      service.submitConfig(
+        {
+          ...directInput,
+          agents: [
+            {
+              ...directInput.agents[0],
+              env: { FOO: `hf_${"x".repeat(24)}` },
+            },
+          ],
+        },
+        0.25,
+        "credential-literal",
+        "test-subject",
+      ),
+    ).rejects.toThrow("credential material");
+    await expect(
+      service.submitConfig(
+        {
+          ...directInput,
+          datasets: [{ path: "/data/local-tasks" }],
+        },
+        0.25,
+        "local-dataset",
+        "test-subject",
+      ),
+    ).rejects.toThrow("local dataset path");
     const direct = await service.submitConfig(
       directInput,
       0.25,

@@ -14,6 +14,8 @@ import {
 const ROUTER_URL = "https://router.huggingface.co/v1";
 const INFERENCE_TOKEN_TEMPLATE = "$" + "{HF_INFERENCE_TOKEN}";
 const LABELED_ENVIRONMENT = "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment";
+const CREDENTIAL_VALUE =
+  /^(?:hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|Bearer\s+\S{16,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
 
 export interface PresetSubmission {
   benchmark: { name: string; preset: string };
@@ -161,7 +163,12 @@ function record(value: unknown, label: string): Record<string, unknown> {
 
 function containsCredentialMaterial(value: unknown, key = ""): boolean {
   if (/(?:token|secret|password|api[_-]?key)/i.test(key)) return true;
-  if (typeof value === "string") return /\$\{[A-Z][A-Z0-9_]*\}/.test(value);
+  if (typeof value === "string")
+    return (
+      /\$\{[A-Z][A-Z0-9_]*\}/.test(value) ||
+      CREDENTIAL_VALUE.test(value) ||
+      value.includes("-----BEGIN PRIVATE KEY-----")
+    );
   if (Array.isArray(value))
     return value.some((item) => containsCredentialMaterial(item, key));
   if (!value || typeof value !== "object") return false;
@@ -185,6 +192,15 @@ export function prepareDirectJobConfig(
   if (!Array.isArray(agents) || agents.length !== 1)
     throw new Error("direct Harbor JobConfig must contain exactly one agent");
   const agent = record(agents[0], "agent");
+  if (Array.isArray(input.datasets)) {
+    for (const [index, item] of input.datasets.entries()) {
+      const dataset = record(item, `dataset ${index}`);
+      if (dataset.path !== undefined && dataset.repo === undefined)
+        throw new Error("direct Harbor JobConfig cannot use a local dataset path");
+      if (dataset.download_dir !== undefined)
+        throw new Error("direct Harbor JobConfig cannot set a dataset download path");
+    }
+  }
   const environment = input.environment;
   if (environment !== undefined) {
     const environmentRecord = record(environment, "environment");

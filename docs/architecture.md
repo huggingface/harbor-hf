@@ -114,9 +114,9 @@ The selected agent receives the inference credential through the fixed
 the Bucket or run request.
 
 Harbor's HF Sandbox environment does not yet accept child labels. The small
-`LabeledHFSandboxEnvironment` subclass adds `harbor-hf-role=trial` and the run
-label immediately after child creation. If label update fails, it deletes the
-child and fails the trial setup.
+`LabeledHFSandboxEnvironment` subclass merges `harbor-hf-role=trial` and the run
+label into the same API call that creates the child. The child cannot become
+live without its ownership labels.
 
 ## Reconciliation
 

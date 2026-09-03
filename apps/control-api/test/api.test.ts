@@ -16,7 +16,7 @@ afterEach(async () => {
   );
 });
 
-async function setup(): Promise<{
+async function setup(writeMode: "disabled" | "enabled" = "enabled"): Promise<{
   runtime: Runtime;
   app: Awaited<ReturnType<typeof buildApp>>;
 }> {
@@ -55,6 +55,7 @@ async function setup(): Promise<{
     bootstrap_operator_subjects: [],
   };
   const runtime = await createRuntime(config);
+  runtime.config.write_mode = writeMode;
   runtimes.push(runtime);
   const app = await buildApp(runtime);
   return { runtime, app };
@@ -72,6 +73,16 @@ const submission = {
 };
 
 describe("control API", () => {
+  it("allows the Hugging Face page to embed the console", async () => {
+    const { app } = await setup();
+    const response = await app.inject({ method: "GET", url: "/" });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-frame-options"]).toBeUndefined();
+    expect(response.headers["content-security-policy"]).toContain(
+      "frame-ancestors 'self' https://huggingface.co",
+    );
+  });
+
   it("reports liveness before initialization and readiness after it", async () => {
     const { runtime, app } = await setup();
     expect((await app.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(
@@ -182,6 +193,27 @@ describe("control API", () => {
     const runs = await app.inject({ method: "GET", url: "/api/v1/runs" });
     expect(runs.statusCode).toBe(401);
     expect(runs.json().error.code).toBe("unauthorized");
+  });
+
+  it("blocks all API mutations while write mode is disabled", async () => {
+    const { runtime, app } = await setup("disabled");
+    await runtime.initialize();
+    const submissionResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "write-disabled" },
+      payload: submission,
+    });
+    expect(submissionResponse.statusCode).toBe(503);
+    expect(submissionResponse.json().error.code).toBe("write_disabled");
+    expect(runtime.projection.listRuns()).toEqual([]);
+
+    const actionResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs/run-0123456789abcdef01234567/pause",
+    });
+    expect(actionResponse.statusCode).toBe(503);
+    expect(actionResponse.json().error.code).toBe("write_disabled");
   });
 
   it("rejects unsafe direct Harbor configuration", async () => {

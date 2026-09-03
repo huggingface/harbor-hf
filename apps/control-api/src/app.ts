@@ -135,7 +135,22 @@ function publicApi(path: string): boolean {
 export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   const app = Fastify({ logger: runtime.config.node_env !== "test" });
   await app.register(cookie);
-  await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'self'", "https://huggingface.co"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    xFrameOptions: false,
+  });
   app.decorateRequest("controlState", null);
   app.addHook("onRequest", async (request) => {
     (request as FastifyRequest & { controlState: RequestState }).controlState = {
@@ -147,12 +162,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     const path = request.url.split("?", 1)[0] ?? request.url;
     if (!path.startsWith("/api/v1/") || publicApi(path)) return;
     if (!(await authenticate(runtime, request, reply))) return reply;
-    if (
-      request.method !== "GET" &&
-      request.method !== "HEAD" &&
-      requireActor(request).role !== "operator"
-    )
+    const mutation = request.method !== "GET" && request.method !== "HEAD";
+    if (mutation && requireActor(request).role !== "operator")
       return error(reply, 403, "operator_required", "operator access is required");
+    if (mutation && runtime.config.write_mode !== "enabled")
+      return error(reply, 503, "write_disabled", "write mode is disabled");
   });
 
   app.setErrorHandler((failure, _request, reply) => {
