@@ -117,17 +117,20 @@ export class PresetCatalog {
     if (agent.reasoning_option !== null)
       kwargs[agent.reasoning_option] = submission.model.reasoning_effort;
 
+    const usesNativeHuggingFace = agent.agent === "pi";
     const harborAgent: Record<string, unknown> = {
       ...(fragment.name ? { name: fragment.name } : {}),
       ...(fragment.import_path ? { import_path: fragment.import_path } : {}),
       ...(fragment.override_setup_timeout_sec
         ? { override_setup_timeout_sec: fragment.override_setup_timeout_sec }
         : {}),
-      model_name: `openai/${submission.model.id}:${submission.model.provider}`,
-      env: {
-        OPENAI_BASE_URL: ROUTER_URL,
-        OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
-      },
+      model_name: `${usesNativeHuggingFace ? "huggingface" : "openai"}/${submission.model.id}:${submission.model.provider}`,
+      env: usesNativeHuggingFace
+        ? { HF_TOKEN: INFERENCE_TOKEN_TEMPLATE }
+        : {
+            OPENAI_BASE_URL: ROUTER_URL,
+            OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
+          },
       kwargs,
     };
     const config = {
@@ -239,17 +242,36 @@ export function prepareDirectJobConfig(
     if (environmentRecord.type !== "hf-sandbox")
       throw new Error("direct Harbor JobConfig must use hf-sandbox");
   }
+  const preparedAgent = clone(agent);
+  const usesNativeHuggingFace =
+    preparedAgent.name === "pi" ||
+    preparedAgent.import_path === "harbor_hf_agents.pi.agent:PiAgent";
+  if (usesNativeHuggingFace) {
+    if (typeof preparedAgent.model_name === "string") {
+      const separator = preparedAgent.model_name.indexOf("/");
+      const model =
+        separator >= 0
+          ? preparedAgent.model_name.slice(separator + 1)
+          : preparedAgent.model_name;
+      preparedAgent.model_name = `huggingface/${model}`;
+    }
+    const kwargs = record(preparedAgent.kwargs ?? {}, "agent kwargs");
+    delete kwargs.model_api;
+    preparedAgent.kwargs = kwargs;
+  }
   const config = {
     ...clone(input),
     job_name: "job",
     jobs_dir: `${mountRoot}/runs/${runId}`,
     agents: [
       {
-        ...clone(agent),
-        env: {
-          OPENAI_BASE_URL: ROUTER_URL,
-          OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
-        },
+        ...preparedAgent,
+        env: usesNativeHuggingFace
+          ? { HF_TOKEN: INFERENCE_TOKEN_TEMPLATE }
+          : {
+              OPENAI_BASE_URL: ROUTER_URL,
+              OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
+            },
       },
     ],
     environment: {
@@ -275,7 +297,11 @@ export function directSubmission(
   const suffix = modelName.lastIndexOf(":");
   const provider = suffix > 0 ? modelName.slice(suffix + 1) : "custom";
   const rawModel = suffix > 0 ? modelName.slice(0, suffix) : modelName;
-  const modelId = rawModel.startsWith("openai/") ? rawModel.slice(7) : rawModel;
+  const routeSeparator = rawModel.indexOf("/");
+  const route = routeSeparator >= 0 ? rawModel.slice(0, routeSeparator) : "";
+  const modelId = ["openai", "huggingface"].includes(route)
+    ? rawModel.slice(routeSeparator + 1)
+    : rawModel;
   const kwargs = record(agent.kwargs ?? {}, "agent kwargs");
   const version =
     typeof kwargs.version === "string" ? kwargs.version : "harbor-bundled";

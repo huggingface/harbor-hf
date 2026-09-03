@@ -115,8 +115,11 @@ The parent receives the two approved service credentials as ephemeral Job
 secrets. It uses the control credential to start and label child Sandbox Jobs.
 The stored agent configuration contains the fixed `${HF_INFERENCE_TOKEN}`
 template. The Sandbox adapter resolves it from the parent's ephemeral secret
-only when it builds an agent command environment. No credential value is stored
-in the Bucket or run request.
+only when it builds an agent command environment. Pi receives it as `HF_TOKEN`
+and uses its built-in Hugging Face provider so its price metadata remains part
+of each usage record. OpenAI-compatible agents receive it as `OPENAI_API_KEY`
+with the fixed router URL. No credential value is stored in the Bucket or run
+request.
 
 Harbor's HF Sandbox environment does not yet accept child labels. The small
 `LabeledHFSandboxEnvironment` subclass merges `harbor-hf-role=trial` and the run

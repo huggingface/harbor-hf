@@ -115,16 +115,9 @@ describe("run submission", () => {
       agents: [
         {
           import_path: "harbor_hf_agents.pi.agent:PiAgent",
-          model_name: "openai/openai/gpt-oss-20b:together",
-          env: {
-            OPENAI_BASE_URL: "https://router.huggingface.co/v1",
-            OPENAI_API_KEY: "$" + "{HF_INFERENCE_TOKEN}",
-          },
-          kwargs: {
-            version: "0.84.2",
-            model_api: "openai-completions",
-            thinking: "off",
-          },
+          model_name: "huggingface/openai/gpt-oss-20b:together",
+          env: { HF_TOKEN: "$" + "{HF_INFERENCE_TOKEN}" },
+          kwargs: { version: "0.84.2", thinking: "off" },
         },
       ],
     });
@@ -321,8 +314,19 @@ describe("run submission", () => {
       "test-subject",
     );
     expect(direct.run.role).toBe("diagnostic");
+    expect(direct.run.submission.model).toEqual({
+      id: "openai/gpt-oss-20b",
+      provider: "together",
+      reasoning_effort: "default",
+    });
     expect(direct.run.harbor_job_config).toMatchObject({
-      agents: [{ kwargs: { version: "0.84.2", max_tokens: 1_000 } }],
+      agents: [
+        {
+          model_name: "huggingface/openai/gpt-oss-20b:together",
+          env: { HF_TOKEN: "$" + "{HF_INFERENCE_TOKEN}" },
+          kwargs: { version: "0.84.2", max_tokens: 1_000 },
+        },
+      ],
       environment: {
         import_path: "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
       },

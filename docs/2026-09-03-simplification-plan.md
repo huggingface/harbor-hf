@@ -270,14 +270,15 @@ removed. No run record field may duplicate a `JobConfig` field.
 
 ### Routing and credentials
 
-Harbor has no Inference Providers routing yet. Until it does, runs use the path
-Harbor already supports for any OpenAI-compatible server. The model name is
-`openai/<model>:<provider>`, the agent environment sets `OPENAI_BASE_URL` to the
-Hugging Face router and `OPENAI_API_KEY` to the inference token. The router
-accepts the `:provider` suffix in the model field. Harbor's own agents handle
-their configuration from there, including pi with its generated `models.json`.
-When Harbor gains a `huggingface` provider with the router as default base URL,
-only the model name changes.
+Harbor has no general Inference Providers routing yet. Agents that use an
+OpenAI-compatible server receive `openai/<model>:<provider>`, the fixed Hugging
+Face router URL, and the inference token. The router accepts the `:provider`
+suffix in the model field. Pi already has a built-in `huggingface` provider, so
+its model name is `huggingface/<model>:<provider>` and its `HF_TOKEN` environment
+value is the inference-token template. This keeps Pi's provider price metadata
+available for Harbor cost accounting instead of creating a zero-price custom
+model. When Harbor gains a general `huggingface` provider with the router as its
+default base URL, the other agents can use the same route.
 
 Credentials never touch the run record. The Space holds two tokens as Space
 secrets. The control token can start Jobs and write the Bucket, and it goes to

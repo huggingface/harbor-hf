@@ -88,14 +88,12 @@ A preset submission creates this immutable record:
     "agents": [
       {
         "import_path": "harbor_hf_agents.pi.agent:PiAgent",
-        "model_name": "openai/openai/gpt-oss-20b:together",
+        "model_name": "huggingface/openai/gpt-oss-20b:together",
         "env": {
-          "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
-          "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}"
+          "HF_TOKEN": "${HF_INFERENCE_TOKEN}"
         },
         "kwargs": {
           "version": "0.84.2",
-          "model_api": "openai-completions",
           "thinking": "off"
         }
       }
@@ -266,7 +264,10 @@ labels argument. It can be removed when that API exposes child labels.
 The same adapter resolves the fixed `${HF_INFERENCE_TOKEN}` template only when
 it assembles an agent command environment. The value comes from the parent's
 ephemeral secret and does not replace the template in Harbor's persisted job
-configuration.
+configuration. Pi uses its built-in `huggingface` provider and provider-pinned
+model entry. This preserves Pi's provider price metadata so Harbor receives a
+non-null inference cost. Agents that need an OpenAI-compatible endpoint use the
+same inference secret through the fixed router URL.
 
 The parent adds one `on_trial_ended` callback. The callback reads the completed
 trial's Harbor cost and writes its immutable attempt receipt before Harbor can

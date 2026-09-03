@@ -37,7 +37,9 @@ Do not print either value. Do not put a credential literal in a run request,
 Bucket object, Job label, log, or result. The control service gives both secrets
 to the reviewed parent Job as ephemeral Job secrets. The parent uses the control
 token to start and label child Sandbox Jobs. The benchmark agent receives only
-the inference token through the fixed `${HF_INFERENCE_TOKEN}` template.
+the inference token through the fixed `${HF_INFERENCE_TOKEN}` template. Pi uses
+its built-in Hugging Face provider so model prices remain available for Harbor
+cost accounting.
 
 Do not copy a token to another store. Use a configured token in place.
 
