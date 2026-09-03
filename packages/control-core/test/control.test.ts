@@ -483,6 +483,17 @@ describe("reconciliation", () => {
     expect(jobs.starts).toBe(1);
   });
 
+  it("keeps a just-started parent in capacity during listing lag", async () => {
+    await submit("lag-first");
+    await submit("lag-second");
+    const originalList = jobs.list.bind(jobs);
+    jobs.list = async () => (jobs.starts === 0 ? originalList() : []);
+
+    await service.reconcile();
+
+    expect(jobs.starts).toBe(1);
+  });
+
   it("cancels the parent and child on pause, then resumes Harbor", async () => {
     const { run } = await submit("pause");
     await service.reconcile();
@@ -568,5 +579,28 @@ describe("reconciliation", () => {
     ).toMatchObject({
       desired_state: "run",
     });
+  });
+
+  it("rechecks cost receipts after it acquires the run lock", async () => {
+    const { run } = await submit("fresh-cost");
+    const attemptId = "55555555-5555-4555-8555-555555555555";
+    const originalList = store.list.bind(store);
+    let runListings = 0;
+    store.list = async (prefix) => {
+      if (prefix === "runs" && ++runListings === 2)
+        await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
+          schema_version: "v1",
+          attempt_id: attemptId,
+          trial_name: "task__trial",
+          cost_usd: 0.5,
+        });
+      return originalList(prefix);
+    };
+
+    await service.reconcile();
+
+    expect(runListings).toBeGreaterThanOrEqual(2);
+    expect(jobs.starts).toBe(0);
+    expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
   });
 });

@@ -263,6 +263,13 @@ export class ControlService {
 
     for (const initialView of runs) {
       await this.withRunLock(initialView.record.run_id, async () => {
+        const observedById = new Map(observations.map((job) => [job.id, job]));
+        for (const job of await this.jobs.list()) observedById.set(job.id, job);
+        observations = [...observedById.values()];
+        await this.projection.rebuild(this.store, observations);
+        activeParents = observations.filter(
+          (job) => job.role === "parent" && isLiveJob(job),
+        ).length;
         const projected = this.projection.run(initialView.record.run_id) ?? initialView;
         const state = validateRunState(
           await readJson(this.store, runStatePath(initialView.record.run_id)),
