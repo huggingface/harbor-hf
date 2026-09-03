@@ -19,17 +19,20 @@ const ROLE_LABEL = "harbor-hf-role";
 const RUN_LABEL = "harbor-hf-run";
 const IMMUTABLE_IMAGE = /@sha256:[0-9a-f]{64}$/;
 
-export interface HuggingFaceJobsOptions {
+export interface ReadOnlyHuggingFaceJobsOptions {
   namespace: string;
   accessToken: string;
+  hubUrl?: string;
+  fetch?: typeof fetch;
+}
+
+export interface HuggingFaceJobsOptions extends ReadOnlyHuggingFaceJobsOptions {
   inferenceToken: string;
   bucketId: string;
   parentImage: string;
   hardware?: SpaceHardwareFlavor;
   mountRoot?: string;
   timeoutSeconds?: number;
-  hubUrl?: string;
-  fetch?: typeof fetch;
 }
 
 function stage(value: string): JobStage {
@@ -59,6 +62,30 @@ function observation(value: ApiJob): JobObservation | null {
     started_at: value.startedAt ?? null,
     finished_at: value.finishedAt ?? null,
   };
+}
+
+export class ReadOnlyHuggingFaceJobs implements JobsPort {
+  constructor(private readonly options: ReadOnlyHuggingFaceJobsOptions) {}
+
+  async list(): Promise<readonly JobObservation[]> {
+    const values = await listJobs({
+      namespace: this.options.namespace,
+      accessToken: this.options.accessToken,
+      ...(this.options.hubUrl ? { hubUrl: this.options.hubUrl } : {}),
+      ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
+    });
+    return values
+      .map(observation)
+      .filter((value): value is JobObservation => value !== null);
+  }
+
+  async startParent(_runId: string): Promise<JobObservation> {
+    throw new Error("Job launch is disabled");
+  }
+
+  async cancel(_jobId: string): Promise<void> {
+    throw new Error("Job cancellation is disabled");
+  }
 }
 
 export class HuggingFaceJobs implements JobsPort {

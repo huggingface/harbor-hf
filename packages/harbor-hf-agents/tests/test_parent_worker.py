@@ -173,6 +173,9 @@ def test_resolves_only_the_fixed_inference_template(
         "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
         "OPENAI_API_KEY": "inference-test-value",
     }
+    assert _resolve_inference_env({"HF_TOKEN": template}) == {
+        "HF_TOKEN": "inference-test-value"
+    }
     assert values["OPENAI_API_KEY"] == template
 
     monkeypatch.delenv("HF_INFERENCE_TOKEN")

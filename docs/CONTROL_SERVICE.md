@@ -120,7 +120,9 @@ OAuth initialization, preset validation, Bucket reads, and the first Job list
 complete.
 
 The reconciler starts only in write mode. Turning write mode off keeps the API
-and projection available without starting or stopping Jobs.
+and projection available without starting or stopping Jobs. The read-only Jobs
+port still lists owned Jobs, so live state does not disappear from the
+projection during deployment.
 
 ## Parent image
 

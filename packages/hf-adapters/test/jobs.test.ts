@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HuggingFaceJobs, NoopJobs } from "../src/index.js";
+import { HuggingFaceJobs, NoopJobs, ReadOnlyHuggingFaceJobs } from "../src/index.js";
 
 const runId = "run-0123456789abcdef01234567";
 const image = `ghcr.io/example/parent@sha256:${"a".repeat(64)}`;
@@ -90,6 +90,23 @@ describe("HuggingFaceJobs", () => {
     expect(await jobs.list()).toHaveLength(2);
     await jobs.cancel("parent-job");
     expect(methods).toEqual(["GET", "POST"]);
+  });
+
+  it("observes owned Jobs without allowing lifecycle changes", async () => {
+    const jobs = new ReadOnlyHuggingFaceJobs({
+      namespace: "example",
+      accessToken: controlToken,
+      fetch: async () =>
+        new Response(
+          JSON.stringify([
+            apiJob(),
+            { ...apiJob(), id: "unrelated", labels: { other: "value" } },
+          ]),
+        ),
+    });
+    expect(await jobs.list()).toHaveLength(1);
+    await expect(jobs.startParent(runId)).rejects.toThrow("launch is disabled");
+    await expect(jobs.cancel("parent-job")).rejects.toThrow("cancellation is disabled");
   });
 
   it("rejects a mutable image and keeps local Jobs disabled", async () => {

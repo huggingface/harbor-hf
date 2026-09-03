@@ -14,6 +14,7 @@ from huggingface_hub import HfApi
 
 _RUN_ID = re.compile(r"^run-[0-9a-f]{24}$")
 _INFERENCE_TOKEN_TEMPLATE = "$" + "{HF_INFERENCE_TOKEN}"
+_SUPPORTED_INFERENCE_KEYS = frozenset({"HF_TOKEN", "OPENAI_API_KEY"})
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,7 @@ def _resolve_inference_env(values: dict[str, str] | None) -> dict[str, str] | No
     resolved = dict(values)
     for key, value in resolved.items():
         if value == _INFERENCE_TOKEN_TEMPLATE:
-            if key != "OPENAI_API_KEY":
+            if key not in _SUPPORTED_INFERENCE_KEYS:
                 raise RuntimeError("unsupported inference credential template")
             resolved[key] = token
     return resolved

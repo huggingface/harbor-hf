@@ -11,6 +11,7 @@ import {
   HuggingFaceBucketStore,
   HuggingFaceJobs,
   NoopJobs,
+  ReadOnlyHuggingFaceJobs,
 } from "@harbor-hf/hf-adapters";
 import { AuthenticationService, AuthStore } from "./auth.js";
 import type { AppConfig } from "./config.js";
@@ -46,17 +47,22 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
   const projection = await Projection.open(config.projection_path);
   const presets = await PresetCatalog.load(config.presets_root);
   const jobs =
-    config.write_mode === "enabled"
-      ? new HuggingFaceJobs({
-          namespace: config.namespace,
-          accessToken: config.hf_token ?? "",
-          inferenceToken: config.hf_inference_token ?? "",
-          bucketId: config.bucket_id,
-          parentImage: config.parent_image ?? "",
-          hardware: config.parent_hardware,
-          timeoutSeconds: config.parent_timeout_seconds,
-        })
-      : new NoopJobs();
+    config.store_mode === "filesystem"
+      ? new NoopJobs()
+      : config.write_mode === "enabled"
+        ? new HuggingFaceJobs({
+            namespace: config.namespace,
+            accessToken: config.hf_token ?? "",
+            inferenceToken: config.hf_inference_token ?? "",
+            bucketId: config.bucket_id,
+            parentImage: config.parent_image ?? "",
+            hardware: config.parent_hardware,
+            timeoutSeconds: config.parent_timeout_seconds,
+          })
+        : new ReadOnlyHuggingFaceJobs({
+            namespace: config.namespace,
+            accessToken: config.hf_token ?? "",
+          });
   const service = new ControlService(store, projection, presets, jobs, {
     harborRevision: HARBOR_REVISION,
     mountRoot: "/data",
