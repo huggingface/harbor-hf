@@ -159,17 +159,14 @@ function record(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function containsCredentialLiteral(value: unknown, key = ""): boolean {
-  if (typeof value === "string")
-    return (
-      /(?:token|secret|password|api[_-]?key)/i.test(key) &&
-      !/^\$\{[A-Z][A-Z0-9_]*\}$/.test(value)
-    );
+function containsCredentialMaterial(value: unknown, key = ""): boolean {
+  if (/(?:token|secret|password|api[_-]?key)/i.test(key)) return true;
+  if (typeof value === "string") return /\$\{[A-Z][A-Z0-9_]*\}/.test(value);
   if (Array.isArray(value))
-    return value.some((item) => containsCredentialLiteral(item, key));
+    return value.some((item) => containsCredentialMaterial(item, key));
   if (!value || typeof value !== "object") return false;
   return Object.entries(value).some(([childKey, child]) =>
-    containsCredentialLiteral(child, childKey),
+    containsCredentialMaterial(child, childKey),
   );
 }
 
@@ -182,8 +179,8 @@ export function prepareDirectJobConfig(
   for (const field of FORBIDDEN_DIRECT_FIELDS) {
     if (field in input) throw new Error(`direct Harbor JobConfig cannot set ${field}`);
   }
-  if (containsCredentialLiteral(input))
-    throw new Error("direct Harbor JobConfig contains a credential literal");
+  if (containsCredentialMaterial(input))
+    throw new Error("direct Harbor JobConfig contains credential material");
   const agents = input.agents;
   if (!Array.isArray(agents) || agents.length !== 1)
     throw new Error("direct Harbor JobConfig must contain exactly one agent");

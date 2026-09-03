@@ -14,7 +14,7 @@ import {
   type PresetSubmission,
 } from "./presets.js";
 import { isLiveJob, type JobObservation, type JobsPort } from "./jobs.js";
-import type { Projection, RunView } from "./projection.js";
+import type { Projection } from "./projection.js";
 import { createJson, type ObjectStore, putJson, readJson } from "./store.js";
 
 export interface ControlServiceOptions {
@@ -75,6 +75,8 @@ function initialState(record: RunRecordV1): RunStateV1 {
 }
 
 export class ControlService {
+  private readonly runOperations = new Map<string, Promise<void>>();
+
   constructor(
     readonly store: ObjectStore,
     readonly projection: Projection,
@@ -82,6 +84,27 @@ export class ControlService {
     readonly jobs: JobsPort,
     readonly options: ControlServiceOptions,
   ) {}
+
+  private async withRunLock<T>(
+    runIdValue: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.runOperations.get(runIdValue) ?? Promise.resolve();
+    let release = (): void => undefined;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.catch(() => undefined).then(() => turn);
+    this.runOperations.set(runIdValue, tail);
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.runOperations.get(runIdValue) === tail)
+        this.runOperations.delete(runIdValue);
+    }
+  }
 
   async initialize(): Promise<void> {
     await this.refresh();
@@ -146,21 +169,27 @@ export class ControlService {
   }
 
   private async persistSubmission(record: RunRecordV1): Promise<SubmissionResult> {
-    const path = runRecordPath(record.run_id);
-    const existingValue = await readIfPresent(this.store, path);
-    if (existingValue) {
-      const existing = validateRunRecord(existingValue);
-      if (!sameRequest(existing, record))
-        throw new Error("idempotency key already identifies a different run");
-      if (!(await readIfPresent(this.store, runStatePath(record.run_id))))
-        await putJson(this.store, runStatePath(record.run_id), initialState(existing));
-      await this.refresh();
-      return { created: false, run: existing };
-    }
-    await createJson(this.store, path, record);
-    await putJson(this.store, runStatePath(record.run_id), initialState(record));
+    const result = await this.withRunLock(record.run_id, async () => {
+      const path = runRecordPath(record.run_id);
+      const existingValue = await readIfPresent(this.store, path);
+      if (existingValue) {
+        const existing = validateRunRecord(existingValue);
+        if (!sameRequest(existing, record))
+          throw new Error("idempotency key already identifies a different run");
+        if (!(await readIfPresent(this.store, runStatePath(record.run_id))))
+          await putJson(
+            this.store,
+            runStatePath(record.run_id),
+            initialState(existing),
+          );
+        return { created: false, run: existing };
+      }
+      await createJson(this.store, path, record);
+      await putJson(this.store, runStatePath(record.run_id), initialState(record));
+      return { created: true, run: record };
+    });
     await this.refresh();
-    return { created: true, run: record };
+    return result;
   }
 
   async setDesiredState(
@@ -168,39 +197,53 @@ export class ControlService {
     desired: "run" | "paused" | "cancelled",
     actor: string,
   ): Promise<RunStateV1> {
-    const view = this.projection.run(runIdValue);
-    if (!view) throw new Error("run was not found");
-    if (view.state.desired_state === "cancelled" && desired !== "cancelled")
-      throw new Error("a cancelled run cannot be resumed");
-    const state = validateRunState({
-      ...view.state,
-      revision: view.state.revision + 1,
-      updated_at: new Date().toISOString(),
-      desired_state: desired,
-      actor,
+    const state = await this.withRunLock(runIdValue, async () => {
+      const value = await readIfPresent(this.store, runStatePath(runIdValue));
+      if (!value) throw new Error("run was not found");
+      const current = validateRunState(value);
+      if (current.desired_state === "cancelled" && desired !== "cancelled")
+        throw new Error("a cancelled run cannot be resumed");
+      const next = validateRunState({
+        ...current,
+        revision: current.revision + 1,
+        updated_at: new Date().toISOString(),
+        desired_state: desired,
+        actor,
+      });
+      await putJson(this.store, runStatePath(runIdValue), next);
+      if (desired !== "run") {
+        const liveJobs = (await this.jobs.list()).filter(
+          (job) => job.run_id === runIdValue && isLiveJob(job),
+        );
+        await Promise.all(liveJobs.map((job) => this.jobs.cancel(job.id)));
+      }
+      return next;
     });
-    await putJson(this.store, runStatePath(runIdValue), state);
     await this.refresh();
     return state;
   }
 
   private async appendParent(
-    view: RunView,
+    runIdValue: string,
     job: JobObservation,
     actor = "harbor-hf-reconciler",
-  ): Promise<void> {
-    if (view.state.parent_jobs.some((item) => item.id === job.id)) return;
+  ): Promise<RunStateV1> {
+    const value = await readIfPresent(this.store, runStatePath(runIdValue));
+    if (!value) throw new Error("run state was not found");
+    const current = validateRunState(value);
+    if (current.parent_jobs.some((item) => item.id === job.id)) return current;
     const state = validateRunState({
-      ...view.state,
-      revision: view.state.revision + 1,
+      ...current,
+      revision: current.revision + 1,
       updated_at: new Date().toISOString(),
       actor,
       parent_jobs: [
-        ...view.state.parent_jobs,
+        ...current.parent_jobs,
         { id: job.id, started_at: job.started_at ?? job.created_at },
       ],
     });
-    await putJson(this.store, runStatePath(view.record.run_id), state);
+    await putJson(this.store, runStatePath(runIdValue), state);
+    return state;
   }
 
   async reconcile(): Promise<void> {
@@ -216,36 +259,42 @@ export class ControlService {
     ).length;
 
     for (const initialView of runs) {
-      let view = this.projection.run(initialView.record.run_id) ?? initialView;
-      const runJobs = observations.filter((job) => job.run_id === view.record.run_id);
-      const liveJobs = runJobs.filter(isLiveJob);
-      const liveParent = liveJobs.find((job) => job.role === "parent");
-      const terminal = ["paused", "cancelled", "finished", "cost_stopped"].includes(
-        view.status,
-      );
-      if (terminal) {
-        await Promise.all(liveJobs.map((job) => this.jobs.cancel(job.id)));
-        activeParents -= liveJobs.filter((job) => job.role === "parent").length;
-        continue;
-      }
-      if (liveParent) {
-        await this.appendParent(view, liveParent);
-        continue;
-      }
-      const orphans = liveJobs.filter((job) => job.role === "trial");
-      await Promise.all(orphans.map((job) => this.jobs.cancel(job.id)));
-      if (activeParents >= this.options.maxActiveJobs) continue;
-      const latest = view.state.parent_jobs.at(-1);
-      if (
-        latest &&
-        Date.now() - Date.parse(latest.started_at) < this.options.restartDelayMs
-      )
-        continue;
-      const parent = await this.jobs.startParent(view.record.run_id);
-      view = this.projection.run(view.record.run_id) ?? view;
-      await this.appendParent(view, parent);
-      observations = [...observations, parent];
-      activeParents += 1;
+      await this.withRunLock(initialView.record.run_id, async () => {
+        const projected = this.projection.run(initialView.record.run_id) ?? initialView;
+        const state = validateRunState(
+          await readJson(this.store, runStatePath(initialView.record.run_id)),
+        );
+        const runJobs = observations.filter(
+          (job) => job.run_id === projected.record.run_id,
+        );
+        const liveJobs = runJobs.filter(isLiveJob);
+        const liveParent = liveJobs.find((job) => job.role === "parent");
+        const terminal =
+          state.desired_state !== "run" ||
+          ["finished", "cost_stopped"].includes(projected.status);
+        if (terminal) {
+          await Promise.all(liveJobs.map((job) => this.jobs.cancel(job.id)));
+          activeParents -= liveJobs.filter((job) => job.role === "parent").length;
+          return;
+        }
+        if (liveParent) {
+          await this.appendParent(projected.record.run_id, liveParent);
+          return;
+        }
+        const orphans = liveJobs.filter((job) => job.role === "trial");
+        await Promise.all(orphans.map((job) => this.jobs.cancel(job.id)));
+        if (activeParents >= this.options.maxActiveJobs) return;
+        const latest = state.parent_jobs.at(-1);
+        if (
+          latest &&
+          Date.now() - Date.parse(latest.started_at) < this.options.restartDelayMs
+        )
+          return;
+        const parent = await this.jobs.startParent(projected.record.run_id);
+        await this.appendParent(projected.record.run_id, parent);
+        observations = [...observations, parent];
+        activeParents += 1;
+      });
     }
     await this.projection.rebuild(this.store, await this.jobs.list());
   }

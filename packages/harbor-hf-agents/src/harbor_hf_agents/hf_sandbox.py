@@ -1,20 +1,48 @@
-"""Harbor HF Sandbox environment with run labels for child cleanup."""
+"""Harbor HF Sandbox environment with atomic run labels."""
 
 from __future__ import annotations
 
-import asyncio
-import os
 import re
-from typing import Any, override
+from contextvars import ContextVar
+from typing import Any, cast, override
 
+import huggingface_hub._sandbox as sandbox_module
 from harbor.environments.hf_sandbox import HFSandboxEnvironment
 from huggingface_hub import HfApi
 
 _RUN_ID = re.compile(r"^run-[0-9a-f]{24}$")
+_JOB_LABELS: ContextVar[dict[str, str] | None] = ContextVar(
+    "harbor_hf_job_labels", default=None
+)
+
+
+class _LabeledHfApi(HfApi):
+    """Merge contextual ownership labels into Sandbox Job creation."""
+
+    @override
+    def run_job(
+        self,
+        *args: Any,  # noqa: ANN401 -- mirrors the Hub client method
+        **kwargs: Any,  # noqa: ANN401 -- mirrors the Hub client method
+    ) -> Any:  # noqa: ANN401 -- return type follows the Hub client
+        ownership = _JOB_LABELS.get()
+        if ownership:
+            supplied = kwargs.get("labels")
+            if supplied is not None and not isinstance(supplied, dict):
+                raise TypeError("Sandbox Job labels must be a dictionary")
+            kwargs["labels"] = {**(supplied or {}), **ownership}
+        return super().run_job(*args, **kwargs)
+
+
+sandbox_api = cast(Any, sandbox_module)
+if sandbox_module.HfApi is HfApi:
+    sandbox_api.HfApi = _LabeledHfApi
+elif sandbox_module.HfApi is not _LabeledHfApi:
+    raise RuntimeError("unsupported Hugging Face Sandbox API binding")
 
 
 class LabeledHFSandboxEnvironment(HFSandboxEnvironment):
-    """Add the owning Harbor-HF run id to each child Sandbox Job."""
+    """Create each child Job with its Harbor-HF ownership labels."""
 
     def __init__(
         self,
@@ -29,19 +57,13 @@ class LabeledHFSandboxEnvironment(HFSandboxEnvironment):
 
     @override
     async def start(self, force_build: bool) -> None:
-        await super().start(force_build)
-        sandbox = self._require_sandbox()
-        namespace = os.environ.get("HARBOR_HF_NAMESPACE")
+        token = _JOB_LABELS.set(
+            {
+                "harbor-hf-role": "trial",
+                "harbor-hf-run": self._run_label,
+            }
+        )
         try:
-            await asyncio.to_thread(
-                HfApi().update_job_labels,
-                job_id=sandbox.id,
-                labels={
-                    "harbor-hf-role": "trial",
-                    "harbor-hf-run": self._run_label,
-                },
-                namespace=namespace,
-            )
-        except Exception:
-            await self.stop(delete=True)
-            raise
+            await super().start(force_build)
+        finally:
+            _JOB_LABELS.reset(token)

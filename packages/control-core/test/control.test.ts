@@ -151,26 +151,43 @@ describe("run submission", () => {
         "test-subject",
       ),
     ).rejects.toThrow("jobs_dir");
+    const directInput = {
+      n_attempts: 1,
+      n_concurrent_trials: 1,
+      datasets: [
+        {
+          repo: "https://github.com/harbor-framework/terminal-bench-2-1.git@d49e28f1e4ddd13d289e85a5f312a66750951932",
+          path: "tasks",
+          task_names: ["adaptive-rejection-sampler"],
+        },
+      ],
+      agents: [
+        {
+          name: "pi",
+          model_name: "openai/openai/gpt-oss-20b:together",
+          kwargs: { version: "0.84.2" },
+        },
+      ],
+      environment: { type: "hf-sandbox" },
+    };
+    await expect(
+      service.submitConfig(
+        {
+          ...directInput,
+          agents: [
+            {
+              ...directInput.agents[0],
+              env: { HF_TOKEN: "$" + "{HF_TOKEN}" },
+            },
+          ],
+        },
+        0.25,
+        "credential-template",
+        "test-subject",
+      ),
+    ).rejects.toThrow("credential material");
     const direct = await service.submitConfig(
-      {
-        n_attempts: 1,
-        n_concurrent_trials: 1,
-        datasets: [
-          {
-            repo: "https://github.com/harbor-framework/terminal-bench-2-1.git@d49e28f1e4ddd13d289e85a5f312a66750951932",
-            path: "tasks",
-            task_names: ["adaptive-rejection-sampler"],
-          },
-        ],
-        agents: [
-          {
-            name: "pi",
-            model_name: "openai/openai/gpt-oss-20b:together",
-            kwargs: { version: "0.84.2" },
-          },
-        ],
-        environment: { type: "hf-sandbox" },
-      },
+      directInput,
       0.25,
       "direct",
       "test-subject",
@@ -306,6 +323,42 @@ describe("reconciliation", () => {
     await service.setDesiredState(run.run_id, "run", "test-subject");
     await service.reconcile();
     expect(jobs.starts).toBe(2);
+  });
+
+  it("keeps cancellation permanent when a parent start is in flight", async () => {
+    const { run } = await submit("cancel-race");
+    const originalStart = jobs.startParent.bind(jobs);
+    let releaseStart = (): void => undefined;
+    const startGate = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    let reportStarted = (): void => undefined;
+    const started = new Promise<void>((resolve) => {
+      reportStarted = resolve;
+    });
+    jobs.startParent = async (runIdValue: string) => {
+      reportStarted();
+      await startGate;
+      return originalStart(runIdValue);
+    };
+
+    const reconciliation = service.reconcile();
+    await started;
+    const cancellation = service.setDesiredState(
+      run.run_id,
+      "cancelled",
+      "test-subject",
+    );
+    releaseStart();
+    await reconciliation;
+    const state = await cancellation;
+
+    expect(state.desired_state).toBe("cancelled");
+    expect(state.parent_jobs).toHaveLength(1);
+    expect(jobs.cancelled).toContain("parent-1");
+    await service.reconcile();
+    expect(jobs.starts).toBe(1);
+    expect(projection.run(run.run_id)?.status).toBe("cancelled");
   });
 
   it("cleans an orphan before it starts a replacement parent", async () => {

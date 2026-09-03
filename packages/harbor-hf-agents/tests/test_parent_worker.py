@@ -5,8 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import huggingface_hub._sandbox as sandbox_module
 import pytest
 from harbor.environments.hf_sandbox import HFSandboxEnvironment
+from huggingface_hub import HfApi
 
 from harbor_hf_agents.hf_sandbox import LabeledHFSandboxEnvironment
 from harbor_hf_agents.parent_worker import (
@@ -81,33 +83,38 @@ async def test_cost_hook_stops_only_after_an_expensive_trial() -> None:
 
 
 @pytest.mark.asyncio
-async def test_labels_the_child_job(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_labels_the_child_job_atomically(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict[str, object]] = []
 
-    async def start(_self: object, _force_build: bool) -> None:
-        return None
+    def run_job(
+        _self: object,
+        *_args: object,
+        **kwargs: object,
+    ) -> SimpleNamespace:
+        calls.append(kwargs)
+        return SimpleNamespace(id="child-job")
 
+    async def start(_self: object, _force_build: bool) -> None:
+        sandbox_module.HfApi().run_job(
+            image="python:3.12",
+            command=["sleep", "infinity"],
+            labels={"hf-sandbox": "1"},
+        )
+
+    monkeypatch.setattr(HfApi, "run_job", run_job)
     monkeypatch.setattr(HFSandboxEnvironment, "start", start)
-    monkeypatch.setattr(
-        HFSandboxEnvironment,
-        "_require_sandbox",
-        lambda _self: SimpleNamespace(id="child-job"),
-    )
-    monkeypatch.setattr(
-        "harbor_hf_agents.hf_sandbox.HfApi.update_job_labels",
-        lambda _self, **kwargs: calls.append(kwargs),
-    )
     environment = object.__new__(LabeledHFSandboxEnvironment)
     environment._run_label = RUN_ID
     await environment.start(False)
 
     assert calls == [
         {
-            "job_id": "child-job",
+            "image": "python:3.12",
+            "command": ["sleep", "infinity"],
             "labels": {
+                "hf-sandbox": "1",
                 "harbor-hf-role": "trial",
                 "harbor-hf-run": RUN_ID,
             },
-            "namespace": None,
         }
     ]
