@@ -109,14 +109,15 @@ run record from that mount.
 
 The parent receives the two approved service credentials as ephemeral Job
 secrets. It uses the control credential to start and label child Sandbox Jobs.
-The selected agent receives the inference credential through the fixed
-`${HF_INFERENCE_TOKEN}` environment template. No credential value is stored in
-the Bucket or run request.
+The stored agent configuration contains the fixed `${HF_INFERENCE_TOKEN}`
+template. The Sandbox adapter resolves it from the parent's ephemeral secret
+only when it builds an agent command environment. No credential value is stored
+in the Bucket or run request.
 
 Harbor's HF Sandbox environment does not yet accept child labels. The small
 `LabeledHFSandboxEnvironment` subclass merges `harbor-hf-role=trial` and the run
-label into the same API call that creates the child. The child cannot become
-live without its ownership labels.
+label and the configured namespace into the same API call that creates the
+child. The child cannot become live outside the controller's ownership scope.
 
 ## Reconciliation
 

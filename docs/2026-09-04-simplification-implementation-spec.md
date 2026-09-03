@@ -226,10 +226,16 @@ The parent reads `run.json` and validates `harbor_job_config`. It then calls
 retry loop, resume rule, result writer, or lock writer.
 
 `LabeledHFSandboxEnvironment` subclasses Harbor's `HFSandboxEnvironment`. It
-adds ownership labels to the same `HfApi.run_job` call that creates the child.
-This prevents an unowned child if the parent stops during Sandbox startup. The
-small, context-scoped integration exists because the pinned Hub Sandbox API has
-no labels argument. It can be removed when that API exposes child labels.
+adds ownership labels and the configured namespace to the same
+`HfApi.run_job` call that creates the child. This prevents an unowned or
+out-of-scope child if the parent stops during Sandbox startup. The small,
+context-scoped integration exists because the pinned Hub Sandbox API has no
+labels argument. It can be removed when that API exposes child labels.
+
+The same adapter resolves the fixed `${HF_INFERENCE_TOKEN}` template only when
+it assembles an agent command environment. The value comes from the parent's
+ephemeral secret and does not replace the template in Harbor's persisted job
+configuration.
 
 The parent adds one `on_trial_ended` callback. The callback reads the completed
 trial's Harbor cost. If that trial exceeds the per-trial ceiling, or the sum of

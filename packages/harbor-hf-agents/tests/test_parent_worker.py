@@ -10,7 +10,10 @@ import pytest
 from harbor.environments.hf_sandbox import HFSandboxEnvironment
 from huggingface_hub import HfApi
 
-from harbor_hf_agents.hf_sandbox import LabeledHFSandboxEnvironment
+from harbor_hf_agents.hf_sandbox import (
+    LabeledHFSandboxEnvironment,
+    _resolve_inference_env,
+)
 from harbor_hf_agents.parent_worker import (
     CostCeilingExceeded,
     cost_ceiling,
@@ -103,6 +106,7 @@ async def test_labels_the_child_job_atomically(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr(HfApi, "run_job", run_job)
     monkeypatch.setattr(HFSandboxEnvironment, "start", start)
+    monkeypatch.setenv("HARBOR_HF_NAMESPACE", "test-namespace")
     environment = object.__new__(LabeledHFSandboxEnvironment)
     environment._run_label = RUN_ID
     await environment.start(False)
@@ -116,5 +120,29 @@ async def test_labels_the_child_job_atomically(monkeypatch: pytest.MonkeyPatch) 
                 "harbor-hf-role": "trial",
                 "harbor-hf-run": RUN_ID,
             },
+            "namespace": "test-namespace",
         }
     ]
+
+
+def test_resolves_only_the_fixed_inference_template(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    template = "$" + "{HF_INFERENCE_TOKEN}"
+    values = {
+        "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+        "OPENAI_API_KEY": template,
+    }
+    monkeypatch.setenv("HF_INFERENCE_TOKEN", "inference-test-value")
+    assert _resolve_inference_env(values) == {
+        "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+        "OPENAI_API_KEY": "inference-test-value",
+    }
+    assert values["OPENAI_API_KEY"] == template
+
+    monkeypatch.delenv("HF_INFERENCE_TOKEN")
+    with pytest.raises(RuntimeError, match="HF_INFERENCE_TOKEN is required"):
+        _resolve_inference_env(values)
+    monkeypatch.setenv("HF_INFERENCE_TOKEN", "inference-test-value")
+    with pytest.raises(RuntimeError, match="unsupported inference credential"):
+        _resolve_inference_env({"OTHER_KEY": template})
