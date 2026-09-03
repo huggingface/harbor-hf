@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harbor-hf.example/schemas/run-record-v1.schema.json",
+  "title": "RunRecordV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "created_at",
+    "submitted_by",
+    "role",
+    "harbor_revision",
+    "submission",
+    "harbor_job_config"
+  ],
+  "properties": {
+    "schema_version": { "const": "v1" },
+    "run_id": { "type": "string", "pattern": "^run-[0-9a-f]{24}$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "submitted_by": { "type": "string", "minLength": 1, "maxLength": 320 },
+    "role": { "enum": ["final", "diagnostic"] },
+    "harbor_revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "submission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["benchmark", "model", "harness", "cost_ceiling_usd_per_trial"],
+      "properties": {
+        "benchmark": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "preset"],
+          "properties": {
+            "name": { "$ref": "#/$defs/slug" },
+            "preset": { "$ref": "#/$defs/slug" }
+          }
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "provider", "reasoning_effort"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 320 },
+            "provider": { "$ref": "#/$defs/slug" },
+            "reasoning_effort": { "type": "string", "minLength": 1, "maxLength": 40 }
+          }
+        },
+        "harness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["agent", "version"],
+          "properties": {
+            "agent": { "$ref": "#/$defs/slug" },
+            "version": { "type": "string", "minLength": 1, "maxLength": 160 }
+          }
+        },
+        "cost_ceiling_usd_per_trial": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10000
+        }
+      }
+    },
+    "harbor_job_config": { "type": "object" }
+  },
+  "$defs": {
+    "slug": {
+      "title": "RunRecordSlug",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+    }
+  }
+}

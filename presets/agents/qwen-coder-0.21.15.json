@@ -1,0 +1,11 @@
+{
+  "schema_version": "v1",
+  "agent": "qwen-coder",
+  "version": "0.21.15",
+  "harbor_agent": {
+    "name": "qwen-coder",
+    "kwargs": { "version": "0.21.15" }
+  },
+  "reasoning_option": null,
+  "reasoning_values": ["default"]
+}

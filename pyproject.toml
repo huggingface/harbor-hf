@@ -7,15 +7,9 @@ license = "Apache-2.0"
 authors = [{ name = "Harbor-HF maintainers" }]
 requires-python = ">=3.12"
 dependencies = [
-  "filelock>=3.20.0",
-  "huggingface-hub>=1.22.0",
-  "httpx>=0.23.0",
-  "pydantic>=2.11.7",
+  "httpx>=0.28.1",
   "pyyaml>=6.0.2",
-  "zstandard>=0.23.0",
-  "typer>=0.16.0",
-  "pyarrow>=18.0.0",
-  "jsonschema>=4.25,<5",
+  "typer>=0.21.0",
 ]
 
 [project.urls]
@@ -32,6 +26,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
   "pip>=26.2.1",
+  "mutmut==3.7.0",
   "pip-audit>=2.9.0",
   "pytest>=8.4.0",
   "pytest-cov>=6.2.0",
@@ -63,3 +58,7 @@ source = ["src/harbor_hf"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+
+[tool.mutmut]
+source_paths = ["src/harbor_hf"]
+pytest_add_cli_args_test_selection = ["tests/test_cli.py"]

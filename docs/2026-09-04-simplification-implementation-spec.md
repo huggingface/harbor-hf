@@ -251,9 +251,9 @@ For each run it applies these rules in order:
 
 1. If the desired state is paused or cancelled, cancel every live Job with the
    run label.
-2. If Harbor's job result is finished, do not start a parent.
-3. If a completed trial crossed a cost limit, cancel labeled Jobs and do not
+2. If a completed trial crossed a cost limit, cancel labeled Jobs and do not
    start a parent.
+3. If Harbor's job result is finished, do not start a parent.
 4. If one labeled parent is live, adopt it if needed and wait.
 5. Cancel orphaned labeled child Jobs.
 6. If capacity is available and the fixed restart delay has passed, start one

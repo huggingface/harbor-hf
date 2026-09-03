@@ -1,5 +1,6 @@
 ---
 title: Harbor-HF Control
+nsfw: false
 sdk: docker
 app_port: 7860
 hf_oauth: true
@@ -9,26 +10,18 @@ suggested_hardware: cpu-upgrade
 
 # Harbor-HF control
 
-This protected Docker Space runs the Harbor-HF API, reconciler, disposable
-SQLite projection, and web application from one exact reviewed source
-revision.
+This private Docker Space runs the Harbor-HF API, reconciler, and web console.
+The release comes from one exact Harbor-HF source revision.
 
-The Space reads and writes immutable objects in the canonical private artifact
-Bucket. Operators configure:
+The Space uses one private Bucket for immutable run records, mutable desired
+state, and Harbor job folders. SQLite is a disposable local projection.
 
-- `HF_TOKEN` for Bucket and Hugging Face lifecycle operations; and
-- `HF_INFERENCE_TOKEN` for execution Jobs that use direct inference.
+Operators configure two persistent secrets. `HF_TOKEN` controls the Bucket and
+HF Jobs. `HF_INFERENCE_TOKEN` is used for benchmark inference. A reviewed parent
+Job receives both as ephemeral Job secrets so it can run Harbor and create
+labeled child Sandbox Jobs. Credential values do not enter run records, labels,
+or results.
 
-Deployment-specific resource identifiers and initial OAuth operator subjects
-remain private Space variables.
-
-Preparation and execution Jobs use signed capabilities bound to one Run,
-launch action, task set, operation set, and expiration. The service never sends
-`HF_TOKEN` or a writable Bucket mount to a Job. It sends
-`HF_INFERENCE_TOKEN` only when the resolved deployment contains an inference
-upstream; Harbor supplies that credential and the locked upstream directly to
-the selected reviewed agent through `AgentConfig.env`.
-
-The Bucket is durable truth. The local SQLite file may be removed and rebuilt
-from immutable records. The Space must stay available while paid Jobs or owned
-Endpoints may require reconciliation and cleanup.
+Write mode also requires `HARBOR_HF_PARENT_IMAGE` with an immutable image
+digest. See `docs/CONTROL_SERVICE.md` in the source repository for the complete
+configuration and deployment checks.

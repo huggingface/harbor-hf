@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, link, mkdir, open, opendir, readFile, rm } from "node:fs/promises";
+import { access, mkdir, open, opendir, readFile, rename, stat } from "node:fs/promises";
 import { dirname, join, normalize, relative, resolve, sep } from "node:path";
 import { canonicalJson, sha256 } from "@harbor-hf/contracts";
 
@@ -15,10 +15,11 @@ export interface CreateResult {
   source_identity: string;
 }
 
-export interface ImmutableObjectStore {
+export interface ObjectStore {
   list(prefix: string): Promise<readonly ObjectEntry[]>;
   read(key: string): Promise<Uint8Array>;
   create(key: string, bytes: Uint8Array): Promise<CreateResult>;
+  put(key: string, bytes: Uint8Array): Promise<{ digest: string }>;
 }
 
 export class ImmutableConflictError extends Error {
@@ -29,12 +30,10 @@ export class ImmutableConflictError extends Error {
 }
 
 function safePath(root: string, key: string): string {
-  if (!key || key.startsWith("/") || key.includes("\u0000")) {
+  if (!key || key.startsWith("/") || key.includes("\u0000"))
     throw new Error("object key must be a non-empty relative path");
-  }
   const candidate = resolve(root, normalize(key));
-  const prefix = `${resolve(root)}${sep}`;
-  if (!candidate.startsWith(prefix))
+  if (!candidate.startsWith(`${resolve(root)}${sep}`))
     throw new Error("object key escapes the store root");
   return candidate;
 }
@@ -54,7 +53,7 @@ async function walk(root: string, directory: string, output: string[]): Promise<
   }
 }
 
-export class FilesystemObjectStore implements ImmutableObjectStore {
+export class FilesystemObjectStore implements ObjectStore {
   readonly root: string;
 
   constructor(root: string) {
@@ -67,12 +66,10 @@ export class FilesystemObjectStore implements ImmutableObjectStore {
     keys.sort();
     return Promise.all(
       keys.map(async (key) => {
-        const bytes = await readFile(safePath(this.root, key));
-        return {
-          key,
-          size: bytes.byteLength,
-          source_identity: sha256(bytes),
-        };
+        const path = safePath(this.root, key);
+        const info = await stat(path);
+        const bytes = await readFile(path);
+        return { key, size: info.size, source_identity: sha256(bytes) };
       }),
     );
   }
@@ -91,18 +88,25 @@ export class FilesystemObjectStore implements ImmutableObjectStore {
       if (sha256(existing) !== digest) throw new ImmutableConflictError(key);
       return { created: false, digest, source_identity: digest };
     } catch (error) {
-      if (
-        !(error instanceof ImmutableConflictError) &&
-        (error as NodeJS.ErrnoException).code !== "ENOENT"
-      ) {
-        throw error;
-      }
       if (error instanceof ImmutableConflictError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+    const handle = await open(path, "wx", 0o600);
+    try {
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } catch (error) {
+      await handle.close();
+      throw error;
+    }
+    await handle.close();
+    return { created: true, digest, source_identity: digest };
+  }
 
-    const temporaryRoot = join(this.root, ".tmp");
-    await mkdir(temporaryRoot, { recursive: true });
-    const temporary = join(temporaryRoot, `${process.pid}-${crypto.randomUUID()}`);
+  async put(key: string, bytes: Uint8Array): Promise<{ digest: string }> {
+    const path = safePath(this.root, key);
+    await mkdir(dirname(path), { recursive: true });
+    const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
     const handle = await open(temporary, "wx", 0o600);
     try {
       await handle.writeFile(bytes);
@@ -110,24 +114,27 @@ export class FilesystemObjectStore implements ImmutableObjectStore {
     } finally {
       await handle.close();
     }
-    try {
-      await link(temporary, path);
-    } catch (error) {
-      await rm(temporary, { force: true });
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const existing = await readFile(path);
-      if (sha256(existing) !== digest) throw new ImmutableConflictError(key);
-      return { created: false, digest, source_identity: digest };
-    }
-    await rm(temporary, { force: true });
-    return { created: true, digest, source_identity: digest };
+    await rename(temporary, path);
+    return { digest: sha256(bytes) };
   }
 }
 
+export async function readJson(store: ObjectStore, key: string): Promise<unknown> {
+  return JSON.parse(new TextDecoder().decode(await store.read(key))) as unknown;
+}
+
 export async function createJson(
-  store: ImmutableObjectStore,
+  store: ObjectStore,
   key: string,
   value: unknown,
 ): Promise<CreateResult> {
   return store.create(key, new TextEncoder().encode(canonicalJson(value)));
+}
+
+export async function putJson(
+  store: ObjectStore,
+  key: string,
+  value: unknown,
+): Promise<{ digest: string }> {
+  return store.put(key, new TextEncoder().encode(canonicalJson(value)));
 }

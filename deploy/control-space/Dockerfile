@@ -24,7 +24,6 @@ COPY apps/control-web/package.json apps/control-web/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/control-core/package.json packages/control-core/package.json
 COPY packages/hf-adapters/package.json packages/hf-adapters/package.json
-COPY packages/test-fixtures/package.json packages/test-fixtures/package.json
 # Keep the npm log in the Space build output when the installer aborts.
 RUN npm ci --omit=dev --no-audit --no-fund --foreground-scripts \
     || (for log in /tmp/npm-cache/_logs/*-debug-0.log /root/.npm/_logs/*-debug-0.log; do \
@@ -34,15 +33,13 @@ RUN npm ci --omit=dev --no-audit --no-fund --foreground-scripts \
 COPY apps/control-api apps/control-api
 COPY apps/control-web apps/control-web
 COPY packages packages
-COPY profiles profiles
+COPY presets presets
 COPY scripts/control-service/installer scripts/control-service/installer
-COPY scripts/control-service/control-smoke-worker.cjs scripts/control-service/control-smoke-worker.cjs
 # Tests and schema generation run in CI. The image compiles the committed
 # sources so a Space rebuild is not blocked on the Vitest suite.
 RUN npm run typecheck:space \
     && npm run build -w @harbor-hf/control-web \
-    && npm prune --omit=dev --workspaces \
-    && rm -rf node_modules/@harbor-hf/test-fixtures
+    && npm prune --omit=dev --workspaces
 
 FROM node:22.22.0-bookworm-slim@sha256:7cc56ef285a8568121537d17b05e72128f01b89c54607b51acf084a50ef483f3 AS runtime
 
@@ -60,7 +57,6 @@ COPY --from=build --chown=node:node /app/apps/control-api/dist ./apps/control-ap
 COPY --from=build --chown=node:node /app/apps/control-api/node_modules ./apps/control-api/node_modules
 COPY --from=build --chown=node:node /app/apps/control-web/package.json ./apps/control-web/package.json
 COPY --from=build --chown=node:node /app/apps/control-web/dist ./apps/control-web/dist
-COPY --from=build --chown=node:node /app/apps/control-web/node_modules ./apps/control-web/node_modules
 COPY --from=build --chown=node:node /app/packages/contracts/package.json ./packages/contracts/package.json
 COPY --from=build --chown=node:node /app/packages/contracts/dist ./packages/contracts/dist
 COPY --from=build --chown=node:node /app/packages/contracts/schemas ./packages/contracts/schemas
@@ -68,7 +64,7 @@ COPY --from=build --chown=node:node /app/packages/control-core/package.json ./pa
 COPY --from=build --chown=node:node /app/packages/control-core/dist ./packages/control-core/dist
 COPY --from=build --chown=node:node /app/packages/hf-adapters/package.json ./packages/hf-adapters/package.json
 COPY --from=build --chown=node:node /app/packages/hf-adapters/dist ./packages/hf-adapters/dist
-COPY --from=build --chown=node:node /app/profiles ./profiles
+COPY --from=build --chown=node:node /app/presets ./presets
 
 RUN npm ls --omit=dev --all
 USER node

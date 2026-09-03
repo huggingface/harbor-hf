@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsc -b",
     "generate": "tsx scripts/generate.ts",
-    "test": "vitest run"
+    "test": "vitest run --root ../.. packages/contracts/test"
   },
   "dependencies": {
     "ajv": "8.20.0"

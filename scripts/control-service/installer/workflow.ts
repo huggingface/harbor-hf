@@ -860,15 +860,32 @@ function concreteVariables(plan: InstallPlan, origin: string): Record<string, st
 }
 
 type WriteMode = "disabled" | "enabled";
+const immutableParentImage = /@sha256:[0-9a-f]{64}$/;
+
+function validateParentImage(value: string | undefined): string {
+  if (!value || !immutableParentImage.test(value))
+    throw new InstallerInputError(
+      "HARBOR_HF_PARENT_IMAGE must use an immutable sha256 digest",
+    );
+  return value;
+}
+
+function parentImageOf(space: SpaceState): string {
+  return validateParentImage(space.variables.HARBOR_HF_PARENT_IMAGE);
+}
 
 function variablesForWriteMode(
   plan: InstallPlan,
   origin: string,
   writeMode: WriteMode,
+  parentImage?: string,
 ): Record<string, string> {
   return {
     ...concreteVariables(plan, origin),
     HARBOR_HF_WRITE_MODE: writeMode,
+    ...(writeMode === "enabled"
+      ? { HARBOR_HF_PARENT_IMAGE: validateParentImage(parentImage) }
+      : {}),
   };
 }
 
@@ -1025,17 +1042,19 @@ function assertSystem(
 ): void {
   if (!isRecord(body)) throw new Error("system response is invalid");
   const projection = body.projection;
-  const contract = body.resource_contract;
+  const resources = body.resources;
   if (
     body.source_revision !== sourceRevision ||
     body.write_mode !== expectedWriteMode ||
+    body.ready !== true ||
     !isRecord(projection) ||
-    projection.ready !== true ||
-    projection.integrity_error !== null ||
-    !isRecord(contract) ||
-    contract.spaces !== 1 ||
-    contract.buckets !== 1 ||
-    contract.operator_secrets !== 2
+    !Number.isSafeInteger(projection.runs) ||
+    !Number.isSafeInteger(projection.trials) ||
+    !Number.isSafeInteger(projection.parent_jobs) ||
+    !isRecord(resources) ||
+    resources.spaces !== 1 ||
+    resources.buckets !== 1 ||
+    resources.operator_secrets !== 2
   ) {
     throw new Error("authenticated system verification failed");
   }
@@ -1066,8 +1085,17 @@ async function verifyPlan(
       "installation is awaiting credential completion; run install:configure",
     );
   }
+  const expectedParentImage =
+    observed.space && expectedWriteMode === "enabled"
+      ? parentImageOf(observed.space)
+      : undefined;
   const expectedForRemote = observed.space
-    ? variablesForWriteMode(plan, observed.space.origin, expectedWriteMode)
+    ? variablesForWriteMode(
+        plan,
+        observed.space.origin,
+        expectedWriteMode,
+        expectedParentImage,
+      )
     : plan.expected_variables;
   assertRemoteSafe(
     observed,
@@ -1085,6 +1113,7 @@ async function verifyPlan(
     plan,
     observed.space.origin,
     expectedWriteMode,
+    expectedParentImage,
   );
   for (const [key, value] of Object.entries(variables)) {
     if (observed.space.variables[key] !== value) {
@@ -1215,9 +1244,8 @@ async function verifyPlan(
       if (
         runs.status !== 200 ||
         !isRecord(runs.body) ||
-        !Array.isArray(runs.body.items) ||
-        runs.body.items.length !== 0 ||
-        runs.body.next_cursor !== null
+        !Array.isArray(runs.body.runs) ||
+        runs.body.runs.length !== 0
       ) {
         throw new Error("activation requires an empty run projection");
       }
@@ -1270,11 +1298,21 @@ function assertInstalledActivationState(
     {
       spaceId: plan.targets.space_id,
       bucketId: plan.targets.bucket_id,
-      variables: variablesForWriteMode(plan, state.space.origin, writeMode),
+      variables: variablesForWriteMode(
+        plan,
+        state.space.origin,
+        writeMode,
+        writeMode === "enabled" ? parentImageOf(state.space) : undefined,
+      ),
     },
     { requireRunning: false, requireAllSecrets: true },
   );
-  const expected = variablesForWriteMode(plan, state.space.origin, writeMode);
+  const expected = variablesForWriteMode(
+    plan,
+    state.space.origin,
+    writeMode,
+    writeMode === "enabled" ? parentImageOf(state.space) : undefined,
+  );
   for (const [key, value] of Object.entries(expected)) {
     if (state.space.variables[key] !== value) {
       throw new Error("activation Space variables do not match the install plan");
@@ -1400,10 +1438,21 @@ export async function activateInstall(
     }
     assertReceipt(plan, loaded.digest, input.bootstrapReceipt);
     const expectedUploadSha = input.bootstrapReceipt.uploaded_sha;
+    const configuredParentImage =
+      currentMode === "enabled"
+        ? parentImageOf(currentSpace)
+        : validateParentImage(
+            (dependencies.environment ?? process.env).HARBOR_HF_PARENT_IMAGE,
+          );
     const enabledFile = await writePrivateEnvironmentFile(
       tempDirectory,
       "variables-enabled.env",
-      variablesForWriteMode(plan, currentSpace.origin, "enabled"),
+      variablesForWriteMode(
+        plan,
+        currentSpace.origin,
+        "enabled",
+        configuredParentImage,
+      ),
     );
     let mutationStarted = currentMode === "enabled";
     try {

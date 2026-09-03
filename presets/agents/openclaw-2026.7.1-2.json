@@ -1,0 +1,11 @@
+{
+  "schema_version": "v1",
+  "agent": "openclaw",
+  "version": "2026.7.1-2",
+  "harbor_agent": {
+    "name": "openclaw",
+    "kwargs": { "version": "2026.7.1-2" }
+  },
+  "reasoning_option": "thinking",
+  "reasoning_values": ["off", "minimal", "low", "medium", "high", "xhigh"]
+}

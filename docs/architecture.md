@@ -1,267 +1,168 @@
+---
+title: Architecture
+author: Harbor-HF maintainers
+date: 2026-09-04
+tags: [architecture, harbor, hugging-face, control]
+---
+
 # Architecture
-
-## Purpose
-
-Harbor-HF is the hosted control plane around Harbor.
-
-Harbor owns benchmark resolution, agents, task environments, verification,
-trajectories, locks, and native trial results. Harbor-HF owns profile
-composition, Run identity, Hugging Face resource lifecycle, durable control
-records, physical-attempt policy, evidence retention, cleanup, and publication.
-
-The shared path stays independent of benchmark, model, and harness names.
-Normal support for a new value is configuration; a new harness implementation
-belongs in a Harbor agent plugin.
 
 ## System boundary
 
-```mermaid
-flowchart TB
-    U[Operator or browser] --> S[Protected control Space]
-    S --> API[Fastify API]
-    S --> R[Reconciler]
-    S --> DB[Disposable SQLite]
-    API --> B[Private artifact Bucket]
-    R --> B
-    R --> J[HF preparation and execution Jobs]
-    R --> E[Managed Inference Endpoints]
-    J -->|Harbor agent direct request| P[HF inference upstream]
-    J -->|scoped evidence and receipt| API
-```
+Harbor-HF adds hosted control around Harbor. It does not replace Harbor's run
+engine.
 
-The browser never reads the Bucket or receives service credentials. Mutations
-write immutable intent before remote side effects. SQLite can be deleted and
-rebuilt from Bucket records.
+Harbor owns:
 
-The steady-state inventory is one protected control Space and one private
-Bucket. Runs, repairs, profiles, leases, and result subsets do not create their
-own persistent stores or services.
+- `JobConfig` validation and benchmark task resolution
+- trial creation, concurrency, retry, and resume
+- job and trial locks
+- results, rewards, costs, and trajectories
+- built-in agent implementations
+
+Harbor-HF owns:
+
+- authenticated run submission
+- reviewed benchmark and agent presets
+- the private Bucket and run records
+- parent and child HF Job lifecycle
+- post-trial cost stops
+- the disposable SQLite projection
+- the web console and leaderboard
+
+The integration uses Harbor's public `Job.create()`, `Job.run()`,
+`Job.on_trial_ended()`, and `len(job)` APIs. It does not contain a second trial
+loop or result writer.
 
 ## Components
 
-### Control Space
+```mermaid
+flowchart TD
+    O[Operator] -->|HTTPS| API[Fastify API]
+    W[Web console] -->|same-origin HTTPS| API
+    API --> CS[Control service]
+    CS -->|run.json and state.json| B[Private Bucket]
+    CS --> DB[SQLite projection]
+    CS -->|start, list, cancel| HF[HF Jobs API]
+    HF --> P[Parent Job]
+    P -->|Job.create and Job.run| H[Harbor]
+    H --> C[HF Sandbox child Jobs]
+    H -->|job folder| B
+    CS --> L[Leaderboard query]
+```
 
-One Node.js process serves the REST API, React application, Server-Sent Events,
-and health endpoints while running the background reconciler. The service is
-the only shared authority for Run decisions.
+The control Space and Bucket are the only persistent resources. Parent and child
+Jobs are temporary. SQLite can be deleted because the service rebuilds it from
+Bucket objects and current Job observations.
 
-`HF_TOKEN` remains in the Space for Bucket and Hugging Face lifecycle
-operations. `HF_INFERENCE_TOKEN` is separately scoped and is attached only to
-an execution Job whose immutable deployment resolves an inference upstream.
+## Run storage
 
-### Immutable artifact Bucket
+Each run has one immutable record, one mutable desired-state record, and one
+Harbor job folder.
 
-The Bucket stores:
+```text
+runs/<run-id>/
+├── run.json
+├── state.json
+└── job/
+    ├── config.json
+    ├── lock.json
+    ├── result.json
+    └── <trial-name>/
+        ├── config.json
+        ├── lock.json
+        ├── result.json
+        └── agent/trajectory.json
+```
 
-- profile records and promotions;
-- Run requests and locks;
-- prepared Harbor jobs and trials;
-- action intents, observations, and receipts;
-- evidence chunks and manifests;
-- logical task selections and retry decisions;
-- Endpoint ownership and cleanup observations;
-- normalized results and publication receipts; and
-- audit and migration records.
+The service creates `run.json` once. An idempotency key produces the run ID.
+Repeating the same key and request returns the existing run. Different content
+with the same key is an immutable conflict.
 
-Records are versioned, canonical, content-addressed where appropriate, and
-append-only. Conflicting bytes at an existing key are an integrity failure.
+The service rewrites `state.json` for `run`, `paused`, and `cancelled` desired
+states. Harbor alone writes below `job/`.
 
-### Task result persistence
+Historical object layouts remain in the Bucket as an archive. The current
+projection reads only `runs/<run-id>/`.
 
-The existing private artifact Bucket stores each finished task result, receipt,
-logs, trajectory, usage, cost and provenance. The control service selects a task
-only after it reads back the objects and verifies the manifest. A selected task
-is durable progress and later Jobs do not run it again.
+## Presets and direct configuration
 
-A physical Job that ends with a replacement-eligible infrastructure failure
-leaves the task unresolved. The next execution starts that task again from the
-same prepared input. A non-infrastructure terminal outcome is not retried
-automatically. Harbor-HF does not save or restore the agent conversation,
-workspace, partial provider response, process memory or container state.
+Benchmark presets contain a safe Harbor job fragment. They can select datasets,
+attempts, trial concurrency, timeout multipliers, retry, and artifacts. They
+cannot set paths, agents, credentials, user agents, source jobs, or a custom
+environment.
 
-Infrastructure executions have no policy retry count. The reconciler can keep
-starting the unresolved task while the run remains active, the finite action-key
-space has capacity and each launch passes the existing admission and cost
-checks. Every failed physical Job and worker generation remains visible in
-result provenance. A repeated deterministic failure pauses affected work for a
-reviewed worker repair. A normal resume is not a repair. The [task result
-persistence and retry plan](2026-09-01-task-result-retry-plan.md) defines the
-implementation and remote checks.
+Agent presets select one Harbor agent or import path, a fixed version, allowed
+reasoning values, and nonsecret options. A request cannot override the preset
+fragment.
 
-### Profile resolver
+A direct `JobConfig` is available for diagnostic work. The API rejects unsafe
+fields and validates the result with the JSON Schema generated from the pinned
+Harbor revision. It then sets the run paths, labeled HF Sandbox environment,
+and inference router variables.
 
-The model profile supplies the canonical Harbor model route and supported
-inference APIs. The harness profile supplies a model-independent
-`AgentConfig` template, exact agent revision, capabilities, and evidence
-requirements. The deployment supplies the worker image, HF route, upstream
-URL, API, prices, limits, hardware, and timeouts.
+## Parent and child Jobs
 
-For direct inference, the resolver:
+The reconciler starts one parent Job per active run. The parent image is selected
+by an immutable digest. The Job gets the Bucket mounted at `/data` and reads the
+run record from that mount.
 
-1. validates the `openai/<model>:<provider>` Harbor route;
-2. checks that the provider suffix matches the deployment;
-3. checks model and harness support for the declared API;
-4. sets `OPENAI_BASE_URL` to the exact upstream;
-5. references `HF_INFERENCE_TOKEN` as `OPENAI_API_KEY`;
-6. locks timeout and output-token settings; and
-7. adds the upstream hostname to Harbor's allowed hosts.
+The parent receives the two approved service credentials as ephemeral Job
+secrets. It uses the control credential to start and label child Sandbox Jobs.
+The selected agent receives the inference credential through the fixed
+`${HF_INFERENCE_TOKEN}` environment template. No credential value is stored in
+the Bucket or run request.
 
-There is no alternate model binding or API translation in the worker.
+Harbor's HF Sandbox environment does not yet accept child labels. The small
+`LabeledHFSandboxEnvironment` subclass adds `harbor-hf-role=trial` and the run
+label immediately after child creation. If label update fails, it deletes the
+child and fails the trial setup.
 
-Approved immutable profiles that pin a historical bridge worker retain a
-conditional bootstrap and provider-capacity reservation path. Direct profiles,
-including the Fast-Agent Workbench deployment, do not use that compatibility
-path.
+## Reconciliation
 
-### Preparation Job
+The reconciler lists owned Jobs and rebuilds the projection before each pass. It
+handles runs in creation order and applies the configured parent Job capacity.
 
-The preparation Job has no persistent secret. It installs pinned Harbor and
-agent-package revisions, builds a normal Harbor `JobConfig`, and uses Harbor's
-public planning API to resolve the benchmark.
+For each run it:
 
-It returns one immutable prepared record per logical trial and a final prepared
-job record. Those records bind Harbor locks, task and image digests, resources,
-timeouts, agent configuration, source revisions, and worker provenance.
+1. cancels live labeled Jobs when the desired state is paused or cancelled;
+2. stops a run when durable trial cost crossed its ceiling;
+3. leaves a finished Harbor job unchanged;
+4. adopts an existing live parent;
+5. cancels live child Jobs that have no live parent; and
+6. starts a new parent after the restart delay when capacity is available.
 
-Preparation is the only point at which the benchmark is resolved. Execution,
-retry, and recovery reconstruct the exact prepared trial.
+A resumed parent uses the same `job/` folder. Harbor reads its existing result
+and lock files, then runs only missing trials.
 
-### Execution Job
+## Projection and status
 
-Each physical attempt runs in one HF Job using the reviewed trial-worker image,
-never the task image as the host image. The worker verifies and unpacks the
-locked task image and runs the task as a dedicated unprivileged host UID.
+SQLite has three tables:
 
-The Job receives:
+- `runs`
+- `trials`
+- `parent_jobs`
 
-- one task assignment;
-- a short-lived capability scoped to its Run and launch action;
-- the exact prepared trial and execution contract; and
-- `HF_INFERENCE_TOKEN` only when direct inference is required.
+The projection combines `run.json`, `state.json`, Harbor result files, and Job
+observations. Desired cancellation and pause have the highest status priority.
+A cost stop comes before normal completion so an expensive completed trial
+cannot enter the leaderboard.
 
-Harbor loads the selected agent through `AgentConfig.import_path`. The agent
-receives the profile-resolved upstream, credential, model, API, timeout, and
-output limit and calls the HF inference upstream directly. After the agent and
-its descendants stop, the worker freezes the workspace and Harbor runs the
-verifier against that state.
+The public leaderboard reads finished `final` runs that use an eligible preset
+and have at least one numeric reward. Rows group by benchmark preset, agent and
+version, model and provider, and reasoning effort. Pass rate is the mean reward.
 
-The worker rejects lock drift, evidence mismatch, leaked credentials, or
-invalid task-image boundaries before posting a terminal receipt.
+## Failure behavior
 
-### Managed Endpoint route
+The service rejects unknown request fields, unknown presets, unsupported
+reasoning values, non-positive cost limits, unsafe direct configuration, and
+credential literals.
 
-Endpoint-backed deployments remain separate from direct calls to HF inference
-services. Their immutable deployment contract covers model and engine
-revision, image, command, hardware, replica policy, parsing and template
-settings, context and batching limits, and health checks.
+Cost enforcement occurs after a trial result is written. One trial can cross its
+limit, and concurrent work can finish before cancellation. The durable result
+keeps that evidence.
 
-The reconciler adopts or creates only the deterministic Endpoint, verifies its
-effective configuration, and records ownership. Cleanup has priority over new
-work. A Run cannot complete until every owned Endpoint is observed paused with
-zero ready replicas.
-
-### Reconciler
-
-The reconciler rebuilds state from immutable records and selects one
-deterministic next action. The action sequence separates intent, admission,
-dispatch, observation, receipt, and advancement.
-
-An ambiguous HF response does not authorize another create call. The
-reconciler observes the deterministic remote identity and either adopts it or
-records a typed failure. Cancellation stops new admission while preserving
-active evidence finalization and cleanup.
-
-### Evidence and publication
-
-Workers upload content-addressed chunks and a canonical manifest through their
-scoped capability. The control service verifies every digest, reference,
-required media type, Run and task identity, and secret-scan result.
-
-Canonical evidence includes the Harbor lock and result, workspace archive and
-index, native session or ATIF trajectory when required, verifier output,
-worker logs, source and image provenance, and infrastructure receipts. Evidence
-requirements come from the harness and benchmark contracts.
-
-Publication is a later deterministic action over accepted canonical evidence.
-It emits normalized result objects and approved public views. Workers never
-write directly to shared public destinations.
-
-## Identity and reproducibility
-
-A Run locks:
-
-- exact profile record IDs and digests;
-- benchmark source and task digests;
-- Harbor and agent-package revisions;
-- task and worker image digests;
-- model route and observable revision;
-- inference provider, upstream, and API;
-- agent entry point, revision, and parameters;
-- hardware, resources, phase limits, and prices;
-- attempt, admission, and spend policy; and
-- evidence and publication policy.
-
-Aliases are submission conveniences only. A behavior-affecting change creates a
-new immutable profile and, for executed work, a new Run identity.
-
-1. An experiment groups a requested matrix.
-2. A run represents one homogeneous matrix cell.
-3. A trial represents one task and logical benchmark attempt.
-4. An execution represents one physical Job invocation. An unresolved trial can
-   have more than one infrastructure execution.
-
-An infrastructure retry starts the prepared task again and stays under the same
-trial. It does not consume another benchmark attempt. Failed executions remain
-immutable records. Replacement benchmark attempts remain separate trials and
-never replace previous records. Composite or manually selected results must be
-labeled explicitly and must not appear as single-run results.
-
-Failures are typed as infrastructure or semantic outcomes.
-
-Replacement-eligible infrastructure examples include a transient HF Job
-failure, control unavailability, image transfer failure, or malformed
-infrastructure receipt. Deterministic worker defects stop affected work.
-
-Semantic outcomes include model refusals, valid zero scores, benchmark
-timeouts, agent failures, and verifier failures. They are not rerun as
-infrastructure.
-
-A replacement physical attempt keeps the same prepared trial and logical task
-identity. Any change to model, agent, source, image, API, limits, hardware, or
-policy requires a linked replacement Run. Publication recovery does not call
-the model again.
-
-## Security boundaries
-
-- The control credential never enters a Job.
-- Preparation Jobs receive no inference credential.
-- Direct-inference agents are reviewed secret consumers.
-- Jobs have no writable canonical Bucket mount.
-- Worker capabilities are short-lived and operation-scoped.
-- Task execution uses a dedicated unprivileged host UID with no supplementary
-  groups, capabilities, or privilege escalation.
-- Credential values and high-confidence patterns are scanned in paths, files,
-  logs, sessions, traces, manifests, and publication candidates.
-- Public responses omit private topology, raw evidence, credentials, and
-  capabilities.
-
-Direct inference intentionally gives the selected agent access to the
-inference credential. Arbitrary user code must therefore remain setup-only
-until a separate user-secret custody design is approved.
-
-## Boundaries
-
-Harbor-HF does not:
-
-- modify Harbor core or monkeypatch Harbor internals;
-- add benchmark-, model-, or harness-specific branches to the control path;
-- run models or benchmark tasks on the operator machine as part of the hosted
-  control path;
-- translate between Chat Completions and Responses;
-- treat local SQLite as durable truth;
-- expose the private Bucket to browsers;
-- hide infrastructure failure inside a model score; or
-- rewrite historical evidence.
-
-See [the control-service specification](CONTROL_SERVICE.md) and
-[the Harbor compatibility contract](harbor-integration-contract.md).
+A failed parent can restart after the fixed delay. A cancelled run cannot
+resume. A projection rebuild failure, immutable run conflict, unlabeled child,
+or Job cancellation failure requires operator review rather than a second
+control path.

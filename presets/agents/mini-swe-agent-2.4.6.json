@@ -1,0 +1,11 @@
+{
+  "schema_version": "v1",
+  "agent": "mini-swe-agent",
+  "version": "2.4.6",
+  "harbor_agent": {
+    "name": "mini-swe-agent",
+    "kwargs": { "version": "2.4.6" }
+  },
+  "reasoning_option": "reasoning_effort",
+  "reasoning_values": ["default", "low", "medium", "high"]
+}

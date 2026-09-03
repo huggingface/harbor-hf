@@ -157,7 +157,10 @@ describe("private installer state", () => {
     const directory = await temporaryDirectory();
     const repository = resolve(directory, "repository");
     const external = resolve(directory, "external");
-    await Promise.all([mkdir(repository), mkdir(external)]);
+    await Promise.all([
+      mkdir(repository, { mode: 0o700 }),
+      mkdir(external, { mode: 0o700 }),
+    ]);
 
     const internalState = resolve(repository, "missing", "state");
     await expect(

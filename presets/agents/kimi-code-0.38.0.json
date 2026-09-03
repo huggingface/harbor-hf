@@ -1,0 +1,11 @@
+{
+  "schema_version": "v1",
+  "agent": "kimi-code",
+  "version": "0.38.0",
+  "harbor_agent": {
+    "name": "kimi-code",
+    "kwargs": { "version": "0.38.0" }
+  },
+  "reasoning_option": null,
+  "reasoning_values": ["default"]
+}

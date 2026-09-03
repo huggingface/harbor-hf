@@ -29,7 +29,7 @@ finding category and location, never the matched value.
 
 ## Development
 
-Benchmark workers and migration helpers use Python. The control API, shared
+The thin CLI and Harbor parent package use Python. The control API, shared
 control authority, and web application use the TypeScript stack in
 [`docs/CONTROL_SERVICE.md`](docs/CONTROL_SERVICE.md). Keep both sets of checks
 green. The TypeScript workspace uses Node.js 22.22.0, npm workspaces, one root
@@ -61,20 +61,20 @@ npm audit --audit-level=low
 npx playwright install chromium
 npm run test:e2e
 docker build --platform linux/amd64 -f deploy/control-space/Dockerfile .
+docker build --platform linux/amd64 -f deploy/parent-worker/Dockerfile .
 uv run slophammer-py dry .
 uv run pip-audit
 uv run slophammer-py check .
+uv run --directory packages/harbor-hf-agents ruff check .
+uv run --directory packages/harbor-hf-agents ruff format --check .
+uv run --directory packages/harbor-hf-agents ty check
+uv run --directory packages/harbor-hf-agents pytest
 ```
 
 Run TypeScript formatting and linting from the repository root. Run type and
 unit checks there too. Run the browser tests and build before checking
 dependencies. Generated
 JSON Schema types, OpenAPI output, and the browser client must be current.
-
-Mutation testing is not part of this project. Do not add mutmut dependencies,
-mutation workflows, mutation release gates, or mutation configuration. Use
-focused deterministic pytest, Vitest, and Playwright regression coverage for
-behavior changes.
 
 Tests must mock Hugging Face and Harbor network boundaries unless they are
 explicitly marked remote integration tests. Never place tokens, endpoint URLs,

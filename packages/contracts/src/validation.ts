@@ -2,6 +2,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
+import type {
+  AgentPresetV1,
+  BenchmarkPresetV1,
+  HarborJobConfigV1,
+  RunRecordV1,
+  RunStateV1,
+} from "./generated/index.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "schemas");
 
@@ -10,100 +17,58 @@ function load(name: string): object {
 }
 
 export const schemas = {
-  apiError: load("api-error-v1.schema.json"),
-  agentWorkbench: load("agent-workbench-v1.schema.json"),
-  attemptSubmission: load("attempt-submission-v1.schema.json"),
-  runAction: load("run-action-v1.schema.json"),
-  runContinuation: load("run-continuation-v1.schema.json"),
-  runSubmission: load("run-submission-v1.schema.json"),
-  controlRecord: load("control-record-v1.schema.json"),
-  preparedJobSubmission: load("prepared-job-submission-v1.schema.json"),
-  resultCatalog: load("result-catalog-v1.schema.json"),
-  leaderboardSnapshot: load("leaderboard-snapshot-v1.schema.json"),
-  workerEvidenceManifest: load("worker-evidence-manifest-v1.schema.json"),
+  agentPreset: load("agent-preset-v1.schema.json"),
+  benchmarkPreset: load("benchmark-preset-v1.schema.json"),
+  harborJobConfig: load("harbor-job-config-v1.schema.json"),
+  runRecord: load("run-record-v1.schema.json"),
+  runState: load("run-state-v1.schema.json"),
 } as const;
 
-const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true, strict: true });
+const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true, strict: false });
 ajv.addFormat("date-time", {
   type: "string",
   validate: (value: string) => Number.isFinite(Date.parse(value)),
 });
-ajv.addSchema(schemas.agentWorkbench);
+ajv.addFormat("path", { type: "string", validate: () => true });
+ajv.addFormat("uuid", {
+  type: "string",
+  validate: (value: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    ),
+});
 
 const validators = {
-  agentWorkbench: ajv.compile(schemas.agentWorkbench),
-  attemptSubmission: ajv.compile(schemas.attemptSubmission),
-  runAction: ajv.compile(schemas.runAction),
-  runContinuation: ajv.compile(schemas.runContinuation),
-  runSubmission: ajv.compile(schemas.runSubmission),
-  controlRecord: ajv.compile(schemas.controlRecord),
-  preparedJobSubmission: ajv.compile(schemas.preparedJobSubmission),
-  resultCatalog: ajv.compile(schemas.resultCatalog),
-  leaderboardSnapshot: ajv.compile(schemas.leaderboardSnapshot),
-  workerEvidenceManifest: ajv.compile(schemas.workerEvidenceManifest),
+  agentPreset: ajv.compile(schemas.agentPreset),
+  benchmarkPreset: ajv.compile(schemas.benchmarkPreset),
+  harborJobConfig: ajv.compile(schemas.harborJobConfig),
+  runRecord: ajv.compile(schemas.runRecord),
+  runState: ajv.compile(schemas.runState),
 } as const;
 
 export class ContractValidationError extends Error {
   readonly errors: readonly ErrorObject[];
 
-  constructor(message: string, errors: readonly ErrorObject[]) {
-    super(message);
+  constructor(label: string, errors: readonly ErrorObject[]) {
+    super(`${label} failed schema validation`);
     this.name = "ContractValidationError";
     this.errors = errors;
   }
 }
 
 function validate<T>(validator: ValidateFunction, value: unknown, label: string): T {
-  if (!validator(value)) {
-    throw new ContractValidationError(`${label} is invalid`, validator.errors ?? []);
-  }
+  if (!validator(value))
+    throw new ContractValidationError(label, validator.errors ?? []);
   return value as T;
 }
 
-export function validateAttemptSubmission<T>(value: unknown): T {
-  return validate<T>(validators.attemptSubmission, value, "attempt submission");
-}
-
-export function validateAgentWorkbenchRecipe<T>(value: unknown): T {
-  return validate<T>(validators.agentWorkbench, value, "agent workbench recipe");
-}
-
-export function validateControlRecord<T>(value: unknown): T {
-  return validate<T>(validators.controlRecord, value, "control record");
-}
-
-export function validateRunSubmission<T>(value: unknown): T {
-  return validate<T>(validators.runSubmission, value, "run submission");
-}
-
-export function validateRunContinuation<T>(value: unknown): T {
-  return validate<T>(validators.runContinuation, value, "run continuation");
-}
-
-export function validateRunAction<T>(value: unknown): T {
-  return validate<T>(validators.runAction, value, "run action");
-}
-
-export function validatePreparedJobSubmission<T>(value: unknown): T {
-  return validate<T>(
-    validators.preparedJobSubmission,
-    value,
-    "prepared job submission",
-  );
-}
-
-export function validateResultCatalog<T>(value: unknown): T {
-  return validate<T>(validators.resultCatalog, value, "result catalog");
-}
-
-export function validateLeaderboardSnapshot<T>(value: unknown): T {
-  return validate<T>(validators.leaderboardSnapshot, value, "leaderboard snapshot");
-}
-
-export function validateWorkerEvidenceManifest<T>(value: unknown): T {
-  return validate<T>(
-    validators.workerEvidenceManifest,
-    value,
-    "worker evidence manifest",
-  );
-}
+export const validateAgentPreset = (value: unknown): AgentPresetV1 =>
+  validate(validators.agentPreset, value, "agent preset");
+export const validateBenchmarkPreset = (value: unknown): BenchmarkPresetV1 =>
+  validate(validators.benchmarkPreset, value, "benchmark preset");
+export const validateHarborJobConfig = (value: unknown): HarborJobConfigV1 =>
+  validate(validators.harborJobConfig, value, "Harbor JobConfig");
+export const validateRunRecord = (value: unknown): RunRecordV1 =>
+  validate(validators.runRecord, value, "run record");
+export const validateRunState = (value: unknown): RunStateV1 =>
+  validate(validators.runState, value, "run state");

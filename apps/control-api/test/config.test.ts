@@ -12,104 +12,59 @@ const environment = {
 };
 
 describe("control API configuration", () => {
+  it("loads the simplified defaults", () => {
+    const config = loadConfig(environment);
+    expect(config.store_mode).toBe("filesystem");
+    expect(config.max_active_jobs).toBe(16);
+    expect(config.parent_hardware).toBe("cpu-basic");
+    expect(config.parent_timeout_seconds).toBe(86_400);
+    expect(config.write_mode).toBe("disabled");
+  });
+
   it("normalizes an origin trailing slash before deriving OAuth URLs", () => {
     const config = loadConfig({
       ...environment,
       HARBOR_HF_PUBLIC_ORIGIN: "https://control.example/",
     });
-
     expect(config.public_origin).toBe("https://control.example");
     expect(config.oauth?.callback_url).toBe("https://control.example/auth/callback");
   });
 
-  it("loads the nonsecret capacity profile alias", () => {
-    const config = loadConfig({
-      ...environment,
-      HARBOR_HF_CAPACITY_PROFILE_ALIAS: "capacity-current",
-    });
-
-    expect(config.capacity_profile_alias).toBe("capacity-current");
-    expect(config.max_active_jobs).toBe(16);
-  });
-
-  it("loads an explicit namespace Job cap", () => {
+  it("loads parent Job controls", () => {
     const config = loadConfig({
       ...environment,
       HARBOR_HF_MAX_ACTIVE_JOBS: "128",
+      HARBOR_HF_PARENT_HARDWARE: "cpu-upgrade",
+      HARBOR_HF_PARENT_TIMEOUT_SECONDS: "3600",
     });
-
     expect(config.max_active_jobs).toBe(128);
+    expect(config.parent_hardware).toBe("cpu-upgrade");
+    expect(config.parent_timeout_seconds).toBe(3_600);
   });
 
-  it("loads the task image mirror repository", () => {
-    expect(loadConfig(environment).task_image_mirror_repository).toBe(
-      "ghcr.io/huggingface/harbor-hf-trial-worker",
-    );
-    const config = loadConfig({
-      ...environment,
-      HARBOR_HF_TASK_IMAGE_MIRROR_REPOSITORY: "mirror.example/harbor-hf/tasks",
-    });
-
-    expect(config.task_image_mirror_repository).toBe("mirror.example/harbor-hf/tasks");
-  });
-
-  it("uses a 30-second Bucket sync cadence unless configured", () => {
-    expect(loadConfig(environment).sync_interval_ms).toBe(30_000);
-    expect(
-      loadConfig({
-        ...environment,
-        HARBOR_HF_SYNC_INTERVAL_MS: "45000",
-      }).sync_interval_ms,
-    ).toBe(45_000);
-  });
-
-  it("keeps Workbench setup disabled outside development unless configured", () => {
-    const defaultConfig = loadConfig(environment);
-    expect(defaultConfig.workbench_runner).toBe("disabled");
-    expect(defaultConfig.workbench_image).toBe("python:3.12-slim");
-
-    const developmentConfig = loadConfig({
-      ...environment,
-      NODE_ENV: "development",
-    });
-    expect(developmentConfig.workbench_runner).toBe("docker");
-
-    const configured = loadConfig({
-      ...environment,
-      HARBOR_HF_WORKBENCH_RUNNER: "docker",
-      HARBOR_HF_WORKBENCH_IMAGE: "example.invalid/agent-setup@sha256:test",
-    });
-    expect(configured.workbench_runner).toBe("docker");
-    expect(configured.workbench_image).toBe("example.invalid/agent-setup@sha256:test");
-
-    const remote = loadConfig({
-      ...environment,
-      HF_TOKEN: "control-test-credential",
-      HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
-      HARBOR_HF_WORKBENCH_IMAGE: "example.invalid/agent-setup@sha256:remote",
-    });
-    expect(remote.workbench_runner).toBe("hf-jobs");
-    expect(remote.workbench_image).toBe("example.invalid/agent-setup@sha256:remote");
-  });
-
-  it("requires the control credential for Hugging Face Workbench Jobs", () => {
+  it("requires two distinct credentials and an immutable image in write mode", () => {
+    expect(() =>
+      loadConfig({ ...environment, HARBOR_HF_WRITE_MODE: "enabled" }),
+    ).toThrow("both approved credentials");
     expect(() =>
       loadConfig({
         ...environment,
-        HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
+        HARBOR_HF_WRITE_MODE: "enabled",
+        HF_TOKEN: "control-test-credential",
+        HF_INFERENCE_TOKEN: "inference-test-credential",
+        HARBOR_HF_PARENT_IMAGE: "example/parent:latest",
       }),
-    ).toThrow("Hugging Face Workbench Jobs require HF_TOKEN");
-  });
+    ).toThrow("immutable digest");
 
-  it("loads a distinct worker inference credential without exposing it elsewhere", () => {
     const config = loadConfig({
       ...environment,
+      HARBOR_HF_WRITE_MODE: "enabled",
       HF_TOKEN: "control-test-credential",
       HF_INFERENCE_TOKEN: "inference-test-credential",
+      HARBOR_HF_PARENT_IMAGE: `example/parent@sha256:${"a".repeat(64)}`,
     });
-
-    expect(config.hf_token).toBe("control-test-credential");
-    expect(config.hf_inference_token).toBe("inference-test-credential");
+    expect(config.write_mode).toBe("enabled");
+    expect(config.parent_image).toContain("@sha256:");
   });
 
   it("rejects reuse of the control credential for inference", () => {

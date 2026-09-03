@@ -9,6 +9,5 @@
     "rootDir": ".",
     "types": ["vite/client"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
-  "references": [{ "path": "../../packages/contracts" }]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

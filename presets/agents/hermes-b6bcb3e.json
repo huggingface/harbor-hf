@@ -1,0 +1,11 @@
+{
+  "schema_version": "v1",
+  "agent": "hermes",
+  "version": "b6bcb3e791c673e63974029bbab40cc9326803ff",
+  "harbor_agent": {
+    "name": "hermes",
+    "kwargs": { "version": "b6bcb3e791c673e63974029bbab40cc9326803ff" }
+  },
+  "reasoning_option": null,
+  "reasoning_values": ["default"]
+}

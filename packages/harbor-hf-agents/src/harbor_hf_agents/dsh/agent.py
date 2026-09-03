@@ -1,4 +1,4 @@
-"""DeepSeek Harness (``dsh``) with direct provider inference."""
+"""DeepSeek Harness with its temporary Harbor-HF ATIF converter."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, cast, override
 
 import yaml
-from harbor.agents.installed.base import with_prompt_template
+from harbor.agents.capabilities import AgentCapabilities
+from harbor.agents.installed.base import BaseInstalledAgent, with_prompt_template
 from harbor.agents.installed.node_install import nvm_node_install_snippet
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
@@ -25,11 +26,6 @@ from harbor.models.trajectories import (
 )
 from harbor.utils.trajectory_utils import format_trajectory_json
 
-from harbor_hf_agents.support.direct_inference import (
-    with_agent_environment_cleanup,
-)
-from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
-
 _PACKAGE = "@deepseek-ai/dsh"
 _DSH_HOME = "/installed-agent/dsh-home"
 _PATCH_PATH = f"{_DSH_HOME}/cordis.patch.yml"
@@ -39,10 +35,10 @@ _GENERIC_PROVIDER = "harbor"
 _NVM = 'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
 
 
-class DshAgent(IsolatedProviderAgent):
+class DshAgent(BaseInstalledAgent):
     """Headless DeepSeek Harness against an OpenAI-compatible inference route."""
 
-    SUPPORTS_ATIF: bool = True
+    capabilities = AgentCapabilities(atif=True)
 
     def __init__(
         self,
@@ -130,7 +126,7 @@ class DshAgent(IsolatedProviderAgent):
 
     async def _prepare_inference_env(
         self,
-        environment: BaseEnvironment,
+        _environment: BaseEnvironment,
     ) -> dict[str, str]:
         del environment
         env: dict[str, str] = {
@@ -146,10 +142,8 @@ class DshAgent(IsolatedProviderAgent):
             env["DSH_BASE_URL"] = env["OPENAI_BASE_URL"]
         if "DSH_API_KEY" not in env and "OPENAI_API_KEY" in env:
             env["DSH_API_KEY"] = env["OPENAI_API_KEY"]
-        if "DSH_BASE_URL" not in env:
-            raise RuntimeError("DeepSeek Harness requires DSH_BASE_URL")
-        if "DSH_API_KEY" not in env:
-            raise RuntimeError("DeepSeek Harness requires DSH_API_KEY")
+        if "DSH_BASE_URL" not in env or "DSH_API_KEY" not in env:
+            raise RuntimeError("DeepSeek Harness requires the OpenAI route")
         return env
 
     @override
@@ -182,7 +176,6 @@ class DshAgent(IsolatedProviderAgent):
 
     @override
     @with_prompt_template
-    @with_agent_environment_cleanup
     async def run(
         self,
         instruction: str,

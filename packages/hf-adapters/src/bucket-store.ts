@@ -2,8 +2,8 @@ import { sha256 } from "@harbor-hf/contracts";
 import {
   type CreateResult,
   ImmutableConflictError,
-  type ImmutableObjectStore,
   type ObjectEntry,
+  type ObjectStore,
 } from "@harbor-hf/control-core";
 import {
   HubApiError,
@@ -74,7 +74,7 @@ async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-export class HuggingFaceBucketStore implements ImmutableObjectStore {
+export class HuggingFaceBucketStore implements ObjectStore {
   private readonly repo: { type: "bucket"; name: string };
   private readonly credentials: { accessToken: string };
   private readonly retryDelaysMs: readonly number[];
@@ -228,6 +228,7 @@ export class HuggingFaceBucketStore implements ImmutableObjectStore {
       repo: this.repo,
       file: { path: key, content: new Blob([Uint8Array.from(bytes).buffer]) },
       commitTitle: `Create immutable control object ${key}`,
+      fetch: this.fetch,
       ...this.credentials,
     });
     return {
@@ -235,6 +236,32 @@ export class HuggingFaceBucketStore implements ImmutableObjectStore {
       digest,
       source_identity: await this.stableSourceIdentity(key, digest),
     };
+  }
+
+  async put(key: string, bytes: Uint8Array): Promise<{ digest: string }> {
+    const operation = this.queue.then(() => this.putSerialized(key, bytes));
+    this.queue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  private async putSerialized(
+    key: string,
+    bytes: Uint8Array,
+  ): Promise<{ digest: string }> {
+    const digest = sha256(bytes);
+    this.deleteCached(key);
+    await uploadFile({
+      repo: this.repo,
+      file: { path: key, content: new Blob([Uint8Array.from(bytes).buffer]) },
+      commitTitle: `Update run state ${key}`,
+      fetch: this.fetch,
+      ...this.credentials,
+    });
+    await this.stableSourceIdentity(key, digest);
+    return { digest };
   }
 
   private async readIfPresent(key: string): Promise<Uint8Array | null> {
@@ -263,7 +290,7 @@ export class HuggingFaceBucketStore implements ImmutableObjectStore {
       recursive,
       expand: true,
       fetch: (input, init) =>
-        fetch(input, {
+        this.fetch(input, {
           ...init,
           signal: AbortSignal.timeout(this.listTimeoutMs),
         }),

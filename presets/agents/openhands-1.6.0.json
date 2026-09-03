@@ -1,0 +1,12 @@
+{
+  "schema_version": "v1",
+  "agent": "openhands",
+  "version": "1.6.0",
+  "harbor_agent": {
+    "name": "openhands",
+    "kwargs": { "version": "1.6.0" },
+    "override_setup_timeout_sec": 7200
+  },
+  "reasoning_option": "reasoning_effort",
+  "reasoning_values": ["default", "low", "medium", "high"]
+}

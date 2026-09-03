@@ -1,42 +1,87 @@
-import type { AgentWorkbenchRecipeV1 } from "@harbor-hf/contracts";
-import type { paths } from "./generated/api";
+export interface Actor {
+  username: string;
+  role: "operator" | "reader";
+  transport: "session" | "bearer" | "development";
+}
 
-export type SessionResponse =
-  paths["/api/v1/auth/session"]["get"]["responses"][200]["content"]["application/json"];
-export type SystemResponse =
-  paths["/api/v1/system"]["get"]["responses"][200]["content"]["application/json"];
-export type NamespaceCapacity =
-  paths["/api/v1/capacity"]["get"]["responses"][200]["content"]["application/json"];
-export type RunList =
-  paths["/api/v1/runs"]["get"]["responses"][200]["content"]["application/json"];
-export type Run =
-  paths["/api/v1/runs/{run_id}"]["get"]["responses"][200]["content"]["application/json"];
-export type Capacity =
-  paths["/api/v1/runs/{run_id}/capacity"]["get"]["responses"][200]["content"]["application/json"];
-export type TaskList =
-  paths["/api/v1/runs/{run_id}/tasks"]["get"]["responses"][200]["content"]["application/json"];
-export type TaskDetail =
-  paths["/api/v1/runs/{run_id}/tasks/{task_id}"]["get"]["responses"][200]["content"]["application/json"];
-export type JobList =
-  paths["/api/v1/jobs"]["get"]["responses"][200]["content"]["application/json"];
-export type EndpointList =
-  paths["/api/v1/endpoints"]["get"]["responses"][200]["content"]["application/json"];
-export type ProfileList =
-  paths["/api/v1/profiles"]["get"]["responses"][200]["content"]["application/json"];
-export type ResultList =
-  paths["/api/v1/results"]["get"]["responses"][200]["content"]["application/json"];
-export type Leaderboard =
-  paths["/api/v1/leaderboard"]["get"]["responses"][200]["content"]["application/json"];
-export type ResultDetail =
-  paths["/api/v1/results/{publication_id}"]["get"]["responses"][200]["content"]["application/json"];
-export type AuditResponse =
-  paths["/api/v1/audit"]["get"]["responses"][200]["content"]["application/json"];
-export type RunSubmission =
-  paths["/api/v1/runs"]["post"]["requestBody"]["content"]["application/json"];
-export type RunAction =
-  paths["/api/v1/runs/{run_id}/actions"]["post"]["requestBody"]["content"]["application/json"];
-export type Accepted =
-  paths["/api/v1/runs"]["post"]["responses"][202]["content"]["application/json"];
+export type Session =
+  | { authenticated: false; login_url: string }
+  | { authenticated: true; actor: Actor };
+
+export interface BenchmarkPreset {
+  schema_version: "v1";
+  benchmark: string;
+  preset: string;
+  leaderboard_eligible: boolean;
+}
+
+export interface AgentPreset {
+  schema_version: "v1";
+  agent: string;
+  version: string;
+  reasoning_option: string | null;
+  reasoning_values: string[];
+}
+
+export interface Presets {
+  benchmarks: BenchmarkPreset[];
+  agents: AgentPreset[];
+}
+
+export interface RunView {
+  record: {
+    run_id: string;
+    created_at: string;
+    role: "final" | "diagnostic";
+    submission: {
+      benchmark: { name: string; preset: string };
+      model: { id: string; provider: string; reasoning_effort: string };
+      harness: { agent: string; version: string };
+      cost_ceiling_usd_per_trial: number;
+    };
+  };
+  state: { desired_state: "run" | "paused" | "cancelled" };
+  status: "queued" | "running" | "paused" | "cancelled" | "finished" | "cost_stopped";
+}
+
+export interface ParentJob {
+  id: string;
+  run_id: string;
+  stage: "queued" | "running" | "stopped" | "error";
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface LeaderboardRow {
+  benchmark: string;
+  preset: string;
+  agent: string;
+  agent_version: string;
+  model: string;
+  provider: string;
+  reasoning_effort: string;
+  n_attempts: number;
+  n_trials: number;
+  pass_rate: number;
+}
+
+export interface SystemState {
+  source_revision: string;
+  harbor_revision: string;
+  write_mode: "disabled" | "enabled";
+  ready: boolean;
+  projection: { runs: number; trials: number; parent_jobs: number };
+  capacity: { max_active_parent_jobs: number };
+}
+
+export interface PresetSubmission {
+  benchmark: { name: string; preset: string };
+  model: { id: string; provider: string; reasoning_effort: string };
+  harness: { agent: string; version: string };
+  cost_ceiling_usd_per_trial: number;
+  role: "final" | "diagnostic";
+}
 
 export type WorkbenchRecipe = AgentWorkbenchRecipeV1;
 export type WorkbenchPreview =
@@ -85,24 +130,10 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
-    readonly requestId: string | null = null,
-    readonly retryAt: number | null = null,
   ) {
     super(message);
     this.name = "ApiError";
   }
-
-  get transient(): boolean {
-    return this.status === 0 || this.status === 429 || this.status >= 500;
-  }
-}
-
-function retryAt(header: string | null): number | null {
-  if (!header) return null;
-  const seconds = Number(header);
-  if (Number.isFinite(seconds) && seconds >= 0) return Date.now() + seconds * 1000;
-  const date = Date.parse(header);
-  return Number.isFinite(date) ? date : null;
 }
 
 function cookie(name: string): string | null {
@@ -124,22 +155,16 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   try {
     response = await fetch(path, { ...init, headers, credentials: "same-origin" });
   } catch {
-    throw new ApiError(
-      0,
-      "network_error",
-      "The control service is unreachable. Check your connection and try again.",
-    );
+    throw new ApiError(0, "network_error", "The control service is not reachable.");
   }
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      error?: { code?: string; message?: string; request_id?: string };
+      error?: { code?: string; message?: string };
     } | null;
     throw new ApiError(
       response.status,
       body?.error?.code ?? "request_failed",
-      body?.error?.message ?? `Request failed with ${response.status}`,
-      body?.error?.request_id ?? null,
-      retryAt(response.headers.get("Retry-After")),
+      body?.error?.message ?? `Request failed with status ${response.status}.`,
     );
   }
   if (response.status === 204) return undefined as T;
@@ -147,26 +172,26 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 }
 
 export async function submitRun(
-  input: RunSubmission,
-  idempotencyKey: string = crypto.randomUUID(),
-): Promise<Accepted> {
-  return request<Accepted>("/api/v1/runs", {
+  input: PresetSubmission,
+): Promise<{ run: RunView["record"] }> {
+  return request("/api/v1/runs", {
     method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify(input),
   });
 }
 
-export async function signOut(): Promise<void> {
-  return request<void>("/auth/logout", { method: "POST" });
+export async function setRunState(
+  runId: string,
+  action: "pause" | "resume" | "cancel",
+): Promise<void> {
+  await request(`/api/v1/runs/${encodeURIComponent(runId)}/${action}`, {
+    method: "POST",
+  });
 }
 
-export async function actOnRun(runId: string, input: RunAction): Promise<Accepted> {
-  return request<Accepted>(`/api/v1/runs/${encodeURIComponent(runId)}/actions`, {
-    method: "POST",
-    headers: { "Idempotency-Key": crypto.randomUUID() },
-    body: JSON.stringify(input),
-  });
+export async function signOut(): Promise<void> {
+  await request("/auth/logout", { method: "POST" });
 }
 
 export async function previewWorkbenchRecipe(

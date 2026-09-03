@@ -48,6 +48,7 @@ import {
 const REVISION = "a".repeat(40);
 const OLD_REVISION = "c".repeat(40);
 const UPLOAD_SHA = "b".repeat(40);
+const PARENT_IMAGE = `ghcr.io/example/parent@sha256:${"d".repeat(64)}`;
 const ORIGIN = "https://placeholder-control.hf.space";
 const WORKBENCH_IMAGE = `example.invalid/workbench@sha256:${"d".repeat(64)}`;
 const WORKBENCH_VARIABLES = {
@@ -158,25 +159,16 @@ class FakeHttp implements HttpAdapter {
         body: {
           source_revision: REVISION,
           write_mode: this.currentWriteMode(),
-          projection: {
-            ready: this.systemIntegrityError === null,
-            integrity_error: this.systemIntegrityError,
-          },
-          resource_contract: {
-            spaces: 1,
-            buckets: 1,
-            operator_secrets: 2,
-          },
+          ready: this.systemIntegrityError === null,
+          projection: { runs: this.runItems.length, trials: 0, parent_jobs: 0 },
+          resources: { spaces: 1, buckets: 1, operator_secrets: 2 },
         },
       };
     }
     if (url.pathname === "/api/v1/runs") {
       return {
         status: 200,
-        body: {
-          items: this.runItems,
-          next_cursor: null,
-        },
+        body: { runs: this.runItems },
       };
     }
     return { status: 404, body: { status: "missing" } };
@@ -553,6 +545,7 @@ async function setup(
     environment: {
       HARBOR_HF_INSTALL_CONTROL_SECRET: "control-placeholder",
       HARBOR_HF_INSTALL_INFERENCE_SECRET: "inference-placeholder",
+      HARBOR_HF_PARENT_IMAGE: PARENT_IMAGE,
     },
   };
   const planned = await planInstall(
@@ -1151,6 +1144,7 @@ describe("installer workflows", () => {
     setupResult.http.runItems = [{ run_id: "existing-run" }];
     setupResult.dependencies.environment = {
       HARBOR_HF_CONTROL_BEARER_TOKEN: "operator-bearer-placeholder",
+      HARBOR_HF_PARENT_IMAGE: PARENT_IMAGE,
     };
 
     await expect(
@@ -1172,6 +1166,7 @@ describe("installer workflows", () => {
     await complete(setupResult, bootstrapResult.receipt);
     if (!setupResult.hf.state.space) throw new Error("test Space is missing");
     setupResult.hf.state.space.variables.HARBOR_HF_WRITE_MODE = "enabled";
+    setupResult.hf.state.space.variables.HARBOR_HF_PARENT_IMAGE = PARENT_IMAGE;
     setupResult.http.systemIntegrityError = "projection mismatch";
     setupResult.http.readyRequestCount = 0;
     setupResult.dependencies.environment = {
@@ -1225,6 +1220,7 @@ describe("installer workflows", () => {
     await complete(setupResult, bootstrapResult.receipt);
     if (!setupResult.hf.state.space) throw new Error("test Space is missing");
     setupResult.hf.state.space.variables.HARBOR_HF_WRITE_MODE = "enabled";
+    setupResult.hf.state.space.variables.HARBOR_HF_PARENT_IMAGE = PARENT_IMAGE;
     setupResult.hf.calls.length = 0;
     setupResult.http.requests.length = 0;
     setupResult.dependencies.environment = {};
@@ -1248,6 +1244,7 @@ describe("installer workflows", () => {
     setupResult.http.readyRequestCount = 0;
     setupResult.dependencies.environment = {
       HARBOR_HF_CONTROL_BEARER_TOKEN: "operator-bearer-placeholder",
+      HARBOR_HF_PARENT_IMAGE: PARENT_IMAGE,
     };
     await expect(
       activateInstall(
