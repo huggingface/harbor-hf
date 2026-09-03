@@ -36,6 +36,8 @@ const config: AppConfig = {
   observe_interval_ms: 1000,
   worker_receipt_grace_ms: 0,
   source_revision: "development",
+  workbench_runner: "disabled",
+  workbench_image: "python:3.12-slim",
   bootstrap_operator_subjects: [],
 };
 const runtime = await createRuntime(config);

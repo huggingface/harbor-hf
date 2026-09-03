@@ -7,26 +7,13 @@ import pytest
 import yaml
 from harbor.models.agent.context import AgentContext
 
-from harbor_hf_agents.dsh import agent as dsh_agent
 from harbor_hf_agents.dsh.agent import DshAgent
 
 
 @pytest.fixture(autouse=True)
-def no_job_inference_route(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        dsh_agent,
-        "use_job_inference_route",
-        AsyncMock(return_value=False),
-    )
-    monkeypatch.setattr(
-        dsh_agent,
-        "prepare_hf_inference_bridge",
-        AsyncMock(return_value=False),
-    )
-    monkeypatch.setattr(
-        "harbor_hf_agents.support.job_inference_route.stop_hf_inference_bridge",
-        AsyncMock(),
-    )
+def no_ambient_inference(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("DSH_API_KEY", "DSH_BASE_URL", "OPENAI_API_KEY", "OPENAI_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
 
 
 def _run_call(exec_calls: list) -> object:
@@ -37,22 +24,15 @@ def _run_call(exec_calls: list) -> object:
 
 
 @pytest.mark.asyncio
-async def test_job_route_uses_dsh_env(
-    temp_dir,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def use_route(_agent, _environment, env, **kwargs):
-        assert kwargs["base_url_key"] == "DSH_BASE_URL"
-        assert kwargs["api_key_key"] == "DSH_API_KEY"
-        env["DSH_BASE_URL"] = "http://127.0.0.1:18080/v1"
-        env["DSH_API_KEY"] = "harbor-local-inference-bridge"
-        return True
-
-    monkeypatch.setattr(dsh_agent, "use_job_inference_route", use_route)
+async def test_direct_openai_settings_populate_dsh_environment(temp_dir) -> None:
     agent = DshAgent(
         logs_dir=temp_dir,
         model_name="openai/openai/gpt-oss-20b:together",
         version="0.1.0-rc.7",
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+        },
     )
     mock_env = AsyncMock()
     mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
@@ -63,19 +43,19 @@ async def test_job_route_uses_dsh_env(
     run_call = _run_call(mock_env.exec.call_args_list)
     assert "dsh --profile headless" in run_call.kwargs["command"]
     assert "solve the task" in run_call.kwargs["command"]
-    assert run_call.kwargs["env"]["DSH_BASE_URL"] == "http://127.0.0.1:18080/v1"
-    assert run_call.kwargs["env"]["DSH_API_KEY"] == "harbor-local-inference-bridge"
+    assert run_call.kwargs["env"]["DSH_BASE_URL"] == "https://router.huggingface.co/v1"
+    assert run_call.kwargs["env"]["DSH_API_KEY"] == "direct-token"
     assert run_call.kwargs["env"]["DSH_TELEMETRY_DISABLED"] == "1"
     settings = yaml.safe_load((temp_dir / "settings.yaml").read_text())
-    route = settings["llm-pi-ai"]["providers"]["harbor"]
-    assert route["baseURL"] == "http://127.0.0.1:18080/v1"
-    assert route["models"][0]["id"] == "openai/gpt-oss-20b:together"
+    provider = settings["llm-pi-ai"]["providers"]["harbor"]
+    assert provider["baseURL"] == "https://router.huggingface.co/v1"
+    assert provider["models"][0]["id"] == "openai/gpt-oss-20b:together"
     patch = yaml.safe_load((temp_dir / "cordis.patch.yml").read_text())
     assert patch[0]["config"]["model"] == "openai/gpt-oss-20b:together"
 
 
 @pytest.mark.asyncio
-async def test_copies_openai_route_when_job_file_is_absent(
+async def test_copies_direct_openai_settings(
     temp_dir,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

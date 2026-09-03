@@ -236,25 +236,21 @@ such as prefix caching, speculation or MTP, CUDA graphs, attention backend, and
 MoE backend. Values observed after startup are stored separately from requested
 values so a provider default cannot silently change the run definition.
 
-Inference Provider targets lock one wire API with `api`: `chat-completions`
-(the default) or `responses`. Every provider-backed agent is an external custom
-agent from `packages/harbor-hf-agents` in the pinned worker checkout and is
-loaded through Harbor's public `AgentConfig.import_path` field. New provider
-runs do not select Harbor built-in agents. One declarative registry validates
-the logical agent, import path, wire API, parameters, trajectory schema, session
-requirement, and retry taxonomy without placing agent-specific branches in the
-generic worker.
+Inference Provider targets lock one native API with `api`:
+`chat-completions` or `responses`. Every provider-backed agent is an external
+Harbor agent from `packages/harbor-hf-agents` in the pinned worker checkout and
+is loaded through Harbor's public `AgentConfig.import_path` field. One
+declarative registry validates the logical agent, import path, API, parameters,
+trajectory schema, session requirement, and retry taxonomy without placing
+agent-specific branches in the generic worker.
 
-The scoped evidence proxy exposes only that route
-for the trial, forwards it to the matching Hugging Face Router endpoint, and
-rejects the other route. Deployment `parameters` are authoritative locked
-overrides: they replace same-named values supplied by an agent, while transport
-fields such as `model`, `input`, `messages`, `tools`, and `stream` are reserved.
-This keeps model-required controls such as `top_p` reproducible without letting
-an agent silently replace them. Both APIs record content-free request counts,
-routing, usage, latency, quota, and retry evidence; prompts, tool names,
-arguments, and response content are never written to the provider evidence
-stream.
+The resolved `AgentConfig.env` supplies the locked Hugging Face upstream,
+`${HF_INFERENCE_TOKEN}`, timeout, and output limit. Its
+`extra_allowed_hosts` includes the upstream hostname. The agent calls that
+upstream directly with its native API. The model profile is authoritative for
+model identity, and the model provider suffix, deployment provider, model API,
+and harness API must match. An incompatible combination is rejected before
+launch rather than translated.
 
 Inference Provider requests identify a model repository, but the provider API
 does not expose or accept a Hub commit for the weights it serves. The locked
@@ -266,17 +262,10 @@ revision-equivalent when the published value is `not_observed`.
 
 Provider `limits.max_spend_usd` and `limits.estimated_wave_cost_usd` must be
 configured together. The estimate is a conservative admission reservation for
-one deployment wave, must not exceed the cap, and is preserved in the run
-and wave locks. It remains charged after closure when provider billing is not
-attributable, so missing observations cannot reopen spent budget. It is not
-presented as observed provider billing. Provider
-`limits.max_attempts` is a hard forwarding limit for identical requests within
-one logical trial, not only an evidence label. Independent trials have separate
-retry budgets even when their request payloads are identical.
-`limits.min_request_interval_seconds` optionally enforces a fleet-wide start
-interval inside one provider wave. Use it with the provider concurrency limit
-when a route has a request-per-second constraint; queued time is not reported as
-provider latency.
+one deployment wave, must not exceed the cap, and is preserved in the Run and
+wave locks. Missing observed usage cannot reopen reserved spend. It is not
+presented as observed provider billing. Physical replacement attempts remain
+an explicit Harbor-HF policy and Harbor internal retries remain disabled.
 
 The endpoint deployment shape supports independent engines such as vLLM and
 llama.cpp. The discriminated Inference Provider profile covers models that are
@@ -474,13 +463,13 @@ recovery until the previous physical Job is terminal or absent.
 
 Every billable provider action also uses one parent-checked capacity claim keyed
 by provider service. The namespace runs at most one internal wave per provider
-service because independent manifests do not prove a larger shared quota. A
-busy controller waits and reruns remaining-time admission without reserving the
-action. Capacity claims do not expire across runs. The exact owner releases
-the claim after synchronous execution. If that Job crashes, the owning
-run's watchdog releases the abandoned claim after proving the Job terminal
-or absent, even when policy blocks a replacement. Other runs can then
-acquire the provider normally.
+service until an immutable capacity profile proves a larger safe value. A busy
+controller waits and reruns remaining-time admission without reserving the
+action. Capacity claims do not expire across Runs. The exact owner releases
+the claim after synchronous execution. If that Job crashes, the owning Run's
+watchdog releases the abandoned claim after proving the Job terminal or absent,
+even when policy blocks a replacement. Other Runs can then acquire the
+provider normally.
 
 One shared scheduled watchdog inspects only run IDs listed in its command.
 It never executes trials or reconciliation actions. For a retryable controller
@@ -492,10 +481,10 @@ attempt exhaustion require an operator decision.
 
 The controller Job timeout is limited to 85,800 seconds. The remaining 600
 seconds within HF Jobs' 86,400-second maximum are reserved for watchdog startup
-and verified endpoint cleanup. It must also exceed `execution.timeout_seconds`
-by at least 4,800 seconds, reserving time for source bootstrap, watchdog
-readiness, endpoint startup, and controller cleanup. The endpoint is not resumed until the watchdog
-has completed its source bootstrap and published a readiness handshake.
+and verified Endpoint cleanup. It must also exceed `execution.timeout_seconds`
+by at least 4,800 seconds, reserving time for source setup, watchdog readiness,
+Endpoint startup, and controller cleanup. The Endpoint is not resumed until the
+watchdog has completed source setup and published a readiness handshake.
 Endpoint readiness has its own 3,600-second allowance and does not consume or
 inherit the Harbor execution timeout.
 Readiness requires every positive `targetReplica` to be represented by a ready

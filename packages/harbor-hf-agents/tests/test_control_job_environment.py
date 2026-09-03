@@ -252,6 +252,37 @@ async def test_rejects_control_authority_under_an_alias(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_rejects_literal_inference_token_name(tmp_path: Path) -> None:
+    environment = _environment(tmp_path)
+    await environment.start(force_build=False)
+
+    with pytest.raises(JobEnvironmentSecurityError, match="HF_INFERENCE_TOKEN"):
+        await environment.exec(
+            "true",
+            env={"HF_INFERENCE_TOKEN": "private-inference-token"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_allows_api_alias_with_same_inference_token_value(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HF_INFERENCE_TOKEN", "private-inference-token")
+    environment = _environment(tmp_path)
+    await environment.start(force_build=False)
+
+    await environment.exec(
+        "true",
+        env={"OPENAI_API_KEY": "private-inference-token"},
+    )
+
+    assert FakeRuntime.instances[-1].exec_calls[-1]["environment"] == {
+        "OPENAI_API_KEY": "private-inference-token"
+    }
+
+
+@pytest.mark.asyncio
 async def test_timeout_retains_runtime_for_evidence_and_verifier(
     tmp_path: Path,
 ) -> None:
@@ -329,13 +360,12 @@ async def test_quiesce_retains_runtime_for_verifier_exec(tmp_path: Path) -> None
     assert result.return_code == 0
 
 
-def test_preflight_rejects_a_persistent_inference_token(
+def test_preflight_allows_inference_token_for_harbor_agent_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HF_INFERENCE_TOKEN", "persistent-token")
 
-    with pytest.raises(JobEnvironmentPreflightError, match="must not retain"):
-        ControlJobEnvironment.preflight()
+    ControlJobEnvironment.preflight()
 
 
 def test_preflight_classifies_missing_uid_support_as_infrastructure() -> None:

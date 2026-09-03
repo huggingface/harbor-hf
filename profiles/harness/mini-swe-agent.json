@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-14a01107c92ed5decd6f612a",
+  "record_id": "profile-c335e3a22ac2c243f01b6564",
   "created_at": "2026-08-22T00:00:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
@@ -13,7 +13,7 @@
     "agent": "mini-swe-agent",
     "revision": "2.4.6",
     "reasoning_effort": "off",
-    "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
+    "required_evidence": ["workspace", "trajectory", "verifier"],
     "harbor_agent": {
       "import_path": "harbor_hf_agents.mini_swe.agent:MiniSweAgent",
       "kwargs": {

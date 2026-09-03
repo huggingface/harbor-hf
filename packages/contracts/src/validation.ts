@@ -11,6 +11,7 @@ function load(name: string): object {
 
 export const schemas = {
   apiError: load("api-error-v1.schema.json"),
+  agentWorkbench: load("agent-workbench-v1.schema.json"),
   attemptSubmission: load("attempt-submission-v1.schema.json"),
   runAction: load("run-action-v1.schema.json"),
   runContinuation: load("run-continuation-v1.schema.json"),
@@ -27,8 +28,10 @@ ajv.addFormat("date-time", {
   type: "string",
   validate: (value: string) => Number.isFinite(Date.parse(value)),
 });
+ajv.addSchema(schemas.agentWorkbench);
 
 const validators = {
+  agentWorkbench: ajv.compile(schemas.agentWorkbench),
   attemptSubmission: ajv.compile(schemas.attemptSubmission),
   runAction: ajv.compile(schemas.runAction),
   runContinuation: ajv.compile(schemas.runContinuation),
@@ -59,6 +62,10 @@ function validate<T>(validator: ValidateFunction, value: unknown, label: string)
 
 export function validateAttemptSubmission<T>(value: unknown): T {
   return validate<T>(validators.attemptSubmission, value, "attempt submission");
+}
+
+export function validateAgentWorkbenchRecipe<T>(value: unknown): T {
+  return validate<T>(validators.agentWorkbench, value, "agent workbench recipe");
 }
 
 export function validateControlRecord<T>(value: unknown): T {

@@ -8,9 +8,6 @@ import pytest
 from harbor.models.agent.context import AgentContext
 
 from harbor_hf_agents.pi.agent import PiAgent, pi_jsonl_to_atif_trajectory
-from harbor_hf_agents.support.job_inference_route import (
-    use_job_inference_route,
-)
 from harbor_hf_agents.support.provider_outcome import TransientProviderError
 
 
@@ -108,51 +105,6 @@ def test_pi_jsonl_converts_tool_use_to_atif(temp_dir) -> None:
     assert trajectory.final_metrics.total_completion_tokens == 3
 
 
-@pytest.mark.asyncio
-async def test_uses_prepared_job_loopback_route() -> None:
-    agent = AsyncMock()
-    route = {
-        "schema_version": "v1",
-        "api": "chat-completions",
-        "base_url": "http://127.0.0.1:18080/v1",
-        "api_key": "harbor-local-inference-bridge",
-        "model": "example/model",
-        "max_output_tokens": 32768,
-    }
-    env: dict[str, str] = {}
-
-    with (
-        patch(
-            "harbor_hf_agents.support.job_inference_route._load_job_route",
-            return_value=route,
-        ),
-        patch(
-            "harbor_hf_agents.support.job_inference_route._job_bridge_pid",
-            return_value=123,
-        ),
-    ):
-        assert await use_job_inference_route(
-            agent,
-            AsyncMock(),
-            env,
-            base_url_key="OPENAI_BASE_URL",
-            api_key_key="OPENAI_API_KEY",
-            api="chat-completions",
-            allowed_model="example/model",
-        )
-    assert env == {
-        "OPENAI_BASE_URL": "http://127.0.0.1:18080/v1",
-        "OPENAI_API_KEY": "harbor-local-inference-bridge",
-        "JOB_INFERENCE_MAX_OUTPUT_TOKENS": "32768",
-    }
-    agent.exec_as_agent.assert_awaited_once()
-    command = agent.exec_as_agent.await_args.kwargs["command"]
-    assert "/proc/123/environ" in command
-    assert "CapBnd" in command
-    assert "/run/harbor-hf-inference.token" in command
-    agent.exec_as_root.assert_not_awaited()
-
-
 class TestPiAgent:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -247,7 +199,7 @@ class TestPiAgent:
             os.environ,
             {
                 "HARBOR_HF_AGENT_TIMEOUT_SECONDS": "900",
-                "HARBOR_HF_INFERENCE_TIMEOUT_SECONDS": "1800",
+                "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": "1800",
             },
             clear=False,
         ):

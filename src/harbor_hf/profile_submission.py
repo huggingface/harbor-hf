@@ -15,7 +15,6 @@ from harbor_hf.judge_recorder import JUDGE_RECORDER_PORT
 from harbor_hf.models import DeploymentProfile
 from harbor_hf.process import SubprocessRunner
 from harbor_hf.profiling import ProfilePlan, bind_profile_target
-from harbor_hf.provider_proxy import PROVIDER_RECORDER_PORT
 from harbor_hf.submission import (
     BucketApi,
     bucket_uri,
@@ -74,7 +73,6 @@ def build_profile_submit_command(
             ]
         )
     else:
-        exposed_ports.extend(["--expose", str(PROVIDER_RECORDER_PORT)])
         labels.extend(
             [
                 "--label",

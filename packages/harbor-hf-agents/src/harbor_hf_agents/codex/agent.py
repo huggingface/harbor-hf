@@ -1,4 +1,4 @@
-"""Standalone Codex CLI over the Harbor-HF Job inference route."""
+"""Standalone Codex CLI using Harbor's direct model connection."""
 
 import shlex
 from contextlib import suppress
@@ -10,11 +10,11 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.trial.paths import EnvironmentPaths
 
-from harbor_hf_agents.support.isolated_user import AGENT_USER
-from harbor_hf_agents.support.job_chat_completions import (
-    JobChatCompletionsAgent,
+from harbor_hf_agents.support.direct_inference import (
+    DirectChatCompletionsAgent,
     allowed_model_id,
 )
+from harbor_hf_agents.support.isolated_user import AGENT_USER
 
 
 class _FullModelCodex(HarborCodex):
@@ -36,7 +36,7 @@ class _FullModelCodex(HarborCodex):
                 "Invalid Codex config: model_providers must be a TOML table"
             )
         providers["harbor_hf"] = {
-            "name": "Harbor-HF loopback bridge",
+            "name": "Harbor-HF direct inference",
             "base_url": openai_base_url,
             "env_key": "OPENAI_API_KEY",
             "wire_api": "responses",
@@ -180,14 +180,13 @@ class _FullModelCodex(HarborCodex):
                 )
 
 
-class CodexAgent(JobChatCompletionsAgent, _FullModelCodex):
+class CodexAgent(DirectChatCompletionsAgent, _FullModelCodex):
     """Run standalone Codex under the isolated Job agent account."""
 
-    route_base_url_key = "OPENAI_BASE_URL"
-    route_api_key_key = "OPENAI_API_KEY"
-    route_label = "Codex"
-    inference_api = "responses"
-    inject_route_into_process = True
+    base_url_key = "OPENAI_BASE_URL"
+    api_key_key = "OPENAI_API_KEY"
+    agent_label = "Codex"
+    inject_environment_into_process = True
     install_packages = (
         "ca-certificates",
         "curl",

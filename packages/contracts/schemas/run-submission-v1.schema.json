@@ -4,44 +4,42 @@
   "title": "Run submission v1",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "benchmark",
-    "model",
-    "harness",
-    "launch_policy",
-    "ceiling_microusd",
-    "confirmed"
-  ],
+  "required": ["harness", "ceiling_microusd", "confirmed"],
   "properties": {
     "benchmark": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
-      "minLength": 2,
-      "maxLength": 160
+      "$ref": "#/$defs/Alias"
     },
     "model": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
-      "minLength": 2,
-      "maxLength": 160
+      "$ref": "#/$defs/Alias"
     },
     "harness": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
-      "minLength": 2,
-      "maxLength": 160
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Alias"
+        },
+        {
+          "$ref": "#/$defs/WorkbenchHarness"
+        }
+      ]
     },
     "deployment": {
-      "type": ["string", "null"],
-      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
-      "minLength": 2,
-      "maxLength": 160
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Alias"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "launch_policy": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
-      "minLength": 2,
-      "maxLength": 160
+      "$ref": "#/$defs/Alias"
+    },
+    "benchmark_config": {
+      "$ref": "#/$defs/Alias"
+    },
+    "benchmark_config_revision": {
+      "$ref": "#/$defs/RunSubmissionDigest"
     },
     "ceiling_microusd": {
       "type": "integer",
@@ -54,6 +52,77 @@
     "start_paused": {
       "type": "boolean",
       "default": false
+    }
+  },
+  "oneOf": [
+    {
+      "required": ["benchmark", "model", "launch_policy"],
+      "properties": {
+        "benchmark": {
+          "$ref": "#/$defs/Alias"
+        },
+        "model": {
+          "$ref": "#/$defs/Alias"
+        },
+        "harness": {
+          "$ref": "#/$defs/Alias"
+        },
+        "launch_policy": {
+          "$ref": "#/$defs/Alias"
+        },
+        "benchmark_config": false,
+        "benchmark_config_revision": false
+      }
+    },
+    {
+      "required": ["benchmark_config", "benchmark_config_revision"],
+      "properties": {
+        "benchmark_config": {
+          "$ref": "#/$defs/Alias"
+        },
+        "benchmark_config_revision": {
+          "$ref": "#/$defs/RunSubmissionDigest"
+        },
+        "harness": {
+          "$ref": "#/$defs/WorkbenchHarness"
+        },
+        "benchmark": false,
+        "model": false,
+        "deployment": false,
+        "launch_policy": false
+      }
+    }
+  ],
+  "$defs": {
+    "Alias": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "RunSubmissionDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "WorkbenchHarness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "recipe", "setup_test_id"],
+      "properties": {
+        "type": {
+          "const": "workbench"
+        },
+        "recipe": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "setup_test_id": {
+          "type": "string",
+          "pattern": "^setup-test-[a-z0-9-]+$",
+          "minLength": 12,
+          "maxLength": 160
+        }
+      }
     }
   }
 }

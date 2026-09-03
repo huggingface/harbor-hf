@@ -29,14 +29,10 @@ from harbor.models.trajectories import (
 from harbor.utils.trajectory_utils import format_trajectory_json
 from packaging.version import InvalidVersion, Version
 
-from harbor_hf_agents.support.hf_inference_bridge import (
-    prepare_hf_inference_bridge,
+from harbor_hf_agents.support.direct_inference import (
+    with_agent_environment_cleanup,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
-from harbor_hf_agents.support.job_inference_route import (
-    use_job_inference_route,
-    with_job_inference_bridge_cleanup,
-)
 from harbor_hf_agents.support.provider_outcome import validate_pi_terminal_output
 
 _CURRENT_PI_PACKAGE = "@earendil-works/pi-coding-agent"
@@ -535,7 +531,7 @@ if (timeout !== null) {
     def _http_idle_timeout_ms(self) -> int | None:
         """Fit Pi's HTTP idle timeout inside the locked task budget."""
         candidates: list[int] = []
-        inference_timeout = self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS")
+        inference_timeout = self._get_env("HARBOR_HF_PROVIDER_TIMEOUT_SECONDS")
         if inference_timeout is not None:
             if re.fullmatch(r"[1-9][0-9]*", inference_timeout) is None:
                 raise RuntimeError("locked inference timeout is invalid")
@@ -574,7 +570,7 @@ if (timeout !== null) {
 
     @override
     @with_prompt_template
-    @with_job_inference_bridge_cleanup
+    @with_agent_environment_cleanup
     async def run(  # noqa: C901 -- parser branches
         self,
         instruction: str,
@@ -632,36 +628,6 @@ if (timeout !== null) {
                 env[key] = val
 
         http_idle_timeout_ms = self._http_idle_timeout_ms()
-
-        allowed_model = self.model_name.split("/", 1)[1]
-        bridged = False
-        if provider == "openai":
-            bridged = await use_job_inference_route(
-                self,
-                environment,
-                env,
-                base_url_key="OPENAI_BASE_URL",
-                api_key_key="OPENAI_API_KEY",
-                api="chat-completions",
-                allowed_model=allowed_model,
-            )
-        if not bridged:
-            bridged = await prepare_hf_inference_bridge(
-                self,
-                environment,
-                env,
-                base_url_key="OPENAI_BASE_URL",
-                api_key_key="OPENAI_API_KEY",
-                inference_token=self._get_env("HF_INFERENCE_TOKEN"),
-                api="chat-completions",
-                allowed_model=allowed_model,
-                max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
-                max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
-                timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
-                max_output_tokens=self._get_env(
-                    "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"
-                ),
-            )
 
         model_args = (
             f"--provider {provider} --model {self.model_name.split('/', 1)[1]} "

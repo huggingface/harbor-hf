@@ -6,11 +6,16 @@ date: "2026-07-16"
 
 # Provider Evidence Recorder Plan
 
+> **Historical record — superseded 2026-09-02.** This document preserves a
+> retired evidence and inference design as factual history. Its imperative
+> language is not active guidance, and it does not authorize new deployment,
+> execution, recovery, or publication. Current behavior is defined by
+> [`harbor-integration-contract.md`](harbor-integration-contract.md).
+
 ## Status
 
-Implemented. Phases 1 through 3 passed local contracts and a remote
-Sandbox-to-Job canary on 2026-07-16. Provider-backed runs use the hosted
-recorder exclusively; the loopback-only transport has been removed.
+Historically implemented. Phases 1 through 3 passed local contracts and a
+remote Sandbox-to-Job canary on 2026-07-16. The implementation is now retired.
 
 ## Purpose
 

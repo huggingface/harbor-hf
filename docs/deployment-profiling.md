@@ -104,11 +104,10 @@ minimum is only a floor. Repeat boundary candidates at least three times. Keep
 client request concurrency, server sequence capacity, Harbor trial concurrency,
 active shards, and replica count separate in the evidence.
 
-Provider profiles use distinct benchmark tasks for every observation at a point
-so independent trials retain independent recorder retry budgets. Before the
-ladder starts, calibrated requests approach the declared context boundary while
-submitting the full declared output limit; a profile fails if either limit is
-not accepted.
+Provider profiles use distinct benchmark tasks for every observation at a
+point. Before the ladder starts, calibrated direct requests approach the
+declared context boundary while submitting the full declared output limit; a
+profile fails if either limit is not accepted.
 
 ## Capacity controls
 
@@ -117,9 +116,7 @@ Profile these limits separately because they control different resources:
 - `trial_job_template.max_jobs` limits active trial Jobs for one Run;
 - namespace and hardware caps limit Jobs across Runs;
 - Job start pacing limits how quickly new Jobs are authorized;
-- `inference_max_concurrency` limits provider requests from one trial Job;
-- `inference_max_total_concurrency` limits provider request units reserved by
-  one Run; and
+- measured deployment capacity limits reliable concurrent trials; and
 - budget admission limits work by reservation and cumulative ceiling.
 
 Compare trial Job limits at the same per-Job resources and provider limits.
@@ -135,11 +132,11 @@ headroom, active and reserved spend, and the limiting reason reported by the
 control service.
 
 Choose no production namespace, hardware, provider, or start-rate value from
-employee access or an undocumented assumption. The run plan must contain a
-verified quota or measured capacity source. It must also set a minimum worthwhile
-absolute goodput gain before the final comparison. A cleanup error, unsafe
-failure rate, provider throttling, missed deadline, or cost ceiling vetoes a
-candidate even when its throughput is higher.
+employee access or an undocumented assumption. The Run plan must contain a
+documented availability limit or measured capacity source. It must also set a
+minimum worthwhile absolute goodput gain before the final comparison. A
+cleanup error, unsafe failure rate, provider throttling, missed deadline, or
+cost ceiling vetoes a candidate even when its throughput is higher.
 
 When candidates are within the practical tie range, select the lower limit. A
 profile can recommend a value but cannot promote the service capacity profile
@@ -268,21 +265,22 @@ harbor-hf profile select profile.json --output selected-profile.json
 `plan` resolves exact identities and creates the candidate ladder without
 remote work. The plan embeds the immutable experiment, so the remote worker
 does not depend on mutable local state. `preflight` verifies the model revision,
-private Bucket, provider route or endpoint compute, current accelerator quota,
-hourly price, worst-case profile cost, and declared spend cap. Unknown endpoint
-quota fails closed. Provider profiles require an explicit estimate for the full
-profile through `--estimated-profile-cost-usd`; this is distinct from the
-deployment's run-wave estimate. Preflight rejects it when it exceeds
-either the provider or profile spend cap. Endpoint profiles omit this option.
+private Bucket, provider route or endpoint compute, current accelerator
+availability, hourly price, worst-case profile cost, and declared spend cap.
+Unknown Endpoint availability fails closed. Provider profiles require an
+explicit estimate for the full profile through
+`--estimated-profile-cost-usd`; this is distinct from the deployment's
+Run-wave estimate. Preflight rejects it when it exceeds either the provider or
+profile spend cap. Endpoint profiles omit this option.
 
 `run` submits one Hugging Face Job. For an Inference Endpoint, the worker
 requires a paused baseline, starts the cleanup watchdog before resume, keeps
 one endpoint lease across the whole ladder, and pauses and verifies zero ready
 replicas on every exit path. It first verifies ordinary chat, the reasoning
-channel when required, and a forced tool call. It then records content-free
-request observations for the endpoint or Inference Provider, tests ascending
-powers of two by running the sampled benchmark tasks through Harbor and the
-declared agent, and repeats the last two viable boundary points until each has
+channel when required, and a forced tool call. It then records trial outcomes,
+timing, and observed throttling for the Endpoint or Inference Provider, tests
+ascending powers of two by running the sampled benchmark tasks through Harbor
+and the declared agent, and repeats the last two viable boundary points until each has
 three successful measurements. Failed health-check attempts remain in the raw
 evidence but do not replace those measurements. Provider points use the same
 distinct task set at every concurrency so workload composition cannot affect

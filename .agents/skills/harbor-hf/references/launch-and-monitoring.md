@@ -1,29 +1,25 @@
 # Launch and monitoring
 
-Use the application-protected control Space for new Harbor-HF runs. The control API and immutable Bucket records are authoritative. HF Job logs are diagnostic and do not define run completion.
-
 ## Pre-submission checks
 
-Confirm the service is ready and inspect the promoted profiles:
+Before any remote action:
 
-```bash
-export HARBOR_HF_CONTROL_URL=https://<control-space>.hf.space
-hf auth whoami
-uv run harbor-hf status
-uv run harbor-hf profiles
-uv run harbor-hf jobs
-uv run harbor-hf endpoints
-```
+1. verify project authorization and cumulative spend;
+2. inspect the current repository revision and working tree;
+3. confirm the control service is ready and writes are enabled for the intended
+   class;
+4. inspect promoted profiles and exact resolved profile records;
+5. check for an existing matching Run or action;
+6. verify model provider suffix and inference API compatibility;
+7. verify worker and task image digests;
+8. review task count, physical-attempt limit, concurrency, timeouts, and Run
+   ceiling; and
+9. inspect active Jobs and owned Endpoints.
 
-Resolve the exact benchmark and model aliases plus the harness, deployment, and launch-policy aliases. Review the immutable profile IDs, task count, source revisions, worker image digest, hardware, attempt limit, reservation, cost ceiling, and publication role.
+Do not launch from a stale alias, mutable image, unreviewed recipe, or changed
+assumption.
 
-Before paid work, apply the paid-compute gate. Record the approved ceiling in micro-USD. Confirm that the cumulative authorized spend still covers every failed Job, repair, provider request, and active endpoint hour.
-
-Do not create a repository, Bucket, Space, Dataset, schedule, lease store, or status store for a run.
-
-## Run submission
-
-Submit one profile-based request:
+## Submission
 
 ```bash
 uv run harbor-hf run submit \
@@ -37,13 +33,12 @@ uv run harbor-hf run submit \
   --yes
 ```
 
-Keep the run ID and action ID from the response. A repeated request from the same actor with the same idempotency key must adopt the run. It must not create another logical run.
+Preserve the Run ID, first action ID, resolved profile IDs, and idempotency key.
+One request must produce one durable Run intent. After a timeout or connection
+loss, inspect the Run and deterministic HF resource identity before taking
+another mutating action.
 
-The run lock records the resolved profile identities, exact task IDs, input digests, source revision, and cost ceiling before the control service creates physical work.
-
-## Live monitoring
-
-Use the API projection or web console:
+## Monitoring
 
 ```bash
 uv run harbor-hf run status <run-id>
@@ -53,35 +48,37 @@ uv run harbor-hf results
 uv run harbor-hf audit
 ```
 
-Check logical and physical state separately:
+Track logical and physical state separately:
 
-- sealed tasks versus total logical tasks
-- physical attempts and their authorizing action IDs
-- pending Job actions and observed remote state
-- reserved and observed micro-USD versus the ceiling
-- endpoint requested state, ready replicas, and cleanup receipt
-- publication state and immutable result paths
+- preparation status and prepared-lock digest;
+- sealed, active, deferred, and unresolved logical tasks;
+- every physical attempt and selected attempt;
+- current action intent, observation, and receipt;
+- active and observed Jobs;
+- spend reservation and accepted cost;
+- evidence upload and manifest validation;
+- cancellation state; and
+- Endpoint ownership and cleanup.
 
-The SSE stream is only a delivery optimization. Refresh the projected API state after reconnecting.
+Job logs and terminal status are diagnostic. A logical task becomes
+authoritative only through accepted evidence and a durable selection record.
 
-## HF Job inspection
+## Direct inference checks
 
-Use HF CLI inspection only for diagnosis:
+For inference-backed execution confirm:
 
-```bash
-hf jobs ps --all --namespace <namespace> --format json
-hf jobs inspect <job-id> --namespace <namespace> --format json
-hf jobs logs <job-id> --namespace <namespace> --tail 200
-hf jobs stats <job-id> --namespace <namespace>
-```
+- only execution Jobs receive `HF_INFERENCE_TOKEN`;
+- `HF_TOKEN` is absent from all Jobs;
+- Harbor receives the locked model route and `AgentConfig`;
+- the upstream and API match the deployment;
+- the agent uses its native supported API;
+- the upstream host is in `extra_allowed_hosts`;
+- timeout and output-token limits match the Run lock; and
+- the agent and descendants stop before verifier execution.
 
-Do not submit, cancel, or recreate a control-owned Job directly. After an ambiguous API response, let the reconciler adopt the deterministic remote action identity.
+## Infrastructure replacement
 
-A stopped Job is not enough to declare a task complete. The selected attempt receipt and terminal selection in the Bucket are authoritative.
-
-## Infrastructure repair
-
-Only an unsealed task whose latest receipt is an eligible infrastructure failure can receive a replacement:
+Use:
 
 ```bash
 uv run harbor-hf run retry-infrastructure <run-id> \
@@ -90,40 +87,43 @@ uv run harbor-hf run retry-infrastructure <run-id> \
   --yes
 ```
 
-The control service rejects semantic outcomes, refusals, verifier failures, and benchmark failures. It also rejects cancellations and benchmark timeouts. It also rejects retries after the launch policy's physical-attempt limit is exhausted.
+Before applying, confirm:
 
-A valid task never runs again. Publication recovery never runs a task.
+- latest selected state is replacement-eligible infrastructure;
+- the prepared trial remains unchanged;
+- no physical attempt is active or ambiguously owned;
+- the attempt limit and Run ceiling permit replacement; and
+- the defect is not deterministic and shared.
+
+Semantic outcomes are terminal.
 
 ## Cancellation
 
-```bash
-uv run harbor-hf run cancel <run-id> --yes
-```
-
-Cancellation seals open logical tasks, suppresses queued launches that no longer have open tasks, preserves existing evidence, and continues observing already-created remote resources until cleanup is known.
+Cancellation records durable intent and stops future admission. It does not
+erase active evidence work or skip Endpoint cleanup. Continue monitoring until
+active attempts drain, receipts are durable, Endpoint state is safe, and the
+Run projection is terminal.
 
 ## Endpoint safety
 
-For every control-owned endpoint:
+Before and during endpoint-backed work, track exact Endpoint identity,
+deployment digest, owner, desired state, observed state, ready replica count,
+health, and cleanup action.
 
-1. Record the immutable endpoint identity before resume.
-2. Verify the requested backend with a real model request.
-3. Record active hourly cost.
-4. Request pause at the terminal boundary.
-5. Poll until the observed ready replica count is zero.
-6. Keep the run incomplete while cleanup remains unverified.
-
-Do not interpret a pause request or HTTP success as zero active replicas. If the control process stops during cleanup, the durable action receipt must let the restarted process continue from the same endpoint identity.
+A Run is not complete while an owned Endpoint is active or cleanup is
+unverified. Never release ownership based only on a successful command return;
+require a durable observation of paused state and zero ready replicas.
 
 ## Completion gate
 
-A run is complete only when:
+Declare completion only when:
 
-- every logical task has one terminal selection
-- no control action is pending
-- every owned endpoint has verified cleanup
-- the result publication receipt is durable
-- normalized rows and catalog objects validate
-- observed spend does not exceed the run ceiling
-
-Retain Jobs, attempts, evidence, metrics, costs, endpoint receipts, publication receipts, and audit records. Do not delete legacy resources until the private consumer and uniqueness audit authorizes that exact resource.
+- preparation is valid;
+- every logical task is sealed;
+- every selected attempt has verified evidence;
+- no control action is pending;
+- no owned Job is unresolved;
+- every owned Endpoint is safe;
+- spend is within the Run ceiling;
+- normalized results and publication receipts are durable; and
+- clean Bucket replay produces the same final state.

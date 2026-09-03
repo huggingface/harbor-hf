@@ -112,6 +112,108 @@
         }
       }
     },
+    "WorkbenchRunRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "benchmark_config",
+        "run_config_revision",
+        "recipe_digest",
+        "revision_id",
+        "setup_test_id"
+      ],
+      "properties": {
+        "benchmark_config": {
+          "$ref": "#/$defs/Id"
+        },
+        "run_config_revision": {
+          "$ref": "#/$defs/Digest"
+        },
+        "recipe_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "revision_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "setup_test_id": {
+          "$ref": "#/$defs/Id"
+        }
+      }
+    },
+    "WorkbenchSetupAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["setup_test_id", "recipe_digest", "revision_id", "completed_at"],
+      "properties": {
+        "setup_test_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "recipe_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "revision_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "completed_at": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      }
+    },
+    "WorkbenchRunLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "benchmark_config",
+        "run_config_revision",
+        "compiler_revision",
+        "template_harness",
+        "resolved_harness_profile_id",
+        "recipe",
+        "recipe_digest",
+        "revision_id",
+        "setup_attestation"
+      ],
+      "properties": {
+        "benchmark_config": {
+          "$ref": "#/$defs/Id"
+        },
+        "run_config_revision": {
+          "$ref": "#/$defs/Digest"
+        },
+        "compiler_revision": {
+          "$ref": "#/$defs/Id"
+        },
+        "template_harness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "profile_id"],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "profile_id": {
+              "$ref": "#/$defs/Digest"
+            }
+          }
+        },
+        "resolved_harness_profile_id": {
+          "$ref": "#/$defs/Digest"
+        },
+        "recipe": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "recipe_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "revision_id": {
+          "$ref": "#/$defs/Id"
+        },
+        "setup_attestation": {
+          "$ref": "#/$defs/WorkbenchSetupAttestation"
+        }
+      }
+    },
     "TaskLock": {
       "type": "object",
       "additionalProperties": false,
@@ -224,6 +326,9 @@
         },
         {
           "$ref": "#/$defs/CapacityProfileObject"
+        },
+        {
+          "$ref": "#/$defs/LegacyCapacityProfileObject"
         }
       ]
     },
@@ -425,6 +530,9 @@
             },
             "start_paused": {
               "type": "boolean"
+            },
+            "workbench": {
+              "$ref": "#/$defs/WorkbenchRunRequest"
             }
           }
         }
@@ -509,6 +617,9 @@
             },
             "start_paused": {
               "type": "boolean"
+            },
+            "workbench": {
+              "$ref": "#/$defs/WorkbenchRunLock"
             }
           }
         }
@@ -878,10 +989,8 @@
         "provider",
         "upstream",
         "agent_model",
-        "bridge_model",
+        "provider_model",
         "api",
-        "max_requests",
-        "max_concurrency",
         "timeout_seconds",
         "max_output_tokens",
         "context_window",
@@ -907,28 +1016,13 @@
           "minLength": 1,
           "maxLength": 512
         },
-        "bridge_model": {
+        "provider_model": {
           "type": "string",
           "minLength": 1,
           "maxLength": 512
         },
         "api": {
           "enum": ["chat-completions", "responses"]
-        },
-        "max_requests": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4096
-        },
-        "max_concurrency": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 64
-        },
-        "max_total_concurrency": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65536
         },
         "timeout_seconds": {
           "type": "integer",
@@ -1859,6 +1953,28 @@
           "minLength": 1,
           "maxLength": 512
         },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "extra_allowed_hosts": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          }
+        },
         "kwargs": {
           "type": "object",
           "properties": {
@@ -1891,6 +2007,11 @@
           "minLength": 1,
           "maxLength": 512
         },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
         "model_name": {
           "type": "string",
           "minLength": 1,
@@ -1899,6 +2020,23 @@
         "kwargs": {
           "type": "object",
           "additionalProperties": true
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "extra_allowed_hosts": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253
+          }
         },
         "override_setup_timeout_sec": {
           "type": "integer",
@@ -2143,6 +2281,42 @@
               "inference_api": {},
               "inference_max_requests": {},
               "inference_max_concurrency": {},
+              "inference_timeout_seconds": {},
+              "inference_max_output_tokens": {},
+              "inference_provider": {},
+              "input_price_microusd_per_million_tokens": {},
+              "output_price_microusd_per_million_tokens": {},
+              "cache_read_price_microusd_per_million_tokens": {},
+              "cache_write_price_microusd_per_million_tokens": {},
+              "context_window": {},
+              "harbor_version": {},
+              "worker_revision": {}
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["inference_upstream"],
+            "properties": {
+              "inference_upstream": {}
+            }
+          },
+          "then": {
+            "required": [
+              "inference_api",
+              "inference_timeout_seconds",
+              "inference_max_output_tokens",
+              "inference_provider",
+              "input_price_microusd_per_million_tokens",
+              "output_price_microusd_per_million_tokens",
+              "cache_read_price_microusd_per_million_tokens",
+              "cache_write_price_microusd_per_million_tokens",
+              "context_window",
+              "harbor_version",
+              "worker_revision"
+            ],
+            "properties": {
+              "inference_api": {},
               "inference_timeout_seconds": {},
               "inference_max_output_tokens": {},
               "inference_provider": {},
@@ -2413,6 +2587,66 @@
         }
       }
     },
+    "LegacyCapacityProfileSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "max_active_sandboxes",
+        "hardware_limits",
+        "start_burst",
+        "start_refill_tokens",
+        "start_refill_period_seconds"
+      ],
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "max_active_sandboxes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "hardware_limits": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["hardware", "max_active_sandboxes"],
+            "properties": {
+              "hardware": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "max_active_sandboxes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1024
+              }
+            }
+          }
+        },
+        "start_burst": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "start_refill_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "start_refill_period_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      }
+    },
     "ProfileSpec": {
       "oneOf": [
         {
@@ -2432,6 +2666,9 @@
         },
         {
           "$ref": "#/$defs/CapacityProfileSpec"
+        },
+        {
+          "$ref": "#/$defs/LegacyCapacityProfileSpec"
         }
       ]
     },
@@ -3247,6 +3484,53 @@
         }
       ]
     },
+    "LegacyCapacityProfileObject": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/Base"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_version",
+            "kind",
+            "record_id",
+            "created_at",
+            "actor",
+            "profile_kind",
+            "name",
+            "spec"
+          ],
+          "properties": {
+            "schema_version": {
+              "const": "v1"
+            },
+            "kind": {
+              "const": "profile.object"
+            },
+            "record_id": {
+              "$ref": "#/$defs/Id"
+            },
+            "created_at": {
+              "$ref": "#/$defs/Timestamp"
+            },
+            "actor": {
+              "$ref": "#/$defs/Actor"
+            },
+            "profile_kind": {
+              "const": "capacity"
+            },
+            "name": {
+              "$ref": "#/$defs/Id"
+            },
+            "spec": {
+              "$ref": "#/$defs/LegacyCapacityProfileSpec"
+            }
+          }
+        }
+      ]
+    },
     "PreparedTrial": {
       "allOf": [
         {
@@ -3674,7 +3958,6 @@
             "namespace",
             "capacity_profile_id",
             "hardware",
-            "reserved_provider_requests",
             "tokens_remaining",
             "refill_cursor_at",
             "previous_grant_id"
@@ -3853,8 +4136,7 @@
         "max_timeout_seconds",
         "lifetime_overhead_seconds",
         "max_image_bytes",
-        "max_image_entries",
-        "root_bootstrap_command"
+        "max_image_entries"
       ],
       "properties": {
         "flavors": {
@@ -3986,6 +4268,26 @@
               "inference_timeout_seconds": {},
               "inference_max_output_tokens": {},
               "root_bootstrap_command": {}
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["inference_upstream"],
+            "properties": {
+              "inference_upstream": {}
+            }
+          },
+          "then": {
+            "required": [
+              "inference_api",
+              "inference_timeout_seconds",
+              "inference_max_output_tokens"
+            ],
+            "properties": {
+              "inference_api": {},
+              "inference_timeout_seconds": {},
+              "inference_max_output_tokens": {}
             }
           }
         }

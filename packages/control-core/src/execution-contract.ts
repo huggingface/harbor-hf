@@ -34,7 +34,7 @@ function clone<T>(value: T): T {
 function checkedHarborRoute(
   model: ModelProfileSpec,
   provider: string,
-): { harborProvider: "openai"; bridgeModel: string } {
+): { harborProvider: "openai"; providerModel: string } {
   const separator = model.harbor_model_name.indexOf("/");
   if (separator < 1 || separator === model.harbor_model_name.length - 1)
     throw new ProfileResolutionError("Harbor model route is malformed");
@@ -43,15 +43,15 @@ function checkedHarborRoute(
     throw new ProfileResolutionError(
       `unsupported Harbor model provider prefix: ${harborProvider}`,
     );
-  const bridgeModel = model.harbor_model_name.slice(separator + 1);
-  const providerSeparator = bridgeModel.lastIndexOf(":");
-  if (providerSeparator < 1 || providerSeparator === bridgeModel.length - 1)
+  const providerModel = model.harbor_model_name.slice(separator + 1);
+  const providerSeparator = providerModel.lastIndexOf(":");
+  if (providerSeparator < 1 || providerSeparator === providerModel.length - 1)
     throw new ProfileResolutionError("Harbor model route has no provider suffix");
-  if (bridgeModel.slice(providerSeparator + 1) !== provider)
+  if (providerModel.slice(providerSeparator + 1) !== provider)
     throw new ProfileResolutionError(
       "Harbor model provider suffix does not match the deployment provider",
     );
-  return { harborProvider, bridgeModel };
+  return { harborProvider, providerModel };
 }
 
 function assertCompatibility(
@@ -70,10 +70,7 @@ function assertCompatibility(
   if (deployment.spec.route !== "hf_job")
     throw new ProfileResolutionError("imported deployments cannot be composed");
   const source = deployment.spec.trial_job_template ?? deployment.spec;
-  const inferenceRequired =
-    deployment.spec.inference_token === "required" ||
-    deployment.spec.trial_job_template?.inference_token === "required";
-  if (!inferenceRequired) return;
+  if (!source.inference_upstream) return;
   const api = source.inference_api;
   if (!api) throw new ProfileResolutionError("deployment has no inference API");
   const modelInferenceApis = model.spec.compatibility.inference_apis;
@@ -130,29 +127,15 @@ function resolvedInference(
     "inference provider",
   );
   const route = checkedHarborRoute(model.spec, provider);
-  const maxTotalConcurrency =
-    "inference_max_total_concurrency" in source &&
-    typeof source.inference_max_total_concurrency === "number"
-      ? source.inference_max_total_concurrency
-      : undefined;
   return {
     harbor_provider: route.harborProvider,
     provider,
     upstream: requiredString(source.inference_upstream, "inference upstream"),
     agent_model: model.spec.harbor_model_name,
-    bridge_model: route.bridgeModel,
+    provider_model: route.providerModel,
     api: requiredString(source.inference_api, "inference API") as
       | "chat-completions"
       | "responses",
-    max_requests: requiredNumber(
-      source.inference_max_requests,
-      "inference request limit",
-    ),
-    max_concurrency: requiredNumber(
-      source.inference_max_concurrency,
-      "inference concurrency limit",
-    ),
-    ...(maxTotalConcurrency ? { max_total_concurrency: maxTotalConcurrency } : {}),
     timeout_seconds: requiredNumber(
       source.inference_timeout_seconds,
       "inference timeout",
@@ -195,7 +178,7 @@ function piModelRuntime(
     provider: inference.harbor_provider,
     base_url: "$OPENAI_BASE_URL",
     api: "openai-completions",
-    model_id: inference.bridge_model,
+    model_id: inference.provider_model,
     context_window: inference.context_window,
     max_tokens: inference.max_output_tokens,
     input_price: inputPrice,
@@ -270,9 +253,20 @@ function composedAgent(
       );
     kwargs.thinking_format = format;
   }
+  const upstream = new URL(inference.upstream);
   return {
     import_path: template.import_path,
     model_name: inference.agent_model,
+    env: {
+      ...clone(template.env ?? {}),
+      OPENAI_API_KEY: `\${HF_INFERENCE_TOKEN}`,
+      OPENAI_BASE_URL: inference.upstream,
+      HARBOR_HF_MAX_OUTPUT_TOKENS: String(inference.max_output_tokens),
+      HARBOR_HF_PROVIDER_TIMEOUT_SECONDS: String(inference.timeout_seconds),
+    },
+    extra_allowed_hosts: [
+      ...new Set([...(template.extra_allowed_hosts ?? []), upstream.hostname]),
+    ],
     ...(Object.keys(kwargs).length > 0 ? { kwargs } : {}),
     ...(template.override_setup_timeout_sec
       ? { override_setup_timeout_sec: template.override_setup_timeout_sec }
@@ -300,10 +294,8 @@ export function composeExecutionContract(
     harness: clone(harness.spec),
     deployment: clone(deployment.spec),
   };
-  const inferenceRequired =
-    deployment.spec.inference_token === "required" ||
-    deployment.spec.trial_job_template?.inference_token === "required";
-  const inference = inferenceRequired
+  const source = deployment.spec.trial_job_template ?? deployment.spec;
+  const inference = source.inference_upstream
     ? resolvedInference(model, deployment)
     : undefined;
   if (deployment.spec.preparation !== "required")

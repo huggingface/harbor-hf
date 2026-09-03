@@ -14,6 +14,16 @@ class TestTtyInput extends PassThrough {
 
 class TestTtyOutput extends PassThrough {
   readonly isTTY = true;
+  readonly chunks: Buffer[] = [];
+
+  constructor() {
+    super();
+    this.on("data", (chunk: Buffer) => this.chunks.push(Buffer.from(chunk)));
+  }
+
+  displayed(): string {
+    return Buffer.concat(this.chunks).toString("utf8");
+  }
 }
 
 describe("installer secret input", () => {
@@ -34,7 +44,7 @@ describe("installer secret input", () => {
     const pending = new TtyInstallerSecretInput(input, output).read("HF_TOKEN");
     input.end("secret-placeholder\n");
     await expect(pending).resolves.toBe("secret-placeholder");
-    const displayed = output.read()?.toString("utf8") ?? "";
+    const displayed = output.displayed();
     expect(displayed).toContain("Control service credential:");
     expect(displayed).not.toContain("secret-placeholder");
     expect(input.isRaw).toBe(false);
@@ -48,7 +58,7 @@ describe("installer secret input", () => {
     );
     input.end("inference-placeholder\n");
     await expect(pending).resolves.toBe("inference-placeholder");
-    const displayed = output.read()?.toString("utf8") ?? "";
+    const displayed = output.displayed();
     expect(displayed).toContain("Inference-only credential/token:");
     expect(displayed).not.toContain("inference-placeholder");
     expect(input.isRaw).toBe(false);

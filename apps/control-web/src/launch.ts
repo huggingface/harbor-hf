@@ -14,8 +14,7 @@ export type DeploymentKind = "providers" | "endpoints";
 
 export type LaunchSelection = {
   model: string;
-  harnessAgent: string;
-  reasoning: ReasoningOption;
+  harness: string;
   deploymentKind: DeploymentKind;
 };
 
@@ -23,6 +22,10 @@ type ApprovedProfile = {
   alias: string;
   spec: Record<string, unknown>;
 };
+
+function objectValue(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 export function approvedAlias(
   selected: string,
@@ -54,6 +57,53 @@ export function deploymentKind(
   if (upstream.includes("router.huggingface.co")) return "providers";
   if (upstream === "<redacted>") return "other";
   return "endpoints";
+}
+
+export function deploymentRequiresPreparation(spec: Record<string, unknown>): boolean {
+  return spec.route === "hf_job" && spec.preparation === "required";
+}
+
+function preparedBenchmark(spec: Record<string, unknown>): boolean {
+  if (!objectValue(spec.harbor_job)) return false;
+  const taskIds = spec.task_ids;
+  const sourceTaskIds = spec.source_task_ids;
+  const trialIndices = spec.trial_indices;
+  if (
+    !Array.isArray(taskIds) ||
+    !Array.isArray(sourceTaskIds) ||
+    !Array.isArray(trialIndices) ||
+    sourceTaskIds.length !== taskIds.length ||
+    trialIndices.length !== taskIds.length
+  )
+    return false;
+  return (
+    new Set(
+      sourceTaskIds.map(
+        (sourceTaskId, index) =>
+          `${String(sourceTaskId)}:${String(trialIndices[index])}`,
+      ),
+    ).size === taskIds.length
+  );
+}
+
+export function compatibleBenchmarks(
+  benchmarks: ReadonlyArray<ApprovedProfile>,
+  deployment: Record<string, unknown>,
+): ApprovedProfile[] {
+  if (!deploymentRequiresPreparation(deployment)) return [...benchmarks];
+  return benchmarks.filter((benchmark) => preparedBenchmark(benchmark.spec));
+}
+
+export function selectCompatibleBenchmarkAlias(
+  benchmarks: ReadonlyArray<ApprovedProfile>,
+  deployment: Record<string, unknown>,
+  selected: string,
+): string {
+  const compatible = compatibleBenchmarks(benchmarks, deployment);
+  if (compatible.some((benchmark) => benchmark.alias === selected)) return selected;
+  const fallback = compatible[0];
+  if (fallback) return fallback.alias;
+  throw new Error("no compatible approved benchmark is available for this deployment");
 }
 
 export function harnessAgent(spec: Record<string, unknown>): string {
@@ -96,11 +146,17 @@ export function profileLabel(
     return typeof spec.model_id === "string" ? spec.model_id : alias;
   if (kind === "harness") {
     const agent = typeof spec.agent === "string" ? spec.agent : alias;
+    if (agent === "command-agent") return humanize(alias);
     if (agent === "dsh" || agent.startsWith("dsh-") || alias.startsWith("dsh"))
       return "DeepSeek Harness";
     if (agent === "opencode") return "OpenCode";
-    if (agent === "fx") return "FX";
-    if (agent === "pi") return "Pi";
+    if (agent === "pi") {
+      const reasoning = REASONING_OPTIONS.find(
+        ([option]) => option === spec.reasoning_effort,
+      )?.[1];
+      if (!reasoning) return "Pi";
+      return `Pi · ${reasoning === "None" ? "No" : reasoning} reasoning`;
+    }
     if (agent === "control-smoke") return "Control smoke";
     return humanize(agent);
   }
@@ -115,17 +171,10 @@ export function labeledHarness(value: string | null | undefined): string {
 
 export function selectHarnessAlias(
   harnesses: ReadonlyArray<{ alias: string; spec: Record<string, unknown> }>,
-  agent: string,
-  reasoning: string,
+  alias: string,
 ): string {
-  const match = harnesses.find(
-    (item) =>
-      harnessAgent(item.spec) === agent && harnessReasoning(item.spec) === reasoning,
-  );
-  if (!match)
-    throw new Error(
-      `no approved ${agent} harness with reasoning ${reasoning} is available`,
-    );
+  const match = harnesses.find((item) => item.alias === alias);
+  if (!match) throw new Error(`approved harness ${alias || "selection"} is missing`);
   return match.alias;
 }
 
@@ -157,6 +206,7 @@ export function firstCompatibleLaunchSelection(
   models: ReadonlyArray<ApprovedProfile>,
   harnesses: ReadonlyArray<ApprovedProfile>,
   deployments: ReadonlyArray<ApprovedProfile>,
+  preferredHarness?: string,
 ): LaunchSelection {
   const modelAliases = new Set(models.map((profile) => profile.alias));
   const harnessByAlias = new Map(harnesses.map((profile) => [profile.alias, profile]));
@@ -171,21 +221,12 @@ export function firstCompatibleLaunchSelection(
       if (typeof model !== "string" || !modelAliases.has(model)) continue;
       for (const harnessAlias of deploymentHarnesses) {
         if (typeof harnessAlias !== "string") continue;
+        if (preferredHarness && harnessAlias !== preferredHarness) continue;
         const harness = harnessByAlias.get(harnessAlias);
         if (!harness) continue;
-        const agent = harnessAgent(harness.spec);
-        const reasoning = harnessReasoning(harness.spec);
-        const selectedHarness = harnesses.find(
-          (profile) =>
-            harnessAgent(profile.spec) === agent &&
-            harnessReasoning(profile.spec) === reasoning,
-        );
-        if (!selectedHarness || !deploymentHarnesses.includes(selectedHarness.alias))
-          continue;
         return {
           model,
-          harnessAgent: agent,
-          reasoning,
+          harness: harness.alias,
           deploymentKind: kind,
         };
       }

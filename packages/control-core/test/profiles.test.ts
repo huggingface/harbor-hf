@@ -1,7 +1,7 @@
 import type {
   BenchmarkProfileSpec,
-  HFJobDeploymentProfileSpec,
   HarnessProfileSpec,
+  HFJobDeploymentProfileSpec,
   ModelProfileSpec,
   PreparedTrial,
   ResolvedExecutionContract,
@@ -12,8 +12,8 @@ import { canonicalJson } from "@harbor-hf/contracts";
 import { describe, expect, it } from "vitest";
 import { composeExecutionContract } from "../src/execution-contract.js";
 import {
-  preparedTrialJobLaunch,
   ProfileResolutionError,
+  preparedTrialJobLaunch,
   validatePreparedRunProfiles,
 } from "../src/profiles.js";
 
@@ -78,7 +78,6 @@ function deployment(): HFJobDeploymentProfileSpec {
     timeout_seconds: 86_400,
     preparation_timeout_seconds: 3_600,
     trusted_worker: true,
-    inference_token: "forbidden",
     preparation: "required",
     trial_job_template: {
       flavors: [
@@ -99,14 +98,10 @@ function deployment(): HFJobDeploymentProfileSpec {
           active_hourly_cost_microusd: 30_000,
         },
       ],
-      inference_token: "required",
       inference_upstream: "https://router.huggingface.co",
       inference_api: "chat-completions",
-      inference_max_requests: 256,
-      inference_max_concurrency: 1,
       inference_timeout_seconds: 1_800,
       inference_max_output_tokens: 32_768,
-      root_bootstrap_command: ["/opt/worker/start-root-services"],
       max_jobs: 2,
       default_cpus: 1,
       default_memory_mb: 2_048,
@@ -206,8 +201,12 @@ describe("resolved execution profiles", () => {
     expect(first.source_profiles.harness).toEqual(second.source_profiles.harness);
     expect(first.harbor_agent?.model_name).toBe("openai/example/model:provider");
     expect(second.harbor_agent?.model_name).toBe("openai/example/other:provider");
-    expect(first.inference?.bridge_model).toBe("example/model:provider");
-    expect(second.inference?.bridge_model).toBe("example/other:provider");
+    expect(first.inference?.provider_model).toBe("example/model:provider");
+    expect(second.inference?.provider_model).toBe("example/other:provider");
+    expect(first.harbor_agent?.env).toMatchObject({
+      OPENAI_API_KEY: `\${HF_INFERENCE_TOKEN}`,
+      OPENAI_BASE_URL: "https://router.huggingface.co",
+    });
   });
 
   it("produces a byte-stable immutable execution contract", () => {
@@ -288,43 +287,52 @@ describe("resolved execution profiles", () => {
     expect(preparedTrialJobLaunch(execution(), preparedTrial())).toMatchObject({
       job_image: `example.invalid/worker@${digest}`,
       task_image: `example.invalid/task@${digest}`,
-      job_command: [
-        "/bin/sh",
-        "-c",
-        [
-          "set -eu",
-          "'/opt/worker/start-root-services'",
-          "unset HF_INFERENCE_TOKEN HARBOR_HF_INFERENCE_TOKEN",
-          "exec 'run-worker'",
-        ].join("\n"),
-      ],
+      job_command: ["run-worker"],
       hardware: "cpu-upgrade",
       timeout_seconds: 3_000,
       active_hourly_cost_microusd: 30_000,
       max_jobs: 2,
       max_image_bytes: 20 * 1024 * 1024 * 1024,
       max_image_entries: 500_000,
-      inference_token: "required",
       inference_model: "example/model:provider",
     });
   });
 
-  it("quotes bootstrap and worker arguments in the locked shell command", () => {
+  it("uses the Harbor worker command directly", () => {
     const value = deployment();
     value.job_command = ["run worker", "it's-locked"];
-    if (!value.trial_job_template) throw new Error("trial template is missing");
-    value.trial_job_template.root_bootstrap_command = ["/root setup", "first"];
     const composed = composeExecutionContract(resolved(model, "model", value));
 
     expect(preparedTrialJobLaunch(composed, preparedTrial()).job_command).toEqual([
-      "/bin/sh",
-      "-c",
-      [
-        "set -eu",
-        "'/root setup' 'first'",
-        "unset HF_INFERENCE_TOKEN HARBOR_HF_INFERENCE_TOKEN",
-        `exec 'run worker' 'it'"'"'s-locked'`,
-      ].join("\n"),
+      "run worker",
+      "it's-locked",
     ]);
+  });
+
+  it("wraps only bridge-compatible workers in their root bootstrap", () => {
+    const value = deployment();
+    value.job_command = ["run worker", "it's-locked"];
+    if (!value.trial_job_template) throw new Error("trial template is missing");
+    value.trial_job_template.inference_token = "required";
+    value.trial_job_template.inference_max_requests = 64;
+    value.trial_job_template.inference_max_concurrency = 4;
+    value.trial_job_template.root_bootstrap_command = ["/root setup", "first"];
+    const composed = composeExecutionContract(resolved(model, "model", value));
+
+    expect(preparedTrialJobLaunch(composed, preparedTrial())).toMatchObject({
+      inference_token: "required",
+      inference_max_requests: 64,
+      inference_max_concurrency: 4,
+      job_command: [
+        "/bin/sh",
+        "-c",
+        [
+          "set -eu",
+          "'/root setup' 'first'",
+          "unset HF_INFERENCE_TOKEN HARBOR_HF_INFERENCE_TOKEN",
+          `exec 'run worker' 'it'"'"'s-locked'`,
+        ].join("\n"),
+      ],
+    });
   });
 });

@@ -76,12 +76,10 @@ from harbor_hf.provider_agents import (
     validate_provider_agent_evidence,
 )
 from harbor_hf.provider_models import (
-    ProviderEndpointEvidence,
     ProviderTarget,
-    unavailable,
+    provider_upstream_url,
+    routed_provider_model,
 )
-from harbor_hf.provider_proxy import PROVIDER_RECORDER_PORT, ProviderEvidenceProxy
-from harbor_hf.providers import routed_provider_model
 from harbor_hf.runs import (
     EndpointWaveTarget,
     ProviderWaveTarget,
@@ -145,8 +143,6 @@ class FrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-_SCOPED_PROVIDER_API_KEY = "harbor-hf-scoped-provider-proxy"
-
 _TRIAL_FAILURE_MARKERS: tuple[tuple[RetryCategory, tuple[str, ...]], ...] = (
     (
         "authentication",
@@ -193,7 +189,7 @@ _MISSING_PREBUILT_IMAGE_MARKER = "hf sandbox requires a prebuilt docker image"
 
 _TERMINAL_MARKERS = ("_SUCCESS", "_FAILED", "_CANCELLED")
 _HF_JOB_ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
-_PROVIDER_RECORDER_READY_TIMEOUT_SECONDS = 120
+_JUDGE_RECORDER_READY_TIMEOUT_SECONDS = 120
 
 
 class LockedSubmitWaveAction(FrozenModel):
@@ -557,7 +553,6 @@ def _run_staged_wave(
     )
     error: Exception | None = None
     cleanup_error: Exception | None = None
-    provider_proxy: ProviderEvidenceProxy | None = None
     judge_recorder: JudgeEvidenceRecorder | None = None
     judge_base_url: str | None = None
     shard_checksums: dict[str, str] = {}
@@ -583,12 +578,11 @@ def _run_staged_wave(
                 destination=run_root.parent / "sources" / "benchmark",
             )
         overall_deadline = _overall_wave_deadline(run, lock, monotonic)
-        base_url, provider_proxy = _prepare_wave_transport(
+        base_url = _prepare_wave_target(
             lock,
             wave_root,
             events,
             lifecycle,
-            token,
             overall_deadline,
             monotonic,
         )
@@ -611,16 +605,13 @@ def _run_staged_wave(
             identifier,
             clock,
             monotonic,
-            provider_proxy=provider_proxy,
             judge_recorder=judge_recorder,
             judge_base_url=judge_base_url,
         )
     except Exception as caught:
         error = caught
     finally:
-        cleanup_error = _cleanup_wave_transport(
-            lifecycle, provider_proxy, judge_recorder
-        )
+        cleanup_error = _cleanup_wave_resources(lifecycle, judge_recorder)
 
     terminal_error = error or cleanup_error
     summary: dict[str, object] = {
@@ -628,9 +619,7 @@ def _run_staged_wave(
         "run_id": run.run_id,
         "shard_checksums": shard_checksums,
         "endpoint_cleanup_verified": (
-            cleanup_error is None and lifecycle.owned
-            if lifecycle is not None
-            else unavailable("not_applicable").model_dump(mode="json")
+            cleanup_error is None and lifecycle.owned if lifecycle is not None else None
         ),
     }
     if terminal_error is None:
@@ -695,42 +684,18 @@ def _verify_prepared_source(
         raise WorkerError("prepared Harbor source revision changed")
 
 
-def _prepare_wave_transport(
+def _prepare_wave_target(
     lock: WaveLock,
     wave_root: Path,
     events: Path,
     lifecycle: _EndpointWaveLifecycle | None,
-    token: str,
     deadline: float,
     monotonic: Callable[[], float],
-) -> tuple[str, ProviderEvidenceProxy | None]:
+) -> str:
     if lifecycle is not None:
-        return lifecycle.prepare(deadline, monotonic), None
+        return lifecycle.prepare(deadline, monotonic)
     target = _prepare_provider_target(lock, wave_root, events)
-    proxy = ProviderEvidenceProxy(
-        target,
-        token=token,
-        evidence_path=wave_root / "provider-requests.jsonl",
-    )
-    base_url = _provider_recorder_base_url()
-    try:
-        proxy.start(host="0.0.0.0", port=PROVIDER_RECORDER_PORT)
-        append_event(events, "provider_recorder_listening", port=PROVIDER_RECORDER_PORT)
-        _wait_for_provider_recorder(base_url, token, deadline, monotonic)
-    except Exception:
-        proxy.close()
-        raise
-    append_event(
-        events,
-        "provider_recorder_ready",
-        host=f"{os.environ['JOB_ID']}--{PROVIDER_RECORDER_PORT}.hf.jobs",
-        port=PROVIDER_RECORDER_PORT,
-    )
-    return base_url, proxy
-
-
-def _provider_recorder_base_url() -> str:
-    return _job_ingress_base_url(PROVIDER_RECORDER_PORT, "provider recorder")
+    return provider_upstream_url(target)
 
 
 def _job_ingress_base_url(port: int, label: str) -> str:
@@ -787,7 +752,7 @@ def _prepare_judge_transport(
     try:
         recorder.start(port=JUDGE_RECORDER_PORT)
         append_event(events, "judge_recorder_listening", port=JUDGE_RECORDER_PORT)
-        _wait_for_provider_recorder(base_url, token, deadline, monotonic)
+        _wait_for_judge_recorder(base_url, token, deadline, monotonic)
     except Exception:
         recorder.close()
         raise
@@ -795,7 +760,7 @@ def _prepare_judge_transport(
     return base_url, recorder
 
 
-def _wait_for_provider_recorder(
+def _wait_for_judge_recorder(
     base_url: str,
     token: str,
     deadline: float,
@@ -805,10 +770,8 @@ def _wait_for_provider_recorder(
     client: httpx.Client | None = None,
 ) -> None:
     if not token:
-        raise WorkerError("provider recorder readiness requires an HF token")
-    ready_deadline = min(
-        deadline, monotonic() + _PROVIDER_RECORDER_READY_TIMEOUT_SECONDS
-    )
+        raise WorkerError("judge recorder readiness requires an HF token")
+    ready_deadline = min(deadline, monotonic() + _JUDGE_RECORDER_READY_TIMEOUT_SECONDS)
     owned_client = client is None
     selected_client = client or httpx.Client(follow_redirects=False)
     last_failure = "no response"
@@ -816,9 +779,7 @@ def _wait_for_provider_recorder(
         while True:
             remaining = ready_deadline - monotonic()
             if remaining <= 0:
-                raise WorkerError(
-                    "provider recorder ingress readiness timed out: " + last_failure
-                )
+                raise WorkerError("judge recorder readiness timed out: " + last_failure)
             try:
                 response = selected_client.get(
                     f"{base_url}/healthz",
@@ -828,7 +789,7 @@ def _wait_for_provider_recorder(
             except httpx.TransportError as error:
                 last_failure = type(error).__name__
             else:
-                failure = _provider_recorder_readiness_failure(response)
+                failure = _judge_recorder_readiness_failure(response)
                 if failure is None:
                     return
                 last_failure = failure
@@ -838,9 +799,9 @@ def _wait_for_provider_recorder(
             selected_client.close()
 
 
-def _provider_recorder_readiness_failure(response: httpx.Response) -> str | None:
+def _judge_recorder_readiness_failure(response: httpx.Response) -> str | None:
     if response.status_code in {401, 403}:
-        raise WorkerError("provider recorder ingress rejected HF authentication")
+        raise WorkerError("judge recorder rejected HF authentication")
     try:
         healthy = response.json() == {"status": "ok"}
     except ValueError:
@@ -850,17 +811,14 @@ def _provider_recorder_readiness_failure(response: httpx.Response) -> str | None
     return f"HTTP {response.status_code}"
 
 
-def _cleanup_wave_transport(
+def _cleanup_wave_resources(
     lifecycle: _EndpointWaveLifecycle | None,
-    provider_proxy: ProviderEvidenceProxy | None,
     judge_recorder: JudgeEvidenceRecorder | None = None,
 ) -> Exception | None:
     errors: list[Exception] = []
-    for closer in (provider_proxy, judge_recorder):
-        if closer is None:
-            continue
+    if judge_recorder is not None:
         try:
-            closer.close()
+            judge_recorder.close()
         except Exception as error:
             errors.append(error)
     if lifecycle is not None:
@@ -889,7 +847,6 @@ def _execute_shards(
     clock: Clock,
     monotonic: Callable[[], float],
     *,
-    provider_proxy: ProviderEvidenceProxy | None = None,
     judge_recorder: JudgeEvidenceRecorder | None = None,
     judge_base_url: str | None = None,
 ) -> dict[str, str]:
@@ -925,7 +882,6 @@ def _execute_shards(
                 clock,
                 monotonic,
                 trial_executor=trial_executor,
-                provider_proxy=provider_proxy,
                 judge_recorder=judge_recorder,
                 judge_base_url=judge_base_url,
             ): shard.shard.shard_id
@@ -961,26 +917,15 @@ def _prepare_provider_target(
                 "requested_model": target.model,
                 "routed_model": routed_provider_model(target),
                 "routing": target.routing.model_dump(mode="json"),
-                "request_controls": {
+                "upstream": provider_upstream_url(target),
+                "agent_configuration": {
                     "max_attempts": target.limits.max_attempts,
-                    "max_concurrent_requests": target.limits.max_concurrent_requests,
-                    "min_request_interval_seconds": (
-                        target.limits.min_request_interval_seconds
-                    ),
                     "parameters": target.parameters,
                     "timeout_seconds": target.timeout_seconds,
                 },
-                "transport": {
-                    "kind": "hf-job-evidence-recorder",
-                    "evidence_path": "provider-requests.jsonl",
-                    "ingress_host": (
-                        f"{os.environ.get('JOB_ID', '')}--"
-                        f"{PROVIDER_RECORDER_PORT}.hf.jobs"
-                    ),
-                    "port": PROVIDER_RECORDER_PORT,
-                    "route_authorization": "opaque-capability",
+                "scheduling": {
+                    "max_concurrent_shards": lock.max_concurrent_shards,
                 },
-                "endpoint": ProviderEndpointEvidence().model_dump(mode="json"),
             },
         },
     )
@@ -1012,7 +957,6 @@ def _execute_shard(
     monotonic: Callable[[], float],
     *,
     trial_executor: Executor | None = None,
-    provider_proxy: ProviderEvidenceProxy | None = None,
     judge_recorder: JudgeEvidenceRecorder | None = None,
     judge_base_url: str | None = None,
 ) -> str | None:
@@ -1037,7 +981,6 @@ def _execute_shard(
             clock,
             monotonic,
             selected_executor,
-            provider_proxy=provider_proxy,
             judge_recorder=judge_recorder,
             judge_base_url=judge_base_url,
         )
@@ -1073,7 +1016,6 @@ def _execute_shard_with_executor(
     monotonic: Callable[[], float],
     trial_executor: Executor,
     *,
-    provider_proxy: ProviderEvidenceProxy | None = None,
     judge_recorder: JudgeEvidenceRecorder | None = None,
     judge_base_url: str | None = None,
 ) -> str | None:
@@ -1140,7 +1082,6 @@ def _execute_shard_with_executor(
                 identifier,
                 clock,
                 monotonic,
-                provider_proxy=provider_proxy,
                 judge_recorder=judge_recorder,
                 judge_base_url=judge_base_url,
             )
@@ -1157,27 +1098,6 @@ def _execute_shard_with_executor(
             failures,
             trial_checksums,
         )
-        if provider_proxy is not None:
-            wave_root = run_root / "waves" / wave.wave_id
-            progress_destination = (
-                output_root
-                / run.artifact_prefix
-                / "waves"
-                / wave.wave_id
-                / "provider-progress.json"
-            )
-            provider_proxy.checkpoint(
-                progress_destination.with_name("provider-requests.jsonl"),
-                wave_root / "provider-progress.json",
-                progress_destination,
-                metadata={
-                    "run_id": run.run_id,
-                    "wave_id": wave.wave_id,
-                    "shard_id": shard.shard_id,
-                    "last_terminal_trial_id": trial.trial_id,
-                    "checkpointed_at": clock().isoformat(),
-                },
-            )
     if failures:
         append_event(events, "shard_failed", failed_trials=len(failures))
         raise min(failures, key=lambda item: item[0])[1]
@@ -1250,7 +1170,6 @@ def _execute_trial(
     clock: Clock,
     monotonic: Callable[[], float],
     *,
-    provider_proxy: ProviderEvidenceProxy | None = None,
     judge_recorder: JudgeEvidenceRecorder | None = None,
     judge_base_url: str | None = None,
 ) -> RetryCategory | None:
@@ -1282,7 +1201,6 @@ def _execute_trial(
     events = attempt_root / "events.jsonl"
     append_event(events, "attempt_started", attempt_id=attempt_id)
     error: Exception | None = None
-    capability: str | None = None
     judge_capability: str | None = None
     judge_route_revoked = False
     judge_api_url: str | None = None
@@ -1290,14 +1208,6 @@ def _execute_trial(
         "configuration"
     )
     try:
-        trial_base_url, capability = _register_trial_provider_route(
-            wave,
-            provider_proxy,
-            base_url,
-            attempt_id,
-            attempt_root,
-            events,
-        )
         judge_api_url, judge_capability = _register_trial_judge_route(
             configuration,
             judge_recorder,
@@ -1307,14 +1217,14 @@ def _execute_trial(
             trial.task_name,
             attempt_root,
             events,
-            tuple(value for value in (token, capability) if value is not None),
+            (token,),
         )
         adapter = FilesystemHarborExecutionAdapter()
         prepared = adapter.prepare(
             configuration,
             attempt_root,
             jobs_dir,
-            trial_base_url,
+            base_url,
             harbor_source,
             task_names=[trial.task_name],
             attempts=1,
@@ -1336,16 +1246,12 @@ def _execute_trial(
         with harbor_process_environment(
             configuration,
             token=token,
-            inference_base_url=trial_base_url,
-            agent_api_key=(
-                _SCOPED_PROVIDER_API_KEY if provider_proxy is not None else None
-            ),
+            inference_token=_provider_inference_token(configuration),
+            inference_base_url=base_url,
             judge_api_key=(token if judge_recorder is not None else None),
             judge_api_url=judge_api_url,
             blocked_secret_names=blocked_secret_names,
-            redaction_secrets=tuple(
-                value for value in (capability, judge_capability) if value is not None
-            ),
+            redaction_secrets=((judge_capability,) if judge_capability else ()),
         ) as environment:
             outcome = adapter.execute(
                 prepared,
@@ -1370,9 +1276,7 @@ def _execute_trial(
             attempt_root / "verification.json",
             outcome.verification.model_dump(mode="json"),
         )
-        evidence_secrets = _attempt_secret_values(
-            wave, token, capability, judge_capability
-        )
+        evidence_secrets = _attempt_secret_values(wave, token, judge_capability)
         _assemble_attempt_trial_evidence(
             outcome.compatibility_path,
             jobs_dir,
@@ -1397,7 +1301,6 @@ def _execute_trial(
         error = caught
         append_event(events, "attempt_failed", error_type=type(caught).__name__)
     finally:
-        _revoke_trial_provider_route(provider_proxy, capability, events)
         error = _finish_trial_judge_route(
             judge_recorder,
             judge_capability,
@@ -1407,7 +1310,7 @@ def _execute_trial(
         )
     failure_record: dict[str, object] | None = None
     failure_category: RetryCategory | None = None
-    secrets = _attempt_secret_values(wave, token, capability, judge_capability)
+    secrets = _attempt_secret_values(wave, token, judge_capability)
     if error is not None:
         failure_category = _attempt_failure_category(
             error, failure_phase, evidence_root=attempt_root
@@ -1619,51 +1522,6 @@ def _assemble_attempt_trial_evidence(
     )
 
 
-def _register_trial_provider_route(
-    wave: WaveLock,
-    provider_proxy: ProviderEvidenceProxy | None,
-    base_url: str,
-    attempt_id: str,
-    attempt_root: Path,
-    events: Path,
-) -> tuple[str, str | None]:
-    if not isinstance(wave.target, ProviderWaveTarget):
-        return base_url, None
-    if provider_proxy is None:
-        raise WorkerError("provider execution requires an evidence recorder")
-    capability = provider_proxy.register_scope(attempt_id)
-    capability_digest = provider_proxy.capability_digest(capability)
-    write_json(
-        attempt_root / "provider-route.json",
-        {
-            "capability_digest": capability_digest,
-            "transport": "hf-job-evidence-recorder",
-        },
-    )
-    append_event(
-        events,
-        "provider_route_registered",
-        capability_digest=capability_digest,
-    )
-    return provider_proxy.scoped_base_url(base_url, capability), capability
-
-
-def _revoke_trial_provider_route(
-    provider_proxy: ProviderEvidenceProxy | None,
-    capability: str | None,
-    events: Path,
-) -> None:
-    if capability is None or provider_proxy is None:
-        return
-    capability_digest = provider_proxy.capability_digest(capability)
-    provider_proxy.revoke_scope(capability)
-    append_event(
-        events,
-        "provider_route_revoked",
-        capability_digest=capability_digest,
-    )
-
-
 def _validate_evidence_trial_identity(
     *,
     observed_name: str,
@@ -1858,6 +1716,18 @@ def _wave_model_name(wave: WaveLock) -> str:
     if isinstance(wave.target, EndpointWaveTarget):
         return wave.target.endpoint.served_model_name
     return routed_provider_model(wave.target.provider)
+
+
+def _provider_inference_token(lock: ExecutionLock) -> str | None:
+    target = lock.deployment
+    if not isinstance(target, ProviderTarget):
+        return None
+    token = os.environ.get(target.token_secret_name, "")
+    if not token:
+        raise WorkerError(
+            f"required secret {target.token_secret_name} is not available"
+        )
+    return token
 
 
 def _stage_run_records(
@@ -2173,7 +2043,11 @@ def _redact_unit(root: Path, secrets: SecretValues) -> None:
 def _wave_secret_values(lock: WaveLock, token: str) -> SecretValues:
     values = [token]
     for run in lock.executions:
-        run_values = execution_secret_values(run.configuration, token)
+        run_values = execution_secret_values(
+            run.configuration,
+            token,
+            inference_token=_provider_inference_token(run.configuration),
+        )
         values.extend((run_values,) if isinstance(run_values, str) else run_values)
     unique = tuple(dict.fromkeys(value for value in values if value))
     return unique[0] if len(unique) == 1 else unique
@@ -2182,13 +2056,9 @@ def _wave_secret_values(lock: WaveLock, token: str) -> SecretValues:
 def _attempt_secret_values(
     wave: WaveLock,
     token: str,
-    provider_capability: str | None,
     judge_capability: str | None,
 ) -> SecretValues:
-    return _secret_values_with(
-        _secret_values_with(_wave_secret_values(wave, token), provider_capability),
-        judge_capability,
-    )
+    return _secret_values_with(_wave_secret_values(wave, token), judge_capability)
 
 
 def _secret_values_with(secrets: SecretValues, value: str | None) -> SecretValues:

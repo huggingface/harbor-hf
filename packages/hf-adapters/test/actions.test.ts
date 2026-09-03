@@ -129,7 +129,8 @@ function apiJob(
     retry: 0,
     spaceId: null,
     secrets:
-      intent.payload.inference_token === "required"
+      intent.payload.worker_role !== "preparation" &&
+      typeof intent.payload.inference_upstream === "string"
         ? ["HARBOR_HF_WORKER_CAPABILITY", "HF_INFERENCE_TOKEN"]
         : ["HARBOR_HF_WORKER_CAPABILITY"],
     labels: {
@@ -377,7 +378,6 @@ describe("HuggingFaceActions", () => {
         ...base.payload,
         worker_role: "preparation",
         worker_revision: "abcdef0",
-        inference_token: "forbidden",
       },
     };
     const fetchMock = vi.fn(
@@ -635,14 +635,9 @@ describe("HuggingFaceActions", () => {
       payload: {
         ...base.payload,
         prepared_job_digest: `sha256:${"d".repeat(64)}`,
-        inference_token: "required",
         inference_upstream: "https://router.huggingface.co/v1",
         inference_model: "example/model",
         inference_api: "chat-completions",
-        inference_max_requests: 64,
-        inference_max_concurrency: 4,
-        inference_timeout_seconds: 600,
-        inference_max_output_tokens: 32768,
       },
     };
     const fetchMock = vi.fn(
@@ -660,15 +655,9 @@ describe("HuggingFaceActions", () => {
         expect(request.environment).not.toHaveProperty("HF_TOKEN");
         expect(request.environment).not.toHaveProperty("HF_INFERENCE_TOKEN");
         expect(request.environment).toMatchObject({
-          HARBOR_HF_INFERENCE_UPSTREAM: "https://router.huggingface.co/v1",
-          HARBOR_HF_INFERENCE_ALLOWED_MODEL: "example/model",
-          HARBOR_HF_INFERENCE_API: "chat-completions",
-          HARBOR_HF_INFERENCE_MAX_REQUESTS: "64",
-          HARBOR_HF_INFERENCE_MAX_CONCURRENCY: "4",
-          HARBOR_HF_INFERENCE_TIMEOUT_SECONDS: "600",
-          HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS: "32768",
           HARBOR_HF_PREPARED_JOB_DIGEST: `sha256:${"d".repeat(64)}`,
         });
+        expect(request.environment).not.toHaveProperty("HARBOR_HF_INFERENCE_UPSTREAM");
         expect(request.secrets).toEqual({
           HARBOR_HF_WORKER_CAPABILITY: expect.stringMatching(/^v1\./),
           HF_INFERENCE_TOKEN: testInferenceToken,
@@ -702,6 +691,71 @@ describe("HuggingFaceActions", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("exports the bounded environment for a bridge-compatible worker", async () => {
+    const inferenceIntent: ActionIntent = {
+      ...base,
+      action_id: "action-test-bridge-compatibility",
+      payload: {
+        ...base.payload,
+        inference_token: "required",
+        inference_upstream: "https://router.huggingface.co/v1",
+        inference_model: "example/model",
+        inference_api: "chat-completions",
+        inference_max_requests: 64,
+        inference_max_concurrency: 4,
+        inference_timeout_seconds: 600,
+        inference_max_output_tokens: 32768,
+      },
+    };
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        if (!init?.method)
+          return new Response("[]", {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        const request = JSON.parse(String(init.body)) as {
+          environment: Record<string, string>;
+          secrets: Record<string, string>;
+          labels: Record<string, string>;
+        };
+        expect(request.environment).toMatchObject({
+          HARBOR_HF_INFERENCE_UPSTREAM: "https://router.huggingface.co/v1",
+          HARBOR_HF_INFERENCE_ALLOWED_MODEL: "example/model",
+          HARBOR_HF_INFERENCE_API: "chat-completions",
+          HARBOR_HF_INFERENCE_MAX_REQUESTS: "64",
+          HARBOR_HF_INFERENCE_MAX_CONCURRENCY: "4",
+          HARBOR_HF_INFERENCE_TIMEOUT_SECONDS: "600",
+          HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS: "32768",
+        });
+        return new Response(
+          JSON.stringify(
+            apiJob(inferenceIntent, {
+              id: "job-bridge-compatibility",
+              environment: request.environment,
+              labels: request.labels,
+              secrets: Object.keys(request.secrets),
+            }),
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new HuggingFaceActions({
+      namespace: "example",
+      accessToken: testToken,
+      taskImageMirrorRepository,
+      inferenceToken: testInferenceToken,
+      controlUrl: "https://control.example",
+    });
+
+    await expect(adapter.execute(inferenceIntent)).resolves.toMatchObject({
+      outcome: "created",
+      resource_id: "job-bridge-compatibility",
+    });
+  });
+
   it("fails closed before a remote lookup when a required inference credential is absent", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -717,14 +771,9 @@ describe("HuggingFaceActions", () => {
         ...base,
         payload: {
           ...base.payload,
-          inference_token: "required",
           inference_upstream: "https://router.huggingface.co/v1",
           inference_model: "example/model",
           inference_api: "chat-completions",
-          inference_max_requests: 64,
-          inference_max_concurrency: 4,
-          inference_timeout_seconds: 600,
-          inference_max_output_tokens: 32768,
         },
       }),
     ).resolves.toMatchObject({

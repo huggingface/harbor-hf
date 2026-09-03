@@ -17,19 +17,18 @@ from harbor_hf.coordination import ClaimConflict
 from harbor_hf.evidence import verify_checksums, write_checksums
 from harbor_hf.executions import ExecutionLock
 from harbor_hf.models import ExperimentSpec, TrialEvidencePolicy
-from harbor_hf.provider_models import ProviderTarget
 from harbor_hf.runs import RunLock, RunTrialLock, WaveExecutionLock, WaveLock
 from harbor_hf.trial_evidence import assemble_trial_evidence
 from harbor_hf.wave_worker import (
     AttemptLock,
     LockedSubmitWaveAction,
     WorkerError,
-    _cleanup_wave_transport,
+    _cleanup_wave_resources,
     _expected_agent_version,
     _file_digest,
+    _job_ingress_base_url,
     _prepare_trial_recovery,
-    _prepare_wave_transport,
-    _provider_recorder_base_url,
+    _prepare_wave_target,
     _publish_digest_sidecar,
     _publish_immutable_file,
     _publish_unit,
@@ -38,7 +37,7 @@ from harbor_hf.wave_worker import (
     _trial_destination,
     _valid_terminal_trial,
     _validate_attempt_identity,
-    _wait_for_provider_recorder,
+    _wait_for_judge_recorder,
     _wave_worker_lease,
 )
 
@@ -830,8 +829,8 @@ def test_attempt_lock_schema_and_action_defaults() -> None:
         )
 
 
-def test_provider_transport_start_and_cleanup_are_exact(
-    remote_spec: ExperimentSpec, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_provider_target_resolves_direct_upstream_without_cleanup(
+    remote_spec: ExperimentSpec, tmp_path: Path
 ) -> None:
     _spec, _run, wave, *_paths = _provider_wave_inputs(
         remote_spec,
@@ -841,81 +840,40 @@ def test_provider_transport_start_and_cleanup_are_exact(
         provider_concurrency=1,
     )
     events = tmp_path / "events.jsonl"
-    calls: list[tuple[object, ...]] = []
     target = wave.provider_target
     assert target is not None
 
-    class FakeProxy:
-        def __init__(
-            self, target: ProviderTarget, *, token: str, evidence_path: Path
-        ) -> None:
-            calls.append(("init", target, token, evidence_path))
-            self.error: Exception | None = None
-
-        def start(self, *, host: str, port: int) -> str:
-            calls.append(("start", host, port))
-            return "http://127.0.0.1:12345"
-
-        def close(self) -> None:
-            calls.append(("close",))
-            if self.error is not None:
-                raise self.error
-
-    monkeypatch.setattr(wave_worker, "ProviderEvidenceProxy", FakeProxy)
-
-    base_url, proxy = _prepare_wave_transport(
+    base_url = _prepare_wave_target(
         wave,
         tmp_path,
         events,
         None,
-        "test-token",
         100.0,
         lambda: 0.0,
     )
 
-    assert base_url == "https://test-wave-job--8000.hf.jobs"
-    assert isinstance(proxy, FakeProxy)
-    assert calls == [
-        (
-            "init",
-            target,
-            "test-token",
-            tmp_path / "provider-requests.jsonl",
-        ),
-        ("start", "0.0.0.0", 8000),
-    ]
-    assert (
-        _cleanup_wave_transport(None, cast(wave_worker.ProviderEvidenceProxy, proxy))
-        is None
-    )
-    assert calls[-1] == ("close",)
-    proxy.error = RuntimeError("close failed")
-    assert (
-        str(
-            _cleanup_wave_transport(
-                None, cast(wave_worker.ProviderEvidenceProxy, proxy)
-            )
-        )
-        == "close failed"
-    )
-    assert _cleanup_wave_transport(None, None) is None
+    assert base_url == "https://router.huggingface.co"
+    assert _cleanup_wave_resources(None) is None
+    runtime = json.loads((tmp_path / "runtime-environment.json").read_text())
+    assert runtime["provider"]["upstream"] == base_url
+    assert runtime["provider"]["scheduling"] == {"max_concurrent_shards": 1}
 
 
-def test_provider_recorder_base_url_validates_job_identity(
+def test_judge_recorder_base_url_validates_job_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("JOB_ID", "0123456789abcdef01234567")
-    assert _provider_recorder_base_url() == (
-        "https://0123456789abcdef01234567--8000.hf.jobs"
+    assert _job_ingress_base_url(8001, "judge recorder") == (
+        "https://0123456789abcdef01234567--8001.hf.jobs"
     )
 
     for invalid in ("", "UPPERCASE", "bad.id", "-leading", "trailing-"):
         monkeypatch.setenv("JOB_ID", invalid)
         with pytest.raises(WorkerError, match="requires a valid HF JOB_ID"):
-            _provider_recorder_base_url()
+            _job_ingress_base_url(8001, "judge recorder")
 
 
-def test_provider_recorder_readiness_retries_external_ingress() -> None:
+def test_judge_recorder_readiness_retries() -> None:
     attempts: list[httpx.Request] = []
 
     def ingress(request: httpx.Request) -> httpx.Response:
@@ -928,8 +886,8 @@ def test_provider_recorder_readiness_retries_external_ingress() -> None:
     now = [0.0]
     client = httpx.Client(transport=httpx.MockTransport(ingress))
     try:
-        _wait_for_provider_recorder(
-            "https://job--8000.hf.jobs",
+        _wait_for_judge_recorder(
+            "https://job--8001.hf.jobs",
             "test-token",
             10.0,
             lambda: now[0],
@@ -940,11 +898,11 @@ def test_provider_recorder_readiness_retries_external_ingress() -> None:
         client.close()
 
     assert len(attempts) == 2
-    assert attempts[0].url == "https://job--8000.hf.jobs/healthz"
+    assert attempts[0].url == "https://job--8001.hf.jobs/healthz"
     assert now[0] == 1.0
 
 
-def test_provider_recorder_readiness_fails_closed() -> None:
+def test_judge_recorder_readiness_fails_closed() -> None:
     unauthorized = httpx.Client(
         transport=httpx.MockTransport(
             lambda _request: httpx.Response(401, json={"error": "unauthorized"})
@@ -952,8 +910,8 @@ def test_provider_recorder_readiness_fails_closed() -> None:
     )
     try:
         with pytest.raises(WorkerError, match="rejected HF authentication"):
-            _wait_for_provider_recorder(
-                "https://job--8000.hf.jobs",
+            _wait_for_judge_recorder(
+                "https://job--8001.hf.jobs",
                 "test-token",
                 10.0,
                 lambda: 0.0,
@@ -971,8 +929,8 @@ def test_provider_recorder_readiness_fails_closed() -> None:
     disconnected = httpx.Client(transport=httpx.MockTransport(unavailable))
     try:
         with pytest.raises(WorkerError, match="readiness timed out: ConnectError"):
-            _wait_for_provider_recorder(
-                "https://job--8000.hf.jobs",
+            _wait_for_judge_recorder(
+                "https://job--8001.hf.jobs",
                 "test-token",
                 2.0,
                 lambda: now[0],
@@ -996,16 +954,15 @@ def test_endpoint_transport_delegates_prepare_and_cleanup() -> None:
             return RuntimeError("cleanup failed")
 
     lifecycle = cast(wave_worker._EndpointWaveLifecycle, Lifecycle())
-    base_url, proxy = _prepare_wave_transport(
+    base_url = _prepare_wave_target(
         cast(WaveLock, None),
         cast(Path, None),
         cast(Path, None),
         lifecycle,
-        "test-token",
         50.0,
         lambda: 2.0,
     )
 
-    assert (base_url, proxy) == ("https://endpoint.example", None)
-    assert str(_cleanup_wave_transport(lifecycle, None)) == "cleanup failed"
+    assert base_url == "https://endpoint.example"
+    assert str(_cleanup_wave_resources(lifecycle)) == "cleanup failed"
     assert calls == [("prepare", 50.0, 2.0), ("cleanup",)]

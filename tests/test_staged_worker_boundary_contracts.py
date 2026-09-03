@@ -14,7 +14,6 @@ from harbor_hf.benchmark_source import source_lock_from_spec
 from harbor_hf.executions import ExecutionLock, build_execution_lock
 from harbor_hf.models import DeploymentProfile, EndpointRef, ExperimentSpec, SourcePin
 from harbor_hf.process import CommandRunner
-from harbor_hf.provider_models import unavailable
 from harbor_hf.wave_worker import _EndpointWaveLifecycle
 from harbor_hf.worker import WorkerError, _prepare_evidence_destination
 
@@ -267,11 +266,11 @@ def test_staged_provider_wave_finalizes_then_publishes_exact_success(
         concurrency=1,
         provider_concurrency=1,
     )
+    monkeypatch.setenv("HF_INFERENCE_TOKEN", "inference-token")
     run_root = tmp_path / "stage" / run.artifact_prefix
     output_root = tmp_path / "output"
     calls: list[tuple[object, ...]] = []
     shard_kwargs: dict[str, object] = {}
-    proxy = object()
     checksums = {"shard-z": "sha256:z", "shard-a": "sha256:a"}
 
     monkeypatch.setattr(
@@ -280,19 +279,17 @@ def test_staged_provider_wave_finalizes_then_publishes_exact_success(
         lambda name: calls.append(("require", name)),
     )
 
-    def prepare_transport(*args: object) -> tuple[str, object]:
-        calls.append(("transport", *args))
-        return "http://127.0.0.1:4321", proxy
+    def prepare_target(*args: object) -> str:
+        calls.append(("target", *args))
+        return "https://router.huggingface.co"
 
     def execute_shards(*args: object, **kwargs: object) -> dict[str, str]:
         calls.append(("shards", *args))
         shard_kwargs.update(kwargs)
         return checksums
 
-    def cleanup(
-        lifecycle: object, provider_proxy: object, judge_recorder: object
-    ) -> None:
-        calls.append(("cleanup", lifecycle, provider_proxy, judge_recorder))
+    def cleanup(lifecycle: object, judge_recorder: object) -> None:
+        calls.append(("cleanup", lifecycle, judge_recorder))
         return None
 
     def finalize(root: Path, token: str) -> None:
@@ -302,12 +299,12 @@ def test_staged_provider_wave_finalizes_then_publishes_exact_success(
     def publish(source: Path, destination: Path) -> None:
         calls.append(("publish", source, destination, (source / "_SUCCESS").is_file()))
 
-    monkeypatch.setattr(wave_worker, "_prepare_wave_transport", prepare_transport)
+    monkeypatch.setattr(wave_worker, "_prepare_wave_target", prepare_target)
     monkeypatch.setattr(
         wave_worker, "_prepare_judge_transport", lambda *args: (None, None)
     )
     monkeypatch.setattr(wave_worker, "_execute_shards", execute_shards)
-    monkeypatch.setattr(wave_worker, "_cleanup_wave_transport", cleanup)
+    monkeypatch.setattr(wave_worker, "_cleanup_wave_resources", cleanup)
     monkeypatch.setattr(wave_worker, "_finalize_unit", finalize)
     monkeypatch.setattr(wave_worker, "_publish_unit", publish)
 
@@ -337,7 +334,7 @@ def test_staged_provider_wave_finalizes_then_publishes_exact_success(
     assert [call[0] for call in calls] == [
         "require",
         "source",
-        "transport",
+        "target",
         "shards",
         "cleanup",
         "finalize",
@@ -348,13 +345,17 @@ def test_staged_provider_wave_finalizes_then_publishes_exact_success(
     assert calls[1][2] == (
         run_root.parent / "sources" / f"harbor-{wave.remote.harbor.source.revision}"
     )
-    assert calls[4] == ("cleanup", None, proxy, None)
+    assert calls[4] == ("cleanup", None, None)
     assert shard_kwargs == {
-        "provider_proxy": proxy,
         "judge_recorder": None,
         "judge_base_url": None,
     }
-    assert calls[5] == ("finalize", wave_root, "contract-token", False)
+    assert calls[5] == (
+        "finalize",
+        wave_root,
+        ("contract-token", "inference-token"),
+        False,
+    )
     assert calls[6] == (
         "publish",
         wave_root,
@@ -369,9 +370,7 @@ def test_staged_provider_wave_finalizes_then_publishes_exact_success(
         "wave_id": wave.wave_id,
         "run_id": run.run_id,
         "shard_checksums": checksums,
-        "endpoint_cleanup_verified": unavailable("not_applicable").model_dump(
-            mode="json"
-        ),
+        "endpoint_cleanup_verified": None,
     }
     assert (wave_root / "_SUCCESS").read_text(encoding="utf-8") == "\n"
     assert not (wave_root / "_FAILED").exists()
@@ -405,7 +404,7 @@ def test_staged_endpoint_wave_preserves_primary_and_cleanup_failures(
     monkeypatch.setattr(wave_worker, "require_executable", lambda name: None)
     monkeypatch.setattr(
         wave_worker,
-        "_prepare_wave_transport",
+        "_prepare_wave_target",
         lambda *args: (_ for _ in ()).throw(ValueError("primary contract-token")),
     )
     monkeypatch.setattr(

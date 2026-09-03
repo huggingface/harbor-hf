@@ -246,20 +246,26 @@ def harbor_process_environment(
     *,
     token: str,
     inference_base_url: str,
-    agent_api_key: str | None = None,
+    inference_token: str | None = None,
     judge_api_key: str | None = None,
     judge_api_url: str | None = None,
     blocked_secret_names: Iterable[str] = (),
     redaction_secrets: Iterable[str] = (),
 ) -> Iterator[dict[str, str]]:
-    scoped_api_key = agent_api_key or token
-    environment = {
-        "HF_TOKEN": token,
-        "OPENAI_API_KEY": scoped_api_key,
-        "OPENAI_BASE_URL": f"{inference_base_url.rstrip('/')}/v1",
-    }
+    environment = {"HF_TOKEN": token}
+    if isinstance(lock.deployment, ProviderTarget):
+        if not inference_token:
+            raise ValueError("provider execution requires HF_INFERENCE_TOKEN")
+        environment["HF_INFERENCE_TOKEN"] = inference_token
+    else:
+        environment.update(
+            {
+                "OPENAI_API_KEY": token,
+                "OPENAI_BASE_URL": f"{inference_base_url.rstrip('/')}/v1",
+            }
+        )
     environment.update(
-        _judge_process_environment(lock, judge_api_url, judge_api_key or scoped_api_key)
+        _judge_process_environment(lock, judge_api_url, judge_api_key or token)
     )
     blocked = set(blocked_secret_names)
     redaction_values = [value for value in redaction_secrets if value]
@@ -302,8 +308,17 @@ def _write_redaction_secrets(values: list[str]) -> Path | None:
     return path
 
 
-def execution_secret_values(lock: ExecutionLock, token: str) -> str | tuple[str, ...]:
+def execution_secret_values(
+    lock: ExecutionLock,
+    token: str,
+    *,
+    inference_token: str | None = None,
+) -> str | tuple[str, ...]:
     values = [token]
+    if isinstance(lock.deployment, ProviderTarget):
+        if not inference_token:
+            raise ValueError("provider execution requires HF_INFERENCE_TOKEN")
+        values.append(inference_token)
     judge = lock.benchmark_judge
     if judge is not None:
         judge_token = os.environ.get(judge.api_key_secret_name, "")

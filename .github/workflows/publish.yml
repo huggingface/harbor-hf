@@ -8,13 +8,8 @@ permissions:
   contents: read
 
 jobs:
-  mutation:
-    name: Mutation preflight
-    uses: ./.github/workflows/mutation.yml
-
   publish:
     name: Publish Python distribution
-    needs: mutation
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

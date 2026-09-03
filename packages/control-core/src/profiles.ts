@@ -96,10 +96,14 @@ function shellCommand(arguments_: string[]): string {
   return arguments_.map(shellQuote).join(" ");
 }
 
-function trialJobCommand(
-  rootBootstrapCommand: string[],
+function bridgedTrialJobCommand(
+  rootBootstrapCommand: string[] | undefined,
   workerCommand: string[],
 ): [string, string, string] {
+  if (!rootBootstrapCommand)
+    throw new ProfileResolutionError(
+      "bridge-compatible trial Job has no root bootstrap command",
+    );
   return [
     "/bin/sh",
     "-c",
@@ -111,7 +115,6 @@ function trialJobCommand(
     ].join("\n"),
   ];
 }
-
 export function preparationRequired(deployment: DeploymentProfileSpec): boolean {
   return deployment.route === "hf_job" && deployment.preparation === "required";
 }
@@ -198,7 +201,7 @@ export interface PreparedTrialJobLaunch {
   max_jobs: number;
   max_image_bytes: number;
   max_image_entries: number;
-  inference_token: "forbidden" | "required";
+  inference_token?: "forbidden" | "required";
   inference_upstream?: string;
   inference_model?: string;
   inference_api?: "chat-completions" | "responses";
@@ -239,21 +242,24 @@ export function preparedTrialJobLaunch(
   return {
     job_image: deployment.job_image,
     task_image: trial.image,
-    job_command: trialJobCommand(
-      template.root_bootstrap_command,
-      deployment.job_command,
-    ),
+    job_command:
+      template.inference_token === "required"
+        ? bridgedTrialJobCommand(
+            template.root_bootstrap_command,
+            deployment.job_command,
+          )
+        : deployment.job_command,
     hardware: flavor.hardware,
     timeout_seconds: timeoutSeconds,
     active_hourly_cost_microusd: flavor.active_hourly_cost_microusd,
     max_jobs: template.max_jobs,
     max_image_bytes: template.max_image_bytes,
     max_image_entries: template.max_image_entries,
-    inference_token: template.inference_token ?? "forbidden",
+    ...(template.inference_token ? { inference_token: template.inference_token } : {}),
     ...(execution.inference
       ? {
           inference_upstream: execution.inference.upstream,
-          inference_model: execution.inference.bridge_model,
+          inference_model: execution.inference.provider_model,
           inference_api: execution.inference.api,
         }
       : {}),
@@ -319,10 +325,7 @@ function deploymentInferenceApi(
 ): "chat-completions" | "responses" | "" | null {
   if (spec.route !== "hf_job") return null;
   const source = spec.trial_job_template ?? spec;
-  const inferenceRequired =
-    spec.inference_token === "required" ||
-    spec.trial_job_template?.inference_token === "required";
-  if (!inferenceRequired) return null;
+  if (!source.inference_upstream) return null;
   return source.inference_api ?? "";
 }
 

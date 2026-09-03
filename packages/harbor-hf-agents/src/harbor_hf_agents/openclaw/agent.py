@@ -25,18 +25,12 @@ from harbor.models.trajectories import (
 from harbor.models.trial.paths import EnvironmentPaths
 from harbor.utils.trajectory_utils import format_trajectory_json
 
-from harbor_hf_agents.support.hf_inference_bridge import (
-    prepare_hf_inference_bridge,
+from harbor_hf_agents.support.direct_inference import (
+    MAX_OUTPUT_TOKENS_ENV,
+    max_output_tokens,
+    with_agent_environment_cleanup,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
-from harbor_hf_agents.support.job_chat_completions import (
-    inference_max_output_tokens,
-)
-from harbor_hf_agents.support.job_inference_route import (
-    JOB_INFERENCE_MAX_OUTPUT_TOKENS_ENV,
-    use_job_inference_route,
-    with_job_inference_bridge_cleanup,
-)
 
 _JOB_PROVIDER = "harbor-hf-job"
 _JOB_API_KEY_ENV = "OPENCLAW_HARBOR_API_KEY"
@@ -831,7 +825,7 @@ class OpenClawAgent(IsolatedProviderAgent):
         model_id: str,
         max_output_tokens: int,
     ) -> None:
-        """Register the locked loopback route as a custom OpenClaw provider."""
+        """Register direct inference as a custom OpenClaw provider."""
         models = cfg.setdefault("models", {})
         models["mode"] = "merge"
         providers = models.setdefault("providers", {})
@@ -899,7 +893,7 @@ class OpenClawAgent(IsolatedProviderAgent):
         model_id: str,
         max_output_tokens: int,
     ) -> dict[str, Any]:
-        """Add the locked loopback provider to the ordinary OpenClaw config."""
+        """Add the direct inference provider to the ordinary OpenClaw config."""
         cfg = self._build_full_openclaw_config()
         self._apply_job_provider(
             cfg,
@@ -1153,7 +1147,7 @@ class OpenClawAgent(IsolatedProviderAgent):
         )
 
     @with_prompt_template
-    @with_job_inference_bridge_cleanup
+    @with_agent_environment_cleanup
     async def run(
         self,
         instruction: str,
@@ -1182,58 +1176,26 @@ class OpenClawAgent(IsolatedProviderAgent):
                 self.logger.debug("Missing optional env key for OpenClaw run: %s", key)
 
         prefix = self._provider_env_prefix(provider)
-        job_bridged = False
         if provider == "openai":
-            job_bridged = await use_job_inference_route(
-                self,
-                environment,
-                env,
-                base_url_key=f"{prefix}_BASE_URL",
-                api_key_key=f"{prefix}_API_KEY",
-                api=self._PROVIDER_API,
-                allowed_model=model,
-            )
-        bridged = job_bridged
-        if not bridged:
-            bridged = await prepare_hf_inference_bridge(
-                self,
-                environment,
-                env,
-                base_url_key=f"{prefix}_BASE_URL",
-                api_key_key=f"{prefix}_API_KEY",
-                inference_token=self._get_env("HF_INFERENCE_TOKEN"),
-                api=self._PROVIDER_API,
-                allowed_model=model,
-                max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
-                max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
-                timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
-                max_output_tokens=self._get_env(
-                    "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"
-                ),
-            )
-        job_model_id = model if bridged else None
-        max_output_tokens = (
-            inference_max_output_tokens(
-                env[JOB_INFERENCE_MAX_OUTPUT_TOKENS_ENV]
-                if job_bridged
-                else self._get_env("HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS")
-            )
-            if bridged
-            else None
-        )
-        if bridged:
-            env[_JOB_API_KEY_ENV] = env[f"{prefix}_API_KEY"]
-            env[_JOB_BASE_URL_ENV] = env[f"{prefix}_BASE_URL"]
+            api_key = self._get_env(f"{prefix}_API_KEY")
+            base_url = self._get_env(f"{prefix}_BASE_URL")
+            if not api_key or not base_url:
+                raise RuntimeError("OpenClaw requires direct OpenAI inference settings")
+            env[_JOB_API_KEY_ENV] = api_key
+            env[_JOB_BASE_URL_ENV] = base_url
+        output_limit = self._get_env(MAX_OUTPUT_TOKENS_ENV)
         await self._run_prepared(
             instruction,
             environment,
             context,
             env,
             runtime_model_name=(
-                f"{_JOB_PROVIDER}/{model}" if bridged else self.model_name
+                f"{_JOB_PROVIDER}/{model}" if provider == "openai" else self.model_name
             ),
-            job_model_id=job_model_id,
-            max_output_tokens=max_output_tokens,
+            job_model_id=model if provider == "openai" else None,
+            max_output_tokens=(
+                max_output_tokens(output_limit) if output_limit is not None else None
+            ),
         )
 
     async def _run_prepared(
@@ -1258,7 +1220,9 @@ class OpenClawAgent(IsolatedProviderAgent):
             runtime_config = self._build_full_openclaw_config()
         else:
             if max_output_tokens is None:
-                raise ValueError("OpenClaw Job provider requires an output-token limit")
+                raise ValueError(
+                    "OpenClaw direct provider requires an output-token limit"
+                )
             runtime_config = self._build_job_openclaw_config(
                 model_id=job_model_id,
                 max_output_tokens=max_output_tokens,

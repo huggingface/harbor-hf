@@ -1,258 +1,145 @@
 # Evidence and publication
 
-Harbor HF publishes results derived from canonical private evidence. The
-private `<artifact-bucket>` Bucket holds evidence, normalized rows, and catalog
-objects. The TypeScript control service rebuilds a disposable SQLite projection
-and serves authenticated result views through the same React application used
-for run progress. The browser never reads the Bucket. Keep deployed names
-in private configuration.
+Harbor-HF publishes only from canonical private evidence in the artifact
+Bucket. The control service verifies immutable objects and rebuilds its
+disposable projection from them. Browsers never read the Bucket directly.
 
 ## Evidence hierarchy
 
-Canonical run evidence follows this hierarchy:
-
 ```text
-run lock
-wave lifecycle and cleanup evidence
-run lock
-shard progress
-logical trial lock and summary
-physical execution lock and evidence
-checksums
-terminal marker
+Run lock
+prepared Harbor job
+logical trial
+physical attempt
+content-addressed evidence manifest
+selected attempt receipt
+terminal logical record
+normalized result
+publication receipt
 ```
 
-A physical retry creates a new execution directory. It never overwrites a prior
-execution. A logical trial summary selects the accepted execution and binds its
-checksum manifest.
+A replacement physical attempt creates a new identity and never overwrites a
+prior attempt. Terminal markers are written last and bind the complete child
+manifest.
 
-Terminal markers are written last. Parent summaries must bind child checksum
-manifests. A marker without its complete immutable envelope is invalid.
+## Complete physical attempt
 
-## Complete physical execution
+A scored attempt normally needs:
 
-A scored physical execution needs:
+- immutable Run, execution, and Harbor locks;
+- Harbor compatibility bundle and native result;
+- frozen post-agent workspace archive and file index;
+- native session and ATIF trajectory when required;
+- verifier reward, scorecard, stdout, and stderr;
+- source, model, agent, worker, and image provenance;
+- infrastructure observations;
+- exact credential scan;
+- complete checksums; and
+- terminal receipt after validation.
 
-- immutable execution and Harbor requests;
-- the Harbor compatibility bundle;
-- complete frozen `/app` archive and file index;
-- native agent session and trajectory when required;
-- provider route and request evidence for provider-backed agents;
-- judge recorder summary and selected complete exchange when required;
-- native verifier reward and scorecard plus stdout and stderr;
-- private artifact inventory;
-- exact secret scan;
-- complete root checksums;
-- terminal marker written after validation.
+A zero reward may be complete. Missing required evidence may not.
 
-A zero reward can satisfy this list. Missing evidence cannot.
+Use Harbor's accepted result and locked prices for available cost data. Leave
+unavailable usage unknown.
 
 ## Workspace boundary
 
-The workspace archive captures `/app` after the agent and descendants stop and
-before verification. The frozen copy is the verifier input. Verifier-created
-files are verifier evidence and do not alter the authoritative post-agent
+Capture `/app` only after the agent and descendants stop and before
+verification. The frozen copy is the verifier input. Verifier-created files
+belong to verifier evidence and do not alter the authoritative post-agent
 workspace.
 
-The archive and index must agree on paths and node types. They must also agree
-on modes and sizes plus digests. They must also agree on safe symlink targets. Capture cannot omit files to fit a policy limit.
-Unsupported nodes, unsafe symlinks, changing files, limit overflow, and known
-secrets invalidate the physical execution.
+The archive and index must agree on paths, node types, modes, sizes, digests,
+and safe symlink targets. Reject unsupported nodes, unsafe paths, changing
+files, limit overflow, or known credentials.
 
-## Judge evidence
+## Session, trajectory, and verifier evidence
 
-Judge calls use an execution-scoped recorder. Retain:
+Retain the exact native session selected by the harness contract and valid ATIF
+when required. Preserve tool calls, timing, role order, and termination
+semantics without inventing missing content.
 
-- exact received and forwarded request bytes;
-- exact upstream and delivered response bytes;
-- strict exchange metadata;
-- allowlisted response and request metadata;
-- recorder call counts and close state;
-- selected exchange ID used by the scorecard;
-- locked provider, API URL, model, reasoning policy, and temperature policy.
+Verifier evidence binds the locked task, frozen workspace, native reward,
+scorecard, logs, and optional judge exchange. Judge evidence must omit
+credentials, cookies, authorization headers, and signed capabilities.
 
-Credentials, cookies, authorization headers, and route capabilities are never
-retained. A missing recorder cannot be replaced by a direct judge call.
+## Validation
 
-A deterministic no-submission path may close the recorder with zero calls when
-the locked task policy permits it. The evidence must state that branch and omit
-a selected exchange.
+Structural validation checks schemas, strict fields, paths, identities,
+references, ordering, media types, timestamps, and completion rules.
 
-## Provider evidence
-
-Provider records remain content-free. They may retain request identity,
-routing and status together with timing and quota. They also retain usage and retry
-observations plus throttle observations. They do
-not retain prompts, responses, tool names, arguments, credentials, or scoped
-capabilities.
-
-Check continuation across tool calls and verify that retries use normalized
-request identity after authoritative provider parameters are applied. Fleet
-queue delay remains separate from provider latency.
-
-## Structural, digest, and deep validation
-
-Structural validation checks schemas, strict fields, safe paths, identity,
-states and references together with ordering and media types. It also checks timestamps and
-completion rules.
-
-Digest validation reads every referenced file and checks exact size and SHA-256.
-It also checks parent coverage.
-
-Deep validation streams the workspace archive, parses every session and
-trajectory record, validates judge body references and native verifier records,
-and compares restored content with the file index.
-
-Run local trial validation on downloaded evidence:
+Digest validation reads every referenced object and checks exact size and
+SHA-256. Deep validation streams workspace archives, parses sessions and
+trajectories, verifies verifier references, and compares restored content with
+the file index.
 
 ```bash
-uv run harbor-hf artifacts verify-trial TRIAL_ROOT --deep
-```
-
-Restore only to a new empty destination:
-
-```bash
-uv run harbor-hf artifacts restore-trial TRIAL_ROOT DESTINATION
-```
-
-A restore operation performs no remote fetch. Download private evidence first
-through an approved credential path.
-
-## Run verification
-
-After reconciliation is terminal:
-
-```bash
-uv run harbor-hf artifacts verify RUN_ID \
-  --namespace NAMESPACE \
+uv run harbor-hf artifacts verify-trial <trial-root> --deep
+uv run harbor-hf artifacts restore-trial <trial-root> <empty-destination>
+uv run harbor-hf artifacts verify <run-id> \
+  --namespace <namespace> \
   --format json > artifacts-verify.json
 ```
 
-Review every run and declared checksum. Confirm:
+Restore only into a new empty destination. Download private evidence through an
+approved credential path before local validation.
 
-- run and run identities;
-- task names, task digests, and logical attempts;
-- selected physical executions;
-- finite rewards and metric ownership;
-- compatible Harbor and agent identities;
-- endpoint cleanup evidence or provider route closure;
-- complete terminal markers;
-- absence of traversal, unsafe members, extra files, and conflicting markers.
+## Credential scanning
 
-Remote verification is mandatory before publication. Local deep validation adds
-audit confidence and is mandatory for repaired or recovered evidence.
+Load known injected values from the approved secret store without printing
+them. Scan path components and regular-file bytes in:
 
-## Secret scanning
-
-Known injected secret values are the mandatory scan set. Load them from the
-approved local secret store without printing them. Scan path components and
-regular-file bytes in:
-
-- workspace archives and indexes;
+- workspaces and indexes;
 - sessions and trajectories;
-- provider and judge evidence;
-- Harbor and worker logs;
-- manifests, locks, failures, compatibility bundles, and checksums;
-- candidate normalized public files and publication receipts.
+- verifier and judge evidence;
+- Harbor, worker, and tool logs;
+- manifests, locks, failures, compatibility bundles, and checksums; and
+- normalized public candidates and publication receipts.
 
-Also use high-confidence generic patterns for API keys, bearer tokens, private
-keys, cookies, signed URLs, scoped capabilities, and secret query parameters.
+Also scan for high-confidence API keys, bearer tokens, private keys, cookies,
+signed URLs, capabilities, and secret query parameters.
 
-Report only the file, detector category, and count needed for remediation. Do
-not print matching bytes. A known secret in exact trial evidence invalidates the
-execution; rewriting it with a redaction token would destroy reproducibility.
+Report only the file, detector category, and count needed for remediation.
+Never print matching bytes. A known credential in canonical attempt evidence
+invalidates that attempt; do not rewrite the evidence to disguise the leak.
 
-## Scoring review
+## Result review
 
-Before publication, independently compute:
+Independently compute:
 
-- expected logical trial denominator;
-- selected tasks and attempt distribution;
-- reward counts and finite-value checks;
-- strict pass count;
-- mean reward;
-- per-task pass count across attempts;
-- infrastructure-exhausted and agent-failed counts plus benchmark-failed and
-  cancelled counts and invalid counts;
-- physical retry count and retry reasons.
+- expected logical task denominator;
+- selected task and attempt distribution;
+- reward count and finite-value checks;
+- strict pass count and mean reward;
+- per-task pass count for repeated protocols;
+- semantic outcome counts;
+- infrastructure-exhausted, cancelled, and invalid counts; and
+- physical replacement count and reasons.
 
-For six-attempt protocols, report the mean across six independent attempts and
-each task's 0-to-6 pass count. Do not use any-of-six as the headline score.
+Do not present infrastructure exhaustion as a model answer. Partial,
+diagnostic, corrected, manually selected, or composite outputs require explicit
+labels and separate cohorts.
 
-Keep failure categories in the result. Infrastructure exhaustion cannot be
-presented as a model answer, even when the fixed-denominator policy assigns it
-zero.
-
-## Result classes
-
-Ordinary complete results may enter the comparable cohort defined by the
-publication contract. Complete runs can contain terminal benchmark zeros
-and declared exhausted failures when the protocol defines them.
-
-Partial and composite results need explicit labels. Correction and diagnostic results need them too. Manually selected results
-also need
-explicit labels and publication paths. Do not insert them into an ordinary
-complete cohort.
-
-A provider-backed run publishes `model_revision: not_observed` because the
-Inference Provider does not prove which Hub commit it served. Endpoint-backed
-runs publish only the revision verified from endpoint configuration.
+For hosted inference, publish only observable facts. If the served model commit
+or runtime configuration is not proven, report it as `not_observed` or unknown.
 
 ## Publication
 
-Publication is a separate deterministic action after every logical task is
-sealed, all physical actions have receipts, and endpoint cleanup is verified.
-The reconciler writes immutable Parquet tables, catalog objects, and a
-publication receipt. A publication failure does not reopen benchmark work.
+Publication is a deterministic control action after:
 
-Inspect the projected publications with:
+- every logical task is sealed;
+- every physical action has a receipt;
+- required evidence validates;
+- managed Endpoint cleanup is verified; and
+- result-class policy is satisfied.
 
-```bash
-uv run harbor-hf results
-uv run harbor-hf audit
-```
+The action writes immutable normalized tables, catalogs, and a publication
+receipt. A publication failure does not reopen benchmark execution.
 
-Record:
+Record the publication ID, Run ID, object paths and digests, schema version,
+row counts, score summary, result class, source evidence roots, Endpoint cleanup
+state, and public destinations.
 
-- publication ID and run ID
-- immutable paths and SHA-256 digests for every result object
-- source run, selected attempts, and Bucket evidence paths
-- full model, benchmark, harness, and deployment provenance
-- row counts for each normalized table
-- result outcome, quality, publication role, and metric unit
-- publication receipt and catalog digest
-
-A repeated matching publication adopts the existing objects and receipt. It
-does not duplicate rows or execute a task.
-
-## Catalog decisions
-
-Profile promotions and result corrections are immutable records with an actor,
-reason, evidence, and source digest. A withdrawal changes comparison
-eligibility without deleting private evidence. Keep evidence while any result,
-correction, audit, or recovery record refers to it.
-
-## Public boundary
-
-Public result stores may contain normalized rows and safe artifact metadata,
-including private relative path, media type, size, and digest. They must not
-contain raw sessions, trajectories, workspaces, task bodies, prompts, judge
-responses, scorecards, manifests, logs, or archives.
-
-The React console reads validated catalogs through same-origin APIs. It has no
-direct Bucket credential and owns no authoritative state.
-
-## Publication report
-
-A final report should state:
-
-- run result class and completeness
-- logical and physical execution counts
-- score calculation and denominator
-- failures and infrastructure retries by category
-- artifact verification and deep-validation results
-- secret-scan file count, byte count, detector set, and zero-finding status
-- provider or endpoint identity limits
-- publication object digests and control revision
-- catalog role or correction action
-- remaining retention and audit obligations
+Public output may include approved normalized fields and traces. It must omit
+raw workspaces, private sessions, credentials, capabilities, private object
+keys, and private deployment topology.

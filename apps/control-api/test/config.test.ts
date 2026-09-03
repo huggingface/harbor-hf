@@ -63,6 +63,44 @@ describe("control API configuration", () => {
     ).toBe(45_000);
   });
 
+  it("keeps Workbench setup disabled outside development unless configured", () => {
+    const defaultConfig = loadConfig(environment);
+    expect(defaultConfig.workbench_runner).toBe("disabled");
+    expect(defaultConfig.workbench_image).toBe("python:3.12-slim");
+
+    const developmentConfig = loadConfig({
+      ...environment,
+      NODE_ENV: "development",
+    });
+    expect(developmentConfig.workbench_runner).toBe("docker");
+
+    const configured = loadConfig({
+      ...environment,
+      HARBOR_HF_WORKBENCH_RUNNER: "docker",
+      HARBOR_HF_WORKBENCH_IMAGE: "example.invalid/agent-setup@sha256:test",
+    });
+    expect(configured.workbench_runner).toBe("docker");
+    expect(configured.workbench_image).toBe("example.invalid/agent-setup@sha256:test");
+
+    const remote = loadConfig({
+      ...environment,
+      HF_TOKEN: "control-test-credential",
+      HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
+      HARBOR_HF_WORKBENCH_IMAGE: "example.invalid/agent-setup@sha256:remote",
+    });
+    expect(remote.workbench_runner).toBe("hf-jobs");
+    expect(remote.workbench_image).toBe("example.invalid/agent-setup@sha256:remote");
+  });
+
+  it("requires the control credential for Hugging Face Workbench Jobs", () => {
+    expect(() =>
+      loadConfig({
+        ...environment,
+        HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
+      }),
+    ).toThrow("Hugging Face Workbench Jobs require HF_TOKEN");
+  });
+
   it("loads a distinct worker inference credential without exposing it elsewhere", () => {
     const config = loadConfig({
       ...environment,

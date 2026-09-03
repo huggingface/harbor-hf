@@ -40,13 +40,13 @@ import { useControlState } from "./control-state";
 import { hints } from "./hints";
 import {
   approvedAlias,
+  compatibleBenchmarks,
   counted,
   doubleReservationMicrousd,
   firstCompatibleLaunchSelection,
-  harnessAgent,
   labeledHarness,
   profileLabel,
-  REASONING_OPTIONS,
+  selectCompatibleBenchmarkAlias,
   selectDeploymentAlias,
   selectHarnessAlias,
 } from "./launch";
@@ -392,8 +392,7 @@ const launchSchema = z.object({
   benchmark: z.string().min(2),
   model: z.string().min(2),
   launchPolicy: z.string().min(2),
-  harnessAgent: z.string().min(2),
-  reasoning: z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]),
+  harness: z.string().min(2),
   deploymentKind: z.enum(["providers", "endpoints"]),
   ceiling_usd: z.number().nonnegative(),
   confirmed: z
@@ -926,7 +925,13 @@ export function OverviewPage() {
   );
 }
 
-function LaunchPanel({ onClose }: { onClose(): void }) {
+function LaunchPanel({
+  onClose,
+  initialHarness,
+}: {
+  onClose(): void;
+  initialHarness?: string;
+}) {
   const navigate = useNavigate();
   const client = useQueryClient();
   const profiles = useAllProfiles();
@@ -938,8 +943,7 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
       benchmark: "",
       model: "",
       launchPolicy: "",
-      harnessAgent: "",
-      reasoning: "off",
+      harness: initialHarness ?? "",
       deploymentKind: "providers",
       ceiling_usd: 0,
       confirmed: false,
@@ -970,16 +974,6 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
   const previousApprovedSignature = useRef<string | undefined>(undefined);
   const ofKind = (kind: string) =>
     approved.filter((profile) => profile.profile_kind === kind);
-  const uniqueAgents = useMemo(
-    () => [
-      ...new Set(
-        approved
-          .filter((profile) => profile.profile_kind === "harness")
-          .map((profile) => harnessAgent(profile.spec)),
-      ),
-    ],
-    [approved],
-  );
   const compatibleDefault = useMemo(() => {
     const profileRefs = (kind: string) =>
       approved
@@ -993,11 +987,12 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
         profileRefs("model"),
         profileRefs("harness"),
         profileRefs("deployment"),
+        initialHarness,
       );
     } catch {
       return undefined;
     }
-  }, [approved]);
+  }, [approved, initialHarness]);
   useEffect(() => {
     let replacedSelection = false;
     if (
@@ -1018,11 +1013,6 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
       approved
         .filter((profile) => profile.profile_kind === kind)
         .map((profile) => profile.approved_alias);
-    const benchmarks = aliases("benchmark");
-    if (!benchmarks.includes(form.getValues("benchmark")) && benchmarks[0]) {
-      form.setValue("benchmark", benchmarks[0]);
-      replacedSelection = true;
-    }
     const launchPolicies = aliases("launch_policy");
     if (
       form.getValues("launchPolicy") &&
@@ -1035,8 +1025,7 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
     try {
       const harness = selectHarnessAlias(
         profileRefs("harness"),
-        form.getValues("harnessAgent"),
-        form.getValues("reasoning"),
+        form.getValues("harness"),
       );
       approvedAlias(form.getValues("model"), aliases("model"), "model");
       selectDeploymentAlias(
@@ -1054,12 +1043,8 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
         form.setValue("model", compatibleDefault.model);
         replacedSelection = true;
       }
-      if (form.getValues("harnessAgent") !== compatibleDefault.harnessAgent) {
-        form.setValue("harnessAgent", compatibleDefault.harnessAgent);
-        replacedSelection = true;
-      }
-      if (form.getValues("reasoning") !== compatibleDefault.reasoning) {
-        form.setValue("reasoning", compatibleDefault.reasoning);
+      if (form.getValues("harness") !== compatibleDefault.harness) {
+        form.setValue("harness", compatibleDefault.harness);
         replacedSelection = true;
       }
       if (form.getValues("deploymentKind") !== compatibleDefault.deploymentKind) {
@@ -1070,6 +1055,69 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
     if (replacedSelection) form.setValue("confirmed", false);
   }, [approved, approvedSignature, compatibleDefault, form]);
   const resetConfirmation = () => form.setValue("confirmed", false);
+  const benchmarkProfiles = useMemo(
+    () =>
+      approved
+        .filter((profile) => profile.profile_kind === "benchmark")
+        .map((profile) => ({
+          alias: profile.approved_alias,
+          spec: profile.spec,
+        })),
+    [approved],
+  );
+  const deploymentProfiles = useMemo(
+    () =>
+      approved
+        .filter((profile) => profile.profile_kind === "deployment")
+        .map((profile) => ({
+          alias: profile.approved_alias,
+          spec: profile.spec,
+        })),
+    [approved],
+  );
+  let selectedHarness: string | undefined;
+  let selectedDeployment: (typeof deploymentProfiles)[number] | undefined;
+  try {
+    selectedHarness = selectHarnessAlias(
+      ofKind("harness").map((profile) => ({
+        alias: profile.approved_alias,
+        spec: profile.spec,
+      })),
+      values.harness,
+    );
+    const deploymentAlias = selectDeploymentAlias(
+      deploymentProfiles,
+      values.deploymentKind,
+      values.model,
+      selectedHarness,
+    );
+    selectedDeployment = deploymentProfiles.find(
+      (profile) => profile.alias === deploymentAlias,
+    );
+  } catch {
+    selectedHarness = undefined;
+    selectedDeployment = undefined;
+  }
+  const benchmarkChoices = selectedDeployment
+    ? compatibleBenchmarks(benchmarkProfiles, selectedDeployment.spec)
+    : [];
+  useEffect(() => {
+    if (!selectedDeployment) return;
+    let benchmark = "";
+    try {
+      benchmark = selectCompatibleBenchmarkAlias(
+        benchmarkProfiles,
+        selectedDeployment.spec,
+        form.getValues("benchmark"),
+      );
+    } catch {
+      // A valid deployment with no compatible benchmark remains visibly unresolved.
+    }
+    if (form.getValues("benchmark") !== benchmark) {
+      form.setValue("benchmark", benchmark);
+      form.setValue("confirmed", false);
+    }
+  }, [benchmarkProfiles, form, selectedDeployment]);
   let resolved:
     | {
         harness: string;
@@ -1081,7 +1129,7 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
   try {
     approvedAlias(
       values.benchmark,
-      ofKind("benchmark").map((profile) => profile.approved_alias),
+      benchmarkChoices.map((profile) => profile.alias),
       "benchmark",
     );
     approvedAlias(
@@ -1090,30 +1138,29 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
       "model",
     );
     resolved = {
-      harness: selectHarnessAlias(
-        ofKind("harness").map((profile) => ({
-          alias: profile.approved_alias,
-          spec: profile.spec,
-        })),
-        values.harnessAgent,
-        values.reasoning,
-      ),
-      deployment: "",
+      harness:
+        selectedHarness ??
+        selectHarnessAlias(
+          ofKind("harness").map((profile) => ({
+            alias: profile.approved_alias,
+            spec: profile.spec,
+          })),
+          values.harness,
+        ),
+      deployment: selectedDeployment?.alias ?? "",
       launch_policy: approvedAlias(
         values.launchPolicy,
         ofKind("launch_policy").map((profile) => profile.approved_alias),
         "launch policy",
       ),
     };
-    resolved.deployment = selectDeploymentAlias(
-      ofKind("deployment").map((profile) => ({
-        alias: profile.approved_alias,
-        spec: profile.spec,
-      })),
-      values.deploymentKind,
-      values.model,
-      resolved.harness,
-    );
+    if (!resolved.deployment)
+      resolved.deployment = selectDeploymentAlias(
+        deploymentProfiles,
+        values.deploymentKind,
+        values.model,
+        resolved.harness,
+      );
   } catch (error) {
     resolvedError = error instanceof Error ? error.message : String(error);
   }
@@ -1165,9 +1212,9 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
         <div>
           <h2 className="font-semibold">Start a run</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Choose the benchmark, model, runtime, harness, reasoning, and launch policy.
-            The hard ceiling follows twice the estimated reservation until you edit it.
-            Submit locks those choices onto the run.
+            Choose the benchmark, model, harness, reasoning, and launch policy. The hard
+            ceiling follows twice the estimated reservation until you edit it. Submit
+            locks those choices onto the run.
           </p>
         </div>
         <Button variant="ghost" onClick={onClose}>
@@ -1206,9 +1253,9 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
               aria-label="Benchmark"
               {...form.register("benchmark", { onChange: resetConfirmation })}
             >
-              {ofKind("benchmark").map((profile) => (
-                <option key={profile.profile_id} value={profile.approved_alias}>
-                  {profileLabel("benchmark", profile.approved_alias, profile.spec)}
+              {benchmarkChoices.map((profile) => (
+                <option key={profile.alias} value={profile.alias}>
+                  {profileLabel("benchmark", profile.alias, profile.spec)}
                 </option>
               ))}
             </select>
@@ -1231,20 +1278,6 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
             </select>
           </div>
           <div className="space-y-1.5 text-sm">
-            <Hint text={hints.launch.deployment} icon>
-              Runtime
-            </Hint>
-            <select
-              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-400 disabled:opacity-50"
-              disabled={!writesAllowed}
-              aria-label="Runtime"
-              {...form.register("deploymentKind", { onChange: resetConfirmation })}
-            >
-              <option value="providers">Inference Providers</option>
-              <option value="endpoints">Inference Endpoints</option>
-            </select>
-          </div>
-          <div className="space-y-1.5 text-sm">
             <Hint text={hints.launch.harness} icon>
               Harness
             </Hint>
@@ -1252,28 +1285,11 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
               className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-400 disabled:opacity-50"
               disabled={!writesAllowed}
               aria-label="Harness"
-              {...form.register("harnessAgent", { onChange: resetConfirmation })}
+              {...form.register("harness", { onChange: resetConfirmation })}
             >
-              {uniqueAgents.map((agent) => (
-                <option key={agent} value={agent}>
-                  {profileLabel("harness", agent, { agent })}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5 text-sm">
-            <Hint text={hints.launch.reasoning} icon>
-              Reasoning
-            </Hint>
-            <select
-              className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-400 disabled:opacity-50"
-              disabled={!writesAllowed}
-              aria-label="Reasoning"
-              {...form.register("reasoning", { onChange: resetConfirmation })}
-            >
-              {REASONING_OPTIONS.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
+              {ofKind("harness").map((profile) => (
+                <option key={profile.profile_id} value={profile.approved_alias}>
+                  {profileLabel("harness", profile.approved_alias, profile.spec)}
                 </option>
               ))}
             </select>
@@ -1356,7 +1372,19 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
                 </div>
                 <div>
                   <dt className="text-slate-500">Locked harness</dt>
-                  <dd>{labeledHarness(values.harnessAgent)}</dd>
+                  <dd>
+                    {profileLabel(
+                      "harness",
+                      resolved?.harness ?? values.harness,
+                      specOf("harness") ?? {},
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Locked reasoning</dt>
+                  <dd>
+                    {humanize(String(specOf("harness")?.reasoning_effort ?? "off"))}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Locked deployment</dt>
@@ -1378,9 +1406,9 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
                 {...form.register("confirmed")}
               />
               <span className="min-w-0 text-sm text-slate-300">
-                I confirm the benchmark, model, runtime, harness, reasoning, launch
-                policy, task count, and cost ceiling. After submit those values are
-                locked on the run.
+                I confirm the benchmark, model, harness, reasoning, launch policy, task
+                count, and cost ceiling. After submit those values are locked on the
+                run.
                 <span className="mt-1.5 block text-slate-400">
                   <Hint text={hints.launch.confirmed} icon>
                     Why is this required?
@@ -1418,11 +1446,29 @@ function LaunchPanel({ onClose }: { onClose(): void }) {
 
 export function RunsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const handoff = useRef<{
+    launch: boolean;
+    harness: string | undefined;
+  } | null>(null);
+  if (!handoff.current) {
+    handoff.current = {
+      launch: searchParams.get("launch") === "1",
+      harness: searchParams.get("harness") ?? undefined,
+    };
+  }
   const navigation = useCursorNavigation();
-  const [launching, setLaunching] = useState(false);
+  const initialHarness = handoff.current.harness;
+  const [launching, setLaunching] = useState(handoff.current.launch);
   const query = useRuns(navigation.cursor);
   const { writesAllowed, writeMode } = useControlState();
   const filter = searchParams.get("status") ?? "all";
+  useEffect(() => {
+    if (!searchParams.has("launch") && !searchParams.has("harness")) return;
+    const updated = new URLSearchParams(searchParams);
+    updated.delete("launch");
+    updated.delete("harness");
+    setSearchParams(updated, { replace: true });
+  }, [searchParams, setSearchParams]);
   const items = (query.data?.items ?? []).filter(
     (item) => filter === "all" || item.status === filter,
   );
@@ -1498,7 +1544,7 @@ export function RunsPage() {
     <>
       <PageHeader
         title="Runs"
-        description="Each run locks a benchmark, model, harness, reasoning, runtime, and cost ceiling. Logical tasks stay sealed; only infrastructure failures can be replaced."
+        description="Each run locks a benchmark, model, harness, reasoning, and cost ceiling. Logical tasks stay sealed; only infrastructure failures can be replaced."
         action={
           <Button
             disabled={!writesAllowed}
@@ -1514,7 +1560,12 @@ export function RunsPage() {
           </Button>
         }
       />
-      {launching ? <LaunchPanel onClose={() => setLaunching(false)} /> : null}
+      {launching ? (
+        <LaunchPanel
+          {...(initialHarness ? { initialHarness } : {})}
+          onClose={() => setLaunching(false)}
+        />
+      ) : null}
       <nav className="mb-4 flex flex-wrap gap-2" aria-label="Filter runs">
         {["all", "active", "cancelling", "publishing", "completed", "cancelled"].map(
           (status) => (
@@ -1841,13 +1892,6 @@ export function RunPage() {
                       0,
                       capacity.data.hardware_limit - capacity.data.hardware_active,
                     )} available`}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Provider requests</dt>
-              <dd className="mt-1">
-                {capacity.data.provider_reserved}/{capacity.data.provider_limit}{" "}
-                reserved
               </dd>
             </div>
             <div>

@@ -1,74 +1,55 @@
 # Harbor Compatibility Contract
 
-This document freezes the Harbor assumptions used by `harbor-hf` while the
-generic Harbor-owned execution protocol is developed upstream. New worker and
-run attempts use this adapter. Historical evidence can still be read by
-the isolated legacy reader.
+This document defines the active boundary between Harbor and Harbor-HF.
+Historical evidence remains readable at its pinned revisions, but new
+preparation, execution, retry, and recovery use this contract.
 
-## Ownership Boundary
+## Ownership boundary
 
-Harbor owns the job config, task resolution, custom-agent loading, environment
-config, trial execution, locks, results, verifier rewards, exceptions, timing,
-token usage, and trial artifact inventory. Workers install Harbor from a pinned
-`harbor-framework/harbor` git commit. Upstream Harbor remains unchanged;
-Harbor-HF uses only its public APIs and does not monkeypatch Harbor internals.
-When a Harbor CLI process exits after writing a trial result, Harbor-HF accepts
-success only if that durable result has no trial exception and its emitted lock
-exactly matches the prepared lock.
+Harbor owns:
 
-`harbor-hf` owns run, execution, and physical attempt identity, Hugging Face
-infrastructure, immutable request storage, endpoint cleanup, infrastructure
-retries, policy checks, evidence publication, and normalized result rows. The
-planned TypeScript service owns shared run decisions. Pinned Python workers
-continue to call Harbor and write attempt evidence, but they do not become a
-second control authority. See the [control service
-specification](CONTROL_SERVICE.md).
+- `JobConfig`, `JobPlan`, `JobLock`, and `TrialLock`;
+- benchmark and task-source resolution;
+- `AgentConfig` loading and agent execution;
+- task environments and verifier execution;
+- native sessions, trajectories, metrics, exceptions, and trial results; and
+- the trial artifact inventory exposed by public Harbor APIs.
 
-The hosted control path calls Harbor through two generic workers. The
-preparation worker resolves the job. The execution worker runs its prepared
-trials. Neither worker branches on a benchmark, model, or harness name.
-`FilesystemHarborExecutionAdapter` remains outside the hosted new-write path for
-historical evidence tools.
+Harbor-HF owns:
 
-## Execution Input
+- immutable profiles and their composition;
+- Run, logical task, and physical attempt identity;
+- Hugging Face Jobs and Endpoint lifecycle;
+- admission, spend, cancellation, and replacement policy;
+- evidence upload, verification, retention, and selection;
+- result normalization and publication; and
+- the shared TypeScript control authority.
 
-A new run first locks its approved profiles, expected logical tasks, and one
-complete resolved execution contract. The TypeScript control service builds the
-contract before reservation or admission. It contains the exact Harbor
-`AgentConfig`, selected model route, derived root bridge route, provider API,
-limits, worker provenance, Harbor version, and source profile IDs.
+Harbor-HF installs Harbor from a pinned `harbor-framework/harbor` commit and
+uses only public APIs. It does not patch Harbor internals or add
+benchmark-specific readers.
 
-The model profile supplies the canonical Harbor route. The harness profile
-supplies a model-independent custom-agent template and capabilities. The
-deployment profile supplies provider and execution policy without another model
-route. The resolver checks the combination and derives the final values. A
-secret-free preparation Job consumes those locked values, runs the pinned Harbor
-git commit, and builds one normal `JobConfig`. It does not bind the model again.
-Harbor resolves the dataset and task sources through its public `JobPlan` API.
-The preparation worker then writes:
+## Resolved execution input
 
-- one immutable `prepared.trial` record per logical task;
-- one final `prepared.job` record that binds the ordered trials;
-- one SHA-256 digest for the reconstructed Harbor `JobLock`.
+Before admission, the control service composes the selected benchmark, model,
+harness, deployment, and launch policy into one immutable execution contract.
 
-Each prepared trial contains the exact Harbor `TrialLock`, source task digest,
-container image digest, resource request, and phase time limits. The control
-service checks the task against the run lock and selects compatible Hugging
-Face Job hardware from the locked execution contract. Prepared and executed
-agent, route, API, limit, and worker values must match that contract exactly.
+The contract contains:
 
-Historical locks without the resolved execution contract remain readable and
-immutable. After the profile cutover, they cannot create, resume, or retry
-work. The [reusable harness profile plan](2026-08-28-reusable-harness-profiles-plan.md)
-defines the cutover and rollback gates. The deployment profile sets
-limits and prices but contains no benchmark task catalog.
+- the exact Harbor and agent-package revisions;
+- a complete Harbor `AgentConfig`;
+- the canonical Harbor model route;
+- provider-facing model identity;
+- inference upstream and API when required;
+- context, output, timeout, and price settings;
+- worker image, command, hardware, and source provenance;
+- task-image safety limits; and
+- physical-attempt, evidence, and publication policy.
 
-An execution worker receives the one task assigned to its physical Job. It
-fetches that prepared record, reconstructs a one-attempt Harbor `JobConfig`,
-and lets Harbor fetch the exact Git or package task. It does not read a dataset
-manifest or select tasks again. Harbor's internal retry count remains zero.
-After a trial, the worker compares Harbor's emitted `TrialLock` with the
-prepared lock before it can submit evidence or an outcome.
+The model profile is the only source of model identity. The harness profile
+contributes a model-independent agent template. The deployment contributes
+execution and inference routing. The resolver rejects incompatible
+combinations before creating a Job.
 
 A physical Job runs the prepared task from the beginning. If it ends with a
 replacement-eligible infrastructure failure, a later Job reconstructs the same
@@ -83,9 +64,10 @@ revision and use the pinned Harbor git commit. The preparation worker has no
 persistent secret, inference access, or Bucket mount. The execution worker has
 no broad control credential or Bucket mount. Its short-lived capability is
 scoped to the assigned lock, evidence upload, and attempt receipt. When
-inference is required, the Job receives only the inference credential for the
-root-owned bridge. The benchmark agent receives only its loopback route and
-placeholder key.
+inference is required, the Job receives only `HF_INFERENCE_TOKEN`. Direct
+profiles expose it through the resolved `AgentConfig` to the reviewed agent.
+Approved immutable compatibility profiles may instead invoke the root bootstrap
+required by their pinned historical worker.
 
 A reviewed worker repair may retry an unresolved task with a new worker. A
 normal resume is not a repair. Historical retries bind the exact immutable
@@ -95,140 +77,178 @@ logical trial. Valid completed-task receipts stay selected, and recovery runs
 only unresolved tasks. A repeated deterministic shared failure pauses the
 affected fleet.
 
-## Custom Provider Agents
+## Preparation
 
-Every provider-backed agent is loaded through Harbor's public
-`AgentConfig.import_path` field. Each custom adapter lives in a separate module
-under the `harbor-hf-agents` package. New provider attempts have no fallback to
-another harness or wire API.
+A credential-free preparation Job invokes Harbor's public planning API and
+stores:
 
-One internal registry validates the logical agent name, import path, required
-wire API, permitted non-secret parameters, trajectory schema, session
-requirement, and retry taxonomy. This registry is Python data, not another
-serialized protocol. Generic Harbor request, worker, and evidence code perform
-a registry lookup and contain no agent-name branches.
+- one immutable prepared trial for every logical task;
+- one prepared job record binding their order; and
+- a digest of the reconstructed Harbor `JobLock`.
 
-Each agent module selects a runtime driver that matches its registered wire API.
-For an OpenCode Chat Completions route, the adapter-generated provider entry
-declares `npm: "@ai-sdk/openai-compatible"`. The same entry registers the exact
-locked model and the loopback bridge base URL. The adapter applies these
-route-owned fields after it copies caller `opencode_config`, so unrelated caller
-settings remain while conflicting driver, model, and base URL values are
-replaced. The bridge continues to reject Responses requests on a Chat
-Completions route.
+Each prepared trial includes the exact `TrialLock`, task-source digest,
+task-image digest, resources, phase limits, and resolved `AgentConfig`.
 
-The standalone Codex adapter uses Harbor's pinned Codex implementation and its
-native Responses API. It preserves the complete namespaced model ID after
-removing only Harbor's provider prefix. It runs under the isolated agent account
-and remains distinct from OpenClaw with the Codex runtime.
+Historical locks that lack the current resolved contract remain immutable and
+readable. They cannot authorize new work.
 
-A deployment is eligible only when its inference API appears in both the model
-provider route's native API list and the harness capability list. The control
-service rejects an incompatible explicit selection before launch, including a
-stale promoted deployment, and automatic selection finds no deployment for an
-unsupported model-provider-harness combination. Matrix plans record that cell
-as unsupported and skip it without creating a run or treating it as a benchmark
-failure. Do not add request translation, response translation, fallback, or
-payload rewriting to force compatibility between different inference APIs.
+## Execution
 
-The Terminus profile keeps the public profile name `terminus` and Harbor's
-`terminus-2` result identity. Terminus is trusted in-process Harbor code. It
-validates the root-owned Job route before execution, uses the locked Chat
-Completions loopback route, and always stops the bridge before verifier
-execution. Its LiteLLM model information comes from the immutable model and
-deployment profiles.
+An execution Job receives exactly one prepared trial. It reconstructs a
+one-attempt Harbor `JobConfig`; it does not select tasks or read a mutable
+benchmark manifest.
 
-mini-swe-agent receives a finite task cost limit and an exact LiteLLM model
-registry derived from the immutable inference contract. The registry preserves
-model identity, token limits, and input, output, cache-read, and cache-write
-prices. The adapter does not use an unpriced fallback or disable the tool's
-cost limit.
+After Harbor exits, the worker accepts the trial only when:
 
-The existing pinned worker revision identifies the package implementation. The
-agent profile identifies the custom import path and exact underlying agent
-revision. Package-backed agents use exact numeric versions; Git-backed agents
-use full commits. Harbor's result must report the same logical agent name,
-revision, model provider, and model name that the independent verification
-policy expects.
+- Harbor wrote a durable native result;
+- the result contains no unhandled trial exception for a successful outcome;
+- the emitted lock exactly matches the prepared lock;
+- agent, model, API, source, image, and verifier identities match;
+- required evidence is present and digest-valid; and
+- secret scanning succeeds.
 
-## Compatibility Export
+Harbor's internal retry count is zero. Harbor-HF owns physical replacement
+attempts so every execution has an explicit identity and receipt.
 
-After Harbor exits, the adapter runs `harbor_adapter/exporter.py` with the same
-pinned Harbor project environment. The exporter imports and validates Harbor's
-own `JobLock`, `JobResult`, `TrialLock`, and `TrialResult` models. It emits
-`harbor-compatibility.json` with schema
-`harbor-hf/harbor-compatibility/v1alpha3`. Readers remain compatible with
-`v1alpha2` bundles, which did not include exception messages.
+## Direct inference through `AgentConfig`
 
-The bundle contains:
+Direct-inference agents are loaded through Harbor's public
+`AgentConfig.import_path`. Their resolved `AgentConfig` supplies:
 
-- Harbor source revision and package version;
-- the immutable request digest;
-- checksums and progress counts for each Harbor job lock and result;
-- checksums, task and agent identity, model identity, exceptions, verifier
-  rewards, timing, usage, and a typed private artifact inventory for each trial;
-- no exception tracebacks, environment variables, agent config, task content,
-  or secret values.
-
-The exporter retries a transient failure up to three times within the shared
-execution deadline. Each attempt is retained in `harbor-export.log`; stale
-partial bundles are removed before a retry. Persistent export failures remain
-terminal. The normal evidence redaction, secret scan, checksums, and
-terminal-marker rules apply to the input, bundle, log, and raw Harbor artifacts
-together.
-
-The controller writes `private-artifacts.json` for every direct Harbor trial and
-for each complete run physical execution. Entries are sorted,
-private-only, size-bounded, and checksummed. A successful provider-agent trial
-whose registry definition requires a native session must include a non-empty
-session JSONL. Failed and timed-out trials
-retain the same requirement record without turning incomplete evidence into a
-score. Raw files and this private manifest cannot cross the normalized result
-publication boundary.
-
-## Additional Policy
-
-The typed bundle is accepted only when all of these checks pass:
-
-- Harbor revision and request digest match the immutable request;
-- the number and names of trials match the fully resolved task set and attempt
-  count, including wildcard selectors;
-- every trial lock has the expected task content digest;
-- custom-agent import path, logical agent name, agent version, model provider,
-  and model name match the request;
-- trial and multi-step exception fields are empty;
-- every trial has at least one finite numeric verifier reward.
-
-A nonzero Harbor exit with a typed trial exception preserves that exception for
-run retry classification. Other malformed output from a failed process is
-reported as the Harbor process failure. A zero exit without a valid typed
-bundle cannot publish success or a score.
-
-## Historical Reader
-
-`harbor_hf.harbor_adapter.legacy` preserves the old `lock.json` and
-`result.json` reader for existing evidence and audit tools. New execution paths
-do not call it. It can be removed from new-write support only after the
-Harbor-owned protocol satisfies the migration conditions in the
-[refactor plan](harbor-integration-refactor.md).
-
-## Behavioral Baseline
-
-The remote baseline is run
-`20260714T072108Z-7a2b167238-2bbc0a89fe`, produced with Harbor commit
-`bd9e606dcb99eb49de70bd741fd846cae5c7ebd1` and OpenClaw `2026.6.11`.
-Its evidence is stored under:
-
-```text
-hf://buckets/example-org/benchmark-runs/runs/
-20260714T072108Z-7a2b167238-2bbc0a89fe
+```json
+{
+  "model_name": "openai/<model-id>:<inference-provider>",
+  "env": {
+    "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
+    "OPENAI_BASE_URL": "<approved-upstream>",
+    "HARBOR_HF_MAX_OUTPUT_TOKENS": "<locked-limit>",
+    "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": "<locked-timeout>"
+  },
+  "extra_allowed_hosts": ["<upstream-host>"]
+}
 ```
 
-Exporter parity was checked against a preserved successful physical execution
-from that run using the same Harbor commit. Harbor `0.17.1` validated one
-job and one trial, including task digest, agent/model identity, rewards, usage,
-and 12 artifact inventory entries.
+Harbor expands the credential reference in the execution Job. The selected
+agent configures its native runtime from these values and calls the upstream
+directly.
 
-The canonical job config was also accepted by the pinned Harbor `JobConfig`
-parser through `harbor run --config ... --print-config`. No inference, model
-weights, endpoint mutation, or remote benchmark was used for either check.
+Approved immutable profiles for pinned historical workers may explicitly
+require the compatibility bridge instead. That launch path is selected by
+profile data, retains its bounded settings, and is not available to arbitrary
+Workbench recipes.
+
+Compatibility is exact:
+
+- the model profile lists supported inference APIs;
+- the harness profile lists supported inference APIs;
+- the deployment declares one API;
+- the provider suffix in the Harbor model route matches the deployment; and
+- the upstream host is allowlisted.
+
+An unsupported combination is rejected or skipped in a matrix before Run
+creation. Do not translate requests or responses, silently select another
+model, change the upstream, or fall back to another harness.
+
+## Harbor agent plugins
+
+Each supported harness has a separate module in `harbor-hf-agents` and an exact
+profile revision. Shared support is limited to neutral concerns such as:
+
+- direct environment resolution;
+- isolated-user command execution;
+- task-process cleanup before verification;
+- session discovery and redaction;
+- ATIF conversion;
+- timeout and output-limit validation; and
+- failure classification.
+
+Agent-specific code may generate the native tool's configuration file or
+environment aliases. It must preserve the resolved model, API, and upstream.
+Package-backed tools use exact package versions; Git-backed tools use full
+commits.
+
+The registry validates import paths, revisions, API capabilities, permitted
+arguments, session requirements, trace formats, and retry taxonomy. Generic
+worker and evidence code must not contain agent-name branches.
+
+## Compatibility export
+
+The worker exports a versioned compatibility bundle from Harbor's native
+objects. It preserves:
+
+- Run, logical task, and physical attempt identity;
+- Harbor job and trial locks;
+- agent and model identity;
+- task source and image identity;
+- native reward, metrics, timing, and exception data;
+- session and trajectory references;
+- verifier records;
+- worker and package provenance; and
+- evidence checksums.
+
+The exporter validates rather than repairs Harbor output. Missing required
+fields, malformed sessions, inconsistent paths, non-finite metrics, lock drift,
+or identity drift fail closed.
+
+## Evidence contract
+
+Required evidence is profile-driven. A complete attempt commonly contains:
+
+- Harbor lock and result;
+- compatibility bundle;
+- frozen post-agent workspace and file index;
+- native session and ATIF trajectory when required;
+- verifier output;
+- source, image, and worker provenance;
+- worker logs and infrastructure observations;
+- secret-scan result;
+- checksum manifest; and
+- terminal receipt.
+
+Cost is derived from accepted Harbor result data and immutable pricing where
+available. Unknown usage remains unknown unless the locked evidence policy
+requires that usage metric; missing or invalid required usage makes the attempt
+unselectable without changing its underlying semantic outcome.
+
+## Retry and failure semantics
+
+Harbor-HF distinguishes:
+
+- semantic model or benchmark outcomes;
+- agent setup or runtime outcomes;
+- verifier outcomes;
+- replacement-eligible infrastructure failures; and
+- deterministic shared infrastructure defects.
+
+Only the replacement-eligible infrastructure class can receive another physical
+attempt. A replacement uses the same prepared trial and requires the Run to
+remain active and pass its locked admission, resource, finite-action-space, and
+cost-ceiling checks. Behavior-affecting changes require a new linked Run.
+
+## Historical reader
+
+Historical evidence is read only by an isolated compatibility path pinned to
+the revision that wrote it. Historical records are never rewritten to match
+this contract and cannot select a retired writer for new work.
+
+## Verification baseline
+
+Local validation covers:
+
+- import-path and revision validation;
+- exact profile composition;
+- model provider-suffix and API compatibility;
+- direct environment expansion;
+- upstream host allowlisting;
+- absence of inference secrets from preparation and no-inference Jobs;
+- task-user isolation and process cleanup;
+- lock and identity drift;
+- session redaction and ATIF conversion;
+- evidence and checksum failures;
+- retry classification; and
+- deterministic behavior through every fail-closed branch.
+
+Remote canaries, when separately authorized, must retain complete Harbor
+results, workspace evidence, sessions or trajectories, verifier evidence,
+provenance, and cleanup observations. A canary does not authorize a full Run,
+deployment, publication, or additional remote mutation.

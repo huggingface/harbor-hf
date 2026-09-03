@@ -7,6 +7,7 @@ import pytest
 from harbor_hf.executions import (
     ExecutionLock,
     build_execution_lock,
+    execution_secret_values,
     harbor_process_environment,
 )
 from harbor_hf.models import (
@@ -163,25 +164,57 @@ def test_execution_lock_preserves_and_renders_hosted_judge(
     }
 
 
-def test_scoped_agent_key_does_not_replace_controller_hf_token(
+def test_provider_environment_supplies_inference_token_for_harbor_expansion(
     remote_spec: ExperimentSpec,
 ) -> None:
-    lock = build_execution_lock(remote_spec, execution_id="scoped-agent-key")
+    model = remote_spec.matrix.models[0]
+    provider = ProviderTarget(id="provider-one", model=model.repo)
+    agent = remote_spec.matrix.agents[0].model_copy(
+        update={
+            "import_path": "harbor_hf_agents.openclaw.agent:OpenClawAgent",
+            "parameters": {"openclaw_config": {}},
+        }
+    )
+    spec = remote_spec.model_copy(
+        update={
+            "matrix": remote_spec.matrix.model_copy(
+                update={"deployments": [provider], "agents": [agent]}
+            )
+        }
+    )
+    lock = build_execution_lock(
+        spec, execution_id="direct-provider", allow_provider=True
+    )
 
     with harbor_process_environment(
         lock,
         token="controller-hf-token",
-        agent_api_key="scoped-agent-key",
-        inference_base_url="https://proxy.example/scopes/capability",
+        inference_token="inference-token",
+        inference_base_url="https://router.huggingface.co",
     ) as environment:
         observed_environment = environment.copy()
 
     assert observed_environment["HF_TOKEN"] == "controller-hf-token"
-    assert observed_environment["OPENAI_API_KEY"] == "scoped-agent-key"
-    assert (
-        observed_environment["OPENAI_BASE_URL"]
-        == "https://proxy.example/scopes/capability/v1"
-    )
+    assert observed_environment["HF_INFERENCE_TOKEN"] == "inference-token"
+    assert "OPENAI_API_KEY" not in observed_environment
+    assert "OPENAI_BASE_URL" not in observed_environment
+    assert execution_secret_values(
+        lock,
+        "controller-hf-token",
+        inference_token="inference-token",
+    ) == ("controller-hf-token", "inference-token")
+
+    with (
+        pytest.raises(ValueError, match="requires HF_INFERENCE_TOKEN"),
+        harbor_process_environment(
+            lock,
+            token="controller-hf-token",
+            inference_base_url="https://router.huggingface.co",
+        ),
+    ):
+        pass
+    with pytest.raises(ValueError, match="requires HF_INFERENCE_TOKEN"):
+        execution_secret_values(lock, "controller-hf-token")
 
 
 def test_execution_lock_reader_accepts_legacy_v1alpha1(

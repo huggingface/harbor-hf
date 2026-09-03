@@ -1,4 +1,4 @@
-import type { AttemptReceipt, RunLock, LaunchPolicySpec } from "@harbor-hf/contracts";
+import type { AttemptReceipt, LaunchPolicySpec, RunLock } from "@harbor-hf/contracts";
 
 export interface AttemptAdmissibility {
   admissible: boolean;
@@ -8,14 +8,7 @@ export interface AttemptAdmissibility {
 export function requiredPositiveMetrics(lock: RunLock): readonly string[] {
   const policy = lock.profiles.find((profile) => profile.kind === "launch_policy")
     ?.spec as LaunchPolicySpec | undefined;
-  if (policy?.required_positive_metrics) return policy.required_positive_metrics;
-  const harness = lock.profiles.find((profile) => profile.kind === "harness")?.spec as
-    | { required_evidence?: unknown }
-    | undefined;
-  return Array.isArray(harness?.required_evidence) &&
-    harness.required_evidence.includes("provider-usage")
-    ? ["input_tokens", "output_tokens"]
-    : [];
+  return policy?.required_positive_metrics ?? [];
 }
 
 export function attemptAdmissibility(

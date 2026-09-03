@@ -4,7 +4,12 @@ import type {
   HarborHFControlRecordV1,
   ProfilePromotion,
 } from "@harbor-hf/contracts";
-import { canonicalJson, deterministicId, sha256 } from "@harbor-hf/contracts";
+import {
+  canonicalJson,
+  controlRecordPath,
+  deterministicId,
+  sha256,
+} from "@harbor-hf/contracts";
 import { NoopActions } from "@harbor-hf/hf-adapters";
 import { createTestControl, type TestControl } from "@harbor-hf/test-fixtures";
 import { afterEach, describe, expect, it } from "vitest";
@@ -155,6 +160,73 @@ class BatchLifetimeStore implements ImmutableObjectStore {
 }
 
 describe("projection replay", () => {
+  it("preserves historical capacity profile bytes and promotion identity", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const profile = {
+      schema_version: "v1",
+      kind: "profile.object",
+      record_id: "profile-capacity-legacy",
+      created_at: "2026-08-22T00:00:00.000Z",
+      actor: { subject: "profile-migration", role: "migration" },
+      profile_kind: "capacity",
+      name: "capacity-legacy",
+      spec: {
+        namespace: "test",
+        max_active_sandboxes: 16,
+        hardware_limits: [
+          { hardware: "cpu-basic", max_active_sandboxes: 12 },
+          { hardware: "cpu-upgrade", max_active_sandboxes: 4 },
+        ],
+        start_burst: 16,
+        start_refill_tokens: 16,
+        start_refill_period_seconds: 60,
+      },
+    } as const;
+    const profileBytes = new TextEncoder().encode(canonicalJson(profile));
+    const profileId = sha256(profileBytes);
+    const promotion = {
+      schema_version: "v1",
+      kind: "profile.promotion",
+      record_id: "promotion-capacity-legacy",
+      created_at: "2026-08-22T00:00:01.000Z",
+      actor: { subject: "profile-operator", role: "operator" },
+      profile_kind: "capacity",
+      alias: "current",
+      profile_id: profileId,
+      promotion_state: "approved",
+      reason: "preserve historical capacity provenance",
+      evidence: [],
+    } as const;
+    const profileKey = controlRecordPath(profile);
+    await control.store.create(profileKey, profileBytes);
+    await control.store.create(
+      controlRecordPath(promotion),
+      new TextEncoder().encode(canonicalJson(promotion)),
+    );
+    const projection = await Projection.open(`${control.root}/legacy-capacity.sqlite`);
+
+    await projection.rebuild(control.store);
+
+    expect(await projection.objectDigest(profileKey)).toBe(profileId);
+    expect(Buffer.from(await control.store.read(profileKey))).toEqual(
+      Buffer.from(profileBytes),
+    );
+    expect(await projection.approvedProfileAliases()).toContainEqual({
+      alias: "current",
+      profile,
+      profile_id: profileId,
+    });
+    expect(await projection.profiles()).toContainEqual(
+      expect.objectContaining({
+        profile_id: profileId,
+        profile_kind: "capacity",
+        spec_body: canonicalJson(profile.spec).trim(),
+      }),
+    );
+    await projection.close();
+  });
+
   it("keeps legacy profile objects and promotions out of the active catalog", async () => {
     const control = await createTestControl();
     controls.push(control);
@@ -192,6 +264,7 @@ describe("projection replay", () => {
     );
     await rebuilt.close();
   });
+
   it("reads only Run-native control trees by default", async () => {
     const control = await createTestControl();
     controls.push(control);

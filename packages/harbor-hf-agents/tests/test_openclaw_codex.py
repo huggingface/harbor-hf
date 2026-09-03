@@ -53,55 +53,34 @@ async def test_codex_run_applies_prompt_template(tmp_path: Path) -> None:
         logs_dir=tmp_path,
         model_name="openai/moonshotai/Kimi-K3:together",
         prompt_template_path=template,
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+        },
     )
     agent.exec_as_agent = AsyncMock()
     agent._run_prepared = AsyncMock()
 
-    with (
-        patch(
-            "harbor_hf_agents.openclaw_codex.agent.use_job_inference_route",
-            AsyncMock(return_value=False),
-        ),
-        patch(
-            "harbor_hf_agents.openclaw_codex.agent.prepare_hf_inference_bridge",
-            AsyncMock(return_value=False),
-        ),
-        patch(
-            "harbor_hf_agents.support.job_inference_route.stop_hf_inference_bridge",
-            AsyncMock(),
-        ),
-    ):
-        await agent.run("do work", AsyncMock(), AsyncMock())
+    await agent.run("do work", AsyncMock(), AsyncMock())
 
     assert agent._run_prepared.await_args.args[0] == "wrapped: do work"
 
 
 @pytest.mark.asyncio
-async def test_codex_run_stops_bridge_after_failure(tmp_path: Path) -> None:
+async def test_codex_run_propagates_agent_failure(tmp_path: Path) -> None:
     agent = OpenClawCodexAgent(
         logs_dir=tmp_path,
         model_name="openai/moonshotai/Kimi-K3:together",
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+        },
     )
     environment = AsyncMock()
     agent.exec_as_agent = AsyncMock()
     agent._run_prepared = AsyncMock(side_effect=RuntimeError("agent failed"))
-    agent._harbor_hf_inference_bridge_active = True
-    stop_bridge = AsyncMock()
-
-    with (
-        patch(
-            "harbor_hf_agents.openclaw_codex.agent.use_job_inference_route",
-            AsyncMock(return_value=True),
-        ),
-        patch(
-            "harbor_hf_agents.support.job_inference_route.stop_hf_inference_bridge",
-            stop_bridge,
-        ),
-        pytest.raises(RuntimeError, match="agent failed"),
-    ):
+    with pytest.raises(RuntimeError, match="agent failed"):
         await agent.run("do work", environment, AsyncMock())
-
-    stop_bridge.assert_awaited_once_with(agent, environment)
 
 
 def test_codex_trajectory_uses_subclass_identity(tmp_path: Path) -> None:
@@ -126,7 +105,7 @@ def test_codex_config_uses_selected_openclaw_agent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:18080/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://router.huggingface.co/v1")
     monkeypatch.setenv("OPENCLAW_AGENT_ID", "custom-agent")
 
     _materialize_openclaw_codex_config()
@@ -140,7 +119,9 @@ def test_codex_config_uses_selected_openclaw_agent(
         / "codex-home"
         / "config.toml"
     )
-    assert config.read_text() == 'openai_base_url = "http://127.0.0.1:18080/v1"\n'
+    assert config.read_text() == (
+        'openai_base_url = "https://router.huggingface.co/v1"\n'
+    )
 
 
 def test_codex_runtime_config_is_forced_for_selected_model(tmp_path: Path) -> None:
@@ -155,7 +136,10 @@ def test_codex_runtime_config_is_forced_for_selected_model(tmp_path: Path) -> No
         codex_request_timeout_ms=123_000,
         model_context_window=131_072,
         model_max_tokens=16_384,
-        extra_env={"OPENAI_BASE_URL": "https://proxy.example/scopes/secret-route/v1"},
+        extra_env={
+            "OPENAI_API_KEY": "test-inference-key",
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+        },
     )
 
     config = agent._build_full_openclaw_config()
@@ -180,8 +164,8 @@ def test_codex_runtime_config_is_forced_for_selected_model(tmp_path: Path) -> No
     }
     provider = config["models"]["providers"]["openai"]
     assert provider["api"] == "openai-responses"
-    assert provider["baseUrl"] == "https://router.huggingface.co/v1"
-    assert provider["apiKey"] == "harbor-hf-scoped-provider-proxy"
+    assert provider["baseUrl"] == "$OPENAI_BASE_URL"
+    assert provider["apiKey"] == "$OPENAI_API_KEY"
     assert provider["models"] == [
         {
             "id": "moonshotai/Kimi-K3:together",

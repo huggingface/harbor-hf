@@ -55,6 +55,8 @@ const schema = z.object({
     .max(300000)
     .default(60000),
   HARBOR_HF_SOURCE_REVISION: z.string().min(7).max(160).default("development"),
+  HARBOR_HF_WORKBENCH_RUNNER: z.enum(["disabled", "docker", "hf-jobs"]).optional(),
+  HARBOR_HF_WORKBENCH_IMAGE: z.string().min(1).max(1024).default("python:3.12-slim"),
   HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS: z.string().default(""),
 });
 
@@ -90,6 +92,8 @@ export interface AppConfig {
   observe_interval_ms: number;
   worker_receipt_grace_ms: number;
   source_revision: string;
+  workbench_runner: "disabled" | "docker" | "hf-jobs";
+  workbench_image: string;
   bootstrap_operator_subjects: string[];
 }
 
@@ -120,6 +124,9 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
   }
   if (parsed.HARBOR_HF_WRITE_MODE !== "disabled" && !parsed.HF_TOKEN) {
     throw new Error("write-enabled service requires HF_TOKEN");
+  }
+  if (parsed.HARBOR_HF_WORKBENCH_RUNNER === "hf-jobs" && !parsed.HF_TOKEN) {
+    throw new Error("Hugging Face Workbench Jobs require HF_TOKEN");
   }
   if (
     parsed.HF_TOKEN &&
@@ -177,6 +184,10 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     observe_interval_ms: parsed.HARBOR_HF_OBSERVE_INTERVAL_MS,
     worker_receipt_grace_ms: parsed.HARBOR_HF_WORKER_RECEIPT_GRACE_MS,
     source_revision: parsed.HARBOR_HF_SOURCE_REVISION,
+    workbench_runner:
+      parsed.HARBOR_HF_WORKBENCH_RUNNER ??
+      (parsed.NODE_ENV === "development" ? "docker" : "disabled"),
+    workbench_image: parsed.HARBOR_HF_WORKBENCH_IMAGE,
     bootstrap_operator_subjects: parsed.HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS.split(",")
       .map((item) => item.trim())
       .filter(Boolean),

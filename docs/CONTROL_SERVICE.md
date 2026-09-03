@@ -1,178 +1,147 @@
 # Harbor-HF Control Service
 
-This specification defines the private Harbor-HF control service and its web
-application. The service runs in one Docker Space, stores durable records in one
-private Bucket, and uses two persistent Space secrets: `HF_TOKEN` for control
-operations and `HF_INFERENCE_TOKEN` for reviewed benchmark workers.
+The Harbor-HF control service is the single shared authority for hosted Harbor
+Runs on Hugging Face infrastructure. It runs in one application-protected
+Docker Space, stores immutable records in one private Bucket, and uses two
+persistent Space secrets: `HF_TOKEN` for control operations and
+`HF_INFERENCE_TOKEN` for inference-backed execution Jobs.
 
-The service is approved for implementation. It is not approved for production
-traffic until the recovery, security, reliability, cost and migration gates in the
-[control service plan](2026-08-16-harbor-hf-control-service-plan.md) pass.
+This specification describes the current Harbor-first direct-inference design.
+A conditional compatibility path remains for approved immutable profiles whose
+pinned historical workers require a root-owned inference bridge. New Workbench
+profiles use direct inference.
 
 ## Runtime inventory
 
-A deployed namespace has two Harbor-HF runtime resources:
+The steady-state service has exactly two persistent resources:
 
-| Resource | Purpose |
-| --- | --- |
-| `<namespace>/<control-space>` | Private Docker Space that runs the API, reconciler, local projection, and web application. |
-| `<namespace>/<artifact-bucket>` | Private Bucket that stores immutable control records, profiles, evidence, normalized results, and catalog objects. |
+1. one protected control Space; and
+2. one private `<artifact-bucket>` Bucket.
 
-`HF_TOKEN` and `HF_INFERENCE_TOKEN` are the only persistent secrets configured
-by the operator in the Space. The credentials must be distinct. The control
-service uses `HF_TOKEN` for Bucket and lifecycle operations and passes only
-`HF_INFERENCE_TOKEN` to deployment profiles that explicitly require inference.
-Hugging Face may inject OAuth client configuration when built-in OAuth is
-enabled. Those platform-managed values are not additional operator-managed
-service credentials.
+The Space contains one Node.js process running:
 
-The service must not create another repository, Space, Bucket, Dataset,
-schedule, lease store, status store, backup store, or result service for normal
-operation.
-
-## Process model
-
-The Space runs one Node.js process and one Fastify server. The process owns:
-
-- the REST API and Server-Sent Events endpoint;
+- Fastify API routes;
 - the background reconciler;
-- the disposable SQLite projection;
-- the compiled React application;
-- adapters for Hugging Face Jobs, Endpoints, Providers, Spaces and Buckets.
+- a disposable SQLite projection;
+- Server-Sent Events;
+- the compiled React application; and
+- health, readiness, and operational views.
 
-The service does not use Node cluster mode or multiple server workers. More
-than one process would create competing reconcilers and violate the single
-writer rule.
+The Bucket contains immutable control records, profiles, prepared Harbor locks,
+evidence chunks and manifests, attempt receipts, normalized results,
+publication receipts, and catalogs. SQLite is never authoritative. Rebuilding
+it from Bucket objects must produce the same state and next action.
 
-The Bucket is the permanent record. SQLite contains only indexes and derived
-views. Deleting the local database and replaying current Run-native control
-records must restore the same run states and next actions. The projection lists
-only the `migrations`, `operators`, `profiles`, and `runs` record trees. Retired
-control trees remain immutable evidence in the Bucket, but normal startup and
-sync do not read or reinterpret them.
+Do not create a per-Run repository, Bucket, Space, Dataset, schedule, lease
+store, result service, or backup service. A new persistent resource requires an
+explicit access or failure-domain reason and operator approval.
+
+## Process and trust model
+
+The control process is the only shared writer of Run decisions. API mutations
+record immutable intent before returning. The reconciler reserves one
+deterministic action, performs the external side effect, and records an
+immutable receipt before advancing.
+
+Python remains in pinned preparation and execution Jobs. Those workers call
+Harbor and return scoped evidence, but they do not become another control
+service.
+
+Credential boundaries are:
+
+- `HF_TOKEN` remains in the control Space and is used for Bucket and HF
+  lifecycle operations.
+- `HF_INFERENCE_TOKEN` may be attached only to an execution Job whose resolved
+  deployment contains `inference_upstream`.
+- Preparation Jobs receive neither persistent credential.
+- Every worker receives a short-lived signed capability scoped to its Run,
+  action, task set, operations, and expiration.
+- No Job receives a writable mount of the canonical Bucket.
+
+For direct inference, the execution contract places
+`${HF_INFERENCE_TOKEN}` in Harbor `AgentConfig.env` alongside the locked
+upstream URL. Harbor expands that value for the selected agent. This means the
+agent is an intended secret consumer; arbitrary user-supplied agent code and
+unreviewed recipes cannot use this path.
 
 ## Source layout
 
-The implementation uses npm workspaces and one root npm lockfile. Python
-workers keep their existing uv lock separately.
+The control-service implementation is split by responsibility:
 
 ```text
 apps/
-  control-api/
-    src/
-  control-web/
-    src/
+  control-api/       Fastify process and composition root
+  control-web/       React application
 packages/
-  contracts/
-  control-core/
-  hf-adapters/
-  test-fixtures/
+  contracts/         JSON Schema, generated TypeScript, API contracts
+  control-core/      domain records, projection, reconciler, policy
+  bucket-store/      immutable Bucket adapter
+  hf-adapters/       Hugging Face lifecycle adapter
+  harbor-hf-agents/  pinned Harbor workers and agent plugins
 deploy/
-  control-space/
-    Dockerfile
+  control-space/     Docker Space image
+  trial-worker/      reviewed HF Job image
+profiles/            checked-in immutable profile sources
 ```
 
-`apps/control-api` contains Fastify route registration, authentication,
-process lifecycle handling, and service wiring. `apps/control-web` contains the React
-application. `packages/control-core` contains pure state transition and policy
-code. `packages/hf-adapters` owns remote API calls. `packages/contracts` owns
-portable schemas and generated types.
-
-The current results application is replaced in place by `control-web`. Do not
-keep a second production frontend or a compatibility reader for the old result
-service.
+Domain code does not import Fastify, React, the filesystem, Hugging Face
+clients, or wall-clock implementations. Untrusted HF responses are validated
+at adapter boundaries.
 
 ## Run preparation
 
-Harbor-HF uses one path for every run. A run starts with a normal
-Harbor job configuration and approved Harbor-HF profiles. The control service
-starts an isolated preparation Job that runs the pinned Harbor version without
-persistent secrets or inference access. Harbor resolves the job. The worker
-submits one `prepared.trial` record per logical task and then one `prepared.job`
-record through a short-lived capability.
+A Run submission names promoted profile aliases for:
 
-Preparation and execution workers install Harbor from a pinned
-`harbor-framework/harbor` git commit, not a PyPI release. The current pin is
-`b37833221e27435a18d7acdd41d875cdc2831893`, which reports Harbor `0.22.0` and
-includes [PR 2681](https://github.com/harbor-framework/harbor/pull/2681). The
-former Harbor 0.21.0 empty-metrics sitecustomize patch is not applied.
+- benchmark;
+- model;
+- harness;
+- deployment; and
+- launch policy.
 
-Execution workers invoke that pinned Harbor version without a dataset source
-label when replaying one exact prepared task. If Harbor exits nonzero only
-after writing a successful trial result, the worker still requires that exact
-durable result and its prepared lock before it can submit a completed attempt.
-A missing result, a mismatched lock, or a trial-level exception remains a
-failure. Harbor-HF uses only public Harbor APIs and does not patch Harbor
-internals.
+The service resolves each alias to an immutable profile record and composes one
+execution contract before cost reservation or Job admission. It rejects:
 
-The prepared records contain the exact Harbor trial locks and the data needed
-for admission, including source and task digests, resolved image digests,
-resources, phase time limits, agent settings, and Harbor version. The final
-record binds their order and the reconstructed Harbor job-lock digest. Model
-and harness names remain configuration values. The control service and its
-workers do not branch on benchmark, model, model family, or harness names.
+- unknown or non-promoted profiles;
+- imported historical profiles;
+- incompatible model, harness, deployment, or API combinations;
+- malformed Harbor model routes;
+- mutable image or source references;
+- unsupported worker commands or hardware;
+- missing prices or runtime limits; and
+- any combination outside the caller's authorization.
 
-Before it admits execution, the control service checks that the lock is
-portable, complete, digest-pinned, compatible with the selected deployment,
-and within the run cost and resource limits. It rejects local paths,
-mutable source references, unpinned images, unsupported environment features,
-and settings that disagree with approved profiles. It stores each prepared
-record immutably. Execution and all later recovery work use those records.
-Harbor fetches the exact locked Git or package task without resolving the
-benchmark dataset again.
+A preparation Job receives the resolved contract without persistent secrets.
+It installs the pinned Harbor and agent-package revisions, creates a normal
+Harbor `JobConfig`, and asks Harbor's public `JobPlan` API to resolve the
+benchmark. It writes:
 
-The prepared benchmark image is immutable task data, not the physical Job
-image. Every execution Job starts from the reviewed, digest-pinned deployment
-Job image. That trusted worker verifies and unpacks the task OCI image, replaces
-its entrypoint, command, and environment, and maps the rootfs to one dedicated
-high host UID/GID. Every task, agent, and verifier command has that real UID,
-empty supplementary groups, an empty Linux capability set, and
-`no_new_privs`. PRoot presents the unpacked filesystem and emulates the image's
-user, including container UID 0, but it is not the security boundary. The task
-UID never becomes host root. Host Unix permissions protect the worker,
-capability, token, and bridge state.
+- one `prepared.trial` record per logical task;
+- one `prepared.job` record binding the ordered trials; and
+- the SHA-256 digest of the reconstructed Harbor `JobLock`.
 
-Execution preflight requires `git`, `proot`, `skopeo`, and `umoci`, a root
-worker without effective `CAP_SYS_PTRACE`, and an unused dedicated UID/GID. A
-probe running with the final task identity must have empty capability fields,
-`no_new_privs`, and no access to the worker's `/proc/<pid>/environ` or a
-root-owned mode-0600 file. A missing runtime feature or failed denial probe is
-a replacement-eligible infrastructure failure. A Harbor process that exits
-without its required trial result is replacement-eligible only when the worker
-did not terminate it at the locked timeout. A timed-out Harbor process with no
-result seals `benchmark_timeout` and does not permit replacement. Other
-evidence-integrity failures remain non-retryable. There is no namespace or
-same-UID fallback.
+Each prepared trial binds the exact Harbor `TrialLock`, task source digest,
+task-image digest, resource request, phase limits, agent configuration, and
+worker provenance. Execution and recovery never resolve the benchmark source
+again.
 
-## Profile ownership and run composition
+## Profile composition
 
-A model profile owns the model ID, exact revision, canonical Harbor model route,
-and typed model-family compatibility. A harness profile owns only stable agent
-configuration and capabilities. It cannot contain a model route, provider
-suffix, price, context limit, output limit, or generated model registry. A
-deployment profile owns Hugging Face infrastructure, provider policy, prices,
-limits, worker provenance, and safety settings. It cannot contain a second
-manually maintained model route.
+### Benchmark profile
 
-Before admission, the TypeScript resolver validates the selected model, harness,
-and deployment. It builds one complete resolved execution contract and stores it
-in the immutable run lock before any reservation or action is written. The
-contract contains the exact Harbor `AgentConfig`, agent and bridge routes,
-provider and API, prices and limits, worker image and revision, Harbor version,
-and source profile IDs. Its values do not depend on a later catalog lookup.
+The benchmark profile identifies the source, revision, task selection, and
+source-integrity policy. Harbor remains the only component that interprets the
+benchmark format.
 
-The resolver derives the root bridge route from the canonical Harbor model
-route. It verifies the first Harbor provider segment and the provider suffix,
-then removes only that first segment. Preparation and trial workers consume the
-locked result and do not reconstruct the profile relationship.
+### Model profile
 
-Pi receives typed locked model runtime data and creates its private
-`models.json` from that data. Model-family facts such as reasoning format belong
-to the model compatibility contract and are checked against harness
-capabilities before admission. Real harness variants remain separate by
-behavior, version, reasoning mode, or capability, never by exact model route
-alone. A bounded profile alias can preserve an established public name, but it
-resolves to the same active profile and has a documented removal release.
+The model profile supplies:
+
+- the canonical Harbor model route;
+- the exact model revision;
+- supported inference APIs and reasoning behavior; and
+- stable aliases for operator-facing selection.
+
+### Historical continuation and worker repair
 
 New run locks use only this composed form. A paused, nonterminal historical run
 may receive one append-only `run.continuation` record when its original prepared
@@ -200,148 +169,113 @@ and first repair digests and may again change only the worker image and source
 revision. Later Job launches carry both repair IDs. No further successor is
 allowed.
 
-A new Harbor-supported benchmark or compatible model requires configuration and
-immutable data only. A new harness implementation belongs in a Harbor agent
-plugin behind the common agent interface. Missing behavior is added as a general
-capability at the correct Harbor, agent, provider, or Hugging Face adapter
-boundary. Harbor-HF does not add name-based special cases. One-time migration
-programs do not define run behavior and do not become the path for adding run
-support.
+### Harness profile
 
-## Technology choices
+The harness profile supplies:
 
-TypeScript is the control-service language. Hugging Face maintains JavaScript
-packages for Hub, Jobs, repository access, and inference operations, and the React application
-already uses TypeScript. This avoids a custom Go integration layer and keeps
-browser and API tooling in one workspace. The control service is low-volume,
-I/O-bound orchestration, so Go's smaller binary and lower idle memory do not
-justify another language or handwritten provider clients.
+- Harbor agent `import_path`;
+- exact agent revision;
+- model-independent agent keyword arguments;
+- supported inference APIs;
+- required evidence types; and
+- session or trajectory policy.
 
-### Control API
+Adding a harness must require only a Harbor agent plugin and profile. Control,
+API, schema, and infrastructure code must not branch on the harness name.
 
-The control API uses:
+### Deployment profile
 
-- the current Node.js long-term support release, pinned in the container;
-- TypeScript with strict checking;
-- Fastify for HTTP routing and lifecycle management;
-- JSON Schema and Ajv for durable record validation;
-- Zod for browser forms and application request validation where JSON Schema is
-  not the source contract;
-- Kysely with `better-sqlite3` for the local projection;
-- Pino for structured logs;
-- the standard OpenID Connect flow through `openid-client`;
-- official Hugging Face JavaScript packages where they expose the required
-  operation.
+The deployment profile supplies:
 
-Uncovered Hugging Face operations use small typed adapters against published
-HTTP or OpenAPI contracts. Provider SDK types do not enter control-domain
-models.
+- `route`;
+- digest-pinned worker image and reviewed commands;
+- hardware and phase timeouts;
+- supported model and harness profile names;
+- prices and admission settings;
+- direct `inference_upstream`;
+- `inference_api`;
+- `inference_timeout_seconds`;
+- `inference_max_output_tokens`; and
+- endpoint configuration when the route uses a managed Endpoint.
 
-The control service replaces Python as the shared control authority. Existing
-Python benchmark workers may remain as pinned remote Job artifacts. They write
-only to their assigned attempt and evidence paths. The Python CLI becomes a
-thin API client or is retired. It must not retain a second reconciliation path.
+The deployment profile does not provide a second model identity. The resolver
+derives the provider-facing model from the canonical Harbor model route and
+verifies that its suffix matches `inference_provider`.
 
-### Web application
+### Resolved inference contract
 
-The web application uses:
+When `inference_upstream` is present, composition produces:
 
-- React and strict TypeScript;
-- Vite;
-- Tailwind CSS;
-- shadcn/ui and Lucide icons;
-- React Router;
-- TanStack Query and TanStack Table;
-- React Hook Form with Zod;
-- shadcn chart components for bounded operational charts.
+- Harbor provider `openai`;
+- the selected HF inference provider;
+- the exact upstream URL;
+- the canonical Harbor agent model;
+- the provider-facing model;
+- either `chat-completions` or `responses`;
+- timeout, context, and output-token limits;
+- immutable token prices; and
+- the upstream hostname in `extra_allowed_hosts`.
 
-Server state belongs in TanStack Query. Filters, sorting, pagination, view
-mode, and the selected catalog scope belong in the URL. Local React state is reserved for
-short-lived interface state. Redux and direct browser access to the Bucket are
-out of scope.
+The final `AgentConfig` includes:
 
-The frontend consumes a generated OpenAPI client. Handwritten copies of API
-request or response types are invalid.
+```json
+{
+  "model_name": "openai/<model-id>:<inference-provider>",
+  "env": {
+    "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
+    "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+    "HARBOR_HF_MAX_OUTPUT_TOKENS": "<locked-positive-integer>",
+    "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": "<locked-positive-integer>"
+  },
+  "extra_allowed_hosts": ["router.huggingface.co"]
+}
+```
 
-## Contract authority
+Agent plugins may derive runtime-specific environment names or configuration
+files from these values. They may not select another model, upstream, API, or
+credential. The service does not translate one inference API into another.
 
-Versioned JSON Schema files are authoritative for immutable Bucket records.
-TypeScript types are generated from those schemas. Unknown fields are rejected
-unless a schema declares a bounded extension object.
+## Agent Workbench
 
-Fastify route schemas produce the OpenAPI document. CI regenerates the
-TypeScript browser client and fails when committed generated output is stale.
-The public API remains under `/api/v1` during this replacement. Schema changes
-replace the pre-release contract in place unless a later compatibility policy
-is explicitly approved.
+The authenticated Agent Workbench compiles and tests generic command-agent
+recipes through the versioned recipe schema and server-authoritative preview
+compiler. Its setup state is actor-scoped and ephemeral.
 
-Canonical JSON encoding, identifier derivation, digest rules, and immutable
-write behavior follow the [control service plan](2026-08-16-harbor-hf-control-service-plan.md).
-The TypeScript service and Python migration tool invoke the same dependency-free
-canonical JSON encoder, including ECMAScript number formatting.
+Local development defaults to a disposable Docker runner. Hosted setups use a
+reviewed setup-only Job. An edited recipe cannot launch benchmark work. It may
+continue to the Run launcher only when its exact compiled form matches a
+reviewed immutable harness profile and compatible deployment.
 
-Runtime readiness remains false through authentication initialization,
-projection rebuild, checked-in profile installation and resolver refresh,
-capacity profile validation or creation, and operator ACL bootstrap. API and
-authentication routes use this runtime state, not projection readiness alone.
-The resolver overlays checked-in profiles with the latest approved promotion
-for each kind and alias. A promotion of a checked-in name does not hide a newer
-deployed digest of that same profile. Candidate and recommended records remain
-visible but cannot authorize a run. A run lock retains the selected alias,
-immutable profile digest, and complete spec even when that alias later moves.
-Canonical migration preserves profile objects and promotion records.
+The detailed Workbench document is maintained separately in
+[`agent-workbench.md`](agent-workbench.md).
 
-A benchmark profile may require a profile-constrained launch policy. A
-constrained policy lists the canonical benchmark, model, harness, and deployment
-profile names it permits. Resolution compares the selected canonical profiles
-with all four lists before creating a run lock or reserving spend. A missing or
-mismatched constraint rejects the request. This lets measured policies be shared
-between identical cells without allowing a lower-cost policy to authorize a
-different workload.
+## Durable contract authority
 
-### Capacity contracts
+Versioned JSON Schema under `packages/contracts/schemas/` is authoritative for
+Bucket records. TypeScript types and browser clients are generated from the
+schema. Portable contracts must not have handwritten duplicate definitions.
 
-Each capacity field has one meaning:
+Immutable records include:
 
-- `trial_job_template.max_jobs` limits active trial Jobs for one run;
-- `inference_max_concurrency` limits concurrent provider requests from one
-  trial Job;
-- `inference_max_total_concurrency` limits the provider request units reserved
-  across all active trial Jobs in one run;
-- the namespace capacity profile limits active or reserved Jobs across
-  runs and by hardware name, and sets the Job start rate; and
-- budget admission limits work through the run's immutable reservations
-  and ceiling.
+- actor and request identity;
+- Run specification and lock;
+- profile records and promotions;
+- preparation and prepared-trial records;
+- admission, action intent, dispatch, observation, and receipt records;
+- evidence manifests and selected attempt receipts;
+- endpoint ownership and cleanup observations;
+- retry, cancellation, and seal decisions;
+- normalized results and publication receipts; and
+- audit and migration records.
 
-A Job reservation is active only while that Job can still spend money. A
-terminal Job observation or a launch suppressed before dispatch appends a
-release for the full Job reservation. Observed cost remains recorded
-independently. Before a paused run reserves resumed work, the service also
-reconciles missing releases for historical terminal and suppressed Job actions.
-The release records are deterministic and append-only.
-
-The namespace capacity profile is service policy. It uses the existing profile
-object and promotion records, but it is not a run profile reference and is
-not part of a run lock. Every admission grant records the exact capacity
-profile digest that authorized it. A later promotion applies only to later
-grants. Lower limits stop new admissions and let active work drain.
-
-Write-enabled startup resolves the promoted alias named by
-`HARBOR_HF_CAPACITY_PROFILE_ALIAS`. When that promotion is absent, the service
-writes and promotes a namespace cap from `HARBOR_HF_MAX_ACTIVE_JOBS` (default
-16, maximum 1024) and matches start burst and refill tokens to the same value.
-An existing approved promotion is the source of truth. Restarting the Space does
-not reset it. Operators change the live cap through `GET` and `POST
-/api/v1/capacity`. The POST body requires `confirmed: true` and an
-`Idempotency-Key`. The response never includes the namespace. Read-only startup
-may replay and display historical records without a capacity profile, but it
-cannot admit new Job work. No production quota is implied by the default.
-Operators select values from verified quota and profiling evidence. Existing
-run locks keep their per-run `max_jobs` and worker concurrency.
+Records use canonical JSON, stable IDs, explicit schema versions, UTC
+timestamps, and SHA-256 digests. Writing different bytes to an existing key is
+an integrity failure.
 
 ## HTTP API
 
-The service exposes these route groups:
+The API uses `/api/v1`. Exact request and response shapes come from generated
+OpenAPI contracts. The major route groups are:
 
 ```text
 GET  /health/live
@@ -374,30 +308,26 @@ GET  /api/v1/audit
 GET  /api/v1/events
 ```
 
-Collection routes use opaque cursor pagination and bounded page sizes, except a
-Job request with `run_id`. That request returns every latest Job for the Run in
-one response with `next_cursor: null`, so new Job observations cannot shift
-offsets between pages. All timestamps use UTC RFC 3339 strings. Responses
-distinguish observed state, recommended action, and approved action.
+Mutations require:
 
-Mutating requests require an `Idempotency-Key`. A mutation that can cause a
-remote side effect writes its immutable intent to the Bucket before the API
-returns `202 Accepted`. The response contains the deterministic action ID and a
-link to its current state. The historical disposition route causes no remote
-side effect. It validates the complete batch, appends disposition records, and
-returns created or adopted status. A local SQLite write cannot authorize or
-acknowledge a remote side effect.
+- an authenticated actor;
+- authorization for the operation;
+- CSRF protection for browser sessions;
+- a request confirmation where the action can spend or mutate remote state;
+- an idempotency key; and
+- immutable intent before any external call.
 
 Errors use one JSON envelope with a stable code, human-readable message,
 request ID, and optional field errors. Raw provider bodies and dependency error
 strings never cross the API boundary.
 
 Workers receive a short-lived signed control capability and never receive
-`HF_TOKEN` or a writable Bucket mount. Deployment profiles declare the worker
-inference credential `required` or `forbidden`. A required profile passes only
-`HF_INFERENCE_TOKEN` as an encrypted physical Job secret. Root bootstrap moves
-it to a root-owned bridge file before the nested task runtime starts. Task,
-agent, and verifier processes receive only the bridge URL. A forbidden profile
+`HF_TOKEN` or a writable Bucket mount. An inference-backed deployment passes
+only `HF_INFERENCE_TOKEN` as an encrypted physical Job secret. Direct profiles
+reference it from `AgentConfig.env`, and Harbor expands it for the selected
+reviewed agent. An approved compatibility profile instead declares
+`inference_token: required` and a pinned root bootstrap; only that path receives
+the bounded bridge settings. A deployment without an inference upstream
 receives no operator-managed secret. The capability is scoped to one run,
 immutable lock digest, launch action, task, operation set, and expiration. It
 authorizes only the assigned lock read, evidence upload, and attempt submission,
@@ -405,19 +335,15 @@ and it is never copied into the task rootfs or task environment.
 
 ### Inference model route binding
 
-Provider-backed custom agents use two model strings for different interfaces.
-`harbor_agent.model_name` is the Harbor-facing name. It starts with the Harbor
-provider segment, such as `openai/<Hub-model>:<inference-provider>`.
-`trial_job_template.inference_model` is the root-bridge route. It removes exactly
-the first Harbor provider segment and keeps the complete Hub model path and
-inference-provider suffix, such as `<Hub-model>:<inference-provider>`.
+Current profiles use one canonical Harbor route in `AgentConfig.model_name`,
+such as `openai/<Hub-model>:<inference-provider>`. The resolver derives the
+provider-facing identity from that route and verifies that its provider suffix
+matches the deployment. It also validates the model, harness, API, upstream,
+timeout, and output limit before creating a Run.
 
-Checked-in profiles must keep these two forms aligned. Their profile tests load
-the bound harness and deployment records, confirm the expected Harbor provider
-segment, remove that segment once, and compare the result with the bridge route.
-A mismatch is an infrastructure failure because the root bridge cannot accept a
-model outside its lock. A shared mismatch stops affected new submissions until
-the profile is repaired and deployed.
+An immutable bridge-compatibility profile uses that same derived
+provider-facing identity as its one allowed bridge model. The launch wrapper and
+bridge environment are emitted only when the profile explicitly requires them.
 
 A built-in profile change produces a new content-derived profile record ID. New
 runs resolve the new ID. Existing run locks keep their original profile IDs and
@@ -428,7 +354,7 @@ lock digest matches the worker capability.
 
 Each execution Job runs one physical Harbor trial. The deployment profile locks
 the digest-pinned trusted worker image, hardware, timeout, resource limits,
-inference limits, and root bootstrap. The prepared trial separately locks the
+and direct-inference settings. The prepared trial separately locks the
 benchmark task image digest. A dispatch fence is durable before Job creation. A
 lost create response becomes adoption-only and cannot issue a second create
 request.
@@ -685,10 +611,10 @@ evidence boundary. Harbor internals are not patched.
 
 An attempt receipt is durable evidence. It is not automatically a valid result.
 Each run lock includes an evidence policy that names the metrics required for
-selection. A provider-backed Pi workload requires finite positive integer values
-for both `input_tokens` and `output_tokens`. Other workloads must state their own
-requirements in the lock. Control code must not branch on a benchmark, model, or
-harness name.
+selection. When that policy requires token metrics, `input_tokens` and
+`output_tokens` must satisfy its declared integer and range constraints. Control
+code evaluates the policy without branching on a benchmark, model, or harness
+name.
 
 The control service evaluates the policy before every terminal selection. Worker
 outcome names and worker-supplied replacement flags cannot make an invalid receipt
@@ -706,13 +632,14 @@ action-key space or the run cost ceiling can stop new Jobs. A repeated
 deterministic failure pauses the affected work for repair.
 
 A run is complete only when every locked logical task has exactly one selected
-attempt and every selection passes the locked evidence policy. Exhausted tasks stay
-on the run while other tasks can still run. The run is failed only after
-every logical task is terminal and at least one task is exhausted. That run
-cannot become a valid completed run and cannot publish. An infrastructure
-exhaustion remains replaceable. Historical records remain byte-for-byte unchanged.
-Projection replay may label an old run `completed-invalid` when its historical
-selection does not pass the current read-only audit.
+attempt and every selection passes the locked evidence policy. Exhausted tasks
+stay on the run while other tasks can still run. The run is failed only after
+every logical task is sealed and at least one task has a non-replaceable
+exhausted outcome. Replacement-eligible infrastructure outcomes remain
+unresolved or paused until retried, repaired, or cancelled. Historical records
+remain byte-for-byte unchanged. Projection replay may label an old run
+`completed-invalid` when its historical selection does not pass the current
+read-only audit.
 
 ## Task result persistence and retry
 
@@ -792,18 +719,15 @@ policy, so replay does not depend on a mutable profile or a second reading of
 benchmark source files.
 
 The trusted trial worker receives its signed capability and, only when required,
-the inference-only credential. Root bootstrap starts the loopback inference
-bridge and removes the raw credential from the worker environment. The worker
-then runs the locked task rootfs as the dedicated unprivileged host UID. It does
-not bind host `/run`, `/tmp`, the root workspace, capability material, or token
-files. A host `/proc` view may expose metadata, but the different real UID and
-absent capabilities prevent task reads of root process environments and file
-descriptors. The bridge
-authoritatively enforces the locked request-body, model, output-token, and
-concurrency limits. Its accepted connections and handler threads are bounded,
-and socket, header, body, and upstream operations have timeouts. Trusted host
-Python removes the route, kills the exact root bridge PID through a pidfd, and
-awaits its exit before verifier execution.
+the inference-only credential. A direct profile reconstructs the exact resolved
+`AgentConfig`; Harbor expands the credential reference for the selected reviewed
+agent, which calls the locked upstream directly. An approved compatibility
+profile first executes its pinned root bootstrap and removes the raw credential
+before starting its pinned worker. The worker then runs the locked task rootfs
+as the dedicated unprivileged host UID. It does not bind host `/run`, `/tmp`,
+the root workspace, capability material, or token files. A host `/proc` view may
+expose metadata, but the different real UID and absent capabilities prevent task
+reads of root process environments and file descriptors.
 
 Runtime stop enumerates the dedicated real UID, sends `SIGSTOP` until the
 process set is stable, sends `SIGKILL`, and verifies that no process remains.
@@ -987,20 +911,24 @@ into public Git or GitHub metadata.
 
 The control service does not:
 
-- move Hugging Face integration into Harbor core;
-- execute benchmark agents inside the Space;
+- modify or monkeypatch Harbor;
+- resolve benchmark formats outside Harbor;
+- run benchmark agents in the Space;
 - load or serve models;
+- translate between inference APIs;
+- infer unobserved provider hardware or model revision;
 - keep durable state only in SQLite;
 - expose the Bucket to browsers;
-- provide active-active control replicas;
-- use PostgreSQL, Redis, a Node cluster, Next.js, Gradio, or a second web
-  service;
-- create an external keep-awake schedule;
-- rewrite historical run evidence.
+- create active-active control replicas;
+- add benchmark-, model-, or harness-name branches to core code; or
+- rewrite historical evidence.
 
 ## References
 
+- [Architecture](architecture.md)
+- [Harbor compatibility contract](harbor-integration-contract.md)
+- [Harbor agent architecture](provider-agent-architecture.md)
+- [Hosted operations cookbook](harbor-cookbook.md)
+- [Trial evidence bundle](trial-evidence-bundle.md)
 - [Hugging Face Docker Spaces](https://huggingface.co/docs/hub/spaces-sdks-docker)
 - [Hugging Face Spaces OAuth](https://huggingface.co/docs/hub/spaces-oauth)
-- [Hugging Face Spaces hardware and sleep behavior](https://huggingface.co/docs/hub/spaces-overview)
-- [Hugging Face JavaScript Hub client](https://huggingface.co/docs/huggingface.js/hub/README)

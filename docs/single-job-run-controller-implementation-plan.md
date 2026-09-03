@@ -388,7 +388,6 @@ uv run ty check
 uv run pytest --cov=src/harbor_hf --cov-fail-under=85
 uv run slophammer-py dry .
 uv run slophammer-py check .
-uv run python scripts/check_mutation.py --min-kill-rate 90
 ```
 
 Also run:

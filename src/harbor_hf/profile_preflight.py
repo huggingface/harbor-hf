@@ -24,7 +24,7 @@ class PreflightReport(BaseModel):
     target_kind: str
     model_revision_verified: bool
     private_bucket_verified: bool
-    provider_route_verified: bool
+    provider_availability_verified: bool
     available_accelerators: int | None = Field(default=None, ge=0)
     required_accelerators: int | None = Field(default=None, ge=1)
     price_per_hour_usd: Decimal | None = Field(default=None, ge=0)
@@ -97,7 +97,7 @@ def _preflight_provider(
         target_kind="inference-provider",
         model_revision_verified=True,
         private_bucket_verified=True,
-        provider_route_verified=True,
+        provider_availability_verified=True,
         estimated_cost_usd=estimate,
         spend_cap_usd=cap,
     )
@@ -166,7 +166,7 @@ def _preflight_endpoint(
         target_kind="inference-endpoint",
         model_revision_verified=True,
         private_bucket_verified=True,
-        provider_route_verified=True,
+        provider_availability_verified=True,
         available_accelerators=available,
         required_accelerators=required,
         price_per_hour_usd=price,

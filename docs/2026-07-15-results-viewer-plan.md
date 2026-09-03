@@ -377,8 +377,7 @@ permalinks remain valid, and rollback has been exercised.
 
 Documentation-only planning changes do not require the runtime test suite.
 Implementation phases must use the repository's normal Ruff, ty, pytest,
-coverage, Slophammer, and relevant frontend checks. Mutation testing remains a
-non-blocking diagnostic and is not part of the deployment critical path.
+coverage, Slophammer, relevant frontend checks, and focused regression tests.
 
 ### Hosted Staging
 

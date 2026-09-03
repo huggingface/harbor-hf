@@ -1,6 +1,6 @@
 import { sha256 } from "@harbor-hf/contracts";
 import { describe, expect, it } from "vitest";
-import { runIdentity, runUnique, runtimeKind, slugSegment } from "../src/run-id.js";
+import { runIdentity, runtimeKind, runUnique, slugSegment } from "../src/run-id.js";
 
 describe("run identity", () => {
   it("names a run from model, harness, reasoning, and runtime", () => {

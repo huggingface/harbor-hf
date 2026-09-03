@@ -682,6 +682,21 @@ def test_harbor_run_config_uses_one_adhoc_task(
         ),
         (
             {
+                "exception_info": {"exception_type": "AgentSetupTimeoutError"},
+                "agent_setup": {"started_at": "2026-08-25T00:00:00Z"},
+            },
+            "",
+            False,
+            ("benchmark_timeout", False),
+        ),
+        (
+            {"exception_info": {"exception_type": "RuntimeError"}},
+            "",
+            False,
+            ("infrastructure", True),
+        ),
+        (
+            {
                 "exception_info": {"exception_type": "RuntimeError"},
                 "agent_execution": {"started_at": "2026-08-25T00:00:00Z"},
             },
@@ -715,67 +730,45 @@ def test_computes_conservative_token_cost(monkeypatch: pytest.MonkeyPatch) -> No
     assert worker._cost_microusd(config, result) == 200_000
 
 
-def test_provider_usage_overrides_untrusted_agent_token_counts(
+def test_metrics_and_cost_use_harbor_agent_result_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(monkeypatch)
-    result = {"agent_result": {"n_input_tokens": 1, "n_output_tokens": 1}}
-    usage = worker.InferenceUsage(
-        requests=2,
-        input_tokens=1_000_000,
-        output_tokens=500_000,
-    )
+    result = {
+        "agent_result": {
+            "n_input_tokens": 1_000_000,
+            "n_output_tokens": 500_000,
+        },
+        "inference_usage": {
+            "input_tokens": 1,
+            "output_tokens": 1,
+        },
+    }
 
-    assert worker._metrics(result, usage) == {
+    assert worker._metrics(result) == {
         "input_tokens": 1_000_000.0,
         "output_tokens": 500_000.0,
     }
-    assert worker._cost_microusd(config, result, usage) == 200_000
+    assert worker._cost_microusd(config, result) == 200_000
 
 
 @pytest.mark.parametrize(
-    ("outcome", "replacement", "usage", "expected"),
+    ("timed_out", "expected"),
     [
-        (
-            "complete",
-            False,
-            worker.InferenceUsage(requests=0, input_tokens=0, output_tokens=0),
-            ("infrastructure", True),
-        ),
-        (
-            "agent",
-            False,
-            worker.InferenceUsage(requests=1, input_tokens=0, output_tokens=0),
-            ("infrastructure", True),
-        ),
-        (
-            "benchmark_timeout",
-            False,
-            worker.InferenceUsage(requests=0, input_tokens=0, output_tokens=0),
-            ("infrastructure", True),
-        ),
-        (
-            "benchmark_timeout",
-            False,
-            worker.InferenceUsage(requests=1, input_tokens=10, output_tokens=2),
-            ("benchmark_timeout", False),
-        ),
-        (
-            "complete",
-            False,
-            worker.InferenceUsage(requests=1, input_tokens=10, output_tokens=2),
-            ("complete", False),
-        ),
-        ("policy", False, None, ("policy", False)),
+        (False, ("infrastructure", True)),
+        (True, ("benchmark_timeout", False)),
     ],
 )
-def test_missing_provider_usage_is_retryable_infrastructure(
-    outcome: str,
-    replacement: bool,
-    usage: worker.InferenceUsage | None,
+def test_missing_harbor_result_is_retryable_unless_timed_out(
+    timed_out: bool,
     expected: tuple[str, bool],
 ) -> None:
-    assert worker._outcome_with_usage(outcome, replacement, usage) == expected
+    assert (
+        worker._worker_failure_outcome(
+            worker.MissingHarborResultError("missing", timed_out=timed_out)
+        )
+        == expected
+    )
 
 
 def test_streams_command_output_and_kills_a_hung_process(
@@ -814,6 +807,7 @@ def test_harbor_child_environment_is_allowlisted() -> None:
         "HOME": "/tmp/home",
         "HARBOR_HF_RUN_ID": "run-1",
         "HARBOR_HF_WORKER_CAPABILITY": "private-capability",
+        "HF_INFERENCE_TOKEN": "private-inference-token",
         "UNRELATED_SECRET": "must-not-enter",
         "ARBITRARY_VALUE": "must-not-enter",
     }
@@ -826,6 +820,7 @@ def test_harbor_child_environment_is_allowlisted() -> None:
         "HOME": "/tmp/home",
         "HARBOR_HF_RUN_ID": "run-1",
         "HARBOR_HF_WORKER_CAPABILITY": "private-capability",
+        "HF_INFERENCE_TOKEN": "private-inference-token",
         "HARBOR_HF_AGENT_TIMEOUT_SECONDS": "900",
     }
 
@@ -1116,10 +1111,6 @@ def test_missing_harbor_result_preserves_timeout_provenance(
             worker.JobEnvironmentPreflightError("dedicated task UID unavailable"),
             ("infrastructure", True),
         ),
-        (
-            worker.InferenceUsageError("invalid provider usage"),
-            ("infrastructure", True),
-        ),
     ],
 )
 def test_only_typed_transient_worker_failures_are_replaceable(
@@ -1159,9 +1150,9 @@ def test_infrastructure_failure_fingerprint_is_stable_and_worker_bound(
     )
 
 
-def test_zero_provider_usage_has_a_stable_failure_class() -> None:
-    usage = worker.InferenceUsage(requests=0, input_tokens=0, output_tokens=0)
-    assert worker._result_failure_class({}, usage) == "missing-positive-inference-usage"
+def test_pre_agent_failure_has_a_stable_failure_class() -> None:
+    assert worker._result_failure_class(None) == "missing-harbor-result"
+    assert worker._result_failure_class({}) == "agent-execution-not-started"
 
 
 def test_failure_evidence_uploads_note_then_canonical_manifest(

@@ -1,4 +1,4 @@
-"""DeepSeek Harness (``dsh``) over the Harbor-HF inference bridge."""
+"""DeepSeek Harness (``dsh``) with direct provider inference."""
 
 from __future__ import annotations
 
@@ -25,21 +25,16 @@ from harbor.models.trajectories import (
 )
 from harbor.utils.trajectory_utils import format_trajectory_json
 
-from harbor_hf_agents.support.hf_inference_bridge import (
-    prepare_hf_inference_bridge,
+from harbor_hf_agents.support.direct_inference import (
+    with_agent_environment_cleanup,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
-from harbor_hf_agents.support.job_inference_route import (
-    use_job_inference_route,
-    with_job_inference_bridge_cleanup,
-)
 
 _PACKAGE = "@deepseek-ai/dsh"
 _DSH_HOME = "/installed-agent/dsh-home"
 _PATCH_PATH = f"{_DSH_HOME}/cordis.patch.yml"
 _SETTINGS_PATH = f"{_DSH_HOME}/settings.yaml"
 _API_KEY_ENV = "DSH_API_KEY"
-_PLACEHOLDER_API_KEY = "not-required"
 _GENERIC_PROVIDER = "harbor"
 _NVM = 'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
 
@@ -137,6 +132,7 @@ class DshAgent(IsolatedProviderAgent):
         self,
         environment: BaseEnvironment,
     ) -> dict[str, str]:
+        del environment
         env: dict[str, str] = {
             "DSH_HOME": _DSH_HOME,
             "DSH_PERMISSION_MODE": "danger-full-access",
@@ -146,41 +142,14 @@ class DshAgent(IsolatedProviderAgent):
             value = self._get_env(key)
             if value:
                 env[key] = value
-        allowed_model = self._model_id()
-        bridged = await use_job_inference_route(
-            self,
-            environment,
-            env,
-            base_url_key="DSH_BASE_URL",
-            api_key_key="DSH_API_KEY",
-            api="chat-completions",
-            allowed_model=allowed_model,
-        )
-        if not bridged:
-            if "DSH_BASE_URL" not in env and "OPENAI_BASE_URL" in env:
-                env["DSH_BASE_URL"] = env["OPENAI_BASE_URL"]
-            if "DSH_API_KEY" not in env and "OPENAI_API_KEY" in env:
-                env["DSH_API_KEY"] = env["OPENAI_API_KEY"]
-            bridged = await prepare_hf_inference_bridge(
-                self,
-                environment,
-                env,
-                base_url_key="DSH_BASE_URL",
-                api_key_key="DSH_API_KEY",
-                inference_token=self._get_env("HF_INFERENCE_TOKEN"),
-                api="chat-completions",
-                allowed_model=allowed_model,
-                max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
-                max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
-                timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
-                max_output_tokens=self._get_env(
-                    "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"
-                ),
-            )
+        if "DSH_BASE_URL" not in env and "OPENAI_BASE_URL" in env:
+            env["DSH_BASE_URL"] = env["OPENAI_BASE_URL"]
+        if "DSH_API_KEY" not in env and "OPENAI_API_KEY" in env:
+            env["DSH_API_KEY"] = env["OPENAI_API_KEY"]
         if "DSH_BASE_URL" not in env:
             raise RuntimeError("DeepSeek Harness requires DSH_BASE_URL")
         if "DSH_API_KEY" not in env:
-            env["DSH_API_KEY"] = _PLACEHOLDER_API_KEY
+            raise RuntimeError("DeepSeek Harness requires DSH_API_KEY")
         return env
 
     @override
@@ -213,7 +182,7 @@ class DshAgent(IsolatedProviderAgent):
 
     @override
     @with_prompt_template
-    @with_job_inference_bridge_cleanup
+    @with_agent_environment_cleanup
     async def run(
         self,
         instruction: str,

@@ -34,8 +34,7 @@ from harbor_hf.models import (
     pinned_harbor_dataset_reference,
 )
 from harbor_hf.provider_agents import effective_provider_agent_parameters
-from harbor_hf.provider_models import ProviderTarget
-from harbor_hf.providers import routed_provider_model
+from harbor_hf.provider_models import ProviderTarget, routed_provider_model
 from harbor_hf.task_selection import task_matches_selector
 
 _SUCCESSFUL_EXPORT_ATTEMPTS = 6
@@ -395,6 +394,19 @@ def build_execution_request(
         environment["extra_allowed_hosts"] = list(
             dict.fromkeys(extra_environment_hosts)
         )
+    agent: dict[str, JsonValue] = {
+        **(
+            {"import_path": lock.agent.import_path}
+            if lock.agent.import_path is not None
+            else {"name": lock.agent.name}
+        ),
+        "model_name": f"openai/{served_model_name}",
+        "n_concurrent": concurrency,
+        "extra_allowed_hosts": [host],
+        "kwargs": agent_kwargs,
+    }
+    if isinstance(lock.deployment, ProviderTarget):
+        agent["env"] = _provider_agent_environment(lock, base_url)
     config: dict[str, JsonValue] = {
         "jobs_dir": str(jobs_dir),
         "n_attempts": attempts,
@@ -407,19 +419,7 @@ def build_execution_request(
             }
         ],
         "environment": environment,
-        "agents": [
-            {
-                **(
-                    {"import_path": lock.agent.import_path}
-                    if lock.agent.import_path is not None
-                    else {"name": lock.agent.name}
-                ),
-                "model_name": f"openai/{served_model_name}",
-                "n_concurrent": concurrency,
-                "extra_allowed_hosts": [host],
-                "kwargs": agent_kwargs,
-            }
-        ],
+        "agents": [agent],
         "datasets": [dataset],
     }
     if lock.agent_setup_timeout_multiplier is not None:
@@ -545,6 +545,29 @@ def _served_model_name(lock: ExecutionLock) -> str:
     if not isinstance(deployment, DeploymentProfile) or deployment.endpoint is None:
         raise WorkerError("execution lock has no endpoint binding")
     return deployment.endpoint.served_model_name
+
+
+def _provider_agent_environment(lock: ExecutionLock, base_url: str) -> dict[str, str]:
+    target = lock.deployment
+    if not isinstance(target, ProviderTarget):
+        raise WorkerError("direct provider configuration requires a provider target")
+    environment = {
+        "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
+        "OPENAI_BASE_URL": f"{base_url.rstrip('/')}/v1",
+        "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": str(target.timeout_seconds),
+    }
+    max_output_tokens = (
+        lock.serving_profile.max_output_tokens
+        if lock.serving_profile is not None
+        else target.parameters.get("max_tokens")
+    )
+    if (
+        isinstance(max_output_tokens, int)
+        and not isinstance(max_output_tokens, bool)
+        and max_output_tokens > 0
+    ):
+        environment["HARBOR_HF_MAX_OUTPUT_TOKENS"] = str(max_output_tokens)
+    return environment
 
 
 def _expected_agent_version(lock: ExecutionLock) -> str:

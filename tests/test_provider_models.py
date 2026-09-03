@@ -8,15 +8,11 @@ from harbor_hf.control import RunSubmittedPayload, new_event
 from harbor_hf.executions import build_execution_lock
 from harbor_hf.models import DeploymentProfile, ExperimentSpec
 from harbor_hf.provider_models import (
-    EvidenceValue,
     ExplicitProviderRoute,
-    ProviderCallResult,
-    ProviderChatRequest,
-    ProviderEvidence,
     ProviderLimits,
-    ProviderMessage,
     ProviderTarget,
-    provider_json_schemas,
+    provider_upstream_url,
+    routed_provider_model,
 )
 from harbor_hf.reconciler import (
     plan_reconciliation,
@@ -47,6 +43,9 @@ def test_provider_target_keeps_admission_and_routing_policy() -> None:
     assert target.api == "chat-completions"
     assert isinstance(target.routing, ExplicitProviderRoute)
     assert target.routing.provider == "groq"
+    assert target.token_secret_name == "HF_INFERENCE_TOKEN"
+    assert provider_upstream_url(target) == "https://router.huggingface.co"
+    assert routed_provider_model(target) == "openai/gpt-oss-120b:groq"
     assert target.limits.max_concurrent_requests == 8
     assert target.limits.max_spend_usd == Decimal("12.50")
     assert target.limits.estimated_wave_cost_usd == Decimal("2.50")
@@ -159,42 +158,3 @@ def test_provider_target_rejects_transport_owned_parameters(key: str) -> None:
             model="owner/model",
             parameters={key: 1},
         )
-
-
-def test_provider_request_rejects_transport_owned_parameters() -> None:
-    with pytest.raises(ValidationError, match="reserved keys: model"):
-        ProviderChatRequest(
-            request_id="request-1",
-            messages=[ProviderMessage(role="user", content="hello")],
-            parameters={"model": "other/model"},
-        )
-
-
-def test_evidence_value_requires_explicit_availability_semantics() -> None:
-    with pytest.raises(ValidationError, match="observed evidence requires"):
-        EvidenceValue[int](status="observed")
-    with pytest.raises(ValidationError, match="unobserved evidence"):
-        EvidenceValue[int](status="not_reported", value=1)
-    with pytest.raises(ValidationError, match="requires a detail"):
-        EvidenceValue[int](status="malformed")
-
-
-def test_provider_contracts_export_versioned_json_schemas() -> None:
-    schemas = provider_json_schemas()
-
-    assert set(schemas) == {
-        "provider_target",
-        "provider_evidence",
-        "provider_call_result",
-    }
-    assert schemas["provider_target"]["title"] == "ProviderTarget"
-    assert schemas["provider_evidence"]["title"] == "ProviderEvidence"
-    assert schemas["provider_call_result"]["title"] == "ProviderCallResult"
-
-
-def test_serialized_evidence_contract_rejects_unknown_fields() -> None:
-    schema = ProviderEvidence.model_json_schema()
-    result_schema = ProviderCallResult.model_json_schema()
-
-    assert schema["additionalProperties"] is False
-    assert result_schema["additionalProperties"] is False

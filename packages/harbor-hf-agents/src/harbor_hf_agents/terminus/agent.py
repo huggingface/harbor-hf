@@ -1,9 +1,9 @@
-"""Terminus 2 over the Harbor-HF Job inference route."""
+"""Terminus 2 using Harbor's direct model connection."""
 
 import asyncio
 import shlex
 from pathlib import Path, PurePosixPath
-from typing import override
+from typing import Any, override
 
 from harbor.agents.terminus_2 import Terminus2
 from harbor.agents.terminus_2.tmux_session import TmuxSession
@@ -12,13 +12,8 @@ from harbor.models.agent.context import AgentContext
 from harbor.models.trial.paths import EnvironmentPaths
 
 from harbor_hf_agents.support.control_job_environment import ControlJobEnvironment
-from harbor_hf_agents.support.hf_inference_bridge import (
-    mark_hf_inference_bridge_active,
-)
-from harbor_hf_agents.support.job_chat_completions import allowed_model_id
-from harbor_hf_agents.support.job_inference_route import (
-    load_job_inference_route,
-    with_job_inference_bridge_cleanup,
+from harbor_hf_agents.support.direct_inference import (
+    with_agent_environment_cleanup,
 )
 
 
@@ -84,7 +79,33 @@ class _JobTmuxSession(TmuxSession):
 
 
 class TerminusAgent(Terminus2):
-    """Run pinned Terminus 2 through the locked Chat Completions bridge."""
+    """Run pinned Terminus 2 with direct OpenAI-compatible settings."""
+
+    def __init__(
+        self,
+        logs_dir: Path,
+        model_name: str | None = None,
+        *,
+        extra_env: dict[str, str] | None = None,
+        api_base: str | None = None,
+        llm_kwargs: dict[str, Any] | None = None,
+        **kwargs: Any,  # noqa: ANN401 -- Harbor API
+    ) -> None:
+        agent_environment = dict(extra_env or {})
+        resolved_base = api_base or agent_environment.get("OPENAI_BASE_URL")
+        resolved_key = agent_environment.get("OPENAI_API_KEY")
+        if not resolved_base or not resolved_key:
+            raise ValueError("Terminus requires direct OpenAI inference settings")
+        resolved_llm_kwargs = dict(llm_kwargs or {})
+        resolved_llm_kwargs["api_key"] = resolved_key
+        super().__init__(
+            logs_dir=logs_dir,
+            model_name=model_name,
+            extra_env=agent_environment,
+            api_base=resolved_base,
+            llm_kwargs=resolved_llm_kwargs,
+            **kwargs,
+        )
 
     @override
     async def setup(self, environment: BaseEnvironment) -> None:
@@ -110,37 +131,12 @@ class TerminusAgent(Terminus2):
         )
         await self._session.start()
 
-    def _validate_configured_route(self, *, base_url: str, api_key: str) -> None:
-        llm = self._llm
-        if getattr(llm, "_api_base", None) != base_url:
-            raise RuntimeError(
-                "Terminus API base does not match the Job inference route"
-            )
-        llm_kwargs = getattr(llm, "_llm_kwargs", None)
-        if not isinstance(llm_kwargs, dict) or llm_kwargs.get("api_key") != api_key:
-            raise RuntimeError(
-                "Terminus API key does not match the Job inference route"
-            )
-        if getattr(llm, "_use_responses_api", None) is not False:
-            raise RuntimeError("Terminus must use the Chat Completions route")
-
     @override
-    @with_job_inference_bridge_cleanup
+    @with_agent_environment_cleanup
     async def run(
         self,
         instruction: str,
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        route = load_job_inference_route(
-            api="chat-completions",
-            allowed_model=allowed_model_id(self._model_name),
-        )
-        if route is None:
-            raise RuntimeError("Terminus requires the Job inference route")
-        mark_hf_inference_bridge_active(self, kind="job")
-        self._validate_configured_route(
-            base_url=route.base_url,
-            api_key=route.api_key,
-        )
         await super().run(instruction, environment, context)

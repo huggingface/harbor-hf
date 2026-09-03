@@ -1,266 +1,137 @@
 # Operator checklists
 
-Use these checklists as evidence gates. Mark an item complete only after
-inspecting the named artifact or command output.
+## Control service deployment
 
-## Control service deployment checklist
+- [ ] Exact source revision and root lockfile reviewed.
+- [ ] Target Space and Bucket supplied privately and match approved resources.
+- [ ] Space is application-protected and Bucket is private.
+- [ ] Release was produced from the reviewed repository revision.
+- [ ] `HF_TOKEN` is narrowly scoped to control operations and remains in the
+      Space.
+- [ ] `HF_INFERENCE_TOKEN` is distinct and narrowly scoped to inference.
+- [ ] Credential values do not appear in source, arguments, plans, logs, or
+      receipts.
+- [ ] Write mode remains disabled until verification and explicit activation.
+- [ ] OAuth identity, same-origin, CSRF, bearer, and worker-capability checks
+      pass.
+- [ ] A clean Bucket replay rebuilds the same projection.
+- [ ] No extra persistent repository, Space, Bucket, Dataset, or schedule was
+      created.
+- [ ] Production hardware and monthly ceiling are separately approved.
 
-- [ ] The deployment follows `docs/CONTROL_SERVICE.md` at an exact source
-      revision.
-- [ ] One pinned multi-stage Node.js image builds the Fastify API and React
-      application from the root npm lockfile.
-- [ ] JSON Schema, generated TypeScript types, OpenAPI, and the browser client
-      are current.
-- [ ] The Space is private, Hugging Face OAuth is enabled, and the private
-      Bucket operator access list was verified.
-- [ ] Read-only users cannot mutate runs, and operator mutations require a
-      valid CSRF token plus an idempotency key.
-- [ ] The Space has exactly two operator-managed persistent secrets:
-      `HF_TOKEN` for control and `HF_INFERENCE_TOKEN` for reviewed workers. The
-      values are distinct, and the browser and build layers cannot read either.
-- [ ] Production uses approved paid CPU hardware with sleep disabled. The
-      current hourly price and monthly ceiling are recorded.
-- [ ] No keep-awake schedule, second Space, Dataset, Bucket, database service,
-      or deployment credential was added.
-- [ ] An empty local filesystem rebuilds SQLite from Bucket records and produces
-      the expected replay cursor, run states, and next actions.
-- [ ] The API reports liveness during rebuild and refuses mutations until
-      readiness passes.
-- [ ] Server-Sent Events resume from a durable cursor, and the polling fallback
-      passes.
-- [ ] Overview, run, task, Job, Endpoint, result, profile, and audit routes
-      pass hosted Playwright tests.
-- [ ] A forced process exit around each remote action boundary creates no
-      duplicate logical work.
-- [ ] Jobs never receive `HF_TOKEN` or a writable canonical Bucket mount. A
-      locked deployment marked `required` receives only `HF_INFERENCE_TOKEN`; a
-      deployment marked `forbidden` receives no operator-managed secret. Signed
-      capabilities authorize only the run, launch action, task set, and
-      expiration.
-- [ ] Each worker capability is bound to the Run-lock digest, launch action,
-      assigned task set, operation set, and expiration. It authorizes only the
-      assigned lock read, evidence upload, and receipt submission.
-- [ ] Preparation and execution Job image, hardware, timeout, task assignment,
-      reservation, and cost match the immutable policy.
-- [ ] Jobs receive no `HF_TOKEN` or writable canonical Bucket mount. A required
-      inference token is isolated in the reviewed root-owned bridge before the
-      unprivileged agent runs.
-- [ ] A worker uploads content-addressed evidence chunks and a canonical
-      manifest before its attempt receipt. Missing, changed, cross-scope, or
-      incomplete evidence is rejected during both receipt acceptance and replay.
-- [ ] The hosted inference-free control smoke launches and observes its Job,
-      submits a worker receipt, reconciles cost, and leaves no active Job.
-- [ ] Every endpoint is paused with zero ready replicas after the deployment
-      canary.
+## Worker and direct inference
 
-## New run checklist
+- [ ] Worker image is pinned by registry digest.
+- [ ] Harbor and agent-package revisions are exact.
+- [ ] Preparation Jobs have no persistent credentials.
+- [ ] No Job receives `HF_TOKEN` or a writable canonical Bucket mount.
+- [ ] Only a deployment with `inference_upstream` receives
+      `HF_INFERENCE_TOKEN`.
+- [ ] Harbor `AgentConfig.env` contains the locked upstream, credential
+      reference, timeout, and output limit.
+- [ ] Model provider suffix, deployment provider, model API, and harness API
+      match.
+- [ ] Upstream hostname is in `extra_allowed_hosts`.
+- [ ] Agent uses its native API without translation or fallback.
+- [ ] Direct inference settings are cleared after the agent run.
+- [ ] Agent descendants stop before workspace freeze and verification.
+- [ ] Task-image digest, extraction limits, host UID, capability, and
+      `no_new_privs` checks pass.
 
-### Scope
+## New Run
 
-- [ ] Benchmark protocol, task set, attempt count, model set, agents, providers,
-      judge, scoring denominator, and publication cohort are approved.
-- [ ] The exact count of runs, tasks, logical trials, shards, and waves is known.
-- [ ] Existing runs and Jobs were checked for duplicates.
-- [ ] Remote writes and maximum spend have explicit authorization.
+### Scope and identity
 
-### Identity
+- [ ] Project file authorizes the exact benchmark, model, harness, deployment,
+      task count, method, and publication role.
+- [ ] Exact source and task digests are reviewed.
+- [ ] Exact model route and observable revision are reviewed.
+- [ ] Exact agent import path and revision are reviewed.
+- [ ] Worker and task images are immutable.
+- [ ] No existing matching Run or unresolved action already exists.
 
-- [ ] Worker and Harbor references are full commits. A public Git benchmark is
-      anonymously readable at a full commit; a local benchmark has a verified
-      bundle content digest. Model and Git agent references are full commits.
-- [ ] Package agents use exact versions.
-- [ ] Images use SHA-256 digests.
-- [ ] Every selected task has a content digest.
-- [ ] Provider API and route are locked together with the model and
-      authoritative parameters.
-- [ ] Judge API URL and model are locked. The secret name, reasoning policy,
-      and temperature policy are locked too.
+### Capacity and spend
 
-### Storage and secrets
-
-- [ ] The namespace resource inventory was captured before mutation.
-- [ ] The namespace has one publicly reachable, application-protected control
-      Space and one private `<artifact-bucket>` Bucket; their deployed names
-      remain in private configuration.
-- [ ] The run creates no repository, Bucket, Space, Dataset, schedule,
-      status store, lease store, backup store, or result service.
-- [ ] Any proposed persistent resource has an approved privacy or
-      failure-domain justification, owner, cost, lifecycle, and removal
-      condition.
-- [ ] Control Dataset, input Bucket, evidence Bucket, and unpublished result
-      stores are private. Anonymous Space routes cannot read them.
-- [ ] Benchmark source models contain no secret names or values.
-- [ ] No Git credential, SSH key, SSH agent, or credential helper is forwarded
-      to remote infrastructure.
-- [ ] Manifest and plan contain only explicitly approved runtime secret names.
-- [ ] Every runtime credential is purpose-scoped and approved for its exact
-      source and destination; the submitter can load it without printing it.
-- [ ] The control Space has exactly two persistent secrets named `HF_TOKEN`
-      and `HF_INFERENCE_TOKEN`; they have the approved distinct scopes.
-- [ ] `HF_TOKEN` contains the retained fine-grained service token and has only
-      the required resource and action scopes. Its display name and local alias
-      are not present in public artifacts.
-- [ ] No per-run, per-repair, per-worker, backup, or result-reader Harbor-HF
-      credential was created. Jobs never receive `HF_TOKEN` or a writable mount
-      of the canonical control Bucket. Each worker receives only its short-lived,
-      action-scoped capability.
-- [ ] Any redundant Harbor-HF credential has a private consumer audit and a
-      canary using only the retained credential before revocation.
-- [ ] A configured named HF Job token still exists in Harbor HF's private local
-      token store, is fine-grained, and its value is absent from Harbor HF JSON
-      config and command output.
-- [ ] Provider-agent isolation requirements are present.
-- [ ] Public publication destinations cannot receive raw private evidence.
-
-### Planning
-
-- [ ] `harbor-hf validate` passes.
-- [ ] Run plan JSON and `source.lock.json` are saved with SHA-256 digests.
-- [ ] A directory source bundle has a complete validated manifest and payload;
-      a Git source passed anonymous preflight with credentials disabled.
-- [ ] A clean-checkout plan has the same semantic digest.
-- [ ] Plan task names and attempts match the protocol.
-- [ ] Infrastructure retries are separate from logical attempts.
-- [ ] Matrix includes and excludes produce the intended cells.
-
-### Capacity
-
-- [ ] Matching deployment profile or representative canary exists.
-- [ ] Transport canary passed evidence and isolation gates.
-- [ ] Representative pilot wave passed at intended concurrency and pacing.
-- [ ] p50 and p95 are recorded. Maximum trial duration and request count are
-      recorded together with queueing and finalization time.
-- [ ] Effective concurrency names its limiting factor.
-- [ ] `check_wave_budget.py` passes every deployment group and wave.
-- [ ] Worst-wave estimate plus reserve fits the execution timeout.
-- [ ] Preparation and execution Job deadlines satisfy `docs/run-spec.md`.
-- [ ] No trial can be admitted with too little time for its locked lifecycle.
-
-### Spend
-
-- [ ] Per-wave estimate and run cap are explicit.
-- [ ] Concurrent reservations fit the cap.
-- [ ] Infrastructure retry reservations fit the cap.
-- [ ] Unknown billing attribution is treated conservatively.
-- [ ] Endpoint quota and price or provider quota are verified.
+- [ ] Representative duration and reliable concurrency evidence reviewed.
+- [ ] Job, inference, possible replacement, Endpoint, and cleanup costs are
+      included.
+- [ ] Physical-attempt limit is explicit.
+- [ ] Run ceiling fits cumulative authorization.
+- [ ] Shared capacity is available.
 
 ### Submission
 
-- [ ] Submit dry run matches the approved plan, source lock, bundle upload or
-      reuse action, and exact source mount.
-- [ ] The rendered Job secret list contains no source or Git credential.
-- [ ] Launch record contains the manifest and plan plus duration and canary
-      evidence.
-- [ ] User has approved the exact paid launch.
-- [ ] Submission response, run ID, controller Job ID, attempt, and input
-      digest are saved.
-- [ ] Provider runs have one controller Job and no child wave Jobs.
+- [ ] Promoted aliases resolve to the reviewed profile IDs.
+- [ ] One stable idempotency key is retained.
+- [ ] The final request is shown and confirmed.
+- [ ] Returned Run and action IDs are recorded.
+- [ ] An ambiguous response will be investigated, not repeated blindly.
 
-## Live run checklist
+## Live Run
 
-- [ ] Provider runs are not driven by an applied local reconcile loop.
-- [ ] Status projection plus latest control and controller revisions are saved.
-- [ ] Controller attempt, claim, heartbeat, wave, and HF Job identity match.
-- [ ] Provider or endpoint identity matches the lock.
-- [ ] Spend reservation remains within the approved bound.
-- [ ] Provider records and terminal bundles advance in the Bucket.
-- [ ] Completed trial count and observed throughput advance.
-- [ ] Remaining work still fits the wave and controller deadlines with reserve.
-- [ ] Retry counts stay within policy.
-- [ ] No benchmark or agent failure is queued for infrastructure retry.
-- [ ] Controller watchdog is scoped to the approved run list.
-- [ ] Endpoint watchdog and lease remain healthy when applicable.
-- [ ] The operator handoff names the next safe action.
+- [ ] Preparation completed and Harbor lock digest validates.
+- [ ] Logical and physical progress are monitored separately.
+- [ ] Active Job identity matches the deterministic action.
+- [ ] Evidence upload and receipt state are monitored.
+- [ ] Spend and remaining ceiling are monitored.
+- [ ] Replacement attempts are admitted only for typed infrastructure failure.
+- [ ] Deterministic shared defects stop affected work.
+- [ ] Endpoint ownership, health, and ready replicas are monitored when
+      applicable.
+- [ ] Logs are treated as diagnostic rather than authoritative.
 
-## Cancellation checklist
+## Cancellation
 
-- [ ] Durable cancellation was previewed and recorded.
-- [ ] New shard admission stopped.
-- [ ] Queued and active Jobs were observed or cancelled through control state.
-- [ ] Every dispatched Job launch was adopted or proven absent, and every active
-      Job reached a terminal observation before task sealing.
-- [ ] Observed Job cost was reconciled and its reservation was released.
-- [ ] Active work drained or became terminal.
-- [ ] Endpoint is paused with zero ready replicas when applicable.
-- [ ] Existing valid trial evidence is retained.
-- [ ] Cleanup and cancellation events are durable.
-- [ ] Leases are released.
-- [ ] Run projection is terminal or the remaining blocker is documented.
+- [ ] Correct Run and reason confirmed.
+- [ ] Durable cancellation intent recorded.
+- [ ] New admission stopped.
+- [ ] Active attempts drained or became terminal.
+- [ ] Available evidence finalized.
+- [ ] Owned Endpoints observed paused with zero ready replicas.
+- [ ] Cleanup and cancellation receipts are durable.
+- [ ] Final Run state confirmed.
 
-## Recovery checklist
+## Recovery
 
-- [ ] The immutable original manifest and plan are preserved with the lock and
-      events.
-- [ ] HF Job and endpoint identities were observed before mutation.
-- [ ] Every affected trial has a failure classification.
-- [ ] Completed benchmark outcomes are excluded from semantic rerun.
-- [ ] Retry candidates fit retry count, wave duration, and spend admission.
-- [ ] Interrupted finalization has one unique validated success.
-- [ ] Original checksums and terminal markers are verified.
-- [ ] Replacement run has a new identity and explicit provenance.
-- [ ] Duplicate prevention ledger maps every affected logical trial.
-- [ ] Replacement pilot wave passes before remaining work is admitted.
+- [ ] Failure classified from canonical evidence.
+- [ ] Remote ownership and deterministic resource identity verified.
+- [ ] Prepared trial and all behavior-affecting inputs remain unchanged.
+- [ ] Replacement eligibility, attempt allowance, and spend admission pass.
+- [ ] No valid semantic outcome is rerun.
+- [ ] Any changed input creates a linked replacement Run.
+- [ ] Original evidence and attempt history remain immutable.
+- [ ] Recovery actions and receipts are append-only.
 
-## Evidence checklist
+## Evidence and publication
 
-- [ ] Harbor compatibility bundle matches the locked request.
-- [ ] Frozen workspace archive and file index agree.
-- [ ] Required native session and ATIF trajectory are present and nontrivial.
-- [ ] Agent and model identities match. Provider and API identities match the
-      revision too.
-- [ ] Provider continuation and retry records are valid.
-- [ ] Judge recorder counts and selected exchange are valid.
-- [ ] Verifier reward and scorecard are finite and structurally consistent.
-- [ ] Isolation evidence passes.
-- [ ] Every referenced file matches its size and SHA-256.
-- [ ] Terminal markers were written last.
-- [ ] Remote artifact verification passes.
-- [ ] Repaired or recovered bundles pass local deep validation.
-- [ ] Known-secret and generic-pattern scans report zero findings.
+- [ ] Every logical task has one selected terminal outcome.
+- [ ] Harbor locks and results match preparation.
+- [ ] Required workspace, session, trajectory, verifier, and provenance
+      evidence exists.
+- [ ] Every referenced object passes size and digest validation.
+- [ ] Credential scans pass over paths and bytes.
+- [ ] Scores and outcome counts are independently recomputed.
+- [ ] Unknown hosted-service details remain unknown.
+- [ ] Partial, diagnostic, corrected, or composite outputs are labeled.
+- [ ] Publication derives only from canonical private evidence.
+- [ ] Public output omits private topology, credentials, capabilities, and raw
+      private evidence.
+- [ ] Publication recovery does not execute benchmark work.
 
-## Publication checklist
+## Final operator report
 
-- [ ] Run control state and Jobs are terminal. Waves and retries are
-      terminal, and cleanup is complete.
-- [ ] Expected and observed logical trial counts match.
-- [ ] Task and attempt distributions match the approved protocol.
-- [ ] Physical retry count and categories are reported.
-- [ ] Score and denominator were independently recomputed.
-- [ ] Result class and cohort eligibility are explicit.
-- [ ] Provider model revision is `not_observed` where required.
-- [ ] Publication dry run matches verified evidence.
-- [ ] Publication receipt and exact Dataset commits are saved.
-- [ ] Catalog change has explicit authorization plus a named actor and reason.
-- [ ] Private evidence retention obligations are recorded.
+Record:
 
-## Final operator report template
-
-```text
-Run:
-Namespace:
-Manifest path and SHA-256:
-Plan path and SHA-256:
-Worker revision:
-Harbor revision:
-Benchmark revision and task count:
-Model and deployment plus provider and agent:
-Judge policy:
-Logical runs and trials plus shards and waves:
-Effective concurrency and limiting factor:
-Planning trial duration:
-Worst-wave estimate, reserve, and deadline:
-Preparation and execution Job deadlines:
-Spend cap, wave reservation, and retry capacity:
-Run state counts:
-HF Job IDs and terminal states:
-Endpoint pause or provider route state:
-Artifact verification:
-Deep validation:
-Secret scan:
-Score and denominator:
-Publication ID and Dataset revisions:
-Catalog state:
-Repairs or replacements:
-Remaining blockers:
-Next safe action:
-```
+- authorization source and remaining scope;
+- repository and deployed revisions;
+- Run ID and exact profile IDs;
+- task count and attempt policy;
+- model route, inference provider, API, and observable revision;
+- Job and Endpoint identities inspected privately;
+- logical outcome and physical attempt counts;
+- replacement reasons;
+- accepted cost and ceiling;
+- evidence verification and credential-scan result;
+- Endpoint final state;
+- publication IDs and digests; and
+- unresolved risks or required operator decisions.

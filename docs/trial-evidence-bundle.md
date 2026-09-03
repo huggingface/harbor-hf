@@ -611,8 +611,8 @@ Rules:
   `x-ratelimit-remaining-tokens`, `x-ratelimit-reset`,
   `x-ratelimit-reset-requests`, and `x-request-id`.
 - Header names are lowercase. Any header outside the allowlist is omitted from
-  evidence. Authorization, proxy authorization, cookies, and set-cookie are
-  always omitted.
+  evidence. Authentication headers, cookies, and set-cookie are always
+  omitted.
 - `outcome` is `success`, `upstream_error`, `transport_error`, or
   `recorder_error`.
 - `transformation` is `none` or `model_enforced`.

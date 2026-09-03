@@ -123,7 +123,6 @@ async function run(service: Service, idempotencyKey = "prepared-run") {
       hardware: "cpu-basic",
       timeout_seconds: 600,
       trusted_worker: true,
-      inference_token: "forbidden",
       run_lock_digest: sha256(canonicalJson(lock)),
     },
   );
@@ -185,6 +184,13 @@ function trialPayload(
       agent: {
         import_path: "example.agent:Agent",
         model_name: "openai/example/model:provider",
+        env: {
+          OPENAI_API_KEY: `\${HF_INFERENCE_TOKEN}`,
+          OPENAI_BASE_URL: "https://router.huggingface.co/v1",
+          HARBOR_HF_MAX_OUTPUT_TOKENS: "32768",
+          HARBOR_HF_PROVIDER_TIMEOUT_SECONDS: "600",
+        },
+        extra_allowed_hosts: ["router.huggingface.co"],
       },
       environment: {
         import_path: "example.environment:Environment",
@@ -231,6 +237,13 @@ function finalizePayload(createdAt: string) {
         {
           import_path: "example.agent:Agent",
           model_name: "openai/example/model:provider",
+          env: {
+            OPENAI_API_KEY: `\${HF_INFERENCE_TOKEN}`,
+            OPENAI_BASE_URL: "https://router.huggingface.co/v1",
+            HARBOR_HF_MAX_OUTPUT_TOKENS: "32768",
+            HARBOR_HF_PROVIDER_TIMEOUT_SECONDS: "600",
+          },
+          extra_allowed_hosts: ["router.huggingface.co"],
         },
       ],
       retry: { max_retries: 0 },
@@ -432,16 +445,7 @@ describe("prepared Harbor jobs", () => {
       task_ids: ["task-001-trial-1"],
       job_image: `example.invalid/worker@sha256:${"a".repeat(64)}`,
       task_image: `library/python@sha256:${"b".repeat(64)}`,
-      job_command: [
-        "/bin/sh",
-        "-c",
-        [
-          "set -eu",
-          "'/opt/worker/start-root-services'",
-          "unset HF_INFERENCE_TOKEN HARBOR_HF_INFERENCE_TOKEN",
-          "exec 'run-worker'",
-        ].join("\n"),
-      ],
+      job_command: ["run-worker"],
       hardware: "cpu-basic",
       timeout_seconds: 2_760,
       worker_revision: "abcdef0",

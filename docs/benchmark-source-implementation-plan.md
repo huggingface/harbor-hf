@@ -97,7 +97,7 @@ Reject symlinks, hard-link preservation, devices, sockets, FIFOs, `.git` directo
 
 Reuse the repository's existing secret-detection primitives where their contract fits. Scan known configured credential values and high-confidence private-key patterns before publication. A source finding fails the bundle; the builder does not rewrite benchmark input.
 
-Property and mutation tests cover ordering, canonical JSON, path normalization, mode normalization, source mutation, archive metadata, extra members, missing members, digest mismatches, extraction traversal, and decompression limits.
+Property and adversarial regression tests cover ordering, canonical JSON, path normalization, mode normalization, source changes, archive metadata, extra members, missing members, digest mismatches, extraction traversal, and decompression limits.
 
 ## Phase 3: private bundle storage
 
@@ -262,7 +262,8 @@ Required local tests include:
 - Job commands containing no Git credential secret
 - provider and endpoint execution parity
 
-Run the repository quality gates from `AGENTS.md`. A behavior implementation is not complete while the mutation gate is below its required threshold.
+Run the repository quality gates from `AGENTS.md`. A behavior implementation is
+not complete until its focused deterministic regression tests pass.
 
 ## Remote acceptance
 
@@ -293,4 +294,5 @@ The implementation is complete when:
 - public Git runs anonymously at a full commit
 - every remote execution consumes a verified source lock
 - retries and recovery preserve the original source identity
-- docs, skills, examples, generated schemas, tests, mutation checks, and remote canaries agree with the specification
+- docs, skills, examples, generated schemas, regression tests, and remote
+  canaries agree with the specification

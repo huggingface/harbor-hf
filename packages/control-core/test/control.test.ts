@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type {
   ActionIntent,
   AttemptReceipt,
+  JobAdmissionGrant,
   PreparedJob,
   PreparedTrial,
   ProfileObject,
@@ -1137,7 +1138,7 @@ describe("control service", () => {
         task_ids: ["task-001"],
         hardware: "cpu-basic",
         max_jobs: 3,
-        inference_max_concurrency: 1,
+        inference_upstream: "https://router.huggingface.co/v1",
         inference_max_total_concurrency: 1,
       });
     const first = launch(firstRun.run_id, 0);
@@ -1147,6 +1148,11 @@ describe("control service", () => {
     await expect(control.service.admitJobLaunch(first)).resolves.toMatchObject({
       status: "admitted",
     });
+    await expect(
+      control.projection.jobAdmission(first.action_id),
+    ).resolves.toMatchObject({
+      reserved_provider_requests: 1,
+    });
     await expect(control.service.admitJobLaunch(second)).resolves.toMatchObject({
       status: "admitted",
     });
@@ -1154,6 +1160,58 @@ describe("control service", () => {
       status: "deferred",
       limiting_factor: "provider_request_capacity",
     });
+  });
+
+  it("derives provider reservations for active historical grants", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    await configureCapacity(control);
+    const capacity = control.service.capacityProfile();
+    if (!capacity) throw new Error("capacity profile is missing");
+    const run = await control.service.submit(
+      { ...submission, start_paused: true },
+      "historical-provider-capacity-run",
+      operator,
+    );
+    const intent = control.service.actionIntent(
+      run.run_id,
+      "job.launch",
+      "task-001",
+      0,
+      {
+        worker_role: "execution",
+        task_id: "task-001",
+        task_ids: ["task-001"],
+        hardware: "cpu-basic",
+        max_jobs: 4,
+        inference_upstream: "https://router.huggingface.co/v1",
+        inference_max_concurrency: 4,
+      },
+    );
+    await control.service.writeAction(intent);
+    const grant: JobAdmissionGrant = {
+      schema_version: "v1",
+      kind: "job.admission",
+      record_id: deterministicId("job-admission", intent.action_id),
+      created_at: "2026-08-22T00:00:00.000Z",
+      actor: { subject: "test", role: "service" },
+      action_id: intent.action_id,
+      run_id: run.run_id,
+      namespace: "test",
+      capacity_profile_id: capacity.profile_id,
+      hardware: "cpu-basic",
+      tokens_remaining: 1,
+      refill_cursor_at: "2026-08-22T00:00:00.000Z",
+      previous_grant_id: null,
+    };
+    await control.service.append(grant);
+
+    await expect(control.projection.activeJobAdmissions("test")).resolves.toEqual([
+      expect.objectContaining({
+        action_id: intent.action_id,
+        reserved_provider_requests: 4,
+      }),
+    ]);
   });
 
   it("adopts idempotent submissions and completes a control smoke run", async () => {
@@ -1396,7 +1454,6 @@ describe("control service", () => {
     const launchPayload = JSON.parse(initialLaunch.intent_body).payload;
     expect(launchPayload).toMatchObject({
       trusted_worker: true,
-      inference_token: "forbidden",
     });
     expect(launchPayload).not.toHaveProperty("requires_hf_token");
     expect(launchPayload).not.toHaveProperty("mount_bucket");
@@ -1571,7 +1628,7 @@ describe("control service", () => {
     });
   });
 
-  it("copies locked inference limits into the worker launch", async () => {
+  it("copies locked direct-inference route identity into the worker launch", async () => {
     const control = await createTestControl(1, 1, 0, true, "required");
     controls.push(control);
     await control.service.submit(submission, "inference-worker-launch-key", operator);
@@ -1588,14 +1645,9 @@ describe("control service", () => {
     );
     if (!launch) throw new Error("inference Job launch is missing");
     expect(JSON.parse(launch.intent_body).payload).toMatchObject({
-      inference_token: "required",
       inference_upstream: "https://router.huggingface.co/v1",
       inference_model: "example/model:provider",
       inference_api: "chat-completions",
-      inference_max_requests: 64,
-      inference_max_concurrency: 4,
-      inference_timeout_seconds: 600,
-      inference_max_output_tokens: 32768,
     });
   });
 

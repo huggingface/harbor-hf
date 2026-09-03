@@ -189,7 +189,6 @@ describe("canonical contracts", () => {
       namespace: "test",
       capacity_profile_id: `sha256:${"a".repeat(64)}`,
       hardware: "cpu-basic",
-      reserved_provider_requests: 1,
       tokens_remaining: 1,
       refill_cursor_at: "2026-08-22T00:00:00.000Z",
       previous_grant_id: null,
@@ -209,6 +208,10 @@ describe("canonical contracts", () => {
 
     expect(validateControlRecord(profile)).toEqual(profile);
     expect(validateControlRecord(grant)).toEqual(grant);
+    expect(validateControlRecord({ ...grant, reserved_provider_requests: 1 })).toEqual({
+      ...grant,
+      reserved_provider_requests: 1,
+    });
     expect(validateControlRecord(release)).toEqual(release);
     expect(controlRecordPath(grant)).toContain("/p-admission.json");
     expect(controlRecordPath(release)).toContain("/zy-capacity-release.json");
@@ -220,10 +223,59 @@ describe("canonical contracts", () => {
     ).toThrow(ContractValidationError);
   });
 
-  it("does not expose a Sandbox contract or action kind", () => {
-    expect(JSON.stringify(schemas.controlRecord).toLowerCase()).not.toContain(
-      "sandbox",
-    );
+  it("replays the exact historical capacity profile without normalizing it", () => {
+    const spec = {
+      namespace: "test",
+      max_active_sandboxes: 16,
+      hardware_limits: [
+        { hardware: "cpu-basic", max_active_sandboxes: 12 },
+        { hardware: "cpu-upgrade", max_active_sandboxes: 4 },
+      ],
+      start_burst: 16,
+      start_refill_tokens: 16,
+      start_refill_period_seconds: 60,
+    } as const;
+    const profile = {
+      schema_version: "v1",
+      kind: "profile.object",
+      record_id: "profile-capacity-legacy",
+      created_at: "2026-08-22T00:00:00.000Z",
+      actor: { subject: "profile-migration", role: "migration" },
+      profile_kind: "capacity",
+      name: "capacity-legacy",
+      spec,
+    } as const;
+
+    expect(validateControlRecord(profile)).toEqual(profile);
+    for (const invalidSpec of [
+      { ...spec, max_active_jobs: 16 },
+      {
+        ...spec,
+        hardware_limits: [
+          {
+            hardware: "cpu-basic",
+            max_active_sandboxes: 12,
+            max_active_jobs: 12,
+          },
+        ],
+      },
+      { ...spec, undocumented: true },
+      {
+        namespace: spec.namespace,
+        max_active_sandboxes: spec.max_active_sandboxes,
+        hardware_limits: spec.hardware_limits,
+        start_burst: spec.start_burst,
+        start_refill_tokens: spec.start_refill_tokens,
+      },
+      { ...spec, max_active_sandboxes: 1025 },
+    ])
+      expect(() => validateControlRecord({ ...profile, spec: invalidSpec })).toThrow(
+        ContractValidationError,
+      );
+  });
+
+  it("does not re-expose Sandbox records or action kinds", () => {
+    expect(JSON.stringify(schemas.controlRecord)).not.toContain('"const":"sandbox.');
     expect(() =>
       validateControlRecord({
         schema_version: "v1",
@@ -299,11 +351,8 @@ describe("canonical contracts", () => {
         hardware: "cpu-basic",
         timeout_seconds: 300,
         trusted_worker: true,
-        inference_token: "required",
         inference_upstream: "https://router.huggingface.co/v1",
         inference_api: "chat-completions",
-        inference_max_requests: 64,
-        inference_max_concurrency: 4,
         inference_timeout_seconds: 600,
         inference_max_output_tokens: 32768,
         inference_provider: "provider",
@@ -320,7 +369,7 @@ describe("canonical contracts", () => {
     expect(() =>
       validateControlRecord({
         ...inferenceDeployment,
-        spec: { ...inferenceDeployment.spec, inference_token: "optional" },
+        spec: { ...inferenceDeployment.spec, unsupported_setup_command: ["false"] },
       }),
     ).toThrow(ContractValidationError);
     expect(() =>
@@ -590,6 +639,46 @@ describe("canonical contracts", () => {
         launch_policy: "x",
         ceiling_microusd: -1,
         confirmed: false,
+      }),
+    ).toThrow(ContractValidationError);
+    const recipe = {
+      schema_version: "v1",
+      name: "test-agent",
+      setup_command: "printf setup",
+      run_command: "printf run",
+      route_api: "chat-completions",
+      setup_timeout_seconds: 60,
+      environment: [],
+      outputs: {
+        results_path: "/logs/agent/results.json",
+        trajectory_path: null,
+      },
+    };
+    expect(
+      validateRunSubmission({
+        benchmark_config: "tb21-gpt-oss-20b-canary",
+        benchmark_config_revision: `sha256:${"1".repeat(64)}`,
+        harness: {
+          type: "workbench",
+          recipe,
+          setup_test_id: "setup-test-contract",
+        },
+        ceiling_microusd: 1_000_000,
+        confirmed: true,
+      }),
+    ).toMatchObject({ benchmark_config: "tb21-gpt-oss-20b-canary" });
+    expect(() =>
+      validateRunSubmission({
+        benchmark_config: "tb21-gpt-oss-20b-canary",
+        benchmark_config_revision: `sha256:${"1".repeat(64)}`,
+        benchmark: "control-smoke",
+        harness: {
+          type: "workbench",
+          recipe,
+          setup_test_id: "setup-test-contract",
+        },
+        ceiling_microusd: 1_000_000,
+        confirmed: true,
       }),
     ).toThrow(ContractValidationError);
   });

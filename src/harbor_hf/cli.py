@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Annotated, NoReturn
+from typing import Annotated, NoReturn, cast
 from uuid import uuid4
 
 import httpx
 import typer
+
+from harbor_hf.workbench_cli import (
+    TransientControlError,
+    read_workbench_recipe,
+    register_workbench_commands,
+)
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -53,6 +59,8 @@ def _request(
     *,
     payload: dict[str, object] | None = None,
     idempotency_key: str | None = None,
+    timeout_seconds: float = 30.0,
+    transient: bool = False,
 ) -> object:
     try:
         response = httpx.request(
@@ -60,11 +68,17 @@ def _request(
             f"{_base_url()}{path}",
             headers=_headers(idempotency_key=idempotency_key),
             json=payload,
-            timeout=30,
+            timeout=timeout_seconds,
             follow_redirects=False,
         )
-    except (httpx.HTTPError, ValueError) as error:
+    except httpx.HTTPError as error:
+        if transient:
+            raise TransientControlError from None
         _fail(f"control API request failed: {type(error).__name__}")
+    except ValueError as error:
+        _fail(f"control API request failed: {type(error).__name__}")
+    if transient and response.status_code in {429, 500, 502, 503, 504}:
+        raise TransientControlError
     if response.status_code >= 400:
         try:
             body = response.json()
@@ -79,6 +93,9 @@ def _request(
 
 def _echo(value: object) -> None:
     typer.echo(json.dumps(value, indent=2, sort_keys=True))
+
+
+register_workbench_commands(app, request=_request, echo=_echo, fail=_fail)
 
 
 @capacity_app.callback(invoke_without_command=True)
@@ -234,13 +251,25 @@ def run_repair_continuation_successor(
 
 
 @run_app.command("submit")
-def run_submit(
-    benchmark: Annotated[str, typer.Option("--benchmark")],
-    model: Annotated[str, typer.Option("--model")],
-    harness: Annotated[str, typer.Option("--harness")],
-    ceiling_microusd: Annotated[int, typer.Option("--ceiling-microusd", min=0)],
-    launch_policy: Annotated[str, typer.Option("--launch-policy")],
+def run_submit(  # noqa: C901 -- validates two intentionally exclusive request modes
+    benchmark: Annotated[str | None, typer.Option("--benchmark")] = None,
+    model: Annotated[str | None, typer.Option("--model")] = None,
+    harness: Annotated[
+        str | None,
+        typer.Option(
+            "--harness",
+            help=(
+                "Reviewed harness alias, or a Workbench recipe JSON file with --config."
+            ),
+        ),
+    ] = None,
+    ceiling_microusd: Annotated[
+        int | None, typer.Option("--ceiling-microusd", min=0)
+    ] = None,
+    launch_policy: Annotated[str | None, typer.Option("--launch-policy")] = None,
     deployment: Annotated[str | None, typer.Option("--deployment")] = None,
+    config: Annotated[str | None, typer.Option("--config")] = None,
+    setup_test: Annotated[str | None, typer.Option("--setup-test")] = None,
     idempotency_key: Annotated[str | None, typer.Option("--idempotency-key")] = None,
     start_paused: Annotated[bool, typer.Option("--start-paused")] = False,
     yes: Annotated[
@@ -248,25 +277,87 @@ def run_submit(
         typer.Option("--yes", help="Confirm the resolved launch and cost ceiling."),
     ] = False,
 ) -> None:
-    """Submit profile references and return the durable run ID."""
-    if not yes:
-        typer.confirm(
-            f"Launch {benchmark} with {model} through {harness}, "
-            f"with a ceiling of {ceiling_microusd} micro-USD?",
-            abort=True,
+    """Submit a reviewed profile set or a tested Workbench harness."""
+    if ceiling_microusd is None:
+        _fail("--ceiling-microusd is required")
+    payload: dict[str, object]
+    if config:
+        if not harness:
+            _fail("--harness must name a recipe JSON file when --config is used")
+        if not setup_test:
+            _fail("--setup-test is required when --config is used")
+        profile_options = (benchmark, model, deployment, launch_policy)
+        if any(value is not None for value in profile_options):
+            _fail(
+                "--config cannot be combined with --benchmark, --model, "
+                "--deployment, or --launch-policy"
+            )
+        catalog_value = _request("GET", "/api/v1/workbench/benchmark-configs")
+        if not isinstance(catalog_value, dict):
+            _fail("control API returned an invalid benchmark configuration catalog")
+        catalog = cast(dict[str, object], catalog_value)
+        items_value = catalog.get("items")
+        if not isinstance(items_value, list):
+            _fail("control API returned an invalid benchmark configuration catalog")
+        items = cast(list[object], items_value)
+        selected_config = next(
+            (
+                item
+                for item in items
+                if isinstance(item, dict) and item.get("name") == config
+            ),
+            None,
         )
+        if not isinstance(selected_config, dict):
+            _fail(f"unknown benchmark configuration: {config}")
+        selected = cast(dict[str, object], selected_config)
+        revision = selected.get("revision")
+        if not isinstance(revision, str):
+            _fail(f"unknown benchmark configuration: {config}")
+        recipe = read_workbench_recipe(harness, _fail)
+        if not yes:
+            typer.confirm(
+                f"Launch tested Workbench recipe {harness} with reviewed config "
+                f"{config}, with a ceiling of {ceiling_microusd} micro-USD?",
+                abort=True,
+            )
+        payload = {
+            "benchmark_config": config,
+            "benchmark_config_revision": revision,
+            "harness": {
+                "type": "workbench",
+                "recipe": recipe,
+                "setup_test_id": setup_test,
+            },
+            "ceiling_microusd": ceiling_microusd,
+            "confirmed": True,
+        }
+    else:
+        if setup_test is not None:
+            _fail("--setup-test requires --config")
+        if not all((benchmark, model, harness, launch_policy)):
+            _fail(
+                "--benchmark, --model, --harness, and --launch-policy are "
+                "required without --config"
+            )
+        if not yes:
+            typer.confirm(
+                f"Launch {benchmark} with {model} through {harness}, "
+                f"with a ceiling of {ceiling_microusd} micro-USD?",
+                abort=True,
+            )
+        payload = {
+            "benchmark": benchmark,
+            "model": model,
+            "harness": harness,
+            "deployment": deployment,
+            "launch_policy": launch_policy,
+            "ceiling_microusd": ceiling_microusd,
+            "confirmed": True,
+        }
     key = idempotency_key or str(uuid4())
     if not idempotency_key:
         typer.echo(json.dumps({"idempotency_key": key}), err=True)
-    payload: dict[str, object] = {
-        "benchmark": benchmark,
-        "model": model,
-        "harness": harness,
-        "deployment": deployment,
-        "launch_policy": launch_policy,
-        "ceiling_microusd": ceiling_microusd,
-        "confirmed": True,
-    }
     if start_paused:
         payload["start_paused"] = True
     _echo(_request("POST", "/api/v1/runs", payload=payload, idempotency_key=key))

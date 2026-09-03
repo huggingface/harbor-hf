@@ -1,4 +1,4 @@
-"""Unit tests for the OpenHands job inference wrapper."""
+"""Unit tests for OpenHands direct inference."""
 
 from unittest.mock import AsyncMock
 
@@ -8,12 +8,11 @@ from harbor.models.agent.context import AgentContext
 from harbor_hf_agents.openhands.agent import OpenHandsAgent
 from harbor_hf_agents.support.control_job_environment import ControlJobEnvironment
 
-_ROUTE = "harbor_hf_agents.support.job_chat_completions.use_job_inference_route"
-
 
 @pytest.fixture(autouse=True)
-def no_job_inference_route(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(_ROUTE, AsyncMock(return_value=False))
+def no_ambient_inference(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("LLM_API_KEY", "LLM_BASE_URL", "OPENAI_API_KEY", "OPENAI_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
 
 
 def _run_call(exec_calls: list) -> object:
@@ -24,26 +23,15 @@ def _run_call(exec_calls: list) -> object:
 
 
 @pytest.mark.asyncio
-async def test_job_route_injects_loopback_env(
-    temp_dir,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def use_route(_agent, _environment, env, **kwargs):
-        assert kwargs["base_url_key"] == "LLM_BASE_URL"
-        assert kwargs["api_key_key"] == "LLM_API_KEY"
-        assert kwargs["api"] == "chat-completions"
-        assert kwargs["allowed_model"] == "openai/gpt-oss-20b:together"
-        env["LLM_BASE_URL"] = "http://127.0.0.1:18080/v1"
-        env["LLM_API_KEY"] = "harbor-local-inference-bridge"
-        return True
-
-    monkeypatch.setattr(_ROUTE, use_route)
-    monkeypatch.delenv("LLM_API_KEY", raising=False)
-    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+async def test_openai_settings_are_mapped_to_harness_aliases(temp_dir) -> None:
     agent = OpenHandsAgent(
         logs_dir=temp_dir,
         model_name="openai/openai/gpt-oss-20b:together",
         version="1.6.0",
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+        },
     )
     mock_env = AsyncMock(spec=ControlJobEnvironment)
     mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
@@ -52,8 +40,8 @@ async def test_job_route_injects_loopback_env(
 
     run_call = _run_call(mock_env.exec.call_args_list)
     assert "solve the task" in run_call.kwargs["command"]
-    assert run_call.kwargs["env"]["LLM_BASE_URL"] == "http://127.0.0.1:18080/v1"
-    assert run_call.kwargs["env"]["LLM_API_KEY"] == "harbor-local-inference-bridge"
+    assert run_call.kwargs["env"]["LLM_BASE_URL"] == "https://router.huggingface.co/v1"
+    assert run_call.kwargs["env"]["LLM_API_KEY"] == "direct-token"
     assert run_call.kwargs["env"]["TMUX_TMPDIR"] == "/tmp/harbor-agent-home/.tmux"
     tmux_call = mock_env.start_background.await_args
     assert "exec tmux -D -f /dev/null" in tmux_call.args[0]
@@ -68,7 +56,7 @@ async def test_job_route_injects_loopback_env(
 
 
 @pytest.mark.asyncio
-async def test_missing_job_route_fails(temp_dir) -> None:
+async def test_missing_direct_settings_fail(temp_dir) -> None:
     agent = OpenHandsAgent(
         logs_dir=temp_dir,
         model_name="openai/openai/gpt-oss-20b:together",
@@ -77,7 +65,7 @@ async def test_missing_job_route_fails(temp_dir) -> None:
     mock_env = AsyncMock(spec=ControlJobEnvironment)
     mock_env.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
 
-    with pytest.raises(RuntimeError, match="Job inference route"):
+    with pytest.raises(RuntimeError, match="inference base URL"):
         await agent.run("solve the task", mock_env, AgentContext())
 
     mock_env.quiesce.assert_awaited_once_with()

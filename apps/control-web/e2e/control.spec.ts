@@ -1,4 +1,10 @@
 import { expect, test } from "@playwright/test";
+import {
+  compileAgentWorkbenchRecipe,
+  fastAgentWorkbenchStarter,
+} from "../../../packages/control-core/src/workbench";
+
+const reviewedFastAgentPreview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
 
 const session = {
   authenticated: true,
@@ -111,6 +117,336 @@ test("shows the operational overview on desktop and mobile", async ({ page }) =>
         document.documentElement.scrollWidth <= document.documentElement.clientWidth,
     ),
   ).toBe(true);
+});
+
+test("tests a Workbench recipe and submits a hosted Run", async ({
+  page,
+}, testInfo) => {
+  let hostedSubmission: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/auth/session", (route) =>
+    route.fulfill({ json: session }),
+  );
+  await page.route("**/api/v1/system", (route) => route.fulfill({ json: system() }));
+  await page.route("**/api/v1/events", (route) => route.abort());
+  await page.route("**/api/v1/profiles**", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            profile_id: "sha256:model",
+            profile_kind: "model",
+            name: "gpt-oss-20b",
+            source: "built-in",
+            promotion_state: "approved",
+            alias: "gpt-oss-20b",
+            approved_aliases: ["gpt-oss-20b"],
+            spec: {
+              model_id: "openai/gpt-oss-20b",
+              revision: "6cee5e81ee83917806bbde320786a8fb61efebee",
+            },
+            created_at: "2026-08-27T00:00:00.000Z",
+          },
+          {
+            profile_id: "sha256:harness",
+            profile_kind: "harness",
+            name: "fast-agent-0-10-16-command",
+            source: "built-in",
+            promotion_state: "approved",
+            alias: "fast-agent-0-10-16-command",
+            approved_aliases: ["fast-agent-0-10-16-command"],
+            spec: reviewedFastAgentPreview.harness_profile,
+            created_at: "2026-08-27T00:00:00.000Z",
+          },
+          {
+            profile_id: "sha256:deployment",
+            profile_kind: "deployment",
+            name: "tb21-gpt-oss-command-providers",
+            source: "built-in",
+            promotion_state: "approved",
+            alias: "tb21-gpt-oss-command-providers",
+            approved_aliases: ["tb21-gpt-oss-command-providers"],
+            spec: {
+              models: ["gpt-oss-20b"],
+              harnesses: ["fast-agent-0-10-16-command"],
+              inference_provider: "together",
+            },
+            created_at: "2026-08-27T00:00:00.000Z",
+          },
+        ],
+        next_cursor: null,
+      },
+    }),
+  );
+  await page.route("**/api/v1/runs", (route) => {
+    if (route.request().method() === "POST") {
+      hostedSubmission = route.request().postDataJSON();
+      return route.fulfill({
+        status: 202,
+        json: {
+          run_id: "run-workbench-hosted",
+          action_id: "action-workbench-hosted",
+          status_url: "/api/v1/runs/run-workbench-hosted",
+          adopted: false,
+        },
+      });
+    }
+    return route.fulfill({ json: { items: [], next_cursor: null } });
+  });
+  await page.route("**/api/v1/workbench/preview", async (route) => {
+    const recipe = route.request().postDataJSON();
+    return route.fulfill({ json: compileAgentWorkbenchRecipe(recipe) });
+  });
+  await page.route("**/api/v1/workbench/benchmark-configs", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            name: "tb21-gpt-oss-20b-canary",
+            revision: `sha256:${"1".repeat(64)}`,
+            label: "Terminal-Bench 2.1 canary · GPT-OSS 20B",
+            description: "Reviewed hosted canary.",
+            benchmark: "terminal-bench-2-1-canary",
+            model: "gpt-oss-20b-together",
+            deployment: "tb21-gpt-oss-20b-fast-agent-command-providers",
+            launch_policy: "diagnostic-single-attempt",
+            default_ceiling_microusd: 1_000_000,
+            max_ceiling_microusd: 1_000_000,
+            task_count: 2,
+            publication_role: "diagnostic",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/v1/workbench/local-runs/options", (route) =>
+    route.fulfill({
+      json: {
+        enabled: false,
+        ready: false,
+        reason: "Local Harbor execution is disabled in browser E2E.",
+        benchmark: "terminal-bench-2-1-canary",
+        model: "gpt-oss-20b-together",
+        task_names: [],
+        harbor_version: null,
+        expected_harbor_version: "0.22.0",
+      },
+    }),
+  );
+  await page.route("**/api/v1/workbench/local-runs", (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page.route("**/api/v1/workbench/setup-tests", (route) =>
+    route.fulfill({
+      status: 202,
+      json: {
+        setup_test_id: "setup-test-workbench",
+        recipe_digest: reviewedFastAgentPreview.recipe_digest,
+        revision_id: reviewedFastAgentPreview.revision_id,
+        status: "passed",
+        created_at: "2026-08-27T12:00:00.000Z",
+        started_at: "2026-08-27T12:00:01.000Z",
+        completed_at: "2026-08-27T12:00:02.000Z",
+        exit_code: 0,
+        error: null,
+        files: [
+          {
+            file_id: "file-instruction",
+            path: "instruction.txt",
+            root: "workspace",
+            size: 31,
+            text: true,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/v1/workbench/setup-tests/*/logs", (route) =>
+    route.fulfill({
+      json: {
+        stdout: "fast-agent-mcp v0.10.16\n",
+        stderr: "",
+        stdout_truncated: false,
+        stderr_truncated: false,
+      },
+    }),
+  );
+  await page.route("**/api/v1/workbench/setup-tests/*/files/*", (route) =>
+    route.fulfill({
+      json: {
+        file_id: "file-instruction",
+        path: "instruction.txt",
+        content: "<script>window.compromised=true</script>",
+        truncated: false,
+      },
+    }),
+  );
+
+  await page.goto("/workbench");
+  await expect(page.getByRole("heading", { name: "Agent Workbench" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Configure → Test → Run" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "The model route, direct inference URL, and credential binding come from the local deployment profile. They are not Workbench settings.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("Preview ready")).toBeVisible();
+  await expect(
+    page.getByLabel("Environment variable OPENAI_API_KEY source"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByLabel("Environment variable MODEL_BASE_URL source"),
+  ).toHaveCount(0);
+
+  await page.getByRole("checkbox", { name: /launch this exact setup recipe/i }).check();
+  await page.getByRole("button", { name: "Launch setup test" }).click();
+  await expect(page.getByText("fast-agent-mcp v0.10.16")).toBeVisible();
+  await expect(page.getByText("passed", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /workspace\/instruction\.txt/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /workspace\/instruction\.txt/ }).click();
+  await expect(page.getByLabel("Contents of instruction.txt")).toContainText(
+    "<script>window.compromised=true</script>",
+  );
+  expect(
+    await page.evaluate(
+      () => (window as Window & { compromised?: boolean }).compromised,
+    ),
+  ).toBeUndefined();
+  await page.screenshot({
+    path: testInfo.outputPath("agent-workbench-desktop.png"),
+    fullPage: true,
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("agent-workbench-mobile.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("checkbox", { name: /i confirm this exact tested recipe/i })
+    .check();
+  await page.getByRole("button", { name: "Start hosted run" }).click();
+  await expect
+    .poll(() => hostedSubmission)
+    .toMatchObject({
+      benchmark_config: "tb21-gpt-oss-20b-canary",
+      harness: {
+        type: "workbench",
+        recipe: fastAgentWorkbenchStarter,
+        setup_test_id: "setup-test-workbench",
+      },
+      ceiling_microusd: 1_000_000,
+      confirmed: true,
+    });
+  await expect(page).toHaveURL(/\/runs\/run-workbench-hosted$/);
+});
+
+test("tails and cancels a running Workbench setup", async ({ page }) => {
+  await page.route("**/api/v1/auth/session", (route) =>
+    route.fulfill({ json: session }),
+  );
+  await page.route("**/api/v1/system", (route) => route.fulfill({ json: system() }));
+  await page.route("**/api/v1/events", (route) => route.abort());
+  await page.route("**/api/v1/workbench/preview", async (route) => {
+    const recipe = route.request().postDataJSON();
+    return route.fulfill({
+      json: {
+        recipe,
+        recipe_digest: "sha256:workbench-running",
+        revision_id: "recipe-revision-running",
+        setup_command: "install agent",
+        run_command: "run agent",
+        environment: [],
+        harness_profile: { agent: "command-agent" },
+        warnings: [],
+      },
+    });
+  });
+  await page.route("**/api/v1/workbench/local-runs/options", (route) =>
+    route.fulfill({
+      json: {
+        enabled: false,
+        ready: false,
+        reason: "Local Harbor execution is disabled in browser E2E.",
+        benchmark: "terminal-bench-2-1-canary",
+        model: "gpt-oss-20b-together",
+        task_names: [],
+        harbor_version: null,
+        expected_harbor_version: "0.22.0",
+      },
+    }),
+  );
+  await page.route("**/api/v1/workbench/local-runs", (route) =>
+    route.fulfill({ json: [] }),
+  );
+  let cancellationRequested = false;
+  const setup = (status: "running" | "cancelling" | "cancelled") => ({
+    setup_test_id: "setup-test-running",
+    recipe_digest: "sha256:workbench-running",
+    revision_id: "recipe-revision-running",
+    status,
+    created_at: "2026-08-27T12:00:00.000Z",
+    started_at: "2026-08-27T12:00:01.000Z",
+    completed_at: status === "cancelled" ? "2026-08-27T12:00:02.000Z" : null,
+    exit_code: status === "cancelled" ? 137 : null,
+    error: null,
+    files: [],
+  });
+  await page.route("**/api/v1/workbench/setup-tests", (route) =>
+    route.fulfill({ status: 202, json: setup("running") }),
+  );
+  await page.route("**/api/v1/workbench/setup-tests/setup-test-running", (route) =>
+    route.fulfill({
+      json: setup(cancellationRequested ? "cancelled" : "running"),
+    }),
+  );
+  await page.route("**/api/v1/workbench/setup-tests/setup-test-running/logs", (route) =>
+    route.fulfill({
+      json: {
+        stdout: "Downloading agent package 3/10\n",
+        stderr: "",
+      },
+    }),
+  );
+  await page.route(
+    "**/api/v1/workbench/setup-tests/setup-test-running/cancel",
+    (route) => {
+      cancellationRequested = true;
+      return route.fulfill({ json: setup("cancelling") });
+    },
+  );
+
+  await page.goto("/workbench");
+  await expect(page.getByText("Preview ready")).toBeVisible();
+  await page.getByRole("checkbox", { name: /launch this exact setup recipe/i }).check();
+  await page.getByRole("button", { name: "Launch setup test" }).click();
+  await expect(page.getByText("Setup submitted")).toBeVisible();
+  await expect(page.getByLabel("Live setup output")).toContainText(
+    "Downloading agent package 3/10",
+  );
+  await expect(page.getByLabel("Final setup standard output")).toHaveCount(0);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Cancel setup" }).click();
+  await expect(page.getByText("cancelled", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Live setup output")).toHaveCount(0);
+  await expect(page.getByLabel("Final setup standard output")).toHaveCount(1);
+  await expect(
+    page.getByRole("checkbox", {
+      name: /launch this exact setup recipe/i,
+    }),
+  ).toBeVisible();
 });
 
 test("disables run launch and omits account details", async ({ page }) => {
@@ -363,8 +699,6 @@ test("shows complete run Jobs with sticky, filterable table headers", async ({
         namespace_limit: 128,
         hardware_active: 4,
         hardware_limit: 128,
-        provider_reserved: 4,
-        provider_limit: 16,
         start_tokens: 120,
         start_burst: 128,
         queued: 0,

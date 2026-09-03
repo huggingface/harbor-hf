@@ -41,6 +41,7 @@ import {
   acceptedSchema,
   attemptAcceptedSchema,
   auditSchema,
+  benchmarkConfigListSchema,
   capacitySchema,
   endpointSchema,
   evidenceAcceptedSchema,
@@ -48,6 +49,9 @@ import {
   itemList,
   jobSchema,
   leaderboardSchema,
+  localHarborConfigSchema,
+  localHarborOptionsSchema,
+  localHarborRunSchema,
   namespaceCapacityPolicySchema,
   namespaceCapacityUpdateSchema,
   namespaceCapacityViewSchema,
@@ -62,6 +66,10 @@ import {
   systemSchema,
   taskDetailSchema,
   taskSchema,
+  workbenchFileContentSchema,
+  workbenchLogsSchema,
+  workbenchPreviewSchema,
+  workbenchSetupSchema,
 } from "./api-schemas.js";
 import {
   type AuthenticatedActor,
@@ -203,6 +211,28 @@ function requireWorkerOperation(
 function redactDeploymentTopology<T>(value: T): T {
   const clone = structuredClone(value) as T;
   if (!clone || typeof clone !== "object") return clone;
+  const redactCommandAgent = (agent: unknown) => {
+    if (!agent || typeof agent !== "object") return;
+    const kwargs = (agent as { kwargs?: unknown }).kwargs;
+    if (!kwargs || typeof kwargs !== "object") return;
+    const config = (kwargs as { config?: unknown }).config;
+    if (!config || typeof config !== "object") return;
+    for (const phaseName of ["setup", "run"] as const) {
+      const phase = (config as Record<string, unknown>)[phaseName];
+      if (!phase || typeof phase !== "object") continue;
+      const record = phase as Record<string, unknown>;
+      if (typeof record.script === "string") record.script = "<redacted>";
+      if (Array.isArray(record.argv)) record.argv = ["<redacted>"];
+      if (
+        record.literals &&
+        typeof record.literals === "object" &&
+        !Array.isArray(record.literals)
+      )
+        record.literals = Object.fromEntries(
+          Object.keys(record.literals).map((name) => [name, "<redacted>"]),
+        );
+    }
+  };
   const profiles = (clone as { profiles?: unknown }).profiles;
   const candidates = Array.isArray(profiles) ? profiles : [clone];
   for (const profile of candidates) {
@@ -212,6 +242,38 @@ function redactDeploymentTopology<T>(value: T): T {
     const template = (spec as { trial_job_template?: unknown }).trial_job_template;
     if (template && typeof template === "object" && "inference_upstream" in template)
       (template as { inference_upstream?: string }).inference_upstream = "<redacted>";
+  }
+  const record = clone as {
+    workbench?: { recipe?: Record<string, unknown> };
+    execution?: {
+      harness?: { harbor_agent?: unknown };
+      harbor_agent?: unknown;
+    };
+  };
+  if (record.workbench) {
+    for (const profile of candidates) {
+      if (!profile || typeof profile !== "object") continue;
+      const spec = (profile as { spec?: unknown }).spec;
+      if (!spec || typeof spec !== "object") continue;
+      redactCommandAgent((spec as { harbor_agent?: unknown }).harbor_agent);
+    }
+    const recipe = record.workbench.recipe;
+    if (recipe) {
+      if (typeof recipe.setup_command === "string") recipe.setup_command = "<redacted>";
+      if (typeof recipe.run_command === "string") recipe.run_command = "<redacted>";
+      if (Array.isArray(recipe.environment))
+        recipe.environment = recipe.environment.map((binding) => {
+          if (
+            binding &&
+            typeof binding === "object" &&
+            (binding as { source?: unknown }).source === "literal"
+          )
+            return { ...binding, value: "<redacted>" };
+          return binding;
+        });
+    }
+    redactCommandAgent(record.execution?.harness?.harbor_agent);
+    redactCommandAgent(record.execution?.harbor_agent);
   }
   return clone;
 }
@@ -287,6 +349,85 @@ function cleanSchema(value: object): object {
   delete clone.$id;
   return clone;
 }
+
+function inlineLocalSchema(value: object): object {
+  const root = structuredClone(value) as Record<string, unknown>;
+  const definitions =
+    typeof root.$defs === "object" && root.$defs !== null
+      ? (root.$defs as Record<string, unknown>)
+      : {};
+
+  const visit = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(visit);
+    if (typeof node !== "object" || node === null) return node;
+
+    const record = node as Record<string, unknown>;
+    const reference = record.$ref;
+    if (typeof reference === "string" && reference.startsWith("#/$defs/")) {
+      const key = decodeURIComponent(reference.slice("#/$defs/".length));
+      const target = definitions[key];
+      if (typeof target !== "object" || target === null)
+        throw new Error(`unknown local schema definition: ${reference}`);
+      const siblings = Object.fromEntries(
+        Object.entries(record).filter(([name]) => name !== "$ref"),
+      );
+      return visit({ ...(target as Record<string, unknown>), ...siblings });
+    }
+
+    return Object.fromEntries(
+      Object.entries(record)
+        .filter(([name]) => !["$schema", "$id", "$defs"].includes(name))
+        .map(([name, child]) => [name, visit(child)]),
+    );
+  };
+
+  return visit(root) as object;
+}
+
+const agentWorkbenchRecipeSchema = inlineLocalSchema(schemas.agentWorkbench) as Record<
+  string,
+  unknown
+>;
+const agentWorkbenchSetupRequestSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["recipe", "confirmed"],
+  properties: {
+    recipe: agentWorkbenchRecipeSchema,
+    confirmed: { const: true },
+  },
+} as const;
+const agentWorkbenchCancelRequestSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["confirmed"],
+  properties: {
+    confirmed: { const: true },
+  },
+} as const;
+const localHarborSelectionSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["recipe", "task_names"],
+  properties: {
+    recipe: agentWorkbenchRecipeSchema,
+    task_names: {
+      type: "array",
+      minItems: 1,
+      maxItems: 2,
+      uniqueItems: true,
+      items: { type: "string", minLength: 1, maxLength: 160 },
+    },
+  },
+} as const;
+const localHarborStartSchema = {
+  ...localHarborSelectionSchema,
+  required: ["recipe", "task_names", "confirmed"],
+  properties: {
+    ...localHarborSelectionSchema.properties,
+    confirmed: { const: true },
+  },
+} as const;
 
 interface SseEnvelope extends Omit<ControlEvent, "id"> {
   id?: string;
@@ -1181,6 +1322,445 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   );
 
   app.post(
+    "/api/v1/workbench/preview",
+    {
+      schema: {
+        tags: ["workbench"],
+        body: agentWorkbenchRecipeSchema,
+        response: { 200: workbenchPreviewSchema },
+      },
+    },
+    async (request) => {
+      try {
+        return runtime.workbench.preview(request.body);
+      } catch (error) {
+        throw new PolicyError(
+          error instanceof Error ? error.message : "workbench recipe is invalid",
+        );
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/workbench/benchmark-configs",
+    {
+      schema: {
+        tags: ["runs"],
+        response: { 200: benchmarkConfigListSchema },
+      },
+    },
+    async () => ({ items: runtime.service.benchmarkConfigs() }),
+  );
+
+  app.get(
+    "/api/v1/workbench/local-runs/options",
+    {
+      schema: {
+        tags: ["workbench"],
+        response: { 200: localHarborOptionsSchema },
+      },
+    },
+    async () => runtime.localHarbor.options(),
+  );
+
+  app.post(
+    "/api/v1/workbench/local-runs/preview",
+    {
+      schema: {
+        tags: ["workbench"],
+        body: localHarborSelectionSchema,
+        response: {
+          200: localHarborConfigSchema,
+          422: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request) => {
+      const body = request.body as { recipe: unknown; task_names: string[] };
+      try {
+        return {
+          config: runtime.localHarbor.config(body.recipe, body.task_names),
+        };
+      } catch (error) {
+        throw new PolicyError(
+          error instanceof Error ? error.message : "local Harbor config is invalid",
+        );
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/workbench/local-runs",
+    {
+      schema: {
+        tags: ["workbench"],
+        response: {
+          200: { type: "array", items: localHarborRunSchema },
+        },
+      },
+    },
+    async (request) => runtime.localHarbor.list(actor(request).subject),
+  );
+
+  app.post(
+    "/api/v1/workbench/local-runs",
+    {
+      schema: {
+        tags: ["workbench"],
+        body: localHarborStartSchema,
+        response: {
+          202: localHarborRunSchema,
+          422: cleanSchema(schemas.apiError),
+          503: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = request.body as {
+        recipe: unknown;
+        task_names: string[];
+        confirmed: true;
+      };
+      const options = runtime.localHarbor.options();
+      if (!options.ready)
+        throw new ControlNotReadyError(options.reason ?? "local Harbor is unavailable");
+      try {
+        return reply
+          .code(202)
+          .send(
+            await runtime.localHarbor.start(
+              body.recipe,
+              body.task_names,
+              actor(request).subject,
+              idempotencyKey(request),
+            ),
+          );
+      } catch (error) {
+        throw new PolicyError(
+          error instanceof Error ? error.message : "local Harbor run is invalid",
+        );
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/workbench/local-runs/:local_run_id",
+    {
+      schema: {
+        tags: ["workbench"],
+        params: {
+          type: "object",
+          required: ["local_run_id"],
+          properties: { local_run_id: { type: "string", maxLength: 160 } },
+        },
+        response: {
+          200: localHarborRunSchema,
+          404: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { local_run_id: localRunId } = request.params as {
+        local_run_id: string;
+      };
+      const result = runtime.localHarbor.get(localRunId, actor(request).subject);
+      if (!result)
+        return reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "local Harbor run was not found",
+            request_id: request.id,
+          },
+        });
+      return result;
+    },
+  );
+
+  app.get(
+    "/api/v1/workbench/local-runs/:local_run_id/logs",
+    {
+      schema: {
+        tags: ["workbench"],
+        params: {
+          type: "object",
+          required: ["local_run_id"],
+          properties: { local_run_id: { type: "string", maxLength: 160 } },
+        },
+        response: {
+          200: workbenchLogsSchema,
+          404: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { local_run_id: localRunId } = request.params as {
+        local_run_id: string;
+      };
+      const result = runtime.localHarbor.logs(localRunId, actor(request).subject);
+      if (!result)
+        return reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "local Harbor run logs were not found",
+            request_id: request.id,
+          },
+        });
+      return result;
+    },
+  );
+
+  app.post(
+    "/api/v1/workbench/local-runs/:local_run_id/cancel",
+    {
+      schema: {
+        tags: ["workbench"],
+        params: {
+          type: "object",
+          required: ["local_run_id"],
+          properties: { local_run_id: { type: "string", maxLength: 160 } },
+        },
+        body: agentWorkbenchCancelRequestSchema,
+        response: {
+          200: localHarborRunSchema,
+          404: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      idempotencyKey(request);
+      const { local_run_id: localRunId } = request.params as {
+        local_run_id: string;
+      };
+      const result = runtime.localHarbor.cancel(localRunId, actor(request).subject);
+      if (!result)
+        return reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "local Harbor run was not found",
+            request_id: request.id,
+          },
+        });
+      return result;
+    },
+  );
+
+  app.post(
+    "/api/v1/workbench/setup-tests",
+    {
+      schema: {
+        tags: ["workbench"],
+        body: agentWorkbenchSetupRequestSchema,
+        response: {
+          202: workbenchSetupSchema,
+          503: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      if (
+        runtime.config.write_mode === "disabled" &&
+        runtime.config.node_env !== "development"
+      )
+        throw new ControlNotReadyError("workbench setup testing is disabled");
+      const body = request.body as { recipe: unknown; confirmed: true };
+      try {
+        return reply
+          .code(202)
+          .send(
+            await runtime.workbench.startSetup(
+              body.recipe,
+              actor(request).subject,
+              idempotencyKey(request),
+            ),
+          );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          [
+            "setup testing is not enabled",
+            "Hugging Face setup Jobs are not enabled",
+            "Hugging Face setup Job could not be started",
+          ].includes(error.message)
+        )
+          throw new ControlNotReadyError(error.message);
+        throw new PolicyError(
+          error instanceof Error ? error.message : "workbench setup is invalid",
+        );
+      }
+    },
+  );
+
+  app.get(
+    "/api/v1/workbench/setup-tests",
+    {
+      schema: {
+        tags: ["workbench"],
+        response: {
+          200: { type: "array", items: workbenchSetupSchema },
+          503: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request) =>
+      await runtime.workbench.listSetups(actor(request).subject).catch(() => {
+        throw new ControlNotReadyError("setup recovery is temporarily unavailable");
+      }),
+  );
+
+  app.get(
+    "/api/v1/workbench/setup-tests/:setup_test_id",
+    {
+      schema: {
+        tags: ["workbench"],
+        params: {
+          type: "object",
+          required: ["setup_test_id"],
+          properties: { setup_test_id: { type: "string", maxLength: 160 } },
+        },
+        response: {
+          200: workbenchSetupSchema,
+          404: cleanSchema(schemas.apiError),
+          503: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { setup_test_id: setupTestId } = request.params as {
+        setup_test_id: string;
+      };
+      const result = await runtime.workbench.getSetup(
+        setupTestId,
+        actor(request).subject,
+      );
+      if (!result)
+        return reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "setup test was not found",
+            request_id: request.id,
+          },
+        });
+      return result;
+    },
+  );
+
+  app.post(
+    "/api/v1/workbench/setup-tests/:setup_test_id/cancel",
+    {
+      schema: {
+        tags: ["workbench"],
+        params: {
+          type: "object",
+          required: ["setup_test_id"],
+          properties: { setup_test_id: { type: "string", maxLength: 160 } },
+        },
+        body: agentWorkbenchCancelRequestSchema,
+        response: {
+          200: workbenchSetupSchema,
+          404: cleanSchema(schemas.apiError),
+          503: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      idempotencyKey(request);
+      const { setup_test_id: setupTestId } = request.params as {
+        setup_test_id: string;
+      };
+      const result = await runtime.workbench
+        .cancelSetup(setupTestId, actor(request).subject)
+        .catch(() => {
+          throw new ControlNotReadyError(
+            "setup cancellation is temporarily unavailable",
+          );
+        });
+      if (!result)
+        return reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "setup test was not found",
+            request_id: request.id,
+          },
+        });
+      return result;
+    },
+  );
+
+  app.get(
+    "/api/v1/workbench/setup-tests/:setup_test_id/logs",
+    {
+      schema: {
+        tags: ["workbench"],
+        params: {
+          type: "object",
+          required: ["setup_test_id"],
+          properties: { setup_test_id: { type: "string", maxLength: 160 } },
+        },
+        response: {
+          200: workbenchLogsSchema,
+          404: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { setup_test_id: setupTestId } = request.params as {
+        setup_test_id: string;
+      };
+      const result = await runtime.workbench.logs(setupTestId, actor(request).subject);
+      if (!result)
+        return reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "setup-test logs were not found",
+            request_id: request.id,
+          },
+        });
+      return result;
+    },
+  );
+
+  app.get(
+    "/api/v1/workbench/setup-tests/:setup_test_id/files/:file_id",
+    {
+      schema: {
+        tags: ["workbench"],
+        params: {
+          type: "object",
+          required: ["setup_test_id", "file_id"],
+          properties: {
+            setup_test_id: { type: "string", maxLength: 160 },
+            file_id: { type: "string", maxLength: 160 },
+          },
+        },
+        response: {
+          200: workbenchFileContentSchema,
+          404: cleanSchema(schemas.apiError),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { setup_test_id: setupTestId, file_id: fileId } = request.params as {
+        setup_test_id: string;
+        file_id: string;
+      };
+      const result = await runtime.workbench.file(
+        setupTestId,
+        fileId,
+        actor(request).subject,
+      );
+      if (!result)
+        return reply.code(404).send({
+          error: {
+            code: "not_found",
+            message: "setup-test file was not found",
+            request_id: request.id,
+          },
+        });
+      return result;
+    },
+  );
+
+  app.post(
     "/api/v1/capacity",
     {
       schema: {
@@ -1225,7 +1805,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     {
       schema: {
         tags: ["runs"],
-        body: cleanSchema(schemas.runSubmission),
+        body: inlineLocalSchema(schemas.runSubmission),
         response: { 202: acceptedSchema },
       },
     },

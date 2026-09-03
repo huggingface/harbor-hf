@@ -1,5 +1,11 @@
 # Trial evidence bundle implementation plan
 
+> **Historical record — superseded 2026-09-02.** This document preserves the
+> implementation plan and terminology reviewed at the time. Its imperative
+> language is not current inference or evidence guidance. New work follows the
+> [`trial evidence bundle specification`](trial-evidence-bundle.md) and
+> [`Harbor compatibility contract`](harbor-integration-contract.md).
+
 ## Status
 
 Superseded implementation record. The [trial evidence bundle
@@ -1225,8 +1231,9 @@ Cover:
 - exact response delivered to verifier;
 - provider agent ledger remains content-free after refactoring.
 
-Retain the current mutation tests around retry budgets and provider evidence.
-Add mutations for every new completion and secret boundary.
+Retain focused regression tests around retry budgets and provider evidence.
+Add deterministic fail-closed cases for every new completion and secret
+boundary.
 
 ### Manifest unit tests
 
@@ -1594,21 +1601,20 @@ docker build -f deploy/space/Dockerfile .
 uv run slophammer-py dry .
 uv run pip-audit
 uv run slophammer-py check . --baseline
-uv run python scripts/check_mutation.py --min-kill-rate 90
 ```
 
 Additional gates for this feature:
 
 - generated evidence schemas match checked-in files;
 - deep verification succeeds for every complete fixture;
-- secret mutation tests kill every missing scan boundary;
-- provider recorder mutation tests prove agent content is still excluded;
-- archive mutation tests reject every changed member and index row;
+- secret-boundary regression tests reject every missing scan boundary;
+- provider recorder regression tests prove agent content is still excluded;
+- archive regression tests reject every changed member and index row;
 - remote canary evidence is downloaded and independently verified;
 - no endpoint or HF Job remains active after remote tests.
 
 Documentation-only changes need the repository's documentation checks. Code
-slices must run the full behavior and mutation gates.
+slices must run the full deterministic behavior gates.
 
 ## Operational limits and cost
 
@@ -1721,6 +1727,6 @@ The implementation is complete when all of these statements are true:
 - endpoint-backed and provider-backed remote canaries pass;
 - evidence capture failures retry as infrastructure and never become silent
   model zeros;
-- all local quality, mutation, security, and remote cleanup gates pass;
+- all local quality, regression, security, and remote cleanup gates pass;
 - the production path has no direct judge fallback or session-based workspace
   reconstruction.

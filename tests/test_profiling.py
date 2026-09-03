@@ -519,9 +519,8 @@ def test_profile_point_preserves_individual_harbor_trial_failures(
             raise HarborTrialFailure("one failed", "SandboxError")
 
     class Transport:
-        @contextmanager
-        def scope(self, _scope: str) -> Iterator[tuple[str, str, None]]:
-            yield "https://endpoint.test", "model", None
+        base_url = "https://endpoint.test"
+        model_name = "model"
 
     @contextmanager
     def process_environment(
@@ -766,9 +765,8 @@ def test_smoke_verifies_declared_context_and_output_limits(
         return _SmokeObservation(True, 20, 2, True, True, False)
 
     class Transport:
-        @contextmanager
-        def scope(self, _scope: str) -> Iterator[tuple[str, str, None]]:
-            yield "https://endpoint.test", "model", None
+        base_url = "https://endpoint.test"
+        model_name = "model"
 
     monkeypatch.setattr("harbor_hf.profile_worker._request", request)
 
@@ -835,9 +833,8 @@ def test_provider_smoke_retries_transient_request_failure(
         return _SmokeObservation(True, 20, 2, True, True, False)
 
     class Transport:
-        @contextmanager
-        def scope(self, _scope: str) -> Iterator[tuple[str, str, None]]:
-            yield "https://provider.test", "model", None
+        base_url = "https://provider.test"
+        model_name = "model"
 
     monkeypatch.setattr("harbor_hf.profile_worker._request", request)
     monkeypatch.setattr("harbor_hf.profile_worker.time.sleep", lambda _delay: None)
@@ -1028,7 +1025,7 @@ def test_profile_submit_command_is_remote_only(remote_spec: ExperimentSpec) -> N
     assert not any("llama-server" in argument for argument in command)
 
 
-def test_provider_profile_submit_command_exposes_recorder(
+def test_provider_profile_submit_command_uses_direct_inference_secret(
     remote_spec: ExperimentSpec,
 ) -> None:
     model = remote_spec.matrix.models[0]
@@ -1059,8 +1056,12 @@ def test_provider_profile_submit_command_exposes_recorder(
         bucket="example-org/results",
     )
 
-    expose = command.index("--expose")
-    assert command[expose : expose + 2] == ["--expose", "8000"]
+    assert "--expose" not in command
+    inference_secret = command.index("HF_INFERENCE_TOKEN")
+    assert command[inference_secret - 1 : inference_secret + 1] == [
+        "--secrets",
+        "HF_INFERENCE_TOKEN",
+    ]
 
 
 def test_judged_profile_submit_command_exposes_judge_recorder(
@@ -1120,11 +1121,11 @@ def test_profile_judge_transport_uses_locked_direct_judge(
 
     monkeypatch.setattr("harbor_hf.profile_worker.JudgeEvidenceRecorder", Recorder)
     monkeypatch.setattr(
-        "harbor_hf.profile_worker.job_ingress_base_url",
+        "harbor_hf.profile_worker._judge_recorder_base_url",
         lambda _port: "https://profile-job--8001.hf.jobs",
     )
     monkeypatch.setattr(
-        "harbor_hf.profile_worker.wait_ready",
+        "harbor_hf.profile_worker._wait_for_judge_recorder",
         lambda base_url, token, deadline: captured.update(
             readiness=(base_url, token, deadline)
         ),

@@ -412,7 +412,7 @@ def _validate_worker_authority() -> None:
             raise JobEnvironmentPreflightError(
                 f"required Job worker setting {name} is missing"
             )
-    for name in ("HF_TOKEN", "HF_INFERENCE_TOKEN"):
+    for name in ("HF_TOKEN",):
         if _ambient_value(name):
             raise JobEnvironmentPreflightError(
                 f"Job worker must not retain {name} after root bootstrap"
@@ -446,7 +446,8 @@ def _validate_child_environment(environment: dict[str, str]) -> None:
 
 def _control_authority_values() -> set[str]:
     values: set[str] = set()
-    for name in (*_FORBIDDEN_EXACT_NAMES, "HARBOR_HF_WORKER_CAPABILITY"):
+    authority_names = _FORBIDDEN_EXACT_NAMES - {"HF_INFERENCE_TOKEN"}
+    for name in (*authority_names, "HARBOR_HF_WORKER_CAPABILITY"):
         value = _ambient_value(name)
         if value:
             values.add(value)

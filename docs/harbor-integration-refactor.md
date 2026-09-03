@@ -1,5 +1,10 @@
 # Harbor Integration Refactor Plan
 
+> **Historical record — superseded 2026-09-02.** This document preserves the
+> migration design and terminology reviewed at the time. Its imperative
+> language is not current inference guidance. New work follows
+> [`harbor-integration-contract.md`](harbor-integration-contract.md).
+
 ## Status
 
 This is a historical compatibility record. The

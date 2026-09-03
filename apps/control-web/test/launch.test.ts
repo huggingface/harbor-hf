@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   approvedAlias,
+  compatibleBenchmarks,
+  deploymentRequiresPreparation,
   doubleReservationMicrousd,
   firstCompatibleLaunchSelection,
   labeledHarness,
   profileLabel,
+  selectCompatibleBenchmarkAlias,
   selectDeploymentAlias,
   selectHarnessAlias,
 } from "../src/launch";
@@ -19,7 +22,7 @@ describe("launch helpers", () => {
     );
   });
 
-  it("selects OpenCode by agent and reasoning without a silent substitute", () => {
+  it("selects the exact approved harness alias without a silent substitute", () => {
     expect(
       selectHarnessAlias(
         [
@@ -33,16 +36,14 @@ describe("launch helpers", () => {
           },
         ],
         "opencode",
-        "off",
       ),
     ).toBe("opencode");
     expect(() =>
       selectHarnessAlias(
         [{ alias: "pi-high", spec: { agent: "pi", reasoning_effort: "high" } }],
         "opencode",
-        "off",
       ),
-    ).toThrow(/no approved opencode harness/);
+    ).toThrow(/approved harness opencode is missing/);
   });
 
   it("doubles the estimated reservation for the default ceiling", () => {
@@ -82,13 +83,12 @@ describe("launch helpers", () => {
       ),
     ).toEqual({
       model: "compatible-model",
-      harnessAgent: "general-agent",
-      reasoning: "medium",
+      harness: "compatible-harness",
       deploymentKind: "providers",
     });
   });
 
-  it("skips an ambiguous harness alias unsupported by the deployment", () => {
+  it("keeps the exact compatible alias when command recipes share an agent name", () => {
     expect(
       firstCompatibleLaunchSelection(
         [{ alias: "model", spec: {} }],
@@ -99,29 +99,103 @@ describe("launch helpers", () => {
         ],
         [
           {
-            alias: "ambiguous-runtime",
+            alias: "second-runtime",
             spec: {
               models: ["model"],
               harnesses: ["second-harness"],
               inference_provider: "provider",
             },
           },
-          {
-            alias: "compatible-runtime",
-            spec: {
-              models: ["model"],
-              harnesses: ["distinct-harness"],
-              inference_provider: "provider",
-            },
-          },
         ],
+        "second-harness",
       ),
     ).toEqual({
       model: "model",
-      harnessAgent: "other-agent",
-      reasoning: "off",
+      harness: "second-harness",
       deploymentKind: "providers",
     });
+  });
+
+  it("offers only Harbor-backed benchmarks to deployments that require preparation", () => {
+    const benchmarks = [
+      {
+        alias: "internal-smoke",
+        spec: { task_ids: ["smoke"] },
+      },
+      {
+        alias: "prepared-canary",
+        spec: {
+          task_ids: ["alpha-trial-1", "beta-trial-1"],
+          source_task_ids: ["alpha", "beta"],
+          trial_indices: [1, 1],
+          harbor_job: { datasets: [{ path: "tasks" }] },
+        },
+      },
+    ];
+    const preparedDeployment = {
+      route: "hf_job",
+      preparation: "required",
+    };
+
+    expect(deploymentRequiresPreparation(preparedDeployment)).toBe(true);
+    expect(
+      compatibleBenchmarks(benchmarks, preparedDeployment).map(
+        (benchmark) => benchmark.alias,
+      ),
+    ).toEqual(["prepared-canary"]);
+    expect(
+      selectCompatibleBenchmarkAlias(benchmarks, preparedDeployment, "internal-smoke"),
+    ).toBe("prepared-canary");
+    expect(
+      compatibleBenchmarks(benchmarks, {
+        route: "hf_job",
+        preparation: "not_required",
+      }).map((benchmark) => benchmark.alias),
+    ).toEqual(["internal-smoke", "prepared-canary"]);
+  });
+
+  it("rejects incomplete or duplicate prepared benchmark mappings", () => {
+    expect(
+      compatibleBenchmarks(
+        [
+          {
+            alias: "incomplete",
+            spec: {
+              task_ids: ["alpha", "beta"],
+              source_task_ids: ["alpha"],
+              trial_indices: [1],
+              harbor_job: { datasets: [] },
+            },
+          },
+          {
+            alias: "duplicate",
+            spec: {
+              task_ids: ["alpha-one", "alpha-two"],
+              source_task_ids: ["alpha", "alpha"],
+              trial_indices: [1, 1],
+              harbor_job: { datasets: [] },
+            },
+          },
+        ],
+        { route: "hf_job", preparation: "required" },
+      ),
+    ).toEqual([]);
+  });
+
+  it("distinguishes Pi harness reasoning while leaving unknown reasoning unlabeled", () => {
+    expect(
+      profileLabel("harness", "pi-high", {
+        agent: "pi",
+        reasoning_effort: "high",
+      }),
+    ).toBe("Pi · High reasoning");
+    expect(
+      profileLabel("harness", "pi-off", {
+        agent: "pi",
+        reasoning_effort: "off",
+      }),
+    ).toBe("Pi · No reasoning");
+    expect(profileLabel("harness", "pi", { agent: "pi" })).toBe("Pi");
   });
 
   it("labels DeepSeek Harness instead of the dsh alias", () => {
@@ -133,11 +207,6 @@ describe("launch helpers", () => {
     ).toBe("DeepSeek Harness");
     expect(labeledHarness("dsh")).toBe("DeepSeek Harness");
     expect(labeledHarness(null)).toBe("—");
-  });
-
-  it("labels FX instead of title-casing the alias", () => {
-    expect(profileLabel("harness", "fx", { agent: "fx" })).toBe("FX");
-    expect(labeledHarness("fx")).toBe("FX");
   });
 
   it("labels Terminal-Bench 2.1 by source tasks and trials, not logical attempts", () => {

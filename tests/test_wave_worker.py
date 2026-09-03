@@ -32,7 +32,6 @@ from harbor_hf.models import (
 )
 from harbor_hf.process import CommandRunner
 from harbor_hf.provider_models import ProviderLimits, ProviderTarget
-from harbor_hf.provider_proxy import ProviderEvidenceProxy
 from harbor_hf.reconciler import (
     DeploymentAdmission,
     ReconcileContext,
@@ -739,15 +738,17 @@ class HarborStream:
         if "--output" in command and "--request-digest" in command:
             write_fake_compatibility_bundle(command, log_path)
             return 0
-        base_url = environment["OPENAI_BASE_URL"]
-        if self.expected_base_url is not None:
-            assert base_url == self.expected_base_url
-        else:
-            assert base_url.startswith("https://test-wave-job--8000.hf.jobs/scopes/")
-            assert base_url.endswith("/v1")
-        assert timeout_seconds > 0
         config_path = Path(command[command.index("--config") + 1])
         config = json.loads(config_path.read_text(encoding="utf-8"))
+        agent_environment = config["agents"][0].get("env")
+        base_url = (
+            agent_environment["OPENAI_BASE_URL"]
+            if agent_environment is not None
+            else environment["OPENAI_BASE_URL"]
+        )
+        if self.expected_base_url is not None:
+            assert base_url == self.expected_base_url
+        assert timeout_seconds > 0
         with self.lock:
             self.commands.append(command)
             self.configs.append(config)
@@ -808,7 +809,20 @@ class HarborStream:
             (workspace / "answer.txt").write_text("answer\n", encoding="utf-8")
             agent = trial / "agent"
             agent.mkdir()
-            (agent / "trajectory.json").write_text("{}\n")
+            (agent / "trajectory.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "ATIF-v1.7",
+                        "agent": {
+                            "name": "openclaw",
+                            "version": "2026.7.2",
+                            "model_name": f"openai/{self.expected_model_name}",
+                        },
+                        "steps": [{"step_id": 1}, {"step_id": 2}],
+                    }
+                )
+                + "\n"
+            )
             if not self.agent_started:
                 sessions = agent / "openclaw-sessions"
                 sessions.mkdir()
@@ -1357,22 +1371,14 @@ def test_provider_wave_runs_shards_without_endpoint_lifecycle(
         provider_concurrency=2,
     )
     monkeypatch.setenv("HF_TOKEN", "test-token")
-    start_proxy = ProviderEvidenceProxy.start
-
-    def start_proxy_on_ephemeral_port(
-        proxy: ProviderEvidenceProxy, *, host: str, port: int
-    ) -> str:
-        assert port == 8000
-        return start_proxy(proxy, host=host, port=0)
-
-    monkeypatch.setattr(ProviderEvidenceProxy, "start", start_proxy_on_ephemeral_port)
+    monkeypatch.setenv("HF_INFERENCE_TOKEN", "inference-token")
     runner = EndpointRunner([])
     routed_model = f"{spec.matrix.models[0].repo}:fastest"
     harbor = HarborStream(
         spec.benchmark.task_digests,
         expected_calls=2,
         synchronize=True,
-        expected_base_url=None,
+        expected_base_url="https://router.huggingface.co/v1",
         expected_model_name=routed_model,
     )
 
@@ -1398,38 +1404,24 @@ def test_provider_wave_runs_shards_without_endpoint_lifecycle(
     assert wave.spend_cap_microusd == 2_500_000
     assert runner.commands == []
     assert harbor.max_active == 2
-    assert len(set(harbor.base_urls)) == 2
-    assert all(
-        base_url.startswith("https://test-wave-job--8000.hf.jobs/scopes/")
-        for base_url in harbor.base_urls
-    )
-    assert all(
-        trial.trial_id not in " ".join(harbor.base_urls)
-        for trial in wave.executions[0].shards[0].shard.trials
-    )
-    capabilities = [
-        base_url.split("/scopes/", maxsplit=1)[1].removesuffix("/v1")
-        for base_url in harbor.base_urls
-    ]
-    assert_secret_absent(output, capabilities)
-    route_records = [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in output.rglob("provider-route.json")
-    ]
-    assert {record["capability_digest"] for record in route_records} == {
-        ProviderEvidenceProxy.capability_digest(capability)
-        for capability in capabilities
-    }
+    assert set(harbor.base_urls) == {"https://router.huggingface.co/v1"}
     assert all(
         config["agents"][0]["model_name"] == f"openai/{routed_model}"
         for config in harbor.configs
     )
+    assert all(
+        config["agents"][0]["env"]["OPENAI_API_KEY"] == "${HF_INFERENCE_TOKEN}"
+        for config in harbor.configs
+    )
+    assert all(
+        config["agents"][0]["extra_allowed_hosts"] == ["router.huggingface.co"]
+        for config in harbor.configs
+    )
+    assert_secret_absent(output, ("test-token", "inference-token"))
     assert sorted(path.name for path in destination.iterdir()) == [
         "_SUCCESS",
         "checksums.json",
         "events.jsonl",
-        "provider-progress.json",
-        "provider-requests.jsonl",
         "provider-target.json",
         "runtime-environment.json",
         "wave-summary.json",
@@ -1437,27 +1429,13 @@ def test_provider_wave_runs_shards_without_endpoint_lifecycle(
     ]
     runtime = json.loads((destination / "runtime-environment.json").read_text())
     assert runtime["provider"]["api"] == "chat-completions"
-    assert runtime["provider"]["request_controls"] == {
+    assert runtime["provider"]["upstream"] == "https://router.huggingface.co"
+    assert runtime["provider"]["agent_configuration"] == {
         "max_attempts": 2,
-        "max_concurrent_requests": 2,
-        "min_request_interval_seconds": 0.0,
         "parameters": {},
         "timeout_seconds": 60.0,
     }
-    assert runtime["provider"]["transport"] == {
-        "evidence_path": "provider-requests.jsonl",
-        "ingress_host": "test-wave-job--8000.hf.jobs",
-        "kind": "hf-job-evidence-recorder",
-        "port": 8000,
-        "route_authorization": "opaque-capability",
-    }
-    assert (destination / "provider-requests.jsonl").read_text() == ""
-    endpoint = runtime["provider"]["endpoint"]
-    assert endpoint["endpoint_name"]["status"] == "not_applicable"
-    assert endpoint["endpoint_status"]["status"] == "not_applicable"
-    assert endpoint["ready_replicas"]["status"] == "not_applicable"
-    for field in ("region", "hardware", "engine", "precision"):
-        assert endpoint[field]["status"] == "not_reported"
+    assert runtime["provider"]["scheduling"] == {"max_concurrent_shards": 2}
     assert _event_payloads(destination / "events.jsonl") == [
         {"event": "wave_started", "wave_id": wave.wave_id},
         {
@@ -1465,20 +1443,10 @@ def test_provider_wave_runs_shards_without_endpoint_lifecycle(
             "service": "hf-inference-providers",
             "target_id": "hf-provider",
         },
-        {"event": "provider_recorder_listening", "port": 8000},
-        {
-            "event": "provider_recorder_ready",
-            "host": "test-wave-job--8000.hf.jobs",
-            "port": 8000,
-        },
         {"event": "wave_succeeded"},
     ]
     summary = json.loads((destination / "wave-summary.json").read_text())
-    assert summary["endpoint_cleanup_verified"] == {
-        "status": "not_applicable",
-        "value": None,
-        "detail": None,
-    }
+    assert summary["endpoint_cleanup_verified"] is None
     assert not (destination / "endpoint.snapshot.json").exists()
     assert not (destination / "endpoint.final.json").exists()
 

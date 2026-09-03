@@ -1,46 +1,58 @@
 # Trial worker image
 
-Prepared execution Jobs must use this reviewed worker image, never the
-benchmark task image. The worker uses `skopeo` and `umoci` to verify and unpack
-the locked task image in a root-owned workspace. It maps the unpacked rootfs to
-a dedicated host UID/GID, strips setuid, setgid, and file capabilities, and
-rejects special files and images that exceed the deployment's byte or entry
-limits. Before extraction, it verifies compressed blob sizes and digests,
-streams every gzip, tar, or Zstandard layer to bound expanded bytes and entries,
-and reserves Job-local filesystem space for extraction and cleanup. It then
-uses PRoot only to present that rootfs and emulate the task image user.
-`setpriv` launches every task command as real UID/GID 60000 with no supplementary
-groups, capabilities, or privilege escalation. The task remains that dedicated
-unprivileged host UID even when it sees container UID 0.
-The image builds PRoot 5.4 from its checksummed upstream source because Debian
-Bookworm's PRoot 5.1 cannot translate the `statx` calls used by Ubuntu 24.04
-package tools. Worker preflight rejects PRoot versions older than 5.3.
+Preparation and execution Jobs use this reviewed worker image, never the
+benchmark task image as the host image. The image contains pinned Python 3.12,
+the pinned Harbor commit, and the local `harbor-hf-agents` package.
 
-The host kernel boundary is Unix UID separation, empty supplementary groups,
-an empty capability bounding set, and `no_new_privs`. PRoot is not treated as a
-security boundary. The task sees host `/proc` metadata so normal tools work,
-plus `/dev/pts` for interactive agent pseudoterminals, but preflight proves
-that its UID cannot read the root worker environment or a root-owned probe
-file. Host `/run`, `/tmp`, worker files, capabilities, and token files are not
-bound into the task rootfs.
-
-The image contains pinned Python 3.12, the pinned Harbor commit, and the local
-`harbor-hf-agents` package. Preparation and execution profiles can therefore
-invoke the installed workers directly:
+Profiles invoke the installed workers directly:
 
 ```text
 python -m harbor_hf_agents.support.control_prepare_worker
 python -m harbor_hf_agents.support.control_trial_job_worker
 ```
 
-The root bootstrap similarly runs
-`python -m harbor_hf_agents.support.job_root_bridge`; it does not download
-worker code. The custom agent stops that trusted root bridge and kills all UID
-60000 processes before Harbor starts the verifier. The verifier intentionally
-shares the task rootfs so Terminal-Bench can score the modified filesystem.
-A distinct verifier image remains unsupported.
+## Task-image boundary
 
-Build and inspect the image locally:
+The execution worker uses `skopeo` and `umoci` to verify and unpack the locked
+task image in a root-owned workspace. Before extraction it:
+
+- verifies compressed blob sizes and digests;
+- bounds expanded bytes and entry counts for gzip, tar, and Zstandard layers;
+- rejects special files and unsafe paths;
+- strips setuid, setgid, and file capabilities; and
+- reserves Job-local space for extraction and cleanup.
+
+PRoot presents the unpacked rootfs and emulates the task-image user. It is not
+treated as a security boundary. The image builds PRoot 5.4 from checksummed
+upstream source because older Debian Bookworm packages cannot translate
+required `statx` calls. Worker preflight rejects PRoot versions older than 5.3.
+
+`setpriv` launches task and agent commands as real UID/GID 60000 with no
+supplementary groups, capabilities, or privilege escalation. Host `/run`,
+`/tmp`, worker files, capabilities, and credential files are not mounted into
+the task rootfs. The worker preflight proves that UID 60000 cannot read the
+root worker environment or a root-owned probe file.
+
+The task sees the host `/proc` metadata needed by normal tools and `/dev/pts`
+for interactive agent terminals. Agent descendants are stopped before the
+worker freezes the post-agent workspace and Harbor starts the verifier. The
+verifier intentionally uses that frozen task filesystem.
+
+## Direct inference
+
+Preparation Jobs receive no inference credential. An execution Job receives
+`HF_INFERENCE_TOKEN` only when its immutable deployment resolves an inference
+upstream. Harbor's resolved `AgentConfig.env` supplies that credential,
+upstream URL, timeout, and output-token settings to the reviewed agent plugin.
+The plugin configures its native runtime and calls the upstream directly.
+
+The control credential is forbidden in every Job. Jobs also receive no
+writable mount of the canonical artifact Bucket. Evidence and terminal
+receipts return through a short-lived signed capability.
+
+## Build and publication
+
+Build and inspect locally:
 
 ```bash
 docker build -f deploy/trial-worker/Dockerfile -t <trial-worker-image> .
@@ -48,12 +60,19 @@ docker image inspect <trial-worker-image> --format '{{json .RepoDigests}}'
 ```
 
 The `Publish trial worker` workflow publishes only the selected commit's
-`linux/amd64` image. It does not move a mutable `latest` tag. Record the
-resulting registry digest in every deployment profile before deployment.
+`linux/amd64` image and does not move a mutable `latest` tag. Record the
+resulting registry digest in every deployment profile.
 
-Before updating a deployment profile, review the installed Python, Harbor,
-`git`, `proot`, `setpriv`, `skopeo`, `umoci`, and `zstd` versions from the build log.
-Test the real-UID preflight, PRoot execution, process cleanup, transfer freeze,
-image limits, and root bridge shutdown on the target HF Job hardware. Publish
-the reviewed image and pin its registry digest. Until that pin is approved,
-execution preflight fails as replacement-eligible infrastructure.
+Before updating a profile, review installed Python, Harbor, `git`, `proot`,
+`setpriv`, `skopeo`, `umoci`, and `zstd` versions from the build log. Test:
+
+- real-UID preflight;
+- task-image verification and extraction limits;
+- PRoot execution;
+- direct inference environment resolution;
+- absence of inference credentials from preparation and no-inference Jobs;
+- agent process cleanup;
+- workspace freeze and verifier ordering; and
+- scoped evidence upload on the target HF Job hardware.
+
+Publish only the reviewed image and pin its immutable digest before deployment.

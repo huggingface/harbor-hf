@@ -333,7 +333,7 @@ def test_command_rejects_an_invalid_locked_dataset_digest(
         build_harbor_command(lock, tmp_path, "https://unused.example", tmp_path)
 
 
-def test_provider_command_applies_locked_openclaw_request_controls(
+def test_provider_command_composes_direct_harbor_agent_environment(
     remote_spec: ExperimentSpec, tmp_path: Path
 ) -> None:
     target = ProviderTarget(
@@ -381,6 +381,13 @@ def test_provider_command_applies_locked_openclaw_request_controls(
         "timeout_seconds": 17.25,
         "max_attempts": 3,
     }
+    assert agents[0]["env"] == {
+        "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
+        "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+        "HARBOR_HF_MAX_OUTPUT_TOKENS": "4096",
+        "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": "17.25",
+    }
+    assert agents[0]["extra_allowed_hosts"] == ["router.huggingface.co"]
 
 
 def test_endpoint_command_aligns_openclaw_model_with_llama_cpp_alias(

@@ -1,21 +1,15 @@
-"""Qwen Code over the Harbor-HF Job inference route."""
+"""Qwen Code using Harbor's direct model connection."""
 
 from harbor.agents.installed.qwen_code import QwenCode
 
-from harbor_hf_agents.support.job_chat_completions import (
-    JobChatCompletionsAgent,
+from harbor_hf_agents.support.direct_inference import (
+    DirectChatCompletionsAgent,
 )
 
 
-class QwenCodeAgent(JobChatCompletionsAgent, QwenCode):
-    """Harbor Qwen Code bound to the locked Job loopback inference route.
+class QwenCodeAgent(DirectChatCompletionsAgent, QwenCode):
+    """Harbor Qwen Code with direct OpenAI-compatible inference settings."""
 
-    Upstream Qwen Code reads ``OPENAI_API_KEY`` and ``OPENAI_BASE_URL`` from the
-    Job process. Execution Jobs do not receive those values. This wrapper loads
-    ``/run/harbor-hf-inference.json`` from the Job and injects the
-    placeholder route into the agent process.
-    """
-
-    route_base_url_key = "OPENAI_BASE_URL"
-    route_api_key_key = "OPENAI_API_KEY"
-    route_label = "Qwen Code"
+    base_url_key = "OPENAI_BASE_URL"
+    api_key_key = "OPENAI_API_KEY"
+    agent_label = "Qwen Code"

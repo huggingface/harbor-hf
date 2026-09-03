@@ -10,12 +10,8 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
 from harbor_hf_agents.openclaw.agent import OpenClawAgent
-from harbor_hf_agents.support.hf_inference_bridge import (
-    prepare_hf_inference_bridge,
-)
-from harbor_hf_agents.support.job_inference_route import (
-    use_job_inference_route,
-    with_job_inference_bridge_cleanup,
+from harbor_hf_agents.support.direct_inference import (
+    with_agent_environment_cleanup,
 )
 
 _DEFAULT_CODEX_PLUGIN_VERSION = "2026.7.1-1"
@@ -58,7 +54,6 @@ def _collect_openclaw_codex_evidence(  # noqa: C901 -- parser branches
     import json
     import os
     from pathlib import Path
-    from urllib.parse import urlsplit
 
     max_files = 10_000
     max_bytes = 512 * 1024 * 1024
@@ -68,11 +63,6 @@ def _collect_openclaw_codex_evidence(  # noqa: C901 -- parser branches
         for name in ("OPENAI_API_KEY", "OPENAI_BASE_URL")
         if (value := os.environ.get(name))
     }
-    base_url = os.environ.get("OPENAI_BASE_URL", "")
-    if base_url:
-        parts = [part for part in urlsplit(base_url).path.split("/") if part]
-        if "scopes" in parts and parts.index("scopes") + 1 < len(parts):
-            sensitive_values.add(parts[parts.index("scopes") + 1].encode())
     ordered_sensitive_values = tuple(
         sorted(sensitive_values, key=lambda item: (-len(item), item))
     )
@@ -314,8 +304,8 @@ class OpenClawCodexAgent(OpenClawAgent):
 
     @override
     def _merge_provider_base_url_from_env(self, cfg: dict[str, Any]) -> None:
-        # The scoped URL is runtime-only authorization. Codex consumes it from the
-        # environment; writing it into OpenClaw's retained upload config would leak it.
+        # Codex consumes direct provider settings through runtime environment
+        # expansion; retained configuration must not contain credential values.
         del cfg
 
     @override
@@ -353,8 +343,8 @@ class OpenClawCodexAgent(OpenClawAgent):
         provider_config.update(
             {
                 "api": "openai-responses",
-                "baseUrl": "https://router.huggingface.co/v1",
-                "apiKey": "harbor-hf-scoped-provider-proxy",
+                "baseUrl": "$OPENAI_BASE_URL",
+                "apiKey": "$OPENAI_API_KEY",
             }
         )
         catalog = provider_config.setdefault("models", [])
@@ -396,7 +386,7 @@ class OpenClawCodexAgent(OpenClawAgent):
 
     @override
     @with_prompt_template
-    @with_job_inference_bridge_cleanup
+    @with_agent_environment_cleanup
     async def run(
         self,
         instruction: str,
@@ -405,38 +395,15 @@ class OpenClawCodexAgent(OpenClawAgent):
     ) -> None:
         if not self.model_name or "/" not in self.model_name:
             raise ValueError("Model name must be in the format provider/model_name")
-        model = self.model_name.split("/", 1)[1]
         env = {
             key: value
             for key in self._provider_env_keys(self._model_provider() or "")
             if (value := self._get_env(key))
         }
         env["OPENCLAW_AGENT_ID"] = self._resolved_openclaw_agent_id()
-        bridged = await use_job_inference_route(
-            self,
-            environment,
-            env,
-            base_url_key="OPENAI_BASE_URL",
-            api_key_key="OPENAI_API_KEY",
-            api="responses",
-            allowed_model=model,
-        )
-        if not bridged:
-            bridged = await prepare_hf_inference_bridge(
-                self,
-                environment,
-                env,
-                base_url_key="OPENAI_BASE_URL",
-                api_key_key="OPENAI_API_KEY",
-                inference_token=self._get_env("HF_INFERENCE_TOKEN"),
-                api="responses",
-                allowed_model=model,
-                max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
-                max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
-                timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
-                max_output_tokens=self._get_env(
-                    "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"
-                ),
+        if not env.get("OPENAI_BASE_URL") or not env.get("OPENAI_API_KEY"):
+            raise RuntimeError(
+                "OpenClaw Codex requires direct OpenAI inference settings"
             )
         try:
             await self.exec_as_agent(

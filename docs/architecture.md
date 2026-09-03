@@ -2,101 +2,69 @@
 
 ## Purpose
 
-`harbor-hf` is the control plane around Harbor. Harbor owns tasks, agents,
-environments, verification, trajectories, and trial results. `harbor-hf` owns
-experiment expansion, Hugging Face resource lifecycle, reproducibility
-metadata, raw artifact retention, and result publication.
+Harbor-HF is the hosted control plane around Harbor.
 
-The package must remain useful as an independent Harbor plugin and be shaped so
-that it could later move into a Harbor monorepo package without architectural
-changes.
+Harbor owns benchmark resolution, agents, task environments, verification,
+trajectories, locks, and native trial results. Harbor-HF owns profile
+composition, Run identity, Hugging Face resource lifecycle, durable control
+records, physical-attempt policy, evidence retention, cleanup, and publication.
 
-## Control service
+The shared path stays independent of benchmark, model, and harness names.
+Normal support for a new value is configuration; a new harness implementation
+belongs in a Harbor agent plugin.
 
-The current release stores live run events and claims in a private Hub
-Dataset. The approved [control service
-plan](2026-08-16-harbor-hf-control-service-plan.md) replaces that new-write path
-with one publicly reachable, application-protected control Space and immutable objects in the configured
-`<artifact-bucket>` Bucket. The [control service
-specification](CONTROL_SERVICE.md) defines the TypeScript runtime, REST API,
-reconciler, local projection, authentication, and React web application.
+## System boundary
 
-One Node.js process runs Fastify, the background reconciler, a disposable local
-SQLite projection, Server-Sent Events, and compiled Vite assets. The web
-application uses React, Tailwind CSS, shadcn/ui, React Router, and TanStack
-Query. The Bucket stores control records, normalized result rows, and the global
-catalog. Real resource names remain in private deployment configuration.
+```mermaid
+flowchart TB
+    U[Operator or browser] --> S[Protected control Space]
+    S --> API[Fastify API]
+    S --> R[Reconciler]
+    S --> DB[Disposable SQLite]
+    API --> B[Private artifact Bucket]
+    R --> B
+    R --> J[HF preparation and execution Jobs]
+    R --> E[Managed Inference Endpoints]
+    J -->|Harbor agent direct request| P[HF inference upstream]
+    J -->|scoped evidence and receipt| API
+```
 
-This is a hard new-write switch with no dual-write mode. Historical Dataset
-commits and Bucket evidence remain immutable. The Run-native projection reads
-only current migration, operator, profile, and run records. It does not replay
-retired campaign trees during startup or sync. Python may remain in pinned remote
-benchmark workers, but it does not remain as a parallel shared control path.
-Hub resources are shared namespace infrastructure. A run, repair, profile,
-lease, status record, or result subset must not create its own repository,
-Bucket, Space, or schedule. New persistent resources require an explicit
-privacy, access, retention, or failure-domain reason that the canonical stores
-cannot meet.
+The browser never reads the Bucket or receives service credentials. Mutations
+write immutable intent before remote side effects. SQLite can be deleted and
+rebuilt from Bucket records.
+
+The steady-state inventory is one protected control Space and one private
+Bucket. Runs, repairs, profiles, leases, and result subsets do not create their
+own persistent stores or services.
 
 ## Components
 
-The target runtime has one service boundary:
+### Control Space
 
-```text
-browser
-   |
-   v
-protected public control Space
-   |-- React web application
-   |-- TypeScript REST API and SSE
-   |-- reconciler
-   |-- disposable SQLite projection
-   |
-   +--> private Bucket
-   |      control records, profiles, evidence, results, catalog
-   |
-   +--> HF Jobs, one physical Harbor trial per Job
-   |
-   +--> HF Endpoints and Inference Providers
-```
+One Node.js process serves the REST API, React application, Server-Sent Events,
+and health endpoints while running the background reconciler. The service is
+the only shared authority for Run decisions.
 
-The browser never reads the Bucket or receives service credentials. API
-mutations write immutable intent before the reconciler performs a remote side
-effect. SQLite may be deleted and rebuilt from Bucket records.
+`HF_TOKEN` remains in the Space for Bucket and Hugging Face lifecycle
+operations. `HF_INFERENCE_TOKEN` is separately scoped and is attached only to
+an execution Job whose immutable deployment resolves an inference upstream.
 
-### Deployment Strategy
+### Immutable artifact Bucket
 
-Inference Endpoints are the primary serving path. Engine choice is independent
-of resource type: normal experiments may deploy vLLM, llama.cpp, or another
-supported engine on separate endpoints. A Red Hat vLLM recipe and our llama.cpp
-recipe are therefore endpoint engine profiles, not different Hugging Face
-resource types. Using the Red Hat recipe does not mean routing requests through
-Hugging Face Inference Providers.
+The Bucket stores:
 
-Inference Providers are a secondary path for models that are too large or too
-expensive to host on a dedicated endpoint. Provider-backed runs use external
-custom agents through Harbor's public `AgentConfig.import_path` surface; Harbor
-core remains unchanged. Hermes, OpenClaw, OpenClaw Codex, and Pi follow the
-same [provider-agent architecture](provider-agent-architecture.md), with
-separate runtime modules and one generic orchestration registry. Provider runs
-do not pretend that unreported runtime, hardware, or quantization details are
-known. Endpoint and provider profiles remain distinct in manifests, locks,
-metrics, and result tables.
+- profile records and promotions;
+- Run requests and locks;
+- prepared Harbor jobs and trials;
+- action intents, observations, and receipts;
+- evidence chunks and manifests;
+- logical task selections and retry decisions;
+- Endpoint ownership and cleanup observations;
+- normalized results and publication receipts; and
+- audit and migration records.
 
-### Trial Job isolation
-
-The TypeScript control service launches one Hugging Face Job for each physical
-trial execution. Every Job starts its assigned task from the original prepared
-input. Every launch uses immutable intent, admission, dispatch, observation,
-receipt, and advancement records. A lost create response becomes adoption-only
-and cannot issue a second create request.
-
-The Job receives a short-lived capability scoped to its run, launch action, and
-task. It never receives `HF_TOKEN` or a writable Bucket mount. When inference is
-required, root bootstrap starts a credential-holding loopback bridge, removes
-the inference credential from the benchmark process environment, and drops
-privileges before Harbor starts. Complete task evidence returns through
-content-addressed uploads and a verified manifest.
+Records are versioned, canonical, content-addressed where appropriate, and
+append-only. Conflicting bytes at an existing key are an integrity failure.
 
 ### Task result persistence
 
@@ -120,171 +88,121 @@ reviewed worker repair. A normal resume is not a repair. The [task result
 persistence and retry plan](2026-09-01-task-result-retry-plan.md) defines the
 implementation and remote checks.
 
-### Planner
+### Profile resolver
 
-The planner validates an experiment, resolves its benchmark source, expands its
-matrix, and produces one homogeneous run per model, deployment, and agent cell.
-A public Git request resolves to an anonymous commit-pinned source. A local
-directory resolves to an immutable bundle identity. An existing bundle or
-Harbor package remains content-addressed. Planning may read and snapshot local
-files but must not create remote resources. Every resolved run receives a
-content digest before it is submitted.
+The model profile supplies the canonical Harbor model route and supported
+inference APIs. The harness profile supplies a model-independent
+`AgentConfig` template, exact agent revision, capabilities, and evidence
+requirements. The deployment supplies the worker image, HF route, upstream
+URL, API, prices, limits, hardware, and timeouts.
 
-The [benchmark source specification](benchmark-sources.md) defines the source
-union, `source.lock.json`, bundle format, anonymous Git boundary, and private
-Bucket layout. Filesystem, Git, archive, and Bucket adapters stay outside domain
-planning.
+For direct inference, the resolver:
 
-### Controller
+1. validates the `openai/<model>:<provider>` Harbor route;
+2. checks that the provider suffix matches the deployment;
+3. checks model and harness support for the declared API;
+4. sets `OPENAI_BASE_URL` to the exact upstream;
+5. references `HF_INFERENCE_TOKEN` as `OPENAI_API_KEY`;
+6. locks timeout and output-token settings; and
+7. adds the upstream hostname to Harbor's allowed hosts.
 
-A provider run runs inside one detached HF Job. Submission stages a
-content-addressed folder containing the requested manifest, resolved source
-lock, run lock, and input manifest. A local benchmark bundle has its own
-shared content address and read-only mount. A parent-checked launch claim
-serializes the exact-label Job lookup and launch, and an immutable receipt binds
-the attempt to its physical Job. The controller verifies the input files and
-source, acquires the run claim, prepares pinned runtime sources, and runs
-one internal wave at a time. Trial concurrency stays inside each wave.
+There is no alternate model binding or API translation in the worker.
 
-The controller records a heartbeat while a long trial runs. Its container
-wrapper records the physical start before pinned source checkout, so admission
-includes bootstrap time. Before billable work, it acquires a parent-checked
-namespace claim keyed by provider service, so two run Jobs cannot run
-internal waves against the same shared provider at once. Provider recorder setup
-draws from the locked wave reserve rather than the trial-work duration. The
-controller stops admitting work if ownership becomes uncertain, shared capacity
-is occupied, the remaining Job time cannot fit the next wave, observed
-throughput breaks the locked duration bound, or policy blocks continuation.
-Completed trial evidence is committed before the next action.
+Approved immutable profiles that pin a historical bridge worker retain a
+conditional bootstrap and provider-capacity reservation path. Direct profiles,
+including the Fast-Agent Workbench deployment, do not use that compatibility
+path.
 
-Endpoint-backed runs keep the existing wave Job and independent endpoint
-watchdog. A killed endpoint worker needs an outside process that can pause the
-endpoint, so endpoint execution does not use the provider controller.
+### Preparation Job
 
-### Run reconciler
+The preparation Job has no persistent secret. It installs pinned Harbor and
+agent-package revisions, builds a normal Harbor `JobConfig`, and uses Harbor's
+public planning API to resolve the benchmark.
 
-Runs are durable submissions of an immutable resolved plan. A run
-lock content-addresses its run cells, bounded shards, logical trials, controller
-policy, and initial wave durations. The same plan may be submitted more than
-once under distinct run IDs without overwriting an earlier measurement.
+It returns one immutable prepared record per logical trial and a final prepared
+job record. Those records bind Harbor locks, task and image digests, resources,
+timeouts, agent configuration, source revisions, and worker provenance.
 
-The domain reconciler reads the run lock and append-only events, rebuilds
-the projection, and selects one deterministic action. It reserves that action
-before applying a side effect and records the outcome before selecting another.
-Cleanup and publication actions run before billable work.
+Preparation is the only point at which the benchmark is resolved. Execution,
+retry, and recovery reconstruct the exact prepared trial.
 
-For provider runs, `submit-wave` means that the owning controller admits
-and executes the wave in process. It no longer submits an HF Job. The endpoint
-adapter keeps the older remote wave meaning because endpoint ownership and
-cleanup require separate resources. Read-only reconciliation remains useful for
-diagnosis. An applied pass is available only for endpoint runs. Historical
-provider runs remain bound to their pinned Harbor HF revision.
+### Execution Job
 
-Endpoint-backed controller and watchdog Jobs carry a deterministic label
-derived from the endpoint namespace and name. They coordinate through one
-private, namespace-level `harbor-hf-coordination` Dataset repository. A
-submission seeds an initialization commit when that repository has no `main`
-commit yet. A watchdog adds the endpoint's lease file with the repository head
-as the expected parent commit before publishing its readiness handshake. Concurrent
-commits cannot both use the same parent; a loser rereads the new head, observes
-the lease, and exits before its controller changes endpoint state.
+Each physical attempt runs in one HF Job using the reviewed trial-worker image,
+never the task image as the host image. The worker verifies and unpacks the
+locked task image and runs the task as a dedicated unprivileged host UID.
 
-The lease file records both controller and watchdog Job IDs. It remains present
-while the watchdog observes the controller and is removed only after the
-endpoint reports `paused` with zero ready replicas. Ownership is revalidated
-at the latest repository head before a parent-checked removal commit. If
-cleanup cannot be verified, the lease remains fail-closed and blocks another
-run from inheriting an endpoint whose state is unknown.
-If publishing the readiness label returns an ambiguous provider error, the
-watchdog also retains the lease, waits for the controller to exit or time out,
-verifies endpoint pause, and only then releases ownership.
+The Job receives:
 
-If a controller Job terminates after publishing successful trial evidence but
-before its wave marker, recovery closes the abandoned wave and may submit a
-replacement. The replacement accepts checksum-valid successful trial evidence
-from an earlier wave only when run, run, shard, trial, task, and logical
-attempt identities all match. This avoids rerunning completed work without
-allowing evidence from another run or task to cross the boundary.
+- one task assignment;
+- a short-lived capability scoped to its Run and launch action;
+- the exact prepared trial and execution contract; and
+- `HF_INFERENCE_TOKEN` only when direct inference is required.
 
-Every endpoint wave Job acquires a second expiring lease keyed by run and
-wave before endpoint work begins. The provider controller instead holds one
-run claim and renews it throughout the physical Job. A duplicate
-controller exits before source preparation or provider requests. Claim expiry
-allows investigation but does not authorize recovery until the prior Job is
-also terminal or absent. A separate provider-capacity claim serializes billable
-waves by provider service. It is released by exact ownership and has no
-cross-run expiry takeover. The owning run's watchdog releases an
-abandoned capacity claim after proving its physical Job terminal or absent,
-even when policy blocks a replacement. Other runs can then acquire the
-provider normally.
+Harbor loads the selected agent through `AgentConfig.import_path`. The agent
+receives the profile-resolved upstream, credential, model, API, timeout, and
+output limit and calls the HF inference upstream directly. After the agent and
+its descendants stop, the worker freezes the workspace and Harbor runs the
+verifier against that state.
 
-### Endpoint Provisioner
+The worker rejects lock drift, evidence mismatch, leaked credentials, or
+invalid task-image boundaries before posting a terminal receipt.
 
-The [endpoint provisioning boundary](endpoint-provisioning.md) converts locked
-model and deployment profiles into deterministic run-scoped managed
-identities and exact effective Hugging Face Endpoint configuration. Its typed
-port supports create, inspect/adopt, pause, and explicit delete without
-depending on SDK response models. Adoption requires managed identity, complete
-configuration equality, and paused-zero-ready state. Ambiguous create outcomes
-are resolved by inspecting the deterministic name rather than issuing another
-create.
+### Managed Endpoint route
 
-This boundary remains independent of the wave controller. A wave acquires the
-endpoint lease and starts the watchdog before resume or shard execution.
+Endpoint-backed deployments remain separate from direct calls to HF inference
+services. Their immutable deployment contract covers model and engine
+revision, image, command, hardware, replica policy, parsing and template
+settings, context and batching limits, and health checks.
 
-### Harbor Adapter
+The reconciler adopts or creates only the deterministic Endpoint, verifies its
+effective configuration, and records ownership. Cleanup has priority over new
+work. A Run cannot complete until every owned Endpoint is observed paused with
+zero ready replicas.
 
-Harbor remains the only benchmark execution engine. The adapter translates a
-resolved run into Harbor job configuration and registers public lifecycle hooks
-for incremental artifact publication. It must not patch Harbor internals.
+### Reconciler
 
-Provider-backed agents are supplied by one installable package under
-`packages/harbor-hf-agents` in this repository. The existing pinned worker
-revision fixes that package. The worker layers the dependency-free package into
-the pinned Harbor environment and selects the agent with
-`AgentConfig.import_path`. Agent-specific
-installation, configuration, invocation, session export, and trajectory
-conversion live in separate external modules. Generic `harbor-hf` code performs
-a declarative registry lookup and never renders one agent's configuration for
-another. New provider runs have no built-in-agent fallback.
+The reconciler rebuilds state from immutable records and selects one
+deterministic next action. The action sequence separates intent, admission,
+dispatch, observation, receipt, and advancement.
 
-### Artifact Store
+An ambiguous HF response does not authorize another create call. The
+reconciler observes the deterministic remote identity and either adopts it or
+records a typed failure. Cancellation stops new admission while preserving
+active evidence finalization and cleanup.
 
-A private HF Storage Bucket is the complete evidence archive. Requested and
-resolved configuration, endpoint snapshots, Harbor output, trajectories,
-sessions, verifier records, logs, and checksums are written under an immutable
-run prefix. The separate managed `jobs-artifacts` Bucket stores run inputs
-and immutable benchmark bundles. Bundle payloads are published first and their
-validated manifests are written last as completion markers. Sanitized run
-evidence is published after validation and resource cleanup, and `_SUCCESS` is
-written only for a complete run. Each Harbor trial's task digest is read from
-its own `lock.json` and must match the pre-resolved task map in `execution.lock.json`.
-The worker first adds a permanent run reservation to the private coordination
-repository with the same parent-commit compare-and-swap protocol. Duplicate run
-IDs therefore fail before source preparation, endpoint work, or failure
-publication. Equivalent Bucket URI spellings are normalized before deriving the
-reservation identity. Terminal markers are delayed only at the run root;
-marker-shaped files within Harbor task artifacts are preserved and included in
-the root checksum manifest. Submission verifies the
-artifact Bucket and managed Job input Bucket are private before launch. Job
-inputs use content-addressed Bucket prefixes mounted read-only by `hf://` URI.
+### Evidence and publication
 
-Raw Harbor output is staged on the controller Job's local filesystem, outside
-the bucket mount. After endpoint cleanup, the controller redacts secret values,
-rejects symbolic links, creates the archive and checksums, then copies the
-sanitized tree to a new bucket prefix. The terminal marker is copied last. A
-killed controller can therefore leave no unsanitized bucket artifacts.
+Workers upload content-addressed chunks and a canonical manifest through their
+scoped capability. The control service verifies every digest, reference,
+required media type, Run and task identity, and secret-scan result.
 
-### Results Publisher
+Canonical evidence includes the Harbor lock and result, workspace archive and
+index, native session or ATIF trajectory when required, verifier output,
+worker logs, source and image provenance, and infrastructure receipts. Evidence
+requirements come from the harness and benchmark contracts.
 
-One serialized publisher converts completed runs into normalized Parquet tables.
-Benchmark-specific Dataset repositories contain run, trial, execution, metric,
-and artifact tables. A small global index contains one row per completed run.
-The bucket is canonical evidence; Datasets are the query and presentation layer.
+Publication is a later deterministic action over accepted canonical evidence.
+It emits normalized result objects and approved public views. Workers never
+write directly to shared public destinations.
 
-## Identity
+## Identity and reproducibility
 
-The stable hierarchy is:
+A Run locks:
+
+- exact profile record IDs and digests;
+- benchmark source and task digests;
+- Harbor and agent-package revisions;
+- task and worker image digests;
+- model route and observable revision;
+- inference provider, upstream, and API;
+- agent entry point, revision, and parameters;
+- hardware, resources, phase limits, and prices;
+- attempt, admission, and spend policy; and
+- evidence and publication policy.
+
+Aliases are submission conveniences only. A behavior-affecting change creates a
+new immutable profile and, for executed work, a new Run identity.
 
 1. An experiment groups a requested matrix.
 2. A run represents one homogeneous matrix cell.
@@ -298,150 +216,52 @@ immutable records. Replacement benchmark attempts remain separate trials and
 never replace previous records. Composite or manually selected results must be
 labeled explicitly and must not appear as single-run results.
 
-## Reproducibility Boundary
+Failures are typed as infrastructure or semantic outcomes.
 
-A resolved run lock records:
+Replacement-eligible infrastructure examples include a transient HF Job
+failure, control unavailability, image transfer failure, or malformed
+infrastructure receipt. Deterministic worker defects stop affected work.
 
-- the benchmark source lock: anonymous Git commit, bundle content address, or
-  Harbor package digest, plus the task-set digest and verifier digest;
-- Harbor and worker source revisions, custom-agent import path, underlying
-  agent, tool, prompt, and skill revisions;
-- model, tokenizer, chat-template, and generation-config revisions;
-- weight format and quantization separately from activation and KV precision;
-- resource type and, when known, provider, region, hardware, accelerator count,
-  replica policy, and driver information;
-- serving engine name, version, build or commit, immutable container image
-  digest, complete arguments, non-secret environment, and secret names;
-- CUDA, framework, attention, reasoning-parser, and other serving-library
-  versions reported by the runtime;
-- chat template source and digest, context and output limits, batching and
-  sequence capacity, and activation and KV-cache precision;
-- prefix caching, speculative decoding or MTP, CUDA graph mode, attention
-  backend, MoE backend, and other behavior-affecting engine controls;
-- context, output, batching, concurrency, retry, timeout, and sampling settings;
-- requested provider configuration and the effective configuration returned by
-  the provider.
+Semantic outcomes include model refusals, valid zero scores, benchmark
+timeouts, agent failures, and verifier failures. They are not rerun as
+infrastructure.
 
-Secret values are never recorded. Manifests store only the names of secrets
-that must be injected by the remote platform. Artifact finalization redacts
-secret values from both file contents and path components before checksums or
-archives are created. File content is scanned and rewritten in bounded chunks,
-and symbolic links are rejected before evidence traversal.
+A replacement physical attempt keeps the same prepared trial and logical task
+identity. Any change to model, agent, source, image, API, limits, hardware, or
+policy requires a linked replacement Run. Publication recovery does not call
+the model again.
 
-The control service has two persistent Space secrets. `HF_TOKEN` is the
-fine-grained control credential and never enters a worker. `HF_INFERENCE_TOKEN`
-is a distinct inference-only credential passed only to a reviewed outer worker
-whose locked deployment profile requires it. The worker confines it to the
-root-owned inference bridge; a benchmark agent may not receive either
-credential. Credential display names and local aliases remain private. Rotate
-the inference credential only after every Job using the prior value is terminal.
+## Security boundaries
 
-The reviewed, digest-pinned deployment Job image is the physical worker
-boundary. The prepared benchmark OCI image is separately digest-pinned task
-data. The worker verifies and unpacks that image, replaces its launch
-environment, strips setuid, setgid, and file capabilities, rejects special
-files, then maps the rootfs to one dedicated high host UID/GID. Task, agent,
-and verifier commands run with that real UID, empty supplementary groups, no
-Linux capabilities, and `no_new_privs`. PRoot supplies the task filesystem
-view and fake image-user semantics only. It is not a security boundary, and
-fake container UID 0 never becomes host root.
+- The control credential never enters a Job.
+- Preparation Jobs receive no inference credential.
+- Direct-inference agents are reviewed secret consumers.
+- Jobs have no writable canonical Bucket mount.
+- Worker capabilities are short-lived and operation-scoped.
+- Task execution uses a dedicated unprivileged host UID with no supplementary
+  groups, capabilities, or privilege escalation.
+- Credential values and high-confidence patterns are scanned in paths, files,
+  logs, sessions, traces, manifests, and publication candidates.
+- Public responses omit private topology, raw evidence, credentials, and
+  capabilities.
 
-The task rootfs does not bind host `/run`, `/tmp`, the root worker workspace,
-token files, or control capability material. It may bind host `/proc` for
-process metadata. Different real UIDs plus the absent `CAP_SYS_PTRACE` prevent
-the task from reading root process environments and file descriptors.
-Preflight proves those denials with the final task identity. If the required
-tools, UID separation, capability state, or denial probes are unavailable,
-preflight records replacement-eligible infrastructure instead of using a
-namespace or same-UID fallback.
-
-### Canonical Configuration Artifacts
-
-Each run preserves four separate configuration records:
-
-| Artifact | Authority |
-| --- | --- |
-| `manifest.yaml` | Immutable copy of what the user requested, including an operator-local path when a directory was selected. |
-| `source.lock.json` | Remote-safe anonymous Git, bundle, or package identity resolved before semantic planning. |
-| `execution.lock.json` | Resolved revisions, matrix cell, policy, and reproducibility contract fixed before execution. |
-| `endpoint.snapshot.json` | Effective endpoint or provider configuration observed after readiness. |
-| `runtime-environment.json` | Versions and feature controls reported from inside the serving runtime. |
-
-The endpoint snapshot never overwrites the requested manifest or resolved lock.
-Differences between requested and effective values remain explicit and are
-published as comparison fields.
-
-Before any remote work, the controller reconstructs the selected matrix cell
-from `manifest.yaml` and the verified `source.lock.json`, then compares the
-complete result with `execution.lock.json`. Matching only the manifest digest is
-insufficient because source and run lock fields can be modified independently.
-
-Runtime evidence uses a status alongside nullable values. `reported` means the
-value came from a named probe or provider response, `not_reported` means the
-remote service did not expose it, `not_applicable` means the field does not
-apply to that serving path, and `unknown` means collection was expected but
-failed. The system never infers a hidden vLLM version, quantization, hardware,
-or other provider detail from model behavior.
-
-## Failure And Cleanup
-
-Runs progress through `planned`, `submitted`, `provisioning`, `running`,
-`verifying`, `publishing`, and a terminal state. Every transition is an
-append-only event.
-
-For endpoint-backed runs, the controller first requires a paused endpoint with
-zero ready replicas, then starts a separate companion HF Job watchdog before it
-resumes the endpoint. The controller requires a readiness label written from
-inside the watchdog's monitoring process; a submitted or merely running Job is
-not sufficient. If readiness polling fails, the controller exits without
-canceling the watchdog, allowing it to observe that exit, pause the endpoint,
-and release its lease. The watchdog also pauses the endpoint after the
-controller terminates or its own deadline expires. The controller pauses the
-endpoint after its last active shard in a `finally` path, but only after its
-watchdog has acquired the endpoint lease. A controller whose watchdog cannot
-acquire the lease records skipped cleanup and never changes endpoint state.
-Cleanup success is part of endpoint run completion, not an optional maintenance
-action. Provider-backed runs have no endpoint lease but still close worker
-resources and record final usage and request state.
-
-The worker verifies `status.state = paused` and `readyReplica = 0` before it
-writes `_SUCCESS`. The final snapshot also records `targetReplica`, which may
-remain nonzero on a paused endpoint. Trial Jobs remain under observation until
-a documented terminal state. Cancellation prevents new Job admission, while
-already running Jobs may finish their assigned trial and evidence boundary.
-Restart recovery adopts a dispatched create by deterministic label and cannot
-launch a replacement until terminal observation and the receipt grace period
-complete.
-
-Endpoint pause requests and status reads retry transient provider failures until
-the bounded cleanup deadline. Each endpoint CLI call is limited to 60 seconds or
-the remaining lifecycle deadline, whichever is shorter. Unexpected local errors
-still fail immediately, and an exhausted retry budget is recorded as cleanup
-failure. When execution and cleanup both fail, evidence preserves them as
-separate failures.
-
-Before benchmark execution, the worker requires `readyReplica` to reach the
-positive `targetReplica` count and probes the `healthRoute` reported in the
-endpoint snapshot. This prevents startup timing and custom image routing from
-changing benchmark validity.
+Direct inference intentionally gives the selected agent access to the
+inference credential. Arbitrary user code must therefore remain setup-only
+until a separate user-secret custody design is approved.
 
 ## Boundaries
 
-- No local model loading or inference.
-- No benchmark-specific behavior in the `harbor_hf` orchestration package;
-  custom-agent behavior belongs to the isolated `harbor-hf-agents` package in
-  this repository.
-- No raw sessions in public Dataset repositories.
-- No secret values in manifests, logs, locks, or artifacts.
-- No state that exists only on the submitting machine.
-- No direct Bucket access or service credential in the browser.
-- No Python fallback for shared run control after the TypeScript service
-  becomes authoritative.
-- No PostgreSQL, Redis, Node cluster, separate frontend service, or keep-awake
-  schedule in the target runtime.
-- No direct writes from trial workers to shared Dataset Git repositories.
-- No per-run, per-profile, per-repair, per-lease, per-status, or
-  per-result-subset Hub repository, Bucket, Space, or schedule.
-- No new persistent Hub resource without an inventory, an unmet privacy or
-  failure-domain requirement, a lifecycle and cost record, and explicit
-  approval.
+Harbor-HF does not:
+
+- modify Harbor core or monkeypatch Harbor internals;
+- add benchmark-, model-, or harness-specific branches to the control path;
+- run models or benchmark tasks on the operator machine as part of the hosted
+  control path;
+- translate between Chat Completions and Responses;
+- treat local SQLite as durable truth;
+- expose the private Bucket to browsers;
+- hide infrastructure failure inside a model score; or
+- rewrite historical evidence.
+
+See [the control-service specification](CONTROL_SERVICE.md) and
+[the Harbor compatibility contract](harbor-integration-contract.md).

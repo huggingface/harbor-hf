@@ -10,20 +10,10 @@ from harbor.environments.capabilities import EnvironmentCapabilities
 from harbor.models.agent.context import AgentContext
 from harbor.models.agent.name import AgentName
 
-from harbor_hf_agents.openclaw import agent as openclaw_agent
 from harbor_hf_agents.openclaw.agent import (
     OpenClawAgent,
     openclaw_session_jsonl_to_atif_steps,
 )
-
-
-@pytest.fixture(autouse=True)
-def no_job_inference_route(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        openclaw_agent,
-        "use_job_inference_route",
-        AsyncMock(return_value=False),
-    )
 
 
 @pytest.fixture
@@ -39,7 +29,15 @@ def test_name(agent: OpenClawAgent) -> None:
 
 
 def test_node_runtime_defaults_to_current_supported_major(tmp_path: Path) -> None:
-    agent = OpenClawAgent(logs_dir=tmp_path, model_name="openai/gpt-4.1")
+    agent = OpenClawAgent(
+        logs_dir=tmp_path,
+        model_name="openai/gpt-4.1",
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+        },
+    )
 
     assert "nvm use 24" in agent._node_command("openclaw --version")
 
@@ -191,20 +189,10 @@ def test_provider_baseurl_only_gets_models_array(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_job_route_uses_custom_provider_and_locked_output_limit(
+async def test_direct_settings_use_custom_provider_and_output_limit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def use_route(_agent, _environment, env, **kwargs):
-        assert kwargs["api"] == "chat-completions"
-        assert kwargs["allowed_model"] == "gpt-4.1"
-        env["OPENAI_BASE_URL"] = "http://127.0.0.1:18080/v1"
-        env["OPENAI_API_KEY"] = "harbor-local-inference-bridge"
-        env["JOB_INFERENCE_MAX_OUTPUT_TOKENS"] = "32768"
-        return True
-
-    monkeypatch.setattr(openclaw_agent, "use_job_inference_route", use_route)
-    monkeypatch.delenv("HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS", raising=False)
     environment = SimpleNamespace(
         capabilities=EnvironmentCapabilities(mounted=True),
         upload_file=AsyncMock(),
@@ -216,6 +204,11 @@ async def test_job_route_uses_custom_provider_and_locked_output_limit(
             "api": "chat-completions",
             "timeout_seconds": 1800,
             "max_attempts": 1,
+        },
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
         },
     )
     exec_as_agent = AsyncMock()
@@ -251,13 +244,10 @@ async def test_job_route_uses_custom_provider_and_locked_output_limit(
         run_call.kwargs["command"] if "command" in run_call.kwargs else run_call.args[1]
     )
     assert "--model harbor-hf-job/gpt-4.1" in run_command
-    assert (
-        run_call.kwargs["env"]["OPENCLAW_HARBOR_API_KEY"]
-        == "harbor-local-inference-bridge"
-    )
+    assert run_call.kwargs["env"]["OPENCLAW_HARBOR_API_KEY"] == "direct-token"
     assert (
         run_call.kwargs["env"]["OPENCLAW_HARBOR_BASE_URL"]
-        == "http://127.0.0.1:18080/v1"
+        == "https://router.huggingface.co/v1"
     )
 
 
@@ -350,7 +340,15 @@ async def test_run_redirects_sessions_before_agent_execution(
         if "openclaw agent --local" in command:
             raise RuntimeError("agent timed out")
 
-    agent = OpenClawAgent(logs_dir=tmp_path, model_name="openai/gpt-4.1")
+    agent = OpenClawAgent(
+        logs_dir=tmp_path,
+        model_name="openai/gpt-4.1",
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+        },
+    )
     monkeypatch.setattr(agent, "exec_as_agent", AsyncMock(side_effect=execute))
     copy_session = AsyncMock()
     monkeypatch.setattr(
@@ -393,7 +391,15 @@ async def test_run_continues_when_session_redirect_fails(
         if "openclaw-sessions" in command:
             raise RuntimeError("session redirect failed")
 
-    agent = OpenClawAgent(logs_dir=tmp_path, model_name="openai/gpt-4.1")
+    agent = OpenClawAgent(
+        logs_dir=tmp_path,
+        model_name="openai/gpt-4.1",
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+        },
+    )
     monkeypatch.setattr(agent, "exec_as_agent", AsyncMock(side_effect=execute))
     monkeypatch.setattr(
         agent,
@@ -413,7 +419,15 @@ async def test_run_uploads_config_to_non_mounted_environment(
     monkeypatch: pytest.MonkeyPatch,
     mounted: bool,
 ) -> None:
-    agent = OpenClawAgent(logs_dir=tmp_path, model_name="openai/gpt-4.1")
+    agent = OpenClawAgent(
+        logs_dir=tmp_path,
+        model_name="openai/gpt-4.1",
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+        },
+    )
     upload_file = AsyncMock()
     environment = SimpleNamespace(
         capabilities=EnvironmentCapabilities(mounted=mounted),
@@ -447,7 +461,15 @@ async def test_run_creates_missing_logs_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     logs_dir = tmp_path / "trial" / "agent"
-    agent = OpenClawAgent(logs_dir=logs_dir, model_name="openai/gpt-4.1")
+    agent = OpenClawAgent(
+        logs_dir=logs_dir,
+        model_name="openai/gpt-4.1",
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+        },
+    )
     environment = SimpleNamespace(
         capabilities=EnvironmentCapabilities(mounted=True),
         upload_file=AsyncMock(),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import cast
 
 import httpx
@@ -102,6 +103,78 @@ def test_run_submit_sends_profile_references(
     }
     headers = cast(dict[str, str], observed["headers"])
     assert headers["Idempotency-Key"] == "request-key-0001"
+
+
+def test_run_submit_sends_tested_workbench_recipe(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    configure(monkeypatch)
+    observed: dict[str, object] = {}
+    recipe = {
+        "schema_version": "v1",
+        "name": "test-agent",
+        "setup_command": "printf setup",
+        "run_command": "printf run",
+        "route_api": "chat-completions",
+        "setup_timeout_seconds": 60,
+        "environment": [],
+        "outputs": {
+            "results_path": "/logs/agent/results.json",
+            "trajectory_path": None,
+        },
+    }
+    recipe_path = tmp_path / "harness.json"
+    recipe_path.write_text(json.dumps(recipe), encoding="utf-8")
+
+    def request(method: str, url: str, **kwargs: object) -> httpx.Response:
+        observed.update({"method": method, "url": url, **kwargs})
+        if method == "GET":
+            return response(
+                200,
+                {
+                    "items": [
+                        {
+                            "name": "tb21-gpt-oss-20b-canary",
+                            "revision": f"sha256:{'1' * 64}",
+                        }
+                    ]
+                },
+            )
+        return response(202, {"run_id": "run-workbench", "action_id": "action-one"})
+
+    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "submit",
+            "--config",
+            "tb21-gpt-oss-20b-canary",
+            "--harness",
+            str(recipe_path),
+            "--setup-test",
+            "setup-test-cli",
+            "--ceiling-microusd",
+            "1000000",
+            "--idempotency-key",
+            "workbench-request-key",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert observed["json"] == {
+        "benchmark_config": "tb21-gpt-oss-20b-canary",
+        "benchmark_config_revision": f"sha256:{'1' * 64}",
+        "harness": {
+            "type": "workbench",
+            "recipe": recipe,
+            "setup_test_id": "setup-test-cli",
+        },
+        "ceiling_microusd": 1_000_000,
+        "confirmed": True,
+    }
 
 
 def test_run_submit_can_start_paused(

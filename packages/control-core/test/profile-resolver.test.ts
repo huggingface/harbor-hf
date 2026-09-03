@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { profile } from "@harbor-hf/test-fixtures";
+import { describe, expect, it } from "vitest";
 import { ProfileResolver } from "../src/profiles.js";
 
 describe("ProfileResolver", () => {
@@ -41,7 +41,7 @@ describe("ProfileResolver", () => {
         route: "hf_job",
         models: ["model"],
         harnesses: ["harness"],
-        inference_token: "required",
+        inference_upstream: "https://router.huggingface.co/v1",
         inference_api: api,
       });
     const supported = deployment("supported", "chat-completions");
@@ -125,6 +125,25 @@ describe("ProfileResolver", () => {
     expect(resolver.get("harness", "opencode").profile_id).toBe(builtIn.profile_id);
     expect(resolver.get("harness", "opencode-canary").profile_id).toBe(
       extra.profile_id,
+    );
+  });
+
+  it("resolves distinct command recipes by alias without an agent-name branch", () => {
+    const first = profile("harness", "first-command-recipe", {
+      agent: "command-agent",
+      revision: "sha256:first",
+    });
+    const second = profile("harness", "second-command-recipe", {
+      agent: "command-agent",
+      revision: "sha256:second",
+    });
+    const resolver = new ProfileResolver([first, second]);
+
+    expect(resolver.get("harness", "first-command-recipe").profile.spec.revision).toBe(
+      "sha256:first",
+    );
+    expect(resolver.get("harness", "second-command-recipe").profile.spec.revision).toBe(
+      "sha256:second",
     );
   });
 });

@@ -161,7 +161,6 @@ def validate_provider_agent_evidence(
     expected_agent_version: str,
     expected_model_name: str,
 ) -> None:
-    _validate_ingress_isolation(root / "agent" / "hf-inference-isolation.json")
     trajectory_path = root / "agent" / "trajectory.json"
     try:
         trajectory = json.loads(trajectory_path.read_text(encoding="utf-8"))
@@ -197,29 +196,3 @@ def _worker_error(message: str) -> RuntimeError:
     from harbor_hf.harbor_adapter.errors import WorkerError
 
     return WorkerError(message)
-
-
-def _validate_ingress_isolation(path: Path) -> None:
-    try:
-        evidence = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise _worker_error(
-            "provider agent ingress isolation evidence is missing or malformed"
-        ) from error
-    if not isinstance(evidence, dict):
-        raise _worker_error(
-            "provider agent ingress isolation evidence must be an object"
-        )
-    agent_uid = evidence.get("agent_uid")
-    bridge_uid = evidence.get("bridge_uid")
-    if (
-        not isinstance(agent_uid, int)
-        or isinstance(agent_uid, bool)
-        or agent_uid < 0
-        or not isinstance(bridge_uid, int)
-        or isinstance(bridge_uid, bool)
-        or bridge_uid < 0
-        or agent_uid == bridge_uid
-        or evidence.get("bridge_environment_readable") is not False
-    ):
-        raise _worker_error("provider agent ingress isolation evidence is invalid")

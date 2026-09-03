@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 import statistics
 import tempfile
@@ -54,11 +55,6 @@ from harbor_hf.judge_recorder import (
 from harbor_hf.models import EndpointRef, ExperimentSpec
 from harbor_hf.private_artifacts import sanitize_private_artifact_special_files
 from harbor_hf.process import SubprocessRunner, run_streaming
-from harbor_hf.profile_worker_transport import (
-    ProfileTransport,
-    job_ingress_base_url,
-    wait_ready,
-)
 from harbor_hf.profiling import (
     ProfilePlan,
     ProfilePoint,
@@ -69,7 +65,11 @@ from harbor_hf.profiling import (
     new_unselected_profile,
     select_profile,
 )
-from harbor_hf.provider_models import ProviderTarget
+from harbor_hf.provider_models import (
+    ProviderTarget,
+    provider_upstream_url,
+    routed_provider_model,
+)
 from harbor_hf.trial_evidence import JudgeCalls, JudgeSelection, assemble_trial_evidence
 from harbor_hf.worker import (
     EndpointManager,
@@ -123,6 +123,40 @@ class _ProfileRecovery:
     selected: ServingProfile | None = None
 
 
+@dataclass
+class ProfileTransport:
+    base_url: str
+    model_name: str
+    judge_base_url: str | None = None
+    judge_recorder: JudgeEvidenceRecorder | None = None
+
+    def attach_judge_recorder(
+        self, recorder: JudgeEvidenceRecorder, base_url: str
+    ) -> None:
+        if self.judge_recorder is not None:
+            raise ProfileWorkerError("profile judge recorder is already attached")
+        self.judge_recorder = recorder
+        self.judge_base_url = base_url
+
+    def detach_judge_recorder(self) -> None:
+        self.judge_recorder = None
+        self.judge_base_url = None
+
+
+_HF_JOB_ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _profile_inference_token(plan: ProfilePlan, control_token: str) -> str:
+    if not isinstance(plan.deployment, ProviderTarget):
+        return control_token
+    token = os.environ.get(plan.deployment.token_secret_name, "")
+    if not token:
+        raise ProfileWorkerError(
+            f"profile worker requires {plan.deployment.token_secret_name}"
+        )
+    return token
+
+
 def run_profile_worker(plan_path: Path, output_root: Path) -> Path:
     plan = ProfilePlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
     spec = ExperimentSpec.model_validate(plan.experiment)
@@ -139,16 +173,19 @@ def run_profile_worker(plan_path: Path, output_root: Path) -> Path:
     )
     if rebuilt != plan:
         raise ProfileWorkerError("profile plan does not match its embedded experiment")
-    token = os.environ.get("HF_TOKEN", "")
-    if not token:
+    control_token = os.environ.get("HF_TOKEN", "")
+    if not control_token:
         raise ProfileWorkerError("profile worker requires HF_TOKEN")
+    inference_token = _profile_inference_token(plan, control_token)
     if spec.remote is None:
         raise ProfileWorkerError("profile worker requires remote execution settings")
     destination = output_root / plan.artifacts.prefix
     recovery = _prepare_profile_destination(plan, destination)
     if recovery is None:
         return destination
-    secrets: str | tuple[str, ...] = token
+    secrets: str | tuple[str, ...] = tuple(
+        dict.fromkeys((control_token, inference_token))
+    )
     try:
         profile = new_unselected_profile(plan)
         bound_spec, desired_endpoint = bind_profile_target(plan)
@@ -163,7 +200,11 @@ def run_profile_worker(plan_path: Path, output_root: Path) -> Path:
         deadline = _profile_deadline(destination)
         require_executable("git")
         require_executable("uv")
-        secrets = execution_secret_values(execution_lock, token)
+        secrets = execution_secret_values(
+            execution_lock,
+            control_token,
+            inference_token=inference_token,
+        )
         if recovery.selected is not None:
             _require_recovered_profile_cleanup(execution_lock)
             _finalize_profile(destination, secrets)
@@ -181,17 +222,17 @@ def run_profile_worker(plan_path: Path, output_root: Path) -> Path:
                 plan,
                 execution_lock,
                 destination,
-                token,
+                control_token,
                 deadline,
                 desired_endpoint=desired_endpoint,
             ) as transport:
-                _verify_smoke(plan, transport, token, deadline)
+                _verify_smoke(plan, transport, inference_token, deadline)
                 points = _run_ladder(
                     plan,
                     execution_lock,
                     transport,
                     harbor_source,
-                    token,
+                    control_token,
                     destination,
                     deadline,
                     existing_points=recovery.existing_points,
@@ -341,17 +382,13 @@ def _profile_transport(
     desired_endpoint: DesiredEndpoint | None,
 ) -> Iterator[ProfileTransport]:
     if isinstance(plan.deployment, ProviderTarget):
-        with (
-            ProfileTransport.for_provider(
-                plan.deployment,
-                token=token,
-                evidence_path=destination / "provider-requests.jsonl",
-                deadline=deadline,
-            ) as transport,
-            _profile_judge_transport(
-                execution_lock, transport, token, deadline
-            ) as selected,
-        ):
+        transport = ProfileTransport(
+            base_url=provider_upstream_url(plan.deployment),
+            model_name=routed_provider_model(plan.deployment),
+        )
+        with _profile_judge_transport(
+            execution_lock, transport, token, deadline
+        ) as selected:
             yield selected
         return
     deployment = execution_lock.deployment
@@ -395,7 +432,10 @@ def _profile_transport(
             token,
             readiness_timeout_seconds=min(3600, _remaining(deadline)),
         )
-        transport = ProfileTransport.for_endpoint(base_url, endpoint.served_model_name)
+        transport = ProfileTransport(
+            base_url=base_url,
+            model_name=endpoint.served_model_name,
+        )
         with _profile_judge_transport(
             execution_lock, transport, token, deadline
         ) as selected:
@@ -432,15 +472,48 @@ def _profile_judge_transport(
         strip_temperature=judge.strip_temperature,
         deadline=deadline,
     )
-    base_url = job_ingress_base_url(JUDGE_RECORDER_PORT)
+    base_url = _judge_recorder_base_url(JUDGE_RECORDER_PORT)
     try:
         recorder.start(port=JUDGE_RECORDER_PORT)
-        wait_ready(base_url, token, deadline)
+        _wait_for_judge_recorder(base_url, token, deadline)
         transport.attach_judge_recorder(recorder, base_url)
         yield transport
     finally:
         transport.detach_judge_recorder()
         recorder.close()
+
+
+def _judge_recorder_base_url(port: int) -> str:
+    job_id = os.environ.get("JOB_ID", "")
+    if not _HF_JOB_ID.fullmatch(job_id):
+        raise ProfileWorkerError("profile judge recorder requires a valid HF Job ID")
+    return f"https://{job_id}--{port}.hf.jobs"
+
+
+def _wait_for_judge_recorder(base_url: str, token: str, deadline: float) -> None:
+    ready_deadline = min(deadline, time.monotonic() + 120)
+    last_failure = "no response"
+    with httpx.Client(follow_redirects=False) as client:
+        while time.monotonic() < ready_deadline:
+            try:
+                response = client.get(
+                    f"{base_url}/healthz",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=min(5.0, max(0.1, ready_deadline - time.monotonic())),
+                )
+                if response.status_code in {401, 403}:
+                    raise ProfileWorkerError(
+                        "profile judge recorder rejected HF authentication"
+                    )
+                if response.status_code == 200 and response.json() == {"status": "ok"}:
+                    return
+                last_failure = f"HTTP {response.status_code}"
+            except (httpx.TransportError, ValueError) as error:
+                last_failure = type(error).__name__
+            time.sleep(min(1.0, max(0.0, ready_deadline - time.monotonic())))
+    raise ProfileWorkerError(
+        "profile judge recorder readiness timed out: " + last_failure
+    )
 
 
 def _prepare_managed_profile_endpoint(
@@ -490,34 +563,39 @@ def _verify_smoke(
     token: str,
     deadline: float,
 ) -> None:
-    with transport.scope("smoke") as (base_url, model_name, capability):
-        chat = _smoke_request(
-            plan,
-            base_url,
-            model_name,
-            token,
-            "Reply with exactly OK.",
-            tools=False,
-            deadline=deadline,
-        )
-        if not chat.success or not (chat.saw_content or chat.saw_reasoning):
-            detail = chat.error or "empty output"
-            raise ProfileWorkerError(f"chat smoke failed: {detail}")
-        if plan.reasoning_required and not chat.saw_reasoning:
-            raise ProfileWorkerError("reasoning smoke produced no reasoning channel")
-        tool = _smoke_request(
-            plan,
-            base_url,
-            model_name,
-            token,
-            "Use the lookup tool to look up the value for key alpha.",
-            tools=True,
-            deadline=deadline,
-        )
-        if not tool.success or not tool.saw_tool_call:
-            detail = tool.error or "no tool call"
-            raise ProfileWorkerError(f"tool smoke failed: {detail}")
-        _verify_token_limits(plan, base_url, model_name, token, deadline)
+    chat = _smoke_request(
+        plan,
+        transport.base_url,
+        transport.model_name,
+        token,
+        "Reply with exactly OK.",
+        tools=False,
+        deadline=deadline,
+    )
+    if not chat.success or not (chat.saw_content or chat.saw_reasoning):
+        detail = chat.error or "empty output"
+        raise ProfileWorkerError(f"chat smoke failed: {detail}")
+    if plan.reasoning_required and not chat.saw_reasoning:
+        raise ProfileWorkerError("reasoning smoke produced no reasoning channel")
+    tool = _smoke_request(
+        plan,
+        transport.base_url,
+        transport.model_name,
+        token,
+        "Use the lookup tool to look up the value for key alpha.",
+        tools=True,
+        deadline=deadline,
+    )
+    if not tool.success or not tool.saw_tool_call:
+        detail = tool.error or "no tool call"
+        raise ProfileWorkerError(f"tool smoke failed: {detail}")
+    _verify_token_limits(
+        plan,
+        transport.base_url,
+        transport.model_name,
+        token,
+        deadline,
+    )
 
 
 def _verify_token_limits(
@@ -938,67 +1016,62 @@ def _run_staged_point(
     scope = f"c{concurrency}-r{repetition}"
     compatibility_path: Path | None = None
     outcome = None
-    with transport.scope(scope) as (base_url, _model_name, capability):
-        prepared = adapter.prepare(
-            execution_lock,
-            attempt_root,
-            jobs_dir,
-            base_url,
-            harbor_source,
-            task_names=list(tasks),
-            attempts=attempts,
-            concurrency=concurrency,
-            expected_task_digests=tasks,
-            extra_environment_hosts=_profile_judge_hosts(transport),
-        )
-        timeout = _remaining(deadline)
-        started = time.monotonic()
-        judge_capability: str | None = None
-        try:
-            with (
-                _profile_point_judge_scope(
-                    plan,
-                    execution_lock,
-                    transport,
-                    attempt_root,
-                    scope,
-                    tasks,
-                    attempts,
-                    capability,
-                ) as (judge_api_url, judge_capability),
-                harbor_process_environment(
-                    execution_lock,
-                    token=token,
-                    inference_base_url=base_url,
-                    judge_api_url=judge_api_url,
-                    redaction_secrets=tuple(
-                        value for value in (capability, judge_capability) if value
-                    ),
-                ) as environment,
-            ):
-                outcome = adapter.execute(
-                    prepared,
-                    harbor_source,
-                    jobs_dir,
-                    attempt_root / "harbor.log",
-                    environment=environment,
-                    timeout_seconds=timeout,
-                    stream_runner=run_streaming,
-                    deadline=deadline,
-                )
-            compatibility_path = outcome.compatibility_path
-        except HarborTrialFailure:
-            compatibility_path = prepared.request_path.with_name(
-                "harbor-compatibility.json"
+    prepared = adapter.prepare(
+        execution_lock,
+        attempt_root,
+        jobs_dir,
+        transport.base_url,
+        harbor_source,
+        task_names=list(tasks),
+        attempts=attempts,
+        concurrency=concurrency,
+        expected_task_digests=tasks,
+        extra_environment_hosts=_profile_judge_hosts(transport),
+    )
+    timeout = _remaining(deadline)
+    started = time.monotonic()
+    judge_capability: str | None = None
+    try:
+        with (
+            _profile_point_judge_scope(
+                plan,
+                execution_lock,
+                transport,
+                attempt_root,
+                scope,
+                tasks,
+                attempts,
+            ) as (judge_api_url, judge_capability),
+            harbor_process_environment(
+                execution_lock,
+                token=token,
+                inference_token=_profile_inference_token(plan, token),
+                inference_base_url=transport.base_url,
+                judge_api_url=judge_api_url,
+                redaction_secrets=((judge_capability,) if judge_capability else ()),
+            ) as environment,
+        ):
+            outcome = adapter.execute(
+                prepared,
+                harbor_source,
+                jobs_dir,
+                attempt_root / "harbor.log",
+                environment=environment,
+                timeout_seconds=timeout,
+                stream_runner=run_streaming,
+                deadline=deadline,
             )
-        except Exception as error:
-            elapsed_ms = (time.monotonic() - started) * 1000
-            _scrub_capability(point_root, capability)
-            _scrub_capability(point_root, judge_capability)
-            return _failed_point_result(tasks, attempts, elapsed_ms, error)
+        compatibility_path = outcome.compatibility_path
+    except HarborTrialFailure:
+        compatibility_path = prepared.request_path.with_name(
+            "harbor-compatibility.json"
+        )
+    except Exception as error:
         elapsed_ms = (time.monotonic() - started) * 1000
-        _scrub_capability(point_root, capability)
         _scrub_capability(point_root, judge_capability)
+        return _failed_point_result(tasks, attempts, elapsed_ms, error)
+    elapsed_ms = (time.monotonic() - started) * 1000
+    _scrub_capability(point_root, judge_capability)
     if outcome is not None and (outcome.exit_code != 0 or outcome.verification is None):
         return _failed_point_result(
             tasks,
@@ -1024,7 +1097,6 @@ def _run_staged_point(
             attempt_root,
             scope,
             token,
-            capability,
             judge_capability,
         )
     except Exception as error:
@@ -1052,7 +1124,6 @@ def _profile_point_judge_scope(
     scope: str,
     tasks: dict[str, str],
     attempts: int,
-    provider_capability: str | None,
 ) -> Iterator[tuple[str | None, str | None]]:
     judged_tasks = set(tasks) & set(execution_lock.judge_required_tasks or [])
     if not judged_tasks:
@@ -1074,7 +1145,7 @@ def _profile_point_judge_scope(
         model=judge.model,
         destination=attempt_root / "judge-records",
         policy=policy,
-        known_secrets=((provider_capability,) if provider_capability else ()),
+        known_secrets=(),
         max_calls=maximum_calls,
     )
     try:
@@ -1092,19 +1163,18 @@ def _assemble_profile_point_evidence(
     attempt_root: Path,
     scope: str,
     token: str,
-    provider_capability: str | None,
     judge_capability: str | None,
 ) -> None:
     policy = execution_lock.trial_evidence
     if policy is None:
         raise ProfileWorkerError("profile trial evidence policy is missing")
-    run_secrets = execution_secret_values(execution_lock, token)
-    base_secrets = (run_secrets,) if isinstance(run_secrets, str) else run_secrets
-    secrets = tuple(
-        value
-        for value in (*base_secrets, provider_capability, judge_capability)
-        if value
+    run_secrets = execution_secret_values(
+        execution_lock,
+        token,
+        inference_token=_profile_inference_token(plan, token),
     )
+    base_secrets = (run_secrets,) if isinstance(run_secrets, str) else run_secrets
+    secrets = tuple(value for value in (*base_secrets, judge_capability) if value)
     judge_records = _split_profile_judge_records(
         plan, execution_lock, bundle, jobs_dir, attempt_root, scope
     )

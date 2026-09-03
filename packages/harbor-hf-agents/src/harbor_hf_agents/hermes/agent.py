@@ -23,14 +23,10 @@ from harbor.models.trajectories import (
 from harbor.utils.trajectory_utils import format_trajectory_json
 from pydantic import BaseModel, ConfigDict, Field
 
-from harbor_hf_agents.support.hf_inference_bridge import (
-    prepare_hf_inference_bridge,
+from harbor_hf_agents.support.direct_inference import (
+    with_agent_environment_cleanup,
 )
 from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
-from harbor_hf_agents.support.job_inference_route import (
-    use_job_inference_route,
-    with_job_inference_bridge_cleanup,
-)
 
 # Hermes native provider routing.
 # Maps Harbor provider prefix → (hermes --provider CLI flag, env var names).
@@ -587,7 +583,7 @@ class HermesAgent(IsolatedProviderAgent):
     # ------------------------------------------------------------------
 
     @with_prompt_template
-    @with_job_inference_bridge_cleanup
+    @with_agent_environment_cleanup
     async def run(  # noqa: C901 -- parser branches
         self,
         instruction: str,
@@ -604,21 +600,9 @@ class HermesAgent(IsolatedProviderAgent):
             "TERMINAL_ENV": "local",
         }
 
-        bridged = False
-        if provider == "openai":
-            bridged = await use_job_inference_route(
-                self,
-                environment,
-                env,
-                base_url_key="OPENAI_BASE_URL",
-                api_key_key="OPENAI_API_KEY",
-                api="chat-completions",
-                allowed_model=model,
-            )
-
-        hermes_provider_flag: str | None = "openai-api" if bridged else None
-        use_native = bridged
-        if not bridged and provider in _NATIVE_PROVIDERS:
+        hermes_provider_flag: str | None = None
+        use_native = False
+        if provider in _NATIVE_PROVIDERS:
             native_flag, key_names = _NATIVE_PROVIDERS[provider]
             for key_name in key_names:
                 key_value = self._get_env(key_name)
@@ -644,30 +628,13 @@ class HermesAgent(IsolatedProviderAgent):
                 raise ValueError("No API key found. Set OPENROUTER_API_KEY.")
             env["OPENROUTER_API_KEY"] = openrouter_key
 
-        if (
-            not bridged
-            and use_native
+        direct_openai = (
+            use_native
             and provider == "openai"
             and "OPENAI_BASE_URL" in env
-        ):
-            bridged = await prepare_hf_inference_bridge(
-                self,
-                environment,
-                env,
-                base_url_key="OPENAI_BASE_URL",
-                api_key_key="OPENAI_API_KEY",
-                inference_token=self._get_env("HF_INFERENCE_TOKEN"),
-                api="chat-completions",
-                allowed_model=model,
-                max_requests=self._get_env("HARBOR_HF_INFERENCE_MAX_REQUESTS"),
-                max_concurrency=self._get_env("HARBOR_HF_INFERENCE_MAX_CONCURRENCY"),
-                timeout_seconds=self._get_env("HARBOR_HF_INFERENCE_TIMEOUT_SECONDS"),
-                max_output_tokens=self._get_env(
-                    "HARBOR_HF_INFERENCE_MAX_OUTPUT_TOKENS"
-                ),
-            )
-
-        if bridged:
+            and "OPENAI_API_KEY" in env
+        )
+        if direct_openai:
             hermes_provider_flag = "openai-api"
             cli_model = model
             config_yaml = self._build_config_yaml(

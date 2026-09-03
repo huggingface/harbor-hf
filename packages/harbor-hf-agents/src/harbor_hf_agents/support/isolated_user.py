@@ -10,6 +10,7 @@ from harbor.environments.base import BaseEnvironment
 
 AGENT_USER = "harbor-agent"
 AGENT_HOME = "/tmp/harbor-agent-home"
+_CLEAN_AGENT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 
 class IsolatedProviderAgent(BaseInstalledAgent):
@@ -60,6 +61,36 @@ class IsolatedProviderAgent(BaseInstalledAgent):
             environment,
             command=wrapped,
             env=env,
+            cwd=cwd,
+            timeout_sec=timeout_sec,
+        )
+
+    async def exec_as_agent_clean(
+        self,
+        environment: BaseEnvironment,
+        command: str,
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
+        timeout_sec: int | None = None,
+    ) -> Any:  # noqa: ANN401 -- Harbor API
+        """Run with only fixed account state and explicitly forwarded variables."""
+        await self._ensure_isolated_agent_user(environment)
+        forwarded = " ".join(f'{name}="${{{name}}}"' for name in sorted(env or {}))
+        if forwarded:
+            forwarded += " "
+        wrapped = (
+            f"runuser -u {AGENT_USER} -- env -i "
+            f"HOME={shlex.quote(AGENT_HOME)} "
+            f"NVM_DIR={shlex.quote(AGENT_HOME + '/.nvm')} "
+            f"USER={AGENT_USER} LOGNAME={AGENT_USER} "
+            f"PATH={shlex.quote(_CLEAN_AGENT_PATH)} "
+            f"{forwarded}"
+            f"/bin/bash -lc {shlex.quote(command)}"
+        )
+        return await super().exec_as_root(
+            environment,
+            command=wrapped,
+            env=dict(env or {}),
             cwd=cwd,
             timeout_sec=timeout_sec,
         )

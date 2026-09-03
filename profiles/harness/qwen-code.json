@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "kind": "profile.object",
-  "record_id": "profile-96fa5178aa4dbc12de44c086",
+  "record_id": "profile-3f23980d87205fddbdf60550",
   "created_at": "2026-08-22T00:00:00.000Z",
   "actor": {
     "subject": "harbor-hf-source",
@@ -13,7 +13,7 @@
     "agent": "qwen-code",
     "revision": "0.21.15",
     "reasoning_effort": "off",
-    "required_evidence": ["workspace", "trajectory", "verifier", "provider-usage"],
+    "required_evidence": ["workspace", "trajectory", "verifier"],
     "harbor_agent": {
       "import_path": "harbor_hf_agents.qwen_code.agent:QwenCodeAgent",
       "kwargs": {

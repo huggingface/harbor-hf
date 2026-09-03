@@ -6,8 +6,6 @@ import { ControlStateProvider, type DisplayActor } from "./control-state";
 import { Layout, loginHref } from "./layout";
 import {
   AuditPage,
-  RunPage,
-  RunsPage,
   EndpointsPage,
   JobsPage,
   LeaderboardPage,
@@ -16,10 +14,13 @@ import {
   ProfilesPage,
   ResultPage,
   ResultsPage,
+  RunPage,
+  RunsPage,
   TaskPage,
 } from "./pages";
 import { keys, useLiveUpdates, useSession, useSystem } from "./queries";
 import { ErrorNotice, Loading, QueryContent } from "./ui";
+import { WorkbenchPage } from "./workbench";
 
 function isPublicBoard(path: string): boolean {
   return path === "/" || path === "/leaderboard";
@@ -72,11 +73,15 @@ function AuthenticatedApp({
     },
   });
   const writeMode = system.data?.write_mode ?? "unknown";
+  const chromeMode =
+    actor.transport === "development" && system.data?.source_revision === "development"
+      ? "local"
+      : writeMode;
   return (
     <ControlStateProvider actor={actor} writeMode={writeMode}>
       <Layout
         actor={actor}
-        writeMode={writeMode}
+        writeMode={chromeMode}
         live={live}
         serviceError={sessionError ?? (system.data ? system.error : null)}
         onSignOut={() => logout.mutate()}
@@ -88,6 +93,7 @@ function AuthenticatedApp({
           {system.data ? (
             <>
               <Route path="/overview" element={<OverviewPage />} />
+              <Route path="/workbench" element={<WorkbenchPage />} />
               <Route path="/runs" element={<RunsPage />} />
               <Route path="/runs/:runId" element={<RunPage />} />
               <Route path="/runs/:runId/tasks/:taskId" element={<TaskPage />} />

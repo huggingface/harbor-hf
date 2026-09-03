@@ -1,6 +1,11 @@
 # Single-job run controller specification
 
-Status: current production design, planned for replacement
+> **Historical record — superseded 2026-09-02.** This document preserves the
+> earlier controller design as factual history. Its imperative language is not
+> current Run or inference guidance. New work follows
+> [`CONTROL_SERVICE.md`](CONTROL_SERVICE.md).
+
+Status: superseded historical design
 
 This specification replaces the local reconciliation loop for Inference Provider runs with one detached Hugging Face controller Job per run. The Job runs the run from its immutable plan, executes bounded waves inside its own process, retries infrastructure failures, finalizes evidence, and publishes the run result.
 
@@ -541,7 +546,7 @@ The implementation is eligible for production only after all of these checks pas
 - cancellation drains and reaches a terminal run state;
 - all trial evidence, sessions, ATIF trajectories, judge exchanges, workspaces, checksums, and secret scans pass;
 - final publication and catalog authority remain separate;
-- local quality, mutation, dependency, schema, and documentation gates pass.
+- local quality, regression, dependency, schema, and documentation gates pass.
 
 ## Boundaries
 

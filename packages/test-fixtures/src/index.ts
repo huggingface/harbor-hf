@@ -86,13 +86,10 @@ export function smokeProfiles(
       active_hourly_cost_microusd: 10_000,
       timeout_seconds: 300,
       trusted_worker: true,
-      inference_token: inferenceToken,
       ...(inferenceToken === "required"
         ? {
             inference_upstream: "https://router.huggingface.co/v1",
             inference_api: "chat-completions",
-            inference_max_requests: 64,
-            inference_max_concurrency: 4,
             inference_timeout_seconds: 600,
             inference_max_output_tokens: 32768,
             inference_provider: "provider",
@@ -181,7 +178,6 @@ export function preparedProfiles(taskCount = 1): LoadedProfile[] {
       timeout_seconds: 3600,
       preparation_timeout_seconds: 600,
       trusted_worker: true,
-      inference_token: "forbidden",
       preparation: "required",
       trial_job_template: {
         flavors: [
@@ -194,14 +190,10 @@ export function preparedProfiles(taskCount = 1): LoadedProfile[] {
             active_hourly_cost_microusd: 10000,
           },
         ],
-        inference_token: "required",
         inference_upstream: "https://router.huggingface.co/v1",
         inference_api: "chat-completions",
-        inference_max_requests: 64,
-        inference_max_concurrency: 1,
         inference_timeout_seconds: 600,
         inference_max_output_tokens: 32_768,
-        root_bootstrap_command: ["/opt/worker/start-root-services"],
         max_jobs: 2,
         default_cpus: 1,
         default_memory_mb: 2048,

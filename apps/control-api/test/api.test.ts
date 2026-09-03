@@ -18,8 +18,10 @@ import {
   workerEvidenceObjectPath,
 } from "@harbor-hf/contracts";
 import {
+  compileAgentWorkbenchRecipe,
   encodeLeaderboardSqlite,
   eventCursor,
+  fastAgentWorkbenchStarter,
   LEADERBOARD_RECEIPT_PREFIX,
   LEADERBOARD_SNAPSHOT_PREFIX,
   loadLatestLeaderboard,
@@ -82,6 +84,8 @@ async function setup(
     observe_interval_ms: 0,
     worker_receipt_grace_ms: 0,
     source_revision: "test-revision",
+    workbench_runner: "disabled",
+    workbench_image: "python:3.12-slim",
     bootstrap_operator_subjects: [],
   };
   const runtime = await createRuntime(config);
@@ -152,6 +156,56 @@ function capacityRecords(): Array<ProfileObject | ProfilePromotion> {
     promotion_state: "approved",
     reason: "approved after capacity review",
     evidence: [sha256("capacity-canary-evidence")],
+  };
+  return [profile, promotion];
+}
+
+function legacyCapacityRecords(): Array<ProfileObject | ProfilePromotion> {
+  const spec = {
+    namespace: "test",
+    max_active_sandboxes: 16,
+    hardware_limits: [
+      { hardware: "cpu-basic", max_active_sandboxes: 12 },
+      { hardware: "cpu-upgrade", max_active_sandboxes: 4 },
+    ],
+    start_burst: 16,
+    start_refill_tokens: 16,
+    start_refill_period_seconds: 60,
+  } as const;
+  const profile = {
+    schema_version: "v1",
+    kind: "profile.object",
+    record_id: deterministicId(
+      "profile",
+      "capacity",
+      "capacity-legacy",
+      sha256(canonicalJson(spec)),
+    ),
+    created_at: "2026-08-18T00:00:00.000Z",
+    actor: { subject: "profile-import", role: "migration" },
+    profile_kind: "capacity",
+    name: "capacity-legacy",
+    spec,
+  } as ProfileObject;
+  const profileId = sha256(canonicalJson(profile));
+  const promotion: ProfilePromotion = {
+    schema_version: "v1",
+    kind: "profile.promotion",
+    record_id: deterministicId(
+      "promotion",
+      "capacity",
+      "capacity-legacy",
+      profileId,
+      "approved",
+    ),
+    created_at: "2026-08-18T00:00:01.000Z",
+    actor: { subject: "profile-operator", role: "operator" },
+    profile_kind: "capacity",
+    alias: "capacity-legacy",
+    profile_id: profileId,
+    promotion_state: "approved",
+    reason: "approved historical capacity policy",
+    evidence: [],
   };
   return [profile, promotion];
 }
@@ -297,6 +351,135 @@ describe("control API", () => {
       204,
     );
     await app.close();
+  });
+
+  it("previews command-agent recipes without exposing a real credential", async () => {
+    const { app } = await setup();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/preview",
+      payload: fastAgentWorkbenchStarter,
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.setup_command).toContain("fast-agent-mcp==0.10.16");
+    expect(body.run_command).toContain("<injected-model-base-url>");
+    expect(body.environment).toContainEqual(
+      expect.objectContaining({
+        name: "OPENAI_API_KEY",
+        value: "<injected-model-api-key>",
+        redacted: true,
+      }),
+    );
+    expect(body.harness_profile).toMatchObject({
+      required_evidence: ["workspace", "verifier", "trajectory"],
+      harbor_agent: {
+        kwargs: {
+          config: {
+            run: {
+              bindings: {
+                OPENAI_API_KEY: "model_api_key",
+                MODEL_BASE_URL: "model_base_url",
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(body.harness_profile)).not.toContain("route_base_url");
+    expect(JSON.stringify(body.harness_profile)).not.toContain("route_api_key");
+    expect(JSON.stringify(body)).not.toContain("test-token-not-a-real-credential");
+  });
+
+  it("builds a task-scoped secret-free Harbor config for local execution", async () => {
+    const { app } = await setup();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/local-runs/preview",
+      payload: {
+        recipe: fastAgentWorkbenchStarter,
+        task_names: ["adaptive-rejection-sampler"],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const config = response.json().config;
+    expect(config).toMatchObject({
+      job_name: "local-preview",
+      n_attempts: 1,
+      n_concurrent_trials: 1,
+      retry: { max_retries: 0 },
+      datasets: [{ task_names: ["adaptive-rejection-sampler"] }],
+      agents: [
+        {
+          import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
+          model_name: "openai/openai/gpt-oss-20b:together",
+          env: {
+            OPENAI_API_KEY: ["$", "{HF_INFERENCE_TOKEN}"].join(""),
+            OPENAI_BASE_URL: "https://router.huggingface.co/v1",
+          },
+          extra_allowed_hosts: ["router.huggingface.co"],
+        },
+      ],
+    });
+    expect(JSON.stringify(config)).not.toContain("test-token-not-a-real-credential");
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/local-runs/preview",
+      payload: {
+        recipe: fastAgentWorkbenchStarter,
+        task_names: ["not-a-canary-task"],
+      },
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.json().error.code).toBe("policy_rejected");
+  });
+
+  it("rejects reserved and credential-like Workbench literals and disabled setup execution", async () => {
+    const { app } = await setup();
+    const reserved = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/preview",
+      payload: {
+        ...structuredClone(fastAgentWorkbenchStarter),
+        environment: [
+          { name: "HF_INFERENCE_TOKEN", source: "literal", value: "value" },
+        ],
+      },
+    });
+    expect(reserved.statusCode).toBe(422);
+    expect(reserved.json().error.code).toBe("policy_rejected");
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/preview",
+      payload: {
+        ...structuredClone(fastAgentWorkbenchStarter),
+        environment: [
+          { name: "SERVICE_API_KEY", source: "literal", value: "not-a-secret" },
+        ],
+      },
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.json().error.code).toBe("policy_rejected");
+
+    const setupResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/setup-tests",
+      headers: { "idempotency-key": "workbench-disabled-setup" },
+      payload: { recipe: fastAgentWorkbenchStarter, confirmed: true },
+    });
+    expect(setupResponse.statusCode).toBe(503);
+    expect(setupResponse.json().error.code).toBe("control_not_ready");
+
+    const missingCancel = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/setup-tests/missing-setup/cancel",
+      headers: { "idempotency-key": "workbench-missing-cancel" },
+      payload: { confirmed: true },
+    });
+    expect(missingCancel.statusCode).toBe(404);
+    expect(missingCancel.json().error.code).toBe("not_found");
   });
 
   it("keeps routes unready after projection replay until runtime initialization ends", async () => {
@@ -882,6 +1065,7 @@ describe("control API", () => {
       run_limit: 1,
       run_active: 0,
       provider_limit: 0,
+      provider_reserved: 0,
     });
     await app.close();
   });
@@ -1054,6 +1238,67 @@ describe("control API", () => {
     await app.close();
   });
 
+  it("preserves a historical capacity profile and appends a current Job cap", async () => {
+    let legacyKey = "";
+    let legacyBytes = new Uint8Array();
+    const { runtime, app } = await setup(
+      "enabled",
+      async (selected) => {
+        for (const record of legacyCapacityRecords()) {
+          const bytes = new TextEncoder().encode(canonicalJson(record));
+          await selected.store.create(controlRecordPath(record), bytes);
+          if (record.kind === "profile.object") {
+            legacyKey = controlRecordPath(record);
+            legacyBytes = bytes;
+          }
+        }
+      },
+      "capacity-legacy",
+      false,
+    );
+
+    const capacity = await app.inject({ method: "GET", url: "/api/v1/capacity" });
+    expect(capacity.statusCode).toBe(200);
+    expect(capacity.json()).toMatchObject({
+      alias: "capacity-legacy",
+      configured: true,
+      max_active_jobs: 16,
+      start_burst: 16,
+      start_refill_tokens: 16,
+    });
+    expect(Buffer.from(await runtime.store.read(legacyKey))).toEqual(
+      Buffer.from(legacyBytes),
+    );
+    const profiles = await app.inject({
+      method: "GET",
+      url: "/api/v1/profiles?limit=100",
+    });
+    expect(profiles.statusCode).toBe(200);
+    const historical = profiles
+      .json()
+      .items.find(
+        (item: { profile_kind: string; spec: Record<string, unknown> }) =>
+          item.profile_kind === "capacity" && "max_active_sandboxes" in item.spec,
+      );
+    expect(historical.spec).toMatchObject({
+      max_active_sandboxes: 16,
+      hardware_limits: [
+        { hardware: "cpu-basic", max_active_sandboxes: 12 },
+        { hardware: "cpu-upgrade", max_active_sandboxes: 4 },
+      ],
+    });
+    expect(historical.approved_aliases).toEqual([]);
+    const selected = profiles
+      .json()
+      .items.find(
+        (item: { profile_kind: string; approved_aliases: string[] }) =>
+          item.profile_kind === "capacity" &&
+          item.approved_aliases.includes("capacity-legacy"),
+      );
+    expect(selected.spec).toMatchObject({ max_active_jobs: 16 });
+    await app.close();
+  });
+
   it("rejects a namespace Job cap change when writes are disabled", async () => {
     const { app } = await setup("disabled");
     const response = await app.inject({
@@ -1147,7 +1392,7 @@ describe("control API", () => {
       headers: { "idempotency-key": "durable-profile-run-key" },
       payload: input,
     });
-    expect(response.statusCode).toBe(202);
+    expect(response.statusCode, response.body).toBe(202);
     const lock = await runtime.projection.runLock(response.json().run_id as string);
     const lockedModel = lock?.profiles.find((item) => item.kind === "model");
     expect(lockedModel).toMatchObject({
@@ -2523,6 +2768,199 @@ describe("control API", () => {
     expect(audit.statusCode).toBe(200);
     expect(audit.json().items.length).toBeGreaterThanOrEqual(4);
     expect(runtime.projection.system().ready).toBe(true);
+    await app.close();
+  });
+
+  it("locks an actor-attested Workbench recipe into a reviewed benchmark config", async () => {
+    const { runtime, app } = await setup();
+    const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+    const setupTestId = "setup-test-hosted-api";
+    const attestor = vi
+      .spyOn(runtime.workbench, "attestPassedSetup")
+      .mockResolvedValue({
+        setup_test_id: setupTestId,
+        recipe_digest: preview.recipe_digest,
+        revision_id: preview.revision_id,
+        completed_at: "2026-09-02T23:00:00.000Z",
+      });
+    const submission = {
+      benchmark_config: "tb21-gpt-oss-20b-canary",
+      benchmark_config_revision: runtime.service.benchmarkConfigs()[0]?.revision,
+      harness: {
+        type: "workbench",
+        recipe: fastAgentWorkbenchStarter,
+        setup_test_id: setupTestId,
+      },
+      ceiling_microusd: 1_000_000,
+      confirmed: true,
+    };
+    const configs = await app.inject({
+      method: "GET",
+      url: "/api/v1/workbench/benchmark-configs",
+    });
+    expect(configs.statusCode).toBe(200);
+    expect(configs.json()).toMatchObject({
+      items: [
+        {
+          name: "tb21-gpt-oss-20b-canary",
+          benchmark: "terminal-bench-2-1-canary",
+          model: "gpt-oss-20b-together",
+          task_count: 2,
+          max_ceiling_microusd: 1_000_000,
+          publication_role: "diagnostic",
+        },
+      ],
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "workbench-hosted-api-key" },
+      payload: submission,
+    });
+    expect(response.statusCode, response.body).toBe(202);
+    expect(attestor).toHaveBeenCalledWith(
+      setupTestId,
+      expect.any(String),
+      fastAgentWorkbenchStarter,
+    );
+
+    const runId = response.json().run_id as string;
+    const lock = await app.inject({
+      method: "GET",
+      url: `/api/v1/runs/${runId}/lock`,
+    });
+    expect(lock.statusCode).toBe(200);
+    expect(lock.json()).toMatchObject({
+      workbench: {
+        benchmark_config: "tb21-gpt-oss-20b-canary",
+        compiler_revision: "agent-workbench-compiler-v1",
+        recipe: {
+          name: fastAgentWorkbenchStarter.name,
+          setup_command: "<redacted>",
+          run_command: "<redacted>",
+        },
+        recipe_digest: preview.recipe_digest,
+        revision_id: preview.revision_id,
+        setup_attestation: {
+          setup_test_id: setupTestId,
+          completed_at: "2026-09-02T23:00:00.000Z",
+        },
+      },
+    });
+    expect(JSON.stringify(lock.json())).not.toContain(
+      fastAgentWorkbenchStarter.setup_command,
+    );
+    expect(JSON.stringify(lock.json())).not.toContain(
+      fastAgentWorkbenchStarter.run_command,
+    );
+    const durableLock = await runtime.projection.runLock(runId);
+    expect(durableLock).toMatchObject({
+      workbench: { recipe: fastAgentWorkbenchStarter },
+      execution: {
+        harbor_agent: preview.harness_profile.harbor_agent,
+        harness: preview.harness_profile,
+      },
+    });
+    const harness = durableLock?.profiles.find(
+      (profile: { kind: string }) => profile.kind === "harness",
+    ) as { name: string; spec: unknown; profile_id: string };
+    expect(harness).toMatchObject({
+      name: "fast-agent-0-10-16-command",
+      spec: preview.harness_profile,
+    });
+    expect(harness.profile_id).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(harness.profile_id).not.toBe(
+      durableLock?.workbench?.template_harness.profile_id,
+    );
+
+    attestor.mockRejectedValue(new Error("setup state no longer exists"));
+    const adopted = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "workbench-hosted-api-key" },
+      payload: submission,
+    });
+    expect(adopted.json()).toMatchObject({ run_id: runId, adopted: true });
+    expect(attestor).toHaveBeenCalledTimes(1);
+
+    const changed = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "workbench-hosted-api-key" },
+      payload: {
+        ...submission,
+        harness: {
+          ...submission.harness,
+          recipe: {
+            ...fastAgentWorkbenchStarter,
+            run_command: `${fastAgentWorkbenchStarter.run_command}\nprintf changed`,
+          },
+        },
+      },
+    });
+    expect(changed.statusCode).toBe(409);
+    await app.close();
+  });
+
+  it("rejects unpassed Workbench setup evidence and config ceilings", async () => {
+    const { runtime, app } = await setup();
+    const attestor = vi
+      .spyOn(runtime.workbench, "attestPassedSetup")
+      .mockRejectedValue(new Error("setup test has not passed"));
+    const submission = {
+      benchmark_config: "tb21-gpt-oss-20b-canary",
+      benchmark_config_revision: runtime.service.benchmarkConfigs()[0]?.revision,
+      harness: {
+        type: "workbench",
+        recipe: fastAgentWorkbenchStarter,
+        setup_test_id: "setup-test-not-passed",
+      },
+      ceiling_microusd: 1_000_000,
+      confirmed: true,
+    };
+    const staleConfig = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "workbench-stale-config-key" },
+      payload: {
+        ...submission,
+        benchmark_config_revision: `sha256:${"0".repeat(64)}`,
+      },
+    });
+    expect(staleConfig.statusCode).toBe(422);
+    expect(staleConfig.json()).toMatchObject({
+      error: {
+        code: "policy_rejected",
+        message:
+          "benchmark configuration changed after it was reviewed; refresh and confirm again",
+      },
+    });
+    expect(attestor).not.toHaveBeenCalled();
+    const unpassed = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "workbench-unpassed-key" },
+      payload: submission,
+    });
+    expect(unpassed.statusCode).toBe(422);
+    expect(unpassed.json()).toMatchObject({
+      error: { code: "policy_rejected", message: "setup test has not passed" },
+    });
+
+    const over = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "workbench-over-ceiling-key" },
+      payload: { ...submission, ceiling_microusd: 1_000_001 },
+    });
+    expect(over.statusCode).toBe(422);
+    expect(over.json()).toMatchObject({
+      error: {
+        code: "policy_rejected",
+        message: "run ceiling exceeds the benchmark configuration maximum",
+      },
+    });
+    expect(attestor).toHaveBeenCalledTimes(1);
     await app.close();
   });
 });

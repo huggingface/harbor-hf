@@ -1,7 +1,7 @@
 /* Generated from JSON Schema. Do not edit. */
 
 export type HarborHFControlRecordV1 = (ProfileObject | LegacyProfileObject | ProfilePromotion | OperatorAcl | RunRequest | RunLock | RunContinuation | RunContinuationRepair | RunContinuationRepairSuccessor | PreparedTrial | PreparedJob | ActionIntent | ActionDispatch | JobAdmissionGrant | JobCapacityRelease | ActionReceipt | ActionAdvanced | AttemptReceipt | TerminalSelection | TaskExhaustion | TaskCancellation | BudgetEvent | EndpointResource | PublicationReceipt | PublicationSupersession | MigrationRecord)
-export type ProfileObject = (BenchmarkProfileObject | ModelProfileObject | HarnessProfileObject | DeploymentProfileObject | LaunchPolicyProfileObject | CapacityProfileObject)
+export type ProfileObject = (BenchmarkProfileObject | ModelProfileObject | HarnessProfileObject | DeploymentProfileObject | LaunchPolicyProfileObject | CapacityProfileObject | LegacyCapacityProfileObject)
 export type BenchmarkProfileObject = (Base & {
 schema_version: "v1"
 kind: "profile.object"
@@ -118,7 +118,7 @@ inference_max_output_tokens?: number
  * @minItems 1
  * @maxItems 128
  */
-root_bootstrap_command: [string, ...(string)[]]
+root_bootstrap_command?: [string, ...(string)[]]
 default_cpus: number
 default_memory_mb: number
 default_storage_mb: number
@@ -148,6 +148,16 @@ actor: Actor
 profile_kind: "capacity"
 name: Id
 spec: CapacityProfileSpec
+})
+export type LegacyCapacityProfileObject = (Base & {
+schema_version: "v1"
+kind: "profile.object"
+record_id: Id
+created_at: Timestamp
+actor: Actor
+profile_kind: "capacity"
+name: Id
+spec: LegacyCapacityProfileSpec
 })
 export type LegacyProfileObject = (LegacyModelProfileObject | LegacyHarnessProfileObject | LegacyDeploymentProfileObject)
 export type LegacyModelProfileObject = (Base & {
@@ -226,6 +236,7 @@ idempotency_key_digest: Digest
 profiles: [ProfileRef, ProfileRef, ProfileRef, ProfileRef]|[ProfileRef, ProfileRef, ProfileRef, ProfileRef, ProfileRef]
 ceiling_microusd: number
 start_paused?: boolean
+workbench?: WorkbenchRunRequest
 })
 export type RunLock = (CurrentRunLock | LegacyRunLock)
 export type CurrentRunLock = (Base & {
@@ -249,6 +260,7 @@ ceiling_microusd: number
 source_revision: Digest
 execution: ResolvedExecutionContract
 start_paused?: boolean
+workbench?: WorkbenchRunLock
 })
 export type ResolvedProfile = (ResolvedBenchmarkProfile | ResolvedModelProfile | ResolvedHarnessProfile | ResolvedDeploymentProfile | ResolvedLaunchPolicyProfile)
 export type LegacyRunLock = (Base & {
@@ -406,7 +418,7 @@ run_id: Id
 namespace: string
 capacity_profile_id: Digest
 hardware: string
-reserved_provider_requests: number
+reserved_provider_requests?: number
 tokens_remaining: number
 refill_cursor_at: Timestamp
 previous_grant_id: (Id | null)
@@ -665,6 +677,14 @@ provider_max_attempts?: number
 }
 export interface HarborAgentTemplate {
 import_path: string
+name?: string
+env?: {
+[k: string]: string
+}
+/**
+ * @maxItems 64
+ */
+extra_allowed_hosts?: string[]
 kwargs: {
 model_name?: never
 models_json?: never
@@ -761,6 +781,20 @@ start_refill_tokens: number
 start_refill_period_seconds: number
 max_active_jobs: number
 }
+export interface LegacyCapacityProfileSpec {
+namespace: string
+max_active_sandboxes: number
+/**
+ * @maxItems 32
+ */
+hardware_limits: {
+hardware: string
+max_active_sandboxes: number
+}[]
+start_burst: number
+start_refill_tokens: number
+start_refill_period_seconds: number
+}
 export interface LegacyModelProfileSpec {
 contract_version?: never
 model_id: unknown
@@ -784,6 +818,13 @@ harnesses: unknown
 export interface ProfileRef {
 kind: ("benchmark" | "model" | "harness" | "deployment" | "launch_policy")
 alias: Id
+}
+export interface WorkbenchRunRequest {
+benchmark_config: Id
+run_config_revision: Digest
+recipe_digest: Digest
+revision_id: Id
+setup_test_id: Id
 }
 export interface ResolvedBenchmarkProfile {
 kind: "benchmark"
@@ -841,10 +882,18 @@ profile_id: Digest
 }
 export interface HarborAgentConfig {
 import_path: string
+name?: string
 model_name: string
 kwargs?: {
 [k: string]: unknown
 }
+env?: {
+[k: string]: string
+}
+/**
+ * @maxItems 64
+ */
+extra_allowed_hosts?: string[]
 override_setup_timeout_sec?: number
 }
 export interface ResolvedInferenceContract {
@@ -852,11 +901,8 @@ harbor_provider: "openai"
 provider: Id
 upstream: string
 agent_model: string
-bridge_model: string
+provider_model: string
 api: ("chat-completions" | "responses")
-max_requests: number
-max_concurrency: number
-max_total_concurrency?: number
 timeout_seconds: number
 max_output_tokens: number
 context_window: number
@@ -864,6 +910,28 @@ input_price_microusd_per_million_tokens: number
 output_price_microusd_per_million_tokens: number
 cache_read_price_microusd_per_million_tokens: number
 cache_write_price_microusd_per_million_tokens: number
+}
+export interface WorkbenchRunLock {
+benchmark_config: Id
+run_config_revision: Digest
+compiler_revision: Id
+template_harness: {
+name: Id
+profile_id: Digest
+}
+resolved_harness_profile_id: Digest
+recipe: {
+[k: string]: unknown
+}
+recipe_digest: Digest
+revision_id: Id
+setup_attestation: WorkbenchSetupAttestation
+}
+export interface WorkbenchSetupAttestation {
+setup_test_id: Id
+recipe_digest: Digest
+revision_id: Id
+completed_at: Timestamp
 }
 export interface LegacyResolvedModelProfile {
 kind: "model"

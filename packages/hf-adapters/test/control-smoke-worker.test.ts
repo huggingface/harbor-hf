@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
-import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
-import { once } from "node:events";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { once } from "node:events";
+import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { canonicalJson, workerEvidenceObjectPath } from "@harbor-hf/contracts";
 import { describe, expect, it } from "vitest";

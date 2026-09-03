@@ -1,4 +1,4 @@
-"""Unit tests for the Terminus Job inference wrapper."""
+"""Unit tests for Terminus direct inference."""
 
 from unittest.mock import AsyncMock
 
@@ -7,10 +7,7 @@ from harbor.agents.terminus_2 import Terminus2
 from harbor.environments.base import ExecResult
 from harbor.models.agent.context import AgentContext
 
-from harbor_hf_agents.support import job_inference_route
 from harbor_hf_agents.support.control_job_environment import ControlJobEnvironment
-from harbor_hf_agents.support.job_inference_route import JobInferenceRoute
-from harbor_hf_agents.terminus import agent as terminus_module
 from harbor_hf_agents.terminus.agent import TerminusAgent, _JobTmuxSession
 
 
@@ -18,9 +15,11 @@ def _agent(temp_dir) -> TerminusAgent:
     return TerminusAgent(
         logs_dir=temp_dir,
         model_name="openai/Qwen/Qwen3.8-27B:deepinfra",
-        api_base="http://127.0.0.1:18080/v1",
+        extra_env={
+            "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+            "OPENAI_API_KEY": "direct-token",
+        },
         llm_backend="litellm",
-        llm_kwargs={"api_key": "harbor-local-inference-bridge"},
         model_info={
             "litellm_provider": "openai",
             "max_input_tokens": 262144,
@@ -107,117 +106,36 @@ def test_keeps_public_terminus_identity(temp_dir) -> None:
 
 
 @pytest.mark.asyncio
-async def test_runs_with_the_exact_locked_chat_route(
+async def test_runs_with_direct_openai_settings(
     temp_dir,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seen: dict[str, str] = {}
-
-    def load_route(*, api: str, allowed_model: str) -> JobInferenceRoute:
-        seen["api"] = api
-        seen["model"] = allowed_model
-        return JobInferenceRoute(
-            base_url="http://127.0.0.1:18080/v1",
-            api_key="harbor-local-inference-bridge",
-            max_output_tokens=32768,
-        )
-
     run = AsyncMock()
-    stop = AsyncMock()
-    monkeypatch.setattr(terminus_module, "load_job_inference_route", load_route)
     monkeypatch.setattr(Terminus2, "run", run)
-    monkeypatch.setattr(job_inference_route, "stop_hf_inference_bridge", stop)
     agent = _agent(temp_dir)
     environment = AsyncMock()
     context = AgentContext()
 
     await agent.run("solve", environment, context)
 
-    assert seen == {
-        "api": "chat-completions",
-        "model": "Qwen/Qwen3.8-27B:deepinfra",
-    }
     run.assert_awaited_once_with("solve", environment, context)
-    stop.assert_awaited_once_with(agent, environment)
-
-
-@pytest.mark.asyncio
-async def test_rejects_a_configured_route_mismatch(
-    temp_dir,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        terminus_module,
-        "load_job_inference_route",
-        lambda **_kwargs: JobInferenceRoute(
-            base_url="http://127.0.0.1:18081/v1",
-            api_key="harbor-local-inference-bridge",
-            max_output_tokens=32768,
-        ),
-    )
-    run = AsyncMock()
-    stop = AsyncMock()
-    monkeypatch.setattr(Terminus2, "run", run)
-    monkeypatch.setattr(job_inference_route, "stop_hf_inference_bridge", stop)
-    agent = _agent(temp_dir)
-
-    with pytest.raises(RuntimeError, match="API base does not match"):
-        await agent.run("solve", AsyncMock(), AgentContext())
-
-    run.assert_not_awaited()
-    stop.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_rejects_missing_route(temp_dir, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        terminus_module,
-        "load_job_inference_route",
-        lambda **_kwargs: None,
-    )
-    run = AsyncMock()
-    monkeypatch.setattr(Terminus2, "run", run)
-    agent = _agent(temp_dir)
-
-    with pytest.raises(RuntimeError, match="requires the Job inference route"):
-        await agent.run("solve", AsyncMock(), AgentContext())
-
-    run.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
-    ("attribute", "value", "message"),
+    ("extra_env", "message"),
     [
-        ("_llm_kwargs", {"api_key": "wrong"}, "API key does not match"),
-        ("_use_responses_api", True, "must use the Chat Completions route"),
+        ({"OPENAI_API_KEY": "direct-token"}, "direct OpenAI"),
+        ({"OPENAI_BASE_URL": "https://router.huggingface.co/v1"}, "direct OpenAI"),
     ],
 )
-@pytest.mark.asyncio
-async def test_rejects_unsafe_litellm_configuration(
+def test_rejects_missing_direct_settings(
     temp_dir,
-    monkeypatch: pytest.MonkeyPatch,
-    attribute: str,
-    value: object,
+    extra_env: dict[str, str],
     message: str,
 ) -> None:
-    monkeypatch.setattr(
-        terminus_module,
-        "load_job_inference_route",
-        lambda **_kwargs: JobInferenceRoute(
-            base_url="http://127.0.0.1:18080/v1",
-            api_key="harbor-local-inference-bridge",
-            max_output_tokens=32768,
-        ),
-    )
-    run = AsyncMock()
-    stop = AsyncMock()
-    monkeypatch.setattr(Terminus2, "run", run)
-    monkeypatch.setattr(job_inference_route, "stop_hf_inference_bridge", stop)
-    agent = _agent(temp_dir)
-    setattr(agent._llm, attribute, value)
-
-    with pytest.raises(RuntimeError, match=message):
-        await agent.run("solve", AsyncMock(), AgentContext())
-
-    run.assert_not_awaited()
-    stop.assert_awaited_once()
+    with pytest.raises(ValueError, match=message):
+        TerminusAgent(
+            logs_dir=temp_dir,
+            model_name="openai/model",
+            extra_env=extra_env,
+        )

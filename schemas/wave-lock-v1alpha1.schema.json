@@ -757,13 +757,6 @@
           ],
           "default": null,
           "title": "Max Spend Usd"
-        },
-        "min_request_interval_seconds": {
-          "default": 0,
-          "maximum": 300,
-          "minimum": 0,
-          "title": "Min Request Interval Seconds",
-          "type": "number"
         }
       },
       "title": "ProviderLimits",
@@ -840,8 +833,8 @@
           "type": "number"
         },
         "token_secret_name": {
-          "const": "HF_TOKEN",
-          "default": "HF_TOKEN",
+          "const": "HF_INFERENCE_TOKEN",
+          "default": "HF_INFERENCE_TOKEN",
           "title": "Token Secret Name",
           "type": "string"
         }

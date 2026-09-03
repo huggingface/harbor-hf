@@ -1,3 +1,4 @@
+export type * from "./agent-workbench-v1.js";
 export type * from "./api-error-v1.js";
 export type * from "./attempt-submission-v1.js";
 export type * from "./control-record-v1.js";

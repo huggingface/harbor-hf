@@ -1,417 +1,289 @@
-# Provider agent architecture
+# Harbor agent architecture
 
 ## Decision
 
-Provider-backed agents run as external Harbor custom agents. Upstream Harbor is
-an immutable dependency and is never patched, forked, monkeypatched, or rewritten
-at runtime.
+Inference-backed harnesses run as Harbor agent plugins and connect directly to
+the profile-approved Hugging Face inference upstream. Harbor loads each plugin
+through `AgentConfig.import_path`; Harbor-HF does not modify Harbor core or add
+another inference service inside the Job.
 
-The first migration replaces every existing provider-agent path at once:
+The design has three goals:
 
-- Hermes.
-- OpenClaw.
-- OpenClaw with the Codex runtime.
-- Pi.
-
-All four agents are loaded through Harbor's supported `AgentConfig.import_path`
-interface. After the migration, `harbor-hf` has no provider execution path that
-depends on adding an agent to Harbor's enum, factory, or installed-agent tree.
-There are no legacy aliases, fallback renderers, or parallel built-in-agent
-paths.
-
-Historical runs remain readable through their immutable locks and evidence.
-They do not keep the superseded execution path alive for new work.
-
-The planned TypeScript control service does not move benchmark agents into the
-Space. This Python package remains a pinned remote Job dependency and writes
-only its assigned attempt evidence. Shared run decisions stay in the
-TypeScript service described by [the control service
-specification](CONTROL_SERVICE.md).
+1. keep Harbor-HF core independent of harness names;
+2. preserve each tool's native supported inference API; and
+3. make the immutable Harbor configuration the only source of model and route
+   selection.
 
 ## Ownership
 
-### Agent package
+### `harbor-hf-agents`
 
-The agent implementations live in one installable Python distribution inside
-the `harbor-hf` repository. They are external to Harbor, but they are versioned
-and released with `harbor-hf`; no agent package lives in `shellbench-local` or a
-separate repository.
+The Python package owns:
+
+- one Harbor agent module per supported harness;
+- isolated unprivileged command execution;
+- native tool installation at an exact revision;
+- conversion of `AgentConfig.env` into tool-specific settings;
+- cleanup of agent descendants before verification;
+- native session capture and redaction;
+- ATIF conversion where needed; and
+- typed setup and runtime failures.
+
+Shared support code remains harness-neutral:
 
 ```text
-harbor-hf/
-  packages/harbor-hf-agents/
-    pyproject.toml
-    src/harbor_hf_agents/
-      hermes/
-        agent.py
-        config.py
-        installer.py
-        session.py
-        trajectory.py
-      openclaw/
-        agent.py
-        config.py
-        session.py
-        trajectory.py
-      openclaw_codex/
-        agent.py
-        config.py
-        session.py
-        trajectory.py
-      pi/
-        agent.py
-        config.py
-        session.py
-        trajectory.py
-      support/
-        hf_inference_bridge.py
-        redaction.py
+packages/harbor-hf-agents/src/harbor_hf_agents/
+  <agent>/
+    agent.py
+  support/
+    direct_inference.py
+    isolated_user.py
+    control_job_environment.py
+    control_prepare_worker.py
+    control_trial_job_worker.py
 ```
 
-The existing `remote.worker` source pin therefore fixes both orchestration code
-and the complete custom-agent package. The package is dependency-free and is
-layered into the separately pinned Harbor environment without changing Harbor's
-source or lock file.
+### Harbor-HF control
 
-Each agent module owns its installation, configuration, invocation, session
-export, and trajectory conversion. Agent modules do not import one another.
-They may share only agent-neutral security and evidence utilities.
+The TypeScript service owns:
 
-The package implements agents against Harbor's public custom-agent API. It must
-not copy Harbor source, import underscored Harbor helpers, modify the Harbor
-checkout, or rely on the caller's current directory or `PYTHONPATH`.
+- immutable model, harness, deployment, and launch-policy profiles;
+- compatibility validation and execution-contract composition;
+- preparation and execution Job lifecycle;
+- capability issuance;
+- evidence acceptance;
+- retry and completion policy; and
+- result publication.
 
-### `harbor-hf`
-
-`harbor-hf` owns remote orchestration and the boundary between locked run
-configuration and the selected custom agent:
-
-- immutable source preparation;
-- provider API and model routing;
-- per-trial provider capabilities;
-- HF Jobs ingress authentication;
-- generic custom-agent selection;
-- compatibility-bundle validation.
-- evidence collection and publication with checksums.
-- infrastructure-only retry classification.
-
-Agent-specific behavior does not belong in `runs.py`, `wave_worker.py`, the
-provider recorder, or the generic evidence assembler.
+It treats agent names as data. Adding a normal agent does not add a core API
+route, schema branch, worker branch, or deployment action type.
 
 ### Harbor
 
-Harbor remains the unmodified benchmark engine. `harbor-hf` uses only its public
-configuration and custom-agent import APIs, together with its execution,
-result, and trajectory APIs.
+Harbor owns agent loading, task-environment interaction, verifier execution,
+locks, results, and native trajectory semantics. Plugins use only Harbor's
+public interfaces.
 
 ## Run-native execution contract
 
-The Run-native control service selects independent model, harness, and
-deployment profiles. A harness profile is an agent template. It contains the
-custom import path, exact agent revision, reasoning mode, capabilities, stable
-non-secret settings, and evidence requirements. It does not contain the
-selected model or provider route.
+The model profile supplies a canonical route:
 
-The model profile is the only checked-in owner of the canonical Harbor model
-route. The deployment profile owns provider and execution policy. Before any
-paid action, the TypeScript resolver checks compatibility and writes a complete
-resolved execution contract into the run lock. That contract contains the exact
-Harbor `AgentConfig`, bridge route, runtime limits, worker provenance, and source
-profile IDs.
+```text
+openai/<model-id>:<inference-provider>
+```
 
-The preparation worker consumes the locked `AgentConfig` and does not bind a
-model for new runs. A later profile change cannot alter a locked run. Pi creates
-its private model registry from typed model runtime data in the contract. DSH
-uses typed model reasoning-format data only when its harness capability permits
-that format.
+The harness profile supplies:
 
-The public Pi constructor accepts the older `models_json` input for the first
-release that contains this cutover. Active control profiles do not use it. The
-following minor release removes that input, while historical locks remain
-read-only.
+- `import_path`;
+- exact tool revision;
+- permitted keyword arguments;
+- supported APIs;
+- required evidence; and
+- session and trajectory policy.
 
-Older `ExperimentSpec`, `ExecutionLock`, and compatibility records remain the
-authority for their historical runs. They are not converted to the new form.
-The legacy reader can project and audit old locks, but old locks cannot create
-new work after the profile cutover.
+The deployment supplies:
 
-The active record authorities are:
+- the HF inference upstream;
+- `chat-completions` or `responses`;
+- timeout and output-token limits;
+- immutable prices;
+- worker image and command;
+- hardware and task-image limits; and
+- the supported model and harness profile names.
 
-| Record | Authority |
-| --- | --- |
-| Model profile | Model ID, revision, canonical Harbor route, and model compatibility. |
-| Harness profile | Agent implementation, revision, capabilities, stable settings, and evidence requirements. |
-| Deployment profile | Provider, API, prices, limits, hardware, worker provenance, and Harbor version. |
-| Run lock execution contract | Complete resolved agent and inference configuration before admission. |
-| Prepared Harbor records | Exact task and Harbor job locks derived from the resolved contract. |
-| Harbor `result.json` | Observed agent and model identity, usage, rewards, and exceptions. |
-| `HarborCompatibilityBundle` | Typed, checksummed compatibility view of Harbor output. |
-| Trial evidence and checksum records | Required private artifacts and content integrity. |
+Composition verifies the model route and API, then writes the final
+`AgentConfig`:
 
-Profiles remain complete and have no inheritance. The resolver uses fixed typed
-rules rather than placeholders or arbitrary binding expressions. The
-[reusable harness profile plan](2026-08-28-reusable-harness-profiles-plan.md)
-defines the schema migration and verification work.
+```json
+{
+  "import_path": "harbor_hf_agents.<agent>.agent:<AgentClass>",
+  "model_name": "openai/<model-id>:<inference-provider>",
+  "env": {
+    "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
+    "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
+    "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+    "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": "1800"
+  },
+  "extra_allowed_hosts": ["router.huggingface.co"]
+}
+```
 
-## Generic agent registry
+The concrete values above are illustrative; profiles provide the locked
+values.
 
-`harbor-hf` has one internal, declarative registry. It is ordinary Python data
-that stays in-process and performs no remote code discovery.
+## Direct inference flow
 
-Each entry declares only what generic orchestration must know:
+```mermaid
+sequenceDiagram
+    participant C as Control service
+    participant H as HF Job
+    participant R as Harbor
+    participant A as Agent plugin
+    participant I as HF inference upstream
 
-- stable logical agent name;
-- required provider API;
-- allowed and required non-secret parameters;
-- required trajectory schema;
-- whether successful execution requires a native session; and
-- the failure categories that are safe to retry as infrastructure.
+    C->>H: prepared trial, capability, optional inference secret
+    H->>R: execute locked JobConfig
+    R->>A: load resolved AgentConfig
+    A->>A: configure native CLI/runtime
+    A->>I: native API request
+    I-->>A: native API response
+    A-->>R: session/trajectory and task completion
+    R-->>H: native result and verifier output
+    H-->>C: evidence manifest and attempt receipt
+```
 
-The selected manifest supplies the custom-agent import path. The pinned
-`remote.worker` source supplies its implementation. The registry validates that
-selection; it does not render agent configuration.
-Agent configuration rendering stays in the external agent package.
+The plugin:
 
-Generic consumers perform a registry lookup and fail closed when no definition
-exists. They do not branch on `hermes`, `openclaw`, `openclaw-codex`, or `pi`.
+1. validates that the model name contains Harbor's provider prefix;
+2. derives only the provider-facing part after that prefix;
+3. reads the upstream and credential from `AgentConfig.env`;
+4. validates the positive output-token setting when present;
+5. adds only documented tool-specific aliases;
+6. starts the pinned native runtime as the dedicated agent user; and
+7. quiesces the task environment before Harbor verifies it.
 
-## Execution flow
+The plugin cannot choose a different provider, API, model, or host.
 
-1. The manifest selects an agent profile, provider target, routed model, and
-   custom agent import path.
-2. Planning resolves the normal matrix cell and includes the import path,
-   underlying agent revision, and pinned worker revision in the existing run and
-   run digests.
-3. The worker checks out upstream Harbor and `harbor-hf` at their full commits
-   using the existing immutable source-preparation boundary.
-4. The Harbor command layers
-   `packages/harbor-hf-agents` from the pinned worker checkout into the pinned
-   Harbor environment with `uv run --with`. It does not modify Harbor's lock or
-   source tree.
-5. The adapter writes Harbor `AgentConfig.import_path`, the locked model name,
-   and the exact underlying agent revision.
-6. Harbor imports the custom class through its public factory and runs the trial
-   normally.
-7. The agent writes its redacted native session and ATIF-v1.7 trajectory under
-   Harbor's normal agent log directory.
-8. The existing exporter validates Harbor's typed result and produces the
-   compatibility bundle.
-9. Generic evidence collection requires the locked trajectory schema and, when
-   declared by the registry, at least one non-empty session JSONL.
-10. Secret scanning, checksums, terminal markers, retry decisions, and
-    publication follow the existing run pipeline.
+## API preservation
 
-A successful trial must match the locked import path, logical agent name,
-reported agent revision, routed model identity, task digest, and evidence
-requirements. Any missing or ambiguous identity fails closed.
+API compatibility is fail-closed:
 
-## Secure HF Jobs ingress
+- Chat Completions agents use deployments declaring `chat-completions`.
+- Responses agents use deployments declaring `responses`.
+- A model route must advertise the same API.
+- The deployment provider must match the model-route suffix.
 
-The provider recorder holds the real upstream provider credential. Each physical
-trial receives a revocable scoped route. Private HF Job ingress may require an
-additional `HF_TOKEN` that must not be given to the benchmark agent.
+Do not rewrite payloads to make an incompatible tool appear supported.
+Unsupported matrix cells are skipped without creating a Run and without being
+counted as benchmark failures.
 
-The external agent package starts a root-owned loopback bridge through Harbor's
-public root-execution API. The bridge:
+## Credential handling
 
-- binds only to `127.0.0.1`.
-- accepts only the provider API declared by the registry.
-- injects the private HF Jobs ingress authorization upstream.
-- rejects unexpected paths and oversized requests.
-- strips client authorization headers.
-- logs neither bodies nor headers.
-- terminates after the trial.
+The control Space holds two persistent credentials:
 
-The agent runs as an unprivileged runtime user and receives only a localhost
-URL and a non-secret placeholder key. It never receives `HF_TOKEN`, provider or
-judge credentials, the scoped route URL, authorization headers, or secret files.
+- `HF_TOKEN`, used only by the control service; and
+- `HF_INFERENCE_TOKEN`, used for inference-backed execution.
 
-User separation is a launch invariant. A paid canary must prove that the bridge
-and agent have different UIDs and that the agent cannot read the bridge process
-environment. Failure to enforce that boundary blocks the run. Redaction
-cannot substitute for isolation.
+Preparation and no-inference Jobs do not receive the inference credential.
+An eligible execution Job receives it as an encrypted Job secret. Harbor
+expands `${HF_INFERENCE_TOKEN}` from the resolved `AgentConfig.env`, and the
+plugin supplies it to the native agent runtime.
 
-## Agent Requirements
+This is an explicit trust decision: the reviewed agent and its descendants are
+credential consumers. Arbitrary customer-authored code cannot use this launch
+path. Workbench recipes remain setup-only unless their exact compiled form is
+promoted as a reviewed harness profile.
 
-### Install-time interpreter contract
+The worker still receives a separate short-lived control capability. That
+capability is limited to the Run, launch action, assigned task, evidence
+operations, and expiration. Jobs never receive the control credential or a
+writable canonical Bucket mount.
 
-An installed-agent plugin can declare immutable environment values for its
-installation. `JobChatCompletionsAgent` applies these values only while it runs
-`install_runtime_packages` and the public Harbor `install` method. The state is
-local to one agent instance and is cleared in a `finally` block after a
-successful or failed installation. A declared value takes precedence over a
-value supplied by the installation caller.
+## Isolation
 
-Normal agent commands do not inherit the install environment. An agent that
-does not opt in receives no install environment. Route configuration and
-loopback credentials remain separate from this contract.
+The trial worker verifies and unpacks the locked task image into a root-owned
+workspace. It launches task and agent commands as a dedicated real host UID
+with:
 
-The mini-swe-agent plugin declares `UV_PYTHON=3.12`. The public Harbor installer
-continues to own the `uv tool install` command, the exact mini-swe-agent package
-version, and its installation smoke check. Harbor-HF does not copy that command,
-pin a second dependency set, or patch Harbor internals. If uv cannot provide
-Python 3.12, installation fails as infrastructure setup. It does not fall back
-to an older task-image Python.
+- no supplementary groups;
+- an empty capability set;
+- `no_new_privs`;
+- no writable worker files;
+- no writable canonical Bucket mount; and
+- no control-service credential.
 
-The shared contract is implemented in
-`packages/harbor-hf-agents/src/harbor_hf_agents/support/job_chat_completions.py`.
-The plugin declaration is in
-`packages/harbor-hf-agents/src/harbor_hf_agents/mini_swe/agent.py`. Focused tests
-belong in `packages/harbor-hf-agents/tests/test_job_chat_completions.py` and
-`packages/harbor-hf-agents/tests/test_mini_swe.py`.
+PRoot presents the task filesystem but is not considered a security boundary.
+The agent and task share the task environment by design. Agent descendants are
+stopped before workspace freeze and verifier execution.
 
-This change does not add a schema, API, profile field, run-lock field, evidence
-format, retry rule, or publication rule. The private evidence that justified
-the interpreter requirement stays outside the public repository.
+## Agent requirements
 
-### Hermes
+Every agent module must:
 
-Hermes is installed from commit
-`cb06017b1d6e1b9ae0cb35f99a48ffa6bcbaa828`. The installer and source checkout
-must be commit-addressed; mutable branches and installers fetched from `main`
-are rejected.
+- use an exact package version or full Git commit;
+- reject missing or malformed model and environment settings;
+- preserve the resolved upstream and API;
+- avoid global mutable state between trials;
+- run commands through the common isolated-user helpers;
+- stop descendants before verification;
+- preserve the native session when required;
+- redact known credentials before evidence acceptance;
+- emit or convert to valid ATIF when required; and
+- map failures into the shared taxonomy.
 
-The pinned implementation uses the Vincent-compatible settings:
+Installation environment values are explicit plugin data and apply only during
+installation. Runtime inference settings apply only while the agent runs and
+are restored afterward.
 
-- `hermes-cli` toolset.
-- 90 turns.
-- memory and user profile disabled.
-- compression enabled with threshold `0.85`.
-- local terminal backend with a 180-second timeout.
-- delegation maximum 50.
-- checkpoints disabled.
-- yolo approval.
+## Evidence
 
-It exports the reported session ID with redaction, applies only the canonical
-unambiguous fallback, and converts the native session to ATIF-v1.7, including
-parallel tool calls, observations, model identity, and usage metrics.
+Agent evidence may include:
 
-The transport is explicitly the Hugging Face provider bridge using Chat
-Completions. The evidence records Vincent's LiteLLM transport only as comparison
-provenance.
+- exact plugin and native tool revisions;
+- sanitized generated configuration;
+- native session;
+- ATIF trajectory;
+- stdout and stderr;
+- timing and exit status;
+- frozen workspace;
+- Harbor result and verifier output; and
+- source, image, and worker provenance.
 
-### OpenClaw, OpenClaw Codex, and Pi
+Do not store authorization headers, API keys, cookies, signed capabilities,
+prompts or responses copied solely for transport auditing, or private route
+details.
 
-Each runtime receives its own custom-agent module and strict configuration model.
-The modules preserve their native request protocol and evidence format:
+Known secret values and high-confidence credential patterns are scanned in
+filenames and file bytes. A finding invalidates the physical attempt; canonical
+evidence is not rewritten to disguise a leak.
 
-Embedded OpenClaw uses Chat Completions. OpenClaw Codex uses Responses and
-retains genuine Codex identity. Pi uses Chat Completions with its locked model
-configuration.
+## Failure policy
 
-The migration preserves model-required parameters such as Kimi `top_p: 0.95`
-and embedded OpenClaw thinking `off`. One runtime's configuration, request
-rewriting, or trajectory converter must never be reused to impersonate another.
+Agent setup, invalid native configuration, unsupported API behavior, and
+malformed required sessions are agent outcomes unless evidence shows an
+external infrastructure fault.
 
-## Evidence Rules
+Transient Job lifecycle, task-image transfer, control availability, or HF
+service failures may be replacement-eligible infrastructure. A deterministic
+defect shared by the worker or plugin stops affected work.
 
-Artifact discovery is based on generic kinds and path predicates. Generic code
-must not enumerate agent-specific session filenames. A non-empty JSONL under the
-agent tree whose filename identifies it as a session is a session artifact; a
-validated `trajectory.json` is a trajectory artifact.
+Model refusals, tool behavior, benchmark timeouts, and verifier outcomes remain
+semantic. They are not replaced as infrastructure.
 
-The registry supplies the required trajectory schema and session requirement.
-The agent-specific module is responsible for producing valid artifacts. Generic
-validation checks identity and presence, checksum and size bounds, plus
-redaction and secret absence.
+## Adding an agent
 
-No physical execution writes `_SUCCESS` until compatibility validation, required
-artifact validation, checksum generation, provider-route revocation, and secret
-scanning have completed.
+1. Confirm that the native tool supports one existing declared API.
+2. Add a module behind Harbor's public agent interface.
+3. Reuse neutral direct-inference and isolated-user helpers.
+4. Pin the native revision.
+5. Define strict arguments, session, trajectory, and failure behavior.
+6. Add an immutable harness profile.
+7. Add compatible deployment-profile references without core name branches.
+8. Run local contract, isolation, redaction, and failure tests.
+9. Run only separately authorized remote canaries.
 
-## Failure Policy
-
-The following are infrastructure failures and may receive a new physical
-execution under the same logical trial:
-
-- immutable source preparation failure.
-- custom-agent package installation failure unrelated to its locked content.
-- failure to provision a plugin's declared install-time interpreter.
-- private ingress startup or authentication failure.
-- provider transport failure covered by the locked retry policy.
-- missing terminal evidence caused by worker or Job loss.
-- artifact publication failure.
-
-The following remain terminal agent or benchmark outcomes:
-
-- a validly started agent exits unsuccessfully.
-- the agent reaches its turn or time limit.
-- the agent does not complete the task.
-- a safety refusal occurs.
-- the verifier rejects the workspace.
-
-Evidence or identity ambiguity never becomes a success and never authorizes a
-semantic rerun.
-
-## Migration
-
-This is a hard replacement for new provider runs:
-
-1. Add the existing-schema `import_path` and Git-revision support plus the
-   generic registry.
-2. Add `uv --with` installation from the already pinned worker checkout.
-3. Implement all four custom agents and neutral shared support under
-   `packages/harbor-hf-agents`.
-4. Migrate every provider run profile to its custom-agent `import_path`.
-5. Remove name-based provider branches, built-in-agent assumptions, custom
-   runtime-manifest work, exact session filename entries, and Harbor fork pins.
-6. Run local contract and mutation tests.
-7. Run one Fireworks and one Together paid canary for every applicable wire API
-   and agent family.
-8. Launch full runs only after all canaries pass.
-
-No new provider run may use the old path after step 5. Historical evidence
-remains readable but cannot select the removed writer.
-
-The install-time interpreter contract is a hard cutover for future worker
-builds. Existing runs, attempts, exhaustion records, evidence, worker images,
-and deployment profiles do not change. No data migration is required. This
-change does not publish a worker image, update a profile, deploy the service,
-retry work, create a successor run, or verify live infrastructure.
+If another compatible model can use the same implementation unchanged, the
+boundary is probably correct. If core logic must inspect the agent name, move
+the behavior into the plugin or represent it as a general capability.
 
 ## Verification matrix
 
-Local validation must cover:
+Local validation covers:
 
-- import-path validation and worker-revision pinning;
-- full-commit and exact-package revision enforcement;
-- deterministic run and run digests;
-- dependency-free `uv --with` installation without Harbor lock drift;
-- install environment delivery only to plugins that opt in;
-- install-state cleanup after successful and failed installation;
-- deterministic precedence for declared install environment values;
-- `UV_PYTHON=3.12` on mini-swe-agent installation and no later run command;
-- no interpreter override for an unaffected agent plugin;
-- custom-agent loading through unmodified Harbor;
-- registry rejection of unknown agents and unsupported APIs;
-- strict per-agent configuration validation;
-- exact Hermes installation and configuration;
-- session selection and redaction, including malformed-session rejection;
-- ATIF-v1.7 conversion, including Unicode and parallel tools;
+- import-path and exact-revision enforcement;
+- direct environment resolution and cleanup;
+- API and provider-suffix mismatch rejection;
+- upstream host allowlisting;
+- missing credential and malformed output-limit rejection;
+- installation-environment scoping;
+- real-UID execution and descendant cleanup;
 - model and agent identity drift;
-- bridge path restrictions, request-size limits, authorization injection,
-  process isolation;
-- planted secrets anywhere in filenames or contents, including sessions,
-  trajectories, logs;
-- infrastructure-versus-agent failure categorization;
-- provider checkpoint and terminal-marker ordering; and
-- mutation tests for every fail-closed branch.
+- native session selection and redaction;
+- ATIF conversion, including parallel tools and Unicode;
+- planted secrets in paths, sessions, trajectories, logs, and workspaces;
+- failure categorization; and
+- deterministic behavior on successful and failed installation or execution.
 
-Paid canaries must retain and verify the Harbor result, compatibility bundle,
-provider evidence, judge evidence, redacted session, ATIF trajectory, workspace,
-checksums, source revisions, model identity, and a zero-finding secret scan.
-
-For an interpreter-contract change, first run the focused and complete agent
-package tests. Then run its locked sync, Ruff check and format check, ty check,
-and mutation gate with a minimum 90% kill rate. Run the applicable root checks
-from `CONTRIBUTING.md`, including the public privacy check, Python coverage of at
-least 85%, TypeScript and browser checks, generated-file checks, dependency
-audits, the control-Space Docker build, Slophammer, and the root mutation gate.
-Do not run a benchmark, model inference, remote integration test, Job, Endpoint,
-deployment, or release as part of this local change.
-
-Before publication of the source branch, inspect the complete diff and public
-metadata, run the public privacy check again, and create only the intended
-Conventional Commit. Push the existing task branch, then verify that its local
-and remote heads match. Do not open a pull request or merge as part of this
-change.
+Remote verification, when approved, retains Harbor results, required sessions
+or trajectories, workspace and verifier evidence, provenance, checksums, and
+secret-scan results.

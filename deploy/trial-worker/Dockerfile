@@ -76,6 +76,7 @@ RUN uv sync \
     && rm -rf /opt/harbor-hf-agents \
     && python --version \
     && python -c "import harbor, harbor_hf_agents" \
+    && python -c "from harbor_hf_agents.command_agent.agent import CommandAgent, CommandAgentConfig; assert CommandAgent.name() == 'command-agent'; assert CommandAgentConfig.__name__ == 'CommandAgentConfig'" \
     && proot --version \
     && uv --version
 

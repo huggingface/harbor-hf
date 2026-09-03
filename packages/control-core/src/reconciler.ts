@@ -1026,7 +1026,6 @@ export class Reconciler {
         reservation_microusd: reservation,
         trusted_worker: profileScalar<boolean>(deployment, "trusted_worker", "boolean"),
         worker_revision: profileScalar<string>(deployment, "worker_revision", "string"),
-        inference_token: "forbidden",
         run_lock_digest: sha256(canonicalJson(lock.source_lock)),
         ...(hourly !== undefined ? { active_hourly_cost_microusd: hourly } : {}),
       },
@@ -1195,11 +1194,13 @@ export class Reconciler {
             timeout_seconds: deployment.timeout_seconds,
             active_hourly_cost_microusd: deployment.active_hourly_cost_microusd ?? 0,
             max_jobs: 1,
-            inference_token: deployment.inference_token ?? ("forbidden" as const),
+            ...(deployment.inference_token
+              ? { inference_token: deployment.inference_token }
+              : {}),
             ...(execution.inference
               ? {
                   inference_upstream: execution.inference.upstream,
-                  inference_model: execution.inference.bridge_model,
+                  inference_model: execution.inference.provider_model,
                   inference_api: execution.inference.api,
                 }
               : {}),
@@ -1207,13 +1208,19 @@ export class Reconciler {
               ? { inference_max_requests: deployment.inference_max_requests }
               : {}),
             ...(deployment.inference_max_concurrency
-              ? { inference_max_concurrency: deployment.inference_max_concurrency }
+              ? {
+                  inference_max_concurrency: deployment.inference_max_concurrency,
+                }
               : {}),
             ...(deployment.inference_timeout_seconds
-              ? { inference_timeout_seconds: deployment.inference_timeout_seconds }
+              ? {
+                  inference_timeout_seconds: deployment.inference_timeout_seconds,
+                }
               : {}),
             ...(deployment.inference_max_output_tokens
-              ? { inference_max_output_tokens: deployment.inference_max_output_tokens }
+              ? {
+                  inference_max_output_tokens: deployment.inference_max_output_tokens,
+                }
               : {}),
           };
       const intent = this.service.actionIntent(

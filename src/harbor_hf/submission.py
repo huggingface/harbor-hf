@@ -51,7 +51,7 @@ from harbor_hf.models import (
     pinned_harbor_dataset_reference,
 )
 from harbor_hf.process import ProcessError
-from harbor_hf.provider_proxy import PROVIDER_RECORDER_PORT
+from harbor_hf.provider_models import ProviderTarget
 from harbor_hf.run_input import write_run_input
 from harbor_hf.runs import EndpointWaveTarget, RunLock, WaveLock
 
@@ -76,6 +76,7 @@ _PROHIBITED_GIT_SECRET_NAMES = {
 }
 _REMOTE_SECRET_SOURCES = {
     "HF_TOKEN": "HARBOR_HF_JOB_TOKEN",
+    "HF_INFERENCE_TOKEN": "HARBOR_HF_JOB_INFERENCE_TOKEN",
     "OPENAI_API_KEY": "HARBOR_HF_JOB_OPENAI_API_KEY",
     "GEMINI_API_KEY": "HARBOR_HF_JOB_GEMINI_API_KEY",
 }
@@ -368,6 +369,8 @@ def job_secret_names(lock: ExecutionLock | WaveLock) -> list[str]:
         else [run.configuration for run in lock.executions]
     )
     for execution_lock in execution_locks:
+        if isinstance(execution_lock.deployment, ProviderTarget):
+            names.add(execution_lock.deployment.token_secret_name)
         judge = execution_lock.benchmark_judge
         if judge is not None:
             names.add(judge.api_key_secret_name)
@@ -583,7 +586,7 @@ def build_submit_run_controller_command(
     if attempt < 1 or attempt > lock.controller_policy.max_attempts:
         raise ValueError("run controller attempt is outside its locked limit")
     job = spec.remote.job
-    exposed_ports = ["--expose", str(PROVIDER_RECORDER_PORT)]
+    exposed_ports: list[str] = []
     if spec.benchmark.judge is not None:
         exposed_ports.extend(["--expose", str(JUDGE_RECORDER_PORT)])
     return [
@@ -641,6 +644,11 @@ def run_job_secret_names(spec: ExperimentSpec) -> list[str]:
     if spec.remote is None:
         raise ValueError("run controller requires remote execution")
     names = {spec.remote.job.token_secret_name}
+    names.update(
+        deployment.token_secret_name
+        for deployment in spec.matrix.deployments
+        if isinstance(deployment, ProviderTarget)
+    )
     if spec.benchmark.judge is not None:
         names.add(spec.benchmark.judge.api_key_secret_name)
     token_name = spec.remote.job.token_secret_name

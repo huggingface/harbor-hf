@@ -19,7 +19,6 @@ from harbor_hf.run_native_profile_migration import (
     MAX_IMAGE_ENTRIES,
     PREPARATION_COMMAND,
     PROFILE_PREFIX,
-    ROOT_BRIDGE_COMMAND,
     TRIAL_COMMAND,
     ConfirmationError,
     InventoryError,
@@ -557,12 +556,29 @@ def test_plan_transforms_profiles_and_remaps_only_related_promotion() -> None:
         JsonObject, cast(JsonObject, fixture.deployment["spec"])["sandbox_template"]
     )
     assert template["flavors"] == legacy_template["flavors"]
-    assert template["inference_max_total_concurrency"] == 8
-    assert template["root_bootstrap_command"] == list(ROOT_BRIDGE_COMMAND)
-    assert template["max_jobs"] == 4
-    assert template["max_image_bytes"] == MAX_IMAGE_BYTES
-    assert template["max_image_entries"] == MAX_IMAGE_ENTRIES
+    assert template == {
+        "flavors": legacy_template["flavors"],
+        "inference_upstream": "https://router.huggingface.co/v1",
+        "inference_api": "chat-completions",
+        "inference_timeout_seconds": 1_800,
+        "inference_max_output_tokens": 32_768,
+        "default_cpus": 1,
+        "default_memory_mb": 2_048,
+        "default_storage_mb": 10_240,
+        "default_gpus": 0,
+        "max_timeout_seconds": 43_200,
+        "lifetime_overhead_seconds": 900,
+        "max_image_bytes": MAX_IMAGE_BYTES,
+        "max_image_entries": MAX_IMAGE_ENTRIES,
+        "max_jobs": 4,
+    }
     for removed in (
+        "inference_token",
+        "inference_model",
+        "inference_max_requests",
+        "inference_max_concurrency",
+        "inference_max_total_concurrency",
+        "root_bootstrap_command",
         "max_sandboxes",
         "max_commands",
         "max_command_seconds",
@@ -728,6 +744,7 @@ def test_plan_preserves_retired_sandbox_deployment_as_direct_job_history() -> No
     )
     spec = cast(JsonObject, migrated["spec"])
     assert "sandbox" not in spec
+    assert "inference_token" not in spec
     assert spec["job_image"] == _OLD_JOB_IMAGE
     assert spec["job_command"] == ["/bin/sh", "-lc", "old sandbox smoke"]
     assert plan.transformed_deployment_count == 2

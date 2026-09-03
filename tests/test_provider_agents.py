@@ -180,16 +180,6 @@ def test_registry_rejects_missing_and_unknown_agent_parameters() -> None:
 def _write_evidence(root: Path) -> None:
     agent_root = root / "agent"
     agent_root.mkdir(parents=True)
-    (agent_root / "hf-inference-isolation.json").write_text(
-        json.dumps(
-            {
-                "agent_uid": 1000,
-                "bridge_uid": 0,
-                "bridge_environment_readable": False,
-            }
-        ),
-        encoding="utf-8",
-    )
     (agent_root / "trajectory.json").write_text(
         json.dumps(
             {
@@ -206,7 +196,7 @@ def _write_evidence(root: Path) -> None:
     )
 
 
-def test_provider_evidence_requires_locked_identity_and_uid_isolation(
+def test_provider_evidence_requires_locked_trajectory_identity(
     tmp_path: Path,
 ) -> None:
     _write_evidence(tmp_path)
@@ -220,18 +210,22 @@ def test_provider_evidence_requires_locked_identity_and_uid_isolation(
         expected_model_name="example/model:together",
     )
 
-    isolation = tmp_path / "agent" / "hf-inference-isolation.json"
-    isolation.write_text(
+    trajectory = tmp_path / "agent" / "trajectory.json"
+    trajectory.write_text(
         json.dumps(
             {
-                "agent_uid": 0,
-                "bridge_uid": 0,
-                "bridge_environment_readable": False,
+                "schema_version": "ATIF-v1.7",
+                "agent": {
+                    "name": "openclaw",
+                    "version": "2026.7.1-2",
+                    "model_name": "openai/wrong/model",
+                },
+                "steps": [{"step_id": 1}, {"step_id": 2}],
             }
         ),
         encoding="utf-8",
     )
-    with pytest.raises(WorkerError, match="isolation evidence is invalid"):
+    with pytest.raises(WorkerError, match="identity does not match"):
         validate_provider_agent_evidence(
             tmp_path,
             definition=definition,

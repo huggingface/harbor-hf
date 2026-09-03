@@ -4,6 +4,232 @@ const nullableInteger = {
   anyOf: [{ type: "integer" }, { type: "null" }],
 } as const;
 
+const workbenchFileSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["file_id", "path", "root", "size", "text"],
+  properties: {
+    file_id: { type: "string" },
+    path: { type: "string" },
+    root: { enum: ["workspace", "logs"] },
+    size: integer,
+    text: { type: "boolean" },
+  },
+} as const;
+
+export const workbenchPreviewSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "recipe",
+    "recipe_digest",
+    "revision_id",
+    "setup_command",
+    "run_command",
+    "environment",
+    "harness_profile",
+    "warnings",
+  ],
+  properties: {
+    recipe: { type: "object", additionalProperties: true },
+    recipe_digest: { type: "string" },
+    revision_id: { type: "string" },
+    setup_command: { type: "string" },
+    run_command: { type: "string" },
+    environment: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "source", "value", "redacted"],
+        properties: {
+          name: { type: "string" },
+          source: { type: "string" },
+          value: { type: "string" },
+          redacted: { type: "boolean" },
+        },
+      },
+    },
+    harness_profile: { type: "object", additionalProperties: true },
+    warnings: { type: "array", items: { type: "string" } },
+  },
+} as const;
+
+export const workbenchSetupSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "setup_test_id",
+    "recipe_digest",
+    "revision_id",
+    "status",
+    "created_at",
+    "started_at",
+    "completed_at",
+    "exit_code",
+    "error",
+    "files",
+  ],
+  properties: {
+    setup_test_id: { type: "string" },
+    recipe_digest: { type: "string" },
+    revision_id: { type: "string" },
+    status: {
+      enum: [
+        "queued",
+        "running",
+        "cancelling",
+        "cancelled",
+        "passed",
+        "failed",
+        "timed-out",
+      ],
+    },
+    created_at: { type: "string", format: "date-time" },
+    started_at: nullableString,
+    completed_at: nullableString,
+    exit_code: nullableInteger,
+    error: nullableString,
+    files: { type: "array", items: workbenchFileSchema },
+  },
+} as const;
+
+export const workbenchLogsSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["stdout", "stderr"],
+  properties: {
+    stdout: { type: "string" },
+    stderr: { type: "string" },
+  },
+} as const;
+
+export const workbenchFileContentSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["content", "truncated"],
+  properties: {
+    content: { type: "string" },
+    truncated: { type: "boolean" },
+  },
+} as const;
+
+export const benchmarkConfigListSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "name",
+          "revision",
+          "label",
+          "description",
+          "benchmark",
+          "model",
+          "deployment",
+          "launch_policy",
+          "default_ceiling_microusd",
+          "max_ceiling_microusd",
+          "task_count",
+          "publication_role",
+        ],
+        properties: {
+          name: { type: "string" },
+          revision: { type: "string" },
+          label: { type: "string" },
+          description: { type: "string" },
+          benchmark: { type: "string" },
+          model: { type: "string" },
+          deployment: { type: "string" },
+          launch_policy: { type: "string" },
+          default_ceiling_microusd: integer,
+          max_ceiling_microusd: integer,
+          task_count: integer,
+          publication_role: { enum: ["final", "component", "diagnostic"] },
+        },
+      },
+    },
+  },
+} as const;
+
+export const localHarborOptionsSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "enabled",
+    "ready",
+    "reason",
+    "benchmark",
+    "model",
+    "task_names",
+    "harbor_version",
+    "expected_harbor_version",
+  ],
+  properties: {
+    enabled: { type: "boolean" },
+    ready: { type: "boolean" },
+    reason: nullableString,
+    benchmark: { type: "string" },
+    model: { type: "string" },
+    task_names: { type: "array", items: { type: "string" } },
+    harbor_version: nullableString,
+    expected_harbor_version: nullableString,
+  },
+} as const;
+
+export const localHarborRunSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "local_run_id",
+    "recipe_digest",
+    "status",
+    "benchmark",
+    "model",
+    "task_names",
+    "created_at",
+    "started_at",
+    "completed_at",
+    "exit_code",
+    "error",
+    "config_path",
+    "result_path",
+    "command",
+  ],
+  properties: {
+    local_run_id: { type: "string" },
+    recipe_digest: { type: "string" },
+    status: {
+      enum: ["queued", "running", "cancelling", "cancelled", "succeeded", "failed"],
+    },
+    benchmark: { type: "string" },
+    model: { type: "string" },
+    task_names: { type: "array", items: { type: "string" } },
+    created_at: { type: "string", format: "date-time" },
+    started_at: nullableString,
+    completed_at: nullableString,
+    exit_code: nullableInteger,
+    error: nullableString,
+    config_path: { type: "string" },
+    result_path: nullableString,
+    command: { type: "array", items: { type: "string" } },
+  },
+} as const;
+
+export const localHarborConfigSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["config"],
+  properties: {
+    config: { type: "object", additionalProperties: true },
+  },
+} as const;
+
 export const runViewSchema = {
   type: "object",
   additionalProperties: false,
@@ -181,7 +407,21 @@ export const capacitySchema = {
     start_tokens: nullableInteger,
     start_burst: nullableInteger,
     queued: integer,
-    limiting_factor: nullableString,
+    limiting_factor: {
+      anyOf: [
+        {
+          enum: [
+            "run_job_capacity",
+            "namespace_job_capacity",
+            "hardware_job_capacity",
+            "provider_request_capacity",
+            "start_rate",
+            "run_cancelled",
+          ],
+        },
+        { type: "null" },
+      ],
+    },
     not_before: nullableString,
   },
 } as const;

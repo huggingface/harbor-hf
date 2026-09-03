@@ -133,7 +133,8 @@ def test_controller_command_runs_the_run_without_child_wave_jobs(
     assert "harbor-hf-run=run-one" in rendered
     assert "run-controller /input/manifest.yaml /input/run.lock.json" in rendered
     assert "wave-worker" not in rendered
-    assert "--expose 8000" in rendered
+    assert "--expose 8000" not in rendered
+    assert "--secrets HF_INFERENCE_TOKEN" in rendered
     assert "--prior-job-terminal" not in command
     assert "HARBOR_HF_JOB_STARTED_AT" in rendered
 

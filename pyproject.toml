@@ -31,7 +31,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-  "mutmut==3.6.0",
   "pip>=26.2.1",
   "pip-audit>=2.9.0",
   "pytest>=8.4.0",
@@ -64,18 +63,3 @@ source = ["src/harbor_hf"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
-
-[tool.mutmut]
-source_paths = ["src/harbor_hf"]
-pytest_add_cli_args_test_selection = ["tests"]
-also_copy = [
-  ".github/workflows",
-  "examples",
-  "deploy",
-  "docs",
-  "schemas",
-  "scripts",
-  ".agents/skills",
-  "packages/contracts",
-  "packages/harbor-hf-agents",
-]

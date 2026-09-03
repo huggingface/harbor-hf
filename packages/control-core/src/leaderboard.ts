@@ -2,11 +2,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
-  RunLock,
   HarborHFLeaderboardSnapshotV1,
   HarborHFResultCatalogV1,
   PublicationReceipt,
   ResolvedProfile,
+  RunLock,
 } from "@harbor-hf/contracts";
 import {
   canonicalJson,

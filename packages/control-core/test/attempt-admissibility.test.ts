@@ -59,7 +59,7 @@ describe("attempt admissibility", () => {
     ).toEqual({ admissible: true, reason: null });
   });
 
-  it("derives provider usage requirements from a historical harness lock", () => {
+  it("does not derive metric requirements from harness evidence", () => {
     const lock = {
       profiles: [
         {
@@ -68,12 +68,12 @@ describe("attempt admissibility", () => {
         },
         {
           kind: "harness",
-          spec: { required_evidence: ["provider-usage"] },
+          spec: { required_evidence: ["trajectory"] },
         },
       ],
     } as unknown as RunLock;
 
-    expect(requiredPositiveMetrics(lock)).toEqual(["input_tokens", "output_tokens"]);
+    expect(requiredPositiveMetrics(lock)).toEqual([]);
   });
 
   it("rejects infrastructure and cancelled outcomes", () => {

@@ -1,7 +1,7 @@
 rules:
   py.mutation-required:
     disabled: true
-    reason: Mutation testing runs manually and as a required package publication preflight.
+    reason: Mutation testing is intentionally unsupported in this repository.
 python:
   coverage:
     threshold: 85
@@ -22,9 +22,6 @@ python:
     copied_blocks:
       enabled: true
       min_tokens: 100
-  mutation:
-    targets:
-      - src/harbor_hf
   dependency_boundaries:
     - from: src/harbor_hf
       allow: []

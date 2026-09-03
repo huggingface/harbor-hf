@@ -149,7 +149,6 @@ interface AdmissionRow {
   namespace: string;
   capacity_profile_id: string;
   hardware: string;
-  reserved_provider_requests: number;
   tokens_remaining: number;
   refill_cursor_at: string;
   previous_grant_id: string | null;
@@ -779,7 +778,6 @@ export class Projection {
       .addColumn("namespace", "text", (column) => column.notNull())
       .addColumn("capacity_profile_id", "text", (column) => column.notNull())
       .addColumn("hardware", "text", (column) => column.notNull())
-      .addColumn("reserved_provider_requests", "integer", (column) => column.notNull())
       .addColumn("tokens_remaining", "integer", (column) => column.notNull())
       .addColumn("refill_cursor_at", "text", (column) => column.notNull())
       .addColumn("previous_grant_id", "text")
@@ -1442,7 +1440,6 @@ export class Projection {
         namespace: record.namespace,
         capacity_profile_id: record.capacity_profile_id,
         hardware: record.hardware,
-        reserved_provider_requests: record.reserved_provider_requests,
         tokens_remaining: record.tokens_remaining,
         refill_cursor_at: record.refill_cursor_at,
         previous_grant_id: record.previous_grant_id,
@@ -2418,18 +2415,33 @@ export class Projection {
   async activeJobAdmissions(namespace: string): Promise<JobAdmissionGrant[]> {
     const rows = await this.db
       .selectFrom("job_admissions")
+      .innerJoin("actions", "actions.action_id", "job_admissions.action_id")
       .leftJoin(
         "job_capacity_releases",
         "job_capacity_releases.action_id",
         "job_admissions.action_id",
       )
-      .select("job_admissions.body")
+      .select(["job_admissions.body", "actions.intent_body"])
       .where("job_admissions.namespace", "=", namespace)
       .where("job_capacity_releases.action_id", "is", null)
       .orderBy("job_admissions.created_at")
       .orderBy("job_admissions.action_id")
       .execute();
-    return rows.map((row) => JSON.parse(row.body) as JobAdmissionGrant);
+    return rows.map((row) => {
+      const grant = JSON.parse(row.body) as JobAdmissionGrant;
+      if (grant.reserved_provider_requests !== undefined) return grant;
+      const intent = JSON.parse(row.intent_body) as ActionIntent;
+      const concurrency = intent.payload.inference_max_concurrency;
+      return {
+        ...grant,
+        reserved_provider_requests:
+          typeof intent.payload.inference_upstream === "string"
+            ? typeof concurrency === "number"
+              ? concurrency
+              : 1
+            : 0,
+      };
+    });
   }
 
   async activeJobAdmissionRunUsage(

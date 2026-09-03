@@ -3,6 +3,8 @@ export const hints = {
     admin: "Operator views. Runs, Jobs, results, profiles, and audit stay here.",
     overview:
       "Queue, active runs, recorded spend, and Endpoint cleanup risk from the control projection.",
+    workbench:
+      "Configure and privately verify a command-line agent before using its immutable recipe in a diagnostic benchmark.",
     runs: "Start and inspect runs. Logical tasks stay sealed; only infrastructure failures can be replaced.",
     jobs: "Hugging Face Jobs launched by control, with Hub inspect links, latest observed stage, and recorded hardware cost.",
     endpoints:

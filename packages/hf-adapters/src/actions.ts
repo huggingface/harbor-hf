@@ -74,11 +74,18 @@ function workerRole(intent: ActionIntent): "preparation" | "execution" {
   return value;
 }
 
-function inferenceTokenPolicy(intent: ActionIntent): "forbidden" | "required" {
-  const value = intent.payload.inference_token ?? "forbidden";
-  if (value !== "forbidden" && value !== "required")
+function requiresInference(intent: ActionIntent): boolean {
+  return (
+    workerRole(intent) === "execution" &&
+    typeof intent.payload.inference_upstream === "string"
+  );
+}
+
+function usesCompatibilityBridge(intent: ActionIntent): boolean {
+  const value = intent.payload.inference_token;
+  if (value !== undefined && value !== "forbidden" && value !== "required")
     throw new Error("action payload inference_token is invalid");
-  return value;
+  return value === "required";
 }
 
 type ApiJob = Awaited<ReturnType<typeof getJob>>;
@@ -155,7 +162,7 @@ function jobEnvironment(
       ? { HARBOR_HF_MAX_IMAGE_ENTRIES: String(intent.payload.max_image_entries) }
       : {}),
   };
-  if (inferenceTokenPolicy(intent) === "forbidden") return environment;
+  if (!usesCompatibilityBridge(intent)) return environment;
   return {
     ...environment,
     HARBOR_HF_INFERENCE_UPSTREAM: stringValue(intent, "inference_upstream"),
@@ -194,10 +201,9 @@ function expectedJobSpec(
       harbor_hf_worker_role: workerRole(intent),
     },
     environment: jobEnvironment(intent, controlUrl, taskImageMirrorRepository),
-    secretNames:
-      inferenceTokenPolicy(intent) === "required"
-        ? ["HARBOR_HF_WORKER_CAPABILITY", "HF_INFERENCE_TOKEN"]
-        : ["HARBOR_HF_WORKER_CAPABILITY"],
+    secretNames: requiresInference(intent)
+      ? ["HARBOR_HF_WORKER_CAPABILITY", "HF_INFERENCE_TOKEN"]
+      : ["HARBOR_HF_WORKER_CAPABILITY"],
   };
 }
 
@@ -553,7 +559,7 @@ export class HuggingFaceActions implements ExternalActionPort {
     intent: ActionIntent,
     context?: ExternalActionContext,
   ): Promise<ExternalActionResult> {
-    const tokenPolicy = inferenceTokenPolicy(intent);
+    const inferenceRequired = requiresInference(intent);
     const role = workerRole(intent);
     const taskIds = stringValues(intent, "task_ids");
     if (taskIds.length === 0)
@@ -563,7 +569,7 @@ export class HuggingFaceActions implements ExternalActionPort {
       (taskIds.length !== 1 || intent.payload.task_id !== taskIds[0])
     )
       throw new Error("execution Job launch requires exactly one task");
-    if (tokenPolicy === "required" && !this.config.inferenceToken)
+    if (inferenceRequired && !this.config.inferenceToken)
       throw new Error("required worker inference credential is unavailable");
     if (!this.config.controlUrl)
       throw new Error("Job launch requires the control service URL");
@@ -604,8 +610,6 @@ export class HuggingFaceActions implements ExternalActionPort {
     if (!booleanValue(intent, "trusted_worker"))
       throw new Error("Job launch requires a trusted worker profile");
     const timeoutSeconds = spec.timeoutSeconds;
-    if (role === "preparation" && tokenPolicy !== "forbidden")
-      throw new Error("preparation Jobs cannot receive an inference credential");
     const capability = mintWorkerCapability(this.config.accessToken, {
       namespace: this.config.namespace,
       run_id: intent.run_id,
@@ -648,7 +652,7 @@ export class HuggingFaceActions implements ExternalActionPort {
         environment: spec.environment,
         secrets: {
           HARBOR_HF_WORKER_CAPABILITY: capability,
-          ...(tokenPolicy === "required"
+          ...(inferenceRequired
             ? { HF_INFERENCE_TOKEN: this.config.inferenceToken as string }
             : {}),
         },

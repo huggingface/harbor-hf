@@ -1,317 +1,196 @@
-# Provider agents and security
-
-Provider-backed Harbor runs load external custom agents from
-`packages/harbor-hf-agents`. Workers install Harbor from a pinned
-`harbor-framework/harbor` git commit. The worker revision pins orchestration
-and the complete custom-agent package.
+# Harbor agents and security
 
 ## Supported boundary
 
-New provider runs use Harbor's public `AgentConfig.import_path`. The
-current package has separate modules for:
+Inference-backed harnesses run as Harbor agent plugins. Harbor loads the exact
+plugin through `AgentConfig.import_path`, and the plugin configures its native
+tool to call the resolved Hugging Face inference upstream directly.
 
-- Hermes through Chat Completions;
-- embedded OpenClaw through Chat Completions;
-- OpenClaw with the genuine Codex runtime through Responses;
-- standalone Codex through Responses;
-- Terminus 2 through Chat Completions;
-- Pi through Chat Completions;
-- DeepSeek Harness through Chat Completions;
-- OpenCode through Chat Completions;
-- Qwen Code through Chat Completions;
-- mini-swe-agent through Chat Completions;
-- Kimi Code through Chat Completions;
-- OpenHands through Chat Completions;
-- FX through Chat Completions.
+Support requires:
 
-Harbor Codex and Claude Code keep their native APIs. The locked
-`gpt-oss-20b` Together route is Chat Completions only, so those two
-harnesses are rejected on that route.
+- an exact package version or full Git commit;
+- a declared native API;
+- a model profile supporting that API;
+- a deployment using the same API and matching provider suffix;
+- strict agent arguments and environment handling;
+- required session and trajectory behavior;
+- process cleanup before verification; and
+- shared failure classification.
 
-Each module owns installation, configuration, invocation, session collection,
-and ATIF-v1.7 conversion. One agent's runtime files or trajectory converter
-cannot substitute for another agent.
+Do not add request or response translation, a fallback model, or agent-name
+branches in shared control and worker code.
 
-Generic Harbor HF code uses a declarative registry. It validates logical agent
-name, import path, wire API, allowed parameters, trajectory schema, session
-requirement, revision kind, and retry taxonomy. Unknown combinations fail
-before paid work.
+## Revision and registry rules
 
-## Revision rules
+The immutable harness profile names the plugin import path and native tool
+revision. The worker revision identifies the containing agent package.
 
-The custom-agent implementation comes from `remote.worker.revision`. The
-underlying agent profile separately pins its runtime:
+One neutral registry validates:
 
-- package-backed agents use an exact numeric package version;
-- Git-backed agents use a full 40-character commit;
-- provider-backed agents require the expected custom import path;
-- the Harbor result must report the locked logical name and revision.
+- logical agent name;
+- import path and class;
+- exact revision syntax;
+- supported inference APIs;
+- permitted keyword arguments;
+- required environment values;
+- native session selection;
+- ATIF handling; and
+- failure taxonomy.
 
-Layer the dependency-free package into pinned Harbor with `uv run --with`.
-Do not mutate the Harbor checkout, modify its lock, use `PYTHONPATH`, depend on
-current working directory, or install a mutable package globally.
+Package revisions are exact numeric versions. Git revisions are full commits.
+Mutable branches, tags, ranges, and unpinned installers are rejected.
 
-## Wire API preservation
+## Direct inference configuration
 
-Preserve each runtime's native API:
+The control service composes:
 
-- Hermes, Pi, Terminus, and embedded OpenClaw use Chat Completions.
-- OpenClaw Codex and standalone Codex use Responses.
-- Standalone Codex must retain the `codex` identity and the complete namespaced
-  model ID. It must not become OpenClaw Codex.
+```text
+model_name = openai/<model-id>:<inference-provider>
+OPENAI_BASE_URL = <deployment inference_upstream>
+OPENAI_API_KEY = ${HF_INFERENCE_TOKEN}
+HARBOR_HF_MAX_OUTPUT_TOKENS = <locked positive integer>
+HARBOR_HF_PROVIDER_TIMEOUT_SECONDS = <locked positive integer>
+extra_allowed_hosts += <upstream hostname>
+```
 
-The scoped proxy exposes one selected path and rejects the other. Rewriting a
-native Responses request into a different schema changes runtime provenance and
-is forbidden.
+The plugin may add documented native aliases or generate a native config file.
+It may derive the provider-facing model only by removing Harbor's first
+provider prefix. It must not remove the inference-provider suffix or choose
+another route.
 
-Provider deployment parameters are authoritative. They replace same-named
-agent parameters after request normalization. Transport fields such as model and messages remain reserved. Input and tools remain reserved. Stream remains reserved too. Verify model-required values
-in provider evidence, including sampling and reasoning controls.
+Chat Completions and Responses are distinct. An incompatible model, harness,
+or deployment is unsupported and must fail before launch.
 
-## Credential isolation
+## Credential boundary
 
-The trusted worker receives the dedicated `HF_INFERENCE_TOKEN` and one
-trial-scoped capability. The control credential `HF_TOKEN` never enters the
-worker. The worker passes the inference credential only to the root-owned
-bridge; neither credential may enter the benchmark agent.
+The control Space retains `HF_TOKEN`; no Job receives it.
 
-HF Job root bootstrap starts a root-owned loopback bridge before the trusted
-worker begins. The custom agent plugin runs in trusted host Python, reads the
-root-owned non-secret route directly, and removes that route before it kills
-and awaits the exact host bridge PID. It does not stop the bridge by executing
-inside the task rootfs. The bridge:
+An execution Job receives `HF_INFERENCE_TOKEN` only when its immutable
+deployment includes `inference_upstream`. Harbor expands the credential
+reference in `AgentConfig.env`, and the reviewed agent is the intended
+consumer. Preparation and no-inference Jobs receive no inference credential.
 
-- binds to `127.0.0.1`;
-- accepts only the registry-selected API path and locked model;
-- connects only to approved Hugging Face Router, Endpoint, or Job ingress hosts;
-- injects the inference-only authorization upstream;
-- strips client authorization;
-- rejects unexpected methods, paths, models, output-token limits, oversized
-  requests, excess requests, and excess concurrency;
-- bounds accepted connections and handler threads, plus header, body, socket,
-  and upstream time;
-- logs no request or response bodies and no headers;
-- terminates after the agent and before verifier execution.
+The execution Job separately receives a signed worker capability scoped to:
 
-Run every task command under the dedicated unprivileged host UID/GID with empty
-supplementary groups, no Linux capabilities, and `no_new_privs`. PRoot may fake
-the image user but does not provide the security boundary. The agent receives
-only a localhost URL and a non-secret placeholder key.
+- one Run;
+- one launch action;
+- one task;
+- declared evidence and receipt operations; and
+- a short expiration.
 
-A paid canary must prove:
+Jobs have no writable canonical Bucket mount. The inference credential must not
+appear in logs, sessions, trajectories, workspaces, manifests, or results.
 
-- bridge UID differs from agent UID;
-- the agent cannot read `/proc/<bridge-pid>/environ`;
-- agent environment lacks `HF_TOKEN`, `HF_INFERENCE_TOKEN`, provider keys, judge
-  keys, private ingress authorization, route capability, and scoped upstream
-  URL;
-- bridge binds only to loopback;
-- only the selected API path succeeds;
-- route revocation occurs before success publication.
+Direct inference is not safe for arbitrary user-authored agent code using a
+platform credential. Such recipes remain setup-only until their exact compiled
+form and secret behavior are reviewed and promoted.
 
-Redaction does not replace process isolation.
+## Task and agent isolation
+
+The reviewed worker:
+
+- verifies the digest-pinned task image;
+- bounds compressed and expanded image content;
+- rejects unsafe paths and special files;
+- strips elevated file metadata;
+- runs task and agent commands as a dedicated real host UID;
+- removes supplementary groups and capabilities;
+- enables `no_new_privs`;
+- keeps worker state and credential files outside the task rootfs; and
+- stops agent descendants before freezing the workspace.
+
+PRoot provides filesystem presentation and user emulation only; it is not the
+security boundary. The agent and task share the task environment by design.
 
 ## Benchmark source credentials
 
-Remote benchmark source loading has no credential path. A Git source must be
-anonymously readable at its full locked commit. Disable credential helpers,
-SSH agents, askpass programs, interactive prompts, global and system Git
-configuration, and ambient Git authentication during both preflight and remote
-checkout.
+Public Git benchmark sources resolve anonymously to a full commit. Private
+benchmark support must use a separately approved content-addressed source
+mechanism. Do not pass personal Git, Hub, or cloud credentials to a task.
 
-Local and private benchmark files use the bundle contract in
-`docs/benchmark-sources.md`. The submitter uses local source access in place,
-builds a content-addressed bundle, and uploads it to the managed private input
-Bucket. The remote Job receives the verified bundle, not the source credential
-or operator path.
-
-Before the control-service cutover, a purpose-scoped remote HF token may come
-from `HARBOR_HF_JOB_TOKEN` or from a fine-grained token added with
-`harbor-hf auth add-job-token`. The command reads the value through a hidden
-prompt and records approval to store it in Harbor HF's owner-only plaintext
-token file. Harbor HF config stores only the selected name.
-
-After cutover, the application-protected control Space has two
-operator-managed persistent secrets. `HF_TOKEN` contains the retained
-fine-grained control credential. The Space must not pass it to a Job or worker.
-`HF_INFERENCE_TOKEN` contains the separate inference-only credential and may be
-passed only to a reviewed worker whose immutable deployment profile requires
-it. Keep credential display names and local aliases out of public artifacts.
-Hugging Face OAuth identifies web users; its user tokens and browser sessions
-must never enter remote Jobs, benchmark agents, evidence, or service-credential
-handling. Never read the Hugging Face CLI token store or active login as an
-implicit remote secret.
-
-Reject a launch when it would forward `GITHUB_TOKEN`, `GH_TOKEN`, an SSH key,
-an SSH agent, a Git credential helper, or `gh auth token`. Do not treat a
-temporary secret file, later deletion, environment blanking, or log redaction
-as permission to copy a personal credential into remote infrastructure.
-
-## Provider evidence
-
-Record one content-free row for every provider attempt. Verify:
-
-- run, run, trial, execution, wave, and request identity;
-- requested and routed provider and model;
-- selected wire API;
-- authoritative parameter fingerprint;
-- retry attempt and normalized request key;
-- queue delay, provider latency, and total duration as separate quantities;
-- status, HTTP outcome, throttle and quota observations;
-- reported usage and explicit `not_reported` fields;
-- checkpoint durability while the wave is active.
-
-Do not store prompts, messages, tool names, tool arguments, response text,
-credentials, cookies, or authorization headers.
-
-## Trial-scoped retries
-
-Provider `max_attempts` limits identical forwarded requests within one logical
-trial. Independent logical trials have independent retry budgets. Normalize the
-request after authoritative provider parameters are applied, then derive the
-retry key.
-
-Classify provider transport failures through the locked taxonomy. A recoverable
-provider call can succeed on a later bounded attempt within the same physical
-execution. An exhausted provider transport failure may authorize a new physical
-execution only when the registry and run recovery policy classify it as
-infrastructure.
-
-Agent and benchmark failures remain terminal even when the last provider HTTP
-request succeeded.
+The control credential must never be reused as a benchmark-source or inference
+credential.
 
 ## Agent evidence
 
-A successful provider-agent trial must retain:
+Retain profile-required evidence such as:
 
-- Harbor's typed result and compatibility bundle;
-- exact custom import path and reported agent revision;
-- nonempty native session JSONL when required;
-- ATIF-v1.7 trajectory with correct agent and model identity;
-- provider request evidence with continuation through tool calls;
-- frozen workspace output;
-- judge exchange or valid deterministic no-call branch;
-- isolation evidence;
-- checksums and a zero-finding secret scan.
+- plugin and native tool revisions;
+- sanitized generated configuration;
+- command timing and exit state;
+- native session;
+- ATIF trajectory;
+- frozen workspace;
+- Harbor result and verifier output; and
+- source, image, and worker provenance.
 
-Generic artifact discovery uses artifact kinds and safe path predicates. It does
-not hard-code one session filename per agent.
+Preserve usage exposed by Harbor's native result when available; otherwise
+leave it unknown.
 
-## Canary matrix
+Scan known credential values and high-confidence patterns in path names and
+file bytes. A finding invalidates the attempt. Do not print the match or rewrite
+canonical evidence to conceal it.
 
-Run a paid canary for every applicable provider, wire API, and agent family.
-A canary should use a representative task that exercises tools and produces
-workspace output. When the full benchmark uses an external judge, the canary
-must exercise that judge path as well.
+## Trial-scoped replacements
 
-Validate the canary in this order:
+Harbor internal retries remain disabled. Harbor-HF owns physical attempt
+identity.
 
-1. remote Job and Harbor process completed without infrastructure exception;
-2. provider records contain at least one successful request and valid routing;
-3. continuation after tool results is accepted;
-4. native session and ATIF trajectory are nontrivial;
-5. agent, model, provider, API, and revision identities match the lock;
-6. required workspace output exists in the frozen archive;
-7. judge exchange uses the locked model and reasoning policy;
-8. bridge and agent isolation evidence passes;
-9. remote artifact verification passes;
-10. deep validation and secret scanning pass.
+Another attempt is allowed only when:
 
-A reward of zero can pass this matrix. Report it as a benchmark outcome.
+- the latest outcome is typed replacement-eligible infrastructure;
+- the exact prepared trial is reused;
+- no attempt is active or ambiguously owned;
+- the physical-attempt limit remains;
+- the Run ceiling admits it; and
+- no deterministic shared defect is present.
 
-## Agent-specific checks
-
-### Hermes
-
-Verify the exact Hermes source commit, `hermes-cli` toolset, turn limit, memory
-and profile policy, compression threshold, terminal timeout, delegation limit,
-checkpoint policy, approval mode, selected provider family, session identity,
-and ATIF conversion. Chat tool-result messages can include a valid `name`; the
-bridge and provider schema must preserve it.
-
-### Embedded OpenClaw
-
-Verify the exact package version, embedded harness identity, Chat Completions
-route, thinking policy, model-required parameters, retained session, and ATIF
-identity. Embedded traces cannot be labeled as Codex.
-
-### OpenClaw Codex
-
-Require genuine `agentHarnessId: "codex"`, Responses traffic, and a Codex-owned
-session. Session files may resolve only beneath the isolated agent home or the
-retained `logs/openclaw-sessions` root. Preserve incompatibility evidence when
-the provider rejects Codex's native Responses request. Do not rewrite the
-request or substitute embedded OpenClaw evidence.
-
-### Pi
-
-Verify the exact Pi package version, model configuration, Chat Completions
-route, reasoning setting, native Pi transcript, and ATIF identity. Keep Pi
-provider files inside the isolated agent home.
-
-### Standalone Codex
-
-Verify the exact Codex package version, native Responses route, complete model
-ID, isolated user, native sessions, and ATIF identity. Keep Codex credentials
-and configuration inside the isolated agent home, then remove temporary auth
-files after each run.
-
-### Terminus
-
-Verify the `terminus-2` Harbor identity, Chat Completions route, complete model
-ID, and model information derived from the immutable inference contract.
-Terminus is trusted in-process Harbor code, so it validates the root-owned Job
-route directly and still owns bridge cleanup before verifier execution.
-
-### mini-swe-agent
-
-Keep a finite per-task cost limit. Register the exact model, context and output
-limits, and token prices from the immutable inference contract with LiteLLM.
-Do not disable cost accounting or accept an unknown-price fallback.
-
-### Capability-scoped Jobs
-
-Verify the capability's run-lock digest, task and operation set before each
-assigned lock read, evidence upload, and receipt submission. Confirm the remote
-Job's deterministic action label, digest-pinned image, hardware, task assignment,
-and secret names during launch, adoption, and observation. A reviewed
-inference-required Job may receive `HF_INFERENCE_TOKEN`; no Job may receive
-`HF_TOKEN` or a writable canonical Bucket mount.
-
-The root bootstrap must start the bridge before removing the inference token and
-route variables from the benchmark process environment. The benchmark agent must
-see only the loopback route and placeholder key. Job resources, task assignment,
-timeout, and evidence limits cannot exceed the immutable policy.
+Agent failures, model behavior, benchmark timeouts, verifier outcomes, and
+valid zeros are semantic and terminal.
 
 ## Judge isolation
 
-The judge recorder is separate from the agent provider recorder. The verifier
-receives an execution-scoped judge route and ingress credential. It does not
-receive the upstream judge key.
+When a benchmark requires a judge, keep judge identity and credentials
+separate from task-model inference. Bind judge evidence to the exact task,
+frozen workspace or answer, policy, selected exchange, and verifier result.
 
-The recorder enforces API URL, model, reasoning effort, request and response
-limits, call limit, timeout, and temperature policy. It stores exact bounded
-request and response bytes after scanning for known secrets. The selected
-exchange ID must bind the scorecard.
+Do not expose judge credentials to the agent or task. Do not retain
+authorization headers or cookies in judge evidence.
+
+## Verification matrix
+
+Before remote use, test:
+
+- import path and exact revision;
+- model provider-suffix and API compatibility;
+- direct environment resolution;
+- missing and malformed setting rejection;
+- upstream host allowlisting;
+- preparation and no-inference credential absence;
+- native configuration precedence;
+- install-time versus runtime environment cleanup;
+- real-UID task execution;
+- agent descendant cleanup before verification;
+- session discovery, redaction, and malformed-session rejection;
+- ATIF conversion;
+- planted credentials in paths and bytes;
+- identity and lock drift;
+- semantic versus infrastructure classification; and
+- deterministic cleanup after success and failure.
 
 ## Security failure response
 
-Stop the run when:
+Stop immediately when:
 
-- agent and bridge UIDs are equal;
-- bridge environment is readable by the agent;
-- a real credential appears in the agent environment or runtime files;
-- ingress accepts an unexpected route;
-- a Job receives `HF_TOKEN` or a writable canonical Bucket mount;
-- the benchmark agent retains the inference token or upstream
-  route after root bootstrap;
-- a Job image, hardware, label, task assignment, or limit differs from the
-  immutable policy;
-- provider or judge evidence contains a capability or authorization material;
-- a session path escapes its allowed root;
-- exact evidence contains a known secret;
-- route revocation or bridge termination is unverified.
+- a credential or capability appears in evidence or logs;
+- a Job receives the control credential or writable Bucket access;
+- a no-inference or preparation Job receives the inference credential;
+- model, provider, API, upstream, or allowed-host values drift;
+- an unreviewed agent receives a platform credential;
+- agent descendants survive into verification;
+- task UID or privilege checks fail; or
+- evidence scanning or checksum validation is incomplete.
 
-Revoke affected credentials and capabilities through the approved provider and
-HF controls. Preserve only content-free incident metadata. Do not upload the
-secret-bearing evidence bundle.
+Preserve non-secret diagnostic facts, quarantine affected evidence, prevent
+publication, stop affected work, and request an operator decision. Credential
+rotation or public-history rewriting requires explicit approval.

@@ -151,8 +151,9 @@ def wave_worker_identity(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
         "HARBOR_HF_TOKEN_STORE", str(tmp_path / "harbor-hf-stored-tokens")
     )
     monkeypatch.setenv("HARBOR_HF_JOB_TOKEN", "test-purpose-scoped-token")
+    monkeypatch.setenv("HARBOR_HF_JOB_INFERENCE_TOKEN", "test-inference-token")
     monkeypatch.setattr(
-        "harbor_hf.wave_worker._wait_for_provider_recorder",
+        "harbor_hf.wave_worker._wait_for_judge_recorder",
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
