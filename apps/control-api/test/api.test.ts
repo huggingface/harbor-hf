@@ -68,7 +68,7 @@ const submission = {
     provider: "together",
     reasoning_effort: "off",
   },
-  harness: { agent: "pi", version: "0.84.2" },
+  harness: { agent: "pi", version: "0.84.4" },
   cost_ceiling_usd_per_trial: 0.25,
 };
 

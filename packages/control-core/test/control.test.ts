@@ -81,7 +81,7 @@ afterEach(async () => {
 const input = {
   benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
   model: { id: "openai/gpt-oss-20b", provider: "together", reasoning_effort: "off" },
-  harness: { agent: "pi", version: "0.84.2" },
+  harness: { agent: "pi", version: "0.84.4" },
   cost_ceiling_usd_per_trial: 0.25,
 } as const;
 
@@ -117,7 +117,7 @@ describe("run submission", () => {
           import_path: "harbor_hf_agents.pi.agent:PiAgent",
           model_name: "huggingface/openai/gpt-oss-20b:together",
           env: { HF_TOKEN: "$" + "{HF_INFERENCE_TOKEN}" },
-          kwargs: { version: "0.84.2", thinking: "off" },
+          kwargs: { version: "0.84.4", thinking: "off" },
         },
       ],
     });

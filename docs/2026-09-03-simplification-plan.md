@@ -231,7 +231,7 @@ second one.
   "submission": {
     "benchmark": { "name": "terminal-bench-2-1", "preset": "all-tasks-5-trials" },
     "model": { "id": "openai/gpt-oss-120b", "provider": "together", "reasoning_effort": "high" },
-    "harness": { "agent": "pi", "version": "0.84.2" },
+    "harness": { "agent": "pi", "version": "0.84.4" },
     "cost_ceiling_usd_per_trial": 2.0
   },
   "harbor_job_config": {
@@ -242,7 +242,7 @@ second one.
       {
         "name": "pi",
         "model_name": "openai/openai/gpt-oss-120b:together",
-        "kwargs": { "version": "0.84.2", "reasoning_effort": "high" }
+        "kwargs": { "version": "0.84.4", "reasoning_effort": "high" }
       }
     ],
     "environment": { "type": "hf-sandbox", "kwargs": { "flavor": "cpu-upgrade" } }

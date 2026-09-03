@@ -69,7 +69,7 @@ A preset submission creates this immutable record:
     },
     "harness": {
       "agent": "pi",
-      "version": "0.84.2"
+      "version": "0.84.4"
     },
     "cost_ceiling_usd_per_trial": 0.25
   },
@@ -93,7 +93,7 @@ A preset submission creates this immutable record:
           "HF_TOKEN": "${HF_INFERENCE_TOKEN}"
         },
         "kwargs": {
-          "version": "0.84.2",
+          "version": "0.84.4",
           "thinking": "off"
         }
       }
@@ -198,7 +198,7 @@ presets/
 │   ├── terminal-bench-2-1-all-tasks-1-trial.json
 │   └── terminal-bench-2-1-all-tasks-5-trials.json
 └── agents/
-    ├── pi-0.84.2.json
+    ├── pi-0.84.4.json
     ├── codex-0.118.0.json
     └── ...
 ```
