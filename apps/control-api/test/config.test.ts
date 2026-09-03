@@ -42,6 +42,16 @@ describe("control API configuration", () => {
     expect(config.parent_timeout_seconds).toBe(3_600);
   });
 
+  it("rejects development authentication in production", () => {
+    expect(() =>
+      loadConfig({
+        ...environment,
+        NODE_ENV: "production",
+        HARBOR_HF_AUTH_MODE: "development",
+      }),
+    ).toThrow("production service requires OAuth authentication");
+  });
+
   it("requires two distinct credentials and an immutable image in write mode", () => {
     expect(() =>
       loadConfig({ ...environment, HARBOR_HF_WRITE_MODE: "enabled" }),

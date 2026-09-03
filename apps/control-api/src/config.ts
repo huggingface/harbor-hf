@@ -105,6 +105,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
   const storeMode =
     parsed.HARBOR_HF_STORE_MODE ??
     (parsed.NODE_ENV === "test" ? "filesystem" : "bucket");
+  if (parsed.NODE_ENV === "production" && parsed.HARBOR_HF_AUTH_MODE !== "oauth")
+    throw new Error("production service requires OAuth authentication");
   if (parsed.HARBOR_HF_WRITE_MODE === "enabled") {
     if (!parsed.HF_TOKEN || !parsed.HF_INFERENCE_TOKEN)
       throw new Error("write-enabled service requires both approved credentials");
