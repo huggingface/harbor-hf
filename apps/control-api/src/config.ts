@@ -112,6 +112,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
       throw new Error("write-enabled service requires HARBOR_HF_PARENT_IMAGE");
     if (!/@sha256:[0-9a-f]{64}$/.test(parsed.HARBOR_HF_PARENT_IMAGE))
       throw new Error("parent image must use an immutable digest");
+    if (storeMode !== "bucket")
+      throw new Error("write-enabled service requires Bucket storage");
   }
   if (parsed.HARBOR_HF_WORKBENCH_RUNNER === "hf-jobs" && !parsed.HF_TOKEN) {
     throw new Error("Hugging Face Workbench Jobs require HF_TOKEN");

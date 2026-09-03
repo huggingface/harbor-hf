@@ -56,9 +56,20 @@ describe("control API configuration", () => {
       }),
     ).toThrow("immutable digest");
 
+    expect(() =>
+      loadConfig({
+        ...environment,
+        HARBOR_HF_WRITE_MODE: "enabled",
+        HF_TOKEN: "control-test-credential",
+        HF_INFERENCE_TOKEN: "inference-test-credential",
+        HARBOR_HF_PARENT_IMAGE: `example/parent@sha256:${"a".repeat(64)}`,
+      }),
+    ).toThrow("requires Bucket storage");
+
     const config = loadConfig({
       ...environment,
       HARBOR_HF_WRITE_MODE: "enabled",
+      HARBOR_HF_STORE_MODE: "bucket",
       HF_TOKEN: "control-test-credential",
       HF_INFERENCE_TOKEN: "inference-test-credential",
       HARBOR_HF_PARENT_IMAGE: `example/parent@sha256:${"a".repeat(64)}`,
