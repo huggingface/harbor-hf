@@ -157,6 +157,18 @@ describe("control API", () => {
     });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().error.code).toBe("invalid_request");
+
+    const credential = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "credential" },
+      payload: {
+        ...submission,
+        model: { ...submission.model, id: `hf_${"x".repeat(24)}` },
+      },
+    });
+    expect(credential.statusCode).toBe(400);
+    expect(credential.json().error.code).toBe("invalid_request");
   });
 
   it("pauses, resumes, and permanently cancels a run", async () => {

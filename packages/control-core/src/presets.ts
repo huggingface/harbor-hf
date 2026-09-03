@@ -164,8 +164,11 @@ function record(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function containsCredentialMaterial(value: unknown, key = ""): boolean {
-  if (/(?:token|secret|password|api[_-]?key)/i.test(key)) return true;
+const CREDENTIAL_KEY =
+  /(?:^|[_-])(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|bearer[_-]?token|(?:hf|github|gitlab|openai|anthropic)[_-]?token|client[_-]?secret|password|secret|credential|authorization)$/i;
+
+export function containsCredentialMaterial(value: unknown, key = ""): boolean {
+  if (CREDENTIAL_KEY.test(key)) return true;
   if (typeof value === "string") {
     let hasUserInfo = false;
     try {

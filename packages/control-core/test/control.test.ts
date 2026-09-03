@@ -148,6 +148,18 @@ describe("run submission", () => {
         "test-subject",
       ),
     ).rejects.toThrow("reasoning effort");
+    for (const [key, modelId] of [
+      ["preset-credential-token", `hf_${"x".repeat(24)}`],
+      ["preset-credential-url", "https://user:password@example.test/model"],
+    ] as const) {
+      await expect(
+        service.submitPreset(
+          { ...input, model: { ...input.model, id: modelId } },
+          key,
+          "test-subject",
+        ),
+      ).rejects.toThrow("credential material");
+    }
     await expect(
       service.submitConfig(
         { jobs_dir: "/tmp", agents: [{ name: "pi" }] },
@@ -170,7 +182,7 @@ describe("run submission", () => {
         {
           name: "pi",
           model_name: "openai/openai/gpt-oss-20b:together",
-          kwargs: { version: "0.84.2" },
+          kwargs: { version: "0.84.2", max_tokens: 1_000 },
         },
       ],
       environment: { type: "hf-sandbox" },
@@ -303,8 +315,11 @@ describe("run submission", () => {
       "test-subject",
     );
     expect(direct.run.role).toBe("diagnostic");
-    expect(direct.run.harbor_job_config.environment).toMatchObject({
-      import_path: "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
+    expect(direct.run.harbor_job_config).toMatchObject({
+      agents: [{ kwargs: { version: "0.84.2", max_tokens: 1_000 } }],
+      environment: {
+        import_path: "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
+      },
     });
   });
 });

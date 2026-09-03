@@ -8,6 +8,7 @@ import {
   validateRunState,
 } from "@harbor-hf/contracts";
 import {
+  containsCredentialMaterial,
   directSubmission,
   prepareDirectJobConfig,
   type PresetCatalog,
@@ -120,6 +121,8 @@ export class ControlService {
     actor: string,
   ): Promise<SubmissionResult> {
     positiveCeiling(input.cost_ceiling_usd_per_trial);
+    if (containsCredentialMaterial(input))
+      throw new Error("preset submission contains credential material");
     const id = runId(idempotencyKey);
     const jobConfig = this.presets.buildJobConfig(id, input, this.options.mountRoot);
     const record = validateRunRecord({
