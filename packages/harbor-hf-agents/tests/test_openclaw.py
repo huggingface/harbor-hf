@@ -35,7 +35,7 @@ def test_node_runtime_defaults_to_current_supported_major(tmp_path: Path) -> Non
         extra_env={
             "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
             "OPENAI_API_KEY": "direct-token",
-            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+            "HARBOR_HF_OUTPUT_LIMIT": "32768",
         },
     )
 
@@ -208,7 +208,7 @@ async def test_direct_settings_use_custom_provider_and_output_limit(
         extra_env={
             "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
             "OPENAI_API_KEY": "direct-token",
-            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+            "HARBOR_HF_OUTPUT_LIMIT": "32768",
         },
     )
     exec_as_agent = AsyncMock()
@@ -346,7 +346,7 @@ async def test_run_redirects_sessions_before_agent_execution(
         extra_env={
             "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
             "OPENAI_API_KEY": "direct-token",
-            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+            "HARBOR_HF_OUTPUT_LIMIT": "32768",
         },
     )
     monkeypatch.setattr(agent, "exec_as_agent", AsyncMock(side_effect=execute))
@@ -397,7 +397,7 @@ async def test_run_continues_when_session_redirect_fails(
         extra_env={
             "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
             "OPENAI_API_KEY": "direct-token",
-            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+            "HARBOR_HF_OUTPUT_LIMIT": "32768",
         },
     )
     monkeypatch.setattr(agent, "exec_as_agent", AsyncMock(side_effect=execute))
@@ -425,7 +425,7 @@ async def test_run_uploads_config_to_non_mounted_environment(
         extra_env={
             "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
             "OPENAI_API_KEY": "direct-token",
-            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+            "HARBOR_HF_OUTPUT_LIMIT": "32768",
         },
     )
     upload_file = AsyncMock()
@@ -467,7 +467,7 @@ async def test_run_creates_missing_logs_directory(
         extra_env={
             "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
             "OPENAI_API_KEY": "direct-token",
-            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+            "HARBOR_HF_OUTPUT_LIMIT": "32768",
         },
     )
     environment = SimpleNamespace(
