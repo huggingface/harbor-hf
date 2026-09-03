@@ -4,7 +4,7 @@
   "version": "0.84.2",
   "harbor_agent": {
     "import_path": "harbor_hf_agents.pi.agent:PiAgent",
-    "kwargs": { "version": "0.84.2" }
+    "kwargs": { "version": "0.84.2", "model_api": "openai-completions" }
   },
   "reasoning_option": "thinking",
   "reasoning_values": ["off", "minimal", "low", "medium", "high", "xhigh"]

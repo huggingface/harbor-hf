@@ -95,6 +95,7 @@ A preset submission creates this immutable record:
         },
         "kwargs": {
           "version": "0.84.2",
+          "model_api": "openai-completions",
           "thinking": "off"
         }
       }

@@ -120,7 +120,11 @@ describe("run submission", () => {
             OPENAI_BASE_URL: "https://router.huggingface.co/v1",
             OPENAI_API_KEY: "$" + "{HF_INFERENCE_TOKEN}",
           },
-          kwargs: { version: "0.84.2", thinking: "off" },
+          kwargs: {
+            version: "0.84.2",
+            model_api: "openai-completions",
+            thinking: "off",
+          },
         },
       ],
     });
