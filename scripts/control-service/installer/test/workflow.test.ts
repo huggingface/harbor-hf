@@ -149,7 +149,7 @@ class FakeHttp implements HttpAdapter {
         this.readyStatus === "ready" &&
         this.readyRequestCount !== this.failReadyOnRequest;
       return {
-        status: 200,
+        status: ready ? 200 : 503,
         body: { status: ready ? "ready" : "initializing" },
       };
     }
@@ -782,8 +782,8 @@ describe("installer workflows", () => {
     const progress: string[] = [];
     setupResult.hf.waitGate = waitGate.promise;
     setupResult.http.readyResponses.push(
-      { status: 200, body: { status: "initializing" } },
-      { status: 200, body: { status: "initializing" } },
+      { status: 503, body: { status: "initializing" } },
+      { status: 503, body: { status: "initializing" } },
     );
     setupResult.dependencies.configureStartupPolicy = {
       runtimeHeartbeatMilliseconds: 30,
@@ -957,12 +957,12 @@ describe("installer workflows", () => {
   });
 
   it.each([
-    ["extra initializing field", 200, { status: "initializing", detail: "unexpected" }],
+    ["extra initializing field", 503, { status: "initializing", detail: "unexpected" }],
     ["ready body on 503", 503, { status: "ready" }],
-    ["initializing body on 503", 503, { status: "initializing" }],
+    ["initializing body on 200", 200, { status: "initializing" }],
     ["extra ready field", 200, { status: "ready", detail: "unexpected" }],
     ["initializing body on 500", 500, { status: "initializing" }],
-    ["non-object body", 200, "initializing"],
+    ["non-object body", 503, "initializing"],
   ])(
     "does not retry an inexact readiness response: %s",
     async (_name, status, body) => {

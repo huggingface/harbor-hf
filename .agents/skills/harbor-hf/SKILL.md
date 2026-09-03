@@ -64,9 +64,10 @@ uv run harbor-hf submit \
 ```
 
 The service replaces caller-controlled paths, environment, and router
-credentials. It rejects multiple agents, source jobs, local paths, custom
-environments, and credential literals. Direct runs are diagnostic and cannot
-enter the leaderboard.
+credentials. It rejects unknown fields, multiple agents, source jobs, local
+paths, caller-supplied agent environments or skills, custom environments,
+credential literals, and credentials in URLs. Direct runs are diagnostic and
+cannot enter the leaderboard.
 
 ## Inspect and control runs
 
@@ -99,8 +100,12 @@ projection. HF Job state is an observation, not the run record.
 ## Cost and completion rules
 
 The cost ceiling is checked after each trial because Harbor writes the result
-before it calls the end hook. One trial can cross its limit. With concurrent
-trials, work that is already active can also finish before cancellation.
+before it calls the end hook. The parent writes one immutable cost receipt for
+each Harbor attempt before Harbor can remove a failed retry folder. It reloads
+these receipts after restart. A missing cost stops the run.
+
+One trial can cross its limit. With concurrent trials, work that is already
+active can also finish before cancellation.
 
 Treat a run as complete only when:
 

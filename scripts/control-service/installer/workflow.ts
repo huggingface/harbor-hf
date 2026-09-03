@@ -1189,7 +1189,7 @@ async function verifyPlan(
         });
         break;
       }
-      if (ready.status !== 200 || !exactStatus(ready.body, "initializing")) {
+      if (ready.status !== 503 || !exactStatus(ready.body, "initializing")) {
         throw new Error("anonymous readiness verification failed");
       }
       if (afterRequest >= nextHeartbeat) {
