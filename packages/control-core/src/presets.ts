@@ -148,12 +148,14 @@ export class PresetCatalog {
 }
 
 const FORBIDDEN_DIRECT_FIELDS = new Set([
+  "extra_instruction_paths",
   "jobs_dir",
   "job_name",
   "source_jobs",
   "tasks",
   "user_agent",
 ]);
+const FORBIDDEN_DIRECT_AGENT_FIELDS = new Set(["load_trajectory", "skills"]);
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -192,6 +194,10 @@ export function prepareDirectJobConfig(
   if (!Array.isArray(agents) || agents.length !== 1)
     throw new Error("direct Harbor JobConfig must contain exactly one agent");
   const agent = record(agents[0], "agent");
+  for (const field of FORBIDDEN_DIRECT_AGENT_FIELDS) {
+    if (field in agent)
+      throw new Error(`direct Harbor JobConfig agent cannot set ${field}`);
+  }
   const submittedAgentEnv = record(agent.env ?? {}, "agent env");
   if (Object.keys(submittedAgentEnv).length > 0)
     throw new Error("direct Harbor JobConfig cannot set agent env");

@@ -229,6 +229,33 @@ describe("run submission", () => {
         "test-subject",
       ),
     ).rejects.toThrow("local dataset path");
+    await expect(
+      service.submitConfig(
+        {
+          ...directInput,
+          extra_instruction_paths: ["/proc/self/environ"],
+        },
+        0.25,
+        "local-instruction",
+        "test-subject",
+      ),
+    ).rejects.toThrow("extra_instruction_paths");
+    for (const [field, value] of [
+      ["skills", ["/proc/self"]],
+      ["load_trajectory", "/proc/self/environ"],
+    ] as const) {
+      await expect(
+        service.submitConfig(
+          {
+            ...directInput,
+            agents: [{ ...directInput.agents[0], [field]: value }],
+          },
+          0.25,
+          `local-agent-${field}`,
+          "test-subject",
+        ),
+      ).rejects.toThrow(field);
+    }
     const direct = await service.submitConfig(
       directInput,
       0.25,
