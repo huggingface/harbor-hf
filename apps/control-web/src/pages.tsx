@@ -201,9 +201,20 @@ function jobColumns(includeRun: boolean): ColumnDef<JobRow>[] {
     },
     ...(includeRun ? [runColumn] : []),
     {
+      accessorKey: "worker_role",
+      header: "Worker role",
+      cell: ({ getValue }) => humanize(String(getValue())),
+    },
+    {
       accessorKey: "action_kind",
       header: () => <Hint text={hints.jobs.action}>Action</Hint>,
       cell: ({ getValue }) => humanize(String(getValue())),
+    },
+    {
+      accessorKey: "outcome",
+      header: "Action outcome",
+      cell: ({ getValue }) =>
+        getValue() == null ? "Not reported" : humanize(String(getValue())),
     },
     {
       accessorKey: "observed_state",
@@ -301,6 +312,52 @@ function RunJobs({ runId }: { runId: string }) {
   const active = jobs.filter(jobIsActive).length;
   return (
     <section className="mt-8">
+      {jobs.some((job) => job.worker_role === "preparation") ? (
+        <Card className="my-6 border-amber-700" role="status">
+          <h2 className="font-semibold">Hosted preparation</h2>
+          {jobs.some(
+            (job) =>
+              job.worker_role === "preparation" &&
+              (["ERROR", "FAILED"].includes((job.observed_state ?? "").toUpperCase()) ||
+                job.outcome === "failed"),
+          ) ? (
+            <p className="mt-2 text-sm text-amber-200">
+              A preparation Job reported failure. Review its recorded state and logs
+              below; later attempts may supersede it.
+            </p>
+          ) : null}
+          <p className="mt-2 text-sm">
+            Recorded preparation Job states (not task outcomes):
+          </p>
+          <ul className="mt-2 space-y-2 text-sm">
+            {jobs
+              .filter((job) => job.worker_role === "preparation")
+              .map((job) => (
+                <li key={job.launch_action_id}>
+                  <span className="font-mono">
+                    {shortId(job.resource_id ?? job.launch_action_id)}
+                  </span>
+                  {": "}
+                  {job.observed_state ?? "Queued"}
+                  {" · Action outcome: "}
+                  {job.outcome ?? "Not reported"}
+                  {job.inspect_url ? (
+                    <a
+                      className="ml-3 text-cyan-300 hover:underline"
+                      href={job.inspect_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Preparation Job logs
+                    </a>
+                  ) : (
+                    <span> · Logs unavailable until a remote Job is recorded.</span>
+                  )}
+                </li>
+              ))}
+          </ul>
+        </Card>
+      ) : null}
       <h2 className="text-lg font-semibold text-white">
         <Hint text={hints.run.jobs}>Physical HF Jobs</Hint>
       </h2>
@@ -308,9 +365,10 @@ function RunJobs({ runId }: { runId: string }) {
         {query.data
           ? `${counted(jobs.length, "Job")} recorded, ${active} active. `
           : null}
-        Each physical trial Job runs one logical trial attempt. A logical trial can
-        retain multiple Jobs after infrastructure replacements, but only one valid
-        attempt becomes its selected result.
+        Preparation Jobs build the hosted execution inputs. Each physical trial Job runs
+        one logical trial attempt. A logical trial can retain multiple Jobs after
+        infrastructure replacements, but only one valid attempt becomes its selected
+        result.
       </p>
       <QueryContent query={query}>
         <DataTable
@@ -1387,6 +1445,10 @@ function LaunchPanel({
                   </dd>
                 </div>
                 <div>
+                  <dt className="text-slate-500">Resolved inference provider</dt>
+                  <dd>
+                    {String(deploymentSpec?.inference_provider ?? "Not reported")}
+                  </dd>
                   <dt className="text-slate-500">Locked deployment</dt>
                   <dd className="font-mono text-xs">{resolved?.deployment}</dd>
                 </div>

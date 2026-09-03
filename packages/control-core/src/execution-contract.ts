@@ -261,7 +261,8 @@ function composedAgent(
       ...clone(template.env ?? {}),
       OPENAI_API_KEY: `\${HF_INFERENCE_TOKEN}`,
       OPENAI_BASE_URL: inference.upstream,
-      HARBOR_HF_MAX_OUTPUT_TOKENS: String(inference.max_output_tokens),
+      // Avoid TOKEN in this non-secret key: Harbor redacts such env names.
+      HARBOR_HF_OUTPUT_LIMIT: String(inference.max_output_tokens),
       HARBOR_HF_PROVIDER_TIMEOUT_SECONDS: String(inference.timeout_seconds),
     },
     extra_allowed_hosts: [

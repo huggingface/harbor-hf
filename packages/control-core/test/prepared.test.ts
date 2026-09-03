@@ -187,7 +187,7 @@ function trialPayload(
         env: {
           OPENAI_API_KEY: `\${HF_INFERENCE_TOKEN}`,
           OPENAI_BASE_URL: "https://router.huggingface.co/v1",
-          HARBOR_HF_MAX_OUTPUT_TOKENS: "32768",
+          HARBOR_HF_OUTPUT_LIMIT: "32768",
           HARBOR_HF_PROVIDER_TIMEOUT_SECONDS: "600",
         },
         extra_allowed_hosts: ["router.huggingface.co"],
@@ -240,7 +240,7 @@ function finalizePayload(createdAt: string) {
           env: {
             OPENAI_API_KEY: `\${HF_INFERENCE_TOKEN}`,
             OPENAI_BASE_URL: "https://router.huggingface.co/v1",
-            HARBOR_HF_MAX_OUTPUT_TOKENS: "32768",
+            HARBOR_HF_OUTPUT_LIMIT: "32768",
             HARBOR_HF_PROVIDER_TIMEOUT_SECONDS: "600",
           },
           extra_allowed_hosts: ["router.huggingface.co"],
@@ -756,6 +756,74 @@ describe("prepared Harbor jobs", () => {
       exhausted_tasks: 1,
     });
     expect(await projection.runAttempts(submitted.run_id)).toHaveLength(0);
+  });
+
+  it.each(["trial", "finalize"] as const)(
+    "reports safe env mismatch paths during %s without leaking keys or values",
+    async (phase) => {
+      const { service } = await setup();
+      const { runId, lock, launch } = await run(service);
+      const task = lock.tasks[0];
+      if (!task) throw new Error("run task is missing");
+      const trial = trialPayload(task.input_digest);
+      const final = finalizePayload(lock.created_at);
+      if (phase === "finalize")
+        await service.submitPreparedJob(runId, launch.action_id, trial);
+      const agent =
+        phase === "trial" ? trial.trial_lock.agent : final.job_config.agents[0];
+      if (!agent) throw new Error("prepared agent is missing");
+      agent.env.OPENAI_API_KEY = "secret-actual-token";
+      agent.env.HARBOR_HF_OUTPUT_LIMIT = "[REDACTED]";
+      Object.assign(agent.env, {
+        "secret-key\nforged diagnostic": "secret-extra-value",
+      });
+      const error = await service
+        .submitPreparedJob(runId, launch.action_id, phase === "trial" ? trial : final)
+        .then(
+          () => {
+            throw new Error("expected rejection");
+          },
+          (error: Error) => error,
+        );
+      expect(error.message).toBe(
+        `prepared Harbor agent does not match the locked execution contract (phase: ${phase}; differing field paths: agent.env; values redacted)`,
+      );
+      for (const secret of [
+        "secret-actual-token",
+        "secret-key",
+        "forged diagnostic",
+        "secret-extra-value",
+        "HF_INFERENCE_TOKEN",
+        "OPENAI_API_KEY",
+        "32768",
+        "[REDACTED]",
+      ])
+        expect(error.message).not.toContain(secret);
+      expect(await service.preparedJob(runId)).toBeNull();
+      if (phase === "trial")
+        expect(await service.preparedTrial(runId, task.task_id)).toBeNull();
+    },
+  );
+
+  it("keeps subset matching permissive for extra keys but strict for arrays", async () => {
+    const { service } = await setup();
+    const { runId, lock, launch } = await run(service);
+    const task = lock.tasks[0];
+    if (!task) throw new Error("run task is missing");
+    const payload = trialPayload(task.input_digest);
+    Object.assign(payload.trial_lock.agent.env, {
+      "untrusted-secret-key": "extra-secret",
+    });
+    payload.trial_lock.agent.extra_allowed_hosts.push("secret-extra-host");
+    await expect(
+      service.submitPreparedJob(runId, launch.action_id, payload),
+    ).rejects.toThrow(
+      "phase: trial; differing field paths: agent.extra_allowed_hosts; values redacted",
+    );
+    payload.trial_lock.agent.extra_allowed_hosts.pop();
+    await expect(
+      service.submitPreparedJob(runId, launch.action_id, payload),
+    ).resolves.toMatchObject({ phase: "trial" });
   });
 
   it("rejects prepared task sources outside the benchmark profile", async () => {

@@ -1637,6 +1637,7 @@ describe("control API", () => {
     const matching = items.filter((item) => item.resource_id === resourceId);
     expect(matching).toHaveLength(1);
     expect(matching[0]).toMatchObject({
+      worker_role: "execution",
       action_kind: "job.observe",
       launch_action_id: launchActionId,
       observed_state: "ERROR",
@@ -1672,7 +1673,9 @@ describe("control API", () => {
         payload: {
           task_ids: [`task-${index}`],
           resource_id: `job-${index}`,
-          ...(launchActionId ? { launch_action_id: launchActionId } : {}),
+          ...(launchActionId
+            ? { launch_action_id: launchActionId }
+            : { worker_role: "preparation" }),
         },
       });
     const launches = Array.from({ length: itemCount }, (_, index) => ({
@@ -1764,6 +1767,7 @@ describe("control API", () => {
     ).toMatchObject({
       action_id: "bulk-observe-1000",
       launch_action_id: launchActionId,
+      worker_role: "preparation",
       observed_state: "RUNNING",
       cost_microusd: 42,
     });

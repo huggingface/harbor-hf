@@ -5832,6 +5832,7 @@
                           "observed_state",
                           "resource_id",
                           "created_at",
+                          "worker_role",
                           "launch_action_id",
                           "inspect_url",
                           "cost_microusd",
@@ -5886,6 +5887,14 @@
                           "created_at": {
                             "type": "string",
                             "format": "date-time"
+                          },
+                          "worker_role": {
+                            "type": "string",
+                            "enum": [
+                              "preparation",
+                              "execution"
+                            ],
+                            "readOnly": true
                           },
                           "launch_action_id": {
                             "type": "string"

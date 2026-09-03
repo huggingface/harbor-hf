@@ -215,6 +215,7 @@ function renderApp(path = "/", client?: QueryClient) {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -355,7 +356,7 @@ describe("control web", () => {
         throw new Error(`unexpected request: ${path}`);
       }),
     );
-    renderApp("/workbench");
+    const view = renderApp("/workbench");
     expect(
       await screen.findByRole("heading", { name: "Agent Workbench" }),
     ).toBeVisible();
@@ -377,6 +378,16 @@ describe("control web", () => {
     expect(await screen.findByText(/"job_name": "local-preview"/)).toBeVisible();
 
     const user = userEvent.setup();
+    await user.clear(screen.getByLabelText("Configuration name"));
+    await user.type(screen.getByLabelText("Configuration name"), "recovered-draft");
+    view.unmount();
+    renderApp("/workbench");
+    expect(await screen.findByLabelText("Configuration name")).toHaveValue(
+      "recovered-draft",
+    );
+    expect(
+      screen.getByRole("checkbox", { name: /launch this exact setup recipe/i }),
+    ).not.toBeChecked();
     await user.click(screen.getByRole("button", { name: "FX 0.0.6" }));
     expect(screen.getByLabelText("Configuration name")).toHaveValue("fx");
     expect(
@@ -401,6 +412,7 @@ describe("control web", () => {
     await waitFor(() => expect(launchSetup).toBeEnabled());
     await user.click(launchSetup);
     expect(await screen.findByText("passed")).toBeVisible();
+    expect(screen.getByText(/This does not verify hosted/)).toBeVisible();
     expect(await screen.findByText(/fast-agent-mcp v0.10.16/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: /hostile.txt/i }));
     expect(
@@ -740,6 +752,92 @@ describe("control web", () => {
     await user.click(screen.getByRole("checkbox"));
     expect(confirm).toBeEnabled();
   });
+
+  it.each([
+    [0, "preparation"],
+    [12, "preparation"],
+    [0, "execution"],
+  ] as const)(
+    "uses Job role with %i locked tasks and %s worker",
+    async (totalTasks, workerRole) => {
+      vi.stubGlobal("EventSource", FakeEventSource);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) => {
+          const path = String(input);
+          if (path.includes("auth/session")) return json(session());
+          if (path.includes("/system")) return json(system());
+          if (path.endsWith("/api/v1/runs/run-prep"))
+            return json({
+              run_id: "run-prep",
+              created_at: "2026-08-18T00:00:00.000Z",
+              status: "failed",
+              total_tasks: totalTasks,
+              terminal_tasks: 0,
+              successful_tasks: 0,
+              admissible_tasks: 0,
+              exhausted_tasks: 0,
+              invalid_selected_tasks: 0,
+              pending_actions: 0,
+              observed_microusd: 0,
+              reserved_microusd: 0,
+              ceiling_microusd: 1000000,
+              cleanup_pending: false,
+              publication_status: null,
+            });
+          if (path.includes("/jobs"))
+            return json({
+              items: [
+                {
+                  action_id: "observe-prep",
+                  launch_action_id: "launch-prep",
+                  worker_role: workerRole,
+                  run_id: "run-prep",
+                  action_kind: "job.observe",
+                  generation: 0,
+                  target: "job-prep",
+                  outcome: "completed",
+                  observed_state: "ERROR",
+                  resource_id: "job-prep",
+                  inspect_url: "https://huggingface.co/jobs/test/job-prep",
+                  created_at: "2026-08-18T00:00:00.000Z",
+                  assigned_tasks: 0,
+                  cost_microusd: 0,
+                },
+              ],
+              next_cursor: null,
+            });
+          if (path.includes("/tasks")) return json({ items: [], next_cursor: null });
+          throw new Error("unavailable");
+        }),
+      );
+      renderApp("/runs/run-prep");
+      await screen.findByRole("columnheader", { name: /Action outcome/ });
+      if (workerRole === "execution") {
+        expect(
+          screen.queryByRole("heading", { name: "Hosted preparation" }),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole("link", { name: "Preparation Job logs" }),
+        ).not.toBeInTheDocument();
+        return;
+      }
+      expect(
+        await screen.findByRole("heading", { name: "Hosted preparation" }),
+      ).toBeVisible();
+      expect(screen.queryByText(/No logical tasks are locked/)).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Preparation Job logs" }),
+      ).toHaveAttribute("href", "https://huggingface.co/jobs/test/job-prep");
+      expect(
+        await screen.findByRole("columnheader", { name: /Action outcome/ }),
+      ).toBeVisible();
+      expect(screen.getAllByText(/ERROR/).length).toBeGreaterThan(0);
+      expect(
+        screen.getByRole("link", { name: /Open Hugging Face Job/ }),
+      ).toHaveAttribute("href", "https://huggingface.co/jobs/test/job-prep");
+    },
+  );
 
   it("shows a replacement Job on the existing run instead of a new row", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);

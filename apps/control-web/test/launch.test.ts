@@ -13,6 +13,24 @@ import {
 } from "../src/launch";
 
 describe("launch helpers", () => {
+  it("rejects ambiguous deployment matches instead of silently choosing the first", () => {
+    const spec = {
+      models: ["model"],
+      harnesses: ["agent"],
+      inference_provider: "provider",
+    };
+    expect(() =>
+      selectDeploymentAlias(
+        [
+          { alias: "one", spec },
+          { alias: "two", spec },
+        ],
+        "providers",
+        "model",
+        "agent",
+      ),
+    ).toThrow(/Multiple approved.*one, two/);
+  });
   it("keeps a selected alias when it is approved", () => {
     expect(
       approvedAlias("gpt-oss-20b", ["control-smoke", "gpt-oss-20b"], "model"),

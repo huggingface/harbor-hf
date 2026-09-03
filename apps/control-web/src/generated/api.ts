@@ -2557,6 +2557,8 @@ export interface paths {
                                 resource_id: string | null;
                                 /** Format: date-time */
                                 created_at: string;
+                                /** @enum {string} */
+                                readonly worker_role: "preparation" | "execution";
                                 launch_action_id: string;
                                 inspect_url: string | null;
                                 cost_microusd: number;

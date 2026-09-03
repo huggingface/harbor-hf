@@ -224,7 +224,7 @@ The final `AgentConfig` includes:
   "env": {
     "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
     "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
-    "HARBOR_HF_MAX_OUTPUT_TOKENS": "<locked-positive-integer>",
+    "HARBOR_HF_OUTPUT_LIMIT": "<locked-positive-integer>",
     "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": "<locked-positive-integer>"
   },
   "extra_allowed_hosts": ["router.huggingface.co"]

@@ -101,7 +101,7 @@ Composition verifies the model route and API, then writes the final
   "env": {
     "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
     "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
-    "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+    "HARBOR_HF_OUTPUT_LIMIT": "32768",
     "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": "1800"
   },
   "extra_allowed_hosts": ["router.huggingface.co"]

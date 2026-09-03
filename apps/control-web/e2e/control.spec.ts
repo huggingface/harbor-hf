@@ -288,7 +288,7 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
   ).toBeVisible();
   await expect(
     page.getByText(
-      "The model route, direct inference URL, and credential binding come from the local deployment profile. They are not Workbench settings.",
+      "The model route, direct inference URL, and credential binding come from the selected hosted deployment or local deployment profile. They are not recipe settings.",
       { exact: true },
     ),
   ).toBeVisible();
@@ -304,6 +304,7 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
   await page.getByRole("button", { name: "Launch setup test" }).click();
   await expect(page.getByText("fast-agent-mcp v0.10.16")).toBeVisible();
   await expect(page.getByText("passed", { exact: true })).toBeVisible();
+  await expect(page.getByText(/This does not verify hosted preparation/)).toBeVisible();
   await expect(
     page.getByRole("button", { name: /workspace\/instruction\.txt/ }),
   ).toBeVisible();

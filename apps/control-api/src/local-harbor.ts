@@ -248,7 +248,7 @@ export class LocalHarborRuntime {
             ...clone(harborAgent.env ?? {}),
             OPENAI_API_KEY: INFERENCE_TOKEN_REFERENCE,
             OPENAI_BASE_URL: template.inference_upstream,
-            HARBOR_HF_MAX_OUTPUT_TOKENS: String(
+            HARBOR_HF_OUTPUT_LIMIT: String(
               template.inference_max_output_tokens ?? 32768,
             ),
             HARBOR_HF_PROVIDER_TIMEOUT_SECONDS: String(
