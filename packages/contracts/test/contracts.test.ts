@@ -8,6 +8,7 @@ import {
   runStatePath,
   sha256,
   validateAgentPreset,
+  validateAttemptCost,
   validateBenchmarkPreset,
   validateHarborJobConfig,
   validateRunRecord,
@@ -98,6 +99,22 @@ describe("contracts", () => {
         reasoning_values: ["off", "high"],
       }),
     ).toMatchObject({ agent: "pi" });
+  });
+
+  it("validates durable attempt cost receipts", () => {
+    const receipt = {
+      schema_version: "v1",
+      attempt_id: "11111111-1111-4111-8111-111111111111",
+      trial_name: "task__trial",
+      cost_usd: 0.2,
+    } as const;
+    expect(validateAttemptCost(receipt)).toEqual(receipt);
+    expect(() => validateAttemptCost({ ...receipt, extra: true })).toThrow(
+      ContractValidationError,
+    );
+    expect(() => validateAttemptCost({ ...receipt, cost_usd: -1 })).toThrow(
+      ContractValidationError,
+    );
   });
 
   it("uses the pinned Harbor JobConfig schema", () => {

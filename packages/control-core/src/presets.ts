@@ -9,6 +9,7 @@ import {
   validateAgentPreset,
   validateBenchmarkPreset,
   validateHarborJobConfig,
+  validateStrictHarborJobConfig,
 } from "@harbor-hf/contracts";
 
 const ROUTER_URL = "https://router.huggingface.co/v1";
@@ -165,12 +166,21 @@ function record(value: unknown, label: string): Record<string, unknown> {
 
 function containsCredentialMaterial(value: unknown, key = ""): boolean {
   if (/(?:token|secret|password|api[_-]?key)/i.test(key)) return true;
-  if (typeof value === "string")
+  if (typeof value === "string") {
+    let hasUserInfo = false;
+    try {
+      const parsed = new URL(value);
+      hasUserInfo = Boolean(parsed.username || parsed.password);
+    } catch {
+      hasUserInfo = false;
+    }
     return (
+      hasUserInfo ||
       /\$\{[A-Z][A-Z0-9_]*\}/.test(value) ||
       CREDENTIAL_VALUE.test(value) ||
       value.includes("-----BEGIN PRIVATE KEY-----")
     );
+  }
   if (Array.isArray(value))
     return value.some((item) => containsCredentialMaterial(item, key));
   if (!value || typeof value !== "object") return false;
@@ -185,6 +195,7 @@ export function prepareDirectJobConfig(
   mountRoot: string,
 ): HarborJobConfigV1 {
   const input = record(value, "Harbor JobConfig");
+  validateStrictHarborJobConfig(input);
   for (const field of FORBIDDEN_DIRECT_FIELDS) {
     if (field in input) throw new Error(`direct Harbor JobConfig cannot set ${field}`);
   }

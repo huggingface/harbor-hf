@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import type {
   AgentPresetV1,
+  AttemptCostV1,
   BenchmarkPresetV1,
   HarborJobConfigV1,
   RunRecordV1,
@@ -18,30 +19,59 @@ function load(name: string): object {
 
 export const schemas = {
   agentPreset: load("agent-preset-v1.schema.json"),
+  attemptCost: load("attempt-cost-v1.schema.json"),
   benchmarkPreset: load("benchmark-preset-v1.schema.json"),
   harborJobConfig: load("harbor-job-config-v1.schema.json"),
   runRecord: load("run-record-v1.schema.json"),
   runState: load("run-state-v1.schema.json"),
 } as const;
 
-const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true, strict: false });
-ajv.addFormat("date-time", {
-  type: "string",
-  validate: (value: string) => Number.isFinite(Date.parse(value)),
-});
-ajv.addFormat("path", { type: "string", validate: () => true });
-ajv.addFormat("uuid", {
-  type: "string",
-  validate: (value: string) =>
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value,
-    ),
-});
+function closeSchemaObjects(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(closeSchemaObjects);
+  if (!value || typeof value !== "object") return value;
+  const closed = Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, closeSchemaObjects(child)]),
+  );
+  if (
+    closed.type === "object" &&
+    closed.properties &&
+    closed.additionalProperties === undefined
+  )
+    closed.additionalProperties = false;
+  return closed;
+}
 
+function configuredAjv(): Ajv2020 {
+  const instance = new Ajv2020({
+    allErrors: true,
+    allowUnionTypes: true,
+    strict: false,
+  });
+  instance.addFormat("date-time", {
+    type: "string",
+    validate: (value: string) => Number.isFinite(Date.parse(value)),
+  });
+  instance.addFormat("path", { type: "string", validate: () => true });
+  instance.addFormat("uuid", {
+    type: "string",
+    validate: (value: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+      ),
+  });
+  return instance;
+}
+
+const ajv = configuredAjv();
+const strictAjv = configuredAjv();
 const validators = {
   agentPreset: ajv.compile(schemas.agentPreset),
+  attemptCost: ajv.compile(schemas.attemptCost),
   benchmarkPreset: ajv.compile(schemas.benchmarkPreset),
   harborJobConfig: ajv.compile(schemas.harborJobConfig),
+  strictHarborJobConfig: strictAjv.compile(
+    closeSchemaObjects(schemas.harborJobConfig) as typeof schemas.harborJobConfig,
+  ),
   runRecord: ajv.compile(schemas.runRecord),
   runState: ajv.compile(schemas.runState),
 } as const;
@@ -64,10 +94,14 @@ function validate<T>(validator: ValidateFunction, value: unknown, label: string)
 
 export const validateAgentPreset = (value: unknown): AgentPresetV1 =>
   validate(validators.agentPreset, value, "agent preset");
+export const validateAttemptCost = (value: unknown): AttemptCostV1 =>
+  validate(validators.attemptCost, value, "attempt cost receipt");
 export const validateBenchmarkPreset = (value: unknown): BenchmarkPresetV1 =>
   validate(validators.benchmarkPreset, value, "benchmark preset");
 export const validateHarborJobConfig = (value: unknown): HarborJobConfigV1 =>
   validate(validators.harborJobConfig, value, "Harbor JobConfig");
+export const validateStrictHarborJobConfig = (value: unknown): HarborJobConfigV1 =>
+  validate(validators.strictHarborJobConfig, value, "strict Harbor JobConfig");
 export const validateRunRecord = (value: unknown): RunRecordV1 =>
   validate(validators.runRecord, value, "run record");
 export const validateRunState = (value: unknown): RunStateV1 =>

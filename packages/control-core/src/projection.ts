@@ -1,7 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
-import { validateRunRecord, validateRunState } from "@harbor-hf/contracts";
+import type { AttemptCostV1, RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
+import {
+  validateAttemptCost,
+  validateRunRecord,
+  validateRunState,
+} from "@harbor-hf/contracts";
 import Database from "better-sqlite3";
 import { isLiveJob, type JobObservation } from "./jobs.js";
 import { type ObjectStore, readJson } from "./store.js";
@@ -94,11 +98,11 @@ export function costLimitReached(
   record: RunRecordV1,
   result: Record<string, unknown> | null,
   trials: readonly TrialSummary[],
+  attemptCosts: readonly (number | null)[] = trials.map((trial) => trial.cost_usd),
 ): boolean {
   const ceiling = record.submission.cost_ceiling_usd_per_trial;
-  if (trials.some((trial) => trial.cost_usd !== null && trial.cost_usd > ceiling))
-    return true;
-  const total = trials.reduce((sum, trial) => sum + (trial.cost_usd ?? 0), 0);
+  if (attemptCosts.some((cost) => cost === null || cost > ceiling)) return true;
+  const total = attemptCosts.reduce<number>((sum, cost) => sum + (cost ?? 0), 0);
   const planned = numeric(result?.n_total_trials);
   return planned !== null && planned > 0 && total > ceiling * planned;
 }
@@ -109,13 +113,43 @@ export function statusFor(
   result: Record<string, unknown> | null,
   trials: readonly TrialSummary[],
   jobs: readonly JobObservation[],
+  attemptCosts?: readonly (number | null)[],
 ): RunStatus {
   if (state.desired_state === "cancelled") return "cancelled";
   if (state.desired_state === "paused") return "paused";
-  if (costLimitReached(record, result, trials)) return "cost_stopped";
+  if (costLimitReached(record, result, trials, attemptCosts)) return "cost_stopped";
   if (typeof result?.finished_at === "string" && result.finished_at) return "finished";
   if (jobs.some((job) => job.role === "parent" && isLiveJob(job))) return "running";
   return "queued";
+}
+
+function receiptIdFromKey(prefix: string, key: string): string {
+  return key.slice(prefix.length, -".json".length);
+}
+
+function trialAttemptId(trial: TrialSummary): string | null {
+  return typeof trial.result.id === "string" ? trial.result.id : null;
+}
+
+function authoritativeAttemptCosts(
+  receipts: readonly AttemptCostV1[],
+  trials: readonly TrialSummary[],
+): Array<number | null> {
+  const receiptsById = new Map(
+    receipts.map((receipt) => [receipt.attempt_id, receipt]),
+  );
+  const costs = receipts.map((receipt) => receipt.cost_usd);
+  for (const trial of trials) {
+    const attemptId = trialAttemptId(trial);
+    const receipt = attemptId === null ? undefined : receiptsById.get(attemptId);
+    if (!receipt) {
+      costs.push(trial.cost_usd);
+      continue;
+    }
+    if (receipt.trial_name !== trial.trial_name || receipt.cost_usd !== trial.cost_usd)
+      throw new Error("attempt cost receipt conflicts with Harbor result");
+  }
+  return costs;
 }
 
 export class Projection {
@@ -193,12 +227,36 @@ export class Projection {
           return summarizeTrial(runId, name, await readJson(store, key));
         }),
       );
+      const receiptPrefix = `runs/${runId}/attempt-costs/`;
+      const receiptKeys = [...keys]
+        .filter(
+          (key) =>
+            key.startsWith(receiptPrefix) &&
+            key.endsWith(".json") &&
+            !key.slice(receiptPrefix.length).includes("/"),
+        )
+        .sort();
+      const receipts = await Promise.all(
+        receiptKeys.map(async (key) => {
+          const receipt = validateAttemptCost(await readJson(store, key));
+          if (receiptIdFromKey(receiptPrefix, key) !== receipt.attempt_id)
+            throw new Error("attempt cost receipt path does not match its id");
+          return receipt;
+        }),
+      );
       const runJobs = jobs.filter((job) => job.run_id === runId);
       rows.push({
         view: {
           record,
           state,
-          status: statusFor(record, state, result, trials, runJobs),
+          status: statusFor(
+            record,
+            state,
+            result,
+            trials,
+            runJobs,
+            authoritativeAttemptCosts(receipts, trials),
+          ),
           result,
         },
         trials,

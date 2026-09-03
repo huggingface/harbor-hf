@@ -26,6 +26,8 @@ A new run has this structure:
 runs/run-19ecb4608a42c1e9f4610f25/
 ├── run.json
 ├── state.json
+├── attempt-costs/
+│   └── <attempt-id>.json
 └── job/
     ├── config.json
     ├── lock.json
@@ -38,9 +40,10 @@ runs/run-19ecb4608a42c1e9f4610f25/
             └── trajectory.json
 ```
 
-The control service creates `run.json` once and rewrites `state.json`. Harbor
-alone writes below `job/`. Historical objects outside `runs/` stay unchanged
-and are not loaded into the new projection.
+The control service creates `run.json` once and rewrites `state.json`. The
+parent worker creates immutable receipts below `attempt-costs/`. Harbor alone
+writes below `job/`. Historical objects outside `runs/` stay unchanged and are
+not loaded into the new projection.
 
 ### `run.json`
 
@@ -161,6 +164,30 @@ A pause cancels the active parent and its labeled children. Resume changes
 `desired_state` to `run`; the next parent uses Harbor's existing `job/` folder
 and completes only missing trials. Cancellation is terminal.
 
+### Attempt cost receipts
+
+The parent writes one immutable `attempt-costs/<attempt-id>.json` receipt after
+each Harbor trial attempt:
+
+```json
+{
+  "schema_version": "v1",
+  "attempt_id": "6d0c5ea0-e39c-4b54-8f97-3db258295b22",
+  "trial_name": "adaptive-rejection-sampler__1",
+  "cost_usd": 0.08
+}
+```
+
+The attempt ID is Harbor's trial result ID. The cost can be `null` when Harbor
+cannot report inference cost. A missing cost stops the run. The parent loads all
+receipts before resume and backfills a receipt for each current Harbor trial
+result. Thus, Harbor can remove a failed retry folder without removing its cost
+evidence.
+
+The projection validates these receipts and combines them with current Harbor
+trial results by attempt ID. This keeps retry costs after a parent restart
+without adding a fourth SQLite table or a second result format.
+
 ## Presets
 
 Reviewed source files replace all five profile kinds.
@@ -204,11 +231,12 @@ duplicate converter that the current Harbor source now owns.
 CLI command `harbor-hf submit --config job.yaml` uses this route. The CLI also
 requires `--cost-ceiling-usd-per-trial`.
 
-The service validates the file with the pinned Harbor schema. It rejects
-multiple agents and any source job, user agent, local task path, local dataset
-path, parent-local instruction or trajectory path, caller-supplied skill or
-agent environment, credential literal, environment other than `hf-sandbox`, or
-jobs path.
+The service validates the file with a closed form of the pinned Harbor schema.
+It rejects unknown fields, multiple agents and any source job, user agent, local
+task path, local dataset path, parent-local instruction or trajectory path,
+caller-supplied skill or agent environment, credential literal, credential in a
+URL, environment other than `hf-sandbox`, or jobs path. It keeps open extension
+maps such as agent `kwargs` because Harbor defines them as open.
 It sets `job_name`, `jobs_dir`, the labeled environment import path, and the
 router credential template. Other accepted fields stay unchanged. Direct runs
 are stored with role `diagnostic` and do not enter the leaderboard.
@@ -240,10 +268,11 @@ ephemeral secret and does not replace the template in Harbor's persisted job
 configuration.
 
 The parent adds one `on_trial_ended` callback. The callback reads the completed
-trial's Harbor cost. If that trial exceeds the per-trial ceiling, or the sum of
-completed trial costs exceeds the ceiling times the planned trial count, the
-callback stops the Harbor task group. Harbor has already written the trial and
-job result before this callback runs.
+trial's Harbor cost and writes its immutable attempt receipt before Harbor can
+remove a failed retry folder. If the cost is unavailable, if that attempt
+exceeds the per-trial ceiling, or if the sum of attempt costs exceeds the
+ceiling times the planned trial count, the callback stops the Harbor task group.
+Harbor has already written the trial and job result before this callback runs.
 
 This is a post-trial stop. It cannot prevent one trial from crossing its limit.
 With concurrency greater than one, already-running trials can also finish or be
@@ -259,8 +288,8 @@ For each run it applies these rules in order:
 
 1. If the desired state is paused or cancelled, cancel every live Job with the
    run label.
-2. If a completed trial crossed a cost limit, cancel labeled Jobs and do not
-   start a parent.
+2. If an attempt receipt has no cost or the durable attempt costs crossed a
+   limit, cancel labeled Jobs and do not start a parent.
 3. If Harbor's job result is finished, do not start a parent.
 4. If one labeled parent is live, adopt it if needed and wait.
 5. Cancel orphaned labeled child Jobs.

@@ -64,6 +64,8 @@ Harbor job folder.
 runs/<run-id>/
 ├── run.json
 ├── state.json
+├── attempt-costs/
+│   └── <attempt-id>.json
 └── job/
     ├── config.json
     ├── lock.json
@@ -80,7 +82,8 @@ Repeating the same key and request returns the existing run. Different content
 with the same key is an immutable conflict.
 
 The service rewrites `state.json` for `run`, `paused`, and `cancelled` desired
-states. Harbor alone writes below `job/`.
+states. The parent writes one immutable cost receipt for each Harbor attempt
+below `attempt-costs/`. Harbor alone writes below `job/`.
 
 Historical object layouts remain in the Bucket as an archive. The current
 projection reads only `runs/<run-id>/`.
@@ -97,9 +100,10 @@ reasoning values, and nonsecret options. A request cannot override the preset
 fragment.
 
 A direct `JobConfig` is available for diagnostic work. The API rejects unsafe
-fields and validates the result with the JSON Schema generated from the pinned
-Harbor revision. It then sets the run paths, labeled HF Sandbox environment,
-and inference router variables.
+and unknown fields and validates the result with a closed form of the JSON
+Schema generated from the pinned Harbor revision. Harbor-defined open extension
+maps stay open. The service then sets the run paths, labeled HF Sandbox
+environment, and inference router variables.
 
 ## Parent and child Jobs
 
@@ -144,10 +148,11 @@ SQLite has three tables:
 - `trials`
 - `parent_jobs`
 
-The projection combines `run.json`, `state.json`, Harbor result files, and Job
-observations. Desired cancellation and pause have the highest status priority.
-A cost stop comes before normal completion so an expensive completed trial
-cannot enter the leaderboard.
+The projection combines `run.json`, `state.json`, attempt cost receipts, Harbor
+result files, and Job observations. It deduplicates current results and receipts
+by Harbor trial result ID. Desired cancellation and pause have the highest
+status priority. A missing cost or cost stop comes before normal completion, so
+an unaccounted or expensive attempt cannot enter the leaderboard.
 
 The public leaderboard reads finished `final` runs that use an eligible preset
 and have at least one numeric reward. Rows group by benchmark preset, agent and
@@ -159,9 +164,10 @@ The service rejects unknown request fields, unknown presets, unsupported
 reasoning values, non-positive cost limits, unsafe direct configuration, and
 credential literals.
 
-Cost enforcement occurs after a trial result is written. One trial can cross its
-limit, and concurrent work can finish before cancellation. The durable result
-keeps that evidence.
+Cost enforcement occurs after a trial result is written. The parent preserves
+an immutable receipt before Harbor can remove a failed retry folder. It reloads
+all receipts after restart. One trial can cross its limit, and concurrent work
+can finish before cancellation. A missing cost stops the run.
 
 A failed parent can restart after the fixed delay. A cancelled run cannot
 resume. A projection rebuild failure, immutable run conflict, unlabeled child,

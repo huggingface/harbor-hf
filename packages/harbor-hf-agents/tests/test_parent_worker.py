@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from uuid import uuid4
 
 import huggingface_hub._sandbox as sandbox_module
 import pytest
@@ -18,6 +19,7 @@ from harbor_hf_agents.parent_worker import (
     CostCeilingExceeded,
     cost_ceiling,
     job_config,
+    load_attempt_costs,
     load_run_record,
     make_cost_hook,
 )
@@ -64,25 +66,58 @@ def test_loads_and_validates_the_assigned_record(tmp_path: Path) -> None:
         load_run_record(tmp_path, RUN_ID)
 
 
+class Result:
+    def __init__(self, trial_name: str, cost: float | None) -> None:
+        self.id = uuid4()
+        self.trial_name = trial_name
+        self.cost = cost
+
+    def compute_token_cost_totals(
+        self,
+    ) -> tuple[None, None, None, float | None]:
+        return None, None, None, self.cost
+
+
 @pytest.mark.asyncio
-async def test_cost_hook_stops_only_after_an_expensive_trial() -> None:
-    class Result:
-        def __init__(self, cost: float | None) -> None:
-            self.cost = cost
+async def test_cost_hook_stops_only_after_an_expensive_trial(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    hook = make_cost_hook(0.25, 2, run_dir)
+    cheap = SimpleNamespace(result=Result("cheap", 0.25))
+    expensive = SimpleNamespace(result=Result("expensive", 0.26))
 
-        def compute_token_cost_totals(
-            self,
-        ) -> tuple[None, None, None, float | None]:
-            return None, None, None, self.cost
-
-    hook = make_cost_hook(0.25, 2)
-    cheap = SimpleNamespace(trial_name="cheap", result=Result(0.25))
-    expensive = SimpleNamespace(trial_name="expensive", result=Result(0.26))
     await hook(cast(Any, cheap))
+
+    assert len(load_attempt_costs(run_dir)) == 1
     with pytest.raises(CostCeilingExceeded, match="above its ceiling"):
         await hook(cast(Any, expensive))
+    assert len(load_attempt_costs(run_dir)) == 2
     with pytest.raises(ValueError, match="planned trial count"):
-        make_cost_hook(0.25, 0)
+        make_cost_hook(0.25, 0, run_dir)
+
+
+@pytest.mark.asyncio
+async def test_cost_hook_restores_retry_cost_after_restart(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    first = make_cost_hook(0.25, 1, run_dir)
+    await first(cast(Any, SimpleNamespace(result=Result("task", 0.2))))
+
+    resumed = make_cost_hook(0.25, 1, run_dir)
+    with pytest.raises(CostCeilingExceeded, match="run ceiling"):
+        await resumed(cast(Any, SimpleNamespace(result=Result("task", 0.2))))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cost", [None, float("inf"), -1.0])
+async def test_cost_hook_fails_closed_when_cost_is_unavailable(
+    tmp_path: Path,
+    cost: float | None,
+) -> None:
+    hook = make_cost_hook(0.25, 1, tmp_path / "run")
+
+    with pytest.raises(CostCeilingExceeded, match="did not report inference cost"):
+        await hook(cast(Any, SimpleNamespace(result=Result("task", cost))))
 
 
 @pytest.mark.asyncio

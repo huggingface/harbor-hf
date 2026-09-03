@@ -89,8 +89,13 @@ async function submit(key = "test-key") {
   return service.submitPreset(input, key, "test-subject");
 }
 
-function trial(cost = 0.01, reward = 1): Record<string, unknown> {
+function trial(
+  cost = 0.01,
+  reward = 1,
+  id = "11111111-1111-4111-8111-111111111111",
+): Record<string, unknown> {
   return {
+    id,
     trial_name: "task__trial",
     agent_result: { cost_usd: cost },
     verifier_result: { rewards: { reward } },
@@ -222,6 +227,41 @@ describe("run submission", () => {
       service.submitConfig(
         {
           ...directInput,
+          datasets: [
+            {
+              ...directInput.datasets[0],
+              repo: "https://user:password@example.test/repository",
+            },
+          ],
+        },
+        0.25,
+        "credential-url",
+        "test-subject",
+      ),
+    ).rejects.toThrow("credential material");
+    await expect(
+      service.submitConfig(
+        { ...directInput, ignored_by_harbor: true },
+        0.25,
+        "unknown-field",
+        "test-subject",
+      ),
+    ).rejects.toThrow("strict Harbor JobConfig");
+    await expect(
+      service.submitConfig(
+        {
+          ...directInput,
+          agents: [{ ...directInput.agents[0], ignored_by_harbor: true }],
+        },
+        0.25,
+        "unknown-agent-field",
+        "test-subject",
+      ),
+    ).rejects.toThrow("strict Harbor JobConfig");
+    await expect(
+      service.submitConfig(
+        {
+          ...directInput,
           datasets: [{ path: "/data/local-tasks" }],
         },
         0.25,
@@ -291,7 +331,13 @@ describe("status and projection", () => {
       parent_jobs: [],
     } satisfies RunStateV1;
     const summary = summarizeTrial(record.run_id, "task", trial(0.5));
+    const cheap = summarizeTrial(record.run_id, "task", trial(0.2));
     expect(costLimitReached(record, { n_total_trials: 1 }, [summary])).toBe(true);
+    expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [0.2])).toBe(false);
+    expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [0.2, 0.2])).toBe(
+      true,
+    );
+    expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [null])).toBe(true);
     expect(statusFor(record, state, null, [], [])).toBe("queued");
     expect(
       statusFor(
@@ -360,6 +406,54 @@ describe("status and projection", () => {
     expect(leaderboard(projection, presets)).toEqual([
       expect.objectContaining({ n_attempts: 5, n_trials: 1, pass_rate: 1 }),
     ]);
+  });
+
+  it("retains failed retry cost in the rebuilt projection", async () => {
+    const { run } = await submit("retry-cost");
+    const previousId = "22222222-2222-4222-8222-222222222222";
+    const currentId = "33333333-3333-4333-8333-333333333333";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: "2026-09-04T00:10:00Z",
+      n_total_trials: 1,
+    });
+    await putJson(
+      store,
+      `runs/${run.run_id}/job/task/result.json`,
+      trial(0.2, 1, currentId),
+    );
+    await putJson(store, `runs/${run.run_id}/attempt-costs/${previousId}.json`, {
+      schema_version: "v1",
+      attempt_id: previousId,
+      trial_name: "task__trial",
+      cost_usd: 0.2,
+    });
+
+    await service.refresh();
+
+    expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
+  });
+
+  it("rejects a cost receipt that conflicts with a Harbor result", async () => {
+    const { run } = await submit("cost-conflict");
+    const attemptId = "44444444-4444-4444-8444-444444444444";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      n_total_trials: 1,
+    });
+    await putJson(
+      store,
+      `runs/${run.run_id}/job/task/result.json`,
+      trial(0.2, 1, attemptId),
+    );
+    await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
+      schema_version: "v1",
+      attempt_id: attemptId,
+      trial_name: "task__trial",
+      cost_usd: 0.1,
+    });
+
+    await expect(service.refresh()).rejects.toThrow(
+      "attempt cost receipt conflicts with Harbor result",
+    );
   });
 });
 

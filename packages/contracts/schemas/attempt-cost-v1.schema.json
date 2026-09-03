@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harbor-hf.invalid/schemas/attempt-cost-v1.schema.json",
+  "title": "Attempt cost v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "attempt_id", "trial_name", "cost_usd"],
+  "properties": {
+    "schema_version": {
+      "const": "v1"
+    },
+    "attempt_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "trial_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "cost_usd": {
+      "anyOf": [
+        {
+          "type": "number",
+          "minimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}
