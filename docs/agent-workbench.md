@@ -9,8 +9,14 @@ The Workbench presents three distinct stages:
 1. **Configure** setup and run commands plus typed environment bindings.
 2. **Test** installation in a disposable local Docker container or Hugging Face
    Job without a benchmark or model request.
-3. **Run** by selecting a reviewed benchmark configuration, previewing its
-   locked infrastructure and maximum cost, and explicitly confirming launch.
+3. **Save** a named immutable recipe version in your owner-scoped library.
+   Testing is optional during authoring, not at launch.
+
+Select that exact version alongside built-in harnesses in **New Run** under
+`/runs`. Choose a supported benchmark selection, model string, and explicit
+reviewed configuration before confirming cost and launch. Workbench itself no
+longer launches benchmarks. See the [current-runtime UX notes](2026-09-04-current-runtime-ux.md)
+for routing limits, Advanced navigation, and upstream compatibility decisions.
 
 A successful setup test is ephemeral verification. It does not create, approve,
 or publish a harness profile and does not start a Run. Hosted submission sends

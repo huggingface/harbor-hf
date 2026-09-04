@@ -29,7 +29,6 @@ const adminNavigation = [
   ["/jobs", "Jobs", ServerCog, hints.nav.jobs],
   ["/endpoints", "Endpoints", Network, hints.nav.endpoints],
   ["/results", "Results", BarChart3, hints.nav.results],
-  ["/profiles", "Profiles", Boxes, hints.nav.profiles],
   ["/audit", "Audit", FileClock, hints.nav.audit],
 ] as const;
 
@@ -183,6 +182,21 @@ export function Layout({
                     </a>
                   ),
                 )}
+                {authenticated ? (
+                  <details open={location.pathname === "/profiles"} className="pt-2">
+                    <summary className="cursor-pointer px-3 py-2 text-sm text-slate-400">
+                      Advanced
+                    </summary>
+                    <NavLink
+                      to="/profiles"
+                      onClick={closeNav}
+                      className={({ isActive }) => navItemClass(isActive)}
+                    >
+                      <Boxes size={18} />
+                      Configuration registry
+                    </NavLink>
+                  </details>
+                ) : null}
               </div>
             </div>
           ) : null}

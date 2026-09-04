@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { fastAgentWorkbenchStarter } from "../../../packages/control-core/src/workbench";
 import { SavedConfigurations } from "../src/saved-configurations";
@@ -30,12 +31,18 @@ it("saves to the server and loads a revision after a fresh mount", async () => {
   );
   const onLoad = vi.fn();
   const view = render(
-    <SavedConfigurations recipe={fastAgentWorkbenchStarter} onLoad={onLoad} />,
+    <MemoryRouter>
+      <SavedConfigurations recipe={fastAgentWorkbenchStarter} onLoad={onLoad} />
+    </MemoryRouter>,
   );
   await userEvent.click(screen.getByRole("button", { name: "Save configuration" }));
   expect(await screen.findByRole("status")).toHaveTextContent("Saved fast-agent");
   view.unmount();
-  render(<SavedConfigurations recipe={fastAgentWorkbenchStarter} onLoad={onLoad} />);
+  render(
+    <MemoryRouter>
+      <SavedConfigurations recipe={fastAgentWorkbenchStarter} onLoad={onLoad} />
+    </MemoryRouter>,
+  );
   await screen.findByRole("option", { name: /fast-agent · aaaaaaaa/ });
   await userEvent.selectOptions(screen.getByRole("combobox"), saved.revision);
   vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -54,7 +61,11 @@ it("does not claim success when saving fails", async () => {
         : Response.json({ items: [] }),
     ),
   );
-  render(<SavedConfigurations recipe={fastAgentWorkbenchStarter} onLoad={vi.fn()} />);
+  render(
+    <MemoryRouter>
+      <SavedConfigurations recipe={fastAgentWorkbenchStarter} onLoad={vi.fn()} />
+    </MemoryRouter>,
+  );
   await userEvent.click(screen.getByRole("button", { name: "Save configuration" }));
   await waitFor(() => expect(screen.getByText("Cannot save")).toBeInTheDocument());
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -75,7 +86,11 @@ it("keeps account scope clear and long saved names in a bounded control", async 
       }),
     ),
   );
-  render(<SavedConfigurations recipe={fastAgentWorkbenchStarter} onLoad={vi.fn()} />);
+  render(
+    <MemoryRouter>
+      <SavedConfigurations recipe={fastAgentWorkbenchStarter} onLoad={vi.fn()} />
+    </MemoryRouter>,
+  );
   expect(screen.getByText(/Saved for your account in the shared Bucket/)).toBeVisible();
   expect(screen.queryByText(/Private to your account/)).not.toBeInTheDocument();
   expect(

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   listSavedConfigurations,
   type SavedConfiguration,
@@ -97,6 +98,12 @@ export function SavedConfigurations({
           Load
         </Button>
       </div>
+      <Link
+        className="mt-3 inline-block text-sm text-cyan-300 underline"
+        to="/runs?launch=1"
+      >
+        Select a saved version in New Run
+      </Link>
       {message ? (
         <p role="status" className="mt-3 break-words text-sm leading-6 text-cyan-300">
           {message}

@@ -243,8 +243,12 @@ compiler. Its setup state is actor-scoped and ephemeral.
 
 Local development defaults to a disposable Docker runner. Hosted setups use a
 reviewed setup-only Job. An edited recipe cannot launch benchmark work. It may
-continue to the Run launcher only when its exact compiled form matches a
-reviewed immutable harness profile and compatible deployment.
+be saved as an owner-scoped immutable version without launching. New Run
+selects that exact version and a reviewed benchmark configuration; the existing
+Workbench admission path requires matching recipe/compiler setup attestation
+and a compatible reviewed deployment, then creates only a Run-scoped harness
+binding. Saving and setup testing do not promote a global execution profile.
+Built-in selections continue through normal five-profile admission.
 
 The detailed Workbench document is maintained separately in
 [`agent-workbench.md`](agent-workbench.md).

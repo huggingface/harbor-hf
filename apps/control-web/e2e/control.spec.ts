@@ -152,7 +152,7 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
             source: "built-in",
             promotion_state: "approved",
             alias: "gpt-oss-20b",
-            approved_aliases: ["gpt-oss-20b"],
+            approved_aliases: ["gpt-oss-20b", "gpt-oss-20b-together"],
             spec: {
               model_id: "openai/gpt-oss-20b",
               revision: "6cee5e81ee83917806bbde320786a8fb61efebee",
@@ -249,31 +249,34 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
   await page.route("**/api/v1/workbench/local-runs", (route) =>
     route.fulfill({ json: [] }),
   );
-  await page.route("**/api/v1/workbench/setup-tests", (route) =>
-    route.fulfill({
-      status: 202,
-      json: {
-        setup_test_id: "setup-test-workbench",
-        recipe_digest: reviewedFastAgentPreview.recipe_digest,
-        revision_id: reviewedFastAgentPreview.revision_id,
-        status: "passed",
-        created_at: "2026-08-27T12:00:00.000Z",
-        started_at: "2026-08-27T12:00:01.000Z",
-        completed_at: "2026-08-27T12:00:02.000Z",
-        exit_code: 0,
-        error: null,
-        files: [
-          {
-            file_id: "file-instruction",
-            path: "instruction.txt",
-            root: "workspace",
-            size: 31,
-            text: true,
-          },
-        ],
+  const setupFixture = {
+    setup_test_id: "setup-test-workbench",
+    recipe_digest: reviewedFastAgentPreview.recipe_digest,
+    revision_id: reviewedFastAgentPreview.revision_id,
+    status: "passed",
+    created_at: "2026-08-27T12:00:00.000Z",
+    started_at: "2026-08-27T12:00:01.000Z",
+    completed_at: "2026-08-27T12:00:02.000Z",
+    exit_code: 0,
+    error: null,
+    files: [
+      {
+        file_id: "file-instruction",
+        path: "instruction.txt",
+        root: "workspace",
+        size: 31,
+        text: true,
       },
-    }),
-  );
+    ],
+  };
+  let setupPassed = false;
+  await page.route("**/api/v1/workbench/setup-tests", (route) => {
+    if (route.request().method() === "POST") {
+      setupPassed = true;
+      return route.fulfill({ status: 202, json: setupFixture });
+    }
+    return route.fulfill({ json: setupPassed ? [setupFixture] : [] });
+  });
   await page.route("**/api/v1/workbench/setup-tests/*/logs", (route) =>
     route.fulfill({
       json: {
@@ -312,7 +315,7 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
 
   await expect(page.getByRole("heading", { name: "Agent Workbench" })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Configure → Test → Run" }),
+    page.getByRole("heading", { name: "Configure → Test → Save" }),
   ).toBeVisible();
   await expect(
     page.getByText(
@@ -328,6 +331,26 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
     page.getByLabel("Environment variable MODEL_BASE_URL source"),
   ).toHaveCount(0);
 
+  await page.getByRole("link", { name: "Select a saved version in New Run" }).click();
+  await page
+    .getByLabel("Benchmark", { exact: true })
+    .selectOption("terminal-bench-2-1-canary");
+  await page
+    .getByLabel("Harness", { exact: true })
+    .selectOption(`saved:${saved.revision}`);
+  await page.getByLabel("Model", { exact: true }).fill("openai/gpt-oss-20b");
+  await page
+    .getByLabel("Reviewed configuration", { exact: true })
+    .selectOption(`sha256:${"1".repeat(64)}`);
+  await expect(
+    page.getByText(/This saved version needs a passed setup test/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Start run", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("link", { name: "Configure, test, or save a harness in Workbench" })
+    .click();
   await page.getByRole("checkbox", { name: /launch this exact setup recipe/i }).check();
   await page.getByRole("button", { name: "Launch setup test" }).click();
   await expect(page.getByText("fast-agent-mcp v0.10.16")).toBeVisible();
@@ -358,7 +381,7 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
         document.documentElement.scrollWidth <= document.documentElement.clientWidth,
     ),
   ).toBe(true);
-  for (const label of ["Configuration name", "Benchmark configuration"]) {
+  for (const label of ["Configuration name"]) {
     const bounds = await page.getByLabel(label, { exact: true }).boundingBox();
     expect(bounds).not.toBeNull();
     expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
@@ -367,10 +390,45 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
     path: testInfo.outputPath("agent-workbench-mobile.png"),
     fullPage: true,
   });
+  await page.getByRole("link", { name: "Select a saved version in New Run" }).click();
   await page
-    .getByRole("checkbox", { name: /i confirm this exact tested recipe/i })
+    .getByLabel("Benchmark", { exact: true })
+    .selectOption("terminal-bench-2-1-canary");
+  await page
+    .getByLabel("Harness", { exact: true })
+    .selectOption(`saved:${saved.revision}`);
+  await page.getByLabel("Model", { exact: true }).fill("unknown/model");
+  await expect(
+    page.getByRole("button", { name: "Start run", exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("Model", { exact: true }).fill("openai/gpt-oss-20b");
+  await page
+    .getByLabel("Reviewed configuration", { exact: true })
+    .selectOption(`sha256:${"1".repeat(64)}`);
+  await page
+    .getByRole("checkbox", { name: /i confirm this exact harness version/i })
     .check();
-  await page.getByRole("button", { name: "Start hosted run" }).click();
+  await page.getByLabel("Cost ceiling, USD", { exact: true }).fill("0.50");
+  await expect(page.getByRole("checkbox")).not.toBeChecked();
+  await page.getByLabel("Cost ceiling, USD", { exact: true }).fill("1");
+  await page.getByRole("checkbox").check();
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("new-run-mobile.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.screenshot({
+    path: testInfo.outputPath("new-run-desktop.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Start run", exact: true }).click();
   await expect
     .poll(() => hostedSubmission)
     .toMatchObject({
@@ -587,19 +645,80 @@ test("requires confirmation before starting a run", async ({ page }) => {
     }),
   );
   await page.route("**/api/v1/events", (route) => route.abort());
+  await page.route("**/api/v1/workbench/configurations", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+  await page.route("**/api/v1/workbench/benchmark-configs", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            name: "reviewed",
+            revision: "sha256:reviewed",
+            benchmark: "terminal-bench-2-1-diagnostic-1",
+            model: "gpt-oss-20b",
+            deployment: "tb21-gpt-oss-20b-opencode-providers",
+            launch_policy: "tb21-diagnostic-1",
+            label: "Reviewed diagnostic",
+            description: "Reviewed fixture",
+            size: "small",
+            task_count: 1,
+            publication_role: "diagnostic",
+            default_ceiling_microusd: 1000000,
+            max_ceiling_microusd: 2000000,
+          },
+        ],
+      },
+    }),
+  );
   await page.goto("/runs");
   await page.getByRole("button", { name: "Start a run" }).click();
-  const create = page.getByRole("button", { name: "Start run" });
+  const create = page.getByRole("button", { name: "Start run", exact: true });
   await expect(create).toBeDisabled();
   await page
-    .getByRole("combobox", { name: "Launch policy" })
-    .selectOption("tb21-diagnostic-1");
+    .getByLabel("Benchmark", { exact: true })
+    .selectOption("terminal-bench-2-1-diagnostic-1");
+  await page.getByLabel("Harness", { exact: true }).selectOption("builtin:opencode");
+  await page.getByLabel("Model", { exact: true }).fill("openai/gpt-oss-20b");
+  await page
+    .getByLabel("Reviewed configuration", { exact: true })
+    .selectOption("sha256:reviewed");
   await page.getByRole("checkbox").check();
   await expect(create).toBeEnabled();
-  await page.getByText("Cost ceiling, USD", { exact: true }).hover();
-  await expect(
-    page.getByText(/defaults to twice the estimated reservation/i),
-  ).toBeVisible();
+  await page.getByLabel("Model", { exact: true }).fill("unreviewed/model");
+  await expect(create).toBeDisabled();
+  await expect(page.getByRole("checkbox")).not.toBeChecked();
+  await page.getByLabel("Model", { exact: true }).fill("openai/gpt-oss-20b");
+  await page
+    .getByLabel("Reviewed configuration", { exact: true })
+    .selectOption("sha256:reviewed");
+  await page.getByRole("checkbox").check();
+  let builtinSubmission: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/runs", (route) => {
+    builtinSubmission = route.request().postDataJSON();
+    return route.fulfill({
+      status: 202,
+      json: {
+        run_id: "run-builtin",
+        action_id: "action-builtin",
+        status_url: "/api/v1/runs/run-builtin",
+        adopted: false,
+      },
+    });
+  });
+  await create.click();
+  await expect
+    .poll(() => builtinSubmission)
+    .toEqual({
+      benchmark: "terminal-bench-2-1-diagnostic-1",
+      model: "gpt-oss-20b",
+      harness: "opencode",
+      deployment: "tb21-gpt-oss-20b-opencode-providers",
+      launch_policy: "tb21-diagnostic-1",
+      ceiling_microusd: 1000000,
+      confirmed: true,
+    });
+  await expect(page).toHaveURL(/\/runs\/run-builtin$/);
 });
 
 test("shows run failures as errors rather than missing data", async ({ page }) => {

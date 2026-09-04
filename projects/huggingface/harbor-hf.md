@@ -817,3 +817,25 @@ Approved at: 2026-09-04
   implement. Preserve current execution safeguards, old locks, and saved recipe
   revisions; stop on an unresolved Harbor-owned gap. No deployment, push,
   spending, credential movement, migration, or upstream mutation is authorized.
+
+### 2026-09-04 current-runtime UX implementation completion
+
+Status: completed
+
+- Following the completed upstream review, the user directly instructed local
+  implementation of the independent Workbench library and New Run UX under the
+  existing amendment. No further runtime cutover or Harbor patch was authorized.
+- Implemented configure/test/save in Workbench and exact saved-version or
+  built-in selection in New Run, using reviewed configurations and the existing
+  admission paths. Kept model strings fail-closed, setup attestation and fresh
+  review mandatory at launch, and the configuration registry under Advanced.
+- Local verification: 806 unit tests and 11 mocked browser tests passed, along
+  with formatting, lint, types, build, generated-contract checks, dependency
+  inspection, dependency audit, DRY, and the non-baseline structure check.
+  The repository-wide 85% coverage gate remains unmet; the structure baseline
+  file and retired mutation script remain absent. No threshold was lowered and
+  no retired tooling was restored.
+- This completes only the local safe-current-runtime UX milestone. Prior
+  deployment records and the broader project authorization remain unchanged.
+  No push, PR, merge, deployment, live write-mode change, remote Job, inference,
+  resource, credential transfer, migration, or result publication was performed.
