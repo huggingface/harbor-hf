@@ -22,22 +22,32 @@
   `uv run python scripts/check_public_privacy.py .`. Inspect the complete diff
   and public metadata. Remove private values before publication.
 
-## Harbor boundary
+## Harbor-first design
 
-- Harbor owns `JobConfig`, benchmark task resolution, trial execution,
-  concurrency, retries, resume, locks, results, rewards, costs, trajectories,
-  and built-in agents.
-- Harbor-HF owns authenticated submission, reviewed presets, the control Space
-  and Bucket, parent and child HF Job lifecycle, post-trial cost stops, the
-  SQLite projection, the web console, and the leaderboard.
-- Before adding behavior, check the pinned Harbor source. Name the checked file
-  in the pull request description.
-- Use Harbor's public APIs. Do not add a second task loop, retry loop, resume
-  rule, lock writer, result writer, or benchmark parser.
-- Keep benchmark and model names as data. Keep harness-specific behavior in a
-  Harbor agent plugin behind `import_path`.
-- If Harbor lacks required general behavior, document the gap and get approval
-  before adding a temporary compatibility implementation.
+- Do not duplicate behavior, configuration, state, or data that Harbor already
+  provides. This is the first design rule for this repository.
+- Read [the design principles](docs/DESIGN_PRINCIPLES.md) before designing or
+  implementing a behavior change.
+- Harbor owns `JobConfig` and benchmark task resolution. Harbor owns trial
+  execution, including concurrency and retry behavior. It controls resume and
+  locking behavior. Harbor results are authoritative for rewards and reported
+  costs. The same rule applies to trajectories and built-in agent output.
+- Harbor-HF owns authenticated submission and reviewed restrictions. It also
+  owns the control Space and Bucket as well as HF Job lifecycle and cost stops.
+  The disposable SQLite projection and web console also belong in Harbor-HF.
+  Harbor-HF owns the leaderboard.
+- Before adding a field, record, loop, parser, adapter, or UI control, check the
+  pinned Harbor source and relevant history. Name the checked files and public
+  APIs in the pull request description.
+- When Harbor already has the behavior or field, use its native API or
+  configuration. Do not add an alias, mirrored field, fallback reader, second
+  state machine, or renamed wrapper for the same concept.
+- Keep benchmark and model names as data. Keep necessary harness-specific
+  behavior in a Harbor agent plugin behind `import_path`.
+- If Harbor lacks required general behavior, stop and report the upstream gap.
+  Get explicit user confirmation before opening a Harbor issue or pull request.
+- A temporary local implementation needs separate approval for an exact
+  upstream gap. Its removal condition must name a Harbor revision.
 
 ## Storage and resources
 
