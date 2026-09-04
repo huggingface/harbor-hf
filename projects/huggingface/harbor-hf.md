@@ -103,6 +103,45 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Reviewed design push and bounded deployment (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T22:42:24Z
+
+- Direct user approval covers normal push of all reviewed local design, regression
+  and authorization commits, including the preceding upstream-issue authorization
+  records, only to `feat/leaderboard-submissions`. Existing draft PR 179 may update
+  through that push; no new PR, merge, default-branch update, force push, upstream
+  issue comment or reopening is authorized.
+- Commit this additive approval first after complete outgoing diff, public metadata
+  and privacy review. Deploy the exact new clean committed HEAD using the retained
+  supported existing-install workflow and canonical installer state. Build the
+  exact sealed production bundle locally for Linux AMD64; no image publication.
+- Freshly verify complete deployed-source provenance, ownership, receipts, private
+  resource settings, two secret names only, worker configuration, all Bucket
+  objects and owned activity. Preserve all current objects and historical paused
+  evidence and accounting; expected identified startup additions are allowed.
+  Stop for new active owned work without interrupting it. Do not infer ownership
+  from unrelated namespace Jobs or treat hidden historical Runs as completed.
+- Preserve existing resources, hardware, protection, credentials and installer
+  history. Local management authentication stays local to provider APIs and Bucket
+  reads, never application authentication or remote runtime. Never retrieve secret
+  values or change credentials, OAuth scopes, access retention or auth settings.
+- Select the reviewed local HF CLI consistently for plan and configure. If needed,
+  pause the existing Space and set only write mode disabled while preserving old
+  source stamps until upload. Permit one configure attempt with stdin closed, no
+  credential input or replacement, no provisioning and no application bearer.
+- Keep execution disabled regardless of configuration write mode. Do not activate
+  writes without supported authenticated source and health gates or bypass them.
+  On unclassified restart failure, verify upload and preservation, leave disabled
+  and paused, and request one manual restart; no repeated upload or diagnostic
+  implementation. On success verify runtime/source and anonymous health without
+  claiming application authentication. Keep evidence owner-only outside Git.
+- No E2E, Jobs, inference, Run actions, new resources, reset, migration, deletion,
+  spending expansion or real result publication. Existing coverage and missing
+  structure-baseline failures remain disclosed; no threshold waiver or weakening.
+  This is design/test deployment, not a new runner or production-readiness claim.
+
 ### Internal design and local compatibility amendment (2026-09-04)
 
 Status: completed
@@ -1122,3 +1161,9 @@ All pre-integration authorization records above are retained as well.
   local; no push, PR update, upstream mutation, live Space inspection, deployment,
   Jobs, inference, spending, new resources, credentials or historical data changes
   occurred. Execution remains disabled. This is not production or launch readiness.
+
+### 2026-09-04 reviewed design push and deployment approval
+
+- Directly approved the additive bounded push/deployment amendment above, including
+  the reviewed local authorization records. Historical approvals remain unchanged;
+  this permits no execution, credential change, migration or broader publication.
