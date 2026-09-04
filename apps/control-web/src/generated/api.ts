@@ -202,7 +202,7 @@ export interface paths {
                             actor?: {
                                 username: string;
                                 /** @enum {unknown} */
-                                role: "operator" | "reader";
+                                role: "operator" | "reader" | "submitter";
                                 /** @enum {unknown} */
                                 transport: "session" | "development";
                             };
@@ -223,7 +223,7 @@ export interface paths {
                             actor?: {
                                 username: string;
                                 /** @enum {unknown} */
-                                role: "operator" | "reader";
+                                role: "operator" | "reader" | "submitter";
                                 /** @enum {unknown} */
                                 transport: "session" | "development";
                             };
@@ -446,7 +446,7 @@ export interface paths {
                         }[];
                         outputs: {
                             results_path: string;
-                            trajectory_path: string | null;
+                            trajectory_path: null | string;
                         };
                     };
                 };
@@ -487,6 +487,135 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workbench/configurations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                /** @enum {unknown} */
+                                schema_version: "v1";
+                                revision: string;
+                                /** Agent Workbench recipe v1 */
+                                recipe: {
+                                    /** @enum {unknown} */
+                                    schema_version: "v1";
+                                    name: string;
+                                    setup_command: string;
+                                    run_command: string;
+                                    /** @enum {unknown} */
+                                    route_api: "chat-completions" | "responses";
+                                    setup_timeout_seconds: number;
+                                    environment: {
+                                        name: string;
+                                        /** @enum {unknown} */
+                                        source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
+                                        value?: string;
+                                    }[];
+                                    outputs: {
+                                        results_path: string;
+                                        trajectory_path: null | string;
+                                    };
+                                };
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {unknown} */
+                        schema_version: "v1";
+                        name: string;
+                        setup_command: string;
+                        run_command: string;
+                        /** @enum {unknown} */
+                        route_api: "chat-completions" | "responses";
+                        setup_timeout_seconds: number;
+                        environment: {
+                            name: string;
+                            /** @enum {unknown} */
+                            source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
+                            value?: string;
+                        }[];
+                        outputs: {
+                            results_path: string;
+                            trajectory_path: null | string;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {unknown} */
+                            schema_version: "v1";
+                            revision: string;
+                            /** Agent Workbench recipe v1 */
+                            recipe: {
+                                /** @enum {unknown} */
+                                schema_version: "v1";
+                                name: string;
+                                setup_command: string;
+                                run_command: string;
+                                /** @enum {unknown} */
+                                route_api: "chat-completions" | "responses";
+                                setup_timeout_seconds: number;
+                                environment: {
+                                    name: string;
+                                    /** @enum {unknown} */
+                                    source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
+                                    value?: string;
+                                }[];
+                                outputs: {
+                                    results_path: string;
+                                    trajectory_path: null | string;
+                                };
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workbench/benchmark-configs": {
         parameters: {
             query?: never;
@@ -512,6 +641,8 @@ export interface paths {
                         "application/json": {
                             items: {
                                 name: string;
+                                /** @enum {unknown} */
+                                size: "small" | "medium" | "large";
                                 revision: string;
                                 label: string;
                                 description: string;
@@ -619,7 +750,7 @@ export interface paths {
                             }[];
                             outputs: {
                                 results_path: string;
-                                trajectory_path: string | null;
+                                trajectory_path: null | string;
                             };
                         };
                         task_names: string[];
@@ -739,7 +870,7 @@ export interface paths {
                             }[];
                             outputs: {
                                 results_path: string;
-                                trajectory_path: string | null;
+                                trajectory_path: null | string;
                             };
                         };
                         task_names: string[];
@@ -1122,7 +1253,7 @@ export interface paths {
                             }[];
                             outputs: {
                                 results_path: string;
-                                trajectory_path: string | null;
+                                trajectory_path: null | string;
                             };
                         };
                         /** @enum {unknown} */
@@ -2678,6 +2809,202 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/leaderboard/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                run_id: string;
+                                publication_id: string;
+                                catalog_digest: string;
+                                public_row: {
+                                    configuration_digest: string;
+                                    run_id: string;
+                                    publication_id: string;
+                                    /** Format: date-time */
+                                    published_at: string;
+                                    benchmark: string;
+                                    model: string;
+                                    harness: string;
+                                    inference_provider: string;
+                                    reasoning_effort: string;
+                                    harbor_version: string;
+                                    trial_count: number;
+                                    task_count: number;
+                                    scored_task_count: number;
+                                    primary_metric_name: string;
+                                    primary_metric_value: number;
+                                    primary_metric_unit: string;
+                                    observed_microusd: number;
+                                };
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/leaderboard/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                id: string;
+                                run_id: string;
+                                publication_id: string;
+                                catalog_digest: string;
+                                /** Format: date-time */
+                                created_at: string;
+                                /** @enum {unknown} */
+                                status: "pending" | "approved" | "rejected";
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        run_id: string;
+                        catalog_digest: string;
+                        /** @enum {boolean} */
+                        confirmed: true;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            run_id: string;
+                            publication_id: string;
+                            catalog_digest: string;
+                            /** Format: date-time */
+                            created_at: string;
+                            /** @enum {unknown} */
+                            status: "pending" | "approved" | "rejected";
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/leaderboard/submissions/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {unknown} */
+                        decision: "approved" | "rejected";
+                        /** @enum {boolean} */
+                        confirmed: true;
+                        /** @description Required true for approval: operator verified privacy and consent for every exact public row field. */
+                        public_metadata_confirmed?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            /** @enum {unknown} */
+                            status: "pending" | "approved" | "rejected";
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harborframework.com/schemas/harbor-hf/saved-workbench-v1.schema.json",
+  "title": "Saved Workbench Configuration V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "revision", "recipe"],
+  "properties": {
+    "schema_version": {
+      "const": "v1"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "recipe": {
+      "$ref": "agent-workbench-v1.schema.json",
+      "tsType": "import(\"./agent-workbench-v1.js\").AgentWorkbenchRecipeV1",
+      "title": "Saved Workbench Recipe"
+    }
+  }
+}

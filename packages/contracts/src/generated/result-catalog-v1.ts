@@ -19,6 +19,7 @@ export interface Entry {
 publication_id: ResultCatalogId
 run_id: ResultCatalogId
 published_at: string
+observed_microusd?: number
 benchmark: NullableString
 model: NullableString
 harness: NullableString

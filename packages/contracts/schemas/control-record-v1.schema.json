@@ -108,7 +108,7 @@
           "maxLength": 160
         },
         "role": {
-          "enum": ["operator", "reader", "service", "migration"]
+          "enum": ["operator", "reader", "submitter", "service", "migration"]
         }
       }
     },

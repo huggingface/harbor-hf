@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useContext } from "react";
 
 export interface DisplayActor {
   username: string;
-  role: "operator" | "reader";
+  role: "operator" | "reader" | "submitter";
   transport: "session" | "development";
 }
 

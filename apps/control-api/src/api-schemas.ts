@@ -126,6 +126,7 @@ export const benchmarkConfigListSchema = {
         additionalProperties: false,
         required: [
           "name",
+          "size",
           "revision",
           "label",
           "description",
@@ -140,6 +141,7 @@ export const benchmarkConfigListSchema = {
         ],
         properties: {
           name: { type: "string" },
+          size: { enum: ["small", "medium", "large"] },
           revision: { type: "string" },
           label: { type: "string" },
           description: { type: "string" },
@@ -944,7 +946,7 @@ export const sessionSchema = {
       required: ["username", "role", "transport"],
       properties: {
         username: { type: "string" },
-        role: { enum: ["operator", "reader"] },
+        role: { enum: ["operator", "reader", "submitter"] },
         transport: { enum: ["session", "development"] },
       },
     },

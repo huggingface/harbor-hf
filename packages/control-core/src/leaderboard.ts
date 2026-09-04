@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
+  Actor,
   HarborHFLeaderboardSnapshotV1,
   HarborHFResultCatalogV1,
   PublicationReceipt,
@@ -17,6 +18,11 @@ import {
   validateResultCatalog,
 } from "@harbor-hf/contracts";
 import Database from "better-sqlite3";
+import {
+  approvedRowDigests,
+  approvedSubmissions,
+  recordDigest,
+} from "./leaderboard-records.js";
 import type { Projection } from "./projection.js";
 import type { ImmutableObjectStore } from "./store.js";
 
@@ -250,21 +256,38 @@ function selectLeaderboardRows(rows: LeaderboardRow[]): LeaderboardRow[] {
   );
 }
 
-async function catalogRows(
+export interface LeaderboardCandidate {
+  row: LeaderboardRow;
+  catalog_key: string;
+  catalog_digest: string;
+  lock_digest: string;
+}
+
+export async function leaderboardCandidates(
   store: ImmutableObjectStore,
   projection: Projection,
-): Promise<LeaderboardRow[]> {
+  actor?: Actor,
+): Promise<LeaderboardCandidate[]> {
   const objects = await store.list(CATALOG_PREFIX);
-  const rows: LeaderboardRow[] = [];
+  const rows: LeaderboardCandidate[] = [];
   for (const object of objects) {
     const catalogBytes = await store.read(object.key);
     const catalog = validateResultCatalog<HarborHFResultCatalogV1>(
       JSON.parse(new TextDecoder().decode(catalogBytes)),
     );
     for (const entry of catalog.entries) {
-      if (!leaderboardEligible(entry)) continue;
-      await requirePublishedReceipt(store, entry, catalogBytes);
+      // Legacy catalogs did not freeze cost. Never infer consent from live spend.
+      if (!leaderboardEligible(entry) || entry.observed_microusd === undefined)
+        continue;
       const lock = await projection.runLock(entry.run_id);
+      const request = await projection.runRequest(entry.run_id);
+      if (
+        actor &&
+        actor.role !== "operator" &&
+        (!lock || (request?.actor ?? lock.actor).subject !== actor.subject)
+      )
+        continue;
+      await requirePublishedReceipt(store, entry, catalogBytes);
       if (!lock) throw new Error(`leaderboard catalog ${entry.run_id} has no run lock`);
       const run = await projection.run(entry.run_id);
       if (!run) throw new Error(`leaderboard catalog ${entry.run_id} has no run`);
@@ -273,30 +296,35 @@ async function catalogRows(
       if (metric === null)
         throw new Error("eligible catalog is missing a primary metric");
       rows.push({
-        configuration_digest: configurationDigest(lock),
-        run_id: entry.run_id,
-        publication_id: entry.publication_id,
-        published_at: entry.published_at,
-        benchmark: catalogString(entry.benchmark, "benchmark"),
-        model: catalogString(entry.model, "model"),
-        harness: catalogString(entry.harness, "harness"),
-        inference_provider: catalogString(
-          entry.inference_provider,
-          "inference_provider",
-        ),
-        reasoning_effort: fields.reasoning_effort,
-        harbor_version: fields.harbor_version,
-        trial_count: fields.trial_count,
-        task_count: entry.task_count,
-        scored_task_count: entry.scored_task_count,
-        primary_metric_name: metric.name,
-        primary_metric_value: metric.value,
-        primary_metric_unit: metric.unit,
-        observed_microusd: run.observed_microusd,
+        catalog_key: object.key,
+        catalog_digest: sha256(catalogBytes),
+        lock_digest: recordDigest(lock),
+        row: {
+          configuration_digest: configurationDigest(lock),
+          run_id: entry.run_id,
+          publication_id: entry.publication_id,
+          published_at: entry.published_at,
+          benchmark: catalogString(entry.benchmark, "benchmark"),
+          model: catalogString(entry.model, "model"),
+          harness: catalogString(entry.harness, "harness"),
+          inference_provider: catalogString(
+            entry.inference_provider,
+            "inference_provider",
+          ),
+          reasoning_effort: fields.reasoning_effort,
+          harbor_version: fields.harbor_version,
+          trial_count: fields.trial_count,
+          task_count: entry.task_count,
+          scored_task_count: entry.scored_task_count,
+          primary_metric_name: metric.name,
+          primary_metric_value: metric.value,
+          primary_metric_unit: metric.unit,
+          observed_microusd: entry.observed_microusd,
+        },
       });
     }
   }
-  return selectLeaderboardRows(rows);
+  return rows;
 }
 
 /**
@@ -309,7 +337,21 @@ export async function refreshLeaderboardSnapshot(
   store: ImmutableObjectStore,
   projection: Projection,
 ): Promise<HarborHFLeaderboardSnapshotV1 | null> {
-  const rows = await catalogRows(store, projection);
+  const approved = await approvedSubmissions(store);
+  const candidates = await leaderboardCandidates(store, projection);
+  const rows = selectLeaderboardRows(
+    candidates
+      .filter((candidate) =>
+        approved.some(
+          (item) =>
+            item.catalog_key === candidate.catalog_key &&
+            item.catalog_digest === candidate.catalog_digest &&
+            item.lock_digest === candidate.lock_digest &&
+            item.public_row_digest === recordDigest(candidate.row),
+        ),
+      )
+      .map((candidate) => candidate.row),
+  );
   if (rows.length === 0) return null;
   const bytes = await encodeLeaderboardSqlite(rows);
   const sqliteDigest = sha256(bytes);
@@ -428,9 +470,9 @@ export function rankLeaderboardRows(
 }
 
 /**
- * Load the latest Bucket snapshot receipt and its SQLite rows.
+ * Load approved rows from immutable Bucket snapshots, tolerating racing refreshes.
  *
- * Rank is computed here. Identical later receipts win by created_at, then id.
+ * Rank is computed here. Metadata refers only to an exact matching snapshot.
  */
 export async function loadLatestLeaderboard(
   store: ImmutableObjectStore,
@@ -449,13 +491,27 @@ export async function loadLatestLeaderboard(
     if (created !== 0) return created;
     return right.record_id.localeCompare(left.record_id);
   });
-  const snapshot = receipts[0];
-  if (!snapshot) throw new Error("leaderboard receipt list is empty");
-  const bytes = await store.read(snapshot.sqlite_key);
-  if (sha256(bytes) !== snapshot.sqlite_digest)
-    throw new Error("leaderboard snapshot digest mismatch");
+  const approved = await approvedRowDigests(store);
+  const shown: LeaderboardRow[] = [];
+  const snapshots: Array<{
+    snapshot: HarborHFLeaderboardSnapshotV1;
+    rows: LeaderboardRow[];
+  }> = [];
+  for (const snapshot of receipts) {
+    const bytes = await store.read(snapshot.sqlite_key);
+    if (sha256(bytes) !== snapshot.sqlite_digest)
+      throw new Error("leaderboard snapshot digest mismatch");
+    const rows = await decodeLeaderboardSqlite(bytes);
+    snapshots.push({ snapshot, rows });
+    shown.push(...rows.filter((row) => approved.has(recordDigest(row))));
+  }
+  // Immutable snapshots can race or predate the approval gate. Merge only
+  // consent-bound rows; publication time still selects the configuration winner.
+  const selected = selectLeaderboardRows(shown);
+  const selectedDigest = recordDigest(selected);
+  const matching = snapshots.find((item) => recordDigest(item.rows) === selectedDigest);
   return {
-    snapshot,
-    rows: rankLeaderboardRows(await decodeLeaderboardSqlite(bytes)),
+    snapshot: selected.length > 0 ? (matching?.snapshot ?? null) : null,
+    rows: rankLeaderboardRows(selected),
   };
 }

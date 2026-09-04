@@ -71,6 +71,11 @@
         "publication_id": { "$ref": "#/$defs/ResultCatalogId" },
         "run_id": { "$ref": "#/$defs/ResultCatalogId" },
         "published_at": { "type": "string", "format": "date-time" },
+        "observed_microusd": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "benchmark": { "$ref": "#/$defs/NullableString" },
         "model": { "$ref": "#/$defs/NullableString" },
         "harness": { "$ref": "#/$defs/NullableString" },

@@ -143,3 +143,8 @@ state, and public destinations.
 Public output may include approved normalized fields and traces. It must omit
 raw workspaces, private sessions, credentials, capabilities, private object
 keys, and private deployment topology.
+
+Internal catalog publication does not make a result public. Hosted leaderboard
+submissions require a separate operator decision bound to exact catalog and
+public-row digests, including explicit privacy and consent confirmation. See
+[hosted leaderboard submissions](../../../../docs/leaderboard-submissions.md).

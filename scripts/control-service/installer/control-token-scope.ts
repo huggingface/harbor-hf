@@ -1,12 +1,11 @@
 import type { HttpAdapter } from "./http.js";
 
 const BUCKET_PERMISSIONS = new Set(["repo.content.read", "repo.write"]);
-const REQUIRED_NAMESPACE_PERMISSIONS = new Set([
-  "inference.endpoints.write",
-  "job.write",
-]);
+// Endpoint management is optional: Jobs-only installs must not require it.
+const REQUIRED_NAMESPACE_PERMISSIONS = new Set(["job.write"]);
 const ALLOWED_NAMESPACE_PERMISSIONS = new Set([
   ...REQUIRED_NAMESPACE_PERMISSIONS,
+  "inference.endpoints.write",
   "inference.endpoints.infer.write",
 ]);
 

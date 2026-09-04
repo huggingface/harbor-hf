@@ -283,6 +283,7 @@ export class ResultPublisher {
           publication_id: publicationId,
           run_id: runId,
           published_at: createdAt,
+          observed_microusd: run.observed_microusd,
           benchmark: profileValue("benchmark", "benchmark"),
           model: profileValue("model", "model_id"),
           harness: profileValue("harness", "agent"),

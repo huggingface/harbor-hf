@@ -10,6 +10,7 @@ import {
 } from "@harbor-hf/contracts";
 import { NoopActions } from "@harbor-hf/hf-adapters";
 import {
+  approveSnapshotFixture,
   createTestControl,
   profile,
   smokeProfiles,
@@ -30,12 +31,13 @@ import {
   rankLeaderboardRows,
   refreshLeaderboardSnapshot,
 } from "../src/leaderboard.js";
+import { LeaderboardSubmissions } from "../src/leaderboard-submissions.js";
 import type { LoadedProfile } from "../src/profiles.js";
 import { Projection } from "../src/projection.js";
 import { ResultPublisher } from "../src/publication.js";
 import { Reconciler } from "../src/reconciler.js";
 import { ControlService } from "../src/service.js";
-import { FilesystemObjectStore } from "../src/store.js";
+import { createJson, FilesystemObjectStore } from "../src/store.js";
 
 const controls: TestControl[] = [];
 afterEach(async () =>
@@ -134,6 +136,7 @@ function catalogEntry(
     publication_id: "publication-test",
     run_id: "run-test",
     published_at: "2026-08-16T00:00:00.000Z",
+    observed_microusd: 0,
     benchmark: "benchmark-test",
     model: "model-test",
     harness: "harness-test",
@@ -415,6 +418,12 @@ describe("leaderboard sqlite snapshot", () => {
         }),
       ),
     );
+    expect(
+      await refreshLeaderboardSnapshot(control.store, control.projection),
+    ).toBeNull();
+    const reviews = new LeaderboardSubmissions(control.store, control.projection);
+    const pending = await reviews.submit(operator, submitted.run_id);
+    await reviews.review(operator, pending.record_id, "approved", true);
     const snapshot = await refreshLeaderboardSnapshot(
       control.store,
       control.projection,
@@ -512,6 +521,8 @@ describe("leaderboard ranking and Pareto frontier", () => {
       primary_metric_value: 0.9,
       observed_microusd: 20_000,
     });
+    await approveSnapshotFixture(control.store, older);
+    await approveSnapshotFixture(control.store, newer);
     const first = await refreshFromRows(control, [older], "2026-08-21T00:00:00.000Z");
     const second = await refreshFromRows(control, [newer], "2026-08-21T01:00:00.000Z");
     expect(first.entry_count).toBe(1);
@@ -573,3 +584,318 @@ async function refreshFromRows(
   );
   return receipt;
 }
+
+async function submissionFixture() {
+  const control = await createControl(leaderboardProfiles());
+  controls.push(control);
+  const submitted = await control.service.submit(
+    submission,
+    "review-fixture",
+    operator,
+  );
+  const entry = catalogEntry({
+    run_id: submitted.run_id,
+    publication_id: "publication-review",
+    result_path: "results/review-receipt.json",
+  });
+  const catalog = {
+    schema_version: "v1",
+    kind: "result.catalog",
+    record_id: "catalog-review",
+    created_at: entry.published_at,
+    source_digest: digest,
+    entries: [entry],
+  };
+  await createJson(
+    control.store,
+    "results/schema=v1/catalog/records/catalog-review.json",
+    catalog,
+  );
+  await createJson(control.store, entry.result_path, {
+    schema_version: "v1",
+    kind: "publication.receipt",
+    record_id: "receipt-review",
+    created_at: entry.published_at,
+    actor: { subject: "test", role: "service" },
+    run_id: entry.run_id,
+    publication_id: entry.publication_id,
+    publication_state: "published",
+    object_digests: [],
+    catalog_digest: sha256(canonicalJson(catalog)),
+    error_code: null,
+  });
+  return {
+    control,
+    runId: submitted.run_id,
+    reviews: new LeaderboardSubmissions(control.store, control.projection),
+  };
+}
+
+describe("hosted leaderboard submissions", () => {
+  it("keeps consent and recovery stable when live spend changes", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    const before = (await reviews.candidates(operator))[0];
+    if (!before) throw new Error("missing fixture candidate");
+    const pending = await reviews.submit(operator, runId, before.catalog_digest);
+    const original = control.projection.run.bind(control.projection);
+    vi.spyOn(control.projection, "run").mockImplementation(async (id) => {
+      const row = await original(id);
+      return row ? { ...row, observed_microusd: 999999 } : row;
+    });
+    expect((await reviews.candidates(operator))[0]?.row).toEqual(before.row);
+    expect(await reviews.submit(operator, runId, before.catalog_digest)).toEqual(
+      pending,
+    );
+    await reviews.review(operator, pending.record_id, "approved", true);
+    await reviews.review(operator, pending.record_id, "approved", true);
+    expect(
+      (await loadLatestLeaderboard(control.store)).rows[0]?.observed_microusd,
+    ).toBe(0);
+  });
+  it("does not offer legacy catalogs without frozen cost", async () => {
+    const { control, reviews } = await submissionFixture();
+    const original = control.store.read.bind(control.store);
+    vi.spyOn(control.store, "read").mockImplementation(async (key) => {
+      const bytes = await original(key);
+      if (!key.startsWith("results/schema=v1/catalog/records/")) return bytes;
+      const value = JSON.parse(new TextDecoder().decode(bytes));
+      delete value.entries[0].observed_microusd;
+      return new TextEncoder().encode(canonicalJson(value));
+    });
+    expect(await reviews.candidates(operator)).toEqual([]);
+  });
+  it("rejects a stale preview digest before persisting consent", async () => {
+    const { reviews, runId } = await submissionFixture();
+    await expect(
+      reviews.submit(operator, runId, `sha256:${"0".repeat(64)}`),
+    ).rejects.toMatchObject({ status: 409, code: "result_changed" });
+    expect(await reviews.list(operator)).toEqual([]);
+  });
+  it("limits candidates and submission by original owner, not current operator role", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    const owner = { subject: operator.subject, role: "submitter" as const };
+    const other = { subject: "other-user", role: "submitter" as const };
+    expect(await reviews.candidates(other)).toEqual([]);
+    await expect(reviews.submit(other, runId)).rejects.toMatchObject({ status: 404 });
+    await expect(reviews.submit(other, "missing-run")).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(
+      await refreshLeaderboardSnapshot(control.store, control.projection),
+    ).toBeNull();
+    const [first, second] = await Promise.all([
+      reviews.submit(owner, runId),
+      reviews.submit(owner, runId),
+    ]);
+    expect(second).toEqual(first);
+    expect(await reviews.summary(first)).toMatchObject({
+      id: first.record_id,
+      status: "pending",
+    });
+    expect(await reviews.summary(first)).not.toHaveProperty("actor");
+    expect(await reviews.list(other)).toEqual([]);
+    expect(await reviews.list(owner)).toMatchObject([
+      { status: "pending", id: first.record_id },
+    ]);
+    expect(await reviews.list(operator)).toHaveLength(1);
+    expect(await loadLatestLeaderboard(control.store)).toEqual({
+      snapshot: null,
+      rows: [],
+    });
+    await expect(
+      reviews.review(owner, first.record_id, "approved", true),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      reviews.review(operator, first.record_id, "approved", false),
+    ).rejects.toMatchObject({ status: 400 });
+    const approved = await reviews.review(operator, first.record_id, "approved", true);
+    expect(await reviews.review(operator, first.record_id, "approved", true)).toEqual(
+      approved,
+    );
+    const loaded = await loadLatestLeaderboard(control.store);
+    expect(loaded.rows).toHaveLength(1);
+    expect(JSON.stringify(loaded.rows)).not.toContain(operator.subject);
+    expect(JSON.stringify(loaded.rows)).not.toContain("actor");
+    await control.projection.rebuild(control.store);
+    expect(
+      await new LeaderboardSubmissions(control.store, control.projection).list(owner),
+    ).toMatchObject([{ status: "approved" }]);
+    await expect(
+      reviews.review(operator, first.record_id, "rejected", false),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("stores a single immutable winner for competing decisions", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    const pending = await reviews.submit(operator, runId);
+    const other = new LeaderboardSubmissions(control.store, control.projection);
+    const settled = await Promise.allSettled([
+      reviews.review(operator, pending.record_id, "rejected", false),
+      other.review(operator, pending.record_id, "approved", true),
+    ]);
+    expect(settled.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(settled.filter((item) => item.status === "rejected")).toHaveLength(1);
+    expect(
+      await control.store.list("results/schema=v1/leaderboard/decisions/"),
+    ).toHaveLength(1);
+  });
+
+  it("rejection is idempotent and never publishes", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    const pending = await reviews.submit(operator, runId);
+    const first = await reviews.review(operator, pending.record_id, "rejected", false);
+    expect(
+      await reviews.review(operator, pending.record_id, "rejected", false),
+    ).toEqual(first);
+    expect((await loadLatestLeaderboard(control.store)).rows).toEqual([]);
+  });
+
+  it("requires the exact submitted catalog and public row, not just a run id", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    const pending = await reviews.submit(operator, runId);
+    const read = control.store.read.bind(control.store);
+    vi.spyOn(control.store, "read").mockImplementation(async (key) => {
+      const bytes = await read(key);
+      if (key !== pending.catalog_key) return bytes;
+      const catalog = JSON.parse(new TextDecoder().decode(bytes));
+      catalog.entries[0].primary_metric.value = 0.25;
+      return new TextEncoder().encode(canonicalJson(catalog));
+    });
+    await expect(
+      reviews.review(operator, pending.record_id, "approved", true),
+    ).rejects.toThrow();
+    expect(
+      await control.store.list("results/schema=v1/leaderboard/decisions/"),
+    ).toEqual([]);
+  });
+
+  it("does not grandfather snapshots without approval", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    await refreshFromRows(
+      control,
+      [sampleRow({ configuration_digest: digest })],
+      "2026-08-21T00:00:00Z",
+    );
+    expect(await loadLatestLeaderboard(control.store)).toEqual({
+      snapshot: null,
+      rows: [],
+    });
+  });
+});
+
+describe("leaderboard approval recovery", () => {
+  it("repairs interrupted snapshot writes by repeating the same approval", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    const pending = await reviews.submit(operator, runId);
+    const create = control.store.create.bind(control.store);
+    const fault = vi
+      .spyOn(control.store, "create")
+      .mockImplementation(async (key, bytes) => {
+        if (key.startsWith(LEADERBOARD_SNAPSHOT_PREFIX))
+          throw new Error("interrupted snapshot");
+        return create(key, bytes);
+      });
+    await expect(
+      reviews.review(operator, pending.record_id, "approved", true),
+    ).rejects.toThrow("interrupted snapshot");
+    expect(await reviews.list(operator)).toMatchObject([{ status: "approved" }]);
+    fault.mockRestore();
+    await reviews.review(operator, pending.record_id, "approved", true);
+    expect((await loadLatestLeaderboard(control.store)).rows).toHaveLength(1);
+  });
+
+  it("rejects altered approved catalog bytes at the public read boundary", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    const pending = await reviews.submit(operator, runId);
+    await reviews.review(operator, pending.record_id, "approved", true);
+    const read = control.store.read.bind(control.store);
+    vi.spyOn(control.store, "read").mockImplementation((key) =>
+      key === pending.catalog_key
+        ? Promise.resolve(new TextEncoder().encode("{}"))
+        : read(key),
+    );
+    await expect(loadLatestLeaderboard(control.store)).rejects.toThrow(
+      "approved catalog digest mismatch",
+    );
+  });
+});
+
+describe("leaderboard submission fail-closed admission", () => {
+  it("rejects readers, unknown reviews, and owned results without eligible catalogs", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    await expect(
+      reviews.submit({ subject: operator.subject, role: "reader" }, runId),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      reviews.review(operator, "missing", "rejected", false),
+    ).rejects.toMatchObject({ status: 404 });
+    vi.spyOn(reviews, "candidates").mockResolvedValue([]);
+    await expect(reviews.submit(operator, runId)).rejects.toMatchObject({
+      status: 422,
+    });
+    expect(
+      await control.store.list("results/schema=v1/leaderboard/submissions/"),
+    ).toEqual([]);
+  });
+
+  it("rejects decision proof drift in both private lists and public reads", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    const pending = await reviews.submit(operator, runId);
+    await reviews.review(operator, pending.record_id, "approved", true);
+    const read = control.store.read.bind(control.store);
+    vi.spyOn(control.store, "read").mockImplementation(async (key) => {
+      const bytes = await read(key);
+      if (!key.startsWith("results/schema=v1/leaderboard/decisions/")) return bytes;
+      const decision = JSON.parse(new TextDecoder().decode(bytes));
+      decision.submission_digest = sha256("other-submission");
+      return new TextEncoder().encode(canonicalJson(decision));
+    });
+    await expect(reviews.list(operator)).rejects.toThrow("decision binding failure");
+    await expect(loadLatestLeaderboard(control.store)).rejects.toThrow(
+      "decision binding failure",
+    );
+  });
+
+  it("rejects public metadata drift after submission even when the catalog is unchanged", async () => {
+    const { control, reviews, runId } = await submissionFixture();
+    const pending = await reviews.submit(operator, runId);
+    const candidates = await reviews.candidates(operator);
+    vi.spyOn(reviews, "candidates").mockResolvedValue(
+      candidates.map((candidate) => ({
+        ...candidate,
+        row: { ...candidate.row, observed_microusd: 123 },
+      })),
+    );
+    await expect(
+      reviews.review(operator, pending.record_id, "approved", true),
+    ).rejects.toMatchObject({ code: "evidence_changed" });
+    expect(
+      await control.store.list("results/schema=v1/leaderboard/decisions/"),
+    ).toEqual([]);
+  });
+});
+
+describe("concurrent approval snapshots", () => {
+  it("does not lose approved rows when snapshots contain disjoint approved sets", async () => {
+    const control = await createTestControl();
+    controls.push(control);
+    const first = sampleRow({
+      configuration_digest: digest,
+      run_id: "run-first",
+      publication_id: "publication-first",
+    });
+    const second = sampleRow({
+      configuration_digest: sha256("other-config"),
+      run_id: "run-second",
+      publication_id: "publication-second",
+    });
+    await approveSnapshotFixture(control.store, first);
+    await approveSnapshotFixture(control.store, second);
+    await refreshFromRows(control, [first], "2026-08-21T00:00:00Z");
+    await refreshFromRows(control, [second], "2026-08-21T00:01:00Z");
+    const loaded = await loadLatestLeaderboard(control.store);
+    expect(loaded.rows).toHaveLength(2);
+    expect(loaded.snapshot).toBeNull();
+  });
+});

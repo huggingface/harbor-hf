@@ -19,6 +19,7 @@ import {
   TaskPage,
 } from "./pages";
 import { keys, useLiveUpdates, useSession, useSystem } from "./queries";
+import { SubmissionsPage } from "./submissions-page";
 import { ErrorNotice, Loading, QueryContent } from "./ui";
 import { WorkbenchPage } from "./workbench";
 
@@ -57,9 +58,10 @@ function AuthenticatedApp({
   sessionError: unknown;
 }) {
   const client = useQueryClient();
-  const system = useSystem();
+  const limited = actor.role === "submitter";
+  const system = useSystem(!limited);
   const live = useLiveUpdates(
-    Boolean(system.data),
+    !limited && Boolean(system.data),
     system.data?.projection.event_cursor,
   );
   const logout = useMutation({
@@ -82,7 +84,7 @@ function AuthenticatedApp({
       <Layout
         actor={actor}
         writeMode={chromeMode}
-        live={live}
+        live={limited ? null : live}
         serviceError={sessionError ?? (system.data ? system.error : null)}
         onSignOut={() => logout.mutate()}
         signingOut={logout.isPending}
@@ -90,7 +92,10 @@ function AuthenticatedApp({
         <Routes>
           <Route path="/" element={<LeaderboardPage />} />
           <Route path="/leaderboard" element={<Navigate to="/" replace />} />
-          {system.data ? (
+          <Route path="/submissions" element={<SubmissionsPage />} />
+          {limited ? (
+            <Route path="*" element={<Navigate to="/submissions" replace />} />
+          ) : system.data ? (
             <>
               <Route path="/overview" element={<OverviewPage />} />
               <Route path="/workbench" element={<WorkbenchPage />} />

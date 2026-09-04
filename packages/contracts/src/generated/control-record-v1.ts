@@ -593,7 +593,7 @@ actor: Actor
 }
 export interface Actor {
 subject: string
-role: ("operator" | "reader" | "service" | "migration")
+role: ("operator" | "reader" | "submitter" | "service" | "migration")
 }
 export interface BenchmarkProfileSpec {
 benchmark: Id

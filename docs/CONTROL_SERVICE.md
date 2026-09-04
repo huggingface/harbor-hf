@@ -314,7 +314,8 @@ Mutations require:
 - authorization for the operation;
 - CSRF protection for browser sessions;
 - a request confirmation where the action can spend or mutate remote state;
-- an idempotency key; and
+- an idempotency key for execution actions (leaderboard submission/review instead
+  use deterministic immutable record identities); and
 - immutable intent before any external call.
 
 Errors use one JSON envelope with a stable code, human-readable message,
@@ -442,13 +443,18 @@ from the run lock. Worker revision, Job IDs, and cost are excluded.
 Only catalogs with `publication_role=final`, quality `clean`, run outcome
 `complete`, and `scored_task_count` equal to `task_count` enter that snapshot.
 Diagnostic, cancelled, mixed, and policy-failed catalogs stay private.
+Eligibility alone never grants public visibility: a hosted submission and an
+operator decision must bind the exact catalog, lock, and public-row digests.
+See [hosted leaderboard submissions](leaderboard-submissions.md) for the
+submission/review API and mandatory privacy-and-consent confirmation.
 
 Each SQLite file is content-addressed. The snapshot receipt is written after
 the database bytes. Rank is computed at read time. The latest published
-eligible row wins for a configuration digest.
+approved eligible row wins for a configuration digest.
 
-`GET /api/v1/leaderboard` is a public, rate-limited read. It returns the latest
-snapshot metadata (without `sqlite_key`) and the ranked rows, each marked as on
+`GET /api/v1/leaderboard` is a public, rate-limited read. It returns matching
+snapshot metadata (without `sqlite_key`, or null during a racing refresh) and the
+approved ranked rows, each marked as on
 or off the cost-versus-score Pareto frontier. The browser never reads the
 Bucket. Runs, result details, system, events, and mutations stay
 authenticated.
@@ -497,7 +503,11 @@ events, and mutations remain protected by the application.
 
 Hugging Face OAuth provides verified user identities. The service stores
 operators and readers in an immutable private Bucket access-list record. A
-verified identity that is absent from both lists receives no control access.
+verified identity absent from both lists receives the limited `submitter` role
+only when an ACL exists. Without an ACL, access fails closed. Submitters have an
+exact method/path allowlist for session/logout, public leaderboard, their own
+submission list/create, and owned hosted candidates. They do not inherit reader
+access to global control state. Review remains operator-only.
 The bearer transport verifies identity with Hugging Face and applies the same
 access list. Failed checks are cached briefly, and new identity lookups have
 per-client and global limits before any external request.
@@ -677,6 +687,7 @@ defines implementation and verification.
 
 ## Safe publication and supersession
 
+Internal result publication is private and is not public leaderboard approval.
 Publication repeats the selection checks independently of run completion. It
 requires one selected receipt for every logical task, valid required metrics,
 matching task and run identities, matching provenance, complete normalized

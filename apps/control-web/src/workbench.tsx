@@ -40,6 +40,7 @@ import { useControlState } from "./control-state";
 import { PageHeader } from "./layout";
 import { cn, formatDate, formatMoney } from "./lib";
 import { useProfiles } from "./queries";
+import { SavedConfigurations } from "./saved-configurations";
 import { Badge, Button, Card, ErrorNotice } from "./ui";
 import { loadWorkbenchDraft, saveWorkbenchDraft } from "./workbench-draft";
 
@@ -687,15 +688,26 @@ export function WorkbenchPage() {
         }
       />
 
+      <SavedConfigurations
+        canSave={writesAllowed}
+        recipe={recipe}
+        onLoad={(saved) => {
+          setRecipe(saved);
+          setSetup(null);
+          setConfirmed(false);
+          setLocalConfirmation(null);
+          setHostedConfirmation(null);
+        }}
+      />
       <WorkbenchFlow />
       <p className="mb-4 text-sm text-slate-400" role="status">
         {draftSaved
-          ? "Draft saved in this browser. Do not enter secrets in commands or literal values. Reload requires fresh launch confirmation."
+          ? "Draft saved in this browser. Never include secrets. Confirm again after reloading."
           : "Draft could not be saved in this browser. Copy your edits before reloading."}
       </p>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
+        <div className="min-w-0 space-y-6">
           <Card>
             <div className="mb-5 flex items-center gap-3">
               <TerminalSquare className="text-cyan-300" size={20} />
@@ -784,7 +796,7 @@ export function WorkbenchPage() {
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Card>
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -807,7 +819,9 @@ export function WorkbenchPage() {
                 <div className="rounded-lg bg-slate-900 p-3 text-xs text-slate-400">
                   <div>
                     Revision:{" "}
-                    <code className="text-slate-200">{preview.revision_id}</code>
+                    <code className="break-all text-slate-200">
+                      {preview.revision_id}
+                    </code>
                   </div>
                   <div className="mt-1 break-all">
                     Digest:{" "}
@@ -937,7 +951,7 @@ export function WorkbenchPage() {
         </div>
 
         <Card className="xl:col-span-2">
-          <div className="mb-4 flex items-center justify-between gap-4">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="font-semibold text-white">Environment</h2>
               <p className="mt-1 text-sm text-slate-400">
@@ -960,7 +974,7 @@ export function WorkbenchPage() {
               <Plus size={15} /> Add
             </Button>
           </div>
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             {recipe.environment.map((binding, index) =>
               isManagedInferenceBinding(binding) ? null : (
                 <div
@@ -1087,7 +1101,7 @@ export function WorkbenchPage() {
                 <option value="">Select a reviewed configuration…</option>
                 {benchmarkConfigs.map((config) => (
                   <option key={config.name} value={config.name}>
-                    {config.label}
+                    {config.label} · {config.size}
                   </option>
                 ))}
               </select>
@@ -1119,7 +1133,9 @@ export function WorkbenchPage() {
           {selectedConfig ? (
             <>
               <p className="mt-4 text-sm text-slate-400">
-                {selectedConfig.description}
+                {selectedConfig.description} Size: {selectedConfig.size}. Size is
+                workload guidance, not a price guarantee; model and infrastructure
+                charges vary. Results are saved automatically.
               </p>
               <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
                 <div>
@@ -1497,7 +1513,7 @@ export function WorkbenchPage() {
           </Card>
 
           {!setupActive ? (
-            <div className="grid gap-6 xl:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
               <Card>
                 <h2 className="font-semibold text-white">Final setup output</h2>
                 <div className="mt-4 space-y-4">
@@ -1533,7 +1549,7 @@ export function WorkbenchPage() {
                 <p className="mt-1 text-sm text-slate-400">
                   Text previews are escaped and bounded. Binary files are listed only.
                 </p>
-                <div className="mt-4 grid min-h-72 gap-4 md:grid-cols-[minmax(12rem,0.8fr)_minmax(0,1.2fr)]">
+                <div className="mt-4 grid grid-cols-1 min-h-72 gap-4 md:grid-cols-[minmax(12rem,0.8fr)_minmax(0,1.2fr)]">
                   <div className="max-h-[32rem] overflow-auto rounded-lg border border-slate-800 p-2">
                     {setup.files.length === 0 ? (
                       <p className="p-3 text-sm text-slate-500">

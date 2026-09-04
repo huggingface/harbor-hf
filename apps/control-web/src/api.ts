@@ -289,3 +289,24 @@ export async function cancelLocalHarborRun(id: string): Promise<LocalHarborRun> 
     },
   );
 }
+
+export type SavedConfiguration =
+  paths["/api/v1/workbench/configurations"]["post"]["responses"][200]["content"]["application/json"];
+export function listSavedConfigurations() {
+  return request<{ items: SavedConfiguration[] }>("/api/v1/workbench/configurations");
+}
+export function saveConfiguration(recipe: WorkbenchRecipe) {
+  return request<SavedConfiguration>("/api/v1/workbench/configurations", {
+    method: "POST",
+    body: JSON.stringify(recipe),
+  });
+}
+
+export type LeaderboardCandidates =
+  paths["/api/v1/leaderboard/candidates"]["get"]["responses"][200]["content"]["application/json"];
+export type LeaderboardSubmissions =
+  paths["/api/v1/leaderboard/submissions"]["get"]["responses"][200]["content"]["application/json"];
+export type LeaderboardSubmissionInput =
+  paths["/api/v1/leaderboard/submissions"]["post"]["requestBody"]["content"]["application/json"];
+export type LeaderboardReviewInput =
+  paths["/api/v1/leaderboard/submissions/{id}/review"]["post"]["requestBody"]["content"]["application/json"];

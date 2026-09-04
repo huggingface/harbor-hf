@@ -27,6 +27,7 @@ import {
   loadLatestLeaderboard,
   mintWorkerCapability,
 } from "@harbor-hf/control-core";
+import { approveSnapshotFixture } from "@harbor-hf/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp, SSE_LIVE_BUFFER_LIMIT, SSE_REPLAY_LIMIT } from "../src/app.js";
 import { AuthenticationService, AuthStore, safeReturnPath } from "../src/auth.js";
@@ -2450,6 +2451,7 @@ describe("control API", () => {
       primary_metric_unit: "score",
       observed_microusd: 2500,
     };
+    await approveSnapshotFixture(runtime.store, row);
     const bytes = await encodeLeaderboardSqlite([row]);
     const sqliteDigest = sha256(bytes);
     const sqliteKey = `${LEADERBOARD_SNAPSHOT_PREFIX}${sqliteDigest.slice("sha256:".length)}/leaderboard.sqlite`;
@@ -2789,7 +2791,8 @@ describe("control API", () => {
       });
     const submission = {
       benchmark_config: "tb21-gpt-oss-20b-canary",
-      benchmark_config_revision: runtime.service.benchmarkConfigs()[0]?.revision,
+      benchmark_config_revision: (await runtime.service.benchmarkConfigs())[0]
+        ?.revision,
       harness: {
         type: "workbench",
         recipe: fastAgentWorkbenchStarter,
@@ -2913,7 +2916,8 @@ describe("control API", () => {
       .mockRejectedValue(new Error("setup test has not passed"));
     const submission = {
       benchmark_config: "tb21-gpt-oss-20b-canary",
-      benchmark_config_revision: runtime.service.benchmarkConfigs()[0]?.revision,
+      benchmark_config_revision: (await runtime.service.benchmarkConfigs())[0]
+        ?.revision,
       harness: {
         type: "workbench",
         recipe: fastAgentWorkbenchStarter,
@@ -3056,10 +3060,260 @@ describe("authentication state", () => {
     }));
     expect(await auth.role("operator")).toBe("operator");
     expect(await auth.role("reader")).toBe("reader");
-    expect(await auth.role("unlisted")).toBeNull();
+    expect(await auth.role("unlisted")).toBe("submitter");
     const unlisted = store.createSession("unlisted", "unlisted-user", 60);
-    expect(await auth.sessionActor(unlisted.id)).toBeNull();
-    expect(store.session(unlisted.id)).toBeNull();
+    expect((await auth.sessionActor(unlisted.id))?.actor.role).toBe("submitter");
+    expect(store.session(unlisted.id)).not.toBeNull();
+    const unconfigured = new AuthenticationService(
+      "oauth",
+      store,
+      null,
+      async () => null,
+    );
+    expect(await unconfigured.role("unlisted")).toBeNull();
+    expect(await unconfigured.sessionActor(unlisted.id)).toBeNull();
     store.close();
+  });
+});
+
+describe("saved Workbench configuration API", () => {
+  it("honors disabled writes and reader permissions", async () => {
+    const { app, runtime } = await setup("disabled");
+    const payload = fastAgentWorkbenchStarter;
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/workbench/configurations",
+          payload,
+        })
+      ).statusCode,
+    ).toBe(422);
+    const original = runtime.auth.developmentActor();
+    vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+      ...original,
+      role: "reader",
+    });
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/workbench/configurations",
+          payload,
+        })
+      ).statusCode,
+    ).toBe(403);
+  });
+
+  it("saves without launching and lists only the authenticated owner's recipes", async () => {
+    const { app, runtime } = await setup();
+    const saved = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/configurations",
+      payload: fastAgentWorkbenchStarter,
+    });
+    expect(saved.statusCode).toBe(200);
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/v1/workbench/configurations",
+    });
+    expect(list.json().items).toEqual([saved.json()]);
+    const original = runtime.auth.developmentActor();
+    vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+      ...original,
+      subject: "another-owner",
+    });
+    const other = await app.inject({
+      method: "GET",
+      url: "/api/v1/workbench/configurations",
+    });
+    expect(other.json().items).toEqual([]);
+
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/runs" })).json().items,
+    ).toEqual([]);
+  });
+  it("rejects invalid recipes without saving", async () => {
+    const { app } = await setup();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/configurations",
+      payload: {},
+    });
+    expect(response.statusCode).toBe(400);
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/v1/workbench/configurations",
+    });
+    expect(list.json().items).toEqual([]);
+  });
+});
+
+describe("limited leaderboard submitter API", () => {
+  it("uses an exact method/path allowlist, never reader-level control access", async () => {
+    const { app, runtime } = await setup();
+    vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+      subject: "ordinary-user",
+      username: "Test submitter",
+      role: "submitter",
+      transport: "development",
+    });
+    for (const url of [
+      "/api/v1/auth/session",
+      "/api/v1/leaderboard",
+      "/api/v1/leaderboard/submissions",
+      "/api/v1/leaderboard/candidates",
+    ]) {
+      expect((await app.inject({ method: "GET", url })).statusCode, url).toBe(200);
+    }
+    for (const url of [
+      "/api/v1/runs",
+      "/api/v1/runs/run-test/lock",
+      "/api/v1/results",
+      "/api/v1/system",
+      "/api/v1/events",
+      "/api/v1/audit",
+      "/api/v1/profiles",
+      "/api/v1/jobs",
+      "/api/v1/endpoints",
+      "/api/v1/capacity",
+      "/api/v1/workbench/configurations",
+      "/api/v1/leaderboard/submissions/extra",
+      "/api/v1/leaderboard/candidates/",
+      "/api/v1/leaderboard%2fsubmissions",
+    ]) {
+      expect((await app.inject({ method: "GET", url })).statusCode, url).toBe(403);
+    }
+    for (const method of ["HEAD", "DELETE", "PUT", "PATCH"] as const) {
+      expect(
+        (await app.inject({ method, url: "/api/v1/leaderboard/submissions" }))
+          .statusCode,
+      ).toBe(403);
+    }
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/leaderboard/submissions/missing/review",
+          payload: {
+            decision: "approved",
+            confirmed: true,
+            public_metadata_confirmed: true,
+          },
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/leaderboard/submissions",
+          payload: {
+            run_id: "missing",
+            catalog_digest: `sha256:${"a".repeat(64)}`,
+            confirmed: true,
+          },
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/leaderboard/submissions",
+          payload: {
+            run_id: "missing",
+            catalog_digest: `sha256:${"a".repeat(64)}`,
+            confirmed: false,
+          },
+        })
+      ).statusCode,
+    ).toBe(400);
+  });
+
+  it("requires session CSRF on submission and operator review and honors disabled writes", async () => {
+    const { app, runtime } = await setup();
+    runtime.config.auth_mode = "oauth";
+    const session = runtime.auth.store.createSession("ordinary-user", "Test user", 60);
+    const row = runtime.auth.store.session(session.id);
+    if (!row) throw new Error("missing test session");
+    const sessionSpy = vi.spyOn(runtime.auth, "sessionActor").mockResolvedValue({
+      actor: {
+        subject: row.subject,
+        username: "Test user",
+        role: "submitter",
+        transport: "session",
+      },
+      session: row,
+    });
+    const headers = { cookie: `hhf_session=${session.id}` };
+    const post = {
+      method: "POST" as const,
+      url: "/api/v1/leaderboard/submissions",
+      payload: {
+        run_id: "missing",
+        catalog_digest: `sha256:${"a".repeat(64)}`,
+        confirmed: true,
+      },
+    };
+    expect((await app.inject({ ...post, headers })).json().error.code).toBe(
+      "csrf_rejected",
+    );
+    expect(
+      (
+        await app.inject({
+          ...post,
+          headers: { ...headers, "x-csrf-token": session.csrf },
+        })
+      ).statusCode,
+    ).toBe(404);
+    runtime.config.write_mode = "disabled";
+    expect(
+      (
+        await app.inject({
+          ...post,
+          headers: { ...headers, "x-csrf-token": session.csrf },
+        })
+      ).json().error.code,
+    ).toBe("policy_rejected");
+    sessionSpy.mockResolvedValue({
+      actor: {
+        subject: row.subject,
+        username: "Test operator",
+        role: "operator",
+        transport: "session",
+      },
+      session: row,
+    });
+    const review = {
+      method: "POST" as const,
+      url: "/api/v1/leaderboard/submissions/missing/review",
+      payload: {
+        decision: "approved",
+        confirmed: true,
+        public_metadata_confirmed: true,
+      },
+    };
+    expect((await app.inject({ ...review, headers })).json().error.code).toBe(
+      "csrf_rejected",
+    );
+    expect(
+      (
+        await app.inject({
+          ...review,
+          headers: { ...headers, "x-csrf-token": session.csrf },
+        })
+      ).json().error.code,
+    ).toBe("policy_rejected");
+    runtime.config.write_mode = "enabled";
+    expect(
+      (
+        await app.inject({
+          ...review,
+          payload: { decision: "approved", confirmed: true },
+          headers: { ...headers, "x-csrf-token": session.csrf },
+        })
+      ).json().error.code,
+    ).toBe("public_metadata_confirmation_required");
   });
 });

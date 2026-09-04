@@ -134,43 +134,58 @@ export function Layout({
             <Trophy size={18} />
             <Hint text={hints.nav.leaderboard}>Leaderboard</Hint>
           </NavLink>
-          <div className="pt-3">
-            <div
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 text-sm font-medium",
-                adminActive ? "text-cyan-300" : "text-slate-300",
-              )}
+          {authenticated ? (
+            <NavLink
+              to="/submissions"
+              onClick={closeNav}
+              className={({ isActive }) => navItemClass(isActive)}
             >
-              <ShieldCheck size={18} />
-              <Hint text={hints.nav.admin}>Admin</Hint>
+              <ClipboardList size={18} /> Submissions
+            </NavLink>
+          ) : (
+            <a href={loginHref("/submissions")} className={navItemClass(false)}>
+              <ClipboardList size={18} /> Submit results
+            </a>
+          )}
+          {actor?.role !== "submitter" ? (
+            <div className="pt-3">
+              <div
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 text-sm font-medium",
+                  adminActive ? "text-cyan-300" : "text-slate-300",
+                )}
+              >
+                <ShieldCheck size={18} />
+                <Hint text={hints.nav.admin}>Admin</Hint>
+              </div>
+              <div className="ml-3 space-y-1 border-l border-slate-800 pl-2">
+                {adminNavigation.map(([href, label, Icon, hint]) =>
+                  authenticated ? (
+                    <NavLink
+                      key={href}
+                      end={href === "/overview"}
+                      to={href}
+                      onClick={closeNav}
+                      className={({ isActive }) => navItemClass(isActive)}
+                    >
+                      <Icon size={18} />
+                      <Hint text={hint}>{label}</Hint>
+                    </NavLink>
+                  ) : (
+                    <a
+                      key={href}
+                      href={loginHref(href)}
+                      onClick={closeNav}
+                      className={navItemClass(false)}
+                    >
+                      <Icon size={18} />
+                      <Hint text={hint}>{label}</Hint>
+                    </a>
+                  ),
+                )}
+              </div>
             </div>
-            <div className="ml-3 space-y-1 border-l border-slate-800 pl-2">
-              {adminNavigation.map(([href, label, Icon, hint]) =>
-                authenticated ? (
-                  <NavLink
-                    key={href}
-                    end={href === "/overview"}
-                    to={href}
-                    onClick={closeNav}
-                    className={({ isActive }) => navItemClass(isActive)}
-                  >
-                    <Icon size={18} />
-                    <Hint text={hint}>{label}</Hint>
-                  </NavLink>
-                ) : (
-                  <a
-                    key={href}
-                    href={loginHref(href)}
-                    onClick={closeNav}
-                    className={navItemClass(false)}
-                  >
-                    <Icon size={18} />
-                    <Hint text={hint}>{label}</Hint>
-                  </a>
-                ),
-              )}
-            </div>
-          </div>
+          ) : null}
         </nav>
         {authenticated ? (
           <div className="mt-auto space-y-4 rounded-xl border border-slate-800 bg-slate-900/50 p-4">

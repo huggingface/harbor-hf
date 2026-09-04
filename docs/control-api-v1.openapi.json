@@ -141,7 +141,8 @@
                         "role": {
                           "enum": [
                             "operator",
-                            "reader"
+                            "reader",
+                            "submitter"
                           ]
                         },
                         "transport": {
@@ -193,7 +194,8 @@
                         "role": {
                           "enum": [
                             "operator",
-                            "reader"
+                            "reader",
+                            "submitter"
                           ]
                         },
                         "transport": {
@@ -809,8 +811,8 @@
                       },
                       "trajectory_path": {
                         "type": [
-                          "string",
-                          "null"
+                          "null",
+                          "string"
                         ],
                         "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
                         "maxLength": 512
@@ -902,6 +904,421 @@
         }
       }
     },
+    "/api/v1/workbench/configurations": {
+      "get": {
+        "tags": [
+          "workbench"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "title": "Saved Workbench Configuration V1",
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "schema_version",
+                          "revision",
+                          "recipe"
+                        ],
+                        "properties": {
+                          "schema_version": {
+                            "enum": [
+                              "v1"
+                            ]
+                          },
+                          "revision": {
+                            "type": "string"
+                          },
+                          "recipe": {
+                            "title": "Agent Workbench recipe v1",
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "schema_version",
+                              "name",
+                              "setup_command",
+                              "run_command",
+                              "route_api",
+                              "setup_timeout_seconds",
+                              "environment",
+                              "outputs"
+                            ],
+                            "properties": {
+                              "schema_version": {
+                                "enum": [
+                                  "v1"
+                                ]
+                              },
+                              "name": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                                "minLength": 2,
+                                "maxLength": 80
+                              },
+                              "setup_command": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 32768
+                              },
+                              "run_command": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 32768
+                              },
+                              "route_api": {
+                                "enum": [
+                                  "chat-completions",
+                                  "responses"
+                                ]
+                              },
+                              "setup_timeout_seconds": {
+                                "type": "integer",
+                                "minimum": 30,
+                                "maximum": 3600
+                              },
+                              "environment": {
+                                "type": "array",
+                                "maxItems": 64,
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "required": [
+                                    "name",
+                                    "source"
+                                  ],
+                                  "properties": {
+                                    "name": {
+                                      "type": "string",
+                                      "pattern": "^[A-Z_][A-Z0-9_]*$",
+                                      "minLength": 1,
+                                      "maxLength": 80
+                                    },
+                                    "source": {
+                                      "enum": [
+                                        "literal",
+                                        "instruction_path",
+                                        "workspace_path",
+                                        "logs_path",
+                                        "agent_home",
+                                        "model_name",
+                                        "model_base_url",
+                                        "model_api_key"
+                                      ]
+                                    },
+                                    "value": {
+                                      "type": "string",
+                                      "maxLength": 4096
+                                    }
+                                  }
+                                }
+                              },
+                              "outputs": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "results_path",
+                                  "trajectory_path"
+                                ],
+                                "properties": {
+                                  "results_path": {
+                                    "type": "string",
+                                    "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+                                    "minLength": 1,
+                                    "maxLength": 512
+                                  },
+                                  "trajectory_path": {
+                                    "type": [
+                                      "null",
+                                      "string"
+                                    ],
+                                    "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+                                    "maxLength": 512
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "workbench"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Agent Workbench recipe v1",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "schema_version",
+                  "name",
+                  "setup_command",
+                  "run_command",
+                  "route_api",
+                  "setup_timeout_seconds",
+                  "environment",
+                  "outputs"
+                ],
+                "properties": {
+                  "schema_version": {
+                    "enum": [
+                      "v1"
+                    ]
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "setup_command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32768
+                  },
+                  "run_command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32768
+                  },
+                  "route_api": {
+                    "enum": [
+                      "chat-completions",
+                      "responses"
+                    ]
+                  },
+                  "setup_timeout_seconds": {
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 3600
+                  },
+                  "environment": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "name",
+                        "source"
+                      ],
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[A-Z_][A-Z0-9_]*$",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "source": {
+                          "enum": [
+                            "literal",
+                            "instruction_path",
+                            "workspace_path",
+                            "logs_path",
+                            "agent_home",
+                            "model_name",
+                            "model_base_url",
+                            "model_api_key"
+                          ]
+                        },
+                        "value": {
+                          "type": "string",
+                          "maxLength": 4096
+                        }
+                      }
+                    }
+                  },
+                  "outputs": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "results_path",
+                      "trajectory_path"
+                    ],
+                    "properties": {
+                      "results_path": {
+                        "type": "string",
+                        "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      "trajectory_path": {
+                        "type": [
+                          "null",
+                          "string"
+                        ],
+                        "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+                        "maxLength": 512
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Saved Workbench Configuration V1",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "schema_version",
+                    "revision",
+                    "recipe"
+                  ],
+                  "properties": {
+                    "schema_version": {
+                      "enum": [
+                        "v1"
+                      ]
+                    },
+                    "revision": {
+                      "type": "string"
+                    },
+                    "recipe": {
+                      "title": "Agent Workbench recipe v1",
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "schema_version",
+                        "name",
+                        "setup_command",
+                        "run_command",
+                        "route_api",
+                        "setup_timeout_seconds",
+                        "environment",
+                        "outputs"
+                      ],
+                      "properties": {
+                        "schema_version": {
+                          "enum": [
+                            "v1"
+                          ]
+                        },
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                          "minLength": 2,
+                          "maxLength": 80
+                        },
+                        "setup_command": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32768
+                        },
+                        "run_command": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32768
+                        },
+                        "route_api": {
+                          "enum": [
+                            "chat-completions",
+                            "responses"
+                          ]
+                        },
+                        "setup_timeout_seconds": {
+                          "type": "integer",
+                          "minimum": 30,
+                          "maximum": 3600
+                        },
+                        "environment": {
+                          "type": "array",
+                          "maxItems": 64,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "name",
+                              "source"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string",
+                                "pattern": "^[A-Z_][A-Z0-9_]*$",
+                                "minLength": 1,
+                                "maxLength": 80
+                              },
+                              "source": {
+                                "enum": [
+                                  "literal",
+                                  "instruction_path",
+                                  "workspace_path",
+                                  "logs_path",
+                                  "agent_home",
+                                  "model_name",
+                                  "model_base_url",
+                                  "model_api_key"
+                                ]
+                              },
+                              "value": {
+                                "type": "string",
+                                "maxLength": 4096
+                              }
+                            }
+                          }
+                        },
+                        "outputs": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "results_path",
+                            "trajectory_path"
+                          ],
+                          "properties": {
+                            "results_path": {
+                              "type": "string",
+                              "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+                              "minLength": 1,
+                              "maxLength": 512
+                            },
+                            "trajectory_path": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+                              "maxLength": 512
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workbench/benchmark-configs": {
       "get": {
         "tags": [
@@ -926,6 +1343,7 @@
                         "additionalProperties": false,
                         "required": [
                           "name",
+                          "size",
                           "revision",
                           "label",
                           "description",
@@ -941,6 +1359,13 @@
                         "properties": {
                           "name": {
                             "type": "string"
+                          },
+                          "size": {
+                            "enum": [
+                              "small",
+                              "medium",
+                              "large"
+                            ]
                           },
                           "revision": {
                             "type": "string"
@@ -1186,8 +1611,8 @@
                           },
                           "trajectory_path": {
                             "type": [
-                              "string",
-                              "null"
+                              "null",
+                              "string"
                             ],
                             "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
                             "maxLength": 512
@@ -1534,8 +1959,8 @@
                           },
                           "trajectory_path": {
                             "type": [
-                              "string",
-                              "null"
+                              "null",
+                              "string"
                             ],
                             "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
                             "maxLength": 512
@@ -2404,8 +2829,8 @@
                           },
                           "trajectory_path": {
                             "type": [
-                              "string",
-                              "null"
+                              "null",
+                              "string"
                             ],
                             "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
                             "maxLength": 512
@@ -6157,6 +6582,365 @@
                         {
                           "type": "null"
                         }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leaderboard/candidates": {
+      "get": {
+        "tags": [
+          "results"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "run_id",
+                          "publication_id",
+                          "catalog_digest",
+                          "public_row"
+                        ],
+                        "properties": {
+                          "run_id": {
+                            "type": "string"
+                          },
+                          "publication_id": {
+                            "type": "string"
+                          },
+                          "catalog_digest": {
+                            "type": "string",
+                            "pattern": "^sha256:[a-f0-9]{64}$"
+                          },
+                          "public_row": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "configuration_digest",
+                              "run_id",
+                              "publication_id",
+                              "published_at",
+                              "benchmark",
+                              "model",
+                              "harness",
+                              "inference_provider",
+                              "reasoning_effort",
+                              "harbor_version",
+                              "trial_count",
+                              "task_count",
+                              "scored_task_count",
+                              "primary_metric_name",
+                              "primary_metric_value",
+                              "primary_metric_unit",
+                              "observed_microusd"
+                            ],
+                            "properties": {
+                              "configuration_digest": {
+                                "type": "string"
+                              },
+                              "run_id": {
+                                "type": "string"
+                              },
+                              "publication_id": {
+                                "type": "string"
+                              },
+                              "published_at": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "benchmark": {
+                                "type": "string"
+                              },
+                              "model": {
+                                "type": "string"
+                              },
+                              "harness": {
+                                "type": "string"
+                              },
+                              "inference_provider": {
+                                "type": "string"
+                              },
+                              "reasoning_effort": {
+                                "type": "string"
+                              },
+                              "harbor_version": {
+                                "type": "string"
+                              },
+                              "trial_count": {
+                                "type": "integer"
+                              },
+                              "task_count": {
+                                "type": "integer"
+                              },
+                              "scored_task_count": {
+                                "type": "integer"
+                              },
+                              "primary_metric_name": {
+                                "type": "string"
+                              },
+                              "primary_metric_value": {
+                                "type": "number"
+                              },
+                              "primary_metric_unit": {
+                                "type": "string"
+                              },
+                              "observed_microusd": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leaderboard/submissions": {
+      "get": {
+        "tags": [
+          "results"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "run_id",
+                          "publication_id",
+                          "catalog_digest",
+                          "created_at",
+                          "status"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "run_id": {
+                            "type": "string"
+                          },
+                          "publication_id": {
+                            "type": "string"
+                          },
+                          "catalog_digest": {
+                            "type": "string",
+                            "pattern": "^sha256:[a-f0-9]{64}$"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "approved",
+                              "rejected"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "results"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "run_id",
+                  "catalog_digest",
+                  "confirmed"
+                ],
+                "properties": {
+                  "run_id": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]+$",
+                    "maxLength": 160
+                  },
+                  "catalog_digest": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}$"
+                  },
+                  "confirmed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "run_id",
+                    "publication_id",
+                    "catalog_digest",
+                    "created_at",
+                    "status"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "run_id": {
+                      "type": "string"
+                    },
+                    "publication_id": {
+                      "type": "string"
+                    },
+                    "catalog_digest": {
+                      "type": "string",
+                      "pattern": "^sha256:[a-f0-9]{64}$"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "approved",
+                        "rejected"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leaderboard/submissions/{id}/review": {
+      "post": {
+        "tags": [
+          "results"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "decision",
+                  "confirmed"
+                ],
+                "properties": {
+                  "decision": {
+                    "enum": [
+                      "approved",
+                      "rejected"
+                    ]
+                  },
+                  "confirmed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "public_metadata_confirmed": {
+                    "type": "boolean",
+                    "description": "Required true for approval: operator verified privacy and consent for every exact public row field."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]+$",
+              "maxLength": 160
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "status"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "approved",
+                        "rejected"
                       ]
                     }
                   }

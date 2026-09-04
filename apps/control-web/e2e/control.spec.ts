@@ -123,6 +123,19 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
   page,
 }, testInfo) => {
   let hostedSubmission: Record<string, unknown> | null = null;
+  const saved = {
+    schema_version: "v1",
+    revision: reviewedFastAgentPreview.recipe_digest,
+    recipe: fastAgentWorkbenchStarter,
+  };
+  let savedItems: (typeof saved)[] = [];
+  await page.route("**/api/v1/workbench/configurations", (route) => {
+    if (route.request().method() === "POST") {
+      savedItems = [saved];
+      return route.fulfill({ json: saved });
+    }
+    return route.fulfill({ json: { items: savedItems } });
+  });
   await page.route("**/api/v1/auth/session", (route) =>
     route.fulfill({ json: session }),
   );
@@ -205,6 +218,7 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
             revision: `sha256:${"1".repeat(64)}`,
             label: "Terminal-Bench 2.1 canary · GPT-OSS 20B",
             description: "Reviewed hosted canary.",
+            size: "small",
             benchmark: "terminal-bench-2-1-canary",
             model: "gpt-oss-20b-together",
             deployment: "tb21-gpt-oss-20b-fast-agent-command-providers",
@@ -282,6 +296,20 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
   );
 
   await page.goto("/workbench");
+  await page.getByRole("button", { name: "Save configuration", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Saved fast-agent" }),
+  ).toBeVisible();
+  await page.reload();
+  await page
+    .getByRole("combobox", { name: "Load configuration" })
+    .selectOption(saved.revision);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Load", exact: true }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Loaded fast-agent" }),
+  ).toBeVisible();
+
   await expect(page.getByRole("heading", { name: "Agent Workbench" })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Configure → Test → Run" }),
@@ -330,6 +358,11 @@ test("tests a Workbench recipe and submits a hosted Run", async ({
         document.documentElement.scrollWidth <= document.documentElement.clientWidth,
     ),
   ).toBe(true);
+  for (const label of ["Configuration name", "Benchmark configuration"]) {
+    const bounds = await page.getByLabel(label, { exact: true }).boundingBox();
+    expect(bounds).not.toBeNull();
+    expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
+  }
   await page.screenshot({
     path: testInfo.outputPath("agent-workbench-mobile.png"),
     fullPage: true,
@@ -792,4 +825,123 @@ test("shows complete run Jobs with sticky, filterable table headers", async ({
       element.scrollTop = element.scrollHeight;
     });
   await expect(header).toBeInViewport();
+});
+
+test("submits hosted results with a limited account and separate admin approval", async ({
+  page,
+}, testInfo) => {
+  let role = "submitter";
+  let submitted = false;
+  let approved = false;
+  const digest = `sha256:${"a".repeat(64)}`;
+  const candidate = {
+    run_id: "run-owned",
+    publication_id: "publication-owned",
+    catalog_digest: digest,
+    public_row: {
+      configuration_digest: digest,
+      run_id: "run-owned",
+      publication_id: "publication-owned",
+      published_at: "2026-09-04T10:00:00Z",
+      benchmark: "example-benchmark",
+      model: "example-model",
+      harness: "example-harness",
+      inference_provider: "example-provider",
+      reasoning_effort: "default",
+      harbor_version: "pinned",
+      trial_count: 1,
+      task_count: 2,
+      scored_task_count: 2,
+      primary_metric_name: "accuracy",
+      primary_metric_value: 0.5,
+      primary_metric_unit: "fraction",
+      observed_microusd: 1000,
+    },
+  };
+  const summary = () => ({
+    id: "submission-owned",
+    run_id: candidate.run_id,
+    publication_id: candidate.publication_id,
+    catalog_digest: digest,
+    created_at: "2026-09-04T10:00:00Z",
+    status: approved ? "approved" : "pending",
+  });
+  const privateRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/\/api\/v1\/(system|events|runs)/.test(request.url()) && role === "submitter")
+      privateRequests.push(request.url());
+  });
+  await page.route("**/api/v1/auth/session", (route) =>
+    route.fulfill({ json: { ...session, actor: { ...session.actor, role } } }),
+  );
+  await page.route("**/api/v1/system", (route) => route.fulfill({ json: system() }));
+  await page.route("**/api/v1/events**", (route) =>
+    route.fulfill({ contentType: "text/event-stream", body: "" }),
+  );
+  await page.route("**/api/v1/leaderboard/candidates", (route) =>
+    route.fulfill({ json: { items: [candidate] } }),
+  );
+  await page.route("**/api/v1/leaderboard/submissions", (route) => {
+    if (route.request().method() === "POST") {
+      expect(route.request().postDataJSON()).toEqual({
+        run_id: "run-owned",
+        catalog_digest: digest,
+        confirmed: true,
+      });
+      submitted = true;
+      return route.fulfill({ json: summary() });
+    }
+    return route.fulfill({ json: { items: submitted ? [summary()] : [] } });
+  });
+  await page.route(
+    "**/api/v1/leaderboard/submissions/submission-owned/review",
+    (route) => {
+      expect(role).toBe("operator");
+      expect(route.request().postDataJSON()).toEqual({
+        decision: "approved",
+        confirmed: true,
+        public_metadata_confirmed: true,
+      });
+      approved = true;
+      return route.fulfill({ json: { id: "submission-owned", status: "approved" } });
+    },
+  );
+  await page.goto("/submissions");
+  await expect(
+    page.getByRole("heading", { name: "Submit your results" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Workbench" })).toHaveCount(0);
+  await page.getByLabel("Hosted result").selectOption(digest);
+  await expect(page.getByRole("button", { name: "Submit for review" })).toBeDisabled();
+  await page.getByLabel(/I consent to sharing/).check();
+  await page.getByRole("button", { name: "Submit for review" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Nothing has been published" }),
+  ).toBeVisible();
+  expect(approved).toBe(false);
+  expect(privateRequests).toEqual([]);
+  await page.screenshot({
+    path: testInfo.outputPath("submissions-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const bounds = await page.getByLabel("Hosted result").boundingBox();
+  expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
+  await expect
+    .poll(async () => {
+      const nav = await page.locator("aside").boundingBox();
+      return (nav?.x ?? 0) + (nav?.width ?? 0);
+    })
+    .toBeLessThanOrEqual(0);
+  await page.screenshot({
+    path: testInfo.outputPath("submissions-mobile.png"),
+    fullPage: true,
+  });
+  role = "operator";
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Approve & publish" })).toBeDisabled();
+  await page.getByLabel(/I reviewed every field/).check();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Approve & publish" }).click();
+  await expect(page.getByText("Approved", { exact: true })).toBeVisible();
 });

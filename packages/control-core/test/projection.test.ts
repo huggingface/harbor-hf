@@ -561,9 +561,10 @@ describe("projection replay", () => {
     const firstKey = "control/schema=v1/operators/operator-acl-first.json";
     const firstBytes = new TextEncoder().encode(canonicalJson(first));
     await control.store.create(firstKey, firstBytes);
-    const rebuildKeys = (await control.store.list("control/schema=v1")).map(
-      (entry) => entry.key,
-    );
+    // Workbench library objects are read directly, not projected as control events.
+    const rebuildKeys = (await control.store.list("control/schema=v1"))
+      .filter((entry) => !entry.key.startsWith("control/schema=v1/workbench/"))
+      .map((entry) => entry.key);
 
     const counting = new ReadCountingStore(control.store);
     const projection = await Projection.open(`${control.root}/read-count.sqlite`);

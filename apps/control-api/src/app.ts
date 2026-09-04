@@ -24,9 +24,12 @@ import {
   type ControlEvent,
   ControlNotReadyError,
   IdempotencyConflictError,
+  LeaderboardSubmissionError,
+  listWorkbenchConfigurations,
   loadLatestLeaderboard,
   PolicyError,
   ProfileResolutionError,
+  saveWorkbenchConfiguration,
   summarizePublishedResult,
   verifyWorkerCapability,
   type WorkerCapability,
@@ -79,6 +82,10 @@ import {
   type SessionRow,
   UnauthorizedSubjectError,
 } from "./auth.js";
+import {
+  registerLeaderboardSubmissions,
+  submitterRouteAllowed,
+} from "./leaderboard-submissions.js";
 import type { Runtime } from "./runtime.js";
 
 declare module "fastify" {
@@ -931,8 +938,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.addHook("onRequest", async (request, reply) => {
     const path = request.url.split("?", 1)[0] ?? request.url;
     if (!path.startsWith("/api/v1")) return;
-    if (path === "/api/v1/system" && !runtime.ready) return;
-    if (path === "/api/v1/auth/session") {
+
+    if (path === "/api/v1/auth/session" && request.method === "GET") {
       if (runtime.config.auth_mode === "development") {
         await admitRequest(
           requestLimiter,
@@ -1124,8 +1131,28 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       });
       return;
     }
+    if (
+      request.actor.role === "submitter" &&
+      !submitterRouteAllowed(request.method, path)
+    ) {
+      await reply.code(403).send({
+        error: {
+          code: "access_denied",
+          message: "this route is not available to submitters",
+          request_id: request.id,
+        },
+      });
+      return;
+    }
     if (isMutation(request)) {
-      if (request.actor.role !== "operator") {
+      if (
+        request.actor.role !== "operator" &&
+        !(
+          request.actor.role === "submitter" &&
+          request.method === "POST" &&
+          path === "/api/v1/leaderboard/submissions"
+        )
+      ) {
         await reply.code(403).send({
           error: {
             code: "operator_required",
@@ -1342,6 +1369,57 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     },
   );
 
+  const savedConfigurationSchema = {
+    ...cleanSchema(schemas.savedWorkbench),
+    properties: {
+      schema_version: { const: "v1" },
+      revision: { type: "string" },
+      recipe: agentWorkbenchRecipeSchema,
+    },
+  };
+  app.get(
+    "/api/v1/workbench/configurations",
+    {
+      schema: {
+        tags: ["workbench"],
+        response: {
+          200: {
+            type: "object",
+            required: ["items"],
+            properties: { items: { type: "array", items: savedConfigurationSchema } },
+          },
+        },
+      },
+    },
+    async (request) => ({
+      items: await listWorkbenchConfigurations(runtime.store, actor(request).subject),
+    }),
+  );
+  app.post(
+    "/api/v1/workbench/configurations",
+    {
+      schema: {
+        tags: ["workbench"],
+        body: agentWorkbenchRecipeSchema,
+        response: { 200: savedConfigurationSchema },
+      },
+    },
+    async (request) => {
+      if (runtime.config.write_mode === "disabled")
+        throw new PolicyError("control writes are disabled");
+      // Use the same compiler checks as preview before anything is persisted.
+      let recipe: unknown;
+      try {
+        recipe = runtime.workbench.preview(request.body).recipe;
+      } catch (error) {
+        throw new PolicyError(
+          error instanceof Error ? error.message : "invalid recipe",
+        );
+      }
+      return saveWorkbenchConfiguration(runtime.store, actor(request).subject, recipe);
+    },
+  );
+
   app.get(
     "/api/v1/workbench/benchmark-configs",
     {
@@ -1350,7 +1428,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         response: { 200: benchmarkConfigListSchema },
       },
     },
-    async () => ({ items: runtime.service.benchmarkConfigs() }),
+    async () => ({ items: await runtime.service.benchmarkConfigs() }),
   );
 
   app.get(
@@ -2454,6 +2532,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       );
     },
   );
+  registerLeaderboardSubmissions(app, runtime);
   app.get(
     "/api/v1/leaderboard",
     {
@@ -2750,7 +2829,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     let status = 500;
     let code = "internal_error";
     let message = "the request could not be completed";
-    if (error instanceof ConfirmationRequiredError) {
+    if (error instanceof LeaderboardSubmissionError) {
+      status = error.status;
+      code = error.code;
+      message = error.message;
+    } else if (error instanceof ConfirmationRequiredError) {
       status = 400;
       code = "confirmation_required";
       message = error.message;

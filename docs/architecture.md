@@ -183,7 +183,9 @@ worker logs, source and image provenance, and infrastructure receipts. Evidence
 requirements come from the harness and benchmark contracts.
 
 Publication is a later deterministic action over accepted canonical evidence.
-It emits normalized result objects and approved public views. Workers never
+It emits private normalized result objects. Public leaderboard visibility
+requires a separate hosted submission and an operator privacy/consent decision
+bound to the exact catalog and displayed metadata. Workers never
 write directly to shared public destinations.
 
 ## Identity and reproducibility

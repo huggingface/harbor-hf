@@ -15,7 +15,7 @@ import {
   skipSubjectCheck,
 } from "openid-client";
 
-export type AuthRole = "operator" | "reader";
+export type AuthRole = "operator" | "reader" | "submitter";
 
 export class BearerRateLimitError extends Error {}
 export class InvalidBearerCredentialError extends Error {}
@@ -404,7 +404,7 @@ export class AuthenticationService {
     const acl = await this.acl();
     if (acl?.operators.includes(subject)) return "operator";
     if (acl?.readers.includes(subject)) return "reader";
-    return null;
+    return acl ? "submitter" : null;
   }
 
   csrfValid(session: SessionRow, token: string | undefined): boolean {

@@ -278,3 +278,5 @@ export async function createTestControl(
   );
   return createTestControlFromProfiles(profiles);
 }
+
+export * from "./leaderboard.js";

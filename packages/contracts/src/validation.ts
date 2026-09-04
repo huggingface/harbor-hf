@@ -10,6 +10,10 @@ function load(name: string): object {
 }
 
 export const schemas = {
+  leaderboardSubmission: load("leaderboard-submission-v1.schema.json"),
+  leaderboardDecision: load("leaderboard-decision-v1.schema.json"),
+  benchmarkCatalog: load("benchmark-catalog-v1.schema.json"),
+  savedWorkbench: load("saved-workbench-v1.schema.json"),
   apiError: load("api-error-v1.schema.json"),
   agentWorkbench: load("agent-workbench-v1.schema.json"),
   attemptSubmission: load("attempt-submission-v1.schema.json"),
@@ -28,9 +32,14 @@ ajv.addFormat("date-time", {
   type: "string",
   validate: (value: string) => Number.isFinite(Date.parse(value)),
 });
+ajv.addKeyword({ keyword: "tsType", valid: true });
 ajv.addSchema(schemas.agentWorkbench);
 
 const validators = {
+  leaderboardSubmission: ajv.compile(schemas.leaderboardSubmission),
+  leaderboardDecision: ajv.compile(schemas.leaderboardDecision),
+  benchmarkCatalog: ajv.compile(schemas.benchmarkCatalog),
+  savedWorkbench: ajv.compile(schemas.savedWorkbench),
   agentWorkbench: ajv.compile(schemas.agentWorkbench),
   attemptSubmission: ajv.compile(schemas.attemptSubmission),
   runAction: ajv.compile(schemas.runAction),
@@ -106,4 +115,19 @@ export function validateWorkerEvidenceManifest<T>(value: unknown): T {
     value,
     "worker evidence manifest",
   );
+}
+
+export function validateBenchmarkCatalog<T>(value: unknown): T {
+  return validate<T>(validators.benchmarkCatalog, value, "benchmark catalog");
+}
+
+export function validateSavedWorkbench<T>(value: unknown): T {
+  return validate<T>(validators.savedWorkbench, value, "saved workbench configuration");
+}
+
+export function validateLeaderboardSubmission<T>(value: unknown): T {
+  return validate<T>(validators.leaderboardSubmission, value, "leaderboard submission");
+}
+export function validateLeaderboardDecision<T>(value: unknown): T {
+  return validate<T>(validators.leaderboardDecision, value, "leaderboard decision");
 }

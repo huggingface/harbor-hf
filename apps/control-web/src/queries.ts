@@ -110,8 +110,9 @@ export const useSession = () =>
     refetchOnReconnect: false,
     staleTime: Number.POSITIVE_INFINITY,
   });
-export const useSystem = () =>
+export const useSystem = (enabled = true) =>
   useQuery({
+    enabled,
     queryKey: keys.system,
     queryFn: () => request<SystemResponse>("/api/v1/system"),
     retry: retryTransient,

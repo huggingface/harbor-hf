@@ -246,13 +246,20 @@ export function LeaderboardPage() {
     <>
       <PageHeader
         title="Leaderboard"
-        description="Official board from the Bucket snapshot. Only final, clean, fully scored runs appear. Diagnostic runs stay on Results."
+        action={
+          <Link
+            to="/submissions"
+            className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-300"
+          >
+            Submit results
+          </Link>
+        }
+        description="Admin-approved results. Only final, clean, fully scored hosted runs appear. Submission and publication are separate."
       />
       <QueryContent query={query}>
         {items.length === 0 ? (
           <Empty>
-            No official rows yet. Publish a final, clean, fully scored run to write the
-            snapshot.
+            No approved results yet. Submit an eligible hosted result for admin review.
           </Empty>
         ) : (
           <div className="space-y-6">

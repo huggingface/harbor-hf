@@ -86,9 +86,9 @@ import {
 } from "./profiles.js";
 import type { Projection } from "./projection.js";
 import {
+  initializeBenchmarkCatalog,
   listReviewedBenchmarkConfigs,
   type ResolvedBenchmarkConfig,
-  reviewedBenchmarkConfig,
 } from "./run-configs.js";
 import { runIdentity, runtimeKind, runUnique } from "./run-id.js";
 import {
@@ -162,6 +162,7 @@ type WorkbenchSetupAttestor = (
 
 export interface BenchmarkConfigView {
   name: string;
+  size: ResolvedBenchmarkConfig["size"];
   revision: string;
   label: string;
   description: string;
@@ -558,6 +559,7 @@ export class ControlService {
   }
 
   async initialize(builtInProfiles: readonly LoadedProfile[]): Promise<void> {
+    await initializeBenchmarkCatalog(this.store);
     for (const item of builtInProfiles) await this.append(item.profile);
     await this.refreshProfileResolver();
   }
@@ -576,26 +578,29 @@ export class ControlService {
     this.workbenchSetupAttestor = attestor;
   }
 
-  benchmarkConfigs(): BenchmarkConfigView[] {
-    return listReviewedBenchmarkConfigs().map((reviewed) => {
-      const config = this.resolveBenchmarkConfig(reviewed.name);
-      const profiles = this.resolver.resolve(this.benchmarkConfigSelection(config));
-      const launchPolicy = profileSpec<LaunchPolicySpec>(profiles, "launch_policy");
-      return {
-        name: config.name,
-        revision: config.revision,
-        label: config.label,
-        description: config.description,
-        benchmark: config.benchmark,
-        model: config.model,
-        deployment: config.deployment,
-        launch_policy: config.launch_policy,
-        default_ceiling_microusd: config.default_ceiling_microusd,
-        max_ceiling_microusd: config.max_ceiling_microusd,
-        task_count: this.resolver.tasks(config.benchmark).length,
-        publication_role: launchPolicy.publication_role,
-      };
-    });
+  async benchmarkConfigs(): Promise<BenchmarkConfigView[]> {
+    return Promise.all(
+      (await listReviewedBenchmarkConfigs(this.store)).map(async (reviewed) => {
+        const config = await this.resolveBenchmarkConfig(reviewed.name);
+        const profiles = this.resolver.resolve(this.benchmarkConfigSelection(config));
+        const launchPolicy = profileSpec<LaunchPolicySpec>(profiles, "launch_policy");
+        return {
+          name: config.name,
+          size: config.size,
+          revision: config.revision,
+          label: config.label,
+          description: config.description,
+          benchmark: config.benchmark,
+          model: config.model,
+          deployment: config.deployment,
+          launch_policy: config.launch_policy,
+          default_ceiling_microusd: config.default_ceiling_microusd,
+          max_ceiling_microusd: config.max_ceiling_microusd,
+          task_count: this.resolver.tasks(config.benchmark).length,
+          publication_role: launchPolicy.publication_role,
+        };
+      }),
+    );
   }
 
   capacityProfile(): { profile_id: string; spec: CapacityProfileSpec } | null {
@@ -1979,10 +1984,14 @@ export class ControlService {
     };
   }
 
-  private resolveBenchmarkConfig(name: string): ResolvedBenchmarkConfig {
+  private async resolveBenchmarkConfig(name: string): Promise<ResolvedBenchmarkConfig> {
     let config: ResolvedBenchmarkConfig;
     try {
-      config = reviewedBenchmarkConfig(name);
+      const selected = (await listReviewedBenchmarkConfigs(this.store)).find(
+        (item) => item.name === name,
+      );
+      if (!selected) throw new Error("missing configuration");
+      config = selected;
     } catch {
       throw new PolicyError(`unknown benchmark configuration: ${name}`);
     }
@@ -2021,16 +2030,16 @@ export class ControlService {
     };
   }
 
-  private profileSelection(input: RunSubmissionV1): {
+  private async profileSelection(input: RunSubmissionV1): Promise<{
     benchmark: string;
     model: string;
     harness: string;
     deployment?: string | null;
     launch_policy: string;
-  } {
+  }> {
     if (isWorkbenchRunSubmission(input))
       return this.benchmarkConfigSelection(
-        this.resolveBenchmarkConfig(input.benchmark_config),
+        await this.resolveBenchmarkConfig(input.benchmark_config),
       );
     if (
       typeof input.benchmark !== "string" ||
@@ -2133,7 +2142,7 @@ export class ControlService {
       );
     const keyDigest = sha256(idempotencyKey);
     const existingId = await this.projection.runIdForIdempotency(keyDigest);
-    const runId = existingId ?? this.newRunId(input, actor, keyDigest);
+    const runId = existingId ?? (await this.newRunId(input, actor, keyDigest));
     const actionId = deterministicId("action", runId, "run.admit", "run", "0");
     const existingRequest = await this.projection.runRequest(runId);
     const existingLock = await this.projection.runLock(runId);
@@ -2153,7 +2162,7 @@ export class ControlService {
         : null;
     const benchmarkConfig =
       workbenchInput && !currentExistingLock
-        ? this.resolveBenchmarkConfig(workbenchInput.benchmark_config)
+        ? await this.resolveBenchmarkConfig(workbenchInput.benchmark_config)
         : null;
     if (
       benchmarkConfig &&
@@ -2171,7 +2180,7 @@ export class ControlService {
       currentExistingLock?.profiles ??
       (workbenchInput && workbenchPreview && benchmarkConfig
         ? this.resolveWorkbenchProfiles(benchmarkConfig, workbenchPreview, runId)
-        : this.resolver.resolve(this.profileSelection(input)));
+        : this.resolver.resolve(await this.profileSelection(input)));
     const execution =
       currentExistingLock?.execution ?? composeExecutionContract(profiles);
     const deployment = profileSpec<DeploymentProfileSpec>(profiles, "deployment");
@@ -2185,7 +2194,9 @@ export class ControlService {
       throw new PolicyError("run ceiling exceeds the launch policy maximum");
     const tasks =
       existingLock?.tasks ??
-      this.resolver.tasks(this.profileSelection(input).benchmark);
+      this.resolver.tasks(
+        benchmarkConfig?.benchmark ?? (await this.profileSelection(input)).benchmark,
+      );
     const executionJobs = tasks.length;
     const initialReservation =
       launchPolicy.reservation_microusd * executionJobs +
@@ -2337,8 +2348,12 @@ export class ControlService {
    * The unique suffix is derived from the namespace, actor, and idempotency
    * key so a repeated request adopts the same identity.
    */
-  private newRunId(input: RunSubmissionV1, actor: Actor, keyDigest: string): string {
-    const selection = this.profileSelection(input);
+  private async newRunId(
+    input: RunSubmissionV1,
+    actor: Actor,
+    keyDigest: string,
+  ): Promise<string> {
+    const selection = await this.profileSelection(input);
     const profiles = this.resolver.resolve(selection);
     const harness = profileSpec<HarnessProfileSpec>(profiles, "harness");
     const deployment = profileSpec<DeploymentProfileSpec>(profiles, "deployment");

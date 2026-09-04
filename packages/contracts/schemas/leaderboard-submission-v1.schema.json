@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harbor-hf.invalid/schemas/leaderboard-submission-v1.schema.json",
+  "title": "LeaderboardSubmissionRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_id",
+    "created_at",
+    "actor",
+    "kind",
+    "run_id",
+    "publication_id",
+    "catalog_key",
+    "catalog_digest",
+    "lock_digest",
+    "public_row_digest",
+    "confirmed"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "v1"
+    },
+    "record_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "maxLength": 160
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "role"],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "role": {
+          "enum": ["operator", "submitter"]
+        }
+      }
+    },
+    "kind": {
+      "const": "leaderboard.submission"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "maxLength": 160
+    },
+    "publication_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "catalog_key": {
+      "type": "string",
+      "pattern": "^results/schema=v1/catalog/records/[^/]+\\.json$"
+    },
+    "catalog_digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "lock_digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "public_row_digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "confirmed": {
+      "const": true
+    }
+  }
+}
