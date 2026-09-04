@@ -4,6 +4,7 @@ import {
   ApiError,
   api,
   getLeaderboard,
+  getModelProviders,
   getTrial,
   getWorkbenchFile,
   submitRun,
@@ -31,6 +32,28 @@ afterEach(() => {
 });
 
 describe("browser API transport", () => {
+  it("looks up providers for a selected Hub model", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "Qwen/Qwen3.8-27B",
+            providers: ["deepinfra", "featherless-ai"],
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getModelProviders("Qwen/Qwen3.8-27B")).resolves.toEqual({
+      model: "Qwen/Qwen3.8-27B",
+      providers: ["deepinfra", "featherless-ai"],
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/v1/model-providers?model=Qwen%2FQwen3.8-27B",
+    );
+  });
+
   it("keeps safe error details returned by the service", async () => {
     vi.stubGlobal(
       "fetch",

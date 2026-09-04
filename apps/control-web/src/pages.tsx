@@ -44,6 +44,7 @@ import {
 import {
   keys,
   useJobs,
+  useModelProviders,
   usePresets,
   useRun,
   useRuns,
@@ -164,6 +165,7 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
   );
   const [model, setModel] = useState("");
   const [provider, setProvider] = useState("");
+  const [providerLookupModel, setProviderLookupModel] = useState("");
   const [reasoning, setReasoning] = useState(firstAgent?.reasoning_values[0] ?? "off");
   const [ceiling, setCeiling] = useState("1");
   const [role, setRole] = useState<"final" | "diagnostic">("diagnostic");
@@ -174,6 +176,8 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
   const selectedAgent = presets.agents.find(
     (item) => `${item.agent}\n${item.version}` === agentKey,
   );
+  const modelProviders = useModelProviders(providerLookupModel);
+  const availableProviders = modelProviders.data?.providers ?? [];
   const mutation = useMutation({
     mutationFn: (input: PresetSubmission) => submitRun(input),
     onSuccess: async ({ run }) => {
@@ -260,21 +264,48 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
             placeholder="publisher/model"
             required
             value={model}
-            onChange={(event) => setModel(event.target.value)}
+            onChange={(event) => {
+              setModel(event.target.value);
+              setProvider("");
+              setProviderLookupModel("");
+            }}
+            onBlur={() => setProviderLookupModel(model.trim())}
           />
         </label>
         <label className="block text-sm text-slate-300">
           Provider
-          <input
+          <select
             className={fieldClass()}
-            pattern="[a-z0-9][a-z0-9-]{0,62}"
-            placeholder="provider"
             required
             value={provider}
+            disabled={
+              !providerLookupModel ||
+              modelProviders.isPending ||
+              modelProviders.isError ||
+              availableProviders.length === 0
+            }
             onChange={(event) => setProvider(event.target.value)}
-          />
+          >
+            <option value="">
+              {!providerLookupModel
+                ? "Select a model first"
+                : modelProviders.isPending
+                  ? "Loading providers…"
+                  : modelProviders.isError
+                    ? "Providers unavailable"
+                    : availableProviders.length === 0
+                      ? "No live providers"
+                      : "Select a provider"}
+            </option>
+            {availableProviders.map((item) => (
+              <option key={item} value={item}>
+                {humanize(item)}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
+      {modelProviders.isError ? <ErrorNotice error={modelProviders.error} /> : null}
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="block text-sm text-slate-300">
           Reasoning

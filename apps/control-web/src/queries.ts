@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   getJobs,
   getLeaderboard,
+  getModelProviders,
   getPresets,
   getRun,
   getRuns,
@@ -15,6 +16,7 @@ export const keys = {
   session: ["session"] as const,
   system: ["system"] as const,
   presets: ["presets"] as const,
+  modelProviders: (model: string) => ["model-providers", model] as const,
   leaderboard: ["leaderboard"] as const,
   runs: ["runs"] as const,
   run: (runId: string) => ["run", runId] as const,
@@ -37,6 +39,16 @@ export function useSystem() {
 
 export function usePresets() {
   return useQuery({ queryKey: keys.presets, queryFn: getPresets });
+}
+
+export function useModelProviders(model: string) {
+  const normalized = model.trim();
+  return useQuery({
+    queryKey: keys.modelProviders(normalized),
+    queryFn: () => getModelProviders(normalized),
+    enabled: Boolean(normalized),
+    staleTime: 300_000,
+  });
 }
 
 export function useLeaderboard() {

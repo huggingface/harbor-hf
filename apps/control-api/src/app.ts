@@ -16,6 +16,11 @@ import {
   InvalidBearerCredentialError,
   type SessionRow,
 } from "./auth.js";
+import {
+  HuggingFaceModelLookupError,
+  HuggingFaceModelNotFoundError,
+  lookupHuggingFaceModelProviders,
+} from "./huggingface-models.js";
 import type { Runtime } from "./runtime.js";
 
 export const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
@@ -73,6 +78,9 @@ const setupParameters = z.object({ setup_test_id: z.string().min(1).max(160) });
 const setupFileParameters = setupParameters.extend({
   file_id: z.string().min(1).max(160),
 });
+const modelProvidersQuery = z
+  .object({ model: z.string().trim().min(1).max(320) })
+  .strict();
 const embeddedCookiePolicy = {
   httpOnly: true,
   secure: true,
@@ -233,6 +241,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       );
     if (failure instanceof ContractValidationError)
       return error(reply, 400, "invalid_request", contractValidationMessage(failure));
+    if (failure instanceof HuggingFaceModelNotFoundError)
+      return error(reply, 404, "model_not_found", failure.message);
+    if (failure instanceof HuggingFaceModelLookupError)
+      return error(reply, 502, "hub_lookup_failed", failure.message);
     const message = failure instanceof Error ? failure.message : "request failed";
     if (message.includes("not found")) return error(reply, 404, "not_found", message);
     if (message.includes("already identifies") || message.includes("cancelled run"))
@@ -332,6 +344,14 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     benchmarks: runtime.presets.benchmarks,
     agents: runtime.presets.agents,
   }));
+
+  app.get("/api/v1/model-providers", async (request) => {
+    const { model } = modelProvidersQuery.parse(request.query);
+    return {
+      model,
+      providers: await lookupHuggingFaceModelProviders(model),
+    };
+  });
 
   app.post("/api/v1/workbench/preview", async (request) =>
     runtime.workbench.preview(request.body),

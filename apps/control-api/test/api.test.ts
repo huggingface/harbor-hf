@@ -14,6 +14,7 @@ const roots: string[] = [];
 const runtimes: Runtime[] = [];
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
@@ -121,6 +122,74 @@ describe("control API", () => {
     await runtime.initialize();
     expect((await app.inject({ method: "GET", url: "/health/ready" })).json()).toEqual({
       status: "ready",
+    });
+  });
+
+  it("returns only live Hugging Face providers for a model", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: "Qwen/Qwen3.8-27B",
+            inferenceProviderMapping: {
+              deepinfra: { status: "live" },
+              featherless: { status: "live" },
+              unavailable: { status: "staging" },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/model-providers?model=Qwen%2FQwen3.8-27B",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      model: "Qwen/Qwen3.8-27B",
+      providers: ["deepinfra", "featherless"],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://huggingface.co/api/models/Qwen/Qwen3.8-27B?expand%5B%5D=inferenceProviderMapping",
+      expect.objectContaining({
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "harbor-hf-control/0.1",
+        },
+      }),
+    );
+  });
+
+  it("reports a missing Hub model with a useful error", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: "Not Found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/model-providers?model=missing%2Fmodel",
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({
+      error: {
+        code: "model_not_found",
+        message: 'model "missing/model" was not found on the Hugging Face Hub',
+      },
     });
   });
 

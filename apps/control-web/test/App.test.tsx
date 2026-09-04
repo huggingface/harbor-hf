@@ -11,6 +11,7 @@ const apiMocks = vi.hoisted(() => ({
   cancelWorkbenchSetup: vi.fn(),
   getJobs: vi.fn(),
   getLeaderboard: vi.fn(),
+  getModelProviders: vi.fn(),
   getPresets: vi.fn(),
   getRun: vi.fn(),
   getRuns: vi.fn(),
@@ -220,6 +221,10 @@ beforeEach(() => {
   });
   apiMocks.getSystem.mockResolvedValue(system);
   apiMocks.getPresets.mockResolvedValue(presets);
+  apiMocks.getModelProviders.mockResolvedValue({
+    model: "publisher/new-model",
+    providers: ["provider"],
+  });
   apiMocks.getLeaderboard.mockResolvedValue([
     {
       benchmark: "terminal-bench-2-1",
@@ -301,8 +306,13 @@ describe("restored control console", () => {
       screen.getByText("Hardware: CPU Upgrade · 1 attempt · 1 concurrent trial"),
     ).toBeVisible();
 
+    expect(screen.getByLabelText("Provider")).toBeDisabled();
     await user.type(model, "publisher/new-model");
-    await user.type(screen.getByLabelText("Provider"), "provider");
+    await user.tab();
+    await waitFor(() =>
+      expect(apiMocks.getModelProviders).toHaveBeenCalledWith("publisher/new-model"),
+    );
+    await user.selectOptions(screen.getByLabelText("Provider"), "provider");
     await user.click(screen.getByRole("button", { name: "Submit run" }));
     await waitFor(() => expect(apiMocks.submitRun).toHaveBeenCalledOnce());
     expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({

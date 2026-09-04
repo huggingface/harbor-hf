@@ -41,6 +41,10 @@ The submission form has four groups:
 3. agent preset and reasoning value
 4. cost ceiling and result role
 
+After a model ID is entered, the console queries the Hugging Face Hub and
+enables the provider select with only providers that currently report a live
+mapping for that model.
+
 A `final` run can enter the leaderboard only when it uses an eligible benchmark
 preset and has at least one scored trial. A `diagnostic` run never enters the
 leaderboard.

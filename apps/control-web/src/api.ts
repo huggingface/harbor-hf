@@ -25,6 +25,11 @@ export interface PresetsResponse {
   agents: AgentPreset[];
 }
 
+export interface ModelProvidersResponse {
+  model: string;
+  providers: string[];
+}
+
 export interface RunSubmission {
   benchmark: { name: string; preset: string };
   model: { id: string; provider: string; reasoning_effort: string };
@@ -246,6 +251,8 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const getSession = (): Promise<SessionResponse> => api("/api/v1/session");
 export const getSystem = (): Promise<SystemResponse> => api("/api/v1/system");
 export const getPresets = (): Promise<PresetsResponse> => api("/api/v1/presets");
+export const getModelProviders = (model: string): Promise<ModelProvidersResponse> =>
+  api(`/api/v1/model-providers?model=${encodeURIComponent(model)}`);
 export const getRuns = async (): Promise<RunView[]> =>
   (await api<{ runs: RunView[] }>("/api/v1/runs")).runs;
 export const getRun = (runId: string): Promise<RunView> =>

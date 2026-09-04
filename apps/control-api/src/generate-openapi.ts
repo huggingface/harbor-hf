@@ -216,6 +216,15 @@ const document = {
           },
         },
       },
+      ModelProvidersResponse: {
+        type: "object",
+        additionalProperties: false,
+        required: ["model", "providers"],
+        properties: {
+          model: { type: "string" },
+          providers: { type: "array", items: { type: "string" } },
+        },
+      },
     },
   },
   paths: {
@@ -234,6 +243,34 @@ const document = {
         summary: "List benchmark and agent presets",
         security: authenticated,
         responses: { "200": ok, "401": error },
+      },
+    },
+    "/api/v1/model-providers": {
+      get: {
+        summary: "List live Hub inference providers for a model",
+        security: authenticated,
+        parameters: [
+          {
+            name: "model",
+            in: "query",
+            required: true,
+            schema: { type: "string", minLength: 1, maxLength: 320 },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Available providers",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ModelProvidersResponse" },
+              },
+            },
+          },
+          "400": error,
+          "401": error,
+          "404": error,
+          "502": error,
+        },
       },
     },
     "/api/v1/workbench/preview": {
