@@ -6,29 +6,17 @@ import {
   Plus,
   RotateCcw,
   Square,
-  TerminalSquare,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  type BenchmarkConfig,
-  cancelLocalHarborRun,
   cancelWorkbenchSetup,
-  getBenchmarkConfigs,
-  getLocalHarborLogs,
-  getLocalHarborOptions,
-  getLocalHarborRun,
   getWorkbenchFile,
   getWorkbenchLogs,
   getWorkbenchSetup,
-  type LocalHarborOptions,
-  type LocalHarborRun,
-  listLocalHarborRuns,
   listWorkbenchSetups,
-  previewLocalHarborConfig,
   previewWorkbenchRecipe,
-  startLocalHarborRun,
   startWorkbenchSetup,
   submitRun,
   type WorkbenchFile,
@@ -38,8 +26,9 @@ import {
 } from "./api";
 import { useControlState } from "./control-state";
 import { PageHeader } from "./layout";
-import { cn, formatDate, formatMoney } from "./lib";
-import { Badge, Button, Card, ErrorNotice } from "./ui";
+import { cn, formatDate, formatMoneyUsd } from "./lib";
+import { usePresets, useSystem } from "./queries";
+import { Badge, Button, Card, ErrorNotice, Loading } from "./ui";
 
 const sources = [
   "literal",
@@ -48,52 +37,11 @@ const sources = [
   "logs_path",
   "agent_home",
   "model_name",
+  "model_base_url",
+  "model_api_key",
 ] as const;
 
-const hostedPendingStorageKey = "harbor-hf.workbench.pending-hosted-run.v1";
-
-interface PendingHostedRun {
-  confirmationKey: string;
-  idempotencyKey: string;
-}
-
-function storedPendingHostedRun(): PendingHostedRun | null {
-  try {
-    const value = JSON.parse(
-      window.localStorage.getItem(hostedPendingStorageKey) ?? "null",
-    ) as Partial<PendingHostedRun> | null;
-    if (
-      value &&
-      typeof value.confirmationKey === "string" &&
-      typeof value.idempotencyKey === "string"
-    )
-      return {
-        confirmationKey: value.confirmationKey,
-        idempotencyKey: value.idempotencyKey,
-      };
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function storePendingHostedRun(value: PendingHostedRun | null): void {
-  try {
-    if (value)
-      window.localStorage.setItem(hostedPendingStorageKey, JSON.stringify(value));
-    else window.localStorage.removeItem(hostedPendingStorageKey);
-  } catch {
-    // Private browsing policies may disable storage; the in-memory key still works.
-  }
-}
-
-function isManagedInferenceBinding(
-  binding: WorkbenchRecipe["environment"][number],
-): boolean {
-  return binding.source === "model_base_url" || binding.source === "model_api_key";
-}
-
-const fastAgentStarter: WorkbenchRecipe = {
+export const fastAgentStarter: WorkbenchRecipe = {
   schema_version: "v1",
   name: "fast-agent",
   setup_command: [
@@ -187,7 +135,7 @@ const fastAgentStarter: WorkbenchRecipe = {
   },
 };
 
-const fxStarter: WorkbenchRecipe = {
+export const fxStarter: WorkbenchRecipe = {
   schema_version: "v1",
   name: "fx",
   setup_command: [
@@ -274,15 +222,15 @@ function WorkbenchFlow() {
   const stages = [
     [
       "Configure",
-      "Edit commands and bindings, then review the authoritative recipe preview.",
+      "Edit the generic command recipe and review its compiled Harbor agent.",
     ],
     [
       "Test",
-      "Install this exact recipe in a disposable CPU sandbox. No benchmark or model request is made.",
+      "Install this exact recipe in a disposable CPU sandbox. No model request is made.",
     ],
     [
       "Run",
-      "Choose a reviewed hosted configuration or run a canary directly with local Harbor.",
+      "Select normal run settings and submit the tested recipe through the standard Harbor path.",
     ],
   ] as const;
   return (
@@ -300,25 +248,30 @@ function WorkbenchFlow() {
         ))}
       </ol>
       <p className="mt-4 text-sm text-slate-300">
-        The model route, direct inference URL, and credential binding come from the
-        local deployment profile. They are not Workbench settings.
+        Setup receives no benchmark, model route, inference credential, Bucket mount, or
+        worker authority. A passed setup is valid for one hour and only for the same
+        actor and exact recipe digest.
       </p>
     </Card>
   );
 }
 
+function terminalSetup(status: WorkbenchSetup["status"]): boolean {
+  return ["cancelled", "passed", "failed", "timed-out"].includes(status);
+}
+
 export function WorkbenchPage() {
   const navigate = useNavigate();
-  const { writesAllowed, writeMode } = useControlState();
+  const { actor, writesAllowed } = useControlState();
+  const system = useSystem();
+  const presets = usePresets();
   const [recipe, setRecipe] = useState<WorkbenchRecipe>(copyStarter);
-  const supportsDirectLocalRun = recipe.environment.some(
-    (binding) => binding.source === "model_base_url",
-  );
   const [preview, setPreview] = useState<WorkbenchPreview | null>(null);
   const [previewError, setPreviewError] = useState<unknown>(null);
   const [checking, setChecking] = useState(false);
   const [setup, setSetup] = useState<WorkbenchSetup | null>(null);
   const [setupError, setSetupError] = useState<unknown>(null);
+  const [startingSetup, setStartingSetup] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [logs, setLogs] = useState({ stdout: "", stderr: "" });
@@ -328,29 +281,17 @@ export function WorkbenchPage() {
     truncated: boolean;
   } | null>(null);
   const [fileError, setFileError] = useState<unknown>(null);
-  const [localOptions, setLocalOptions] = useState<LocalHarborOptions | null>(null);
-  const [localOptionsError, setLocalOptionsError] = useState<unknown>(null);
-  const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
-  const [localConfig, setLocalConfig] = useState<Record<string, unknown> | null>(null);
-  const [localConfigError, setLocalConfigError] = useState<unknown>(null);
-  const [localRun, setLocalRun] = useState<LocalHarborRun | null>(null);
-  const [localLogs, setLocalLogs] = useState({ stdout: "", stderr: "" });
-  const [localRunError, setLocalRunError] = useState<unknown>(null);
-  const [localConfirmation, setLocalConfirmation] = useState<string | null>(null);
-  const [startingLocal, setStartingLocal] = useState(false);
-  const [cancellingLocal, setCancellingLocal] = useState(false);
-  const [benchmarkConfigs, setBenchmarkConfigs] = useState<BenchmarkConfig[]>([]);
-  const [benchmarkConfigsError, setBenchmarkConfigsError] = useState<unknown>(null);
-  const [selectedBenchmarkConfig, setSelectedBenchmarkConfig] = useState("");
-  const [hostedCeiling, setHostedCeiling] = useState(0);
-  const [hostedConfirmation, setHostedConfirmation] = useState<string | null>(null);
-  const [hostedRunError, setHostedRunError] = useState<unknown>(null);
-  const [startingHosted, setStartingHosted] = useState(false);
+  const [benchmarkKey, setBenchmarkKey] = useState("");
+  const [model, setModel] = useState("");
+  const [provider, setProvider] = useState("");
+  const [ceiling, setCeiling] = useState("1");
+  const [role, setRole] = useState<"final" | "diagnostic">("diagnostic");
+  const [launchConfirmed, setLaunchConfirmed] = useState(false);
+  const [launching, setLaunching] = useState(false);
+  const [launchError, setLaunchError] = useState<unknown>(null);
   const previewSequence = useRef(0);
-  const hostedRequestRef = useRef<PendingHostedRun | null>(null);
   const activeSetupRef = useRef<HTMLDivElement | null>(null);
-  const liveOutputRef = useRef<HTMLElement | null>(null);
-  const liveOutput = `${logs.stdout}${logs.stderr ? `\n[stderr]\n${logs.stderr}` : ""}`;
+  const liveOutputRef = useRef<HTMLPreElement | null>(null);
 
   useEffect(() => {
     void listWorkbenchSetups()
@@ -361,39 +302,19 @@ export function WorkbenchPage() {
   }, []);
 
   useEffect(() => {
-    void Promise.all([getLocalHarborOptions(), listLocalHarborRuns()])
-      .then(([options, runs]) => {
-        setLocalOptions(options);
-        setSelectedTasks((current) =>
-          current.length > 0 ? current : options.task_names.slice(0, 1),
-        );
-        if (runs[0]) setLocalRun(runs[0]);
-      })
-      .catch(setLocalOptionsError);
-  }, []);
-
-  useEffect(() => {
-    void getBenchmarkConfigs()
-      .then(({ items }) => {
-        setBenchmarkConfigs(items);
-        const first = items[0];
-        if (!first) return;
-        setSelectedBenchmarkConfig((current) => current || first.name);
-        setHostedCeiling((current) => current || first.default_ceiling_microusd);
-      })
-      .catch(setBenchmarkConfigsError);
-  }, []);
+    const first = presets.data?.benchmarks[0];
+    if (first && !benchmarkKey) setBenchmarkKey(`${first.benchmark}\n${first.preset}`);
+  }, [benchmarkKey, presets.data]);
 
   useEffect(() => {
     const sequence = ++previewSequence.current;
     setChecking(true);
-    setPreview(null);
-    setPreviewError(null);
-    const timer = window.setTimeout(() => {
+    const timeout = window.setTimeout(() => {
       void previewWorkbenchRecipe(recipe)
         .then((value) => {
           if (sequence !== previewSequence.current) return;
           setPreview(value);
+          setPreviewError(null);
         })
         .catch((error: unknown) => {
           if (sequence !== previewSequence.current) return;
@@ -403,141 +324,99 @@ export function WorkbenchPage() {
         .finally(() => {
           if (sequence === previewSequence.current) setChecking(false);
         });
-    }, 350);
-    return () => window.clearTimeout(timer);
+    }, 250);
+    return () => window.clearTimeout(timeout);
   }, [recipe]);
 
   useEffect(() => {
-    if (!setup || !["queued", "running", "cancelling"].includes(setup.status)) return;
+    if (!setup || terminalSetup(setup.status)) return;
     const timer = window.setInterval(() => {
       void getWorkbenchSetup(setup.setup_test_id).then(setSetup).catch(setSetupError);
-      void getWorkbenchLogs(setup.setup_test_id).then(setLogs).catch(setSetupError);
-    }, 1000);
+    }, 1_000);
     return () => window.clearInterval(timer);
   }, [setup]);
-
-  useEffect(() => {
-    if (!preview || !supportsDirectLocalRun || selectedTasks.length === 0) {
-      setLocalConfig(null);
-      setLocalConfigError(null);
-      return;
-    }
-    let current = true;
-    setLocalConfigError(null);
-    void previewLocalHarborConfig(recipe, selectedTasks)
-      .then((config) => {
-        if (current) setLocalConfig(config);
-      })
-      .catch((error: unknown) => {
-        if (!current) return;
-        setLocalConfig(null);
-        setLocalConfigError(error);
-      });
-    return () => {
-      current = false;
-    };
-  }, [preview, recipe, selectedTasks, supportsDirectLocalRun]);
-
-  useEffect(() => {
-    if (!localRun || !["queued", "running", "cancelling"].includes(localRun.status))
-      return;
-    const timer = window.setInterval(() => {
-      void getLocalHarborRun(localRun.local_run_id)
-        .then(setLocalRun)
-        .catch(setLocalRunError);
-      void getLocalHarborLogs(localRun.local_run_id)
-        .then(setLocalLogs)
-        .catch(setLocalRunError);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [localRun]);
-
-  useEffect(() => {
-    if (!localRun) return;
-    void getLocalHarborLogs(localRun.local_run_id)
-      .then(setLocalLogs)
-      .catch(setLocalRunError);
-  }, [localRun]);
 
   useEffect(() => {
     if (!setup) return;
-    void getWorkbenchLogs(setup.setup_test_id).then(setLogs).catch(setSetupError);
+    const load = () =>
+      void getWorkbenchLogs(setup.setup_test_id)
+        .then((value) => {
+          setLogs(value);
+          setSetupError(null);
+        })
+        .catch(setSetupError);
+    load();
+    if (terminalSetup(setup.status)) return;
+    const timer = window.setInterval(load, 1_000);
+    return () => window.clearInterval(timer);
   }, [setup]);
 
   useEffect(() => {
-    if (!liveOutput) return;
-    const output = liveOutputRef.current;
-    if (output) output.scrollTop = output.scrollHeight;
-  }, [liveOutput]);
+    if (!liveOutputRef.current || !setup || terminalSetup(setup.status)) return;
+    void logs.stdout;
+    void logs.stderr;
+    liveOutputRef.current.scrollTop = liveOutputRef.current.scrollHeight;
+  }, [logs, setup]);
 
-  const setupActive =
-    setup !== null && ["queued", "running", "cancelling"].includes(setup.status);
-  const setupMatchesCurrent =
-    !checking &&
-    setup !== null &&
-    preview !== null &&
-    preview?.recipe_digest === setup.recipe_digest &&
-    preview?.revision_id === setup.revision_id;
-  const verifiedCurrent = setupMatchesCurrent && setup?.status === "passed";
-  const localConfirmationKey = preview
-    ? [preview.recipe_digest, ...selectedTasks].join(":")
-    : null;
-  const selectedConfig = benchmarkConfigs.find(
-    (config) => config.name === selectedBenchmarkConfig,
+  const setupMatches = Boolean(
+    setup &&
+      preview &&
+      setup.status === "passed" &&
+      setup.exit_code === 0 &&
+      setup.recipe_digest === preview.recipe_digest &&
+      setup.revision_id === preview.revision_id,
   );
-  const hostedConfirmationKey =
-    preview && setup && selectedConfig
-      ? [
-          preview.recipe_digest,
-          setup.setup_test_id,
-          selectedConfig.revision,
-          hostedCeiling,
-        ].join(":")
-      : null;
-  const updateEnvironment = (
-    index: number,
-    change: Partial<WorkbenchRecipe["environment"][number]>,
-  ) => {
-    setRecipe((current) => {
-      const environment = [...current.environment];
-      const previous = environment[index];
-      if (!previous) return current;
-      const next = { ...previous, ...change };
-      if (next.source !== "literal") delete next.value;
-      else if (next.value === undefined) next.value = "";
-      environment[index] = next;
-      return { ...current, environment };
-    });
-    setConfirmed(false);
-  };
+  const setupCanStart = Boolean(
+    system.data?.workbench.setup_enabled &&
+      (system.data.workbench.runner === "docker" || writesAllowed),
+  );
+  const hasDirectRoute =
+    recipe.environment.some((binding) => binding.source === "model_base_url") &&
+    recipe.environment.some((binding) => binding.source === "model_api_key");
+  const liveOutput = `${logs.stdout}${logs.stderr ? `\n[stderr]\n${logs.stderr}` : ""}`;
 
-  const launchSetup = async () => {
+  function changeRecipe(next: WorkbenchRecipe) {
+    setRecipe(next);
+    setConfirmed(false);
+    setLaunchConfirmed(false);
+    setSelectedFile(null);
+    setFileContent(null);
+  }
+
+  function updateEnvironment(
+    index: number,
+    next: WorkbenchRecipe["environment"][number],
+  ) {
+    changeRecipe({
+      ...recipe,
+      environment: recipe.environment.map((item, itemIndex) =>
+        itemIndex === index ? next : item,
+      ),
+    });
+  }
+
+  async function startSetup() {
+    if (!confirmed || !preview || !setupCanStart) return;
+    setStartingSetup(true);
     setSetupError(null);
     try {
       const value = await startWorkbenchSetup(recipe);
       setSetup(value);
-      setConfirmed(false);
-      setSelectedFile(null);
-      setFileContent(null);
       setLogs({ stdout: "", stderr: "" });
-      window.requestAnimationFrame(() => {
-        const target = activeSetupRef.current;
-        if (typeof target?.scrollIntoView === "function")
-          target.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      });
+      setConfirmed(false);
+      window.setTimeout(
+        () => activeSetupRef.current?.scrollIntoView?.({ behavior: "smooth" }),
+        0,
+      );
     } catch (error) {
       setSetupError(error);
+    } finally {
+      setStartingSetup(false);
     }
-  };
+  }
 
-  const cancelSetup = async () => {
-    if (!setup || !setupActive) return;
-    if (
-      !window.confirm(
-        "Cancel this setup test? The disposable setup environment will be stopped.",
-      )
-    )
-      return;
+  async function cancelSetup() {
+    if (!setup) return;
     setCancelling(true);
     setSetupError(null);
     try {
@@ -547,1014 +426,600 @@ export function WorkbenchPage() {
     } finally {
       setCancelling(false);
     }
-  };
+  }
 
-  const selectFile = async (file: WorkbenchFile) => {
-    if (!setup) return;
+  async function openFile(file: WorkbenchFile) {
+    if (!setup || !file.text) return;
     setSelectedFile(file);
     setFileContent(null);
     setFileError(null);
-    if (!file.text) return;
     try {
       setFileContent(await getWorkbenchFile(setup.setup_test_id, file.file_id));
     } catch (error) {
       setFileError(error);
     }
-  };
+  }
 
-  const launchLocal = async () => {
-    setStartingLocal(true);
-    setLocalRunError(null);
-    try {
-      const value = await startLocalHarborRun(recipe, selectedTasks);
-      setLocalRun(value);
-      setLocalLogs({ stdout: "", stderr: "" });
-      setLocalConfirmation(null);
-    } catch (error) {
-      setLocalRunError(error);
-    } finally {
-      setStartingLocal(false);
-    }
-  };
-
-  const launchHosted = async () => {
-    if (!setup || !selectedConfig || !verifiedCurrent || !hostedConfirmationKey) return;
-    setStartingHosted(true);
-    setHostedRunError(null);
-    try {
-      if (hostedRequestRef.current?.confirmationKey !== hostedConfirmationKey) {
-        const stored = storedPendingHostedRun();
-        hostedRequestRef.current =
-          stored?.confirmationKey === hostedConfirmationKey
-            ? stored
-            : {
-                confirmationKey: hostedConfirmationKey,
-                idempotencyKey: crypto.randomUUID(),
-              };
-        storePendingHostedRun(hostedRequestRef.current);
-      }
-      const value = await submitRun(
-        {
-          benchmark_config: selectedConfig.name,
-          benchmark_config_revision: selectedConfig.revision,
-          harness: {
-            type: "workbench",
-            recipe: { ...recipe },
-            setup_test_id: setup.setup_test_id,
-          },
-          ceiling_microusd: hostedCeiling,
-          confirmed: true,
-        },
-        hostedRequestRef.current.idempotencyKey,
-      );
-      storePendingHostedRun(null);
-      hostedRequestRef.current = null;
-      navigate(value.status_url.replace(/^\/api\/v1/, ""));
-    } catch (error) {
-      setHostedRunError(error);
-    } finally {
-      setStartingHosted(false);
-    }
-  };
-
-  const cancelLocal = async () => {
-    if (!localRun || !["queued", "running"].includes(localRun.status)) return;
-    if (!window.confirm("Cancel this local Harbor process and its active trials?"))
+  async function launch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !setup ||
+      !setupMatches ||
+      !launchConfirmed ||
+      !writesAllowed ||
+      !hasDirectRoute
+    )
       return;
-    setCancellingLocal(true);
-    setLocalRunError(null);
+    const [benchmark, preset] = benchmarkKey.split("\n");
+    if (!(benchmark && preset && model.trim() && provider.trim())) return;
+    setLaunching(true);
+    setLaunchError(null);
     try {
-      setLocalRun(await cancelLocalHarborRun(localRun.local_run_id));
+      const response = await submitRun({
+        benchmark: { name: benchmark, preset },
+        model: {
+          id: model.trim(),
+          provider: provider.trim(),
+          reasoning_effort: "off",
+        },
+        cost_ceiling_usd_per_trial: Number(ceiling),
+        role,
+        workbench: { recipe, setup_test_id: setup.setup_test_id },
+      });
+      navigate(`/runs/${response.run.run_id}`);
     } catch (error) {
-      setLocalRunError(error);
+      setLaunchError(error);
     } finally {
-      setCancellingLocal(false);
+      setLaunching(false);
     }
-  };
+  }
 
   return (
     <>
       <PageHeader
         title="Agent Workbench"
-        description="Configure a command-line harness, verify its setup, then combine that exact recipe with a reviewed hosted Run configuration."
-        action={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setRecipe(copyStarter());
-                setSetup(null);
-                setConfirmed(false);
-                setLocalConfirmation(null);
-              }}
-            >
-              <RotateCcw size={16} /> Fast-Agent 0.10.16
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setRecipe(copyStarter(fxStarter));
-                setSetup(null);
-                setConfirmed(false);
-                setLocalConfirmation(null);
-              }}
-            >
-              <RotateCcw size={16} /> FX 0.0.6
-            </Button>
-          </div>
-        }
+        description="Author and setup-test a generic command-line Harbor agent, then launch the exact tested recipe through one normal Run."
       />
-
       <WorkbenchFlow />
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.2fr)_minmax(24rem,0.8fr)]">
         <div className="space-y-6">
           <Card>
-            <div className="mb-5 flex items-center gap-3">
-              <TerminalSquare className="text-cyan-300" size={20} />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h2 className="font-semibold text-white">Commands</h2>
-                <p className="text-sm text-slate-400">
-                  Describe how to install and invoke the harness.
+                <h2 className="font-semibold text-white">1. Configure</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Start from a retained recipe or edit every typed field.
                 </p>
               </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => changeRecipe(copyStarter(fastAgentStarter))}
+                >
+                  <RotateCcw size={14} aria-hidden="true" /> Fast Agent
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => changeRecipe(copyStarter(fxStarter))}
+                >
+                  <RotateCcw size={14} aria-hidden="true" /> FX
+                </Button>
+              </div>
             </div>
-            <div className="space-y-5">
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-200">
-                  Configuration name
-                </span>
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              <label className="text-sm text-slate-300">
+                Recipe name
                 <input
                   className={fieldClass()}
                   value={recipe.name}
                   onChange={(event) =>
-                    setRecipe((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
+                    changeRecipe({ ...recipe, name: event.target.value })
                   }
                 />
               </label>
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-200">
-                  Setup command
-                </span>
-                <textarea
-                  aria-label="Setup command"
-                  className={cn(fieldClass(), "min-h-40 font-mono leading-6")}
-                  spellCheck={false}
-                  value={recipe.setup_command}
+              <label className="text-sm text-slate-300">
+                Inference API
+                <select
+                  className={fieldClass()}
+                  value={recipe.route_api}
                   onChange={(event) =>
-                    setRecipe((current) => ({
-                      ...current,
-                      setup_command: event.target.value,
-                    }))
+                    changeRecipe({
+                      ...recipe,
+                      route_api: event.target.value as WorkbenchRecipe["route_api"],
+                    })
                   }
-                />
-                <span className="mt-1 block text-xs text-slate-500">
-                  Runs without model credentials in a disposable setup environment.
-                </span>
+                >
+                  <option value="chat-completions">Chat Completions</option>
+                  <option value="responses">Responses</option>
+                </select>
               </label>
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium text-slate-200">
-                  Run command
-                </span>
-                <textarea
-                  aria-label="Run command"
-                  className={cn(fieldClass(), "min-h-56 font-mono leading-6")}
-                  spellCheck={false}
-                  value={recipe.run_command}
+              <label className="text-sm text-slate-300">
+                Setup timeout (seconds)
+                <input
+                  className={fieldClass()}
+                  min={30}
+                  max={3600}
+                  type="number"
+                  value={recipe.setup_timeout_seconds}
                   onChange={(event) =>
-                    setRecipe((current) => ({
-                      ...current,
-                      run_command: event.target.value,
-                    }))
+                    changeRecipe({
+                      ...recipe,
+                      setup_timeout_seconds: Number(event.target.value),
+                    })
                   }
                 />
               </label>
-              <label className="block max-w-xs">
-                <span className="mb-2 block text-sm font-medium text-slate-200">
-                  Setup timeout
-                </span>
-                <div className="flex items-center gap-2">
+            </div>
+            <label className="mt-4 block text-sm text-slate-300">
+              Setup command
+              <textarea
+                className={`${fieldClass()} min-h-52 font-mono text-xs leading-5`}
+                value={recipe.setup_command}
+                onChange={(event) =>
+                  changeRecipe({ ...recipe, setup_command: event.target.value })
+                }
+              />
+            </label>
+            <label className="mt-4 block text-sm text-slate-300">
+              Run command
+              <textarea
+                className={`${fieldClass()} min-h-32 font-mono text-xs leading-5`}
+                value={recipe.run_command}
+                onChange={(event) =>
+                  changeRecipe({ ...recipe, run_command: event.target.value })
+                }
+              />
+            </label>
+            <div className="mt-5 flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-white">Environment bindings</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Model route and key bindings are injected only during the Harbor
+                  trial.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  changeRecipe({
+                    ...recipe,
+                    environment: [
+                      ...recipe.environment,
+                      { name: "NEW_VALUE", source: "literal", value: "" },
+                    ],
+                  })
+                }
+              >
+                <Plus size={14} aria-hidden="true" /> Add
+              </Button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {recipe.environment.map((binding, index) => (
+                <div
+                  className="grid gap-2 rounded-lg border border-slate-800 p-3 sm:grid-cols-[1fr_1fr_1.25fr_auto]"
+                  key={binding.name}
+                >
                   <input
+                    aria-label={`Binding ${index + 1} name`}
                     className={fieldClass()}
-                    min={30}
-                    max={3600}
-                    type="number"
-                    value={recipe.setup_timeout_seconds}
+                    value={binding.name}
                     onChange={(event) =>
-                      setRecipe((current) => ({
-                        ...current,
-                        setup_timeout_seconds: Number(event.target.value),
-                      }))
+                      updateEnvironment(index, { ...binding, name: event.target.value })
                     }
                   />
-                  <span className="text-sm text-slate-500">seconds</span>
+                  <select
+                    aria-label={`Binding ${index + 1} source`}
+                    className={fieldClass()}
+                    value={binding.source}
+                    onChange={(event) => {
+                      const source = event.target.value as (typeof sources)[number];
+                      updateEnvironment(
+                        index,
+                        source === "literal"
+                          ? { name: binding.name, source, value: "" }
+                          : { name: binding.name, source },
+                      );
+                    }}
+                  >
+                    {sources.map((source) => (
+                      <option key={source}>{source}</option>
+                    ))}
+                  </select>
+                  {binding.source === "literal" ? (
+                    <input
+                      aria-label={`Binding ${index + 1} value`}
+                      className={fieldClass()}
+                      value={binding.value ?? ""}
+                      onChange={(event) =>
+                        updateEnvironment(index, {
+                          ...binding,
+                          value: event.target.value,
+                        })
+                      }
+                    />
+                  ) : (
+                    <span className="self-center text-xs text-slate-500">
+                      Managed at run time
+                    </span>
+                  )}
+                  <Button
+                    aria-label={`Remove binding ${binding.name}`}
+                    variant="ghost"
+                    onClick={() =>
+                      changeRecipe({
+                        ...recipe,
+                        environment: recipe.environment.filter(
+                          (_, itemIndex) => itemIndex !== index,
+                        ),
+                      })
+                    }
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </Button>
                 </div>
+              ))}
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm text-slate-300">
+                Results path
+                <input
+                  className={fieldClass()}
+                  value={recipe.outputs.results_path}
+                  onChange={(event) =>
+                    changeRecipe({
+                      ...recipe,
+                      outputs: { ...recipe.outputs, results_path: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <label className="text-sm text-slate-300">
+                ATIF trajectory path (optional)
+                <input
+                  className={fieldClass()}
+                  value={recipe.outputs.trajectory_path ?? ""}
+                  onChange={(event) =>
+                    changeRecipe({
+                      ...recipe,
+                      outputs: {
+                        ...recipe.outputs,
+                        trajectory_path: event.target.value || null,
+                      },
+                    })
+                  }
+                />
               </label>
             </div>
           </Card>
-        </div>
 
-        <div className="space-y-6">
           <Card>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="font-semibold text-white">Authoritative preview</h2>
+                <h2 className="font-semibold text-white">Compiled preview</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  Generated by the same compiler that locks the recipe.
+                  This is the secret-free command agent that Harbor will receive.
                 </p>
               </div>
               {checking ? (
                 <LoaderCircle className="animate-spin text-cyan-300" size={18} />
-              ) : preview ? (
-                <Badge status="complete">Preview ready</Badge>
-              ) : (
-                <Badge status="error">Invalid</Badge>
-              )}
-            </div>
-            {previewError ? <ErrorNotice error={previewError} /> : null}
-            {preview ? (
-              <div className="space-y-4">
-                <div className="rounded-lg bg-slate-900 p-3 text-xs text-slate-400">
-                  <div>
-                    Revision:{" "}
-                    <code className="text-slate-200">{preview.revision_id}</code>
-                  </div>
-                  <div className="mt-1 break-all">
-                    Digest:{" "}
-                    <code className="text-slate-200">{preview.recipe_digest}</code>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="mb-2 text-sm font-medium text-slate-200">
-                    Expanded setup
-                  </h3>
-                  <pre className="max-h-64 overflow-auto rounded-lg border border-slate-800 bg-black/30 p-3 text-xs leading-5 text-slate-300">
-                    {preview.setup_command}
-                  </pre>
-                </div>
-                <div>
-                  <h3 className="mb-2 text-sm font-medium text-slate-200">
-                    Expanded run command
-                  </h3>
-                  <pre className="max-h-80 overflow-auto rounded-lg border border-slate-800 bg-black/30 p-3 text-xs leading-5 text-slate-300">
-                    {preview.run_command}
-                  </pre>
-                </div>
-                <div>
-                  <h3 className="mb-2 text-sm font-medium text-slate-200">
-                    Effective environment
-                  </h3>
-                  <div className="space-y-1 rounded-lg border border-slate-800 p-3 font-mono text-xs">
-                    {preview.environment
-                      .filter(
-                        (item) =>
-                          item.source !== "model_base_url" &&
-                          item.source !== "model_api_key",
-                      )
-                      .map((item) => (
-                        <div className="break-all" key={item.name}>
-                          <span className="text-cyan-300">{item.name}</span>
-                          <span className="text-slate-600">=</span>
-                          <span className="text-slate-300">{item.value}</span>
-                        </div>
-                      ))}
-                  </div>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Model connectivity is injected by the deployment and is
-                    intentionally omitted here.
-                  </p>
-                </div>
-              </div>
-            ) : null}
-          </Card>
-
-          <Card>
-            <div className="mb-4 flex items-center gap-3">
-              <FlaskConical className="text-cyan-300" size={20} />
-              <div>
-                <h2 className="font-semibold text-white">Try setup</h2>
-                <p className="text-sm text-slate-400">
-                  Installs the agent without running a benchmark or model request.
-                </p>
-              </div>
-            </div>
-            {setupError ? <ErrorNotice error={setupError} /> : null}
-            {setup && !setupMatchesCurrent && setup.status === "passed" ? (
-              <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
-                This setup passed for an older recipe. Test the current edits before
-                starting Harbor.
-              </p>
-            ) : null}
-            {setupActive ? (
-              <div
-                className="space-y-4 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-4"
-                ref={activeSetupRef}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <LoaderCircle className="animate-spin text-cyan-300" size={18} />
-                    <span className="font-medium text-white">Setup submitted</span>
-                    <Badge status="active">{setup.status}</Badge>
-                  </div>
-                  <Button
-                    disabled={cancelling || setup.status === "cancelling"}
-                    variant="secondary"
-                    onClick={() => void cancelSetup()}
-                  >
-                    <Square size={14} />
-                    {setup.status === "cancelling" || cancelling
-                      ? "Cancelling…"
-                      : "Cancel setup"}
-                  </Button>
-                </div>
-                <p className="text-xs text-slate-400">
-                  Confirmation was reset for any future retry. This setup continues
-                  below and can be safely cancelled here.
-                </p>
-                <section
-                  aria-label="Live setup output"
-                  className="max-h-64 min-h-32 overflow-auto rounded-lg border border-slate-800 bg-black/40 p-3 text-xs leading-5 text-slate-300"
-                  ref={liveOutputRef}
-                >
-                  <pre className="whitespace-pre-wrap break-words">
-                    {liveOutput || "Waiting for setup output…"}
-                  </pre>
-                </section>
-              </div>
-            ) : (
-              <>
-                <label className="flex items-start gap-3 text-sm text-slate-300">
-                  <input
-                    className="mt-1"
-                    type="checkbox"
-                    checked={confirmed}
-                    onChange={(event) => setConfirmed(event.target.checked)}
-                  />
-                  <span>
-                    Launch this exact setup recipe in a disposable CPU sandbox.
-                  </span>
-                </label>
-                <Button
-                  className="mt-4 w-full"
-                  disabled={!confirmed || !preview || checking}
-                  onClick={() => void launchSetup()}
-                >
-                  <FlaskConical size={16} /> Launch setup test
-                </Button>
-              </>
-            )}
-          </Card>
-        </div>
-
-        <Card className="xl:col-span-2">
-          <div className="mb-4 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="font-semibold text-white">Environment</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Configure task paths and ordinary non-secret values. Model connectivity
-                is managed by the deployment.
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                setRecipe((current) => ({
-                  ...current,
-                  environment: [
-                    ...current.environment,
-                    { name: "NEW_VALUE", source: "literal", value: "" },
-                  ],
-                }))
-              }
-            >
-              <Plus size={15} /> Add
-            </Button>
-          </div>
-          <div className="grid gap-3 xl:grid-cols-2">
-            {recipe.environment.map((binding, index) =>
-              isManagedInferenceBinding(binding) ? null : (
-                <div
-                  className="relative grid gap-3 rounded-lg border border-slate-800 p-3 pr-12 sm:grid-cols-2"
-                  // biome-ignore lint/suspicious/noArrayIndexKey: the portable recipe contract intentionally has no UI-only row identifier.
-                  key={`${index}-${binding.name}`}
-                >
-                  <label>
-                    <span className="mb-1 block text-xs text-slate-500">Name</span>
-                    <input
-                      aria-label={`Environment variable ${index + 1} name`}
-                      className={fieldClass()}
-                      value={binding.name}
-                      onChange={(event) =>
-                        updateEnvironment(index, { name: event.target.value })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span className="mb-1 block text-xs text-slate-500">Source</span>
-                    <select
-                      aria-label={`Environment variable ${binding.name} source`}
-                      className={fieldClass()}
-                      value={binding.source}
-                      onChange={(event) =>
-                        updateEnvironment(index, {
-                          source: event.target
-                            .value as WorkbenchRecipe["environment"][number]["source"],
-                        })
-                      }
-                    >
-                      {sources.map((source) => (
-                        <option key={source} value={source}>
-                          {source.replaceAll("_", " ")}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="sm:col-span-2">
-                    <span className="mb-1 block text-xs text-slate-500">
-                      {binding.source === "literal" ? "Value" : "Effective binding"}
-                    </span>
-                    <input
-                      aria-label={`Environment variable ${binding.name} value`}
-                      className={fieldClass()}
-                      disabled={binding.source !== "literal"}
-                      value={
-                        binding.source === "literal"
-                          ? (binding.value ?? "")
-                          : `<${binding.source.replaceAll("_", " ")}>`
-                      }
-                      onChange={(event) =>
-                        updateEnvironment(index, { value: event.target.value })
-                      }
-                    />
-                  </label>
-                  <Button
-                    aria-label={`Remove ${binding.name}`}
-                    className="absolute right-2 top-2"
-                    variant="ghost"
-                    onClick={() =>
-                      setRecipe((current) => ({
-                        ...current,
-                        environment: current.environment.filter(
-                          (_item, itemIndex) => itemIndex !== index,
-                        ),
-                      }))
-                    }
-                  >
-                    <Trash2 size={16} />
-                  </Button>
-                </div>
-              ),
-            )}
-          </div>
-        </Card>
-
-        <Card className="xl:col-span-2">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <PlayCircle className="text-cyan-300" size={20} />
-                <h2 className="font-semibold text-white">Run hosted</h2>
-                <Badge status={verifiedCurrent ? "complete" : "active"}>
-                  {verifiedCurrent ? "Setup passed" : "Awaiting setup"}
-                </Badge>
-              </div>
-              <p className="mt-2 max-w-3xl text-sm text-slate-400">
-                Select a reviewed benchmark configuration. Harbor-HF locks its
-                benchmark, model, deployment, worker, hardware, retry policy, and
-                evidence envelope together with this exact tested recipe.
-              </p>
-            </div>
-          </div>
-          {!writesAllowed ? (
-            <p className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
-              Hosted launch is unavailable because write mode is {writeMode}.
-            </p>
-          ) : null}
-          {benchmarkConfigsError ? (
-            <div className="mt-4">
-              <ErrorNotice error={benchmarkConfigsError} />
-            </div>
-          ) : null}
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <label className="text-sm text-slate-300">
-              <span className="mb-1.5 block text-slate-400">
-                Benchmark configuration
-              </span>
-              <select
-                aria-label="Benchmark configuration"
-                className={fieldClass()}
-                disabled={!writesAllowed || benchmarkConfigs.length === 0}
-                value={selectedBenchmarkConfig}
-                onChange={(event) => {
-                  const next = benchmarkConfigs.find(
-                    (config) => config.name === event.target.value,
-                  );
-                  setSelectedBenchmarkConfig(event.target.value);
-                  if (next) setHostedCeiling(next.default_ceiling_microusd);
-                  setHostedConfirmation(null);
-                }}
-              >
-                {benchmarkConfigs.map((config) => (
-                  <option key={config.name} value={config.name}>
-                    {config.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm text-slate-300">
-              <span className="mb-1.5 block text-slate-400">Cost ceiling, USD</span>
-              <input
-                aria-label="Hosted cost ceiling, USD"
-                className={fieldClass()}
-                disabled={!writesAllowed || !selectedConfig}
-                type="number"
-                min="0"
-                max={
-                  selectedConfig
-                    ? selectedConfig.max_ceiling_microusd / 1_000_000
-                    : undefined
-                }
-                step="0.01"
-                value={hostedCeiling / 1_000_000}
-                onChange={(event) => {
-                  setHostedCeiling(
-                    Math.max(0, Math.round(Number(event.target.value) * 1_000_000)),
-                  );
-                  setHostedConfirmation(null);
-                }}
-              />
-            </label>
-          </div>
-          {selectedConfig ? (
-            <>
-              <p className="mt-4 text-sm text-slate-400">
-                {selectedConfig.description}
-              </p>
-              <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <dt className="text-slate-500">Benchmark</dt>
-                  <dd className="mt-1 font-mono text-slate-300">
-                    {selectedConfig.benchmark}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Model</dt>
-                  <dd className="mt-1 font-mono text-slate-300">
-                    {selectedConfig.model}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Tasks</dt>
-                  <dd className="mt-1 text-slate-300">{selectedConfig.task_count}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Maximum ceiling</dt>
-                  <dd className="mt-1 text-slate-300">
-                    {formatMoney(selectedConfig.max_ceiling_microusd)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Deployment</dt>
-                  <dd className="mt-1 font-mono text-slate-300">
-                    {selectedConfig.deployment}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Launch policy</dt>
-                  <dd className="mt-1 font-mono text-slate-300">
-                    {selectedConfig.launch_policy}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Result role</dt>
-                  <dd className="mt-1 text-slate-300">
-                    {selectedConfig.publication_role}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Recipe revision</dt>
-                  <dd className="mt-1 break-all font-mono text-slate-300">
-                    {preview?.revision_id ?? "Waiting for preview"}
-                  </dd>
-                </div>
-              </dl>
-            </>
-          ) : null}
-          <div className="mt-5 border-t border-slate-800 pt-5">
-            <label className="flex items-start gap-3 text-sm text-slate-300">
-              <input
-                className="mt-1 accent-cyan-400"
-                type="checkbox"
-                disabled={!writesAllowed || !verifiedCurrent || !selectedConfig}
-                checked={
-                  hostedConfirmationKey !== null &&
-                  hostedConfirmation === hostedConfirmationKey
-                }
-                onChange={(event) =>
-                  setHostedConfirmation(
-                    event.target.checked ? hostedConfirmationKey : null,
-                  )
-                }
-              />
-              <span>
-                I confirm this exact tested recipe, reviewed benchmark configuration,
-                and {formatMoney(hostedCeiling)} hard cost ceiling.
-              </span>
-            </label>
-            {hostedRunError ? (
-              <div className="mt-4">
-                <ErrorNotice error={hostedRunError} />
-              </div>
-            ) : null}
-            <Button
-              className="mt-4"
-              disabled={
-                !writesAllowed ||
-                !verifiedCurrent ||
-                !selectedConfig ||
-                hostedCeiling <= 0 ||
-                hostedCeiling > selectedConfig.max_ceiling_microusd ||
-                hostedConfirmationKey === null ||
-                hostedConfirmation !== hostedConfirmationKey ||
-                startingHosted
-              }
-              onClick={() => void launchHosted()}
-            >
-              <PlayCircle size={16} />
-              {startingHosted ? "Starting hosted run…" : "Start hosted run"}
-            </Button>
-            {!verifiedCurrent ? (
-              <p className="mt-2 text-xs text-slate-500">
-                Pass setup for the current recipe before starting a hosted Run.
-              </p>
-            ) : null}
-          </div>
-        </Card>
-
-        {localOptions?.enabled !== false ? (
-          <Card className="xl:col-span-2">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <PlayCircle className="text-cyan-300" size={20} />
-                  <h2 className="font-semibold text-white">Run locally with Harbor</h2>
-                  {localOptions ? (
-                    <Badge status={localOptions.ready ? "complete" : "error"}>
-                      {localOptions.ready ? "Ready" : "Unavailable"}
-                    </Badge>
-                  ) : null}
-                </div>
-                <p className="mt-2 max-w-3xl text-sm text-slate-400">
-                  Uses the checked-in Terminal-Bench 2.1 canary and approved model
-                  route. Harbor owns task resolution, the container environment,
-                  verification, and native results.
-                </p>
-              </div>
-              {localOptions?.harbor_version ? (
-                <div className="text-right text-xs text-slate-500">
-                  <div>Installed: {localOptions.harbor_version}</div>
-                  {localOptions.expected_harbor_version ? (
-                    <div>Profile: Harbor {localOptions.expected_harbor_version}</div>
-                  ) : null}
-                </div>
               ) : null}
             </div>
-            {localOptionsError ? (
+            {previewError ? (
               <div className="mt-4">
-                <ErrorNotice error={localOptionsError} />
+                <ErrorNotice error={previewError} />
               </div>
             ) : null}
-            {localOptions?.reason ? (
-              <p className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
-                {localOptions.reason}
-              </p>
-            ) : null}
-            {!supportsDirectLocalRun ? (
-              <p className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
-                This recipe can be setup-tested, but it cannot use the direct local
-                inference route. FX 0.0.6 expects Vercel AI Gateway semantics, so Harbor
-                Run remains disabled to keep the HF inference credential on its intended
-                endpoint.
-              </p>
-            ) : null}
-            <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(16rem,0.65fr)_minmax(0,1.35fr)]">
-              <div>
-                <h3 className="text-sm font-medium text-slate-200">Canary tasks</h3>
-                <div className="mt-3 space-y-2">
-                  {(localOptions?.task_names ?? []).map((taskName) => (
-                    <label
-                      className="flex items-start gap-3 rounded-lg border border-slate-800 p-3 text-sm text-slate-300"
-                      key={taskName}
-                    >
-                      <input
-                        className="mt-0.5 accent-cyan-400"
-                        type="checkbox"
-                        checked={selectedTasks.includes(taskName)}
-                        onChange={(event) => {
-                          setSelectedTasks((current) =>
-                            event.target.checked
-                              ? [...current, taskName]
-                              : current.filter((item) => item !== taskName),
-                          );
-                          setLocalConfirmation(null);
-                        }}
-                      />
-                      <span className="font-mono text-xs">{taskName}</span>
-                    </label>
-                  ))}
-                </div>
-                <dl className="mt-4 space-y-2 text-xs">
+            {preview ? (
+              <div className="mt-4 space-y-4">
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
                   <div>
-                    <dt className="text-slate-500">Benchmark</dt>
-                    <dd className="font-mono text-slate-300">
-                      {localOptions?.benchmark ?? "Loading…"}
+                    <dt className="text-slate-500">Recipe digest</dt>
+                    <dd className="mt-1 break-all font-mono text-xs text-slate-200">
+                      {preview.recipe_digest}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-slate-500">Model</dt>
-                    <dd className="font-mono text-slate-300">
-                      {localOptions?.model ?? "Loading…"}
+                    <dt className="text-slate-500">Compiler revision</dt>
+                    <dd className="mt-1 break-all font-mono text-xs text-slate-200">
+                      {preview.revision_id}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Harbor import</dt>
+                    <dd className="mt-1 break-all font-mono text-xs text-slate-200">
+                      {preview.harbor_agent.import_path}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Setup timeout</dt>
+                    <dd className="mt-1 text-slate-200">
+                      {preview.harbor_agent.override_setup_timeout_sec}s
                     </dd>
                   </div>
                 </dl>
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-sm font-medium text-slate-200">
-                  Generated Harbor config
-                </h3>
-                {localConfigError ? (
-                  <div className="mt-3">
-                    <ErrorNotice error={localConfigError} />
-                  </div>
-                ) : (
-                  <pre className="mt-3 max-h-96 overflow-auto rounded-lg border border-slate-800 bg-black/30 p-3 text-xs leading-5 text-slate-300">
-                    {localConfig
-                      ? JSON.stringify(localConfig, null, 2)
-                      : "Select a task and wait for a valid recipe preview."}
-                  </pre>
-                )}
-              </div>
-            </div>
-            <div className="mt-5 border-t border-slate-800 pt-5">
-              <label className="flex items-start gap-3 text-sm text-slate-300">
-                <input
-                  className="mt-1 accent-cyan-400"
-                  type="checkbox"
-                  checked={
-                    localConfirmationKey !== null &&
-                    localConfirmation === localConfirmationKey
-                  }
-                  onChange={(event) =>
-                    setLocalConfirmation(
-                      event.target.checked ? localConfirmationKey : null,
-                    )
-                  }
-                />
-                <span>
-                  Start Harbor locally with this exact recipe, config, and task
-                  selection.
-                </span>
-              </label>
-              {localRunError ? (
-                <div className="mt-4">
-                  <ErrorNotice error={localRunError} />
-                </div>
-              ) : null}
-              <Button
-                className="mt-4"
-                disabled={
-                  !localOptions?.ready ||
-                  !supportsDirectLocalRun ||
-                  !verifiedCurrent ||
-                  !localConfig ||
-                  selectedTasks.length === 0 ||
-                  localConfirmationKey === null ||
-                  localConfirmation !== localConfirmationKey ||
-                  startingLocal ||
-                  Boolean(
-                    localRun &&
-                      ["queued", "running", "cancelling"].includes(localRun.status),
-                  )
-                }
-                onClick={() => void launchLocal()}
-              >
-                <PlayCircle size={16} />
-                {startingLocal ? "Starting Harbor…" : "Start local benchmark"}
-              </Button>
-              {!verifiedCurrent ? (
-                <p className="mt-2 text-xs text-slate-500">
-                  Pass setup for the current recipe before starting the benchmark.
-                </p>
-              ) : null}
-            </div>
-          </Card>
-        ) : null}
-      </div>
-
-      {localRun ? (
-        <Card className="mt-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                {["queued", "running", "cancelling"].includes(localRun.status) ? (
-                  <LoaderCircle className="animate-spin text-cyan-300" size={20} />
-                ) : localRun.status === "succeeded" ? (
-                  <CheckCircle2 className="text-emerald-400" size={20} />
-                ) : (
-                  <FlaskConical className="text-rose-400" size={20} />
-                )}
-                <h2 className="font-semibold text-white">Local Harbor run</h2>
-                <Badge
-                  status={
-                    localRun.status === "succeeded"
-                      ? "complete"
-                      : ["failed", "cancelled"].includes(localRun.status)
-                        ? "error"
-                        : "active"
-                  }
-                >
-                  {localRun.status}
-                </Badge>
-              </div>
-              <p className="mt-2 break-all font-mono text-xs text-slate-500">
-                {localRun.config_path}
-              </p>
-              {localRun.result_path ? (
-                <p className="mt-1 break-all font-mono text-xs text-emerald-300">
-                  Result: {localRun.result_path}
-                </p>
-              ) : null}
-            </div>
-            {["queued", "running", "cancelling"].includes(localRun.status) ? (
-              <Button
-                variant="secondary"
-                disabled={cancellingLocal || localRun.status === "cancelling"}
-                onClick={() => void cancelLocal()}
-              >
-                <Square size={14} />
-                {cancellingLocal || localRun.status === "cancelling"
-                  ? "Cancelling…"
-                  : "Cancel run"}
-              </Button>
-            ) : null}
-          </div>
-          {localRun.error ? (
-            <p className="mt-4 rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">
-              {localRun.error}
-            </p>
-          ) : null}
-          <section
-            aria-label="Local Harbor output"
-            className="mt-4 max-h-[36rem] min-h-48 overflow-auto rounded-lg border border-slate-800 bg-black/40 p-3 text-xs leading-5 text-slate-300"
-          >
-            <pre className="whitespace-pre-wrap break-words">
-              {localLogs.stdout}
-              {localLogs.stderr ? `\n[stderr]\n${localLogs.stderr}` : ""}
-              {!localLogs.stdout && !localLogs.stderr
-                ? "Waiting for Harbor output…"
-                : ""}
-            </pre>
-          </section>
-        </Card>
-      ) : null}
-
-      {setup ? (
-        <div className="mt-6 space-y-6">
-          <Card>
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  {setup.status === "passed" ? (
-                    <CheckCircle2 className="text-emerald-400" size={20} />
-                  ) : ["running", "queued", "cancelling"].includes(setup.status) ? (
-                    <LoaderCircle className="animate-spin text-cyan-300" size={20} />
-                  ) : (
-                    <FlaskConical className="text-rose-400" size={20} />
-                  )}
-                  <h2 className="font-semibold text-white">Setup test</h2>
-                  <Badge status={statusTone(setup.status)}>{setup.status}</Badge>
-                </div>
-                <p className="mt-2 text-sm text-slate-400">
-                  Started {setup.started_at ? formatDate(setup.started_at) : "soon"}
-                  {setup.completed_at
-                    ? ` · finished ${formatDate(setup.completed_at)}`
-                    : ""}
-                </p>
-                {verifiedCurrent ? (
-                  <p className="mt-2 max-w-xl text-sm text-slate-300">
-                    Setup passed for the current recipe. Hosted and local Harbor launch
-                    options are ready above.
+                {preview.warnings.map((warning) => (
+                  <p
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-200"
+                    key={warning}
+                  >
+                    {warning}
                   </p>
-                ) : null}
+                ))}
+                <details className="rounded-lg border border-slate-800">
+                  <summary className="cursor-pointer px-3 py-2 text-sm text-slate-300">
+                    Resolved commands and bindings
+                  </summary>
+                  <pre className="max-h-80 overflow-auto border-t border-slate-800 p-3 text-xs text-slate-300">
+                    {JSON.stringify(
+                      {
+                        setup_command: preview.setup_command,
+                        run_command: preview.run_command,
+                        environment: preview.environment,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </details>
               </div>
-            </div>
-            {setup.error ? (
-              <p className="mt-4 rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-200">
-                {setup.error}
-              </p>
             ) : null}
           </Card>
+        </div>
 
-          {!setupActive ? (
-            <div className="grid gap-6 xl:grid-cols-2">
-              <Card>
-                <h2 className="font-semibold text-white">Final setup output</h2>
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                      Standard output
-                    </h3>
-                    <section
-                      aria-label="Final setup standard output"
-                      className="max-h-[32rem] min-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-black/30 p-3 text-xs leading-5 text-slate-300"
-                    >
-                      <pre>{logs.stdout || "Waiting for output…"}</pre>
-                    </section>
-                  </div>
-                  {logs.stderr ? (
+        <div className="space-y-6">
+          <div ref={activeSetupRef}>
+            <Card>
+              <h2 className="font-semibold text-white">2. Test setup</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Runner: {system.data ? system.data.workbench.runner : "loading"}. The
+                setup command cannot access the inference credential.
+              </p>
+              {!system.data ? (
+                <div className="mt-4">
+                  <Loading />
+                </div>
+              ) : null}
+              {system.error ? (
+                <div className="mt-4">
+                  <ErrorNotice error={system.error} />
+                </div>
+              ) : null}
+              {!setupCanStart && system.data ? (
+                <p className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-200">
+                  Setup testing is not available in the current runner or write mode.
+                </p>
+              ) : null}
+              <label className="mt-4 flex items-start gap-2 text-sm text-slate-300">
+                <input
+                  className="mt-1"
+                  type="checkbox"
+                  checked={confirmed}
+                  onChange={(event) => setConfirmed(event.target.checked)}
+                />
+                Start one disposable CPU setup test for this exact recipe.
+              </label>
+              <Button
+                className="mt-4 w-full"
+                disabled={!confirmed || !preview || !setupCanStart || startingSetup}
+                onClick={() => void startSetup()}
+              >
+                <FlaskConical size={15} aria-hidden="true" />
+                {startingSetup ? "Starting" : "Run setup test"}
+              </Button>
+              {setupError ? (
+                <div className="mt-4">
+                  <ErrorNotice error={setupError} />
+                </div>
+              ) : null}
+              {setup ? (
+                <div className="mt-5 space-y-4 border-t border-slate-800 pt-5">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-                        Standard error
-                      </h3>
-                      <section
-                        aria-label="Final setup standard error"
-                        className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-rose-900/60 bg-rose-950/20 p-3 text-xs leading-5 text-rose-200"
-                      >
-                        <pre>{logs.stderr}</pre>
-                      </section>
+                      <p className="font-mono text-xs text-slate-400">
+                        {setup.setup_test_id}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Started {formatDate(setup.started_at ?? setup.created_at)}
+                      </p>
+                    </div>
+                    <Badge status={statusTone(setup.status)}>{setup.status}</Badge>
+                  </div>
+                  {!terminalSetup(setup.status) ? (
+                    <Button
+                      className="w-full"
+                      variant="destructive"
+                      disabled={cancelling}
+                      onClick={() => void cancelSetup()}
+                    >
+                      <Square size={13} aria-hidden="true" />
+                      {cancelling ? "Cancelling" : "Cancel setup"}
+                    </Button>
+                  ) : null}
+                  {setup.status === "passed" ? (
+                    <p className="flex items-center gap-2 text-sm text-emerald-300">
+                      <CheckCircle2 size={16} aria-hidden="true" /> Setup passed
+                    </p>
+                  ) : null}
+                  {setup.error ? (
+                    <p className="text-sm text-rose-300">{setup.error}</p>
+                  ) : null}
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
+                      Output
+                    </p>
+                    <pre
+                      ref={liveOutputRef}
+                      className="max-h-72 min-h-24 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs leading-5 text-slate-300"
+                    >
+                      {liveOutput || "No output yet."}
+                    </pre>
+                  </div>
+                  {setup.files.length > 0 ? (
+                    <div>
+                      <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">
+                        Created files
+                      </p>
+                      <div className="space-y-1">
+                        {setup.files.map((file) => (
+                          <button
+                            className="flex w-full items-center justify-between rounded-md border border-slate-800 px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-900 disabled:opacity-50"
+                            disabled={!file.text}
+                            key={file.file_id}
+                            type="button"
+                            onClick={() => void openFile(file)}
+                          >
+                            <span className="truncate">
+                              {file.root}/{file.path}
+                            </span>
+                            <span className="ml-3 text-slate-600">{file.size} B</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {selectedFile ? (
+                    <div>
+                      <p className="mb-2 break-all text-xs text-slate-500">
+                        {selectedFile.root}/{selectedFile.path}
+                      </p>
+                      {fileError ? <ErrorNotice error={fileError} /> : null}
+                      {fileContent ? (
+                        <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">
+                          {fileContent.content}
+                          {fileContent.truncated ? "\n[preview truncated]" : ""}
+                        </pre>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
-              </Card>
+              ) : null}
+            </Card>
+          </div>
 
-              <Card>
-                <h2 className="font-semibold text-white">Created files</h2>
-                <p className="mt-1 text-sm text-slate-400">
-                  Text previews are escaped and bounded. Binary files are listed only.
+          <Card>
+            <h2 className="font-semibold text-white">3. Run with Harbor</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              This uses the normal Run record, parent Job, Harbor job folder, trial
+              lifecycle, and cost stop.
+            </p>
+            {!setupMatches ? (
+              <p className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-200">
+                Pass setup for the current recipe before launch.
+              </p>
+            ) : null}
+            {!hasDirectRoute ? (
+              <p className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-200">
+                Hosted launch requires both model_base_url and model_api_key bindings.
+                This recipe can still be setup-tested.
+              </p>
+            ) : null}
+            <form className="mt-4 space-y-4" onSubmit={(event) => void launch(event)}>
+              <label className="block text-sm text-slate-300">
+                Benchmark preset
+                <select
+                  className={fieldClass()}
+                  required
+                  value={benchmarkKey}
+                  onChange={(event) => setBenchmarkKey(event.target.value)}
+                >
+                  {(presets.data?.benchmarks ?? []).map((item) => (
+                    <option
+                      key={`${item.benchmark}:${item.preset}`}
+                      value={`${item.benchmark}\n${item.preset}`}
+                    >
+                      {item.benchmark} · {item.preset}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm text-slate-300">
+                Model
+                <input
+                  className={fieldClass()}
+                  maxLength={320}
+                  placeholder="publisher/model"
+                  required
+                  value={model}
+                  onChange={(event) => setModel(event.target.value)}
+                />
+              </label>
+              <label className="block text-sm text-slate-300">
+                Provider
+                <input
+                  className={fieldClass()}
+                  pattern="[a-z0-9][a-z0-9-]{0,62}"
+                  placeholder="provider"
+                  required
+                  value={provider}
+                  onChange={(event) => setProvider(event.target.value)}
+                />
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm text-slate-300">
+                  Cost limit per trial
+                  <input
+                    className={fieldClass()}
+                    min="0.000001"
+                    max="10000"
+                    step="0.000001"
+                    type="number"
+                    required
+                    value={ceiling}
+                    onChange={(event) => setCeiling(event.target.value)}
+                  />
+                </label>
+                <label className="block text-sm text-slate-300">
+                  Result role
+                  <select
+                    className={fieldClass()}
+                    value={role}
+                    onChange={(event) =>
+                      setRole(event.target.value as "final" | "diagnostic")
+                    }
+                  >
+                    <option value="diagnostic">Diagnostic</option>
+                    <option value="final">Final</option>
+                  </select>
+                </label>
+              </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-400">
+                <p>Agent: command-agent · {preview?.revision_id ?? "Unavailable"}</p>
+                <p className="mt-1">
+                  Maximum inference cost per completed trial:{" "}
+                  {formatMoneyUsd(Number(ceiling))}
                 </p>
-                <div className="mt-4 grid min-h-72 gap-4 md:grid-cols-[minmax(12rem,0.8fr)_minmax(0,1.2fr)]">
-                  <div className="max-h-[32rem] overflow-auto rounded-lg border border-slate-800 p-2">
-                    {setup.files.length === 0 ? (
-                      <p className="p-3 text-sm text-slate-500">
-                        Files appear after setup completes.
-                      </p>
-                    ) : (
-                      setup.files.map((file) => (
-                        <button
-                          className={cn(
-                            "block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400",
-                            selectedFile?.file_id === file.file_id
-                              ? "bg-cyan-400/10 text-cyan-200"
-                              : "text-slate-300",
-                          )}
-                          key={file.file_id}
-                          onClick={() => void selectFile(file)}
-                          type="button"
-                        >
-                          <span className="text-slate-500">{file.root}/</span>
-                          {file.path}
-                          <span className="ml-2 text-slate-600">{file.size} B</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                  <div className="min-w-0 rounded-lg border border-slate-800 bg-black/20 p-3">
-                    {fileError ? <ErrorNotice error={fileError} /> : null}
-                    {!selectedFile ? (
-                      <p className="text-sm text-slate-500">
-                        Select a file to inspect it.
-                      </p>
-                    ) : !selectedFile.text ? (
-                      <p className="text-sm text-slate-400">
-                        Binary file · {selectedFile.size} bytes
-                      </p>
-                    ) : fileContent ? (
-                      <>
-                        <section
-                          aria-label={`Contents of ${selectedFile.path}`}
-                          className="max-h-[30rem] overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-slate-300"
-                        >
-                          <pre>{fileContent.content}</pre>
-                        </section>
-                        {fileContent.truncated ? (
-                          <p className="mt-2 text-xs text-amber-300">
-                            Preview truncated.
-                          </p>
-                        ) : null}
-                      </>
-                    ) : (
-                      <p className="text-sm text-slate-500">Loading preview…</p>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            </div>
-          ) : null}
+                <p className="mt-1">Reasoning setting: Off</p>
+              </div>
+              <label className="flex items-start gap-2 text-sm text-slate-300">
+                <input
+                  className="mt-1"
+                  type="checkbox"
+                  checked={launchConfirmed}
+                  onChange={(event) => setLaunchConfirmed(event.target.checked)}
+                />
+                Launch this exact tested recipe and accept the displayed per-trial cost
+                limit.
+              </label>
+              {launchError ? <ErrorNotice error={launchError} /> : null}
+              <Button
+                className="w-full"
+                disabled={
+                  !setupMatches ||
+                  !hasDirectRoute ||
+                  !launchConfirmed ||
+                  !writesAllowed ||
+                  launching ||
+                  actor.role !== "operator"
+                }
+                type="submit"
+              >
+                <PlayCircle size={16} aria-hidden="true" />
+                {launching ? "Launching" : "Launch Harbor run"}
+              </Button>
+            </form>
+          </Card>
         </div>
-      ) : null}
+      </div>
     </>
   );
 }

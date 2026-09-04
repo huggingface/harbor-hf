@@ -3,7 +3,7 @@ import { createContext, type ReactNode, useContext } from "react";
 export interface DisplayActor {
   username: string;
   role: "operator" | "reader";
-  transport: "session" | "development";
+  transport: "session" | "bearer" | "development";
 }
 
 interface ControlState {

@@ -10,11 +10,13 @@ import {
 import {
   HuggingFaceBucketStore,
   HuggingFaceJobs,
+  HuggingFaceWorkbenchJobs,
   NoopJobs,
   ReadOnlyHuggingFaceJobs,
 } from "@harbor-hf/hf-adapters";
 import { AuthenticationService, AuthStore } from "./auth.js";
 import type { AppConfig } from "./config.js";
+import { WorkbenchRuntime } from "./workbench.js";
 
 const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
 
@@ -26,6 +28,7 @@ export interface Runtime {
   auth: AuthenticationService;
   reconciler: Reconciler;
   presets: PresetCatalog;
+  workbench: WorkbenchRuntime;
   readonly ready: boolean;
   initialize(): Promise<void>;
   start(onReconcilerError?: (error: unknown) => void): void;
@@ -84,6 +87,22 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     async () => acl,
   );
   const reconciler = new Reconciler(service, config.reconcile_interval_ms);
+  const remoteWorkbenchJobs =
+    config.workbench_runner === "hf-jobs"
+      ? new HuggingFaceWorkbenchJobs({
+          namespace: config.namespace,
+          accessToken: config.hf_token ?? "",
+          image: config.workbench_image,
+          maxActiveJobs: config.max_active_jobs,
+        })
+      : null;
+  if (config.workbench_runner === "hf-jobs" && !config.hf_token)
+    throw new Error("hosted Workbench requires the control credential");
+  const workbench = new WorkbenchRuntime(
+    config.workbench_runner,
+    config.workbench_image,
+    remoteWorkbenchJobs,
+  );
   let ready = false;
   return {
     config,
@@ -93,6 +112,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     auth,
     reconciler,
     presets,
+    workbench,
     get ready() {
       return ready;
     },
@@ -108,6 +128,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     async close() {
       ready = false;
       await reconciler.stop();
+      await workbench.close();
       authStore.close();
       projection.close();
     },

@@ -11,6 +11,13 @@
   Platform-assigned authorship is the only automatic exception.
 - Use placeholders such as `<namespace>`, `<control-space>`, `<artifact-bucket>`,
   and `<service-token>`.
+- Public availability elsewhere does not grant permission to repeat a private or
+  operator-specific identifier in this repository.
+- Publishing an exact external identifier or destination requires explicit
+  approval for that exact value and exact public destination.
+- If private data is published, remove it from the current public surface,
+  disclose what was exposed and where, and recommend rotation when a credential
+  could be affected. Ask before rewriting public history.
 - Before each public commit, push, issue, pull request, comment, or release, run
   `uv run python scripts/check_public_privacy.py .`. Inspect the complete diff
   and public metadata. Remove private values before publication.

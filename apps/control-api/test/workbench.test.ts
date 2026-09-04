@@ -9,7 +9,7 @@ import type {
   WorkbenchJobRequest,
   WorkbenchJobSnapshot,
 } from "@harbor-hf/hf-adapters";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkbenchRuntime } from "../src/workbench.js";
 
 describe.sequential("local Workbench runner", () => {
@@ -17,6 +17,7 @@ describe.sequential("local Workbench runner", () => {
 
   afterEach(() => {
     process.env.PATH = originalPath;
+    vi.restoreAllMocks();
   });
 
   it("does not report completion before file inventory is ready", async () => {
@@ -91,6 +92,18 @@ printf 'fake setup complete\\n'
           run_command: `${fastAgentWorkbenchStarter.run_command}\nprintf changed`,
         }),
       ).rejects.toThrow("setup test does not match this exact recipe");
+      const completedAt = Date.parse(current.completed_at ?? "");
+      const clock = vi
+        .spyOn(Date, "now")
+        .mockReturnValue(completedAt + 60 * 60 * 1_000);
+      await expect(
+        runtime.attestPassedSetup(
+          started.setup_test_id,
+          "test-operator",
+          fastAgentWorkbenchStarter,
+        ),
+      ).rejects.toThrow("setup test has expired");
+      clock.mockRestore();
     } finally {
       await runtime.close();
     }

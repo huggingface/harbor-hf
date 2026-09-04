@@ -19,6 +19,8 @@ describe("control API configuration", () => {
     expect(config.parent_hardware).toBe("cpu-basic");
     expect(config.parent_timeout_seconds).toBe(86_400);
     expect(config.write_mode).toBe("disabled");
+    expect(config.workbench_runner).toBe("disabled");
+    expect(config.workbench_image).toBe("python:3.12-slim");
   });
 
   it("normalizes an origin trailing slash before deriving OAuth URLs", () => {
@@ -86,6 +88,35 @@ describe("control API configuration", () => {
     });
     expect(config.write_mode).toBe("enabled");
     expect(config.parent_image).toContain("@sha256:");
+  });
+
+  it("enables local setup testing only by default in development", () => {
+    const config = loadConfig({
+      ...environment,
+      NODE_ENV: "development",
+      HARBOR_HF_AUTH_MODE: "development",
+      HARBOR_HF_WORKBENCH_IMAGE: "example/workbench:development",
+    });
+    expect(config.workbench_runner).toBe("docker");
+    expect(config.workbench_image).toBe("example/workbench:development");
+  });
+
+  it("requires an immutable Workbench image for hosted setup Jobs", () => {
+    expect(() =>
+      loadConfig({
+        ...environment,
+        NODE_ENV: "production",
+        HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
+        HARBOR_HF_WORKBENCH_IMAGE: "example/workbench:latest",
+      }),
+    ).toThrow("hosted Workbench image must use an immutable digest");
+    const config = loadConfig({
+      ...environment,
+      NODE_ENV: "production",
+      HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
+      HARBOR_HF_WORKBENCH_IMAGE: `example/workbench@sha256:${"b".repeat(64)}`,
+    });
+    expect(config.workbench_runner).toBe("hf-jobs");
   });
 
   it("rejects reuse of the control credential for inference", () => {

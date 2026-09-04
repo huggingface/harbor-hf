@@ -10,6 +10,7 @@ import {
 import {
   containsCredentialMaterial,
   directSubmission,
+  type HarborAgentFragment,
   prepareDirectJobConfig,
   type PresetCatalog,
   type PresetSubmission,
@@ -131,6 +132,40 @@ export class ControlService {
       created_at: new Date().toISOString(),
       submitted_by: actor,
       role: input.role ?? "final",
+      harbor_revision: this.options.harborRevision,
+      submission: {
+        benchmark: input.benchmark,
+        model: input.model,
+        harness: input.harness,
+        cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
+      },
+      harbor_job_config: jobConfig,
+    });
+    return this.persistSubmission(record);
+  }
+
+  async submitWorkbench(
+    input: PresetSubmission,
+    harborAgent: HarborAgentFragment,
+    idempotencyKey: string,
+    actor: string,
+  ): Promise<SubmissionResult> {
+    positiveCeiling(input.cost_ceiling_usd_per_trial);
+    if (containsCredentialMaterial(input))
+      throw new Error("Workbench submission contains credential material");
+    const id = runId(idempotencyKey);
+    const jobConfig = this.presets.buildWorkbenchJobConfig(
+      id,
+      input,
+      this.options.mountRoot,
+      harborAgent,
+    );
+    const record = validateRunRecord({
+      schema_version: "v1",
+      run_id: id,
+      created_at: new Date().toISOString(),
+      submitted_by: actor,
+      role: input.role ?? "diagnostic",
       harbor_revision: this.options.harborRevision,
       submission: {
         benchmark: input.benchmark,

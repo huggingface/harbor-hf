@@ -26,7 +26,7 @@ export interface PresetSubmission {
   role?: "final" | "diagnostic";
 }
 
-interface HarborAgentFragment {
+export interface HarborAgentFragment {
   name?: string;
   import_path?: string;
   kwargs?: Record<string, unknown>;
@@ -148,6 +148,48 @@ export class PresetCatalog {
       },
     };
     return validateHarborJobConfig(config);
+  }
+
+  buildWorkbenchJobConfig(
+    runId: string,
+    submission: PresetSubmission,
+    mountRoot: string,
+    fragment: HarborAgentFragment,
+  ): HarborJobConfigV1 {
+    const benchmark = this.benchmark(
+      submission.benchmark.name,
+      submission.benchmark.preset,
+    );
+    if (submission.model.reasoning_effort !== "off")
+      throw new Error("Workbench command agents support reasoning effort off only");
+    if (fragment.import_path !== "harbor_hf_agents.command_agent.agent:CommandAgent")
+      throw new Error("Workbench requires the reviewed command agent plugin");
+    const harborAgent = {
+      import_path: fragment.import_path,
+      ...(fragment.override_setup_timeout_sec
+        ? { override_setup_timeout_sec: fragment.override_setup_timeout_sec }
+        : {}),
+      model_name: `openai/${submission.model.id}:${submission.model.provider}`,
+      env: {
+        OPENAI_BASE_URL: ROUTER_URL,
+        OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
+      },
+      kwargs: clone(fragment.kwargs ?? {}),
+    };
+    return validateHarborJobConfig({
+      ...clone(benchmark.job),
+      job_name: "job",
+      jobs_dir: `${mountRoot}/runs/${runId}`,
+      agents: [harborAgent],
+      environment: {
+        import_path: LABELED_ENVIRONMENT,
+        kwargs: {
+          flavor: "cpu-basic",
+          job_timeout: "30m",
+          run_label: runId,
+        },
+      },
+    });
   }
 }
 

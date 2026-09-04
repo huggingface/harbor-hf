@@ -24,10 +24,11 @@ class Request(Protocol):
         method: str,
         path: str,
         *,
-        payload: dict[str, object] | None = None,
+        payload: object | None = None,
         idempotency_key: str | None = None,
         timeout_seconds: float = 30.0,
         transient: bool = False,
+        extra_headers: dict[str, str] | None = None,
     ) -> object: ...
 
 
@@ -127,7 +128,6 @@ def _wait_for_setup(
         except TransientControlError:
             time.sleep(min(poll_interval, _remaining_seconds(deadline, fail)))
             continue
-        _remaining_seconds(deadline, fail)
         status = _setup_status(value, fail)
         if status in _TERMINAL_SETUP_STATUSES:
             echo(value)
@@ -178,190 +178,14 @@ def _write_private_text(
         temporary.unlink(missing_ok=True)
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-
-
-def _profile_page(
-    value: object,
-    fail: Fail,
-) -> tuple[list[dict[str, object]], str | None]:
-    if not isinstance(value, dict) or not isinstance(value.get("items"), list):
-        fail("control API returned an invalid profile collection", 1)
+def _setup_collection(value: object, fail: Fail) -> list[object]:
+    if not isinstance(value, dict) or not isinstance(value.get("setups"), list):
+        fail("control API returned an invalid setup collection", 1)
     record = cast(dict[str, object], value)
-    page = cast(list[object], record["items"])
-    items: list[dict[str, object]] = []
-    for item in page:
-        if not isinstance(item, dict):
-            fail("control API returned an invalid profile item", 1)
-        items.append(cast(dict[str, object], item))
-    next_cursor = record.get("next_cursor")
-    if next_cursor is not None and not isinstance(next_cursor, str):
-        fail("control API returned an invalid profile cursor", 1)
-    return items, next_cursor
+    return cast(list[object], record["setups"])
 
 
-def _new_profiles(
-    page: list[dict[str, object]],
-    seen_profile_ids: set[str],
-    fail: Fail,
-) -> list[dict[str, object]]:
-    added: list[dict[str, object]] = []
-    for item in page:
-        profile_id = item.get("profile_id")
-        if not isinstance(profile_id, str):
-            fail("control API returned a profile without an ID", 1)
-        if profile_id in seen_profile_ids:
-            continue
-        seen_profile_ids.add(profile_id)
-        added.append(item)
-    return added
-
-
-def _profile_items(request: Request, fail: Fail) -> list[dict[str, object]]:
-    cursor: str | None = None
-    seen: set[str] = set()
-    seen_profile_ids: set[str] = set()
-    items: list[dict[str, object]] = []
-    while True:
-        path = "/api/v1/profiles?limit=100"
-        if cursor:
-            path += f"&cursor={quote(cursor, safe='')}"
-        page, next_cursor = _profile_page(request("GET", path), fail)
-        added = _new_profiles(page, seen_profile_ids, fail)
-        items.extend(added)
-        if next_cursor is None:
-            return items
-        if not added:
-            fail("profile pagination made no progress", 1)
-        if next_cursor == cursor or next_cursor in seen:
-            fail("profile pagination repeated a cursor", 1)
-        seen.add(next_cursor)
-        cursor = next_cursor
-
-
-def _approved_profiles(
-    profiles: list[dict[str, object]],
-    kind: str,
-) -> list[tuple[str, dict[str, object]]]:
-    approved: list[tuple[str, dict[str, object]]] = []
-    for profile in profiles:
-        if profile.get("profile_kind") != kind:
-            continue
-        aliases = profile.get("approved_aliases")
-        spec = profile.get("spec")
-        if not isinstance(aliases, list) or not isinstance(spec, dict):
-            continue
-        for alias in aliases:
-            if isinstance(alias, str):
-                approved.append((alias, cast(dict[str, object], spec)))
-    return approved
-
-
-def _deployment_kind(spec: dict[str, object]) -> str | None:
-    provider = spec.get("inference_provider")
-    if isinstance(provider, str) and provider:
-        return "providers"
-    template = spec.get("trial_job_template")
-    if not isinstance(template, dict):
-        return None
-    upstream = template.get("inference_upstream")
-    if not isinstance(upstream, str) or not upstream or upstream == "<redacted>":
-        return None
-    if "router.huggingface.co" in upstream:
-        return "providers"
-    return "endpoints"
-
-
-def _compatible_selection(
-    profiles: list[dict[str, object]],
-    harness_alias: str,
-) -> dict[str, str] | None:
-    models = {alias for alias, _spec in _approved_profiles(profiles, "model")}
-    harnesses = {alias for alias, _spec in _approved_profiles(profiles, "harness")}
-    if harness_alias not in harnesses:
-        return None
-    for deployment_alias, spec in _approved_profiles(profiles, "deployment"):
-        kind = _deployment_kind(spec)
-        deployment_models = spec.get("models")
-        deployment_harnesses = spec.get("harnesses")
-        if (
-            kind is None
-            or not isinstance(deployment_models, list)
-            or not isinstance(deployment_harnesses, list)
-            or harness_alias not in deployment_harnesses
-        ):
-            continue
-        for model in deployment_models:
-            if isinstance(model, str) and model in models:
-                return {
-                    "deployment": deployment_alias,
-                    "deployment_kind": kind,
-                    "harness": harness_alias,
-                    "model": model,
-                }
-    return None
-
-
-def _publication_state(
-    recipe: dict[str, object],
-    setup_test_id: str,
-    *,
-    request: Request,
-    fail: Fail,
-) -> dict[str, object]:
-    preview = request("POST", "/api/v1/workbench/preview", payload=recipe)
-    setup = request("GET", _setup_path(setup_test_id))
-    if not isinstance(preview, dict) or not isinstance(setup, dict):
-        fail("control API returned an invalid Workbench response", 1)
-    digest = preview.get("recipe_digest")
-    revision = preview.get("revision_id")
-    setup_digest = setup.get("recipe_digest")
-    setup_revision = setup.get("revision_id")
-    if (
-        not isinstance(digest, str)
-        or not isinstance(revision, str)
-        or not isinstance(setup_digest, str)
-        or not isinstance(setup_revision, str)
-    ):
-        fail("control API returned invalid Workbench identity fields", 1)
-    setup_status = _setup_status(setup, fail)
-    base: dict[str, object] = {
-        "setup_test_id": setup_test_id,
-        "recipe_digest": digest,
-        "revision_id": revision,
-        "setup_status": setup_status,
-        "state": "test-required",
-        "harness": None,
-        "model": None,
-        "deployment": None,
-        "deployment_kind": None,
-    }
-    if setup_status != "passed" or setup_digest != digest or setup_revision != revision:
-        return base
-    harness_profile = preview.get("harness_profile")
-    if not isinstance(harness_profile, dict):
-        fail("control API preview omitted the harness profile", 1)
-    profiles = _profile_items(request, fail)
-    candidates = sorted(
-        alias
-        for alias, spec in _approved_profiles(profiles, "harness")
-        if _canonical_json(spec) == _canonical_json(harness_profile)
-    )
-    if not candidates:
-        return {**base, "state": "unpublished"}
-    for alias in candidates:
-        selection = _compatible_selection(profiles, alias)
-        if selection is not None:
-            return {**base, "state": "published", **selection}
-    return {
-        **base,
-        "state": "published-no-deployment",
-        "harness": candidates[0],
-    }
-
-
-def register_workbench_commands(  # noqa: C901 -- bounded Typer command registry
+def register_workbench_commands(  # noqa: C901
     root: typer.Typer,
     *,
     request: Request,
@@ -378,7 +202,7 @@ def register_workbench_commands(  # noqa: C901 -- bounded Typer command registry
 
     @workbench.command("preview")
     def preview(recipe: Annotated[str, typer.Argument(help="JSON file or -")]) -> None:
-        """Compile and preview one recipe without starting a setup test."""
+        """Compile one recipe without starting a Job."""
         echo(
             request(
                 "POST",
@@ -402,7 +226,7 @@ def register_workbench_commands(  # noqa: C901 -- bounded Typer command registry
         ] = 3900.0,
         yes: Annotated[bool, typer.Option("--yes")] = False,
     ) -> None:
-        """Start one confirmed disposable setup test."""
+        """Start one confirmed credentialless setup test."""
         if recipe == "-" and not yes:
             fail("use --yes when reading a recipe from stdin", 1)
         value = read_workbench_recipe(recipe, fail)
@@ -411,12 +235,11 @@ def register_workbench_commands(  # noqa: C901 -- bounded Typer command registry
                 "Launch this exact setup recipe in a disposable CPU environment?",
                 abort=True,
             )
-        key = _idempotency_key(idempotency_key, fail)
         result = request(
             "POST",
             "/api/v1/workbench/setup-tests",
-            payload={"recipe": value, "confirmed": True},
-            idempotency_key=key,
+            payload={"recipe": value},
+            idempotency_key=_idempotency_key(idempotency_key, fail),
         )
         if not wait:
             echo(result)
@@ -438,8 +261,13 @@ def register_workbench_commands(  # noqa: C901 -- bounded Typer command registry
 
     @setup.command("list")
     def setup_list() -> None:
-        """List the authenticated actor's recent setup tests."""
-        echo(request("GET", "/api/v1/workbench/setup-tests"))
+        """List the current actor's recent setup tests."""
+        echo(
+            _setup_collection(
+                request("GET", "/api/v1/workbench/setup-tests"),
+                fail,
+            )
+        )
 
     @setup.command("status")
     def setup_status(setup_test_id: Annotated[str, typer.Argument()]) -> None:
@@ -470,9 +298,6 @@ def register_workbench_commands(  # noqa: C901 -- bounded Typer command registry
     @setup.command("cancel")
     def setup_cancel(
         setup_test_id: Annotated[str, typer.Argument()],
-        idempotency_key: Annotated[
-            str | None, typer.Option("--idempotency-key")
-        ] = None,
         wait: Annotated[bool, typer.Option("--wait")] = False,
         poll_interval: Annotated[
             float, typer.Option("--poll-interval", min=0.2, max=60.0)
@@ -482,15 +307,10 @@ def register_workbench_commands(  # noqa: C901 -- bounded Typer command registry
         ] = 120.0,
         yes: Annotated[bool, typer.Option("--yes")] = False,
     ) -> None:
-        """Cancel one setup test without deleting its logs or files."""
+        """Cancel one setup test without deleting its evidence."""
         if not yes:
             typer.confirm(f"Cancel setup test {setup_test_id}?", abort=True)
-        result = request(
-            "POST",
-            f"{_setup_path(setup_test_id)}/cancel",
-            payload={"confirmed": True},
-            idempotency_key=_idempotency_key(idempotency_key, fail),
-        )
+        result = request("POST", f"{_setup_path(setup_test_id)}/cancel")
         if not wait or _setup_status(result, fail) == "cancelled":
             echo(result)
             return
@@ -564,30 +384,10 @@ def register_workbench_commands(  # noqa: C901 -- bounded Typer command registry
             or not isinstance(value.get("truncated"), bool)
         ):
             fail("control API returned invalid setup file content", 1)
-        file_content = cast(dict[str, object], value)
-        if file_content["truncated"] and not allow_truncated:
+        file_record = cast(dict[str, object], value)
+        content = cast(str, file_record["content"])
+        truncated = cast(bool, file_record["truncated"])
+        if truncated and not allow_truncated:
             fail("file preview is truncated; use --allow-truncated to save it", 1)
-        _write_private_text(
-            output,
-            cast(str, file_content["content"]),
-            force=force,
-            fail=fail,
-        )
-        echo({"output": str(output), "truncated": file_content["truncated"]})
-
-    @workbench.command("publication")
-    def publication(
-        recipe: Annotated[str, typer.Argument(help="JSON file or -")],
-        setup_test_id: Annotated[str, typer.Option("--setup-test")],
-        require_ready: Annotated[bool, typer.Option("--require-ready")] = False,
-    ) -> None:
-        """Check whether the exact tested recipe is published and runnable."""
-        value = _publication_state(
-            read_workbench_recipe(recipe, fail),
-            setup_test_id,
-            request=request,
-            fail=fail,
-        )
-        echo(value)
-        if require_ready and value["state"] != "published":
-            raise typer.Exit(1)
+        _write_private_text(output, content, force=force, fail=fail)
+        echo({"output": str(output), "truncated": truncated})

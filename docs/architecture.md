@@ -28,7 +28,7 @@ Harbor-HF owns:
 - parent and child HF Job lifecycle
 - post-trial cost stops
 - the disposable SQLite projection
-- the web console and leaderboard
+- the web console, Agent Workbench, and leaderboard
 
 The integration uses Harbor's public `Job.create()`, `Job.run()`,
 `Job.on_trial_ended()`, and `len(job)` APIs. It does not contain a second trial
@@ -45,15 +45,28 @@ flowchart TD
     CS --> DB[SQLite projection]
     CS -->|start, list, cancel| HF[HF Jobs API]
     HF --> P[Parent Job]
+    HF --> T[Temporary Workbench setup Job]
     P -->|Job.create and Job.run| H[Harbor]
     H --> C[HF Sandbox child Jobs]
     H -->|job folder| B
     CS --> L[Leaderboard query]
 ```
 
-The control Space and Bucket are the only persistent resources. Parent and child
-Jobs are temporary. SQLite can be deleted because the service rebuilds it from
-Bucket objects and current Job observations.
+The control Space and Bucket are the only persistent resources. Parent, child,
+and Workbench setup Jobs are temporary. SQLite can be deleted because the
+service rebuilds it from Bucket objects and current Job observations.
+
+## Agent Workbench
+
+Agent Workbench compiles a secret-free recipe into one generic Harbor agent
+behind `import_path`. A disposable setup test checks installation without a
+benchmark, inference credential, Bucket mount, or worker authority. A passed
+setup is actor-, digest-, revision-, and time-bound.
+
+The exact tested recipe then enters the ordinary run submission path. The
+result has one `run.json`, one `state.json`, one parent Job, and one Harbor job
+folder. Workbench does not add profiles, promotions, preparation Jobs, a second
+task loop, or another result writer. See [Agent Workbench](agent-workbench.md).
 
 ## Run storage
 

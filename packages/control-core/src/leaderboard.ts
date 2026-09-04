@@ -12,10 +12,13 @@ export interface LeaderboardRow {
   n_attempts: number;
   n_trials: number;
   pass_rate: number;
+  cost_usd: number | null;
 }
 
-interface Aggregate extends Omit<LeaderboardRow, "n_trials" | "pass_rate"> {
+interface Aggregate
+  extends Omit<LeaderboardRow, "n_trials" | "pass_rate" | "cost_usd"> {
   rewards: number[];
+  costs: number[];
 }
 
 export function leaderboard(
@@ -36,10 +39,13 @@ export function leaderboard(
       eligible = false;
     }
     if (!eligible) continue;
-    const rewards = projection
-      .trials(record.run_id)
+    const trials = projection.trials(record.run_id);
+    const rewards = trials
       .map((trial) => trial.reward)
       .filter((reward): reward is number => reward !== null);
+    const costs = trials
+      .map((trial) => trial.cost_usd)
+      .filter((cost): cost is number => cost !== null);
     if (rewards.length === 0) continue;
     const config = record.harbor_job_config;
     const nAttempts = typeof config.n_attempts === "number" ? config.n_attempts : 1;
@@ -55,14 +61,17 @@ export function leaderboard(
     };
     const key = JSON.stringify(values);
     const group = groups.get(key);
-    if (group) group.rewards.push(...rewards);
-    else groups.set(key, { ...values, rewards: [...rewards] });
+    if (group) {
+      group.rewards.push(...rewards);
+      group.costs.push(...costs);
+    } else groups.set(key, { ...values, rewards: [...rewards], costs: [...costs] });
   }
   return [...groups.values()]
-    .map(({ rewards, ...row }) => ({
+    .map(({ rewards, costs, ...row }) => ({
       ...row,
       n_trials: rewards.length,
       pass_rate: rewards.reduce((sum, reward) => sum + reward, 0) / rewards.length,
+      cost_usd: costs.length > 0 ? costs.reduce((sum, cost) => sum + cost, 0) : null,
     }))
     .sort(
       (left, right) =>

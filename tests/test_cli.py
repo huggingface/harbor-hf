@@ -393,6 +393,156 @@ def test_output_config_and_action_helpers_are_exact(
     assert values == [{"state": "pausing"}]
 
 
+def test_run_submit_supports_reviewed_presets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure(monkeypatch)
+    captured: dict[str, object] = {}
+
+    def request(method: str, url: str, **kwargs: object) -> httpx.Response:
+        captured.update(method=method, url=url, **kwargs)
+        return response(201, {"created": True, "run": {"run_id": "run-example"}})
+
+    monkeypatch.setattr(httpx, "request", request)
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "submit",
+            "--benchmark",
+            "benchmark",
+            "--preset",
+            "one-task",
+            "--model",
+            "publisher/model",
+            "--provider",
+            "provider",
+            "--agent",
+            "pi",
+            "--agent-version",
+            "1.0.0",
+            "--cost-ceiling-usd-per-trial",
+            "0.25",
+            "--idempotency-key",
+            "preset-run",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["url"] == "https://control.example/api/v1/runs"
+    payload = cast(dict[str, object], captured["json"])
+    assert payload["harness"] == {"agent": "pi", "version": "1.0.0"}
+    assert "workbench" not in payload
+
+
+def test_run_submit_uses_an_exact_tested_workbench_recipe(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    configure(monkeypatch)
+    source = tmp_path / "recipe.json"
+    recipe = {
+        "schema_version": "v1",
+        "name": "example-agent",
+        "setup_command": "install-agent",
+        "run_command": "run-agent",
+        "route_api": "chat-completions",
+        "setup_timeout_seconds": 600,
+        "environment": [
+            {"name": "MODEL_BASE_URL", "source": "model_base_url"},
+            {"name": "MODEL_API_KEY", "source": "model_api_key"},
+        ],
+        "outputs": {
+            "results_path": "/logs/agent/results.json",
+            "trajectory_path": None,
+        },
+    }
+    source.write_text(json.dumps(recipe), encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def request(method: str, url: str, **kwargs: object) -> httpx.Response:
+        captured.update(method=method, url=url, **kwargs)
+        return response(201, {"created": True, "run": {"run_id": "run-example"}})
+
+    monkeypatch.setattr(httpx, "request", request)
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "submit",
+            "--benchmark",
+            "benchmark",
+            "--preset",
+            "one-task",
+            "--model",
+            "publisher/model",
+            "--provider",
+            "provider",
+            "--harness",
+            str(source),
+            "--setup-test",
+            "setup-one",
+            "--cost-ceiling-usd-per-trial",
+            "0.25",
+            "--idempotency-key",
+            "workbench-run",
+            "--yes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = cast(dict[str, object], captured["json"])
+    assert payload["workbench"] == {
+        "recipe": recipe,
+        "setup_test_id": "setup-one",
+    }
+    assert "harness" not in payload
+
+
+def test_run_submit_rejects_mixed_or_incomplete_harness_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    configure(monkeypatch)
+    source = tmp_path / "recipe.json"
+    source.write_text("{}", encoding="utf-8")
+    common = [
+        "run",
+        "submit",
+        "--benchmark",
+        "benchmark",
+        "--preset",
+        "one-task",
+        "--model",
+        "publisher/model",
+        "--provider",
+        "provider",
+        "--cost-ceiling-usd-per-trial",
+        "0.25",
+        "--yes",
+    ]
+    incomplete = runner.invoke(app, [*common, "--harness", str(source)])
+    mixed = runner.invoke(
+        app,
+        [
+            *common,
+            "--harness",
+            str(source),
+            "--setup-test",
+            "setup-one",
+            "--agent",
+            "pi",
+            "--agent-version",
+            "1.0.0",
+        ],
+    )
+    assert incomplete.exit_code != 0
+    assert "must be used together" in incomplete.output
+    assert mixed.exit_code != 0
+    assert "does not use agent preset options" in mixed.output
+
+
 def test_module_entry_point_calls_the_app(monkeypatch: pytest.MonkeyPatch) -> None:
     called = False
 

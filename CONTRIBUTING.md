@@ -76,6 +76,11 @@ unit checks there too. Run the browser tests and build before checking
 dependencies. Generated
 JSON Schema types, OpenAPI output, and the browser client must be current.
 
+Mutation testing is not part of this project. Do not add mutmut dependencies,
+mutation workflows, mutation release gates, or mutation configuration. Use
+focused deterministic pytest, Vitest, and Playwright regression coverage for
+behavior changes.
+
 Tests must mock Hugging Face and Harbor network boundaries unless they are
 explicitly marked remote integration tests. Never place tokens, endpoint URLs,
 or captured secrets in fixtures.

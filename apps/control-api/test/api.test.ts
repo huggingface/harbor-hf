@@ -1,7 +1,11 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import {
+  compileAgentWorkbenchRecipe,
+  fastAgentWorkbenchStarter,
+} from "@harbor-hf/control-core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import type { AppConfig } from "../src/config.js";
 import { createRuntime, type Runtime } from "../src/runtime.js";
@@ -50,6 +54,8 @@ async function setup(writeMode: "disabled" | "enabled" = "enabled"): Promise<{
     reconcile_interval_ms: 1_000,
     parent_restart_delay_ms: 0,
     source_revision: "test-revision",
+    workbench_runner: "disabled",
+    workbench_image: "python:3.12-slim",
     bootstrap_operator_subjects: [],
   };
   const runtime = await createRuntime(config);
@@ -58,6 +64,29 @@ async function setup(writeMode: "disabled" | "enabled" = "enabled"): Promise<{
   const app = await buildApp(runtime);
   return { runtime, app };
 }
+
+const workbenchRecipe = structuredClone(fastAgentWorkbenchStarter);
+const workbenchPreview = compileAgentWorkbenchRecipe(workbenchRecipe);
+const workbenchSetup = {
+  setup_test_id: "workbench-setup-0123456789abcdef01234567",
+  recipe_digest: workbenchPreview.recipe_digest,
+  revision_id: workbenchPreview.revision_id,
+  status: "passed" as const,
+  created_at: "2026-01-01T00:00:00.000Z",
+  started_at: "2026-01-01T00:00:01.000Z",
+  completed_at: "2026-01-01T00:00:02.000Z",
+  exit_code: 0,
+  error: null,
+  files: [
+    {
+      file_id: "file-one",
+      path: "ready.txt",
+      root: "workspace" as const,
+      size: 6,
+      text: true,
+    },
+  ],
+};
 
 const submission = {
   benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
@@ -218,12 +247,14 @@ describe("control API", () => {
     expect(submissionResponse.json().error.code).toBe("write_disabled");
     expect(runtime.projection.listRuns()).toEqual([]);
 
-    const actionResponse = await app.inject({
-      method: "POST",
-      url: "/api/v1/runs/run-0123456789abcdef01234567/pause",
-    });
-    expect(actionResponse.statusCode).toBe(503);
-    expect(actionResponse.json().error.code).toBe("write_disabled");
+    for (const action of ["pause", "cancel"]) {
+      const actionResponse = await app.inject({
+        method: "POST",
+        url: `/api/v1/runs/run-0123456789abcdef01234567/${action}`,
+      });
+      expect(actionResponse.statusCode).toBe(503);
+      expect(actionResponse.json().error.code).toBe("write_disabled");
+    }
   });
 
   it("rejects unsafe direct Harbor configuration", async () => {
@@ -244,5 +275,158 @@ describe("control API", () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("invalid_request");
+  });
+
+  it("previews Workbench recipes while normal writes are disabled", async () => {
+    const { runtime, app } = await setup("disabled");
+    await runtime.initialize();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/preview",
+      payload: workbenchRecipe,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      recipe_digest: workbenchPreview.recipe_digest,
+      revision_id: workbenchPreview.revision_id,
+      harbor_agent: {
+        import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
+      },
+    });
+    expect(JSON.stringify(response.json())).not.toContain("harness_profile");
+  });
+
+  it("exposes an actor-scoped bounded setup lifecycle in local development", async () => {
+    const { runtime, app } = await setup("disabled");
+    await runtime.initialize();
+    runtime.config.workbench_runner = "docker";
+    vi.spyOn(runtime.workbench, "startSetup").mockResolvedValue(workbenchSetup);
+    vi.spyOn(runtime.workbench, "listSetups").mockResolvedValue([workbenchSetup]);
+    vi.spyOn(runtime.workbench, "getSetup").mockResolvedValue(workbenchSetup);
+    vi.spyOn(runtime.workbench, "cancelSetup").mockResolvedValue({
+      ...workbenchSetup,
+      status: "cancelled",
+    });
+    vi.spyOn(runtime.workbench, "logs").mockResolvedValue({
+      stdout: "ready\n",
+      stderr: "",
+    });
+    vi.spyOn(runtime.workbench, "file").mockResolvedValue({
+      content: "ready\n",
+      truncated: false,
+    });
+
+    const started = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/setup-tests",
+      headers: { "idempotency-key": "setup-local" },
+      payload: { recipe: workbenchRecipe },
+    });
+    expect(started.statusCode).toBe(202);
+    const setupId = workbenchSetup.setup_test_id;
+    const responses = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v1/workbench/setup-tests" }),
+      app.inject({ method: "GET", url: `/api/v1/workbench/setup-tests/${setupId}` }),
+      app.inject({
+        method: "GET",
+        url: `/api/v1/workbench/setup-tests/${setupId}/logs`,
+      }),
+      app.inject({
+        method: "GET",
+        url: `/api/v1/workbench/setup-tests/${setupId}/files/file-one`,
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/v1/workbench/setup-tests/${setupId}/cancel`,
+      }),
+    ]);
+    expect(responses.map((response) => response.statusCode)).toEqual([
+      200, 200, 200, 200, 200,
+    ]);
+    expect(responses[0]?.json().setups).toHaveLength(1);
+    expect(responses[2]?.json().stdout).toBe("ready\n");
+    expect(responses[3]?.json()).toEqual({ content: "ready\n", truncated: false });
+    expect(runtime.workbench.startSetup).toHaveBeenCalledWith(
+      workbenchRecipe,
+      "development-operator",
+      "setup-local",
+    );
+  });
+
+  it("submits an attested Workbench recipe as one normal Harbor run", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const attestation = vi
+      .spyOn(runtime.workbench, "attestPassedSetup")
+      .mockResolvedValue({
+        setup_test_id: workbenchSetup.setup_test_id,
+        recipe_digest: workbenchSetup.recipe_digest,
+        revision_id: workbenchSetup.revision_id,
+        completed_at: workbenchSetup.completed_at ?? "",
+        expires_at: "2026-01-01T01:00:02.000Z",
+      });
+    const payload = {
+      benchmark: submission.benchmark,
+      model: submission.model,
+      cost_ceiling_usd_per_trial: 0.25,
+      role: "diagnostic",
+      workbench: {
+        recipe: workbenchRecipe,
+        setup_test_id: workbenchSetup.setup_test_id,
+      },
+    };
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "workbench-run" },
+      payload,
+    });
+    const repeated = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "workbench-run" },
+      payload,
+    });
+    expect(first.statusCode).toBe(201);
+    expect(repeated.statusCode).toBe(200);
+    const record = first.json().run;
+    expect(record.submission.harness).toEqual({
+      agent: "command-agent",
+      version: workbenchPreview.revision_id,
+    });
+    expect(record.harbor_job_config.agents).toHaveLength(1);
+    expect(record.harbor_job_config.agents[0]).toMatchObject({
+      import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
+      model_name: "openai/openai/gpt-oss-20b:together",
+    });
+    expect(JSON.stringify(record)).not.toContain("harness_profile");
+    expect(JSON.stringify(record)).not.toContain("promotion");
+    expect(attestation).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not create a Run when setup attestation is stale", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    vi.spyOn(runtime.workbench, "attestPassedSetup").mockRejectedValue(
+      new Error("setup test has expired"),
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "stale-workbench" },
+      payload: {
+        benchmark: submission.benchmark,
+        model: submission.model,
+        cost_ceiling_usd_per_trial: 0.25,
+        role: "diagnostic",
+        workbench: {
+          recipe: workbenchRecipe,
+          setup_test_id: workbenchSetup.setup_test_id,
+        },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toBe("setup test has expired");
+    expect(runtime.projection.listRuns()).toEqual([]);
   });
 });

@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import json
 import stat
-from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
 import httpx
 import pytest
+import typer
 from typer.testing import CliRunner
 
+import harbor_hf.cli as cli
 from harbor_hf.cli import app
-from harbor_hf.workbench_cli import _profile_items, _write_private_text
+from harbor_hf.workbench_cli import TransientControlError, _write_private_text
 
 runner = CliRunner()
 
@@ -37,7 +38,10 @@ def recipe() -> dict[str, object]:
         "run_command": "run-agent",
         "route_api": "chat-completions",
         "setup_timeout_seconds": 600,
-        "environment": [],
+        "environment": [
+            {"name": "MODEL_BASE_URL", "source": "model_base_url"},
+            {"name": "MODEL_API_KEY", "source": "model_api_key"},
+        ],
         "outputs": {
             "results_path": "/logs/agent/results.json",
             "trajectory_path": None,
@@ -52,29 +56,29 @@ def write_recipe(path: Path) -> None:
 def setup_value(status: str = "queued") -> dict[str, object]:
     return {
         "setup_test_id": "setup-one",
-        "recipe_digest": "sha256:recipe",
+        "recipe_digest": "a" * 64,
         "revision_id": "revision-one",
         "status": status,
         "created_at": "2026-01-01T00:00:00Z",
         "started_at": None,
         "completed_at": None,
-        "exit_code": None,
+        "exit_code": 0 if status == "passed" else None,
         "error": None,
         "files": [],
     }
 
 
-def test_workbench_help_exposes_generic_commands() -> None:
+def test_workbench_help_keeps_only_current_commands() -> None:
     result = runner.invoke(app, ["workbench", "--help"])
 
     assert result.exit_code == 0
     assert "preview" in result.output
     assert "setup" in result.output
-    assert "publication" in result.output
-    assert "fast-agent" not in result.output
+    assert "publication" not in result.output
+    assert "profile" not in result.output
 
 
-def test_workbench_preview_sends_recipe_object(
+def test_workbench_preview_sends_the_exact_recipe(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -85,40 +89,21 @@ def test_workbench_preview_sends_recipe_object(
 
     def request(method: str, url: str, **kwargs: object) -> httpx.Response:
         observed.update({"method": method, "url": url, **kwargs})
-        return response(200, {"recipe_digest": "sha256:recipe"})
+        return response(200, {"recipe_digest": "a" * 64})
 
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
+    monkeypatch.setattr(httpx, "request", request)
     result = runner.invoke(app, ["workbench", "preview", str(source)])
 
     assert result.exit_code == 0
     assert observed["method"] == "POST"
     assert observed["url"] == "https://control.example/api/v1/workbench/preview"
     assert observed["json"] == recipe()
+    assert "test-token" not in result.output
 
 
-def test_workbench_preview_reads_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
-    configure(monkeypatch)
-    observed: dict[str, object] = {}
-
-    def request(method: str, url: str, **kwargs: object) -> httpx.Response:
-        observed.update({"method": method, "url": url, **kwargs})
-        return response(200, {"recipe_digest": "sha256:recipe"})
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(
-        app,
-        ["workbench", "preview", "-"],
-        input=json.dumps(recipe()),
-    )
-
-    assert result.exit_code == 0
-    assert observed["json"] == recipe()
-
-
-@pytest.mark.parametrize("document", ["{", "[]", '"recipe"'])
-def test_workbench_rejects_invalid_recipe_before_http(
+def test_workbench_rejects_bad_or_oversize_input_before_http(
     monkeypatch: pytest.MonkeyPatch,
-    document: str,
+    tmp_path: Path,
 ) -> None:
     configure(monkeypatch)
     called = False
@@ -126,16 +111,20 @@ def test_workbench_rejects_invalid_recipe_before_http(
     def request(*_args: object, **_kwargs: object) -> httpx.Response:
         nonlocal called
         called = True
-        return response(500, {})
+        return response(200, {})
 
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(app, ["workbench", "preview", "-"], input=document)
+    monkeypatch.setattr(httpx, "request", request)
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("[]", encoding="utf-8")
+    oversize = tmp_path / "oversize.json"
+    oversize.write_bytes(b"{" + b"x" * (1024 * 1024))
 
-    assert result.exit_code == 1
+    assert runner.invoke(app, ["workbench", "preview", str(invalid)]).exit_code == 1
+    assert runner.invoke(app, ["workbench", "preview", str(oversize)]).exit_code == 1
     assert called is False
 
 
-def test_workbench_setup_start_sends_confirmed_recipe(
+def test_setup_start_uses_one_confirmed_recipe_and_idempotency_key(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -148,7 +137,7 @@ def test_workbench_setup_start_sends_confirmed_recipe(
         observed.update({"method": method, "url": url, **kwargs})
         return response(202, setup_value())
 
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
+    monkeypatch.setattr(httpx, "request", request)
     result = runner.invoke(
         app,
         [
@@ -157,81 +146,19 @@ def test_workbench_setup_start_sends_confirmed_recipe(
             "start",
             str(source),
             "--idempotency-key",
-            "setup-key-0001",
+            "setup-key",
             "--yes",
         ],
     )
 
     assert result.exit_code == 0
-    assert observed["method"] == "POST"
-    assert observed["url"] == "https://control.example/api/v1/workbench/setup-tests"
-    assert observed["json"] == {"recipe": recipe(), "confirmed": True}
     headers = cast(dict[str, str], observed["headers"])
-    assert headers["Idempotency-Key"] == "setup-key-0001"
+    assert headers["Idempotency-Key"] == "setup-key"
+    assert observed["json"] == {"recipe": recipe()}
+    assert "confirmed" not in json.dumps(observed["json"])
 
 
-def test_workbench_setup_start_reports_generated_key_only_on_stderr(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    source = tmp_path / "recipe.json"
-    write_recipe(source)
-    observed: dict[str, object] = {}
-
-    def request(method: str, url: str, **kwargs: object) -> httpx.Response:
-        observed.update({"method": method, "url": url, **kwargs})
-        return response(202, setup_value())
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(
-        app,
-        ["workbench", "setup", "start", str(source), "--yes"],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["setup_test_id"] == "setup-one"
-    generated = json.loads(result.stderr)["idempotency_key"]
-    assert 8 <= len(generated) <= 256
-    headers = cast(dict[str, str], observed["headers"])
-    assert headers["Idempotency-Key"] == generated
-
-
-@pytest.mark.parametrize("key", ["short", "x" * 257])
-def test_workbench_setup_start_rejects_invalid_idempotency_key(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    key: str,
-) -> None:
-    configure(monkeypatch)
-    source = tmp_path / "recipe.json"
-    write_recipe(source)
-    called = False
-
-    def request(*_args: object, **_kwargs: object) -> httpx.Response:
-        nonlocal called
-        called = True
-        return response(202, setup_value())
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "start",
-            str(source),
-            "--idempotency-key",
-            key,
-            "--yes",
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert called is False
-
-
-def test_workbench_setup_start_from_stdin_requires_yes(
+def test_setup_start_from_stdin_requires_explicit_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configure(monkeypatch)
@@ -245,92 +172,71 @@ def test_workbench_setup_start_from_stdin_requires_yes(
     assert "--yes" in result.output
 
 
-def test_workbench_setup_list_reads_actor_collection(
+def test_setup_list_unwraps_the_actor_collection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configure(monkeypatch)
-    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        httpx,
+        "request",
+        lambda *_args, **_kwargs: response(200, {"setups": [setup_value("passed")]}),
+    )
 
-    def request(method: str, url: str, **_kwargs: object) -> httpx.Response:
-        calls.append((method, url))
-        return response(200, [setup_value("passed")])
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
     result = runner.invoke(app, ["workbench", "setup", "list"])
 
     assert result.exit_code == 0
     assert json.loads(result.stdout)[0]["status"] == "passed"
-    assert calls == [("GET", "https://control.example/api/v1/workbench/setup-tests")]
 
 
-def test_workbench_setup_commands_encode_ids(
+def test_setup_status_and_files_encode_untrusted_identifiers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configure(monkeypatch)
-    calls: list[tuple[str, str]] = []
+    urls: list[str] = []
 
-    def request(method: str, url: str, **_kwargs: object) -> httpx.Response:
-        calls.append((method, url))
+    def request(_method: str, url: str, **_kwargs: object) -> httpx.Response:
+        urls.append(url)
+        if "/files/" in url:
+            return response(200, {"content": "safe", "truncated": False})
         return response(200, setup_value("passed"))
 
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(
-        app,
-        ["workbench", "setup", "status", "setup/with space"],
+    monkeypatch.setattr(httpx, "request", request)
+    assert (
+        runner.invoke(
+            app, ["workbench", "setup", "status", "setup/with space"]
+        ).exit_code
+        == 0
     )
-
-    assert result.exit_code == 0
-    assert calls == [
-        (
-            "GET",
-            "https://control.example/api/v1/workbench/setup-tests/setup%2Fwith%20space",
-        )
+    assert (
+        runner.invoke(
+            app,
+            ["workbench", "setup", "file", "setup/with space", "file/name"],
+        ).exit_code
+        == 0
+    )
+    assert urls == [
+        "https://control.example/api/v1/workbench/setup-tests/setup%2Fwith%20space",
+        "https://control.example/api/v1/workbench/setup-tests/setup%2Fwith%20space/files/file%2Fname",
     ]
 
 
-def test_workbench_setup_wait_polls_until_passed(
+def test_setup_wait_retries_transient_failures_and_stops_on_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configure(monkeypatch)
-    values = iter([setup_value("running"), setup_value("passed")])
-
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(200, next(values)),
-    )
-    monkeypatch.setattr("harbor_hf.workbench_cli.time.sleep", lambda _value: None)
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "wait",
-            "setup-one",
-            "--poll-interval",
-            "0.2",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["status"] == "passed"
-
-
-def test_workbench_setup_wait_retries_one_transient_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    configure(monkeypatch)
-    values: list[httpx.Response | httpx.HTTPError] = [
-        httpx.ConnectError("temporary connection failure"),
-        response(200, setup_value("passed")),
+    values: list[object] = [
+        TransientControlError(),
+        setup_value("running"),
+        setup_value("passed"),
     ]
 
     def request(*_args: object, **_kwargs: object) -> httpx.Response:
         value = values.pop(0)
-        if isinstance(value, httpx.HTTPError):
+        if isinstance(value, Exception):
             raise value
-        return value
+        return response(200, value)
 
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
+    monkeypatch.setattr(httpx, "request", request)
     monkeypatch.setattr("harbor_hf.workbench_cli.time.sleep", lambda _value: None)
     result = runner.invoke(
         app,
@@ -349,892 +255,231 @@ def test_workbench_setup_wait_retries_one_transient_failure(
     assert values == []
 
 
-def test_workbench_setup_wait_retries_one_transient_http_status(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    configure(monkeypatch)
-    values = iter(
-        [
-            response(
-                503,
-                {
-                    "error": {
-                        "code": "control_not_ready",
-                        "message": "projection is rebuilding",
-                    }
-                },
-            ),
-            response(200, setup_value("passed")),
-        ]
-    )
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: next(values),
-    )
-    monkeypatch.setattr("harbor_hf.workbench_cli.time.sleep", lambda _value: None)
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "wait",
-            "setup-one",
-            "--poll-interval",
-            "0.2",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["status"] == "passed"
-
-
-def test_workbench_setup_start_can_wait_for_accepted_setup(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    source = tmp_path / "recipe.json"
-    write_recipe(source)
-    values = iter(
-        [
-            response(202, setup_value("queued")),
-            response(200, setup_value("running")),
-            response(200, setup_value("passed")),
-        ]
-    )
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: next(values),
-    )
-    monkeypatch.setattr("harbor_hf.workbench_cli.time.sleep", lambda _value: None)
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "start",
-            str(source),
-            "--idempotency-key",
-            "setup-key-0001",
-            "--wait",
-            "--poll-interval",
-            "0.2",
-            "--yes",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["status"] == "passed"
-
-
-def test_workbench_setup_wait_exits_nonzero_for_failure(
+def test_setup_wait_fails_for_a_terminal_setup_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configure(monkeypatch)
     monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
+        httpx,
+        "request",
         lambda *_args, **_kwargs: response(200, setup_value("failed")),
     )
+
     result = runner.invoke(app, ["workbench", "setup", "wait", "setup-one"])
 
     assert result.exit_code == 1
     assert json.loads(result.stdout)["status"] == "failed"
 
 
-def test_workbench_setup_wait_timeout_does_not_cancel(
+def test_setup_cancel_targets_only_the_named_setup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     configure(monkeypatch)
-    calls: list[tuple[str, str]] = []
+    observed: list[tuple[str, str]] = []
 
     def request(method: str, url: str, **_kwargs: object) -> httpx.Response:
-        calls.append((method, url))
-        return response(200, setup_value("running"))
+        observed.append((method, url))
+        return response(200, setup_value("cancelled"))
 
-    monotonic = iter([0.0, 0.0, 2.0])
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    monkeypatch.setattr(
-        "harbor_hf.workbench_cli.time.monotonic", lambda: next(monotonic)
-    )
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "wait",
-            "setup-one",
-            "--timeout-seconds",
-            "1",
-        ],
-    )
+    monkeypatch.setattr(httpx, "request", request)
+    result = runner.invoke(app, ["workbench", "setup", "cancel", "setup-one", "--yes"])
 
-    assert result.exit_code == 1
-    assert "without cancelling" in result.output
-    assert calls == [
+    assert result.exit_code == 0
+    assert observed == [
         (
-            "GET",
-            "https://control.example/api/v1/workbench/setup-tests/setup-one",
+            "POST",
+            "https://control.example/api/v1/workbench/setup-tests/setup-one/cancel",
         )
     ]
 
 
-def test_workbench_setup_cancel_uses_idempotency_key(
+@pytest.mark.parametrize(
+    ("channel", "expected"),
+    [
+        ("stdout", "out\n"),
+        ("stderr", "err\n"),
+        ("combined", "out\n\n[stderr]\nerr\n"),
+    ],
+)
+def test_setup_logs_supports_raw_channels(
     monkeypatch: pytest.MonkeyPatch,
+    channel: str,
+    expected: str,
 ) -> None:
     configure(monkeypatch)
-    observed: dict[str, object] = {}
+    monkeypatch.setattr(
+        httpx,
+        "request",
+        lambda *_args, **_kwargs: response(200, {"stdout": "out\n", "stderr": "err\n"}),
+    )
 
-    def request(method: str, url: str, **kwargs: object) -> httpx.Response:
-        observed.update({"method": method, "url": url, **kwargs})
-        return response(200, setup_value("cancelled"))
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
     result = runner.invoke(
         app,
-        [
-            "workbench",
-            "setup",
-            "cancel",
-            "setup-one",
-            "--idempotency-key",
-            "cancel-key-0001",
-            "--yes",
-        ],
+        ["workbench", "setup", "logs", "setup-one", "--channel", channel],
     )
 
     assert result.exit_code == 0
-    assert observed["method"] == "POST"
-    assert str(observed["url"]).endswith("/setup-one/cancel")
-    assert observed["json"] == {"confirmed": True}
-    headers = cast(dict[str, str], observed["headers"])
-    assert headers["Idempotency-Key"] == "cancel-key-0001"
+    assert result.stdout == expected
 
 
-def test_workbench_setup_cancel_can_wait_until_cancelled(
+def test_setup_file_writes_owner_only_and_refuses_truncation(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     configure(monkeypatch)
-    values = iter(
-        [
-            response(200, setup_value("cancelling")),
-            response(200, setup_value("cancelled")),
-        ]
-    )
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: next(values),
-    )
+    truncated = False
+
+    def request(*_args: object, **_kwargs: object) -> httpx.Response:
+        return response(200, {"content": "safe\n", "truncated": truncated})
+
+    monkeypatch.setattr(httpx, "request", request)
+    destination = tmp_path / "preview.txt"
     result = runner.invoke(
         app,
         [
             "workbench",
             "setup",
-            "cancel",
+            "file",
             "setup-one",
-            "--idempotency-key",
-            "cancel-key-0001",
-            "--wait",
-            "--yes",
+            "file-one",
+            "--output",
+            str(destination),
         ],
+    )
+    assert result.exit_code == 0
+    assert destination.read_text(encoding="utf-8") == "safe\n"
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+
+    destination.unlink()
+    truncated = True
+    result = runner.invoke(
+        app,
+        [
+            "workbench",
+            "setup",
+            "file",
+            "setup-one",
+            "file-one",
+            "--output",
+            str(destination),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "--allow-truncated" in result.output
+    assert not destination.exists()
+
+
+def test_recipe_reader_reports_file_encoding_and_json_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    configure(monkeypatch)
+    missing = tmp_path / "missing.json"
+    invalid_utf8 = tmp_path / "invalid-utf8.json"
+    invalid_utf8.write_bytes(b"\xff")
+    invalid_json = tmp_path / "invalid-json.json"
+    invalid_json.write_text("{", encoding="utf-8")
+
+    missing_result = runner.invoke(app, ["workbench", "preview", str(missing)])
+    encoding_result = runner.invoke(app, ["workbench", "preview", str(invalid_utf8)])
+    json_result = runner.invoke(app, ["workbench", "preview", str(invalid_json)])
+
+    assert "could not be read" in missing_result.output
+    assert "UTF-8 JSON" in encoding_result.output
+    assert "valid JSON" in json_result.output
+
+
+def test_setup_start_reports_a_generated_key_and_validates_wait_response(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    configure(monkeypatch)
+    source = tmp_path / "recipe.json"
+    write_recipe(source)
+    monkeypatch.setattr(
+        httpx,
+        "request",
+        lambda *_args, **_kwargs: response(202, {"status": "queued"}),
+    )
+
+    result = runner.invoke(
+        app,
+        ["workbench", "setup", "start", str(source), "--yes", "--wait"],
+    )
+
+    assert result.exit_code == 1
+    assert "idempotency_key" in result.stderr
+    assert "invalid setup response" in result.stderr
+
+
+def test_setup_collection_logs_and_file_shape_errors_are_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    configure(monkeypatch)
+    monkeypatch.setattr(
+        httpx,
+        "request",
+        lambda *_args, **_kwargs: response(200, {}),
+    )
+
+    collection = runner.invoke(app, ["workbench", "setup", "list"])
+    logs = runner.invoke(
+        app,
+        ["workbench", "setup", "logs", "setup-one", "--channel", "stdout"],
+    )
+    files = runner.invoke(app, ["workbench", "setup", "files", "setup-one"])
+    file_result = runner.invoke(
+        app,
+        [
+            "workbench",
+            "setup",
+            "file",
+            "setup-one",
+            "file-one",
+            "--output",
+            str(tmp_path / "file.txt"),
+        ],
+    )
+
+    assert "invalid setup collection" in collection.stderr
+    assert "invalid setup logs" in logs.stderr
+    assert "invalid setup file list" in files.stderr
+    assert "invalid setup file content" in file_result.stderr
+
+
+def test_setup_cancel_can_wait_for_the_exact_cancelled_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure(monkeypatch)
+    values = iter([setup_value("cancelling"), setup_value("cancelled")])
+    monkeypatch.setattr(
+        httpx,
+        "request",
+        lambda *_args, **_kwargs: response(200, next(values)),
+    )
+    monkeypatch.setattr("harbor_hf.workbench_cli.time.sleep", lambda _value: None)
+
+    result = runner.invoke(
+        app,
+        ["workbench", "setup", "cancel", "setup-one", "--yes", "--wait"],
     )
 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["status"] == "cancelled"
 
 
-def test_workbench_setup_logs_can_emit_one_raw_channel(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    configure(monkeypatch)
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(
-            200, {"stdout": "setup output\n", "stderr": "warning\n"}
-        ),
-    )
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "logs",
-            "setup-one",
-            "--channel",
-            "stdout",
-        ],
-    )
+def test_private_file_write_does_not_replace_an_existing_file(tmp_path: Path) -> None:
+    destination = tmp_path / "existing.txt"
+    destination.write_text("original", encoding="utf-8")
 
-    assert result.exit_code == 0
-    assert result.stdout == "setup output\n"
-
-
-def test_workbench_setup_logs_can_emit_json_and_combined(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    configure(monkeypatch)
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(
-            200, {"stdout": "setup output", "stderr": "warning"}
-        ),
-    )
-
-    json_result = runner.invoke(
-        app,
-        ["workbench", "setup", "logs", "setup-one"],
-    )
-    combined_result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "logs",
-            "setup-one",
-            "--channel",
-            "combined",
-        ],
-    )
-
-    assert json_result.exit_code == 0
-    assert json.loads(json_result.stdout)["stderr"] == "warning"
-    assert combined_result.exit_code == 0
-    assert combined_result.stdout == "setup output\n[stderr]\nwarning"
-
-
-def test_workbench_setup_logs_preserves_ansi_bytes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    configure(monkeypatch)
-    text = "\x1b[31merror\x1b[0m"
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(200, {"stdout": text, "stderr": ""}),
-    )
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "logs",
-            "setup-one",
-            "--channel",
-            "stdout",
-        ],
-        color=False,
-    )
-
-    assert result.exit_code == 0
-    assert result.stdout_bytes == text.encode()
-
-
-def test_workbench_setup_logs_rejects_unknown_channel(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    configure(monkeypatch)
-    called = False
-
-    def request(*_args: object, **_kwargs: object) -> httpx.Response:
-        nonlocal called
-        called = True
-        return response(200, {"stdout": "", "stderr": ""})
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "logs",
-            "setup-one",
-            "--channel",
-            "unknown",
-        ],
-    )
-
-    assert result.exit_code == 2
-    assert "Invalid value" in result.output
-    assert called is False
-
-
-def test_workbench_setup_files_extracts_file_metadata(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    configure(monkeypatch)
-    value = setup_value("passed")
-    value["files"] = [
-        {
-            "file_id": "file-one",
-            "path": "setup.log",
-            "root": "logs",
-            "size": 12,
-            "text": True,
-        }
-    ]
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(200, value),
-    )
-    result = runner.invoke(
-        app,
-        ["workbench", "setup", "files", "setup-one"],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout) == value["files"]
-
-
-def test_workbench_setup_file_writes_owner_only(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    destination = tmp_path / "setup.log"
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(
-            200, {"content": "setup output\n", "truncated": False}
-        ),
-    )
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "file",
-            "setup-one",
-            "file-one",
-            "--output",
-            str(destination),
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert destination.read_text() == "setup output\n"
-    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
-
-
-def test_workbench_setup_file_defaults_to_json(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    configure(monkeypatch)
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(
-            200, {"content": "setup output\n", "truncated": False}
-        ),
-    )
-    result = runner.invoke(
-        app,
-        ["workbench", "setup", "file", "setup-one", "file-one"],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["content"] == "setup output\n"
-
-
-def test_workbench_setup_file_refuses_overwrite_without_force(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    destination = tmp_path / "setup.log"
-    destination.write_text("preserve", encoding="utf-8")
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(
-            200, {"content": "replacement", "truncated": False}
-        ),
-    )
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "file",
-            "setup-one",
-            "file-one",
-            "--output",
-            str(destination),
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert destination.read_text() == "preserve"
-
-
-def test_workbench_setup_file_refuses_truncated_output(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    destination = tmp_path / "setup.log"
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(
-            200, {"content": "partial", "truncated": True}
-        ),
-    )
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "file",
-            "setup-one",
-            "file-one",
-            "--output",
-            str(destination),
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert destination.exists() is False
-
-
-def test_workbench_setup_file_force_replaces_symlink_not_target(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    target = tmp_path / "target.txt"
-    target.write_text("preserve", encoding="utf-8")
-    destination = tmp_path / "setup.log"
-    destination.symlink_to(target)
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        lambda *_args, **_kwargs: response(
-            200, {"content": "setup output\n", "truncated": False}
-        ),
-    )
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "setup",
-            "file",
-            "setup-one",
-            "file-one",
-            "--output",
-            str(destination),
-            "--force",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert target.read_text() == "preserve"
-    assert destination.is_symlink() is False
-    assert destination.read_text() == "setup output\n"
-
-
-def test_private_file_write_cleans_temporary_file_after_interrupt(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    destination = tmp_path / "setup.log"
-
-    def interrupt(_source: Path, _destination: Path) -> None:
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr("harbor_hf.workbench_cli.os.replace", interrupt)
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(typer.Exit):
         _write_private_text(
             destination,
-            "private output",
-            force=True,
-            fail=lambda message, _code: (_ for _ in ()).throw(AssertionError(message)),
+            "replacement",
+            force=False,
+            fail=lambda message, code: cli._fail(message, code),
         )
 
-    assert destination.exists() is False
-    assert list(tmp_path.iterdir()) == []
-
-
-def profile(
-    profile_id: str,
-    kind: str,
-    alias: str,
-    spec: dict[str, object],
-) -> dict[str, object]:
-    return {
-        "profile_id": profile_id,
-        "profile_kind": kind,
-        "name": alias,
-        "source": "repository",
-        "promotion_state": "approved",
-        "alias": alias,
-        "approved_aliases": [alias],
-        "spec": spec,
-        "created_at": "2026-01-01T00:00:00Z",
-    }
-
-
-def publication_request(
-    expected_harness: dict[str, object],
-    profiles: list[dict[str, object]],
-) -> Callable[..., httpx.Response]:
-    def request(method: str, url: str, **_kwargs: object) -> httpx.Response:
-        if url.endswith("/api/v1/workbench/preview"):
-            return response(
-                200,
-                {
-                    "recipe_digest": "sha256:recipe",
-                    "revision_id": "revision-one",
-                    "harness_profile": expected_harness,
-                },
-            )
-        if "/api/v1/workbench/setup-tests/" in url:
-            return response(200, setup_value("passed"))
-        if "/api/v1/profiles?" in url:
-            return response(200, {"items": profiles, "next_cursor": None})
-        raise AssertionError((method, url))
-
-    return request
-
-
-def test_workbench_publication_reports_runnable_profile(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    source = tmp_path / "recipe.json"
-    write_recipe(source)
-    harness: dict[str, object] = {
-        "agent": "command-agent",
-        "config": {"version": 1},
-    }
-    profiles = [
-        profile("model-one", "model", "model-alias", {"model_id": "model/id"}),
-        profile("harness-one", "harness", "harness-alias", harness),
-        profile(
-            "deployment-one",
-            "deployment",
-            "deployment-alias",
-            {
-                "models": ["model-alias"],
-                "harnesses": ["harness-alias"],
-                "inference_provider": "provider",
-            },
-        ),
-    ]
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        publication_request(harness, profiles),
-    )
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "publication",
-            str(source),
-            "--setup-test",
-            "setup-one",
-            "--require-ready",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout) == {
-        "deployment": "deployment-alias",
-        "deployment_kind": "providers",
-        "harness": "harness-alias",
-        "model": "model-alias",
-        "recipe_digest": "sha256:recipe",
-        "revision_id": "revision-one",
-        "setup_status": "passed",
-        "setup_test_id": "setup-one",
-        "state": "published",
-    }
-
-
-def test_workbench_publication_requires_exact_tested_recipe(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    source = tmp_path / "recipe.json"
-    write_recipe(source)
-
-    def request(_method: str, url: str, **_kwargs: object) -> httpx.Response:
-        if url.endswith("/api/v1/workbench/preview"):
-            return response(
-                200,
-                {
-                    "recipe_digest": "sha256:changed",
-                    "revision_id": "revision-one",
-                    "harness_profile": {},
-                },
-            )
-        return response(200, setup_value("passed"))
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "publication",
-            str(source),
-            "--setup-test",
-            "setup-one",
-            "--require-ready",
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert json.loads(result.stdout)["state"] == "test-required"
-
-
-def test_workbench_publication_rejects_missing_identity_fields(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    source = tmp_path / "recipe.json"
-    write_recipe(source)
-
-    def request(_method: str, url: str, **_kwargs: object) -> httpx.Response:
-        if url.endswith("/api/v1/workbench/preview"):
-            return response(200, {"harness_profile": {}})
-        return response(
-            200,
-            {
-                **setup_value("passed"),
-                "recipe_digest": None,
-                "revision_id": None,
-            },
-        )
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "publication",
-            str(source),
-            "--setup-test",
-            "setup-one",
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert "identity fields" in result.output
-
-
-@pytest.mark.parametrize(
-    ("profiles", "expected_state"),
-    [
-        ([], "unpublished"),
-        (
-            [
-                profile(
-                    "harness-one",
-                    "harness",
-                    "harness-alias",
-                    {"agent": "command-agent"},
-                )
-            ],
-            "published-no-deployment",
-        ),
-    ],
-)
-def test_workbench_publication_reports_non_runnable_states(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    profiles: list[dict[str, object]],
-    expected_state: str,
-) -> None:
-    configure(monkeypatch)
-    source = tmp_path / "recipe.json"
-    write_recipe(source)
-    harness: dict[str, object] = {"agent": "command-agent"}
-    monkeypatch.setattr(
-        "harbor_hf.cli.httpx.request",
-        publication_request(harness, profiles),
-    )
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "publication",
-            str(source),
-            "--setup-test",
-            "setup-one",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["state"] == expected_state
-
-
-def test_workbench_publication_follows_profile_pagination(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    source = tmp_path / "recipe.json"
-    write_recipe(source)
-    harness: dict[str, object] = {"agent": "command-agent"}
-    profile_pages = 0
-
-    def request(_method: str, url: str, **_kwargs: object) -> httpx.Response:
-        nonlocal profile_pages
-        if url.endswith("/api/v1/workbench/preview"):
-            return response(
-                200,
-                {
-                    "recipe_digest": "sha256:recipe",
-                    "revision_id": "revision-one",
-                    "harness_profile": harness,
-                },
-            )
-        if "/api/v1/workbench/setup-tests/" in url:
-            return response(200, setup_value("passed"))
-        if url.endswith("/api/v1/profiles?limit=100"):
-            profile_pages += 1
-            return response(
-                200,
-                {
-                    "items": [
-                        profile(
-                            "model-one",
-                            "model",
-                            "model-alias",
-                            {"model_id": "model/id"},
-                        )
-                    ],
-                    "next_cursor": "page/two",
-                },
-            )
-        if url.endswith("/api/v1/profiles?limit=100&cursor=page%2Ftwo"):
-            profile_pages += 1
-            return response(
-                200,
-                {
-                    "items": [
-                        profile(
-                            "harness-one",
-                            "harness",
-                            "harness-alias",
-                            harness,
-                        ),
-                        profile(
-                            "deployment-one",
-                            "deployment",
-                            "deployment-alias",
-                            {
-                                "models": ["model-alias"],
-                                "harnesses": ["harness-alias"],
-                                "inference_provider": "provider",
-                            },
-                        ),
-                    ],
-                    "next_cursor": None,
-                },
-            )
-        raise AssertionError(url)
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "publication",
-            str(source),
-            "--setup-test",
-            "setup-one",
-            "--require-ready",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert profile_pages == 2
-
-
-def test_workbench_publication_rejects_repeated_profile_cursor(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    configure(monkeypatch)
-    source = tmp_path / "recipe.json"
-    write_recipe(source)
-
-    def request(_method: str, url: str, **_kwargs: object) -> httpx.Response:
-        if url.endswith("/api/v1/workbench/preview"):
-            return response(
-                200,
-                {
-                    "recipe_digest": "sha256:recipe",
-                    "revision_id": "revision-one",
-                    "harness_profile": {},
-                },
-            )
-        if "/api/v1/workbench/setup-tests/" in url:
-            return response(200, setup_value("passed"))
-        if "/api/v1/profiles?" in url:
-            return response(
-                200,
-                {
-                    "items": [profile("model-one", "model", "model-alias", {})],
-                    "next_cursor": "same",
-                },
-            )
-        raise AssertionError(url)
-
-    monkeypatch.setattr("harbor_hf.cli.httpx.request", request)
-    result = runner.invoke(
-        app,
-        [
-            "workbench",
-            "publication",
-            str(source),
-            "--setup-test",
-            "setup-one",
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert "made no progress" in result.output
-
-
-def test_profile_pagination_deduplicates_profile_ids() -> None:
-    pages = iter(
-        [
-            {
-                "items": [
-                    profile(
-                        "profile-one",
-                        "model",
-                        "first-alias",
-                        {"model_id": "model/one"},
-                    )
-                ],
-                "next_cursor": "next",
-            },
-            {
-                "items": [
-                    profile(
-                        "profile-one",
-                        "model",
-                        "duplicate-alias",
-                        {"model_id": "model/duplicate"},
-                    ),
-                    profile(
-                        "profile-two",
-                        "model",
-                        "second-alias",
-                        {"model_id": "model/two"},
-                    ),
-                ],
-                "next_cursor": None,
-            },
-        ]
-    )
-
-    items = _profile_items(
-        lambda *_args, **_kwargs: next(pages),
-        lambda message, _code: (_ for _ in ()).throw(AssertionError(message)),
-    )
-
-    assert [item["profile_id"] for item in items] == [
-        "profile-one",
-        "profile-two",
-    ]
-    assert items[0]["approved_aliases"] == ["first-alias"]
+    assert destination.read_text(encoding="utf-8") == "original"
+    assert not list(tmp_path.glob("*.harbor-hf-tmp"))

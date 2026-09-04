@@ -1,11 +1,12 @@
 export interface paths {
-    "/health/live": {
+    "/api/v1/session": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
+        /** Read the current session */
         get: {
             parameters: {
                 query?: never;
@@ -15,219 +16,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/health/ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Reports control initialization without failing the hosting platform health check. */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            /** @enum {unknown} */
-                            status: "initializing" | "ready";
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: {
-                    return_to?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/logout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/session": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            authenticated: boolean;
-                            login_url?: string;
-                            /** Format: date-time */
-                            expires_at?: string;
-                            actor?: {
-                                username: string;
-                                /** @enum {unknown} */
-                                role: "operator" | "reader";
-                                /** @enum {unknown} */
-                                transport: "session" | "development";
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                401: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            authenticated: boolean;
-                            login_url?: string;
-                            /** Format: date-time */
-                            expires_at?: string;
-                            actor?: {
-                                username: string;
-                                /** @enum {unknown} */
-                                role: "operator" | "reader";
-                                /** @enum {unknown} */
-                                transport: "session" | "development";
-                            };
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
             };
@@ -247,6 +42,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read system state */
         get: {
             parameters: {
                 query?: never;
@@ -256,32 +52,25 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
                         "application/json": {
-                            source_revision: string;
-                            /** @enum {unknown} */
-                            write_mode: "disabled" | "enabled";
-                            initialization: {
-                                ready: boolean;
-                                /** @enum {unknown} */
-                                status: "initializing" | "ready";
-                            };
-                            projection: {
-                                ready: boolean;
-                                rebuilding: boolean;
-                                object_count: number;
-                                last_rebuild_at: string | null;
-                                last_sync_at: string | null;
-                                event_cursor: string | null;
-                                integrity_error: string | null;
-                            };
-                            resource_contract: {
-                                [key: string]: number;
+                            error: {
+                                code: string;
+                                message: string;
                             };
                         };
                     };
@@ -296,13 +85,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/capacity": {
+    "/api/v1/presets": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
+        /** List benchmark and agent presets */
         get: {
             parameters: {
                 query?: never;
@@ -312,81 +102,17 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            alias: string | null;
-                            configured: boolean;
-                            max_active_jobs: number | null;
-                            start_burst: number | null;
-                            start_refill_tokens: number | null;
-                            start_refill_period_seconds: number | null;
-                            profile_id: string | null;
-                            active_jobs: number;
-                            available_jobs: number | null;
-                            queued_jobs: number;
-                            observed_running_jobs: number;
-                            observed_scheduling_jobs: number;
-                            reserved_without_active_observation: number;
-                            start_tokens: number | null;
-                            runs: {
-                                run_id: string;
-                                max_active_jobs: number;
-                                active_jobs: number;
-                                available_jobs: number;
-                            }[];
-                            hardware: {
-                                hardware: string;
-                                max_active_jobs: number;
-                                active_jobs: number;
-                                available_jobs: number;
-                            }[];
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        max_active_jobs: number;
-                        /** @enum {unknown} */
-                        confirmed: true;
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            alias: string | null;
-                            configured: boolean;
-                            max_active_jobs: number | null;
-                            start_burst: number | null;
-                            start_refill_tokens: number | null;
-                            start_refill_period_seconds: number | null;
-                            profile_id: string | null;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                503: {
+                /** @description Request error */
+                401: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -395,16 +121,14 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
                 };
             };
         };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -420,6 +144,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Compile and validate a Workbench recipe */
         post: {
             parameters: {
                 query?: never;
@@ -429,219 +154,21 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        /** @enum {unknown} */
-                        schema_version: "v1";
-                        name: string;
-                        setup_command: string;
-                        run_command: string;
-                        /** @enum {unknown} */
-                        route_api: "chat-completions" | "responses";
-                        setup_timeout_seconds: number;
-                        environment: {
-                            name: string;
-                            /** @enum {unknown} */
-                            source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
-                            value?: string;
-                        }[];
-                        outputs: {
-                            results_path: string;
-                            trajectory_path: string | null;
-                        };
-                    };
+                    "application/json": components["schemas"]["WorkbenchRecipe"];
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            recipe: {
-                                [key: string]: unknown;
-                            };
-                            recipe_digest: string;
-                            revision_id: string;
-                            setup_command: string;
-                            run_command: string;
-                            environment: {
-                                name: string;
-                                source: string;
-                                value: string;
-                                redacted: boolean;
-                            }[];
-                            harness_profile: {
-                                [key: string]: unknown;
-                            };
-                            warnings: string[];
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workbench/benchmark-configs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            items: {
-                                name: string;
-                                revision: string;
-                                label: string;
-                                description: string;
-                                benchmark: string;
-                                model: string;
-                                deployment: string;
-                                launch_policy: string;
-                                default_ceiling_microusd: number;
-                                max_ceiling_microusd: number;
-                                task_count: number;
-                                /** @enum {unknown} */
-                                publication_role: "final" | "component" | "diagnostic";
-                            }[];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workbench/local-runs/options": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            enabled: boolean;
-                            ready: boolean;
-                            reason: string | null;
-                            benchmark: string;
-                            model: string;
-                            task_names: string[];
-                            harbor_version: string | null;
-                            expected_harbor_version: string | null;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workbench/local-runs/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** Agent Workbench recipe v1 */
-                        recipe: {
-                            /** @enum {unknown} */
-                            schema_version: "v1";
-                            name: string;
-                            setup_command: string;
-                            run_command: string;
-                            /** @enum {unknown} */
-                            route_api: "chat-completions" | "responses";
-                            setup_timeout_seconds: number;
-                            environment: {
-                                name: string;
-                                /** @enum {unknown} */
-                                source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
-                                value?: string;
-                            }[];
-                            outputs: {
-                                results_path: string;
-                                trajectory_path: string | null;
-                            };
-                        };
-                        task_names: string[];
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            config: {
-                                [key: string]: unknown;
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                422: {
+                /** @description Request error */
+                400: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -650,372 +177,6 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workbench/local-runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            local_run_id: string;
-                            recipe_digest: string;
-                            /** @enum {unknown} */
-                            status: "queued" | "running" | "cancelling" | "cancelled" | "succeeded" | "failed";
-                            benchmark: string;
-                            model: string;
-                            task_names: string[];
-                            /** Format: date-time */
-                            created_at: string;
-                            started_at: string | null;
-                            completed_at: string | null;
-                            exit_code: number | null;
-                            error: string | null;
-                            config_path: string;
-                            result_path: string | null;
-                            command: string[];
-                        }[];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** Agent Workbench recipe v1 */
-                        recipe: {
-                            /** @enum {unknown} */
-                            schema_version: "v1";
-                            name: string;
-                            setup_command: string;
-                            run_command: string;
-                            /** @enum {unknown} */
-                            route_api: "chat-completions" | "responses";
-                            setup_timeout_seconds: number;
-                            environment: {
-                                name: string;
-                                /** @enum {unknown} */
-                                source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
-                                value?: string;
-                            }[];
-                            outputs: {
-                                results_path: string;
-                                trajectory_path: string | null;
-                            };
-                        };
-                        task_names: string[];
-                        /** @enum {unknown} */
-                        confirmed: true;
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                202: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            local_run_id: string;
-                            recipe_digest: string;
-                            /** @enum {unknown} */
-                            status: "queued" | "running" | "cancelling" | "cancelled" | "succeeded" | "failed";
-                            benchmark: string;
-                            model: string;
-                            task_names: string[];
-                            /** Format: date-time */
-                            created_at: string;
-                            started_at: string | null;
-                            completed_at: string | null;
-                            exit_code: number | null;
-                            error: string | null;
-                            config_path: string;
-                            result_path: string | null;
-                            command: string[];
-                        };
-                    };
-                };
-                /** @description Default Response */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                503: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workbench/local-runs/{local_run_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    local_run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            local_run_id: string;
-                            recipe_digest: string;
-                            /** @enum {unknown} */
-                            status: "queued" | "running" | "cancelling" | "cancelled" | "succeeded" | "failed";
-                            benchmark: string;
-                            model: string;
-                            task_names: string[];
-                            /** Format: date-time */
-                            created_at: string;
-                            started_at: string | null;
-                            completed_at: string | null;
-                            exit_code: number | null;
-                            error: string | null;
-                            config_path: string;
-                            result_path: string | null;
-                            command: string[];
-                        };
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workbench/local-runs/{local_run_id}/logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    local_run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            stdout: string;
-                            stderr: string;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workbench/local-runs/{local_run_id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    local_run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** @enum {unknown} */
-                        confirmed: true;
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            local_run_id: string;
-                            recipe_digest: string;
-                            /** @enum {unknown} */
-                            status: "queued" | "running" | "cancelling" | "cancelled" | "succeeded" | "failed";
-                            benchmark: string;
-                            model: string;
-                            task_names: string[];
-                            /** Format: date-time */
-                            created_at: string;
-                            started_at: string | null;
-                            completed_at: string | null;
-                            exit_code: number | null;
-                            error: string | null;
-                            config_path: string;
-                            result_path: string | null;
-                            command: string[];
-                        };
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
@@ -1035,6 +196,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List setup tests owned by the current actor */
         get: {
             parameters: {
                 query?: never;
@@ -1044,37 +206,17 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            setup_test_id: string;
-                            recipe_digest: string;
-                            revision_id: string;
-                            /** @enum {unknown} */
-                            status: "queued" | "running" | "cancelling" | "cancelled" | "passed" | "failed" | "timed-out";
-                            /** Format: date-time */
-                            created_at: string;
-                            started_at: string | null;
-                            completed_at: string | null;
-                            exit_code: number | null;
-                            error: string | null;
-                            files: {
-                                file_id: string;
-                                path: string;
-                                /** @enum {unknown} */
-                                root: "workspace" | "logs";
-                                size: number;
-                                text: boolean;
-                            }[];
-                        }[];
+                        "application/json": Record<string, never>;
                     };
                 };
-                /** @description Default Response */
-                503: {
+                /** @description Request error */
+                401: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1083,10 +225,6 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
@@ -1094,74 +232,35 @@ export interface paths {
             };
         };
         put?: never;
+        /** Start a credentialless disposable setup test */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
                 path?: never;
                 cookie?: never;
             };
             requestBody: {
                 content: {
                     "application/json": {
-                        /** Agent Workbench recipe v1 */
-                        recipe: {
-                            /** @enum {unknown} */
-                            schema_version: "v1";
-                            name: string;
-                            setup_command: string;
-                            run_command: string;
-                            /** @enum {unknown} */
-                            route_api: "chat-completions" | "responses";
-                            setup_timeout_seconds: number;
-                            environment: {
-                                name: string;
-                                /** @enum {unknown} */
-                                source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
-                                value?: string;
-                            }[];
-                            outputs: {
-                                results_path: string;
-                                trajectory_path: string | null;
-                            };
-                        };
-                        /** @enum {unknown} */
-                        confirmed: true;
+                        recipe: components["schemas"]["WorkbenchRecipe"];
                     };
                 };
             };
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 202: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            setup_test_id: string;
-                            recipe_digest: string;
-                            revision_id: string;
-                            /** @enum {unknown} */
-                            status: "queued" | "running" | "cancelling" | "cancelled" | "passed" | "failed" | "timed-out";
-                            /** Format: date-time */
-                            created_at: string;
-                            started_at: string | null;
-                            completed_at: string | null;
-                            exit_code: number | null;
-                            error: string | null;
-                            files: {
-                                file_id: string;
-                                path: string;
-                                /** @enum {unknown} */
-                                root: "workspace" | "logs";
-                                size: number;
-                                text: boolean;
-                            }[];
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-                /** @description Default Response */
-                503: {
+                /** @description Request error */
+                400: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1170,10 +269,20 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
                             };
                         };
                     };
@@ -1193,6 +302,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read one actor-owned setup test */
         get: {
             parameters: {
                 query?: never;
@@ -1204,36 +314,16 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            setup_test_id: string;
-                            recipe_digest: string;
-                            revision_id: string;
-                            /** @enum {unknown} */
-                            status: "queued" | "running" | "cancelling" | "cancelled" | "passed" | "failed" | "timed-out";
-                            /** Format: date-time */
-                            created_at: string;
-                            started_at: string | null;
-                            completed_at: string | null;
-                            exit_code: number | null;
-                            error: string | null;
-                            files: {
-                                file_id: string;
-                                path: string;
-                                /** @enum {unknown} */
-                                root: "workspace" | "logs";
-                                size: number;
-                                text: boolean;
-                            }[];
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-                /** @description Default Response */
+                /** @description Request error */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1243,28 +333,6 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                503: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
@@ -1288,6 +356,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Cancel one actor-owned setup test */
         post: {
             parameters: {
                 query?: never;
@@ -1297,45 +366,18 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** @enum {unknown} */
-                        confirmed: true;
-                    };
-                };
-            };
+            requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            setup_test_id: string;
-                            recipe_digest: string;
-                            revision_id: string;
-                            /** @enum {unknown} */
-                            status: "queued" | "running" | "cancelling" | "cancelled" | "passed" | "failed" | "timed-out";
-                            /** Format: date-time */
-                            created_at: string;
-                            started_at: string | null;
-                            completed_at: string | null;
-                            exit_code: number | null;
-                            error: string | null;
-                            files: {
-                                file_id: string;
-                                path: string;
-                                /** @enum {unknown} */
-                                root: "workspace" | "logs";
-                                size: number;
-                                text: boolean;
-                            }[];
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-                /** @description Default Response */
+                /** @description Request error */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1345,28 +387,6 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                503: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
@@ -1386,6 +406,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read bounded setup-test logs */
         get: {
             parameters: {
                 query?: never;
@@ -1397,19 +418,16 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            stdout: string;
-                            stderr: string;
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-                /** @description Default Response */
+                /** @description Request error */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1419,10 +437,6 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
@@ -1444,6 +458,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read one bounded setup-test file preview */
         get: {
             parameters: {
                 query?: never;
@@ -1456,19 +471,16 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            content: string;
-                            truncated: boolean;
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-                /** @description Default Response */
+                /** @description Request error */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1478,10 +490,6 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
@@ -1503,120 +511,101 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** List runs */
         get: {
             parameters: {
-                query?: {
-                    cursor?: string;
-                    limit?: number;
-                };
+                query?: never;
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
                         "application/json": {
-                            items: {
-                                run_id: string;
-                                /** Format: date-time */
-                                created_at: string;
-                                status: string;
-                                ceiling_microusd: number;
-                                reserved_microusd: number;
-                                observed_microusd: number;
-                                budget_exceeded: boolean;
-                                total_tasks: number;
-                                terminal_tasks: number;
-                                admissible_tasks: number;
-                                invalid_selected_tasks: number;
-                                exhausted_tasks: number;
-                                successful_tasks: number;
-                                pending_actions: number;
-                                replacement_assigned_tasks: number;
-                                replacement_recorded_tasks: number;
-                                publication_status: string | null;
-                                cleanup_pending: boolean;
-                                cancellation_requested: boolean;
-                                paused: boolean;
-                            }[];
-                            next_cursor: string | null;
+                            error: {
+                                code: string;
+                                message: string;
+                            };
                         };
                     };
                 };
             };
         };
         put?: never;
+        /** Submit a reviewed preset or attested Workbench run */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
                 path?: never;
                 cookie?: never;
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        benchmark?: string;
-                        model?: string;
-                        harness: string | {
-                            /** @enum {unknown} */
-                            type: "workbench";
-                            recipe: {
-                                [key: string]: unknown;
+                    "application/json": components["schemas"]["PresetSubmission"] | components["schemas"]["WorkbenchSubmission"];
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Success */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
                             };
-                            setup_test_id: string;
                         };
-                        deployment?: string | null;
-                        launch_policy?: string;
-                        benchmark_config?: string;
-                        benchmark_config_revision?: string;
-                        ceiling_microusd: number;
-                        confirmed: boolean;
-                        /** @default false */
-                        start_paused?: boolean;
-                    } & ({
-                        benchmark: string;
-                        model: string;
-                        harness?: string;
-                        launch_policy: string;
-                        benchmark_config?: never;
-                        benchmark_config_revision?: never;
-                    } | {
-                        benchmark_config: string;
-                        benchmark_config_revision: string;
-                        harness?: {
-                            /** @enum {unknown} */
-                            type: "workbench";
-                            recipe: {
-                                [key: string]: unknown;
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
                             };
-                            setup_test_id: string;
-                        };
-                        benchmark?: never;
-                        model?: never;
-                        deployment?: never;
-                        launch_policy?: never;
-                    });
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                202: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            run_id: string;
-                            action_id: string;
-                            status_url: string;
-                            adopted: boolean;
                         };
                     };
                 };
@@ -1628,202 +617,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/runs/{run_id}/continuation": {
+    "/api/v1/runs/config": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        get?: never;
         put?: never;
+        /** Submit a direct Harbor JobConfig */
         post: {
             parameters: {
                 query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
+                header: {
+                    "Idempotency-Key": string;
+                    "X-Harbor-HF-Cost-Ceiling-USD-Per-Trial": number;
                 };
+                path?: never;
                 cookie?: never;
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        reason: string;
-                        /** @enum {unknown} */
-                        confirmed: true;
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
             responses: {
-                /** @description Default Response */
-                202: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Success */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Request error */
+                400: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": {
-                            run_id: string;
-                            continuation_id: string;
-                            status_url: string;
-                            adopted: boolean;
+                            error: {
+                                code: string;
+                                message: string;
+                            };
                         };
                     };
                 };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/runs/{run_id}/continuation-repair": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        reason: string;
-                        /** @enum {unknown} */
-                        confirmed: true;
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                202: {
+                /** @description Request error */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": {
-                            run_id: string;
-                            continuation_repair_id: string;
-                            status_url: string;
-                            adopted: boolean;
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/runs/{run_id}/continuation-repair-successor": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        reason: string;
-                        /** @enum {unknown} */
-                        confirmed: true;
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                202: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            run_id: string;
-                            continuation_repair_successor_id: string;
-                            status_url: string;
-                            adopted: boolean;
+                            error: {
+                                code: string;
+                                message: string;
+                            };
                         };
                     };
                 };
@@ -1842,6 +704,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Read one run */
         get: {
             parameters: {
                 query?: never;
@@ -1853,38 +716,16 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            run_id: string;
-                            /** Format: date-time */
-                            created_at: string;
-                            status: string;
-                            ceiling_microusd: number;
-                            reserved_microusd: number;
-                            observed_microusd: number;
-                            budget_exceeded: boolean;
-                            total_tasks: number;
-                            terminal_tasks: number;
-                            admissible_tasks: number;
-                            invalid_selected_tasks: number;
-                            exhausted_tasks: number;
-                            successful_tasks: number;
-                            pending_actions: number;
-                            replacement_assigned_tasks: number;
-                            replacement_recorded_tasks: number;
-                            publication_status: string | null;
-                            cleanup_pending: boolean;
-                            cancellation_requested: boolean;
-                            paused: boolean;
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-                /** @description Default Response */
+                /** @description Request error */
                 404: {
                     headers: {
                         [name: string]: unknown;
@@ -1894,10 +735,6 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
@@ -1912,424 +749,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/runs/{run_id}/capacity": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            configured: boolean;
-                            profile_id: string | null;
-                            namespace_limit: number | null;
-                            namespace_active: number;
-                            run_limit: number;
-                            run_active: number;
-                            hardware_limit: number | null;
-                            hardware_active: number;
-                            provider_limit: number;
-                            provider_reserved: number;
-                            start_tokens: number | null;
-                            start_burst: number | null;
-                            queued: number;
-                            limiting_factor: ("run_job_capacity" | "namespace_job_capacity" | "hardware_job_capacity" | "provider_request_capacity" | "start_rate" | "run_cancelled") | null;
-                            not_before: string | null;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/runs/{run_id}/lock": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/runs/{run_id}/prepared-job": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** @enum {unknown} */
-                        phase: "trial";
-                        task_id: string;
-                        source_task_id: string;
-                        trial_index: number;
-                        input_digest: string;
-                        trial_lock: {
-                            [key: string]: unknown;
-                        };
-                        trial_lock_digest: string;
-                        declared_image: string;
-                        image: string;
-                        cpus: number;
-                        memory_mb: number;
-                        storage_mb: number;
-                        gpus: number;
-                        agent_timeout_seconds: number;
-                        verifier_timeout_seconds: number;
-                        environment_build_timeout_seconds: number;
-                        agent_setup_timeout_seconds: number;
-                    } | {
-                        /** @enum {unknown} */
-                        phase: "finalize";
-                        harbor_version: string;
-                        job_config: {
-                            [key: string]: unknown;
-                        };
-                        job_lock_header: {
-                            [key: string]: unknown;
-                        };
-                    };
-                };
-            };
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            /** @enum {unknown} */
-                            phase: "trial" | "finalize";
-                            record_id: string;
-                            digest: string;
-                            adopted: boolean;
-                        };
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/runs/{run_id}/prepared-job/trials/{task_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/runs/{run_id}/tasks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            items: {
-                                run_id: string;
-                                task_id: string;
-                                input_digest: string;
-                                terminal_outcome: string | null;
-                                selected_attempt_id: string | null;
-                            }[];
-                            next_cursor: string | null;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/runs/{run_id}/tasks/{task_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    run_id: string;
-                    task_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            task: {
-                                run_id: string;
-                                task_id: string;
-                                input_digest: string;
-                                terminal_outcome: string | null;
-                                selected_attempt_id: string | null;
-                            };
-                            attempts: {
-                                attempt_id: string;
-                                action_id: string;
-                                run_id: string;
-                                task_id: string;
-                                outcome: string;
-                                replacement_eligible: number;
-                                failure_fingerprint: string | null;
-                                cost_microusd: number;
-                                metrics: {
-                                    [key: string]: number;
-                                };
-                                /** Format: date-time */
-                                created_at: string;
-                                physical_job: null | {
-                                    resource_id: string | null;
-                                    observed_state: string | null;
-                                    inspect_url: string | null;
-                                };
-                            }[];
-                            exhaustion: null | {
-                                source_action_id: string;
-                                last_attempt_id: string | null;
-                                attempt_count: number;
-                                reason: string;
-                                /** Format: date-time */
-                                created_at: string;
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/runs/{run_id}/actions": {
+    "/api/v1/runs/{run_id}/pause": {
         parameters: {
             query?: never;
             header?: never;
@@ -2338,6 +758,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Pause a run */
         post: {
             parameters: {
                 query?: never;
@@ -2347,31 +768,28 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** @enum {unknown} */
-                        action: "cancel" | "retry_infrastructure" | "publish" | "pause_endpoint" | "pause" | "resume" | "supersede";
-                        task_id?: string | null;
-                        reason?: string | null;
-                        confirmed: boolean;
-                        task_limit?: number | null;
-                        publication_id?: string | null;
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
                     };
                 };
-            };
-            responses: {
-                /** @description Default Response */
-                202: {
+                /** @description Request error */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": {
-                            run_id: string;
-                            action_id: string;
-                            status_url: string;
-                            adopted: boolean;
+                            error: {
+                                code: string;
+                                message: string;
+                            };
                         };
                     };
                 };
@@ -2383,7 +801,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/runs/{run_id}/tasks/{task_id}/attempts": {
+    "/api/v1/runs/{run_id}/resume": {
         parameters: {
             query?: never;
             header?: never;
@@ -2392,89 +810,29 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Resume a run */
         post: {
             parameters: {
                 query?: never;
                 header?: never;
                 path: {
                     run_id: string;
-                    task_id: string;
                 };
                 cookie?: never;
             };
-            requestBody: {
-                content: {
-                    "application/json": {
-                        /** @enum {unknown} */
-                        outcome: "complete" | "invalid" | "infrastructure" | "semantic" | "refusal" | "verifier" | "agent" | "benchmark_timeout" | "cancelled" | "policy";
-                        replacement_eligible: boolean;
-                        evidence_digest: string;
-                        failure_fingerprint?: string;
-                        evidence_path: string;
-                        cost_microusd: number;
-                        /** Format: date-time */
-                        completed_at: string;
-                        /** @enum {unknown} */
-                        confirmed: true;
-                        metrics: {
-                            [key: string]: number;
-                        };
-                        action_id: string;
-                    } | {
-                        /** @enum {unknown} */
-                        operation: "upload_evidence";
-                        action_id: string;
-                        digest: string;
-                        content_base64: string;
-                    };
-                };
-            };
+            requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            path: string;
-                            digest: string;
-                            size: number;
-                            created: boolean;
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-                /** @description Default Response */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            path: string;
-                            digest: string;
-                            size: number;
-                            created: boolean;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                202: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            run_id: string;
-                            task_id: string;
-                            attempt_id: string;
-                            status_url: string;
-                            adopted: boolean;
-                        };
-                    };
-                };
-                /** @description Default Response */
-                403: {
+                /** @description Request error */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -2483,16 +841,12 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
                 };
-                /** @description Default Response */
-                422: {
+                /** @description Request error */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -2501,16 +855,169 @@ export interface paths {
                             error: {
                                 code: string;
                                 message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
                             };
                         };
                     };
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a run */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Request error */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/trials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List trials for one run */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Request error */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/trials/{trial_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one trial result */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                    trial_name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Request error */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2524,151 +1031,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Lists Jobs globally with offset pagination. When run_id is present, returns every latest Job for that Run in one stable response with next_cursor set to null. */
+        /** List parent Jobs */
         get: {
             parameters: {
-                query?: {
-                    cursor?: string;
-                    limit?: number;
-                    /** @description Return every latest Job for this Run in one response. cursor and limit do not apply. */
-                    run_id?: string;
-                };
+                query?: never;
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            items: {
-                                action_id: string;
-                                run_id: string;
-                                action_kind: string;
-                                generation: number;
-                                target: string;
-                                outcome: string | null;
-                                observed_state: string | null;
-                                resource_id: string | null;
-                                /** Format: date-time */
-                                created_at: string;
-                                launch_action_id: string;
-                                inspect_url: string | null;
-                                cost_microusd: number;
-                                assigned_tasks: number;
-                            }[];
-                            next_cursor: string | null;
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/endpoints": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: {
-                    cursor?: string;
-                    limit?: number;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
+                /** @description Request error */
+                401: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": {
-                            items: {
-                                action_id: string;
-                                run_id: string;
-                                endpoint_id: string;
-                                desired_state: string;
-                                observed_state: string;
-                                ready_replicas: number;
-                                cleanup_verified: number;
-                                active_hourly_cost_microusd: number;
-                                /** Format: date-time */
-                                created_at: string;
-                            }[];
-                            next_cursor: string | null;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/profiles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: {
-                    cursor?: string;
-                    limit?: number;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            items: {
-                                profile_id: string;
-                                profile_kind: string;
-                                name: string;
-                                source: string;
-                                promotion_state: string | null;
-                                alias: string | null;
-                                approved_aliases: string[];
-                                spec: {
-                                    [key: string]: unknown;
-                                };
-                                /** Format: date-time */
-                                created_at: string;
-                            }[];
-                            next_cursor: string | null;
+                            error: {
+                                code: string;
+                                message: string;
+                            };
                         };
                     };
                 };
@@ -2689,7 +1081,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Official snapshot rows. Anonymous GET is allowed. Runs and result details stay authenticated. */
+        /** Read the public leaderboard */
         get: {
             parameters: {
                 query?: never;
@@ -2699,355 +1091,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Default Response */
+                /** @description Success */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            snapshot: {
-                                record_id: string;
-                                /** Format: date-time */
-                                created_at: string;
-                                sqlite_digest: string;
-                                source_digest: string;
-                                entry_count: number;
-                            } | null;
-                            items: {
-                                rank: number;
-                                pareto: boolean;
-                                configuration_digest: string;
-                                run_id: string;
-                                publication_id: string;
-                                /** Format: date-time */
-                                published_at: string;
-                                benchmark: string;
-                                model: string;
-                                harness: string;
-                                inference_provider: string;
-                                reasoning_effort: string;
-                                harbor_version: string;
-                                trial_count: number;
-                                task_count: number;
-                                scored_task_count: number;
-                                primary_metric_name: string;
-                                primary_metric_value: number;
-                                primary_metric_unit: string;
-                                observed_microusd: number;
-                            }[];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/results": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: {
-                    cursor?: string;
-                    limit?: number;
-                    model?: string;
-                    benchmark?: string;
-                    agent?: string;
-                    status?: string;
-                    search?: string;
-                    published_after?: string;
-                    published_before?: string;
-                    sort?: "published_at" | "model" | "benchmark" | "status" | "score";
-                    order?: "asc" | "desc";
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            items: {
-                                publication_id: string;
-                                run_id: string;
-                                status: string;
-                                catalog_digest: string | null;
-                                /** Format: date-time */
-                                published_at: string;
-                                benchmark?: string | null;
-                                model?: string | null;
-                                harness?: string | null;
-                                inference_provider?: string | null;
-                                run_outcome?: string | null;
-                                quality?: string | null;
-                                publication_role?: string | null;
-                                task_count?: number | null;
-                                scored_task_count?: number | null;
-                                strict_pass_count?: number | null;
-                                primary_metric?: {
-                                    name: string;
-                                    value: number;
-                                    unit: string;
-                                } | null;
-                                result_path?: string | null;
-                                pass_count?: number | null;
-                                pass_rate?: number | null;
-                                pass_rate_ci95?: {
-                                    low: number;
-                                    high: number;
-                                } | null;
-                                input_tokens?: number | null;
-                                output_tokens?: number | null;
-                                inference_cost_microusd?: number | null;
-                                mean_task_cost_microusd?: number | null;
-                                task_cost_ci95?: {
-                                    low: number;
-                                    high: number;
-                                } | null;
-                                observed_cost_microusd?: number | null;
-                                outputs_prefix?: string | null;
-                                outputs_url?: string | null;
-                                hf_uri?: string | null;
-                                tasks?: {
-                                    task_id: string;
-                                    outcome: string;
-                                    reward: number | null;
-                                    cost_microusd: number;
-                                    input_tokens: number | null;
-                                    output_tokens: number | null;
-                                }[];
-                                benchmark_revision?: string | null;
-                                model_revision?: string | null;
-                                harness_revision?: string | null;
-                                agent?: string | null;
-                                source_revision?: string | null;
-                                catalog_source_digest?: string | null;
-                                superseded_by_publication_id?: string | null;
-                                profile_ids?: {
-                                    [key: string]: string;
-                                };
-                            }[];
-                            next_cursor: string | null;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/results/{publication_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    publication_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            publication_id: string;
-                            run_id: string;
-                            status: string;
-                            catalog_digest: string | null;
-                            /** Format: date-time */
-                            published_at: string;
-                            benchmark?: string | null;
-                            model?: string | null;
-                            harness?: string | null;
-                            inference_provider?: string | null;
-                            run_outcome?: string | null;
-                            quality?: string | null;
-                            publication_role?: string | null;
-                            task_count?: number | null;
-                            scored_task_count?: number | null;
-                            strict_pass_count?: number | null;
-                            primary_metric?: {
-                                name: string;
-                                value: number;
-                                unit: string;
-                            } | null;
-                            result_path?: string | null;
-                            pass_count?: number | null;
-                            pass_rate?: number | null;
-                            pass_rate_ci95?: {
-                                low: number;
-                                high: number;
-                            } | null;
-                            input_tokens?: number | null;
-                            output_tokens?: number | null;
-                            inference_cost_microusd?: number | null;
-                            mean_task_cost_microusd?: number | null;
-                            task_cost_ci95?: {
-                                low: number;
-                                high: number;
-                            } | null;
-                            observed_cost_microusd?: number | null;
-                            outputs_prefix?: string | null;
-                            outputs_url?: string | null;
-                            hf_uri?: string | null;
-                            tasks?: {
-                                task_id: string;
-                                outcome: string;
-                                reward: number | null;
-                                cost_microusd: number;
-                                input_tokens: number | null;
-                                output_tokens: number | null;
-                            }[];
-                            benchmark_revision?: string | null;
-                            model_revision?: string | null;
-                            harness_revision?: string | null;
-                            agent?: string | null;
-                            source_revision?: string | null;
-                            catalog_source_digest?: string | null;
-                            superseded_by_publication_id?: string | null;
-                            profile_ids?: {
-                                [key: string]: string;
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                request_id: string;
-                                fields?: {
-                                    [key: string]: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/audit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: {
-                    cursor?: string;
-                    limit?: number;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            items: {
-                                id: string;
-                                type: string;
-                                /** Format: date-time */
-                                occurred_at: string;
-                                data: {
-                                    [key: string]: unknown;
-                                };
-                            }[];
-                            next_cursor: string | null;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Streams bounded durable-event replay and live updates. cursor.reset tells clients to refetch current state and resume from data.latest_cursor. */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Last durable cursor received. Replay is capped; stale cursors receive cursor.reset. */
-                    cursor?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Server-Sent Events frames. Durable envelopes have an id. cursor.reset has no id and includes reason, latest_cursor, and replay_limit metadata. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/event-stream": string;
+                        "application/json": Record<string, never>;
                     };
                 };
             };
@@ -3063,7 +1113,68 @@ export interface paths {
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: never;
+    schemas: {
+        PresetSubmission: {
+            benchmark: {
+                name: string;
+                preset: string;
+            };
+            model: {
+                id: string;
+                provider: string;
+                reasoning_effort: string;
+            };
+            harness: {
+                agent: string;
+                version: string;
+            };
+            cost_ceiling_usd_per_trial: number;
+            /**
+             * @default final
+             * @enum {string}
+             */
+            role: "final" | "diagnostic";
+        };
+        WorkbenchRecipe: {
+            /** @constant */
+            schema_version: "v1";
+            name: string;
+            setup_command: string;
+            run_command: string;
+            /** @enum {string} */
+            route_api: "chat-completions" | "responses";
+            setup_timeout_seconds: number;
+            environment: {
+                name: string;
+                /** @enum {string} */
+                source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
+                value?: string;
+            }[];
+            outputs: {
+                results_path: string;
+                trajectory_path: string | null;
+            };
+        };
+        WorkbenchSubmission: {
+            benchmark: {
+                name: string;
+                preset: string;
+            };
+            model: {
+                id: string;
+                provider: string;
+                /** @constant */
+                reasoning_effort: "off";
+            };
+            cost_ceiling_usd_per_trial: number;
+            /** @enum {string} */
+            role: "final" | "diagnostic";
+            workbench: {
+                recipe: components["schemas"]["WorkbenchRecipe"];
+                setup_test_id: string;
+            };
+        };
+    };
     responses: never;
     parameters: never;
     requestBodies: never;

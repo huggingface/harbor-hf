@@ -60,6 +60,8 @@ The service reads these Space variables:
 | `HARBOR_HF_AUTH_PATH` | no | `/tmp/harbor-hf/auth.sqlite` | OAuth session store |
 | `HARBOR_HF_WEB_ROOT` | no | `./apps/control-web/dist` | built web application |
 | `HARBOR_HF_SOURCE_REVISION` | no | `development` | deployed source revision |
+| `HARBOR_HF_WORKBENCH_RUNNER` | no | `disabled` | `disabled`, local `docker`, or hosted `hf-jobs` setup tests |
+| `HARBOR_HF_WORKBENCH_IMAGE` | for hosted setup | parent image | immutable setup Job image |
 | `HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS` | no | empty | comma-separated operator subjects |
 
 Write mode fails startup unless both secrets and an image reference ending in
@@ -91,6 +93,10 @@ Authenticated read routes are:
 
 - `GET /api/v1/system`
 - `GET /api/v1/presets`
+- `GET /api/v1/workbench/setup-tests`
+- `GET /api/v1/workbench/setup-tests/{setup_test_id}`
+- `GET /api/v1/workbench/setup-tests/{setup_test_id}/logs`
+- `GET /api/v1/workbench/setup-tests/{setup_test_id}/files/{file_id}`
 - `GET /api/v1/runs`
 - `GET /api/v1/runs/{run_id}`
 - `GET /api/v1/runs/{run_id}/trials`
@@ -99,14 +105,21 @@ Authenticated read routes are:
 
 Operator write routes are:
 
+- `POST /api/v1/workbench/preview`
+- `POST /api/v1/workbench/setup-tests`
+- `POST /api/v1/workbench/setup-tests/{setup_test_id}/cancel`
 - `POST /api/v1/runs`
 - `POST /api/v1/runs/config`
 - `POST /api/v1/runs/{run_id}/pause`
 - `POST /api/v1/runs/{run_id}/resume`
 - `POST /api/v1/runs/{run_id}/cancel`
 
-Preset and direct submissions require `Idempotency-Key`. Direct submissions also
-require `X-Harbor-HF-Cost-Ceiling-USD-Per-Trial`.
+Preset, Workbench, setup-test, and direct submissions require
+`Idempotency-Key`. Direct submissions also require
+`X-Harbor-HF-Cost-Ceiling-USD-Per-Trial`. Workbench preview remains available
+when writes are disabled. Local Docker setup tests also remain available in
+explicit development mode, and setup cancellation remains available for safe
+cleanup.
 
 Browser writes use the session cookie and CSRF token. CLI requests use an
 approved bearer token. Readers can use authenticated GET routes but cannot
@@ -134,7 +147,8 @@ projection during deployment.
 
 The parent image is built from `deploy/parent-worker/Dockerfile`. It pins Harbor
 to the revision recorded in `packages/harbor-hf-agents/pyproject.toml` and
-contains the two temporary ATIF adapters plus the labeled HF Sandbox adapter.
+contains the Harbor parent runner, the reviewed agents, the generic Workbench
+command agent, and the labeled HF Sandbox adapter.
 
 Publish an `linux/amd64` image with the `Publish parent worker` workflow. Record
 the registry digest from the workflow output. Configure the control Space with
@@ -159,11 +173,13 @@ Before enabling writes:
 
 1. publish and test the parent image;
 2. set `HARBOR_HF_PARENT_IMAGE` to its immutable digest;
-3. verify that the two Space secrets are present and distinct;
-4. keep `HARBOR_HF_WRITE_MODE=disabled` for the first startup;
-5. verify liveness, readiness, OAuth, presets, Bucket projection, and the source
-   revision; and
-6. set write mode to `enabled` and restart once.
+3. set `HARBOR_HF_WORKBENCH_RUNNER=hf-jobs` and use the same immutable image for
+   `HARBOR_HF_WORKBENCH_IMAGE` when hosted setup tests are required;
+4. verify that the two Space secrets are present and distinct;
+5. keep `HARBOR_HF_WRITE_MODE=disabled` for the first startup;
+6. verify liveness, readiness, OAuth, presets, Bucket projection, Workbench
+   runner state, and the source revision; and
+7. set write mode to `enabled` and restart once.
 
 After deployment, verify the intended repository revision, runtime revision,
 Space stage, build logs, runtime logs, and authenticated `/api/v1/system`

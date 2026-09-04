@@ -465,7 +465,7 @@ export class HuggingFaceWorkbenchJobs implements WorkbenchJobClient {
       .slice(0, 20)
       .map((job) => ({
         setup_id: job.labels?.harbor_hf_setup_id as string,
-        recipe_digest: `sha256:${job.labels?.harbor_hf_recipe_digest as string}`,
+        recipe_digest: job.labels?.harbor_hf_recipe_digest as string,
         revision_id: job.labels?.harbor_hf_revision_id as string,
         snapshot: snapshot(job),
       }));

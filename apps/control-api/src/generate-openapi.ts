@@ -39,6 +39,18 @@ const trialParameter = {
   required: true,
   schema: { type: "string" },
 } as const;
+const setupParameter = {
+  name: "setup_test_id",
+  in: "path",
+  required: true,
+  schema: { type: "string", minLength: 1, maxLength: 160 },
+} as const;
+const fileParameter = {
+  name: "file_id",
+  in: "path",
+  required: true,
+  schema: { type: "string", minLength: 1, maxLength: 160 },
+} as const;
 const idempotencyHeader = {
   name: "Idempotency-Key",
   in: "header",
@@ -101,6 +113,109 @@ const document = {
           role: { type: "string", enum: ["final", "diagnostic"], default: "final" },
         },
       },
+      WorkbenchRecipe: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "schema_version",
+          "name",
+          "setup_command",
+          "run_command",
+          "route_api",
+          "setup_timeout_seconds",
+          "environment",
+          "outputs",
+        ],
+        properties: {
+          schema_version: { const: "v1" },
+          name: { type: "string" },
+          setup_command: { type: "string" },
+          run_command: { type: "string" },
+          route_api: { type: "string", enum: ["chat-completions", "responses"] },
+          setup_timeout_seconds: { type: "integer", minimum: 30, maximum: 3600 },
+          environment: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["name", "source"],
+              properties: {
+                name: { type: "string" },
+                source: {
+                  type: "string",
+                  enum: [
+                    "literal",
+                    "instruction_path",
+                    "workspace_path",
+                    "logs_path",
+                    "agent_home",
+                    "model_name",
+                    "model_base_url",
+                    "model_api_key",
+                  ],
+                },
+                value: { type: "string" },
+              },
+            },
+          },
+          outputs: {
+            type: "object",
+            additionalProperties: false,
+            required: ["results_path", "trajectory_path"],
+            properties: {
+              results_path: { type: "string" },
+              trajectory_path: { type: ["string", "null"] },
+            },
+          },
+        },
+      },
+      WorkbenchSubmission: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "benchmark",
+          "model",
+          "cost_ceiling_usd_per_trial",
+          "role",
+          "workbench",
+        ],
+        properties: {
+          benchmark: {
+            type: "object",
+            additionalProperties: false,
+            required: ["name", "preset"],
+            properties: {
+              name: { type: "string" },
+              preset: { type: "string" },
+            },
+          },
+          model: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "provider", "reasoning_effort"],
+            properties: {
+              id: { type: "string" },
+              provider: { type: "string" },
+              reasoning_effort: { const: "off" },
+            },
+          },
+          cost_ceiling_usd_per_trial: {
+            type: "number",
+            exclusiveMinimum: 0,
+            maximum: 10000,
+          },
+          role: { type: "string", enum: ["final", "diagnostic"] },
+          workbench: {
+            type: "object",
+            additionalProperties: false,
+            required: ["recipe", "setup_test_id"],
+            properties: {
+              recipe: { $ref: "#/components/schemas/WorkbenchRecipe" },
+              setup_test_id: { type: "string", minLength: 1, maxLength: 160 },
+            },
+          },
+        },
+      },
     },
   },
   paths: {
@@ -121,6 +236,81 @@ const document = {
         responses: { "200": ok, "401": error },
       },
     },
+    "/api/v1/workbench/preview": {
+      post: {
+        summary: "Compile and validate a Workbench recipe",
+        security: authenticated,
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/WorkbenchRecipe" },
+            },
+          },
+        },
+        responses: { "200": ok, "400": error },
+      },
+    },
+    "/api/v1/workbench/setup-tests": {
+      get: {
+        summary: "List setup tests owned by the current actor",
+        security: authenticated,
+        responses: { "200": ok, "401": error },
+      },
+      post: {
+        summary: "Start a credentialless disposable setup test",
+        security: authenticated,
+        parameters: [idempotencyHeader],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["recipe"],
+                properties: {
+                  recipe: { $ref: "#/components/schemas/WorkbenchRecipe" },
+                },
+              },
+            },
+          },
+        },
+        responses: { "202": ok, "400": error, "409": error },
+      },
+    },
+    "/api/v1/workbench/setup-tests/{setup_test_id}": {
+      get: {
+        summary: "Read one actor-owned setup test",
+        security: authenticated,
+        parameters: [setupParameter],
+        responses: { "200": ok, "404": error },
+      },
+    },
+    "/api/v1/workbench/setup-tests/{setup_test_id}/cancel": {
+      post: {
+        summary: "Cancel one actor-owned setup test",
+        security: authenticated,
+        parameters: [setupParameter],
+        responses: { "200": ok, "404": error },
+      },
+    },
+    "/api/v1/workbench/setup-tests/{setup_test_id}/logs": {
+      get: {
+        summary: "Read bounded setup-test logs",
+        security: authenticated,
+        parameters: [setupParameter],
+        responses: { "200": ok, "404": error },
+      },
+    },
+    "/api/v1/workbench/setup-tests/{setup_test_id}/files/{file_id}": {
+      get: {
+        summary: "Read one bounded setup-test file preview",
+        security: authenticated,
+        parameters: [setupParameter, fileParameter],
+        responses: { "200": ok, "404": error },
+      },
+    },
     "/api/v1/runs": {
       get: {
         summary: "List runs",
@@ -128,14 +318,19 @@ const document = {
         responses: { "200": ok, "401": error },
       },
       post: {
-        summary: "Submit a preset run",
+        summary: "Submit a reviewed preset or attested Workbench run",
         security: authenticated,
         parameters: [idempotencyHeader],
         requestBody: {
           required: true,
           content: {
             "application/json": {
-              schema: { $ref: "#/components/schemas/PresetSubmission" },
+              schema: {
+                oneOf: [
+                  { $ref: "#/components/schemas/PresetSubmission" },
+                  { $ref: "#/components/schemas/WorkbenchSubmission" },
+                ],
+              },
             },
           },
         },

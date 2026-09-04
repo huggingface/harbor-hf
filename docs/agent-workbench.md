@@ -1,277 +1,167 @@
+---
+title: Agent Workbench
+author: Harbor-HF maintainers
+date: 2026-09-04
+tags: [agents, workbench, harbor, security]
+---
+
 # Agent Workbench
 
-Agent Workbench is an authenticated control-web page for authoring and privately
-testing a generic command-line Harbor agent recipe. It is available at
-`/workbench`.
+Agent Workbench is the authenticated `/workbench` page for a generic command-line
+Harbor agent. It restores the useful configure, test, and run flow without
+restoring the old profile or worker systems.
 
-The Workbench presents three distinct stages:
+## Flow
 
-1. **Configure** setup and run commands plus typed environment bindings.
-2. **Test** installation in a disposable local Docker container or Hugging Face
-   Job without a benchmark or model request.
-3. **Run** by selecting a reviewed benchmark configuration, previewing its
-   locked infrastructure and maximum cost, and explicitly confirming launch.
+The page has three stages:
 
-A successful setup test is ephemeral verification. It does not create, approve,
-or publish a harness profile and does not start a Run. Hosted submission sends
-the exact non-secret recipe and actor-owned setup-test ID through the ordinary
-`POST /api/v1/runs` endpoint. The server recompiles it and rejects a failed,
-foreign, stale, or digest-mismatched setup test.
+1. **Configure:** Edit setup and run commands, environment bindings, and output
+   paths. The service compiles the recipe and shows the exact Harbor agent.
+2. **Test:** Run only the setup command in a disposable CPU environment. This
+   stage has no benchmark, model request, inference credential, Bucket mount, or
+   worker authority.
+3. **Run:** Select a reviewed benchmark, model route, cost limit, and result
+   role. Submit the exact tested recipe through `POST /api/v1/runs`.
 
-The resulting harness exists only inside that Run lock. It is content-addressed
-using the Run, reviewed configuration revision, compiler revision, recipe
-digest, and compiled harness. No `profile.object` or `profile.promotion` record
-is created for the recipe.
+A setup pass is temporary evidence. It does not create or approve a profile. It
+does not start a benchmark. The pass is valid for one hour, for the same actor,
+recipe digest, and compiler revision. A service restart makes a recovered setup
+record non-attestable, so the operator must run the test again.
 
-## Recipe contract
+## Recipe
 
-The authoritative contract is
-`packages/contracts/schemas/agent-workbench-v1.schema.json`.
-
+The authoritative schema is
+[`agent-workbench-v1.schema.json`](../packages/contracts/schemas/agent-workbench-v1.schema.json).
 A recipe contains:
 
-- a portable configuration name;
-- setup and run shell scripts;
-- the OpenAI-compatible inference API expected by the agent:
-  `chat-completions` or `responses`;
-- a bounded setup timeout;
+- a portable name;
+- setup and run shell commands;
+- a `chat-completions` or `responses` route type;
+- a setup timeout from 30 to 3,600 seconds;
 - typed environment bindings; and
-- declared result and optional ATIF trajectory paths beneath `/logs/agent`.
+- a required result path and optional ATIF trajectory path below
+  `/logs/agent`.
 
 Environment sources are:
 
-| Source | Setup | Run | Meaning |
+| Source | Setup | Run | Value |
 | --- | --- | --- | --- |
-| `literal` | yes | yes | Non-secret recipe text. |
-| `workspace_path` | yes | yes | Writable task workspace. |
-| `logs_path` | yes | yes | Agent log/output directory. |
-| `agent_home` | yes | yes | Managed agent installation and runtime home. |
-| `model_name` | yes | yes | Model selected by the immutable Run lock. |
-| `instruction_path` | no | yes | File containing the task instruction. |
-| `model_base_url` | no | yes | Direct model endpoint from the immutable execution contract. |
-| `model_api_key` | no | yes | Runtime model credential injected by the worker. |
+| `literal` | yes | yes | Non-secret recipe text |
+| `workspace_path` | yes | yes | Writable task workspace |
+| `logs_path` | yes | yes | Agent output directory |
+| `agent_home` | yes | yes | Managed agent home |
+| `model_name` | yes | yes | Model selected for the run |
+| `instruction_path` | no | yes | File that contains the task instruction |
+| `model_base_url` | no | yes | Model route injected for the run |
+| `model_api_key` | no | yes | Inference credential injected for the run |
 
-Setup compilation rejects references to run-only bindings. Commands receive
-instructions by file path; the instruction text is never interpolated into a
-command.
+The compiler rejects duplicate names, shell-reserved names, Harbor control
+names, credential-like literal names or values, paths outside the managed
+roots, duplicate output paths, and run-only bindings in setup commands.
+Instructions stay in a file. The compiler does not put instruction text in a
+shell command.
 
-Literal values are rejected when their names or values look credential-like.
-Reserved process and Harbor-HF environment names are also rejected. The
-preview redacts the model API-key binding.
+## Harbor integration
 
-## Generic Harbor agent
-
-The compiler emits a normal Harbor harness profile using:
+The compiler produces one Harbor agent fragment with this fixed import:
 
 ```text
 harbor_hf_agents.command_agent.agent:CommandAgent
 ```
 
-The command agent:
+The fragment goes into the same Harbor `JobConfig` that a reviewed agent preset
+uses. The normal run record, parent Job, Harbor folder, trial lifecycle, retry
+behavior, result projection, cost stop, and controls apply. There is no
+Workbench-specific run endpoint, task loop, retry loop, worker, profile,
+promotion, preparation Job, or publication record.
 
-- uses only Harbor's public installed-agent APIs;
-- accepts script or argv commands through a strict Pydantic configuration;
-- runs setup and task commands as the isolated unprivileged agent user;
-- starts commands with an empty ambient environment and only declared
-  bindings;
-- stages instructions as a mode-0600 file;
-- obtains inference directly from the model endpoint in the immutable execution
-  contract;
-- collects required declared output files from `/logs/agent`;
-- optionally validates, canonicalizes, and ingests a declared ATIF document;
-  and
-- writes bounded setup and run process logs.
+The server accepts a Workbench run only when the recipe has both
+`model_base_url` and `model_api_key` bindings. It recompiles the submitted
+recipe, checks the exact setup attestation, and creates one normal run. The
+inference credential appears only as the existing runtime template in the
+Harbor agent environment. It is not stored in the recipe, run record, request,
+Job label, or setup Job.
 
-The compiler always requires workspace and verifier evidence. A declared ATIF
-path additionally requires trajectory evidence.
+A diagnostic role is the safe default. Final runs can enter the public
+leaderboard only when the selected benchmark is eligible and Harbor records at
+least one numeric reward.
 
-Recipe setup failures and client-configuration failures after agent setup
-begins are sealed as non-retryable agent outcomes. Typed task environment
-failures and typed transient provider failures remain the bounded
-replacement-eligible infrastructure cases.
+## Setup runners
 
-The harness profile omits a fixed model name. During normal Harbor preparation,
-the worker injects the model name from the selected immutable model profile.
-If a harness explicitly declares a different model, preparation rejects it.
+Local development uses Docker. The container has bounded CPU, memory, process,
+time, log, file-count, and file-preview limits. It mounts only temporary
+workspace, logs, agent-home, and recipe paths.
 
-## Disposable setup runners
+A hosted deployment can use one temporary Hugging Face Job for each setup test.
+The Job uses:
 
-The control API supports:
+- `cpu-basic` on `amd64`;
+- an immutable reviewed image;
+- one attempt;
+- no secrets;
+- no volumes;
+- no Space attachment; and
+- opaque ownership and recipe labels.
+
+The control service verifies the returned Job specification. If verification
+fails after creation, it cancels that Job. Cancellation targets only the Job
+that belongs to the actor-owned setup record. Setup logs are bounded to 2 MiB
+per stream. At most 1,000 files and 1 MiB of text previews are retained by the
+control process.
+
+The hosted runner needs these variables:
 
 ```text
-POST /api/v1/workbench/preview
-POST /api/v1/workbench/setup-tests
-GET  /api/v1/workbench/setup-tests
-GET  /api/v1/workbench/setup-tests/{setup_test_id}
-POST /api/v1/workbench/setup-tests/{setup_test_id}/cancel
-GET  /api/v1/workbench/setup-tests/{setup_test_id}/logs
-GET  /api/v1/workbench/setup-tests/{setup_test_id}/files/{file_id}
+HARBOR_HF_WORKBENCH_RUNNER=hf-jobs
+HARBOR_HF_WORKBENCH_IMAGE=<image>@sha256:<digest>
 ```
 
-## Operator CLI
+Production rejects a hosted Workbench image that does not use an immutable
+digest. `disabled` is the production default. Development defaults to `docker`.
 
-The Python operator CLI exposes the same actor-scoped Workbench control
-surface without adding a Workbench-specific Run path:
+## Command-line use
 
-```text
-harbor-hf workbench preview RECIPE.json
-harbor-hf workbench setup start RECIPE.json
+Set the normal control URL and bearer token in the shell. Then use:
+
+```bash
+harbor-hf workbench preview recipe.json
+harbor-hf workbench setup start recipe.json --yes --wait
 harbor-hf workbench setup list
-harbor-hf workbench setup status SETUP_TEST_ID
-harbor-hf workbench setup wait SETUP_TEST_ID
-harbor-hf workbench setup cancel SETUP_TEST_ID
-harbor-hf workbench setup logs SETUP_TEST_ID
-harbor-hf workbench setup files SETUP_TEST_ID
-harbor-hf workbench setup file SETUP_TEST_ID FILE_ID
-harbor-hf run submit --config CONFIG --harness RECIPE.json \
-  --setup-test SETUP_TEST_ID --ceiling-microusd MICRO_USD --yes
+harbor-hf workbench setup status <setup-test-id>
+harbor-hf workbench setup wait <setup-test-id>
+harbor-hf workbench setup logs <setup-test-id>
+harbor-hf workbench setup files <setup-test-id>
+harbor-hf workbench setup file <setup-test-id> <file-id>
+harbor-hf workbench setup cancel <setup-test-id> --yes
 ```
 
-`RECIPE.json` may be `-` to read one UTF-8 JSON object from stdin. Setup start
-requires a separate confirmation unless `--yes` is supplied, and stdin setup
-start always requires `--yes`. Generated idempotency keys are printed only to
-stderr so stdout remains machine-readable JSON.
+Submit the exact passed recipe through the normal run command:
 
-`setup start --wait` and `setup wait` poll actor-scoped setup state and exit
-nonzero unless the setup passes. They never cancel a setup test when the local
-wait deadline expires. `setup cancel --wait` succeeds only when cancellation
-reaches the `cancelled` terminal state.
-
-Logs are JSON by default. `--channel stdout` and `stderr` preserve the selected
-text exactly; `combined` inserts a visible `[stderr]` separator when stderr is
-present. File previews are JSON by default; `--output` writes a mode-0600 local
-file atomically, refuses overwrite without `--force`, and refuses a truncated
-preview without `--allow-truncated`.
-
-The older `workbench publication` command remains a non-mutating catalog
-diagnostic. It is not required for hosted Workbench Runs. `run submit --config`
-cannot be mixed with the profile-selection flags because model, deployment, and
-launch policy are fixed by the reviewed configuration.
-
-Setup execution is controlled by:
-
-| Variable | Values | Behavior |
-| --- | --- | --- |
-| `HARBOR_HF_WORKBENCH_RUNNER` | `disabled`, `docker`, `hf-jobs` | Development defaults to `docker`; production and tests default to `disabled`. Selecting `hf-jobs` requires `HF_TOKEN`. |
-| `HARBOR_HF_WORKBENCH_IMAGE` | Docker image reference | Defaults to `python:3.12-slim`; hosted installations should configure a reviewed immutable image reference. |
-
-The Docker runner:
-
-- uses an unprivileged UID/GID;
-- drops all Linux capabilities and sets `no-new-privileges`;
-- applies CPU, memory, PID, and timeout limits;
-- keeps managed agent-home files outside the browsable workspace;
-- bounds retained stdout, stderr, file count, and text previews;
-- refuses symlink and special-file previews; and
-- scopes in-memory setup state to the authenticated actor.
-
-The Hugging Face Jobs runner is a thin disposable adapter. It:
-
-- calls the Hugging Face Jobs API directly rather than creating a Harbor Run,
-  profile, lock, action intent, or reconciler record;
-- checks the configured namespace active-Job limit before launching;
-- launches one `cpu-basic` Job with one attempt and the recipe's setup timeout
-  plus a short finalization allowance;
-- labels the Job with opaque setup, actor, recipe, and revision digests so the
-  Workbench can recover the actor's recent setup tests after a service restart;
-- supplies no Job secrets, volumes, worker capability, inference credential, or
-  model route;
-- uses the control credential only in the control-service-to-Hub request;
-- runs the customer command with a constructed environment containing only
-  declared setup bindings plus managed `HOME` and `PATH`;
-- frames bounded stdout, stderr, file metadata, text previews, and the final
-  exit result through the private Job log stream; and
-- observes and cancels the exact Job directly through the Jobs API.
-
-After submission, the web application replaces the one-time confirmation
-control with one inline live-output panel. The panel polls status and bounded
-stdout/stderr once per second, follows new output, and provides a separately
-confirmed Cancel action. Once setup is terminal, the live panel is replaced by
-the final stdout/stderr and created-file views; the same logs are not displayed
-twice. Cancellation stops the configured disposable environment, retains the
-available logs and files, and records the terminal setup state as `cancelled`
-rather than a generic failure.
-
-Setup-test API state, reconstructed logs, and file previews remain intentionally
-ephemeral and actor-scoped. A graceful control-service shutdown cancels active
-setup environments; an abrupt failure can leave an HF Job running only until
-its bounded remote timeout. The remote Job is the lifecycle object, but the
-Workbench does not turn setup verification into durable benchmark state.
-
-## Fast-Agent starter
-
-The starter bootstraps a version-pinned command-agent toolchain from immutable
-recipe data:
-
-```text
-uv 0.12.5
-CPython 3.12.14
-fast-agent-mcp==0.10.16
+```bash
+harbor-hf run submit \
+  --benchmark terminal-bench-2-1 \
+  --preset one-task-1-trial \
+  --model publisher/model \
+  --provider provider \
+  --harness recipe.json \
+  --setup-test <setup-test-id> \
+  --cost-ceiling-usd-per-trial 0.25 \
+  --role diagnostic \
+  --yes
 ```
 
-The setup command downloads the pinned Linux `uv` archive, verifies its exact
-SHA-256 before execution, installs the selected managed Python version beneath
-the agent home, and installs the selected Fast-Agent package version into that
-managed environment. It does not depend on an ambient task-image Python, venv,
-or pip. Download diagnostics remain beneath the non-browsable managed agent
-home.
+`--harness` and `--setup-test` must be used together. A Workbench submission
+cannot also select an agent preset and must use reasoning effort `off`.
 
-Its run command uses typed bindings for model name, direct model base URL,
-runtime `OPENAI_API_KEY`, instruction file, workspace, managed home, results,
-and trajectory output. Fast-Agent and its toolchain remain recipe data; neither
-the Workbench compiler nor the command-agent plugin branches on their names.
+## Starter recipes
 
-The checked-in `fast-agent-0-10-16-command` harness profile is derived from the
-same compiler output returned by the Workbench preview. The first reviewed
-benchmark configuration uses this profile as its command-agent capability
-template. A submitted recipe does not inherit the template's commands: the
-server replaces only the resolved harness spec with the newly compiled recipe
-and records both identities in the Run lock.
+The page keeps the historical Fast Agent and FX starter recipes with their
+pinned versions and checksums.
 
-## FX starter
+The Fast Agent starter has direct model base URL and API key bindings, so it can
+complete the full setup and Harbor run flow.
 
-The Workbench also includes a standalone FX 0.0.6 starter. Its setup recipe
-downloads the architecture-specific release archive, verifies the pinned
-SHA-256 digest, installs `fx` beneath the managed agent home, and reports the
-installed version. It uses the same generic command-agent compiler as the
-Fast-Agent starter.
-
-FX 0.0.6 expects Vercel AI Gateway model and credential semantics and does not
-provide the direct model-base-URL binding required by the local Harbor MVP.
-The Workbench therefore supports setup testing for this starter but keeps
-local benchmark execution disabled. This prevents the HF inference credential
-from being sent to an unintended endpoint. Enabling FX benchmark execution
-requires a separately reviewed deployment route; it does not require restoring
-the removed completions proxy UX.
-
-## Hosted benchmark flow
-
-The narrow hosted flow is:
-
-1. Setup passes for the current actor-owned recipe digest and compiler revision.
-2. The browser loads reviewed configurations from
-   `GET /api/v1/workbench/benchmark-configs`.
-3. The user selects a configuration, reviews its benchmark, model, deployment,
-   task count, launch policy, result role, and maximum ceiling, then confirms an
-   allowed hard ceiling.
-4. The browser submits `benchmark_config`, the exact recipe, and its setup-test
-   ID through `POST /api/v1/runs`, together with the displayed configuration
-   revision. That revision hashes the exact resolved profile and task identities,
-   so a concurrent infrastructure/profile change forces a fresh review.
-5. The server resolves the checked-in configuration and approved template,
-   recompiles the recipe, attests the exact setup test, enforces the recipe API
-   and ceiling policy, and creates a Run-scoped resolved harness.
-6. Preparation, HF Job launch, Harbor execution, retries, evidence, and
-   diagnostic publication continue through the existing Run path.
-
-`tb21-gpt-oss-20b-canary` is the first checked-in configuration. It fixes the
-Terminal-Bench 2.1 canary, GPT-OSS 20B route, digest-pinned worker deployment,
-diagnostic single-attempt policy, and a maximum ceiling of 1 USD.
-
-The Run command receives the runtime model credential because the recipe author
-is the intended inference client and bears the Run cost. The setup command does
-not receive that credential. Recipes and literals are still checked for
-credential-like values so secrets are not persisted in the Run lock.
-
-There is no Workbench-specific Run endpoint, worker, reconciler, resource, or
-benchmark/model/harness-name branch.
+The FX starter uses its original Vercel AI Gateway assumptions. It can be
+setup-tested, but it cannot start a Harbor run until its recipe declares the
+direct model route and credential bindings required by Harbor-HF. This prevents
+an inference credential from going to an unintended endpoint.

@@ -5,7 +5,9 @@ import type { RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
 import { runRecordPath, runStatePath } from "@harbor-hf/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  compileAgentWorkbenchRecipe,
   ControlService,
+  fastAgentWorkbenchStarter,
   FilesystemObjectStore,
   type JobObservation,
   type JobsPort,
@@ -122,6 +124,59 @@ describe("run submission", () => {
       ],
     });
     expect(projection.run(result.run.run_id)?.status).toBe("queued");
+  });
+
+  it("submits a Workbench recipe through the same one-Run Harbor contract", async () => {
+    const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+    const workbenchInput = {
+      ...input,
+      harness: { agent: "command-agent", version: preview.revision_id },
+      role: "diagnostic" as const,
+    };
+    const result = await service.submitWorkbench(
+      workbenchInput,
+      preview.harbor_agent,
+      "workbench-key",
+      "test-subject",
+    );
+    expect(result.run.role).toBe("diagnostic");
+    expect(result.run.harbor_job_config).toMatchObject({
+      job_name: "job",
+      jobs_dir: `/data/runs/${result.run.run_id}`,
+      n_attempts: 1,
+      n_concurrent_trials: 1,
+      agents: [
+        {
+          import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
+          model_name: "openai/openai/gpt-oss-20b:together",
+          env: {
+            OPENAI_BASE_URL: "https://router.huggingface.co/v1",
+            OPENAI_API_KEY: "$" + "{HF_INFERENCE_TOKEN}",
+          },
+        },
+      ],
+    });
+    const serialized = JSON.stringify(result.run);
+    expect(serialized).not.toContain("harness_profile");
+    expect(serialized).not.toContain("promotion");
+    expect(serialized).not.toContain("preparation");
+    expect(projection.run(result.run.run_id)?.status).toBe("queued");
+    await expect(
+      service.submitWorkbench(
+        { ...workbenchInput, model: { ...input.model, reasoning_effort: "high" } },
+        preview.harbor_agent,
+        "bad-workbench-reasoning",
+        "test-subject",
+      ),
+    ).rejects.toThrow("reasoning effort off only");
+    await expect(
+      service.submitWorkbench(
+        workbenchInput,
+        { ...preview.harbor_agent, import_path: "other.module:Agent" },
+        "bad-workbench-agent",
+        "test-subject",
+      ),
+    ).rejects.toThrow("reviewed command agent");
   });
 
   it("adopts a repeated request and rejects different input", async () => {

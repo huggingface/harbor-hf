@@ -49,6 +49,13 @@ Pause stops the active parent and labeled child Jobs. Resume starts a new parent
 against the same Harbor folder, so Harbor skips completed trials. Cancellation
 is permanent.
 
+The restored console also includes full run and trial pages, parent Job status,
+raw Harbor result inspection, responsive desktop and mobile navigation, and the
+Agent Workbench configure, test, and run flow. Workbench compiles one generic
+command agent into a normal Harbor run. It does not create profiles, preparation
+Jobs, or a second execution system. See
+[Agent Workbench](docs/agent-workbench.md).
+
 ## Command-line client
 
 Install the Python package with `uv`:
@@ -74,15 +81,30 @@ harbor-hf jobs
 harbor-hf presets
 ```
 
-Control a run:
+Submit and control a reviewed preset run:
 
 ```bash
+harbor-hf run submit \
+  --benchmark terminal-bench-2-1 \
+  --preset one-task-1-trial \
+  --model publisher/model \
+  --provider provider \
+  --agent pi \
+  --agent-version 0.84.4 \
+  --cost-ceiling-usd-per-trial 0.25 \
+  --role diagnostic \
+  --yes
 harbor-hf run pause <run-id>
 harbor-hf run resume <run-id>
 harbor-hf run cancel <run-id> --yes
 ```
 
-The web console is the usual way to submit a preset run. The CLI can submit a
+Workbench recipes can be previewed and setup-tested from the CLI. A passed
+recipe uses the same `run submit` command with `--harness <recipe.json>` and
+`--setup-test <setup-test-id>`. See
+[Agent Workbench](docs/agent-workbench.md) for the complete command list.
+
+The CLI can also submit a
 direct Harbor `JobConfig` for a diagnostic test:
 
 ```bash
@@ -118,6 +140,18 @@ npm ci
 uv sync --all-groups --locked --directory packages/harbor-hf-agents
 ```
 
+Start the restored local console and API:
+
+```bash
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. Local state stays below the ignored
+`.harbor-hf/` directory. Development authentication and filesystem storage are
+enabled only for this command. Workbench setup tests use disposable local
+Docker containers. Normal hosted writes remain disabled. Use `npm run dev:api`
+or `npm run dev:web` when only one process is needed.
+
 Run the local checks:
 
 ```bash
@@ -134,10 +168,8 @@ npm run check:generated
 npm run test:e2e
 ```
 
-The local API uses a filesystem Bucket and development authentication when the
-matching environment values are set. See
-[`docs/CONTROL_SERVICE.md`](docs/CONTROL_SERVICE.md) for deployment settings and
-run storage details.
+See [`docs/CONTROL_SERVICE.md`](docs/CONTROL_SERVICE.md) for deployment settings
+and run storage details.
 
 ## License
 

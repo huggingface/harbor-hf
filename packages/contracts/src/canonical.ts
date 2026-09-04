@@ -20,6 +20,10 @@ export function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+export function deterministicId(prefix: string, ...parts: readonly string[]): string {
+  return `${prefix}-${sha256(parts.join("\u0000")).slice(0, 24)}`;
+}
+
 export function runId(idempotencyKey: string): string {
   if (!idempotencyKey.trim()) throw new Error("idempotency key is required");
   return `run-${sha256(idempotencyKey).slice(0, 24)}`;

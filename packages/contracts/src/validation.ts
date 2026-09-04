@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import type {
   AgentPresetV1,
+  AgentWorkbenchRecipeV1,
   AttemptCostV1,
   BenchmarkPresetV1,
   HarborJobConfigV1,
@@ -19,6 +20,7 @@ function load(name: string): object {
 
 export const schemas = {
   agentPreset: load("agent-preset-v1.schema.json"),
+  agentWorkbenchRecipe: load("agent-workbench-v1.schema.json"),
   attemptCost: load("attempt-cost-v1.schema.json"),
   benchmarkPreset: load("benchmark-preset-v1.schema.json"),
   harborJobConfig: load("harbor-job-config-v1.schema.json"),
@@ -66,6 +68,7 @@ const ajv = configuredAjv();
 const strictAjv = configuredAjv();
 const validators = {
   agentPreset: ajv.compile(schemas.agentPreset),
+  agentWorkbenchRecipe: ajv.compile(schemas.agentWorkbenchRecipe),
   attemptCost: ajv.compile(schemas.attemptCost),
   benchmarkPreset: ajv.compile(schemas.benchmarkPreset),
   harborJobConfig: ajv.compile(schemas.harborJobConfig),
@@ -94,6 +97,9 @@ function validate<T>(validator: ValidateFunction, value: unknown, label: string)
 
 export const validateAgentPreset = (value: unknown): AgentPresetV1 =>
   validate(validators.agentPreset, value, "agent preset");
+export const validateAgentWorkbenchRecipe = <T extends AgentWorkbenchRecipeV1>(
+  value: unknown,
+): T => validate(validators.agentWorkbenchRecipe, value, "agent workbench recipe") as T;
 export const validateAttemptCost = (value: unknown): AttemptCostV1 =>
   validate(validators.attemptCost, value, "attempt cost receipt");
 export const validateBenchmarkPreset = (value: unknown): BenchmarkPresetV1 =>

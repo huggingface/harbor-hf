@@ -45,6 +45,8 @@ const schema = z.object({
     .max(3_600_000)
     .default(60_000),
   HARBOR_HF_SOURCE_REVISION: z.string().min(7).max(160).default("development"),
+  HARBOR_HF_WORKBENCH_RUNNER: z.enum(["disabled", "docker", "hf-jobs"]).optional(),
+  HARBOR_HF_WORKBENCH_IMAGE: z.string().min(1).max(1024).optional(),
   HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS: z.string().default(""),
 });
 
@@ -81,6 +83,8 @@ export interface AppConfig {
   reconcile_interval_ms: number;
   parent_restart_delay_ms: number;
   source_revision: string;
+  workbench_runner: "disabled" | "docker" | "hf-jobs";
+  workbench_image: string;
   bootstrap_operator_subjects: string[];
 }
 
@@ -119,6 +123,19 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     parsed.HF_TOKEN === parsed.HF_INFERENCE_TOKEN
   )
     throw new Error("control and inference credentials must be distinct");
+  const workbenchRunner =
+    parsed.HARBOR_HF_WORKBENCH_RUNNER ??
+    (parsed.NODE_ENV === "development" ? "docker" : "disabled");
+  const workbenchImage =
+    parsed.HARBOR_HF_WORKBENCH_IMAGE ??
+    parsed.HARBOR_HF_PARENT_IMAGE ??
+    "python:3.12-slim";
+  if (
+    parsed.NODE_ENV === "production" &&
+    workbenchRunner === "hf-jobs" &&
+    !/@sha256:[0-9a-f]{64}$/.test(workbenchImage)
+  )
+    throw new Error("hosted Workbench image must use an immutable digest");
   const publicOrigin = normalizePublicOrigin(
     parsed.HARBOR_HF_PUBLIC_ORIGIN ??
       (parsed.SPACE_HOST
@@ -166,6 +183,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     reconcile_interval_ms: parsed.HARBOR_HF_RECONCILE_INTERVAL_MS,
     parent_restart_delay_ms: parsed.HARBOR_HF_PARENT_RESTART_DELAY_MS,
     source_revision: parsed.HARBOR_HF_SOURCE_REVISION,
+    workbench_runner: workbenchRunner,
+    workbench_image: workbenchImage,
     bootstrap_operator_subjects: parsed.HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS.split(",")
       .map((item) => item.trim())
       .filter(Boolean),
