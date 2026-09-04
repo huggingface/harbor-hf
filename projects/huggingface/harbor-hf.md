@@ -103,6 +103,46 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### UI cutover with preserved historical evidence (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T18:06:12Z
+
+- The user directly instructed proceeding with the approved UI deployment now,
+  explicitly accepting that historical Runs remain archived and hidden from the
+  new projection. This clarifies the UI-feedback deployment scope below; it does
+  not require another archive decision. Preserve every historical immutable
+  object, paused state, failed-Run evidence, receipt, and budget reservation.
+  Archive means exclusion from the new projection only: no deletion, migration,
+  cancellation, settlement, repair, retry, or replacement Run identity.
+- Commit this additive approval before mutation, privacy-check and normally push
+  only the existing feature branch, then rebuild and plan the exact clean new
+  source revision. Reverify complete old-source provenance, ownership, receipts,
+  credentials by names only, resource settings, inventory and historical activity
+  using the historical projection. Stop on fresh active Jobs, pending actions,
+  or a concrete ownership, integrity, or source mismatch, not merely preserved
+  unresolved paused history.
+- Safely pause the old service, set only its write-mode variable to disabled,
+  and verify it remains paused before the target upload. Preserve old source
+  bindings until the supported configure transition. Use the reviewed local
+  CLI version and existing canonical installer state. Permit one supported
+  configure attempt with stdin closed, no credential inputs or replacement,
+  and no application bearer. Allow only expected additive startup configuration
+  metadata after inspecting that it cannot overwrite historical objects.
+- Keep writes disabled pending supported authenticated health/source checks;
+  no browser or activation is authorized in this operation. On unclassified
+  restart failure, verify uploaded source and preservation, leave disabled and
+  paused, and request one manual restart. Do not retry or re-upload blindly.
+- The user also requested two-trial inference E2E, but it is not admitted and
+  authorizes no new execution spend while the deterministic shared defect,
+  unsupported runner, credential/billing boundary, and exact current cost and
+  cumulative-budget gates remain unresolved. No broad paid approval is recorded.
+  This deployment is independent UI authoring cutover, not execution recovery.
+- No behavior repair, Jobs, inference, Run actions, new resources, credential
+  movement or scopes, reset, result publication, default-branch push, or PR merge.
+  Neither persistent secret is retrieved or forwarded; local management OAuth
+  remains local to provider APIs. Retain all earlier disclosed check limitations.
+
 ### Execution-disabled UI-feedback deployment (2026-09-04)
 
 Status: approved
@@ -1014,3 +1054,11 @@ All pre-integration authorization records above are retained as well.
   deletion of older authorization records. Restored the complete pre-integration
   record and retained incoming historical wording above without rewriting Git
   history. This changes no runtime behavior and grants no operational authority.
+
+### 2026-09-04 historical archive UI-cutover clarification
+
+- Directly approved proceeding with the UI-only deployment despite historical
+  Runs becoming invisible in the new projection, with all evidence, paused
+  states and accounting preserved. The requested inference E2E remains blocked
+  and unadmitted; no execution spending or recovery is authorized by this step.
+  Apply the bounded configure and fail-closed restart limits above.
