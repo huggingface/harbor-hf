@@ -1,4 +1,4 @@
-import type { AgentWorkbenchRecipeV1 } from "@harbor-hf/contracts";
+import type { AgentWorkbenchRecipeV1, BenchmarkPresetV1 } from "@harbor-hf/contracts";
 
 export interface Actor {
   username: string;
@@ -10,17 +10,7 @@ export type SessionResponse =
   | { authenticated: false; login_url: string }
   | { authenticated: true; actor: Actor };
 
-export interface BenchmarkPreset {
-  schema_version: "v1";
-  benchmark: string;
-  preset: string;
-  leaderboard_eligible: boolean;
-  job: {
-    n_attempts: number;
-    n_concurrent_trials: number;
-    environment_flavor: "cpu-basic" | "cpu-upgrade";
-  };
-}
+export type BenchmarkPreset = BenchmarkPresetV1;
 
 export interface AgentPreset {
   schema_version: "v1";

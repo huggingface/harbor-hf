@@ -23,9 +23,13 @@ const presets = {
       preset: "one-task-1-trial",
       leaderboard_eligible: true,
       job: {
+        datasets: [{ repo: "https://example.test/tasks.git@revision", path: "tasks" }],
         n_attempts: 1,
         n_concurrent_trials: 1,
-        environment_flavor: "cpu-upgrade",
+        environment: {
+          type: "hf-sandbox",
+          kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
+        },
       },
     },
   ],

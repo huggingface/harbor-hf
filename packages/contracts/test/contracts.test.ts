@@ -76,20 +76,30 @@ describe("contracts", () => {
   });
 
   it("validates reviewed presets", () => {
-    expect(
-      validateBenchmarkPreset({
-        schema_version: "v1",
-        benchmark: "terminal-bench-2-1",
-        preset: "one-task-1-trial",
-        leaderboard_eligible: false,
-        job: {
-          datasets: [{ repo: "https://example.test/repo.git@revision", path: "tasks" }],
-          n_attempts: 1,
-          n_concurrent_trials: 1,
-          environment_flavor: "cpu-upgrade",
+    const preset = {
+      schema_version: "v1",
+      benchmark: "terminal-bench-2-1",
+      preset: "one-task-1-trial",
+      leaderboard_eligible: false,
+      job: {
+        datasets: [{ repo: "https://example.test/repo.git@revision", path: "tasks" }],
+        n_attempts: 1,
+        n_concurrent_trials: 1,
+        environment: {
+          type: "hf-sandbox",
+          kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
         },
+      },
+    } as const;
+    expect(validateBenchmarkPreset(preset)).toMatchObject({
+      job: { environment: preset.job.environment },
+    });
+    expect(() =>
+      validateBenchmarkPreset({
+        ...preset,
+        job: { ...preset.job, environment_flavor: "cpu-upgrade" },
       }),
-    ).toMatchObject({ preset: "one-task-1-trial" });
+    ).toThrow(ContractValidationError);
     expect(
       validateAgentPreset({
         schema_version: "v1",

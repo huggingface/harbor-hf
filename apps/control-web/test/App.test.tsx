@@ -118,9 +118,13 @@ const presets: PresetsResponse = {
       preset: "one-task-1-trial",
       leaderboard_eligible: true,
       job: {
+        datasets: [{ repo: "https://example.test/tasks.git@revision", path: "tasks" }],
         n_attempts: 1,
         n_concurrent_trials: 1,
-        environment_flavor: "cpu-upgrade",
+        environment: {
+          type: "hf-sandbox",
+          kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
+        },
       },
     },
   ],
@@ -292,7 +296,10 @@ describe("restored control console", () => {
     const model = await screen.findByLabelText("Model");
     expect(
       screen.getByRole("combobox", { name: /^Benchmark preset/ }),
-    ).toHaveTextContent("terminal-bench-2-1 · one-task-1-trial · cpu-upgrade");
+    ).toHaveTextContent("terminal-bench-2-1 · one-task-1-trial");
+    expect(
+      screen.getByText("Hardware: CPU Upgrade · 1 attempt · 1 concurrent trial"),
+    ).toBeVisible();
 
     await user.type(model, "publisher/new-model");
     await user.type(screen.getByLabelText("Provider"), "provider");

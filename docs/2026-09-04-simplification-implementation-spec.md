@@ -204,12 +204,14 @@ presets/
 ```
 
 A benchmark preset contains `schema_version`, `benchmark`, `preset`,
-`leaderboard_eligible` and `job`. `job` contains `datasets`, `n_attempts`,
-`n_concurrent_trials` and a reviewed `environment_flavor`. It can also contain
-timeout multipliers, `retry` and `artifacts`. The flavor is limited to
-`cpu-basic` or `cpu-upgrade`; it cannot select paid accelerator hardware. A
-preset cannot set paths, agents, credentials, user agents, custom environments
-or source jobs.
+`leaderboard_eligible` and `job`. The `job` object is a reviewed Harbor
+`JobConfig` fragment. It contains `datasets`, `n_attempts`,
+`n_concurrent_trials` and the native `environment` object. The environment type
+is `hf-sandbox`. Its native `kwargs.flavor` value is limited to `cpu-basic` or
+`cpu-upgrade`, so a preset cannot select paid accelerator hardware. The
+environment also keeps the reviewed native `kwargs.job_timeout` value. The job
+can contain timeout multipliers, `retry` and `artifacts`. It cannot set paths,
+agents, credentials, user agents, custom environments or source jobs.
 
 An agent preset contains `schema_version`, `agent`, `version`, `harbor_agent`,
 `reasoning_option` and `reasoning_values`. `harbor_agent` selects `name` or
