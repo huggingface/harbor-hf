@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const workbenchDraftKey = "harbor-hf.workbench.draft.v1";
+
 // Validate structure, not compiler rules: incomplete edits must survive reload too.
 const draftSchema = z.object({
   recipe: z.object({
@@ -35,10 +36,15 @@ const draftSchema = z.object({
       trajectory_path: z.string().nullable(),
     }),
   }),
-  selectedBenchmarkConfig: z.string(),
-  hostedCeiling: z.number().nonnegative(),
+  benchmarkKey: z.string(),
+  model: z.string(),
+  provider: z.string(),
+  ceiling: z.string(),
+  role: z.enum(["final", "diagnostic"]),
 });
+
 export type WorkbenchDraft = z.infer<typeof draftSchema>;
+
 export function loadWorkbenchDraft(): WorkbenchDraft | null {
   try {
     const parsed = draftSchema.safeParse(
@@ -49,6 +55,7 @@ export function loadWorkbenchDraft(): WorkbenchDraft | null {
     return null;
   }
 }
+
 export function saveWorkbenchDraft(draft: WorkbenchDraft): boolean {
   try {
     window.localStorage.setItem(workbenchDraftKey, JSON.stringify(draft));

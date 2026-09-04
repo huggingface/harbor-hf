@@ -38,6 +38,25 @@ def test_mutation_testing_paths_are_absent() -> None:
         assert "check_mutation.py" not in workflow.read_text()
 
 
+def test_superseded_profile_and_worker_paths_are_absent() -> None:
+    root = WORKFLOWS.parents[1]
+    obsolete_paths = (
+        "profiles",
+        "deploy/trial-worker",
+        "apps/control-api/src/api-schemas.ts",
+        "apps/control-api/src/local-harbor.ts",
+        "apps/control-web/src/hints.ts",
+        "apps/control-web/src/launch.ts",
+        "packages/control-core/src/execution-contract.ts",
+        "packages/control-core/src/run-configs.ts",
+        "packages/harbor-hf-agents/src/harbor_hf_agents/support/direct_inference.py",
+        "src/harbor_hf/harbor_adapter",
+    )
+
+    for relative in obsolete_paths:
+        assert not (root / relative).exists(), f"obsolete path returned: {relative}"
+
+
 def test_package_publication_has_no_mutation_preflight() -> None:
     workflow = _workflow("publish.yml")
     jobs = _record(workflow["jobs"])

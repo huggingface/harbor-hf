@@ -2,6 +2,8 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const apiOrigin = `http://127.0.0.1:${process.env.HARBOR_HF_DEV_API_PORT ?? "7861"}`;
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
@@ -20,9 +22,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api": "http://127.0.0.1:7860",
-      "/auth": "http://127.0.0.1:7860",
-      "/health": "http://127.0.0.1:7860",
+      "/api": apiOrigin,
+      "/auth": apiOrigin,
+      "/health": apiOrigin,
     },
   },
 });

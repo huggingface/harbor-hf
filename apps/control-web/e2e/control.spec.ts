@@ -135,6 +135,8 @@ const leaderboard = {
 interface MockOptions {
   authenticated?: boolean;
   setupStatus?: "running" | "passed" | "failed";
+  runStatus?: "queued" | "running" | "paused";
+  runPostError?: boolean;
   onRunPost?(payload: unknown): void;
   onAction?(action: string): void;
 }
@@ -149,6 +151,7 @@ function json(route: Route, value: unknown, status = 200) {
 
 async function mockControl(page: Page, options: MockOptions = {}) {
   const authenticated = options.authenticated ?? true;
+  const currentRun = { ...run, status: options.runStatus ?? run.status };
   let setupStatus = options.setupStatus ?? "passed";
   await page.route("**/auth/login**", (route) =>
     route.fulfill({ status: 200, contentType: "text/plain", body: "sign in" }),
@@ -177,12 +180,18 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     if (path === "/api/v1/presets") return json(route, presets);
     if (path === "/api/v1/jobs") return json(route, { jobs: [job] });
     if (path === "/api/v1/runs" && method === "GET")
-      return json(route, { runs: [run] });
+      return json(route, { runs: [currentRun] });
     if (path === "/api/v1/runs" && method === "POST") {
       options.onRunPost?.(request.postDataJSON());
+      if (options.runPostError)
+        return json(
+          route,
+          { error: { code: "submission_rejected", message: "submission rejected" } },
+          500,
+        );
       return json(route, { created: true, run: record }, 201);
     }
-    if (path === `/api/v1/runs/${runId}`) return json(route, run);
+    if (path === `/api/v1/runs/${runId}`) return json(route, currentRun);
     if (path === `/api/v1/runs/${runId}/trials`)
       return json(route, { trials: [trialSummary] });
     if (path === `/api/v1/runs/${runId}/trials/${trialName}`) return json(route, trial);
@@ -195,9 +204,11 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     }
     if (path === "/api/v1/workbench/preview" && method === "POST") {
       const recipe = request.postDataJSON();
+      const recipeDigest =
+        recipe.name === "fast-agent" ? "a".repeat(64) : "b".repeat(64);
       return json(route, {
         recipe,
-        recipe_digest: "a".repeat(64),
+        recipe_digest: recipeDigest,
         revision_id: "agent-recipe-0123456789abcdef01234567",
         setup_command: recipe.setup_command,
         run_command: recipe.run_command,
@@ -275,7 +286,7 @@ test("shows the public leaderboard and starts sign-in from a private route", asy
   await mockControl(page, { authenticated: false });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Leaderboard" })).toBeVisible();
-  await expect(page.getByText("publisher/model")).toBeVisible();
+  await expect(page.getByText("publisher/model", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute(
     "href",
     "/auth/login?return_to=%2F",
@@ -331,18 +342,35 @@ test("validates and submits the overview form without losing selected values", a
   await expect(page.getByLabel("Model")).toHaveValue("publisher/new-model");
 });
 
+test("retains overview values after a failed submission", async ({ page }) => {
+  await mockControl(page, { runPostError: true });
+  await page.goto("/overview");
+  await page.getByLabel("Model").fill("publisher/retry-model");
+  await page.getByLabel("Provider").fill("retry-provider");
+  await page.getByLabel("Cost limit per trial").fill("0.75");
+  await page.getByLabel("Result role").selectOption("final");
+  await page.getByRole("button", { name: "Submit run" }).click();
+  await expect(page.getByRole("alert")).toContainText("submission rejected");
+  await expect(page.getByLabel("Model")).toHaveValue("publisher/retry-model");
+  await expect(page.getByLabel("Provider")).toHaveValue("retry-provider");
+  await expect(page.getByLabel("Cost limit per trial")).toHaveValue("0.75");
+  await expect(page.getByLabel("Result role")).toHaveValue("final");
+});
+
 test("navigates from runs to complete run and trial evidence", async ({ page }) => {
   await mockControl(page);
   await page.goto("/runs");
   await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
-  await page.getByRole("link", { name: runId }).click();
+  await page.locator(`a[href="/runs/${runId}"]`).click();
   await expect(page.getByRole("heading", { name: "Run detail" })).toBeVisible();
   await expect(page.getByText("Harbor totals")).toBeVisible();
   await expect(page.getByText("job-parent-one")).toBeVisible();
   await page.getByRole("link", { name: trialName }).click();
   await expect(page.getByRole("heading", { name: "Trial detail" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Verifier result" })).toBeVisible();
-  await expect(page.getByText("assistant completed the task")).toBeVisible();
+  await expect(
+    page.getByText("assistant completed the task", { exact: true }),
+  ).toBeVisible();
 });
 
 test("targets pause and cancel at the open run", async ({ page }) => {
@@ -353,6 +381,17 @@ test("targets pause and cancel at the open run", async ({ page }) => {
   await expect.poll(() => actions).toContain("pause");
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect.poll(() => actions).toContain("cancel");
+});
+
+test("resumes the open paused run", async ({ page }) => {
+  const actions: string[] = [];
+  await mockControl(page, {
+    runStatus: "paused",
+    onAction: (action) => actions.push(action),
+  });
+  await page.goto(`/runs/${runId}`);
+  await page.getByRole("button", { name: "Resume" }).click();
+  await expect.poll(() => actions).toContain("resume");
 });
 
 test("shows parent Jobs with links to their runs", async ({ page }) => {
@@ -398,6 +437,27 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
     },
     workbench: { setup_test_id: setupId },
   });
+});
+
+test("invalidates Workbench launch approval after a recipe edit", async ({ page }) => {
+  await mockControl(page);
+  await page.goto("/workbench");
+  await page
+    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
+    .check();
+  await page.getByRole("button", { name: "Run setup test" }).click();
+  await expect(page.getByText("Setup passed")).toBeVisible();
+  await page.getByLabel("Model").last().fill("publisher/workbench-model");
+  await page.getByLabel("Provider").last().fill("provider");
+  await page
+    .getByLabel(
+      "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+    )
+    .check();
+  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeEnabled();
+
+  await page.getByLabel("Recipe name").fill("edited-agent");
+  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
 });
 
 test("shows Workbench setup failure without enabling Run launch", async ({ page }) => {

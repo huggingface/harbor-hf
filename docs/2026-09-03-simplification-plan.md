@@ -491,8 +491,10 @@ panel updates. Shrinking the installer.
 
 ## Related documents
 
-This plan supersedes the design in [architecture](architecture.md) and the [run
-specification](run-spec.md). It also supersedes the [reusable harness profiles
+The [current architecture](architecture.md) now reflects this cutover. The
+former run specification is classified in the
+[interface restoration audit](2026-09-04-interface-restoration-audit.md). This plan also
+supersedes the [reusable harness profiles
 plan](2026-08-28-reusable-harness-profiles-plan.md). The [control service
 specification](CONTROL_SERVICE.md) remains the reference for the Space runtime,
 authentication, the Bucket store, and the projection until the cutover updates

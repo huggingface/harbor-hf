@@ -29,6 +29,7 @@ import { PageHeader } from "./layout";
 import { cn, formatDate, formatMoneyUsd } from "./lib";
 import { usePresets, useSystem } from "./queries";
 import { Badge, Button, Card, ErrorNotice, Loading } from "./ui";
+import { loadWorkbenchDraft, saveWorkbenchDraft } from "./workbench-draft";
 
 const sources = [
   "literal",
@@ -265,7 +266,11 @@ export function WorkbenchPage() {
   const { actor, writesAllowed } = useControlState();
   const system = useSystem();
   const presets = usePresets();
-  const [recipe, setRecipe] = useState<WorkbenchRecipe>(copyStarter);
+  const [draft] = useState(loadWorkbenchDraft);
+  const [recipe, setRecipe] = useState<WorkbenchRecipe>(
+    () => draft?.recipe ?? copyStarter(),
+  );
+  const [draftSaved, setDraftSaved] = useState(true);
   const [preview, setPreview] = useState<WorkbenchPreview | null>(null);
   const [previewError, setPreviewError] = useState<unknown>(null);
   const [checking, setChecking] = useState(false);
@@ -281,17 +286,23 @@ export function WorkbenchPage() {
     truncated: boolean;
   } | null>(null);
   const [fileError, setFileError] = useState<unknown>(null);
-  const [benchmarkKey, setBenchmarkKey] = useState("");
-  const [model, setModel] = useState("");
-  const [provider, setProvider] = useState("");
-  const [ceiling, setCeiling] = useState("1");
-  const [role, setRole] = useState<"final" | "diagnostic">("diagnostic");
+  const [benchmarkKey, setBenchmarkKey] = useState(draft?.benchmarkKey ?? "");
+  const [model, setModel] = useState(draft?.model ?? "");
+  const [provider, setProvider] = useState(draft?.provider ?? "");
+  const [ceiling, setCeiling] = useState(draft?.ceiling ?? "1");
+  const [role, setRole] = useState<"final" | "diagnostic">(draft?.role ?? "diagnostic");
   const [launchConfirmed, setLaunchConfirmed] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState<unknown>(null);
   const previewSequence = useRef(0);
   const activeSetupRef = useRef<HTMLDivElement | null>(null);
   const liveOutputRef = useRef<HTMLPreElement | null>(null);
+
+  useEffect(() => {
+    setDraftSaved(
+      saveWorkbenchDraft({ recipe, benchmarkKey, model, provider, ceiling, role }),
+    );
+  }, [recipe, benchmarkKey, model, provider, ceiling, role]);
 
   useEffect(() => {
     void listWorkbenchSetups()
@@ -481,6 +492,11 @@ export function WorkbenchPage() {
         description="Author and setup-test a generic command-line Harbor agent, then launch the exact tested recipe through one normal Run."
       />
       <WorkbenchFlow />
+      <p className="mb-4 text-sm text-slate-400" role="status">
+        {draftSaved
+          ? "Draft saved in this browser. Do not enter secrets in commands or literal values. Reload requires fresh setup and launch confirmation."
+          : "Draft could not be saved in this browser. Copy your edits before reloading."}
+      </p>
       <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.2fr)_minmax(24rem,0.8fr)]">
         <div className="space-y-6">
           <Card>

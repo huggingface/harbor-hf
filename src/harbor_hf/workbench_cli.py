@@ -185,7 +185,7 @@ def _setup_collection(value: object, fail: Fail) -> list[object]:
     return cast(list[object], record["setups"])
 
 
-def register_workbench_commands(  # noqa: C901
+def register_workbench_commands(  # noqa: C901 -- Keep related Typer commands in one registrar.
     root: typer.Typer,
     *,
     request: Request,

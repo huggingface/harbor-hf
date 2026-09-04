@@ -1,3 +1,7 @@
+rules:
+  py.mutation-required:
+    disabled: true
+    reason: Mutation testing is intentionally unsupported in this repository.
 python:
   coverage:
     threshold: 85

@@ -21,8 +21,8 @@ provider segment `openai/`. The root bridge expects the same route after that
 first segment is removed. The provider suffix stays in both forms.
 
 The [control service specification](CONTROL_SERVICE.md#inference-model-route-binding)
-defines this binding. The [provider agent architecture](provider-agent-architecture.md)
-defines the wider custom-agent and bridge boundary.
+defines this historical binding. The [current architecture](architecture.md)
+defines the Harbor-owned model route boundary after the simplification.
 
 ## Scope
 

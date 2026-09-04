@@ -10,7 +10,7 @@ import httpx
 import typer
 import yaml
 
-from .workbench_cli import (
+from harbor_hf.workbench_cli import (
     TransientControlError,
     read_workbench_recipe,
     register_workbench_commands,
@@ -136,7 +136,7 @@ def submit(
 
 
 @run_app.command("submit")
-def run_submit(  # noqa: C901
+def run_submit(  # noqa: C901 -- Keep one Typer command as one validation boundary.
     benchmark: Annotated[str, typer.Option("--benchmark")],
     preset: Annotated[str, typer.Option("--preset")],
     model: Annotated[str, typer.Option("--model")],

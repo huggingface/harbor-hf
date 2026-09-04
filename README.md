@@ -169,7 +169,9 @@ npm run test:e2e
 ```
 
 See [`docs/CONTROL_SERVICE.md`](docs/CONTROL_SERVICE.md) for deployment settings
-and run storage details.
+and run storage details. The
+[interface restoration audit](docs/2026-09-04-interface-restoration-audit.md) records which
+historical surfaces were retained, adapted, or removed.
 
 ## License
 

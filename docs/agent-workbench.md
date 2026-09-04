@@ -23,6 +23,11 @@ The page has three stages:
 3. **Run:** Select a reviewed benchmark, model route, cost limit, and result
    role. Submit the exact tested recipe through `POST /api/v1/runs`.
 
+The browser saves incomplete recipe and run-form edits in local storage. It does
+not save setup approval, setup state, or launch confirmation. Reloading the page
+therefore keeps the draft but requires a fresh confirmation. Recipe commands and
+literal values must not contain secrets.
+
 A setup pass is temporary evidence. It does not create or approve a profile. It
 does not start a benchmark. The pass is valid for one hour, for the same actor,
 recipe digest, and compiler revision. A service restart makes a recovered setup

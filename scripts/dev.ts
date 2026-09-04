@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 
 if (process.env.NODE_ENV && process.env.NODE_ENV !== "development")
   throw new Error("npm run dev refuses a non-development NODE_ENV");
@@ -8,19 +9,42 @@ if (
 )
   throw new Error("npm run dev refuses OAuth authentication");
 
+async function freeApiPort(): Promise<string> {
+  return await new Promise((resolvePromise, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("could not allocate a local API port"));
+        return;
+      }
+      const port = String(address.port);
+      server.close((error) => {
+        if (error) reject(error);
+        else resolvePromise(port);
+      });
+    });
+  });
+}
+
+const apiPort = process.env.HARBOR_HF_DEV_API_PORT ?? (await freeApiPort());
+const environment = { ...process.env, HARBOR_HF_DEV_API_PORT: apiPort };
 const commands = [
   ["API", "npm", ["run", "dev:api"]],
   ["web", "npm", ["run", "dev:web"]],
 ] as const;
 
 console.error("Harbor-HF development console: http://127.0.0.1:5173");
+console.error(`Development API: http://127.0.0.1:${apiPort}`);
 console.error("Local state: .harbor-hf/ (ignored by Git)");
 
 const children = commands.map(([label, command, args]) => ({
   label,
   child: spawn(command, args, {
     stdio: "inherit",
-    env: process.env,
+    env: environment,
     detached: true,
   }),
 }));

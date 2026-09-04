@@ -16,7 +16,7 @@
     "deploy:space": "tsx scripts/control-service/deploy-space.ts",
     "check:generated": "npm run generate && git diff --exit-code -- docs/control-api-v1.openapi.json apps/control-web/src/generated/api.ts packages/contracts/src/generated",
     "dev": "npm run generate && tsx scripts/dev.ts",
-    "dev:api": "mkdir -p .harbor-hf/store && NODE_ENV=development HARBOR_HF_NAMESPACE=${HARBOR_HF_NAMESPACE:-local} HARBOR_HF_BUCKET_ID=local/artifacts HARBOR_HF_BUCKET_ROOT=.harbor-hf/store HARBOR_HF_PROJECTION_PATH=.harbor-hf/projection.sqlite HARBOR_HF_AUTH_PATH=.harbor-hf/auth.sqlite HARBOR_HF_AUTH_MODE=development HARBOR_HF_WRITE_MODE=disabled HARBOR_HF_WORKBENCH_RUNNER=${HARBOR_HF_WORKBENCH_RUNNER:-docker} HARBOR_HF_PUBLIC_ORIGIN=${HARBOR_HF_PUBLIC_ORIGIN:-http://127.0.0.1:5173} tsx watch apps/control-api/src/main.ts",
+    "dev:api": "mkdir -p .harbor-hf/store && NODE_ENV=development HARBOR_HF_NAMESPACE=${HARBOR_HF_NAMESPACE:-local} HARBOR_HF_BUCKET_ID=local/artifacts HARBOR_HF_BUCKET_ROOT=.harbor-hf/store HARBOR_HF_STORE_MODE=filesystem PORT=${HARBOR_HF_DEV_API_PORT:-7861} HARBOR_HF_PROJECTION_PATH=.harbor-hf/projection.sqlite HARBOR_HF_AUTH_PATH=.harbor-hf/auth.sqlite HARBOR_HF_AUTH_MODE=development HARBOR_HF_WRITE_MODE=disabled HARBOR_HF_WORKBENCH_RUNNER=${HARBOR_HF_WORKBENCH_RUNNER:-docker} HARBOR_HF_PUBLIC_ORIGIN=${HARBOR_HF_PUBLIC_ORIGIN:-http://127.0.0.1:5173} tsx apps/control-api/src/main.ts",
     "dev:web": "npm run dev -w @harbor-hf/control-web",
     "format": "biome format --write .",
     "format:check": "biome format .",

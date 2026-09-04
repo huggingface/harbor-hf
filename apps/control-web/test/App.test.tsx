@@ -204,6 +204,7 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   apiMocks.getSession.mockResolvedValue({
     authenticated: true,
     actor: { username: "test-operator", role: "operator", transport: "development" },
@@ -368,6 +369,28 @@ describe("restored control console", () => {
       },
       workbench: { setup_test_id: setup.setup_test_id },
     });
+  });
+
+  it("restores a Workbench draft without restoring approval state", async () => {
+    const user = userEvent.setup();
+    const view = renderAt("/workbench");
+    const name = await screen.findByLabelText("Recipe name");
+    await user.clear(name);
+    await user.type(name, "recovered-draft");
+    view.unmount();
+
+    renderAt("/workbench");
+    expect(await screen.findByLabelText("Recipe name")).toHaveValue("recovered-draft");
+    expect(
+      screen.getByLabelText(
+        "Start one disposable CPU setup test for this exact recipe.",
+      ),
+    ).not.toBeChecked();
+    expect(
+      screen.getByLabelText(
+        "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+      ),
+    ).not.toBeChecked();
   });
 
   it("keeps unknown authenticated routes inside the restored shell", async () => {

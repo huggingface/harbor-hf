@@ -22,10 +22,11 @@ agent configurations after model-only values were removed. The active catalog
 now keeps one profile for each real agent configuration and builds the full run
 configuration before Harbor-HF admits paid work.
 
-The [control service specification](CONTROL_SERVICE.md#profile-ownership-and-run-composition)
-defines the durable contract. The [provider agent architecture](provider-agent-architecture.md#run-native-execution-contract)
-defines the agent boundary. The [Harbor compatibility contract](harbor-integration-contract.md#execution-input)
-defines how preparation uses the locked configuration.
+The [control service specification](CONTROL_SERVICE.md) defines the current
+durable contract. The [current architecture](architecture.md) defines the
+Harbor-owned agent boundary. The
+[historical Harbor compatibility contract](harbor-integration-contract.md)
+records the superseded preparation design.
 
 ## Ownership
 
