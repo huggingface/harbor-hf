@@ -126,6 +126,22 @@ Approved at: 2026-09-04T08:35:55Z
   identifiers out of tracked files. Local authorization and implementation
   commits are permitted; public publication requires its own scope review.
 
+### Credential-minimization follow-up (2026-09-04)
+
+Approved at: 2026-09-04T09:04:31Z
+
+- Verify public Hugging Face documentation for OAuth access to personal Buckets,
+  permission granularity, token lifetime, and user submission to the shared
+  leaderboard. Report unsupported or unverified provider capabilities honestly.
+- Remove the installer's unconditional Endpoint-management permission requirement
+  for the Jobs-based installation. Preserve required Job and canonical-Bucket
+  permissions and existing credential boundaries; test the narrower acceptance.
+- Local implementation and authorization commits are permitted. Do not deploy,
+  transfer or replace credentials, revoke permissions, create resources, launch
+  paid work, or publish results as part of this follow-up.
+- Personal-Bucket delegation and a new leaderboard submission workflow remain
+  design work, not approval to implement new storage or publication authority.
+
 ### Scope
 
 - Diagnose the failed post-reset installation using sanitized read-only
@@ -580,3 +596,9 @@ authorization effect.
 - Approved the narrow saved-configuration Workbench milestone described above.
   The user preferred task size guidance over promises of exact cost enforcement.
   This does not authorize unbounded execution or removal of existing safeguards.
+
+### 2026-09-04 credential-minimization follow-up
+
+- Approved public-documentation verification and removal of the unnecessary
+  installer Endpoint permission requirement. The user emphasized easy submission
+  of results to the admin leaderboard. No credential change is authorized.
