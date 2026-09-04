@@ -103,6 +103,29 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Workbench saved-configuration milestone (2026-09-04)
+
+Approved at: 2026-09-04T08:35:55Z
+
+- Implement and test a canonical-Bucket benchmark catalog and named durable
+  Workbench configuration Save/Load for the existing fast-agent and FX paths.
+  Keep the existing execution mechanism; do not perform the proposed runtime
+  cutover or add a second control authority.
+- Simplify the configure, save, select benchmark, confirm, run, and saved-result
+  flow. Treat small/medium/large benchmark sizing as guidance rather than a
+  guaranteed monetary bound. Preserve existing execution safeguards.
+- Deploy the reviewed change to the user-selected existing test control Space
+  only after confirming canonical ownership and resource identity. Verify one
+  small diagnostic smoke run; do not expand this approval into full benchmark
+  cohorts, endpoint work, billing changes, or recurring resources.
+- The user approved proceeding and expressed tolerance for benchmark spending,
+  without specifying a replacement numeric ceiling. Retain the existing
+  diagnostic configuration ceiling for this milestone; ask before increasing it.
+- No new resource, credential transfer, public result publication, upstream
+  Harbor mutation, merge, or default-branch push is authorized. Keep private
+  identifiers out of tracked files. Local authorization and implementation
+  commits are permitted; public publication requires its own scope review.
+
 ### Scope
 
 - Diagnose the failed post-reset installation using sanitized read-only
@@ -551,3 +574,9 @@ authorization effect.
 ### 2026-09-02
 
 - At 2026-09-02T07:03:36Z, approved one immutable successor worker-repair attachment for each of the seven existing continuation repairs after the first repair-aware worker exposed a cross-language continuation-digest defect. Each successor binds to the original continuation and prior repair digests and may change only the worker image digest and source revision. Existing records, Run IDs, ceilings, prepared inputs, settings, evidence, and selected outcomes remain unchanged. The same unresolved OpenHands task must prove the corrected image before other historical work is admitted.
+
+### 2026-09-04
+
+- Approved the narrow saved-configuration Workbench milestone described above.
+  The user preferred task size guidance over promises of exact cost enforcement.
+  This does not authorize unbounded execution or removal of existing safeguards.
