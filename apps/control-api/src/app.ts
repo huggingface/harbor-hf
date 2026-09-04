@@ -20,6 +20,13 @@ import type { Runtime } from "./runtime.js";
 
 export const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
 
+const providerSchema = z
+  .string()
+  .regex(
+    /^[a-z0-9][a-z0-9-]{0,62}$/,
+    "provider must use lowercase letters, numbers, and hyphens",
+  );
+
 const submissionSchema = z
   .object({
     benchmark: z
@@ -28,7 +35,7 @@ const submissionSchema = z
     model: z
       .object({
         id: z.string().min(1).max(320),
-        provider: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+        provider: providerSchema,
         reasoning_effort: z.string().min(1).max(40),
       })
       .strict(),
@@ -46,7 +53,7 @@ const workbenchSubmissionSchema = submissionSchema
     model: z
       .object({
         id: z.string().min(1).max(320),
-        provider: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+        provider: providerSchema,
         reasoning_effort: z.literal("off").default("off"),
       })
       .strict(),
@@ -84,6 +91,16 @@ function state(request: FastifyRequest): RequestState {
 
 function error(reply: FastifyReply, status: number, code: string, message: string) {
   return reply.code(status).send({ error: { code, message } });
+}
+
+function contractValidationMessage(failure: ContractValidationError): string {
+  const details = failure.errors
+    .map(({ instancePath, keyword, message }) => {
+      const path = instancePath || "request";
+      return `${path}: ${message ?? keyword}`;
+    })
+    .join("\n");
+  return details ? `${failure.message}:\n${details}` : failure.message;
 }
 
 async function authenticate(
@@ -207,8 +224,15 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.setErrorHandler((failure, _request, reply) => {
     if (reply.sent) return;
-    if (failure instanceof z.ZodError || failure instanceof ContractValidationError)
-      return error(reply, 400, "invalid_request", "the request is invalid");
+    if (failure instanceof z.ZodError)
+      return error(
+        reply,
+        400,
+        "invalid_request",
+        `the request is invalid:\n${z.prettifyError(failure)}`,
+      );
+    if (failure instanceof ContractValidationError)
+      return error(reply, 400, "invalid_request", contractValidationMessage(failure));
     const message = failure instanceof Error ? failure.message : "request failed";
     if (message.includes("not found")) return error(reply, 404, "not_found", message);
     if (message.includes("already identifies") || message.includes("cancelled run"))

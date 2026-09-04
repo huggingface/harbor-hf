@@ -184,6 +184,22 @@ describe("control API", () => {
     });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().error.code).toBe("invalid_request");
+    expect(invalid.json().error.message).toContain("extra");
+
+    const invalidProvider = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "invalid-provider" },
+      payload: {
+        ...submission,
+        model: { ...submission.model, provider: "DeepInfra" },
+      },
+    });
+    expect(invalidProvider.statusCode).toBe(400);
+    expect(invalidProvider.json().error.message).toContain("model.provider");
+    expect(invalidProvider.json().error.message).toContain(
+      "lowercase letters, numbers, and hyphens",
+    );
 
     const credential = await app.inject({
       method: "POST",

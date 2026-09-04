@@ -45,6 +45,10 @@ A `final` run can enter the leaderboard only when it uses an eligible benchmark
 preset and has at least one scored trial. A `diagnostic` run never enters the
 leaderboard.
 
+Request failures show the API error code, HTTP status, and safe validation
+details, including the invalid field and its constraint. For example, a
+provider must use lowercase letters, numbers, and hyphens.
+
 Pause stops the active parent and labeled child Jobs. Resume starts a new parent
 against the same Harbor folder, so Harbor skips completed trials. Cancellation
 is permanent.
