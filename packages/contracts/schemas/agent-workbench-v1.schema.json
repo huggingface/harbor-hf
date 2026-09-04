@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harborframework.com/schemas/harbor-hf/agent-workbench-v1.schema.json",
+  "title": "Agent Workbench recipe v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "setup_command",
+    "run_command",
+    "route_api",
+    "setup_timeout_seconds",
+    "environment",
+    "outputs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "v1"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "minLength": 2,
+      "maxLength": 80
+    },
+    "setup_command": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768
+    },
+    "run_command": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768
+    },
+    "route_api": {
+      "enum": ["chat-completions", "responses"]
+    },
+    "setup_timeout_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 3600
+    },
+    "environment": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/EnvironmentBinding"
+      }
+    },
+    "outputs": {
+      "$ref": "#/$defs/OutputDeclaration"
+    }
+  },
+  "$defs": {
+    "EnvironmentBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z_][A-Z0-9_]*$",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "source": {
+          "enum": [
+            "literal",
+            "instruction_path",
+            "workspace_path",
+            "logs_path",
+            "agent_home",
+            "model_name",
+            "model_base_url",
+            "model_api_key"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "OutputDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["results_path", "trajectory_path"],
+      "properties": {
+        "results_path": {
+          "type": "string",
+          "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "trajectory_path": {
+          "type": ["string", "null"],
+          "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+          "maxLength": 512
+        }
+      }
+    }
+  }
+}
