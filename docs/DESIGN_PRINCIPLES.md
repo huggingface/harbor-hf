@@ -146,9 +146,13 @@ environment:
 ```
 
 Harbor-HF MAY replace `type: hf-sandbox` with its labeled environment adapter
-when it compiles the final job. The adapter MUST add only the run label required
-for owned Job cleanup and MUST preserve the native environment arguments. It
-MUST NOT create a parallel field such as `environment_flavor`.
+when it compiles the final job. The compiler MUST preserve the native
+environment arguments and MUST add only the `run_label` argument required by
+the adapter. The adapter MUST limit its changes to Harbor-HF integration needs,
+such as Job ownership and target namespace selection. It MAY also deliver the
+approved inference credential at the execution boundary. It MUST delegate
+environment lifecycle and flavor handling to Harbor. It MUST NOT create a
+parallel field such as `environment_flavor`.
 
 The same rule applies to attempts and concurrency. It applies to timeouts and
 retries. It also applies to agent and model settings. Keep native task names and
