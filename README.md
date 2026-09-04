@@ -160,6 +160,10 @@ npm ci
 uv sync --all-groups --locked --directory packages/harbor-hf-agents
 ```
 
+The local Space installer supports Linux and macOS. It uses the native
+`flock` command on Linux and Python's standard `fcntl` module on macOS, so
+macOS does not need a separate `flock` executable.
+
 Start the restored local console and API:
 
 ```bash

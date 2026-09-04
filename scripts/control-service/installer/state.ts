@@ -34,6 +34,16 @@ const BOOTSTRAP_RECEIPT_SCHEMA = "harbor-hf.install-bootstrap-receipt.v1";
 const POINTER_BYTES_LIMIT = 16 * 1024;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const REVISION = /^[a-f0-9]{40}$/;
+const PYTHON_FLOCK_SCRIPT = `
+import fcntl
+
+try:
+    fcntl.flock(3, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    raise SystemExit(1)
+except OSError:
+    raise SystemExit(2)
+`;
 
 interface StatePointer {
   schema_version: typeof STATE_SCHEMA;
@@ -77,9 +87,19 @@ async function acquireInstallerLock(path: string): Promise<FileHandle> {
 }
 
 async function acquireAdvisoryLock(handle: FileHandle): Promise<void> {
+  const command =
+    process.platform === "darwin"
+      ? {
+          file: "python3",
+          arguments: ["-c", PYTHON_FLOCK_SCRIPT],
+        }
+      : {
+          file: "flock",
+          arguments: ["--exclusive", "--nonblock", "3"],
+        };
   await new Promise<void>((resolvePromise, rejectPromise) => {
-    // The parent retains the same Linux open file description after flock exits.
-    const locker = spawn("flock", ["--exclusive", "--nonblock", "3"], {
+    // The parent retains the same open file description after the helper exits.
+    const locker = spawn(command.file, command.arguments, {
       env: sanitizedChildEnvironment(),
       stdio: ["ignore", "ignore", "ignore", handle.fd],
     });

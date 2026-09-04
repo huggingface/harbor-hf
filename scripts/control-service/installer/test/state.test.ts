@@ -7,6 +7,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   rm,
   stat,
   symlink,
@@ -38,11 +39,30 @@ import {
 } from "../state.js";
 
 const temporaryDirectories: string[] = [];
+const PYTHON_LOCK_PROBE = `
+import fcntl
+import sys
+
+try:
+    with open(sys.argv[1], "r+") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    raise SystemExit(1)
+except OSError:
+    raise SystemExit(2)
+`;
 
 async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(resolve(tmpdir(), "installer-state-test-"));
   temporaryDirectories.push(directory);
   return directory;
+}
+
+function runCompetingLock(lockPath: string): ReturnType<typeof spawnSync> {
+  if (process.platform === "darwin") {
+    return spawnSync("python3", ["-c", PYTHON_LOCK_PROBE, lockPath]);
+  }
+  return spawnSync("flock", ["--exclusive", "--nonblock", lockPath, "/bin/true"]);
 }
 
 async function initializeGitRepository(repository: string): Promise<void> {
@@ -177,18 +197,19 @@ describe("private installer state", () => {
     await expect(access(resolve(repository, "missing"))).rejects.toThrow();
 
     const missingExternalState = resolve(external, "missing", "state");
+    const physicalExternal = await realpath(external);
     await expect(
       assertInstallerStateOutsideRepository(missingExternalState, repository),
-    ).resolves.toBe(missingExternalState);
+    ).resolves.toBe(resolve(physicalExternal, "missing", "state"));
     await expect(access(missingExternalState)).rejects.toThrow();
     await expect(
       assertInstallerStateOutsideRepository(external, repository),
-    ).resolves.toBe(external);
+    ).resolves.toBe(physicalExternal);
     const safeStateLink = resolve(directory, "safe-state-link");
     await symlink(external, safeStateLink);
     await expect(
       assertInstallerStateOutsideRepository(safeStateLink, repository),
-    ).resolves.toBe(external);
+    ).resolves.toBe(physicalExternal);
 
     const danglingAncestor = resolve(directory, "dangling");
     await symlink(resolve(repository, "not-created"), danglingAncestor);
@@ -406,34 +427,25 @@ describe("private installer state", () => {
       if (!target) throw new Error("installer target directory is missing");
       lockPath = resolve(root, target, ".operation.lock");
 
-      const competingLock = spawnSync("flock", [
-        "--exclusive",
-        "--nonblock",
-        lockPath,
-        "/bin/true",
-      ]);
-      expect(competingLock.status).toBe(1);
+      const competing = runCompetingLock(lockPath);
+      expect(competing.status).toBe(1);
     });
 
-    const lockAfterRelease = spawnSync("flock", [
-      "--exclusive",
-      "--nonblock",
-      lockPath,
-      "/bin/true",
-    ]);
+    const lockAfterRelease = runCompetingLock(lockPath);
     expect(lockAfterRelease.status).toBe(0);
   });
 
-  it("does not pass installer credentials to the flock subprocess", async () => {
+  it("does not pass installer credentials to the advisory-lock subprocess", async () => {
     const directory = await temporaryDirectory();
     const root = resolve(directory, "state");
     const toolDirectory = resolve(directory, "tools");
     const capturePath = resolve(directory, "flock-environment.txt");
-    const flockPath = resolve(toolDirectory, "flock");
+    const helperName = process.platform === "darwin" ? "python3" : "flock";
+    const helperPath = resolve(toolDirectory, helperName);
     await mkdir(toolDirectory);
     await writeFile(
-      flockPath,
-      `#!/bin/sh\n/usr/bin/env > '${capturePath}'\nexec /usr/bin/flock "$@"\n`,
+      helperPath,
+      `#!/bin/sh\n/usr/bin/env > '${capturePath}'\nexit 0\n`,
       { mode: 0o700 },
     );
     const previous = {
@@ -442,7 +454,7 @@ describe("private installer state", () => {
       inference: process.env.HARBOR_HF_INSTALL_INFERENCE_SECRET,
       bearer: process.env.HARBOR_HF_CONTROL_BEARER_TOKEN,
     };
-    process.env.PATH = `${toolDirectory}:/usr/bin:/bin`;
+    process.env.PATH = `${toolDirectory}:${previous.path ?? ""}`;
     process.env.HARBOR_HF_INSTALL_CONTROL_SECRET = "control-secret-placeholder";
     process.env.HARBOR_HF_INSTALL_INFERENCE_SECRET = "inference-secret-placeholder";
     process.env.HARBOR_HF_CONTROL_BEARER_TOKEN = "control-bearer-placeholder";
