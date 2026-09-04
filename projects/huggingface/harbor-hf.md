@@ -103,6 +103,37 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Upstream compatibility, feature reconciliation, and PR visibility (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T15:25:00Z
+
+- Direct user approval: "see if they are compatible with our direction, merge
+  and push (open a PR for visibility)". Review fresh canonical upstream main
+  and all feature changes against the greenfield first-install direction.
+- If safe, merge current `origin/main` into `feat/leaderboard-submissions`,
+  reconcile implementation and tests with Harbor JobConfig and the parent-Job
+  architecture, commit, push only that feature branch without force, and open
+  one PR targeting main (or update its existing PR). This does not authorize
+  merging the PR, pushing main, rebasing published history, or resetting.
+- Workbench configures, tests, and saves named immutable harness versions;
+  New Run selects benchmark subset, built-in or saved harness, model string,
+  and cost ceiling. Profiles belong in Advanced. Do not restore obsolete
+  five-profile admission or introduce a parallel reconciler. Existing-install
+  upgrade support is not required; preserve historical immutable bindings.
+- Read pinned Harbor source and subsequent history before implementation.
+  Stop for an unresolved Harbor-owned gap or material unsafe incompatibility;
+  no local Harbor patch or upstream issue or PR is authorized.
+- Run required local checks, including production Docker build and integration
+  regressions. Do not lower coverage or conceal failing gates. Use a draft PR
+  if required checks remain red or incomplete; do not claim deployment or
+  merge readiness. Check privacy and inspect complete diffs and public metadata
+  before every commit, push, and PR publication.
+- No HF API work, deployment, activation, Jobs, inference, spending, resource
+  creation or retirement, credential access or transfer, Bucket reset, data
+  migration, or real result publication is authorized. Earlier operational
+  approvals do not expand this task.
+
 ### Harness library and New Run UX amendment (2026-09-04)
 
 Status: approved
@@ -839,3 +870,12 @@ Status: completed
   deployment records and the broader project authorization remain unchanged.
   No push, PR, merge, deployment, live write-mode change, remote Job, inference,
   resource, credential transfer, migration, or result publication was performed.
+
+### 2026-09-04 upstream compatibility and PR visibility
+
+- Directly approved at 2026-09-04T15:25:00Z: compare fresh upstream main with
+  the greenfield direction, reconcile by merging main into the feature branch
+  if safe, test, push only the feature branch, and open or update one PR for
+  visibility. No default-branch push or PR merge; no HF deployment, Jobs,
+  credentials, resources, reset, or operational migration. Stop on material
+  incompatibility rather than bypassing architecture or safety boundaries.
