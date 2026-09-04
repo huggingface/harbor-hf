@@ -10,6 +10,7 @@ import type {
   HarborJobConfigV1,
   RunRecordV1,
   RunStateV1,
+  SavedWorkbenchConfigurationV1,
 } from "./generated/index.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "schemas");
@@ -19,6 +20,7 @@ function load(name: string): object {
 }
 
 export const schemas = {
+  savedWorkbench: load("saved-workbench-v1.schema.json"),
   agentPreset: load("agent-preset-v1.schema.json"),
   agentWorkbenchRecipe: load("agent-workbench-v1.schema.json"),
   attemptCost: load("attempt-cost-v1.schema.json"),
@@ -66,7 +68,12 @@ function configuredAjv(): Ajv2020 {
 
 const ajv = configuredAjv();
 const strictAjv = configuredAjv();
+ajv.addSchema(
+  schemas.harborJobConfig,
+  "https://harborframework.com/schemas/harbor-hf/harbor-job-config-v1.schema.json",
+);
 const validators = {
+  savedWorkbench: ajv.compile(schemas.savedWorkbench),
   agentPreset: ajv.compile(schemas.agentPreset),
   agentWorkbenchRecipe: ajv.compile(schemas.agentWorkbenchRecipe),
   attemptCost: ajv.compile(schemas.attemptCost),
@@ -112,3 +119,6 @@ export const validateRunRecord = (value: unknown): RunRecordV1 =>
   validate(validators.runRecord, value, "run record");
 export const validateRunState = (value: unknown): RunStateV1 =>
   validate(validators.runState, value, "run state");
+
+export const validateSavedWorkbench = (value: unknown): SavedWorkbenchConfigurationV1 =>
+  validate(validators.savedWorkbench, value, "saved configuration");

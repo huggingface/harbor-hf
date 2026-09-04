@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 from typing import cast
 
@@ -66,14 +65,11 @@ def test_package_publication_has_no_mutation_preflight() -> None:
     assert "needs" not in publish
 
 
-def test_trial_worker_publication_pins_privileged_actions() -> None:
-    workflow = _workflow("publish-trial-worker.yml")
-    jobs = _record(workflow["jobs"])
-    publish = _record(jobs["publish"])
-    steps = publish["steps"]
-    assert isinstance(steps, list)
-
-    for step in steps:
-        uses = _record(step).get("uses")
-        if uses is not None:
-            assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", str(uses))
+def test_unsupported_execution_implementation_and_publication_are_absent() -> None:
+    assert not (WORKFLOWS / "publish-trial-worker.yml").exists()
+    agents = ROOT / "packages/harbor-hf-agents/src/harbor_hf_agents"
+    assert not (agents / "parent_worker.py").exists()
+    assert not (agents / "hf_sandbox.py").exists()
+    dockerfile = (ROOT / "deploy/parent-worker/Dockerfile").read_text()
+    assert 'CMD ["harbor", "--help"]' in dockerfile
+    assert "parent_worker" not in dockerfile

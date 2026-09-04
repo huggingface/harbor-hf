@@ -1,1 +1,1 @@
-"""Harbor-HF parent integration and temporary ATIF converters."""
+"""Harbor-HF command-agent plugin and temporary ATIF converters."""

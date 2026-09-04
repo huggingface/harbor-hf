@@ -4,5 +4,5 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["*.ts", "test/**/*.ts"]
+  "include": ["*.ts", "test/**/*.ts", "e2e/**/*.ts"]
 }

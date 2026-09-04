@@ -3,7 +3,12 @@ import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
 import { ContractValidationError } from "@harbor-hf/contracts";
-import { leaderboard } from "@harbor-hf/control-core";
+import {
+  EXECUTION_DISABLED_REASON,
+  leaderboard,
+  listWorkbenchConfigurations,
+  saveWorkbenchConfiguration,
+} from "@harbor-hf/control-core";
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -25,53 +30,6 @@ import type { Runtime } from "./runtime.js";
 
 export const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
 
-const providerSchema = z
-  .string()
-  .regex(
-    /^[a-z0-9][a-z0-9-]{0,62}$/,
-    "provider must use lowercase letters, numbers, and hyphens",
-  );
-
-const submissionSchema = z
-  .object({
-    benchmark: z
-      .object({ name: z.string().min(1), preset: z.string().min(1) })
-      .strict(),
-    model: z
-      .object({
-        id: z.string().min(1).max(320),
-        provider: providerSchema,
-        reasoning_effort: z.string().min(1).max(40),
-      })
-      .strict(),
-    harness: z
-      .object({ agent: z.string().min(1), version: z.string().min(1) })
-      .strict(),
-    cost_ceiling_usd_per_trial: z.number().positive().max(10_000),
-    role: z.enum(["final", "diagnostic"]).default("final"),
-  })
-  .strict();
-
-const workbenchSubmissionSchema = submissionSchema
-  .omit({ harness: true })
-  .extend({
-    model: z
-      .object({
-        id: z.string().min(1).max(320),
-        provider: providerSchema,
-        reasoning_effort: z.literal("off").default("off"),
-      })
-      .strict(),
-    workbench: z
-      .object({
-        recipe: z.unknown(),
-        setup_test_id: z.string().min(1).max(160),
-      })
-      .strict(),
-  })
-  .strict();
-
-const workbenchSetupSchema = z.object({ recipe: z.unknown() }).strict();
 const runParameters = z.object({ run_id: z.string().regex(/^run-[0-9a-f]{24}$/) });
 const trialParameters = runParameters.extend({ trial_name: z.string().min(1) });
 const setupParameters = z.object({ setup_test_id: z.string().min(1).max(160) });
@@ -170,13 +128,6 @@ function requireActor(request: FastifyRequest): AuthenticatedActor {
   return actor;
 }
 
-function idempotencyKey(request: FastifyRequest): string {
-  const value = request.headers["idempotency-key"];
-  if (typeof value !== "string" || !value.trim() || value.length > 320)
-    throw new Error("Idempotency-Key header is required");
-  return value;
-}
-
 function publicApi(path: string): boolean {
   return path === "/api/v1/leaderboard" || path === "/api/v1/session";
 }
@@ -214,19 +165,14 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     const mutation = request.method !== "GET" && request.method !== "HEAD";
     if (mutation && requireActor(request).role !== "operator")
       return error(reply, 403, "operator_required", "operator access is required");
-    const workbenchPreview = path === "/api/v1/workbench/preview";
-    const localWorkbench =
-      path.startsWith("/api/v1/workbench/setup-tests") &&
-      runtime.config.workbench_runner === "docker";
-    const workbenchCancel =
-      path.startsWith("/api/v1/workbench/setup-tests/") && path.endsWith("/cancel");
     if (
       mutation &&
-      runtime.config.write_mode !== "enabled" &&
-      !workbenchPreview &&
-      !localWorkbench &&
-      !workbenchCancel
+      (path.startsWith("/api/v1/runs") ||
+        path.startsWith("/api/v1/workbench/setup-tests"))
     )
+      return error(reply, 503, "execution_disabled", EXECUTION_DISABLED_REASON);
+    const workbenchPreview = path === "/api/v1/workbench/preview";
+    if (mutation && runtime.config.write_mode !== "enabled" && !workbenchPreview)
       return error(reply, 503, "write_disabled", "write mode is disabled");
   });
 
@@ -334,8 +280,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     projection: runtime.projection.system(),
     capacity: { max_active_parent_jobs: runtime.config.max_active_jobs },
     workbench: {
-      runner: runtime.config.workbench_runner,
-      setup_enabled: runtime.config.workbench_runner !== "disabled",
+      runner: "disabled",
+      setup_enabled: false,
     },
     resources: { spaces: 1, buckets: 1, operator_secrets: 2 },
   }));
@@ -353,20 +299,30 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     };
   });
 
+  app.get("/api/v1/workbench/configurations", async (request) => ({
+    items: await listWorkbenchConfigurations(
+      runtime.store,
+      requireActor(request).subject,
+    ),
+  }));
+  app.post("/api/v1/workbench/configurations", async (request) => {
+    const input = z
+      .object({ name: z.string().min(1).max(80), harbor_job_config: z.unknown() })
+      .strict()
+      .parse(request.body);
+    return saveWorkbenchConfiguration(runtime.store, requireActor(request).subject, {
+      name: input.name,
+      harbor_job_config: input.harbor_job_config,
+    });
+  });
+
   app.post("/api/v1/workbench/preview", async (request) =>
     runtime.workbench.preview(request.body),
   );
 
-  app.post("/api/v1/workbench/setup-tests", async (request, reply) => {
-    const actor = requireActor(request);
-    const input = workbenchSetupSchema.parse(request.body);
-    const setup = await runtime.workbench.startSetup(
-      input.recipe,
-      actor.subject,
-      idempotencyKey(request),
-    );
-    return reply.code(202).send(setup);
-  });
+  app.post("/api/v1/workbench/setup-tests", async (_request, reply) =>
+    error(reply, 503, "execution_disabled", EXECUTION_DISABLED_REASON),
+  );
 
   app.get("/api/v1/workbench/setup-tests", async (request) => ({
     setups: await runtime.workbench.listSetups(requireActor(request).subject),
@@ -382,15 +338,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     return setup;
   });
 
-  app.post("/api/v1/workbench/setup-tests/:setup_test_id/cancel", async (request) => {
-    const { setup_test_id } = setupParameters.parse(request.params);
-    const setup = await runtime.workbench.cancelSetup(
-      setup_test_id,
-      requireActor(request).subject,
-    );
-    if (!setup) throw new Error("setup test was not found");
-    return setup;
-  });
+  app.post(
+    "/api/v1/workbench/setup-tests/:setup_test_id/cancel",
+    async (_request, reply) =>
+      error(reply, 503, "execution_disabled", EXECUTION_DISABLED_REASON),
+  );
 
   app.get("/api/v1/workbench/setup-tests/:setup_test_id/logs", async (request) => {
     const { setup_test_id } = setupParameters.parse(request.params);
@@ -416,55 +368,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     },
   );
 
-  app.post("/api/v1/runs", async (request, reply) => {
-    const actor = requireActor(request);
-    const body = request.body as Record<string, unknown>;
-    if (body && typeof body === "object" && "workbench" in body) {
-      const input = workbenchSubmissionSchema.parse(body);
-      const preview = runtime.workbench.preview(input.workbench.recipe);
-      const sources = new Set(preview.recipe.environment.map((item) => item.source));
-      if (!sources.has("model_base_url") || !sources.has("model_api_key"))
-        throw new Error(
-          "Workbench Run requires model_base_url and model_api_key bindings",
-        );
-      await runtime.workbench.attestPassedSetup(
-        input.workbench.setup_test_id,
-        actor.subject,
-        input.workbench.recipe,
-      );
-      const result = await runtime.service.submitWorkbench(
-        {
-          benchmark: input.benchmark,
-          model: input.model,
-          harness: { agent: "command-agent", version: preview.revision_id },
-          cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
-          role: input.role,
-        },
-        preview.harbor_agent,
-        idempotencyKey(request),
-        actor.subject,
-      );
-      return reply.code(result.created ? 201 : 200).send(result);
-    }
-    const result = await runtime.service.submitPreset(
-      submissionSchema.parse(body),
-      idempotencyKey(request),
-      actor.subject,
+  for (const path of ["/api/v1/runs", "/api/v1/runs/config"]) {
+    app.post(path, async (_request, reply) =>
+      error(reply, 503, "execution_disabled", EXECUTION_DISABLED_REASON),
     );
-    return reply.code(result.created ? 201 : 200).send(result);
-  });
-
-  app.post("/api/v1/runs/config", async (request, reply) => {
-    const actor = requireActor(request);
-    const ceiling = Number(request.headers["x-harbor-hf-cost-ceiling-usd-per-trial"]);
-    const result = await runtime.service.submitConfig(
-      request.body,
-      ceiling,
-      idempotencyKey(request),
-      actor.subject,
-    );
-    return reply.code(result.created ? 201 : 200).send(result);
-  });
+  }
 
   app.get("/api/v1/runs", async () => ({ runs: runtime.projection.listRuns() }));
   app.get("/api/v1/runs/:run_id", async (request) => {
@@ -474,16 +382,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     return run;
   });
 
-  for (const [action, desired] of [
-    ["pause", "paused"],
-    ["resume", "run"],
-    ["cancel", "cancelled"],
-  ] as const) {
-    app.post(`/api/v1/runs/:run_id/${action}`, async (request) => {
-      const actor = requireActor(request);
-      const { run_id } = runParameters.parse(request.params);
-      return runtime.service.setDesiredState(run_id, desired, actor.subject);
-    });
+  for (const action of ["pause", "resume", "cancel"]) {
+    app.post(`/api/v1/runs/:run_id/${action}`, async (_request, reply) =>
+      error(reply, 503, "execution_disabled", EXECUTION_DISABLED_REASON),
+    );
   }
 
   app.get("/api/v1/runs/:run_id/trials", async (request) => {

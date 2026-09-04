@@ -162,6 +162,7 @@ async function mockControl(page: Page, options: MockOptions = {}) {
   const authenticated = options.authenticated ?? true;
   const currentRun = { ...run, status: options.runStatus ?? run.status };
   let setupStatus = options.setupStatus ?? "passed";
+  const saved: unknown[] = [];
   await page.route("**/auth/login**", (route) =>
     route.fulfill({ status: 200, contentType: "text/plain", body: "sign in" }),
   );
@@ -187,6 +188,18 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     if (path === "/api/v1/leaderboard") return json(route, leaderboard);
     if (path === "/api/v1/system") return json(route, system);
     if (path === "/api/v1/presets") return json(route, presets);
+    if (path === "/api/v1/workbench/configurations") {
+      if (method === "GET") return json(route, { items: saved });
+      const value = {
+        schema_version: "v1",
+        revision: `sha256:${"a".repeat(64)}`,
+        ...request.postDataJSON(),
+      };
+      saved.push(value);
+      return json(route, value);
+    }
+    if (path === "/api/v1/model-providers")
+      return json(route, { model: "publisher/model", providers: ["provider"] });
     if (path === "/api/v1/jobs") return json(route, { jobs: [job] });
     if (path === "/api/v1/runs" && method === "GET")
       return json(route, { runs: [currentRun] });
@@ -330,42 +343,6 @@ test("shows the restored overview on desktop and mobile", async ({
   });
 });
 
-test("validates and submits the overview form without losing selected values", async ({
-  page,
-}) => {
-  let submitted: unknown = null;
-  await mockControl(page, { onRunPost: (payload) => (submitted = payload) });
-  await page.goto("/overview");
-  await expect(page.getByRole("button", { name: "Submit run" })).toBeVisible();
-  await page.getByLabel("Model").fill("publisher/new-model");
-  await page.getByLabel("Provider").fill("provider");
-  await page.getByRole("button", { name: "Submit run" }).click();
-  await expect(page.getByRole("link", { name: "Open it" })).toHaveAttribute(
-    "href",
-    `/runs/${runId}`,
-  );
-  expect(submitted).toMatchObject({
-    model: { id: "publisher/new-model", provider: "provider" },
-    harness: { agent: "pi", version: "0.84.4" },
-  });
-  await expect(page.getByLabel("Model")).toHaveValue("publisher/new-model");
-});
-
-test("retains overview values after a failed submission", async ({ page }) => {
-  await mockControl(page, { runPostError: true });
-  await page.goto("/overview");
-  await page.getByLabel("Model").fill("publisher/retry-model");
-  await page.getByLabel("Provider").fill("retry-provider");
-  await page.getByLabel("Cost limit per trial").fill("0.75");
-  await page.getByLabel("Result role").selectOption("final");
-  await page.getByRole("button", { name: "Submit run" }).click();
-  await expect(page.getByRole("alert")).toContainText("submission rejected");
-  await expect(page.getByLabel("Model")).toHaveValue("publisher/retry-model");
-  await expect(page.getByLabel("Provider")).toHaveValue("retry-provider");
-  await expect(page.getByLabel("Cost limit per trial")).toHaveValue("0.75");
-  await expect(page.getByLabel("Result role")).toHaveValue("final");
-});
-
 test("navigates from runs to complete run and trial evidence", async ({ page }) => {
   await mockControl(page);
   await page.goto("/runs");
@@ -382,27 +359,6 @@ test("navigates from runs to complete run and trial evidence", async ({ page }) 
   ).toBeVisible();
 });
 
-test("targets pause and cancel at the open run", async ({ page }) => {
-  const actions: string[] = [];
-  await mockControl(page, { onAction: (action) => actions.push(action) });
-  await page.goto(`/runs/${runId}`);
-  await page.getByRole("button", { name: "Pause" }).click();
-  await expect.poll(() => actions).toContain("pause");
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect.poll(() => actions).toContain("cancel");
-});
-
-test("resumes the open paused run", async ({ page }) => {
-  const actions: string[] = [];
-  await mockControl(page, {
-    runStatus: "paused",
-    onAction: (action) => actions.push(action),
-  });
-  await page.goto(`/runs/${runId}`);
-  await page.getByRole("button", { name: "Resume" }).click();
-  await expect.poll(() => actions).toContain("resume");
-});
-
 test("shows parent Jobs with links to their runs", async ({ page }) => {
   await mockControl(page);
   await page.goto("/jobs");
@@ -414,83 +370,6 @@ test("shows parent Jobs with links to their runs", async ({ page }) => {
   );
 });
 
-test("completes Workbench configure, setup, and normal Run submission", async ({
-  page,
-}) => {
-  let submitted: unknown = null;
-  await mockControl(page, { onRunPost: (payload) => (submitted = payload) });
-  await page.goto("/workbench");
-  await expect(page.getByRole("heading", { name: "Agent Workbench" })).toBeVisible();
-  await expect(page.getByText("Configure → Test → Run")).toBeVisible();
-  await expect(page.getByText(/agent-recipe-/).first()).toBeVisible();
-  await page
-    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
-    .check();
-  await page.getByRole("button", { name: "Run setup test" }).click();
-  await expect(page.getByText("Setup passed")).toBeVisible();
-  await expect(page.getByText("setup ready")).toBeVisible();
-  await page.getByLabel("Model").last().fill("publisher/workbench-model");
-  await page.getByLabel("Provider").last().fill("provider");
-  await page
-    .getByLabel(
-      "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
-    )
-    .check();
-  await page.getByRole("button", { name: "Launch Harbor run" }).click();
-  await expect.poll(() => submitted).not.toBeNull();
-  expect(submitted).toMatchObject({
-    model: {
-      id: "publisher/workbench-model",
-      provider: "provider",
-      reasoning_effort: "off",
-    },
-    workbench: { setup_test_id: setupId },
-  });
-});
-
-test("invalidates Workbench launch approval after a recipe edit", async ({ page }) => {
-  await mockControl(page);
-  await page.goto("/workbench");
-  await page
-    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
-    .check();
-  await page.getByRole("button", { name: "Run setup test" }).click();
-  await expect(page.getByText("Setup passed")).toBeVisible();
-  await page.getByLabel("Model").last().fill("publisher/workbench-model");
-  await page.getByLabel("Provider").last().fill("provider");
-  await page
-    .getByLabel(
-      "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
-    )
-    .check();
-  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeEnabled();
-
-  await page.getByLabel("Recipe name").fill("edited-agent");
-  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
-});
-
-test("shows Workbench setup failure without enabling Run launch", async ({ page }) => {
-  await mockControl(page, { setupStatus: "failed" });
-  await page.goto("/workbench");
-  await page
-    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
-    .check();
-  await page.getByRole("button", { name: "Run setup test" }).click();
-  await expect(page.getByText("setup failed safely")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
-});
-
-test("cancels only the active Workbench setup", async ({ page }) => {
-  await mockControl(page, { setupStatus: "running" });
-  await page.goto("/workbench");
-  await page
-    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
-    .check();
-  await page.getByRole("button", { name: "Run setup test" }).click();
-  await page.getByRole("button", { name: "Cancel setup" }).click();
-  await expect(page.getByText("cancelled")).toBeVisible();
-});
-
 test("keeps direct authenticated route refreshes in the restored shell", async ({
   page,
 }) => {
@@ -498,4 +377,66 @@ test("keeps direct authenticated route refreshes in the restored shell", async (
   await page.goto(`/runs/${runId}/trials/${trialName}`);
   await expect(page.getByRole("heading", { name: "Trial detail" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Workbench" }).first()).toBeVisible();
+});
+
+test("authoring saves and loads native fragments without setup or Run requests", async ({
+  page,
+}) => {
+  await mockControl(page);
+  const executionRequests: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      /\/api\/v1\/(runs|workbench\/setup-tests)/.test(request.url())
+    )
+      executionRequests.push(request.url());
+  });
+  await page.goto("/workbench");
+  await page.getByLabel("Harness name").fill("saved-harness");
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect(
+    page.getByText("Saved immutable harness version. No Job was launched."),
+  ).toBeVisible();
+  await page.getByLabel("Harness name").fill("edited-harness");
+  await page.getByRole("button", { name: "Load", exact: true }).click();
+  await expect(page.getByLabel("Harness name")).toHaveValue("saved-harness");
+  await expect(page.getByRole("button", { name: "Test setup" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
+  expect(executionRequests).toEqual([]);
+});
+test("New Run previews saved native configuration without admission", async ({
+  page,
+}) => {
+  let submitted: unknown = null;
+  await mockControl(page, {
+    onRunPost: (value) => {
+      submitted = value;
+    },
+  });
+  await page.goto("/workbench");
+  await page.getByLabel("Harness name").fill("selected-harness");
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect(
+    page.getByText("Saved immutable harness version. No Job was launched."),
+  ).toBeVisible();
+  await page.goto("/overview");
+  await page
+    .getByRole("combobox", { name: "Agent", exact: true })
+    .selectOption(`sha256:${"a".repeat(64)}`);
+  await page.getByLabel("Model", { exact: true }).fill("publisher/model");
+  await page.getByLabel("Model", { exact: true }).blur();
+  await page
+    .getByRole("combobox", { name: "Provider", exact: true })
+    .selectOption("provider");
+  await page.getByRole("button", { name: "Preview configuration" }).click();
+  await expect(
+    page.getByText("Configuration preview (not a resolved Harbor lock)"),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /Submit run/ })).toBeDisabled();
+  expect(submitted).toBeNull();
+  await page.goto(`/runs/${runId}`);
+  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeDisabled();
 });

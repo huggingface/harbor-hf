@@ -7,22 +7,21 @@ import {
   ListChecks,
   Pause,
   Play,
-  Plus,
   RotateCw,
   ServerCog,
   Square,
   TerminalSquare,
 } from "lucide-react";
-import { type FormEvent, type ReactNode, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   actOnRun,
   type BenchmarkPreset,
   type ParentJob,
-  type PresetSubmission,
   type PresetsResponse,
   type RunView,
-  submitRun,
+  listSavedConfigurations,
+  type SavedConfiguration,
   type TrialDetail,
   type TrialSummary,
 } from "./api";
@@ -154,7 +153,6 @@ function hardwareLabel(preset: BenchmarkPreset): string {
 }
 
 function SubmissionForm({ presets }: { presets: PresetsResponse }) {
-  const client = useQueryClient();
   const firstBenchmark = presets.benchmarks[0];
   const firstAgent = presets.agents[0];
   const [benchmarkKey, setBenchmarkKey] = useState(
@@ -169,7 +167,14 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
   const [reasoning, setReasoning] = useState(firstAgent?.reasoning_values[0] ?? "off");
   const [ceiling, setCeiling] = useState("1");
   const [role, setRole] = useState<"final" | "diagnostic">("diagnostic");
-  const [createdRun, setCreatedRun] = useState<string | null>(null);
+  const [saved, setSaved] = useState<SavedConfiguration[]>([]);
+  const [preview, setPreview] = useState<unknown>(null);
+  const [savedError, setSavedError] = useState<unknown>(null);
+  useEffect(() => {
+    void listSavedConfigurations()
+      .then((result) => setSaved(result.items))
+      .catch(setSavedError);
+  }, []);
   const selectedBenchmark = presets.benchmarks.find(
     (item) => `${item.benchmark}\n${item.preset}` === benchmarkKey,
   );
@@ -178,31 +183,25 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
   );
   const modelProviders = useModelProviders(providerLookupModel);
   const availableProviders = modelProviders.data?.providers ?? [];
-  const mutation = useMutation({
-    mutationFn: (input: PresetSubmission) => submitRun(input),
-    onSuccess: async ({ run }) => {
-      setCreatedRun(run.run_id);
-      await client.invalidateQueries({ queryKey: keys.runs });
-    },
-  });
-
   function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setCreatedRun(null);
+    setPreview(null);
     const [benchmark, preset] = benchmarkKey.split("\n");
-    const [agent, version] = agentKey.split("\n");
-    if (!(benchmark && preset && agent && version && model.trim() && provider.trim()))
-      return;
-    mutation.mutate({
-      benchmark: { name: benchmark, preset },
-      model: {
-        id: model.trim(),
-        provider: provider.trim(),
-        reasoning_effort: reasoning,
+    const [agent] = agentKey.split("\n");
+    if (!(benchmark && preset && agent && model.trim())) return;
+    const savedVersion = saved.find((item) => item.revision === agentKey);
+    setPreview({
+      harbor_job_config: {
+        ...selectedBenchmark?.job,
+        ...(savedVersion?.harbor_job_config ?? {}),
+        agents: (
+          savedVersion?.harbor_job_config.agents ?? [
+            selectedAgent?.harbor_agent ?? { name: agent },
+          ]
+        ).map((item) => ({ ...item, model_name: model.trim() })),
       },
-      harness: { agent, version },
       cost_ceiling_usd_per_trial: Number(ceiling),
-      role,
+      execution: "disabled",
     });
   }
 
@@ -245,6 +244,11 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
             setReasoning(next?.reasoning_values[0] ?? "off");
           }}
         >
+          {saved.map((item) => (
+            <option key={item.revision} value={item.revision}>
+              {item.name} · {item.revision.slice(7, 15)} (saved)
+            </option>
+          ))}
           {presets.agents.map((item) => (
             <option
               key={`${item.agent}:${item.version}`}
@@ -344,19 +348,20 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
           </select>
         </label>
       </div>
-      {mutation.error ? <ErrorNotice error={mutation.error} /> : null}
-      {createdRun ? (
-        <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-sm text-emerald-300">
-          Run created.{" "}
-          <Link className="underline" to={`/runs/${createdRun}`}>
-            Open it
-          </Link>
-          .
-        </p>
+      <p role="status">
+        Execution disabled: configuration preview only. No preparation Job, task
+        resolution, reservation, or inference occurs.
+      </p>
+      {savedError ? <ErrorNotice error={savedError} /> : null}
+      {preview ? (
+        <JsonDetails
+          label="Configuration preview (not a resolved Harbor lock)"
+          value={preview}
+        />
       ) : null}
-      <Button disabled={mutation.isPending} type="submit">
-        <Plus size={15} aria-hidden="true" />
-        {mutation.isPending ? "Submitting" : "Submit run"}
+      <Button type="submit">Preview configuration</Button>
+      <Button disabled type="button">
+        Submit run — execution disabled
       </Button>
     </form>
   );
@@ -577,7 +582,6 @@ export function RunsPage() {
 
 function RunActions({ run }: { run: RunView }) {
   const client = useQueryClient();
-  const { writesAllowed } = useControlState();
   const mutation = useMutation({
     mutationFn: (action: "pause" | "resume" | "cancel") =>
       actOnRun(run.record.run_id, action),
@@ -594,27 +598,16 @@ function RunActions({ run }: { run: RunView }) {
   return (
     <div className="flex flex-wrap gap-2">
       {live ? (
-        <Button
-          variant="outline"
-          disabled={!writesAllowed || mutation.isPending}
-          onClick={() => mutation.mutate("pause")}
-        >
+        <Button variant="outline" disabled onClick={() => mutation.mutate("pause")}>
           <Pause size={14} aria-hidden="true" /> Pause
         </Button>
       ) : null}
       {paused ? (
-        <Button
-          disabled={!writesAllowed || mutation.isPending}
-          onClick={() => mutation.mutate("resume")}
-        >
+        <Button disabled onClick={() => mutation.mutate("resume")}>
           <Play size={14} aria-hidden="true" /> Resume
         </Button>
       ) : null}
-      <Button
-        variant="destructive"
-        disabled={!writesAllowed || mutation.isPending}
-        onClick={() => mutation.mutate("cancel")}
-      >
+      <Button variant="destructive" disabled onClick={() => mutation.mutate("cancel")}>
         <Square size={13} aria-hidden="true" /> Cancel
       </Button>
       {mutation.error ? <ErrorNotice error={mutation.error} /> : null}

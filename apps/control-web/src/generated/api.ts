@@ -229,6 +229,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workbench/configurations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List owner-scoped immutable native Harbor configurations */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Save a named immutable native Harbor configuration without execution */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workbench/preview": {
         parameters: {
             query?: never;
@@ -326,7 +410,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** Start a credentialless disposable setup test */
+        /** Execution disabled: no admission or Job action */
         post: {
             parameters: {
                 query?: never;
@@ -344,31 +428,8 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Success */
-                202: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
                 /** @description Request error */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                            };
-                        };
-                    };
-                };
-                /** @description Request error */
-                409: {
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -450,7 +511,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancel one actor-owned setup test */
+        /** Execution disabled: no admission or Job action */
         post: {
             parameters: {
                 query?: never;
@@ -462,17 +523,8 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
                 /** @description Request error */
-                404: {
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -641,7 +693,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** Submit a reviewed preset or attested Workbench run */
+        /** Execution disabled: no admission or Job action */
         post: {
             parameters: {
                 query?: never;
@@ -657,40 +709,8 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Success */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
                 /** @description Request error */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                            };
-                        };
-                    };
-                };
-                /** @description Request error */
-                409: {
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -720,7 +740,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Submit a direct Harbor JobConfig */
+        /** Execution disabled: no admission or Job action */
         post: {
             parameters: {
                 query?: never;
@@ -737,40 +757,8 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
-                /** @description Success */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
                 /** @description Request error */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                            };
-                        };
-                    };
-                };
-                /** @description Request error */
-                409: {
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -852,7 +840,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Pause a run */
+        /** Execution disabled: no admission or Job action */
         post: {
             parameters: {
                 query?: never;
@@ -864,17 +852,8 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
                 /** @description Request error */
-                404: {
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -904,7 +883,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Resume a run */
+        /** Execution disabled: no admission or Job action */
         post: {
             parameters: {
                 query?: never;
@@ -916,31 +895,8 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
                 /** @description Request error */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                            };
-                        };
-                    };
-                };
-                /** @description Request error */
-                409: {
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -970,7 +926,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancel a run */
+        /** Execution disabled: no admission or Job action */
         post: {
             parameters: {
                 query?: never;
@@ -982,17 +938,8 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Success */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": Record<string, never>;
-                    };
-                };
                 /** @description Request error */
-                404: {
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };

@@ -9,8 +9,6 @@ import {
 } from "@harbor-hf/control-core";
 import {
   HuggingFaceBucketStore,
-  HuggingFaceJobs,
-  HuggingFaceWorkbenchJobs,
   NoopJobs,
   ReadOnlyHuggingFaceJobs,
 } from "@harbor-hf/hf-adapters";
@@ -50,20 +48,10 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
   const jobs =
     config.store_mode === "filesystem"
       ? new NoopJobs()
-      : config.write_mode === "enabled"
-        ? new HuggingFaceJobs({
-            namespace: config.namespace,
-            accessToken: config.hf_token ?? "",
-            inferenceToken: config.hf_inference_token ?? "",
-            bucketId: config.bucket_id,
-            parentImage: config.parent_image ?? "",
-            hardware: config.parent_hardware,
-            timeoutSeconds: config.parent_timeout_seconds,
-          })
-        : new ReadOnlyHuggingFaceJobs({
-            namespace: config.namespace,
-            accessToken: config.hf_token ?? "",
-          });
+      : new ReadOnlyHuggingFaceJobs({
+          namespace: config.namespace,
+          accessToken: config.hf_token ?? "",
+        });
   const service = new ControlService(store, projection, presets, jobs, {
     harborRevision: HARBOR_REVISION,
     mountRoot: "/data",
@@ -87,22 +75,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     async () => acl,
   );
   const reconciler = new Reconciler(service, config.reconcile_interval_ms);
-  const remoteWorkbenchJobs =
-    config.workbench_runner === "hf-jobs"
-      ? new HuggingFaceWorkbenchJobs({
-          namespace: config.namespace,
-          accessToken: config.hf_token ?? "",
-          image: config.workbench_image,
-          maxActiveJobs: config.max_active_jobs,
-        })
-      : null;
-  if (config.workbench_runner === "hf-jobs" && !config.hf_token)
-    throw new Error("hosted Workbench requires the control credential");
-  const workbench = new WorkbenchRuntime(
-    config.workbench_runner,
-    config.workbench_image,
-    remoteWorkbenchJobs,
-  );
+  const workbench = new WorkbenchRuntime("disabled", config.workbench_image, null);
   let ready = false;
   return {
     config,
@@ -123,7 +96,8 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
       ready = true;
     },
     start(onReconcilerError?: (error: unknown) => void) {
-      if (config.write_mode === "enabled") reconciler.start(onReconcilerError);
+      // Execution remains disabled regardless of write-mode configuration.
+      void onReconcilerError;
     },
     async close() {
       ready = false;

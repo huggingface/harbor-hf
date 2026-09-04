@@ -7,10 +7,30 @@ default_branch: main
 
 # Harbor-HF
 
+> **Superseded runtime note (2026-09-02):** Harbor-HF now uses Harbor-first
+> direct inference through the resolved `AgentConfig`. Earlier authorization
+> text about an intermediary inference process and the removed harness is
+> retained only as a factual record of what was approved at
+> that time. It does not authorize new implementation, deployment, launch,
+> retry, recovery, or publication on those retired paths. Current operations
+> follow `docs/CONTROL_SERVICE.md`, `docs/harbor-integration-contract.md`, and
+> `.agents/skills/harbor-hf/SKILL.md`.
+
 ## Current authorization
 
 Status: approved
 Approved at: 2026-08-17T06:48:55Z
+Amended at: 2026-09-02
+Direct-inference documentation amendment approved at: 2026-09-02
+Harbor-first implementation amendment approved at: 2026-09-02T12:17:25Z
+Harbor-first implementation amendment completed at: 2026-09-02T13:09:16Z
+Harbor-first commit-and-push amendment approved at: 2026-09-02T13:20:28Z
+Harbor-first commit-and-push amendment completed at: 2026-09-02T13:21:41Z
+Harbor-first deployment amendment approved at: 2026-09-02T13:53:54Z
+Harbor-first deployment amendment completed at: 2026-09-02T14:39:30Z
+Canonical Bucket reset amendment approved at: 2026-09-02T14:59:25Z
+Workbench installer-variable amendment approved at: 2026-09-02T15:03:05Z
+Post-reset installation-repair amendment approved at: 2026-09-02T16:00:27Z
 Amended at: 2026-09-01T18:11:42Z
 Inference-token amendment approved at: 2026-08-17T15:37:46Z
 Sandbox-lifecycle amendment approved at: 2026-08-17T18:39:15Z
@@ -67,14 +87,452 @@ Installer readiness-polling amendment approved at: 2026-08-24T15:31:07Z
 Slophammer mutation-declaration amendment approved at: 2026-08-24T18:24:12Z
 Failed-Run replacement amendment approved at: 2026-08-25T22:29:22Z
 Admission-integrity repair amendment approved at: 2026-08-26T12:06:30Z
+Agent-Workbench amendment approved at: 2026-08-27T14:35:22Z
+Agent-Workbench FX-example-and-push amendment approved at: 2026-08-27T22:02:30Z
+Agent-Workbench canary-activation amendment approved at: 2026-08-28T07:28:34Z
+Canonical work-remote amendment approved at: 2026-08-28T07:44:34Z
+Private Harbor-HF recovery amendment approved at: 2026-08-28T08:21:01Z
+Run-native profile migration amendment approved at: 2026-08-28T08:58:58Z
+Agent-Workbench recipe-and-UX repair amendment approved at: 2026-08-28T15:38:33Z
+Agent-Workbench upstream integration amendment approved at: 2026-09-01T08:56:03Z
+Agent-Workbench upstream push amendment approved at: 2026-09-01T09:56:29Z
+Mutation-tooling retirement amendment approved: 2026-08-26
 GLM-5.3-Flash full-run amendment approved at: 2026-09-01T11:12:25Z
 GLM-5.3-Flash streaming-replacement amendment approved at: 2026-09-01T14:07:05Z
 Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Reviewed design push and bounded deployment (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T22:42:24Z
+
+- Direct user approval covers normal push of all reviewed local design, regression
+  and authorization commits, including the preceding upstream-issue authorization
+  records, only to `feat/leaderboard-submissions`. Existing draft PR 179 may update
+  through that push; no new PR, merge, default-branch update, force push, upstream
+  issue comment or reopening is authorized.
+- Commit this additive approval first after complete outgoing diff, public metadata
+  and privacy review. Deploy the exact new clean committed HEAD using the retained
+  supported existing-install workflow and canonical installer state. Build the
+  exact sealed production bundle locally for Linux AMD64; no image publication.
+- Freshly verify complete deployed-source provenance, ownership, receipts, private
+  resource settings, two secret names only, worker configuration, all Bucket
+  objects and owned activity. Preserve all current objects and historical paused
+  evidence and accounting; expected identified startup additions are allowed.
+  Stop for new active owned work without interrupting it. Do not infer ownership
+  from unrelated namespace Jobs or treat hidden historical Runs as completed.
+- Preserve existing resources, hardware, protection, credentials and installer
+  history. Local management authentication stays local to provider APIs and Bucket
+  reads, never application authentication or remote runtime. Never retrieve secret
+  values or change credentials, OAuth scopes, access retention or auth settings.
+- Select the reviewed local HF CLI consistently for plan and configure. If needed,
+  pause the existing Space and set only write mode disabled while preserving old
+  source stamps until upload. Permit one configure attempt with stdin closed, no
+  credential input or replacement, no provisioning and no application bearer.
+- Keep execution disabled regardless of configuration write mode. Do not activate
+  writes without supported authenticated source and health gates or bypass them.
+  On unclassified restart failure, verify upload and preservation, leave disabled
+  and paused, and request one manual restart; no repeated upload or diagnostic
+  implementation. On success verify runtime/source and anonymous health without
+  claiming application authentication. Keep evidence owner-only outside Git.
+- No E2E, Jobs, inference, Run actions, new resources, reset, migration, deletion,
+  spending expansion or real result publication. Existing coverage and missing
+  structure-baseline failures remain disclosed; no threshold waiver or weakening.
+  This is design/test deployment, not a new runner or production-readiness claim.
+
+### Internal design and local compatibility amendment (2026-09-04)
+
+Status: completed
+Approved at: 2026-09-04T22:23:44Z
+Completed at: 2026-09-04T22:32:42Z
+
+- Direct user instruction approves internal workarounds first and actual bounded
+  internal design/local compatibility work. Produce a concrete control-Space
+  Harbor CLI design, threat model, credential map, staged acceptance contract,
+  and precise public upstream gaps. Inspect pinned source and relevant history.
+- Local security-boundary guards and offline regression/compatibility tests are
+  approved where independent of unresolved Harbor execution gaps. Reuse existing
+  guards; do not build a duplicate planner, schema validator, controller, trial
+  loop, retry/resume implementation, private patch, or handle interception.
+- Commit this additive authorization before implementation. Local documentation,
+  tests, and in-scope guard commits are allowed after complete diff/metadata and
+  public-privacy review. No push, PR or upstream issue/comment mutation, merge,
+  reset, deployment, live inspection, Jobs, inference, spending, new resources,
+  credential access/transfer, OAuth grants or credential storage is authorized.
+- HF_TOKEN stays exclusively in the control Space. Neither persistent secret is
+  forwarded. Arbitrary plugins and controller hooks must never receive secrets.
+  One TypeScript control authority remains; execution stays disabled before
+  admission and credential resolution regardless of configuration write mode.
+- Isolated credential-free preparation with an exact native Harbor lock remains
+  a prerequisite, not permission to implement a resolver through Harbor imports.
+  Stop implementation at that upstream gap while completing independent local
+  design and nonexecuting boundary tests. Existing historical approvals do not
+  broaden this phase or waive policy, coverage, or paid-compute gates.
+
+### UI cutover with preserved historical evidence (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T18:06:12Z
+
+- The user directly instructed proceeding with the approved UI deployment now,
+  explicitly accepting that historical Runs remain archived and hidden from the
+  new projection. This clarifies the UI-feedback deployment scope below; it does
+  not require another archive decision. Preserve every historical immutable
+  object, paused state, failed-Run evidence, receipt, and budget reservation.
+  Archive means exclusion from the new projection only: no deletion, migration,
+  cancellation, settlement, repair, retry, or replacement Run identity.
+- Commit this additive approval before mutation, privacy-check and normally push
+  only the existing feature branch, then rebuild and plan the exact clean new
+  source revision. Reverify complete old-source provenance, ownership, receipts,
+  credentials by names only, resource settings, inventory and historical activity
+  using the historical projection. Stop on fresh active Jobs, pending actions,
+  or a concrete ownership, integrity, or source mismatch, not merely preserved
+  unresolved paused history.
+- Safely pause the old service, set only its write-mode variable to disabled,
+  and verify it remains paused before the target upload. Preserve old source
+  bindings until the supported configure transition. Use the reviewed local
+  CLI version and existing canonical installer state. Permit one supported
+  configure attempt with stdin closed, no credential inputs or replacement,
+  and no application bearer. Allow only expected additive startup configuration
+  metadata after inspecting that it cannot overwrite historical objects.
+- Keep writes disabled pending supported authenticated health/source checks;
+  no browser or activation is authorized in this operation. On unclassified
+  restart failure, verify uploaded source and preservation, leave disabled and
+  paused, and request one manual restart. Do not retry or re-upload blindly.
+- The user also requested two-trial inference E2E, but it is not admitted and
+  authorizes no new execution spend while the deterministic shared defect,
+  unsupported runner, credential/billing boundary, and exact current cost and
+  cumulative-budget gates remain unresolved. No broad paid approval is recorded.
+  This deployment is independent UI authoring cutover, not execution recovery.
+- No behavior repair, Jobs, inference, Run actions, new resources, credential
+  movement or scopes, reset, result publication, default-branch push, or PR merge.
+  Neither persistent secret is retrieved or forwarded; local management OAuth
+  remains local to provider APIs. Retain all earlier disclosed check limitations.
+
+### Execution-disabled UI-feedback deployment (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T17:46:12Z
+
+- The user explicitly approved deploying the current pushed feature to the
+  existing selected `<control-space>` for UI feedback. Record and commit this
+  amendment first; deploy the exact new clean committed HEAD including this
+  record. Normal push of this authorization commit to the existing feature
+  branch is approved; no default-branch update or PR merge is authorized.
+- Read the complete authorization, current operational contracts, and prior
+  installer evidence. Before remote mutation, freshly verify canonical ownership,
+  complete deployed bundle provenance, inventory and activity, and read-only
+  projection replay of existing records with the new code. Stop on incompatible
+  records; no migration, reset, deletion, compatibility patch, or invented proof.
+- Use only the supported existing-install workflow, preserving all receipts and
+  generations, Bucket data, Run state, hardware, protection, and existing secret
+  names and values. Local management OAuth is for provider APIs only, never
+  application authentication or remote runtime. Do not retrieve, copy, replace,
+  forward, or expose either persistent credential.
+- Permit one bounded supported configure attempt with closed stdin and without
+  credential replacement or application bearer. Keep writes disabled during
+  deployment and verification; execution must fail closed regardless of write
+  mode, before admission, credentials, setup tests, actions, or reconciliation.
+  Do not bypass empty-history, source, health, operator-authentication, or idle
+  gates or manually enable writes. No browser operation is authorized here.
+- On unclassified restart failure, preserve artifacts, leave disabled and paused,
+  report, and request one user restart rather than blindly retrying upload or
+  using an unreviewed manual startup path. Verify exact source, runtime revision,
+  release, anonymous health, and data preservation before claiming deployment.
+- No Jobs, inference, Run actions, new resources, credential or OAuth changes,
+  spending expansion, real result publication, migration, reset, or deletion.
+  Report honestly that native JobConfig authoring and configuration preview
+  replace the old Workbench flow; submission UI reconciliation remains pending.
+  Keep evidence owner-only and private; retain disclosed test-gate limitations.
+
+### Execution-disabled integration amendment (2026-09-04)
+
+Status: completed
+Approved at: 2026-09-04T16:01:01Z
+Completed at: 2026-09-04T16:23:54Z
+
+- The user explicitly approved proceeding with execution-disabled integration:
+  merge fresh main into `feat/leaderboard-submissions`, reconcile authoring UX
+  with Harbor JobConfig, push only that feature branch without force, and open
+  or update one visibility PR against main. Do not merge the PR or push main.
+- Remove unsupported parent-worker execution, private Harbor or Hub patches,
+  and control-credential forwarding. Fail closed before Job admission,
+  reservations, Run actions, or execution credential resolution. Disable launch
+  and remote setup tests with a clear explanation; never return accepted Runs.
+- Preserve configure/save/load of immutable named harness configurations using
+  Harbor-accepted JobConfig fragments. New Run may preview only without remote
+  preparation. Do not restore removed profiles, invent Harbor-owned execution,
+  discovery, lock resolution or retry behavior, or add a parallel reconciler.
+- Preserve historical records and authorization history, the two-secret
+  configuration, and the control-only HF_TOKEN boundary. Neither persistent
+  secret is forwarded on the disabled path. No private Harbor patch is approved.
+- Future per-user OAuth scopes, user-account billing, and Jobs/inference
+  delegation are separate research for the parent agent, not implementation
+  authority. No token forwarding or new credential store is authorized.
+- No HF operational calls, deployment, Jobs, inference, spending, resources,
+  credential transfers, reset, migration, or Run actions are authorized.
+- Run required local checks and production Docker build, add security/API and
+  browser regressions, and disclose failures without weakening thresholds.
+  Publish a draft PR for intentionally disabled execution or incomplete gates.
+  Check public privacy and full actual diffs and metadata before every commit,
+  push, and PR. Include the pinned Harbor revision and files reviewed in the PR.
+
+### Upstream compatibility, feature reconciliation, and PR visibility (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T15:25:00Z
+
+- Direct user approval: "see if they are compatible with our direction, merge
+  and push (open a PR for visibility)". Review fresh canonical upstream main
+  and all feature changes against the greenfield first-install direction.
+- If safe, merge current `origin/main` into `feat/leaderboard-submissions`,
+  reconcile implementation and tests with Harbor JobConfig and the parent-Job
+  architecture, commit, push only that feature branch without force, and open
+  one PR targeting main (or update its existing PR). This does not authorize
+  merging the PR, pushing main, rebasing published history, or resetting.
+- Workbench configures, tests, and saves named immutable harness versions;
+  New Run selects benchmark subset, built-in or saved harness, model string,
+  and cost ceiling. Profiles belong in Advanced. Do not restore obsolete
+  five-profile admission or introduce a parallel reconciler. Existing-install
+  upgrade support is not required; preserve historical immutable bindings.
+- Read pinned Harbor source and subsequent history before implementation.
+  Stop for an unresolved Harbor-owned gap or material unsafe incompatibility;
+  no local Harbor patch or upstream issue or PR is authorized.
+- Run required local checks, including production Docker build and integration
+  regressions. Do not lower coverage or conceal failing gates. Use a draft PR
+  if required checks remain red or incomplete; do not claim deployment or
+  merge readiness. Check privacy and inspect complete diffs and public metadata
+  before every commit, push, and PR publication.
+- No HF API work, deployment, activation, Jobs, inference, spending, resource
+  creation or retirement, credential access or transfer, Bucket reset, data
+  migration, or real result publication is authorized. Earlier operational
+  approvals do not expand this task.
+
+### Harness library and New Run UX amendment (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T14:12:04Z
+
+- Directly approved local implementation and tests for the proposed Workbench
+  configuration flow: installation commands and settings, optional setup testing
+  as a user-facing goal, and named immutable versioned harness presets selectable
+  alongside built-in harnesses in New Run. New Run presents benchmark subset or
+  size, harness, model string, cost ceiling, and review before launch. Move the
+  mixed profile registry and provider or Endpoint details into Advanced without
+  bypassing server-side compatibility, authorization, or credential safeguards.
+- This initial pass is read-only upstream and architecture review plus this
+  authorization record only. Do not implement yet. Compare the pinned Harbor
+  source with freshly fetched public upstream history, identify landed features,
+  pin-upgrade effects and execution-owned gaps, and return a concrete plan.
+- Subsequent local implementation may cover wrapper-owned preset storage,
+  library, UI, and Harbor configuration submission after the review establishes
+  a safe path. Store accepted Harbor configuration rather than duplicate its
+  fields. Preserve old Run locks and saved recipe revisions; do not silently
+  recompile, promote, migrate, or reinterpret them on a pin upgrade.
+- A saved preset or successful setup test is not execution approval. Do not
+  bypass immutable profile or reviewed-worker gates in the current runtime to
+  simulate unrestricted model selection or optional setup. The simplification
+  plan's credential decision and paid-test preconditions remain unsatisfied by
+  this amendment; no runtime cutover or gate waiver is authorized here.
+- Stop and report any missing Harbor-owned execution behavior with a proposed
+  upstream change. No local Harbor patch, upstream issue, or upstream pull
+  request is approved. Reuse landed upstream features instead of implementing
+  them in Harbor-HF; any later pin update requires local compatibility checks.
+- Local authorization and implementation commits are permitted after privacy
+  review. No push, pull request, merge, release, deployment, activation, benchmark
+  or setup Job, inference, spending, new resource, credential access or transfer,
+  reset, migration, or real result publication is authorized by this amendment.
+  Do not inherit publication or deployment permission from earlier milestones.
+  Earlier deployment records remain intact and are not closed by this work.
+
+### Workbench saved-configuration milestone (2026-09-04)
+
+Approved at: 2026-09-04T08:35:55Z
+
+- Implement and test a canonical-Bucket benchmark catalog and named durable
+  Workbench configuration Save/Load for the existing fast-agent and FX paths.
+  Keep the existing execution mechanism; do not perform the proposed runtime
+  cutover or add a second control authority.
+- Simplify the configure, save, select benchmark, confirm, run, and saved-result
+  flow. Treat small/medium/large benchmark sizing as guidance rather than a
+  guaranteed monetary bound. Preserve existing execution safeguards.
+- Deploy the reviewed change to the user-selected existing test control Space
+  only after confirming canonical ownership and resource identity. Verify one
+  small diagnostic smoke run; do not expand this approval into full benchmark
+  cohorts, endpoint work, billing changes, or recurring resources.
+- The user approved proceeding and expressed tolerance for benchmark spending,
+  without specifying a replacement numeric ceiling. Retain the existing
+  diagnostic configuration ceiling for this milestone; ask before increasing it.
+- No new resource, credential transfer, public result publication, upstream
+  Harbor mutation, merge, or default-branch push is authorized. Keep private
+  identifiers out of tracked files. Local authorization and implementation
+  commits are permitted; public publication requires its own scope review.
+
+### Credential-minimization follow-up (2026-09-04)
+
+Approved at: 2026-09-04T09:04:31Z
+
+- Verify public Hugging Face documentation for OAuth access to personal Buckets,
+  permission granularity, token lifetime, and user submission to the shared
+  leaderboard. Report unsupported or unverified provider capabilities honestly.
+- Remove the installer's unconditional Endpoint-management permission requirement
+  for the Jobs-based installation. Preserve required Job and canonical-Bucket
+  permissions and existing credential boundaries; test the narrower acceptance.
+- Local implementation and authorization commits are permitted. Do not deploy,
+  transfer or replace credentials, revoke permissions, create resources, launch
+  paid work, or publish results as part of this follow-up.
+- Personal-Bucket delegation and a new leaderboard submission workflow remain
+  design work, not approval to implement new storage or publication authority.
+
+### Leaderboard submission and presentation milestone (2026-09-04)
+
+Approved at: 2026-09-04T09:14:11Z
+
+- Prioritize authenticated user result submission with separate administrator
+  review and publication. Reuse the canonical Bucket, current result/evidence
+  contracts and publication authority; do not grant submitters operator access.
+- Support selection of authorized hosted results and bounded external Harbor
+  bundle intake where the existing Harbor validation boundary supports it.
+  Preserve provenance and never label external uploads as verified execution.
+  Report Harbor gaps rather than adding Harbor-owned behavior locally.
+- Tidy the frontend for a presentable desktop/mobile submission and review flow,
+  including clear permissions, states, confirmation, and publication copy.
+- Implement, test, document, and make local commits. Prepare for the user's own
+  deployment and testing. Do not deploy, launch paid work, publish actual results,
+  transfer credentials, create resources, push, or merge in this milestone.
+- Personal-Bucket OAuth delegation remains deferred. No new credentials or
+  persistent resources are authorized. Existing privacy and check gates remain.
+
+### Feature-branch publication and test deployment (2026-09-04)
+
+Approved at: 2026-09-04T10:29:15Z
+
+- Create `feat/leaderboard-submissions` from the completed local milestone and
+  push that branch to the canonical GitHub repository. Publish only reviewed,
+  privacy-checked code and metadata. No pull request, merge, or default-branch
+  push is authorized.
+- Deploy the exact committed branch revision to the previously selected existing
+  test control Space after verifying its canonical Space/Bucket ownership and
+  deployment provenance. Use the supported existing-install workflow, preserving
+  credentials, hardware, protection, Bucket data, and reviewed worker settings.
+- The user requested deployment after the remaining coverage, audit, and missing
+  tooling failures were disclosed. This is a test deployment request, not a
+  declaration that those checks pass or permission to lower their thresholds.
+- Read-only provenance and activity inspection is permitted. Stop on uncertain
+  resource ownership, installer binding mismatch, unexpected credential requests,
+  active work that makes reconfiguration unsafe, or failed deployment verification.
+  Do not fabricate missing source markers or replace private installer state.
+- No new resources, credential transfer/replacement/revocation, paid benchmark
+  launch, external-result migration, or actual public leaderboard publication is
+  authorized by this request. Enable application writes only after verifying the
+  existing installation and confirming no queued work would be launched.
+
+### Installer metadata reconciliation (2026-09-04)
+
+Approved at: 2026-09-04T10:50:12Z
+
+- Reconcile the existing test installation's source and bundle metadata against
+  the verified deployed release and paired canonical resources, then continue
+  the approved exact-source deployment on `feat/leaderboard-submissions`.
+- Establish the current deployed source and file digests from immutable evidence
+  before restoring metadata. Preserve the installer ownership ID and existing
+  private state; do not fabricate provenance or discard receipts to bypass checks.
+- Preserve secrets, Bucket contents, hardware, protection, and reviewed worker
+  settings. No credential transfer, resource creation, benchmark execution,
+  publication of real results, or legacy-result migration is approved.
+- Use the supported installer sequence after reconciliation. Verify source,
+  health, authentication, and idle control state before enabling writes. If a
+  further unexplained mismatch prevents proof, stop and report it.
+- Commit and push the authorization and any sanitized operational documentation
+  to the approved feature branch only; no default-branch push or merge.
+
+### Browser-authenticated installer verification (2026-09-04)
+
+Approved at: 2026-09-04T11:01:54Z
+
+- Replace the installer's bearer-only activation requirement with verification
+  through the existing HF browser OAuth login. Implement and test this local
+  installer change without adding a new service credential, OAuth application,
+  server authentication authority, or persistent credential store.
+- Keep browser authentication scoped to the exact planned control origin and
+  operator identity. Do not export session cookies, copy local management
+  credentials into the browser or Space, persist browser login state, or log
+  credentials. Preserve existing source, health, write-mode, and activity gates.
+- Commit and push reviewed changes to `feat/leaderboard-submissions`, then
+  continue the previously approved provenance reconciliation and test deployment.
+  Browser sign-in may require the user's interactive participation; never bypass
+  it or claim authenticated verification without observing success.
+- Existing constraints remain: no new persistent resources, credential transfer,
+  benchmark execution, result publication/migration, default-branch push, or merge.
+
 ### Scope
 
+- Diagnose the failed post-reset installation using sanitized read-only
+  provider state and logs, implement and test any general installer or control
+  startup repair required, commit and push the reviewed repair only to
+  `feat/agent-workbench`, and retry the existing-resource
+  `install:plan`/`install:configure`/`install:verify`/`install:activate`
+  sequence. The repair may upload source, pause, restart, and update
+  installer-owned variables on the existing canonical `<control-space>`, but
+  must preserve its existing secrets, reviewed Workbench variables, hardware,
+  protection, and canonical `<artifact-bucket>`. Keep writes disabled until
+  verification succeeds. Do not provision or create resources, replace or
+  retrieve credentials, publish an image, launch a setup or benchmark Job or
+  Run, call inference, publish results, merge, or update the default branch.
+  If the repaired installation cannot be verified, leave writes disabled and
+  the Space paused.
+- Preserve the existing reviewed `HARBOR_HF_WORKBENCH_RUNNER` and
+  digest-pinned `HARBOR_HF_WORKBENCH_IMAGE` values in installer plans and
+  phase transitions so the supported npm existing-install workflow accepts
+  and retains the hosted Workbench configuration. Add deterministic tests,
+  commit and push the repair before continuing the approved Bucket reset.
+  Do not expose variable values, broaden accepted variable names, change the
+  values remotely, or alter secrets, hardware, protection, resources, or Run
+  state.
+- Disable control writes, delete all application objects
+  from the one live canonical artifact Bucket while preserving its single
+  installer ownership marker and the Bucket resource, then use the supported
+  existing-install npm sequence (`install:plan`, `install:configure`,
+  `install:verify`, and `install:activate`) to deploy the exact latest
+  `feat/agent-workbench` revision. Do not run `install:provision`, replace or
+  retrieve existing secrets, change hardware or protection, republish the
+  worker image, launch setup or benchmark Jobs, call inference, publish
+  results, create resources, merge, or update the default branch. Verify a
+  fresh projection, enabled write mode, and visibility of the 21 pinned
+  deployment profiles. The deleted application records are intentionally not
+  recoverable; if installation fails after deletion, leave writes disabled and
+  stop rather than creating replacement resources.
+- Publish one immutable `linux/amd64` trial-worker image
+  from the reviewed Harbor-first branch, pin its real digest and source revision
+  in every active compatible deployment profile, recompute profile identities,
+  commit and push those pins to `feat/agent-workbench`, deploy that exact final
+  revision to the existing canonical control Space, and verify service health
+  plus approved profile visibility. Use only the existing Space, Bucket,
+  secrets, image package, and branch. Do not launch a Workbench setup Job or
+  benchmark Run, call inference, publish benchmark results, create resources,
+  change hardware, merge, or update the default branch. If the control service
+  fails health checks, restore only the immediately preceding known-good
+  control revision.
+- Commit the completed and locally verified Harbor-first refactor, including
+  its source, tests, profiles, generated artifacts, documentation, and
+  instruction updates, then push the current `feat/agent-workbench` branch to
+  its tracked `origin` branch. Do not deploy, publish an image or package, run
+  inference, use credentials beyond Git transport, merge, or mutate hosted
+  runtime resources.
+- Complete the already-started Harbor-first code refactor,
+  remove the remaining active root Python provider proxy and its scoped routes,
+  placeholder credential, request enforcement, isolation evidence, and cleanup,
+  update affected tests and generated artifacts, and run local verification.
+  No deployment, publication, credential use, inference, paid work, push, merge,
+  hosted mutation, or remote resource change is included.
+- Rewrite the documentation and repository instruction surface for
+  Harbor-first direct inference, remove active guidance for the retired
+  inference intermediary and request-accounting design, remove active support
+  for the retired harness, preserve clearly marked historical facts, and
+  restore `AGENTS.md` and `.agents/` as the canonical instruction paths. Do not
+  edit code, tests, or `docs/agent-workbench.md`.
 - Add the project-authorization skill and this repository-indexed project file through the normal contribution workflow.
 - Finish deployment and hard cutover of the hosted TypeScript control service described by the approved control-service plan.
 - Install the retained purpose-scoped service credential as the control Space's `HF_TOKEN` control secret.
@@ -94,12 +552,12 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 - Restart the failed no-inference control-smoke as an infrastructure replacement after protected public ingress.
 - Research the minimum permissions required by the local CLI control bearer token and update the README to describe the explicit `HARBOR_HF_CONTROL_BEARER_TOKEN` authentication flow accurately.
 - Add deterministic plan, apply, and verify npm commands for provisioning and adopting the canonical control Space and artifact Bucket, uploading an exact control release, configuring disabled-write deployment variables and required secrets safely, and verifying the hosted installation.
-- Run one controlled phase-one installer apply against the operator-selected existing bootstrap to capture the sanitized provider failure category or complete creation of its canonical private Bucket and local ownership receipt.
-- Diagnose and complete phase one for the operator-selected installer test bootstrap autonomously, using the active local write-capable Hugging Face credential for bounded plan/apply retries and direct Bucket probes.
-- Complete one bounded phase-two recovery for the operator-selected installer test bootstrap using its exact prior private plan and existing remote credential names.
-- Reset the operator-selected test bootstrap after confirming that its marked Space is absent and its remaining private Bucket is empty, then recreate phase one.
+- Run one controlled phase-one installer apply against the operator-selected existing test installation to capture the sanitized HF failure category or complete creation of its canonical private Bucket and local ownership receipt.
+- Diagnose and complete phase one for the operator-selected installer test installation autonomously, using the active local write-capable Hugging Face credential for bounded plan/apply retries and direct Bucket probes.
+- Complete one bounded phase-two recovery for the operator-selected installer test installation using its exact prior private plan and existing remote credential names.
+- Reset the operator-selected test installation after confirming that its marked Space is absent and its remaining private Bucket is empty, then recreate phase one.
 - Complete one bounded source-staged retry after the operator installed both expected credential names interactively.
-- Diagnose and complete the operator-selected installer test bootstrap autonomously within its existing two-resource, free-hardware boundary.
+- Diagnose and complete the operator-selected installer test installation autonomously within its existing two-resource, free-hardware boundary.
 - Add guarded installer commands for canary activation, production promotion, and emergency write disablement.
 - Expand the README with an agent-oriented hosted-installation runbook and execution model that distinguishes the local npm installer, local Python operator CLI, hosted control service, reconciler, and remote workers.
 - Replace the implicit two-pass apply and installer canary workflow with explicit provision, configure, verify, activate, and emergency-disable commands. Activation enables the inspected installation without changing hardware, transferring credentials, or embedding benchmark, model, or harness names in runtime policy.
@@ -109,7 +567,7 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 - Repair the pull-request CI cadence test so it isolates scheduled Bucket synchronization from terminal worker-receipt safety synchronization. Run focused and full validation, commit the verified test repair locally, and push the resulting commits only to the tracked public `tweaks` branch.
 - Harden installer credential acceptance with a fresh exact-Bucket create/read-back probe before storing a proposed control credential, and make owner-only installer operation locks safely reclaimable after confirmed process death or host reboot.
 - Require exact non-mutating fine-grained scope attestation before storing a proposed control credential, make source-staged recovery stop on receipt/Space SHA drift without overwriting attested source, and remove credential checks that enumerate durable control records.
-- Remove installer credentials from advisory-lock subprocesses, make resources-only provisioning reject any bootstrap where configuration has started, and serialize verification with all per-target installer operations.
+- Remove installer credentials from advisory-lock subprocesses, make resources-only provisioning reject any installation where configuration has started, and serialize verification with all per-target installer operations.
 - Require the existing non-mutating inference-only scope attestation before the installer persists an initial or replacement inference credential.
 - Bound installer Bucket probe HTTP exchanges by inactivity and streamed bytes, and reject state roots that resolve inside the source checkout before creating lock or state files.
 - Remove the redundant `--confirm-space` argument from installer activation and disablement while preserving exact target-bound plans and all existing preflight, verification, and rollback protections.
@@ -123,6 +581,7 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 - Run one replacement exact `install:configure` retry for the existing installer-test resources from the plan's sealed source revision, with the project uv environment selecting the sealed Hugging Face CLI version.
 - Add visible bounded Space-start and application-readiness polling to installer configuration, with exact retry conditions, sanitized progress, and fail-closed timeout rollback.
 - Disable Slophammer's Python mutation-declaration rule with a documented reason and remove its obsolete baseline finding while retaining optional manual mutation tooling.
+- Retire mutation testing completely from the root project and Harbor agent package. Remove mutmut dependencies and configuration, mutation runner scripts and workflows, package-publication mutation preflights, active developer instructions, documentation, and lockfile entries. Preserve ordinary deterministic pytest regression tests whose filenames use `mutation_contracts`; they do not invoke mutation tooling.
 - Add a leaderboard snapshot in the existing canonical `<artifact-bucket>`: a configuration digest, mechanical eligibility, and a derived SQLite file of the rows shown on the board. Keep one Space and one Bucket.
 - Make the official leaderboard the Space default route and allow anonymous `GET /api/v1/leaderboard`. The current operator dashboard moves to `/overview` behind a "Run benchmark" button and Hugging Face login.
 - Integrate the requested dashboard harnesses as Harbor agent plugins behind the existing campaign path: OpenCode, Qwen Code, mini-swe-agent, Pi, Kimi Code, Hermes, Codex, OpenHands, OpenClaw, and Claude Code. Prove each with one Terminal-Bench 2.1 two-task canary. Reject a harness that needs a native API the locked Hugging Face router route cannot preserve.
@@ -131,8 +590,6 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 - Treat Harbor environment-setup failures as infrastructure, retry transient evidence-upload HTTP 500 responses, and keep an execution Job running after one task fails to upload evidence. Deploy that reviewed revision, then retry only eligible infrastructure failures on the existing gpt-oss OpenCode Terminal-Bench 2.1 single-trial campaign. Add a run-page control and CLI `--all-eligible` that call the existing per-task infrastructure retry path.
 - After the gpt-oss OpenCode 89-task single-trial diagnostic exists, run the same Terminal-Bench 2.1 one-trial diagnostic for the other Chat Completions harnesses that already have a two-task canary: Qwen Code, mini-swe-agent, Pi, Kimi Code, Hermes, OpenHands, and OpenClaw. Use `openai/gpt-oss-20b` on Together, reasoning off, publication role diagnostic, and the existing promoted profiles. Do not add a campaign for OpenCode. Reject Codex and Claude Code on this route because they need a native API the locked Chat Completions router cannot preserve.
 - Install Harbor from a pinned `harbor-framework/harbor` git commit instead of a PyPI release so new campaigns can evaluate harnesses as they land upstream. Remove the Harbor 0.21.0 empty-metrics sitecustomize workaround after that pin includes PR 2681. Deploy the reviewed revision. Existing campaign locks keep their Harbor pin.
-- Add FX as a Harbor agent plugin and promoted harness plus gpt-oss Together deployment so it appears in the launch list. Deploy the reviewed revision. Do not launch a campaign.
-- Finish one successful full Terminal-Bench 2.1 single-trial diagnostic for each existing gpt-oss Chat Completions 89-task run by inspecting that run and its Jobs, fixing the shared defects those Jobs expose, deploying the reviewed revision, and retrying only eligible infrastructure failures or unresolved tasks on those same campaigns. The existing FX 89-task row may be finished. Do not add a second 89-task campaign for a harness that already has one. Do not launch Codex or Claude Code.
 - Make the namespace Sandbox cap an operator setting with default 16, then set the live service to 128 so the existing 89-task diagnostics can start more Sandboxes at once. Campaign ceilings stay unchanged. Existing campaign locks keep their per-run `max_sandboxes` and worker concurrency.
 - Replace the Campaign concept with Run throughout source, contracts, durable records, API routes, CLI, web UI, tests, profiles, and documentation. Do not retain Campaign aliases or a compatibility API.
 - Replace nested Sandboxes with one Hugging Face Job per physical trial attempt. A trial records the ordered list of Jobs that attempted it and selects a result only from a valid attempt receipt. A failed Job may create a replacement only for an eligible infrastructure failure within the locked attempt and budget limits.
@@ -141,6 +598,14 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 - After the redesigned service passes an unpaid control canary and a bounded paid task canary, launch fresh Terminal-Bench 2.1 single-trial runs for the Chat Completions harnesses with explicit launch authorization.
 - Harden worker retries across control-service projection rebuilds, delete only the seven fresh Runs whose final preparation Jobs failed on `control_not_ready`, and launch one replacement Run for each same authorized harness after the hardened path passes its canaries.
 - Repair the single detected Job admission-chain fork by deleting only its orphaned admission object, which has no dispatch, receipt, capacity release, advancement, or remote Job. Preserve its action intent and every other Run record. Add startup projection catch-up, deploy the reviewed revision, and restart the existing control Space.
+- Build a user-friendly Agent Workbench for private customer-authored command-agent configurations. Support editable setup and run commands, typed environment bindings, redacted expansion previews, immutable execution revisions, setup-only tests, streaming logs, bounded private file browsing, result access, and direct transition from setup verification to a small benchmark run.
+- Add one generic Harbor command-agent plugin behind the public agent interface. Keep install and execution commands, environment bindings, output declarations, and optional trace normalization as immutable configuration data. Harbor remains authoritative for task execution, verifier rewards, locks, results, and trial exceptions.
+- Add a Fast-Agent 0.10.11 starter configuration that uses the command-agent path and supports a locked model route plus `--base-url`. Accept direct ATIF output when present without making normalized traces a prerequisite for private diagnostic verifier results.
+- Exercise the Workbench end to end in the local control service and browser, including screenshot-based review, hostile-output rendering checks, setup logs, workspace browsing, command previews, and user-facing failure recovery.
+- After all local gates pass, optionally deploy the exact reviewed revision to the existing canonical `<control-space>` and run bounded setup and diagnostic trial canaries through the existing control path. Use no new persistent resource and preserve every unrelated Run and control record.
+- Activate the reviewed Fast-Agent Workbench canary path: keep Slophammer's Python mutation-declaration rule disabled, remove mutation execution from the mandatory local completion gate while retaining the on-demand tooling, push only `feat/agent-workbench`, publish one reviewed digest-pinned generic trial-worker image from the exact committed revision, add its compatible deployment and diagnostic launch-policy profiles, deploy the exact reviewed control revision to the existing canonical `<control-space>`, verify setup through the Workbench setup path, and submit one normal Run using `terminal-bench-2-1-canary`, `gpt-oss-20b`, and the reviewed Fast-Agent command-agent harness.
+- Repair the Agent Workbench after the first Fast-Agent diagnostic: keep CLI installation and runtime provisioning in immutable recipes so Python/uv, npm/npx, and other ecosystems use the same generic command-agent path without core name branches; update the reviewed Fast-Agent recipe and route binding; make the Workbench workflow explicitly communicate configure, test, publish, and Run stages; consolidate or clearly distinguish setup and execution logs; improve reviewed-profile loading and failure states; correct deterministic setup and client-configuration outcome classification; test, commit, push, and deploy the exact reviewed repair; then launch one new two-task diagnostic canary under the same limits.
+- Make the canonical `huggingface/harbor-hf` repository the normal work remote for this checkout. Rename that remote to `origin`, retain the former fork as a secondary `fork` remote, push `feat/agent-workbench` directly to the canonical repository, and use the canonical repository's existing Actions workflow and package permission for worker-image publication.
 - Run one final Terminal-Bench 2.1 full evaluation with all 89 tasks and one trial per task, using the existing promoted GLM-5.3-Flash Together deployment and Pi 0.84.2 with reasoning off.
 - Cancel only the GLM-5.3-Flash plus Pi full Run invalidated by the pre-streaming inference bridge after its admitted Jobs reach evidence boundaries, then launch exactly one clean 89-task replacement using the fixed streaming worker.
 - Add one append-only execution-continuation attachment to each of the seven approved historical gpt-oss 89-task Runs so the current TypeScript control service can finish only their unresolved tasks without changing Run IDs or rerunning selected outcomes.
@@ -157,14 +622,14 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 - The 2026-08-20 amendment permits exactly one new private canonical `<artifact-bucket>` in the selected namespace. It does not permit another Space, Bucket, repository, Dataset, schedule, credential, or result store.
 - The later 2026-08-20 replacement amendment permits exactly one new private canonical `<control-space>` in the selected namespace. It does not permit an additional Space or any other persistent resource.
 - Do not rerun valid logical tasks or use inference during migration and publication recovery. The 2026-08-22 amendment permits one separate fresh 89-task diagnostic campaign after the validity fixes deploy; it does not reopen or retry the old campaign.
-- Keep credential values, private resource identifiers, operator paths, and private topology out of Git and browsers. Do not expose credentials in logs or evidence; the approved inference credential may appear only in the trusted worker or root-owned inference bridge environment.
+- Keep credential values, private resource identifiers, operator paths, and private topology out of Git and browsers. Do not expose credentials in logs or evidence; the approved inference credential may appear only in an eligible execution Job and the selected reviewed Harbor agent environment.
 - Do not delete or retire a legacy resource without its completed private audit and a separate explicit approval for that resource.
 - Anonymous callers may reach static application assets, login initiation, OAuth return handling, health checks, and `GET /api/v1/leaderboard`. That leaderboard response is the official snapshot only: ranked rows and Pareto flags, no `sqlite_key`, no diagnostic catalogs, and no campaign internals. Campaigns, results, system, events, Jobs, profiles, audit, and all mutations remain deny-by-default.
 - Add bounded request-body and anonymous request-rate controls before changing Space visibility. If hosted denial, capability, or abuse-control verification fails, restore private visibility, disable writes, and stop.
 - Keep exactly two operator-managed Space secrets: the control credential `HF_TOKEN` and the inference-only `HF_INFERENCE_TOKEN`.
 - Workers must never receive `HF_TOKEN`. They may receive only `HF_INFERENCE_TOKEN`, whose permissions are limited to serverless and Endpoint inference calls.
-- Pin each worker image and command, enforce the locked model, route, token, request, concurrency, timeout, and cost limits in the worker bridge, and rotate the inference credential regularly. Revoke the prior credential only after every Job using it is terminal.
-- Bind every Sandbox operation to the immutable campaign lock, launch action, task, expiration, approved image, hardware, paths, transfer limits, timeouts, and budget. Record fenced lifecycle receipts and do not expose a general Hugging Face API proxy.
+- Pin each worker image and command, resolve the exact model, upstream, native API, credential reference, timeout, output limit, and prices into Harbor's immutable execution contract, and rotate the inference credential regularly. Revoke the prior credential only after every Job using it is terminal.
+- Bind every Sandbox operation to the immutable campaign lock, launch action, task, expiration, approved image, hardware, paths, transfer limits, timeouts, and budget. Record fenced lifecycle receipts and do not expose general Hugging Face lifecycle authority.
 - Keep `HF_TOKEN` in the control Space. Never pass it to a worker or Sandbox. The control Space may derive and use a per-Sandbox credential only inside its trusted process while handling an authorized lifecycle operation.
 - Keep the first Terminal-Bench canary below USD 5. Treat the full campaign as substantial paid compute: measure throughput and cost first, preserve durable partial evidence, prove pause and resume, and obtain explicit approval for the exact trial count, concurrency, hardware, and hard cost ceiling before launch.
 - For the approved Terminal-Bench 2.1 campaign, use one bounded representative canary and then continue without another conversational prompt only when the hosted control plane admits the measured worst-case cost for 89 tasks and five trials under the existing USD 300 total project limit. Count setup, canaries, retries, recovery, and cleanup. Allow only infrastructure replacements; never rerun a terminal semantic outcome.
@@ -178,10 +643,10 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 - Limit installer redundant-confirmation removal to local implementation, tests, documentation, and commits. Do not use real credentials, call hosted APIs, run installer remote commands, mutate resources, activate or disable writes, incur cost, push, or open a pull request.
 - Limit installer bearer-variable simplification to local implementation, tests, documentation, and commits. Do not use real credentials, call hosted APIs, run installer remote commands, mutate resources, activate writes, incur cost, push, or open a pull request.
 - Limit the upstream safe integration to local merge resolution, bounded implementation fixes, generated artifacts, tests, documentation, and commits. Preserve both sides' intended general behavior, use no real credentials, call no hosted APIs, run no installer remote commands, mutate no resources, incur no cost, and do not push or open a pull request.
-- Limit the installer diagnostic apply to the existing protected, free-hardware bootstrap and its canonical private Bucket. Do not upload application source, prompt for or move service credentials, activate writes, create any other resource, incur paid compute, push, or open a pull request. Stop after the phase-one result or first failure.
+- Limit the installer diagnostic apply to the existing protected, free-hardware test installation and its canonical private Bucket. Do not upload application source, prompt for or move service credentials, activate writes, create any other resource, incur paid compute, push, or open a pull request. Stop after the phase-one result or first failure.
 - Limit autonomous installer diagnosis to the selected protected, free-hardware test Space and its one empty private test Bucket. Direct probes may create and, when required for deterministic recovery, delete only that empty test Bucket. Do not upload application source, read or move service credentials, activate writes, use paid hardware, mutate unrelated resources, push, or open a pull request. Stop after phase one succeeds or a concrete provider defect is isolated.
 - Limit the phase-two recovery to re-uploading the exact previously planned source, adopting only the already-present expected secret names without reading or rewriting credential values, setting the installed phase, restarting on free hardware, and running verification with writes disabled. Create no resources, use no paid hardware, pause on failure, and do not push or open a pull request. This one recovery supersedes the earlier source-upload prohibition only for these exact actions.
-- Limit the empty-bootstrap reset to deleting the one verified-empty private test Bucket after rechecking that the marked Space remains absent, quarantining rather than deleting its stale owner-only local installer state, and running fresh plan plus phase-one apply for the same protected `cpu-basic` Space and private Bucket. Do not upload source, prompt for or move credentials, use paid hardware, push, or open a pull request. Stop after phase one succeeds or the first failure.
+- Limit the empty-installation reset to deleting the one verified-empty private test Bucket after rechecking that the marked Space remains absent, quarantining rather than deleting its stale owner-only local installer state, and running fresh plan plus phase-one apply for the same protected `cpu-basic` Space and private Bucket. Do not upload source, prompt for or move credentials, use paid hardware, push, or open a pull request. Stop after phase one succeeds or the first failure.
 - Limit the source-staged retry to adopting the already-present expected credential names without reading or rewriting values, re-uploading the exact saved source, setting the installed phase, restarting on free hardware, and running verification with writes disabled. Record only redacted command stages, pause on failure, create no resources, use no paid hardware, and do not push or open a pull request. Stop after success or the first failure.
 - Limit autonomous completion to the selected test Space and its existing private Bucket on `cpu-basic`, using the active local write-capable credential and the two already-installed expected secret names. Allow bounded status and log probes, exact-source uploads, managed-variable transitions, restarts, pauses, verification, and implementation fixes required to reach a verified installed state with writes disabled. Do not read, copy, replace, or expose credential values; create no additional resources; use no paid hardware; mutate no unrelated resource; and do not push or open a pull request.
 - Limit the activation-command amendment to implementation, tests, and documentation. Require exact installed bindings, authenticated system verification, explicit target confirmation, disabled-to-canary staging, evidence-gated canary-to-enabled promotion, explicit paid-hardware approval, fail-closed rollback, and emergency return to disabled writes. Do not activate or promote a hosted Space, change remote hardware, incur cost, move credentials, push, or open a pull request while implementing it.
@@ -209,15 +674,36 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 - The 2026-08-22 infrastructure-retry amendment does not raise any campaign ceiling. Retries stay inside the locked ceiling of that existing campaign. Do not reopen `complete`, agent, verifier, policy, refusal, semantic, cancelled, or benchmark-timeout outcomes. Do not rerun a scored miss.
 - The 2026-08-22 harness 89-task diagnostic amendment authorizes seven new campaigns. Each campaign uses the same hard ceiling as the existing gpt-oss OpenCode 89-task run: USD 10.60 (`10600000` micro-USD), which is twice the diagnostic reservation. Combined hard cap for those seven campaigns is USD 74.20, including infrastructure retries. This does not reopen the OpenCode 89-task campaign, does not authorize Codex or Claude Code, and does not authorize the official five-trial protocol.
 - The 2026-08-23 Harbor-from-source amendment pins an exact Harbor git commit. It does not float on a branch, add a persistent resource or credential, relaunch a campaign, or raise any spend ceiling. `harbor_version` stays the version that commit reports so preparation admission still matches.
-- The 2026-08-23 FX harness amendment does not authorize a canary, 89-task diagnostic, official five-trial run, new persistent resource, or credential. It only adds the harness to the existing campaign path and deploys the reviewed revision.
-- The later 2026-08-23 harness full-run repair amendment does not raise any campaign ceiling and does not add a persistent resource or credential. Retries stay inside each existing campaign's locked ceiling. The seven-campaign combined cap remains USD 74.20. The existing FX 89-task row stays inside its locked ceiling. Do not reopen sealed semantic, agent, verifier, policy, refusal, cancelled, or benchmark-timeout outcomes. Do not launch a second 89-task campaign for a harness that already has one.
+- The retired-harness amendments from 2026-08-23 are superseded and authorize no current canary, diagnostic, official run, retry, publication, deployment, persistent resource, or credential.
+- The later 2026-08-23 harness full-run repair amendment does not raise any campaign ceiling and does not add a persistent resource or credential. Retries stay inside each supported campaign's locked ceiling. Do not reopen sealed semantic, agent, verifier, policy, refusal, cancelled, or benchmark-timeout outcomes. Do not launch a second 89-task campaign for a harness that already has one.
 - The 2026-08-23 Sandbox-parallelism amendment raises only the shared namespace Sandbox cap from 16 to 128. It does not raise a campaign ceiling, add a persistent resource, or change a locked campaign. Sandbox hardware cost still counts against each campaign's existing ceiling.
 - The 2026-08-24 Run-native reset amendment authorizes irreversible deletion only for run-derived objects under a reviewed exact-prefix allowlist. It does not authorize deleting ACLs, profiles, promotions, capacity policy, the canonical Space or Bucket, credentials, or unrelated objects.
 - The Run-native path has no Sandbox lifecycle and no Campaign compatibility writer, reader, route, field, alias, or UI label. Existing run data is deleted instead of migrated.
 - Replacement Jobs remain limited to explicit infrastructure failures, the locked physical-attempt count, the run ceiling, and the previously approved aggregate ceilings. Semantic, agent, verifier, policy, refusal, cancelled, benchmark-timeout, and scored outcomes remain terminal.
-- Fresh runs start only after the exact deployed revision passes the unpaid control canary and bounded paid task canary. FX, Codex, and Claude Code remain excluded from fresh launch without a separate amendment.
+- Fresh runs start only after the exact deployed revision passes the unpaid control canary and bounded paid task canary. Retired or otherwise unsupported harnesses remain excluded from fresh launch.
 - The 2026-08-25 failed-Run replacement amendment permits targeted deletion and replacement only for the seven fresh Runs invalidated by `control_not_ready` during the control deployment. Preserve every unrelated Run and retained control object. Keep the same profiles, USD 10.60 per-Run ceiling, USD 74.20 aggregate ceiling, and excluded harnesses. Do not rerun any scored or semantic outcome.
 - The 2026-08-26 admission-integrity repair amendment permits deletion of exactly one orphaned Job admission object and no other object. It adds no compatibility path, persistent resource, credential, Run, retry, or ceiling increase.
+- The Agent Workbench must keep arbitrary commands inside the unprivileged task runtime. It must not expose the control credential, the platform inference credential, a writable canonical Bucket mount, host authentication directories, or unrelated worker environment variables.
+- Customer-authored recipes may execute without human promotion, but remain private or diagnostic by default. Final leaderboard eligibility, shared aliases, and wider reuse require the existing reviewed promotion and publication gates.
+- Generate command and environment previews from the same immutable execution manifest used by the worker. Keep secret values redacted, reject literal credentials in durable recipes, escape arbitrary text, and never render customer HTML or scripts in the control application origin.
+- The local Hugging Face CLI credential may be accessed during this session for authenticated development and bounded control-plane API calls without printing or recording its value. It must not be passed to a remote runtime, written to Git, logs, evidence, manifests, or browser state, or copied into another credential store.
+- A provider-scoped Fast-Agent authentication export may be created only in an owner-only temporary local location for command-construction and schema testing, then removed. It must not be committed, logged, uploaded, passed to a remote Job, or used for local inference.
+- Real inference tests may use only the existing purpose-scoped inference credential configured in the canonical control Space and attached to eligible execution Jobs. Do not retrieve, replace, or copy that credential.
+- Keep this amendment's new paid verification at or below USD 10 total. Run at most three new single-attempt diagnostic logical trials with concurrency one after local verification succeeds. Count setup Jobs, model calls, retries, and cleanup; stop on a shared worker defect or unexpected cost.
+- Do not create, resume, or resize an Inference Endpoint under this amendment. Direct calls to the reviewed serverless inference route are allowed only for the bounded diagnostic trials.
+- Use only public Harbor APIs. Do not modify or publish another Harbor repository. If the command-agent implementation needs a Harbor change, stop and request a separate repository authorization.
+- Local commits and an exact reviewed deployment to the existing canonical control Space are allowed. Do not push, open a pull request, merge, create a release, or publish an official result under this amendment.
+- The 2026-08-28 Workbench canary-activation amendment supersedes the preceding no-push limit only for the current `feat/agent-workbench` branch and the bounded follow-up commits needed to pin the published worker image. It authorizes no pull request, merge, default-branch update, force push, GitHub release, Python-package publication, or official benchmark publication.
+- Publish exactly one `linux/amd64` trial-worker image from an exact commit on `feat/agent-workbench` to the existing public worker-image package. Use the existing GitHub Actions package credential; do not move or expose a local credential.
+- Keep the activation on the two canonical Harbor-HF runtime resources and the two existing control-Space secrets. Do not create or replace a Space, Bucket, repository, Dataset, schedule, Endpoint, credential, or other persistent resource.
+- Run exactly two single-trial logical tasks from `terminal-bench-2-1-canary`, with at most one active trial Job, one physical infrastructure attempt per logical task, diagnostic publication only, and a hard Run ceiling of USD 1.00. Use only the existing direct serverless inference route and the inference-only credential attached to the eligible execution Job.
+- Setup verification plus the two-task Run must remain within the existing Agent Workbench USD 10 aggregate allowance. Stop before another setup Job, retry, replacement, or Run if the reviewed image, worker revision, lock, task digest, model route, cost, credential boundary, or concurrency differs from this amendment.
+- The recipe-and-UX repair must keep ecosystem-specific installation commands in immutable recipe/profile data. Do not add uv-, Python-, npm-, npx-, benchmark-, model-, or harness-name branches to Harbor-HF control, Run, schema, or worker orchestration.
+- The repaired Workbench must present configure, setup test, reviewed publication, and benchmark Run as distinct stages; do not imply that a successful generic setup test alone authorizes a Run. Avoid duplicate log surfaces unless their scope is explicit, and distinguish profile loading or query failure from a confirmed unreviewed recipe.
+- The follow-up authorization permits exactly one new `terminal-bench-2-1-canary` Run with two single-trial logical tasks, at most one active trial Job and provider request, one physical infrastructure attempt per logical task, diagnostic publication only, no Endpoint, and a hard Run ceiling of USD 1.00. Do not retry or replace the failed first canary.
+- Preserve the failed first canary and its accepted evidence. The repair may update the generic worker image and immutable profiles when required, but must use the existing public image package, canonical `<control-space>`, canonical `<artifact-bucket>`, and two existing Space secrets. Do not create, delete, replace, or transfer a persistent resource or credential.
+- Slophammer `py.mutation-required` remains explicitly disabled with a reason. The local mutation script and manual workflow may remain available on demand, but mutation execution is not a completion, deployment, or canary gate for this amendment.
+- The canonical work-remote amendment authorizes normal feature-branch fetches and fast-forward pushes to `huggingface/harbor-hf`. It does not authorize changing the upstream default branch, merging, opening or modifying a pull request, force pushing, deleting a shared branch, creating a tag or release, or pushing additional commits to the retained fork without separate approval.
 - The 2026-09-01 GLM-5.3-Flash amendment permits exactly one new full Run with a USD 18 hard ceiling, at most 16 active trial Jobs, and at most two physical attempts per task. These bounds come from the checked-in `tb21-full-glm-standard` launch policy. The measured estimate is USD 2.052029 from its published two-task canary, as recorded in the full-matrix plan. Do not launch another matrix cell, create a persistent resource or credential, or rerun a valid logical task.
 - The 2026-09-01 streaming-replacement amendment classifies every outcome from the first GLM-5.3-Flash plus Pi full Run as invalid because its immutable worker buffered streaming provider responses until completion. It permits cancelling only that paused Run and launching one clean full replacement with a new USD 18 hard ceiling, at most 16 active trial Jobs, and at most two physical attempts per task. It explicitly permits the replacement to rerun those invalidated tasks. Do not resume the invalidated Run, launch another matrix cell, create a persistent resource or credential, or alter any other Run.
 - The 2026-09-01 historical-Run continuation amendment permits one immutable attachment per approved historical Run. The attachment must preserve the original lock, Run ID, task IDs, selected outcomes, attempt and evidence history, observed cost, ceiling, model, benchmark, harness, provider, and trial identity. It may bind only a reviewed current deployment and worker contract that matches those identities. It may admit only tasks without a valid selected receipt. It creates no replacement Run, persistent resource, credential, budget reset, selected-task retry, deletion, or compatibility writer outside the TypeScript control service. The seven USD 10.60 per-Run ceilings and USD 74.20 aggregate ceiling remain unchanged.
@@ -231,12 +717,79 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep each substantial paid campaign behind its measured launch review and exact enforced cost ceiling.
 - Keep the harness-integration canary series inside the USD 80 hard ceiling. Reject a harness that needs a native API the locked router route cannot preserve.
 - Keep the seven gpt-oss 89-task harness diagnostics inside USD 10.60 each and USD 74.20 combined.
+- Finish only still-supported existing 89-task rows, plus the existing OpenCode row, without a second campaign for the same harness. The retired harness row may not continue or publish under current authorization.
 - Finish those existing 89-task rows, plus the existing OpenCode and FX 89-task rows, without a second campaign for the same harness.
 - Attach and resume a historical Run only after deterministic replay and selection-preservation tests pass and that harness's reviewed worker passes its bounded canary.
 - Admit remaining historical work only after the successor repair passes the same unresolved OpenHands task with valid evidence and nonzero provider token usage.
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+The entries below are immutable factual summaries of past approvals. Any
+reference to a retired inference implementation or removed harness is
+superseded by the 2026-09-02 notice above and has no active normative or
+authorization effect.
+
+### 2026-09-02
+
+- Approved at 2026-09-02T16:00:27Z under the instruction to try and repair the
+  failed post-reset installation: inspect sanitized provider diagnostics,
+  implement and push a general repair on `feat/agent-workbench`, and retry the
+  existing-resource installer sequence through activation. Preserve the
+  existing secrets, Workbench variables, hardware, protection, Space, and
+  Bucket; keep writes disabled until verification; do not provision resources,
+  launch Jobs or Runs, call inference, publish results or images, merge, or
+  update the default branch. On another unverifiable failure, leave the Space
+  disabled and paused.
+- Approved at 2026-09-02T15:03:05Z under the instruction to proceed with
+  getting the reset installation working: model and preserve only the two
+  existing reviewed Workbench variables across installer planning and phase
+  transitions, add tests, commit, and push the repair. Do not expose or change
+  their values or broaden the installer variable allowlist.
+- Approved at 2026-09-02T14:59:25Z after inventory: disable
+  writes, irreversibly deleting the 1,143 application objects from the one live
+  canonical artifact Bucket while preserving its installer ownership marker
+  and resource, and running the existing-install npm
+  plan/configure/verify/activate sequence for the exact latest branch revision.
+  Preserve existing secret values, hardware, protection, Space, and Bucket; do
+  not provision resources, publish another image, launch Jobs or Runs, call
+  inference, publish results, merge, or update the default branch. If the fresh
+  installation fails, leave writes disabled and stop.
+- Approved at 2026-09-02T13:53:54Z: publish one bridge-free worker image,
+  refresh immutable deployment-profile pins, commit and push on
+  `feat/agent-workbench`, exact control-Space deployment, profile-visibility
+  verification, and bounded rollback to the immediately preceding control
+  revision if health checks fail. This excludes setup or benchmark Jobs,
+  inference, result publication, new resources, hardware changes, merge, and
+  default-branch updates.
+- Completed at 2026-09-02T14:39:30Z: published and verified the worker image,
+  pinned and pushed all active compatible deployment profiles, and attempted
+  the exact control deployment. Startup rejected one immutable historical
+  action record under the stricter current schema, so the authorized rollback
+  restored the immediately preceding control revision with healthy readiness,
+  unchanged write mode, zero control-owned active Jobs, and a clean projection.
+  No setup or benchmark Job, inference call, result publication, resource
+  creation, hardware change, merge, or default-branch update occurred. During
+  diagnostics, one private Space identifier and one historical Run identifier
+  appeared in local tool output; no credential or private identifier was
+  committed or pushed, and the local captured files were removed.
+- Approved at 2026-09-02T13:20:28Z: commit the completed Harbor-first refactor
+  and push only the current `feat/agent-workbench` branch to its tracked
+  `origin` branch. No deployment, image or package publication, inference,
+  merge, paid work, or hosted runtime mutation is authorized.
+- Completed at 2026-09-02T13:21:41Z: committed the verified refactor and
+  pushed `feat/agent-workbench` to its tracked `origin` branch. No deployment,
+  image or package publication, inference, merge, paid work, or hosted runtime
+  mutation occurred.
+- Approved at 2026-09-02T12:17:25Z: complete the local Harbor-first implementation,
+  including removal of the remaining active root Python custom provider proxy,
+  integration-test repairs, generated-file refreshes, and local validation only.
+  This amendment excludes credentials, local or remote inference, deployment,
+  publication, spending, push, merge, hosted mutation, and resource changes.
+- Completed at 2026-09-02T13:09:16Z: removed the active custom inference
+  intermediary paths, migrated execution to direct Harbor agent configuration,
+  refreshed tests and generated artifacts, and passed the approved local
+  verification gates. No remote action or credential use occurred.
 
 ### 2026-08-17
 
@@ -329,6 +882,29 @@ No project-scope amendment remains pending. Operational gates still apply:
 ### 2026-08-26
 
 - At 2026-08-26T12:06:30Z, approved removing the old orphaned admission behind the single detected integrity fork, fixing startup replay without backward compatibility, and restarting the existing control Space. The repair deletes only the admission object that never dispatched or created a remote Job and preserves every other durable record.
+- Approved fully retiring mutation testing from every supported root and agent-package path, superseding the earlier requirement to retain on-demand tooling. Remove its dependencies, configuration, scripts, GitHub Actions workflow, release preflight, active documentation, and lockfile entries. Keep deterministic regression tests that do not execute mutation tooling. Limit this amendment to local repository changes, validation, and commits; do not push, deploy, mutate hosted resources, move credentials, or spend.
+
+### 2026-08-27
+
+- At 2026-08-27T14:35:22Z, fully authorized the Agent Workbench implementation and end-to-end feature-development session. The approved work includes a generic customer-authored command-agent recipe, setup and run previews, setup-only Jobs, private logs and workspace browsing, optional trace adaptation, a Fast-Agent 0.10.11 starter, local browser and screenshot testing, and up to three bounded diagnostic trials after local gates pass.
+- Authorized session-only access to the locally authenticated Hugging Face CLI credential for development API calls without exposing its value, plus temporary local creation of a provider-scoped Fast-Agent authentication export for non-inference compatibility testing. Standing credential-isolation rules still prohibit passing either local credential into a remote runtime.
+- Authorized an exact reviewed deployment to the existing canonical control Space when needed for bounded remote verification. No new persistent resource, official publication, Harbor repository change, push, pull request, merge, or release is authorized. New paid verification remains capped at USD 10.
+- At 2026-08-27T22:02:30Z, approved adding an FX example to the Agent Workbench, committing the reviewed change, and pushing only the current `feat/agent-workbench` branch to its configured public `origin`. No pull request, merge, deployment, release, credential transfer, paid run, or other remote mutation is authorized.
+
+### 2026-08-28
+
+- At 2026-08-28T07:28:34Z, approved keeping Slophammer mutation testing disabled, checking the current upstream defect status, and proceeding with the remaining Agent Workbench activation steps.
+- Approved pushing only `feat/agent-workbench`, publishing one exact generic trial-worker image, committing and pushing the resulting digest-pinned deployment and single-attempt diagnostic policy, deploying the exact reviewed revision to the existing canonical control Space, verifying the Fast-Agent setup path, and launching one two-task `terminal-bench-2-1-canary` Run with `gpt-oss-20b`.
+- Keep trial concurrency at one, physical infrastructure attempts at one per logical task, diagnostic publication only, and the hard Run ceiling at USD 1.00. No new persistent resource, credential, Endpoint, pull request, merge, release, force push, default-branch update, official result, or unrelated hosted mutation is authorized.
+- At 2026-08-28T07:44:34Z, approved making `huggingface/harbor-hf` the checkout's normal work remote, retaining the former fork only as a secondary remote, and pushing `feat/agent-workbench` directly to the canonical repository so its existing Actions publisher can build the exact worker image. This supersedes the unapproved temporary-branch proposal without authorizing a default-branch update, merge, pull-request mutation, force push, shared-branch deletion, tag, or release.
+- At 2026-08-28T08:21:01Z, confirmed authority over the existing private Harbor-HF Spaces and Buckets in the operator-selected namespace. This authorizes restoring the failed control deployment to its prior known-good source, implementing and deploying a general durable-schema compatibility repair for the legacy capacity profile, and resuming the already-approved Workbench setup and two-task diagnostic canary. Keep private resource identifiers out of repository content. Do not create or delete persistent resources, replace or transfer credentials, create an Endpoint, increase the USD 1.00 Run ceiling, or broaden publication beyond diagnostic.
+- At 2026-08-28T08:58:58Z, applied that authority to the exact reviewed one-time Run-native profile migration for the existing private `<artifact-bucket>`. The approved plan inventories 45 profiles and one promotion, adds and verifies 21 current-schema replacements, remaps one promotion, then deletes 21 superseded profile-prefix records. It transforms one capacity profile, 17 deployment profiles, and two launch policies under only `control/schema=v1/profiles/`, using the checked-in general worker image and revision. Keep the existing `<control-space>` paused during apply, require the digest-bound dry-run manifest and final verification manifest, and stop on any inventory drift. Do not touch ACL, Run, credential, configuration, or other Bucket prefixes.
+- At 2026-08-28T15:38:33Z, approved repairing the Agent Workbench and reviewed Fast-Agent recipe after the first two-task diagnostic exposed hidden task-image Python assumptions, incompatible route-key naming, and unclear setup-to-Run UX. Keep each CLI ecosystem's installation and run behavior in immutable recipes through the generic command-agent path; improve the configure, test, publish, and Run workflow plus log and reviewed-profile states; correct deterministic failure classification; run the normal non-mutation gates; commit and push only `feat/agent-workbench`; publish and pin one replacement generic worker image only if worker code changes; deploy the exact reviewed revision to the existing canonical resources; and launch exactly one new two-task diagnostic canary under the same concurrency, one-attempt, diagnostic-only, no-Endpoint, and USD 1.00 limits. Preserve the failed first canary and do not retry or replace either of its attempts.
+
+### 2026-09-01
+
+- At 2026-09-01T08:56:03Z, approved fetching the latest canonical `main` branch and merging it into local `feat/agent-workbench`, preserving both sides' intended behavior. Resolve conflicts if necessary, run relevant validation and the public-privacy check, inspect the resulting diff and metadata, and commit the merge locally. Do not push, open or modify a pull request, update the default branch, deploy, mutate hosted resources, handle credentials, run inference, or incur cost.
+- At 2026-09-01T09:56:29Z, approved committing this authorization amendment and pushing the verified local `feat/agent-workbench` history through the current merge commit to public `origin/feat/agent-workbench`. Require a normal fast-forward branch update after fetching and confirming no remote divergence. Do not force push, create or modify a pull request, update the default branch, create a tag or release, deploy, mutate hosted resources, handle credentials, run inference, or incur cost.
 
 ### 2026-09-01
 
@@ -339,3 +915,255 @@ No project-scope amendment remains pending. Operational gates still apply:
 ### 2026-09-02
 
 - At 2026-09-02T07:03:36Z, approved one immutable successor worker-repair attachment for each of the seven existing continuation repairs after the first repair-aware worker exposed a cross-language continuation-digest defect. Each successor binds to the original continuation and prior repair digests and may change only the worker image digest and source revision. Existing records, Run IDs, ceilings, prepared inputs, settings, evidence, and selected outcomes remain unchanged. The same unresolved OpenHands task must prove the corrected image before other historical work is admitted.
+
+### 2026-09-04
+
+- Approved the narrow saved-configuration Workbench milestone described above.
+  The user preferred task size guidance over promises of exact cost enforcement.
+  This does not authorize unbounded execution or removal of existing safeguards.
+
+### 2026-09-04 credential-minimization follow-up
+
+- Approved public-documentation verification and removal of the unnecessary
+  installer Endpoint permission requirement. The user emphasized easy submission
+  of results to the admin leaderboard. No credential change is authorized.
+
+### 2026-09-04 leaderboard submission and presentation
+
+- Approved prioritizing the proposed user submission/admin publication flow and
+  a quick frontend presentation sweep, so the user can deploy and test afterward.
+
+### 2026-09-04 branch publication and test deployment
+
+- Approved creating and pushing the feature branch and deploying the completed
+  milestone to the previously selected existing test control Space. Preserve
+  the resource/credential boundaries and stop on failed provenance checks.
+- Feature branch publication completed. Deployment stopped before mutation:
+  the existing Space lacks its installer source-revision variable, and the live
+  manifest binding has no matching saved installer plan. The deployed release
+  record agrees with its Dockerfile and dependency-lock digests, but that does
+  not by itself reconcile the installation binding.
+- Pending approval: reconcile installer metadata against the verified deployed
+  release and existing paired resources, then retry the supported deployment.
+  Preserve all secrets, Bucket data, hardware, and ownership; do not fabricate
+  provenance, discard installer state, or launch execution. If reconciliation
+  cannot be proven, stop and report rather than forcing deployment.
+
+### 2026-09-04 installer metadata reconciliation
+
+- Approved the pending reconciliation request: repair only proven installation
+  metadata and then continue deployment, preserving credentials and Bucket data.
+
+### 2026-09-04 browser-authenticated installer verification
+
+- Approved replacing the missing application-bearer requirement with existing
+  HF browser login verification before continuing deployment. Preserve all
+  verification gates and the two-token runtime credential boundary.
+
+### 2026-09-04 narrow deployment build repair
+
+Approved at: 2026-09-04
+
+- Directly approved another deployment-fix attempt after the user confirmed
+  they would stop manual restarts. Record this additively under the existing
+  browser-installer and feature-branch deployment approvals.
+- Repair only the installer-introduced production build boundary: exclude the
+  local browser installer from Space compilation while preserving its strict
+  local checks and browser dependencies. Add a regression check using the
+  actual release install with development dependencies omitted. No Harbor
+  runtime behavior or activation-gate change is authorized.
+- Run required checks, review the full diff and public metadata, commit and
+  push only `feat/leaderboard-submissions`, then plan the exact clean revision
+  and attempt supported existing-resource configuration once with writes
+  disabled and without credential replacement or input.
+- Preserve prior installer receipts, canonical resources, hardware, secrets,
+  worker configuration, Bucket objects, and Run state. Local management OAuth
+  remains local-to-provider only. Do not activate, launch a browser, create
+  resources, transfer credentials, launch Jobs or inference, publish results,
+  migrate/reset data, open a pull request, merge, or update the default branch.
+- On success verify anonymous source/health and canonical preservation, leaving
+  the service running with writes disabled. On failure leave it disabled and
+  paused, gather read-only diagnostics, and stop without a blind retry.
+- The fresh deterministic build failure does not establish the cause of the
+  earlier generic configuration failure. Previously disclosed coverage and
+  retired/missing tooling limitations remain disclosed, not waived thresholds.
+
+### 2026-09-04 sanitized configuration diagnostics completion
+
+Approved at: 2026-09-04
+
+- The user explicitly directed completion of the previously approved sanitized
+  failure diagnostics and deployment retry. The build repair did not complete
+  that diagnostic work. Add closed-allowlist operation and failure categories
+  with privacy regression tests; never expose subprocess stderr, arbitrary
+  provider messages, URLs, credentials, or private identifiers.
+- Preserve all safety, provenance, authentication, and activation gates. Review
+  and commit this additive record before implementation. Run the required
+  checks without lowering thresholds, inspect full diffs and public metadata,
+  and commit and push only `feat/leaderboard-submissions`.
+- After fresh read-only ownership, source, resource, worker, and activity
+  checks, permit at most one instrumented supported configure attempt from a
+  new exact committed plan. Keep stdin closed and writes disabled; do not
+  replace credentials or provide an application bearer. Preserve all prior
+  receipts, canonical resources, hardware, secrets, Bucket and Run records.
+- This is not approval for another unchanged retry. On failure leave the Space
+  disabled and paused, diagnose read-only, and report the precise sanitized
+  stage and proposed next fix. A straightforward in-scope local repair is
+  allowed, but another configure attempt requires review. On success leave
+  the service running with writes disabled, without activation.
+- No Jobs, inference, new resources, credential transfer, reset, migration,
+  real result publication, pull request, merge, or default-branch update.
+  Local management OAuth stays local to provider APIs and Bucket inspection;
+  no browser before healthy readiness. Keep operational evidence owner-only.
+
+### 2026-09-04 harness library and New Run UX
+
+- At 2026-09-04T14:12:04Z, directly approved the local UX and harness-library
+  implementation scope recorded above, beginning with upstream compatibility and
+  architecture review and an authorization-only commit. This pass must not
+  implement. Preserve current execution safeguards, old locks, and saved recipe
+  revisions; stop on an unresolved Harbor-owned gap. No deployment, push,
+  spending, credential movement, migration, or upstream mutation is authorized.
+
+### 2026-09-04 current-runtime UX implementation completion
+
+Status: completed
+
+- Following the completed upstream review, the user directly instructed local
+  implementation of the independent Workbench library and New Run UX under the
+  existing amendment. No further runtime cutover or Harbor patch was authorized.
+- Implemented configure/test/save in Workbench and exact saved-version or
+  built-in selection in New Run, using reviewed configurations and the existing
+  admission paths. Kept model strings fail-closed, setup attestation and fresh
+  review mandatory at launch, and the configuration registry under Advanced.
+- Local verification: 806 unit tests and 11 mocked browser tests passed, along
+  with formatting, lint, types, build, generated-contract checks, dependency
+  inspection, dependency audit, DRY, and the non-baseline structure check.
+  The repository-wide 85% coverage gate remains unmet; the structure baseline
+  file and retired mutation script remain absent. No threshold was lowered and
+  no retired tooling was restored.
+- This completes only the local safe-current-runtime UX milestone. Prior
+  deployment records and the broader project authorization remain unchanged.
+  No push, PR, merge, deployment, live write-mode change, remote Job, inference,
+  resource, credential transfer, migration, or result publication was performed.
+
+### 2026-09-04 upstream compatibility and PR visibility
+
+- Directly approved at 2026-09-04T15:25:00Z: compare fresh upstream main with
+  the greenfield direction, reconcile by merging main into the feature branch
+  if safe, test, push only the feature branch, and open or update one PR for
+  visibility. No default-branch push or PR merge; no HF deployment, Jobs,
+  credentials, resources, reset, or operational migration. Stop on material
+  incompatibility rather than bypassing architecture or safety boundaries.
+
+### 2026-09-04 execution-disabled integration
+
+- Directly approved the execution-disabled integration amendment above. This
+  resolves the prior safety stop by disabling incompatible execution, not by
+  authorizing credential forwarding or a local Harbor patch. OAuth research
+  remains separate and deferred; all operational prohibitions remain in force.
+
+### 2026-09-04 execution-disabled integration completion
+
+- Merged reviewed main into the feature branch in `e291f43`, pushed that branch
+  without force, and updated the existing canonical draft PR 179. The default
+  branch and PR were not merged. Authorization history is preserved additively.
+- Execution fails closed before admission and credentials. Removed the parent
+  worker, private Hub/Harbor patches and forwarding. Native immutable harness
+  authoring and configuration-only preview are available; the old publication
+  engine's submission UI was not restored and remains a disclosed follow-up.
+- Passed 398 unit tests, eight mocked browser tests, 46 root Python tests with
+  87.98% coverage, 32 agent-package tests, formatting/lint/types/build/generated
+  checks, dependency checks and audits, DRY, the non-baseline structure check,
+  public privacy, and both local Linux AMD64 Docker builds.
+- Remaining red gates are disclosed in the draft: TypeScript coverage below 85%
+  (72.83% lines, 70.22% statements, 68.59% functions, 63.14% branches), the absent
+  structure baseline, and the retired mutation script. No threshold was lowered.
+- No HF operational calls, deployment, Jobs, inference, resources, credential
+  transfers, reset, migration, Run actions, or real result publication occurred.
+  Per-user OAuth remains separate research, with no forwarding implementation.
+- This completes only the approved disabled integration and visibility scope,
+  not production readiness or any earlier operational milestone.
+
+### Historical upstream wording retained during integration
+
+The following incoming-main wording is retained only as historical evidence.
+It grants no new permission, does not revive a retired runtime or bridge, and
+cannot supersede the execution-disabled boundary or control-only HF_TOKEN rule.
+All pre-integration authorization records above are retained as well.
+
+- Run one controlled phase-one installer apply against the operator-selected existing bootstrap to capture the sanitized provider failure category or complete creation of its canonical private Bucket and local ownership receipt.
+- Diagnose and complete phase one for the operator-selected installer test bootstrap autonomously, using the active local write-capable Hugging Face credential for bounded plan/apply retries and direct Bucket probes.
+- Complete one bounded phase-two recovery for the operator-selected installer test bootstrap using its exact prior private plan and existing remote credential names.
+- Reset the operator-selected test bootstrap after confirming that its marked Space is absent and its remaining private Bucket is empty, then recreate phase one.
+- Diagnose and complete the operator-selected installer test bootstrap autonomously within its existing two-resource, free-hardware boundary.
+- Remove installer credentials from advisory-lock subprocesses, make resources-only provisioning reject any bootstrap where configuration has started, and serialize verification with all per-target installer operations.
+- Add FX as a Harbor agent plugin and promoted harness plus gpt-oss Together deployment so it appears in the launch list. Deploy the reviewed revision. Do not launch a campaign.
+- Finish one successful full Terminal-Bench 2.1 single-trial diagnostic for each existing gpt-oss Chat Completions 89-task run by inspecting that run and its Jobs, fixing the shared defects those Jobs expose, deploying the reviewed revision, and retrying only eligible infrastructure failures or unresolved tasks on those same campaigns. The existing FX 89-task row may be finished. Do not add a second 89-task campaign for a harness that already has one. Do not launch Codex or Claude Code.
+- Keep credential values, private resource identifiers, operator paths, and private topology out of Git and browsers. Do not expose credentials in logs or evidence; the approved inference credential may appear only in the trusted worker or root-owned inference bridge environment.
+- Pin each worker image and command, enforce the locked model, route, token, request, concurrency, timeout, and cost limits in the worker bridge, and rotate the inference credential regularly. Revoke the prior credential only after every Job using it is terminal.
+- Bind every Sandbox operation to the immutable campaign lock, launch action, task, expiration, approved image, hardware, paths, transfer limits, timeouts, and budget. Record fenced lifecycle receipts and do not expose a general Hugging Face API proxy.
+- Limit the installer diagnostic apply to the existing protected, free-hardware bootstrap and its canonical private Bucket. Do not upload application source, prompt for or move service credentials, activate writes, create any other resource, incur paid compute, push, or open a pull request. Stop after the phase-one result or first failure.
+- Limit the empty-bootstrap reset to deleting the one verified-empty private test Bucket after rechecking that the marked Space remains absent, quarantining rather than deleting its stale owner-only local installer state, and running fresh plan plus phase-one apply for the same protected `cpu-basic` Space and private Bucket. Do not upload source, prompt for or move credentials, use paid hardware, push, or open a pull request. Stop after phase one succeeds or the first failure.
+- The 2026-08-23 FX harness amendment does not authorize a canary, 89-task diagnostic, official five-trial run, new persistent resource, or credential. It only adds the harness to the existing campaign path and deploys the reviewed revision.
+- The later 2026-08-23 harness full-run repair amendment does not raise any campaign ceiling and does not add a persistent resource or credential. Retries stay inside each existing campaign's locked ceiling. The seven-campaign combined cap remains USD 74.20. The existing FX 89-task row stays inside its locked ceiling. Do not reopen sealed semantic, agent, verifier, policy, refusal, cancelled, or benchmark-timeout outcomes. Do not launch a second 89-task campaign for a harness that already has one.
+- Fresh runs start only after the exact deployed revision passes the unpaid control canary and bounded paid task canary. FX, Codex, and Claude Code remain excluded from fresh launch without a separate amendment.
+
+### 2026-09-04 UI-feedback deployment approval
+
+- Directly approved the execution-disabled UI-feedback deployment amendment
+  above, including its authorization-first commit and feature-only push.
+  This grants a bounded existing-resource deployment, not a policy bypass,
+  history migration, credential change, execution launch, or production claim.
+
+### 2026-09-04 additive authorization-history repair
+
+- Final verification found that Git's automatic merge had applied upstream
+  deletion of older authorization records. Restored the complete pre-integration
+  record and retained incoming historical wording above without rewriting Git
+  history. This changes no runtime behavior and grants no operational authority.
+
+### 2026-09-04 historical archive UI-cutover clarification
+
+- Directly approved proceeding with the UI-only deployment despite historical
+  Runs becoming invisible in the new projection, with all evidence, paused
+  states and accounting preserved. The requested inference E2E remains blocked
+  and unadmitted; no execution spending or recovery is authorized by this step.
+  Apply the bounded configure and fail-closed restart limits above.
+
+### 2026-09-04 internal design and local compatibility approval
+
+- Directly approved the additive local-only amendment above: concrete internal
+  design, independent security guards where needed, offline compatibility and
+  regression tests, and local commits. Execution and all remote mutations remain
+  excluded; unresolved Harbor-owned preparation and ownership gaps stay blocked.
+
+### 2026-09-04 internal design and local compatibility completion
+
+- Completed the bounded local design and regression phase only. Added
+  `docs/2026-09-04-internal-cli-contract.md` with source/history evidence,
+  threat model, staged flow, fixed CLI contract, credential map, and precise
+  unresolved preparation, ownership and cost-stop requirements.
+- Added 19 offline regressions at existing API/service boundaries: eight hostile
+  configuration shapes in both write modes, two native harness round trips that
+  cannot grant execution, and throwing input/dependency checks. Existing runtime
+  guards already suffice; no duplicate validator, planner, runner, schema, policy
+  change, pin upgrade, or fake execution was added.
+- Passed 417 TypeScript unit tests, eight mocked browser tests, formatting, lint,
+  types, build, generated checks, npm audit (zero vulnerabilities), DRY and the
+  non-baseline structure check. Both local Linux AMD64 Docker builds passed.
+  Agent package Ruff, formatting, ty and 32 pytest tests passed. No root Python
+  source changed; its full suite was not rerun in this phase.
+- Existing gates remain red: coverage is 72.83% lines, 70.22% statements,
+  68.59% functions and 63.14% branches against 85%; the structure baseline is
+  absent. No threshold was lowered or retired mutation tooling restored.
+- Authorization was committed before implementation. All new commits remain
+  local; no push, PR update, upstream mutation, live Space inspection, deployment,
+  Jobs, inference, spending, new resources, credentials or historical data changes
+  occurred. Execution remains disabled. This is not production or launch readiness.
+
+### 2026-09-04 reviewed design push and deployment approval
+
+- Directly approved the additive bounded push/deployment amendment above, including
+  the reviewed local authorization records. Historical approvals remain unchanged;
+  this permits no execution, credential change, migration or broader publication.

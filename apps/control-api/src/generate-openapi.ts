@@ -64,7 +64,8 @@ const document = {
   info: {
     title: "Harbor-HF control API",
     version: "v1",
-    description: "Submit Harbor runs and inspect their projected state.",
+    description:
+      "Execution-disabled configuration authoring and historical state inspection. Run and setup mutations return 503 execution_disabled.",
   },
   components: {
     securitySchemes: {
@@ -273,6 +274,18 @@ const document = {
         },
       },
     },
+    "/api/v1/workbench/configurations": {
+      get: {
+        summary: "List owner-scoped immutable native Harbor configurations",
+        security: authenticated,
+        responses: { "200": ok },
+      },
+      post: {
+        summary: "Save a named immutable native Harbor configuration without execution",
+        security: authenticated,
+        responses: { "200": ok, "400": error, "503": error },
+      },
+    },
     "/api/v1/workbench/preview": {
       post: {
         summary: "Compile and validate a Workbench recipe",
@@ -452,9 +465,26 @@ const document = {
   },
 } as const;
 
+const disabledDocument: OpenAPI3 = structuredClone(document) as unknown as OpenAPI3;
+for (const [path, item] of Object.entries(disabledDocument.paths ?? {})) {
+  if (
+    item &&
+    "post" in item &&
+    item.post &&
+    !("$ref" in item.post) &&
+    (path.startsWith("/api/v1/runs") ||
+      path.startsWith("/api/v1/workbench/setup-tests"))
+  ) {
+    item.post.summary = "Execution disabled: no admission or Job action";
+    item.post.responses = { "503": error } as unknown as NonNullable<
+      typeof item.post.responses
+    >;
+  }
+}
+
 const documentPath = join(repository, "docs", "control-api-v1.openapi.json");
-await writeFile(documentPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
-const generated = astToString(await openapiTS(document as unknown as OpenAPI3));
+await writeFile(documentPath, `${JSON.stringify(disabledDocument, null, 2)}\n`, "utf8");
+const generated = astToString(await openapiTS(disabledDocument));
 const outputPath = join(
   repository,
   "apps",

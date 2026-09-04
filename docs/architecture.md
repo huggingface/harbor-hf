@@ -5,6 +5,16 @@ date: 2026-09-04
 tags: [architecture, harbor, hugging-face, control]
 ---
 
+> **Execution-disabled integration (2026-09-04):** This greenfield branch is not
+> production-ready. Run submission, actions, remote setup tests, and automatic
+> reconciliation are disabled before admission or credential resolution, even
+> when configuration writes are enabled. Workbench saves native Harbor JobConfig
+> fragments; New Run previews configuration without task resolution or a Job.
+> HF_TOKEN stays exclusively in the control Space. Neither persistent secret is
+> forwarded. Parent-worker execution and private Hub/Harbor patches are removed.
+> Execution descriptions below are deferred design, not available behavior or
+> permission to launch. See [execution boundary](../docs/execution-disabled-integration.md).
+
 # Architecture
 
 ## System boundary
@@ -120,29 +130,13 @@ Schema generated from the pinned Harbor revision. Harbor-defined open extension
 maps stay open. The service then sets the run paths, labeled HF Sandbox
 environment, and inference router variables.
 
-## Parent and child Jobs
+## Execution boundary
 
-The reconciler starts one parent Job per active run. The parent image is selected
-by an immutable digest. The Job gets the Bucket mounted at `/data` and reads the
-run record from that mount.
-
-The parent receives the two approved service credentials as ephemeral Job
-secrets. It uses the control credential to start and label child Sandbox Jobs.
-The stored agent configuration contains the fixed `${HF_INFERENCE_TOKEN}`
-template. The Sandbox adapter resolves it from the parent's ephemeral secret
-only when it builds an agent command environment. Pi receives it as `HF_TOKEN`.
-Its adapter combines Pi's public base model metadata with live provider prices,
-tool support and context metadata from the public Hugging Face router. The
-provider-pinned entry exists only in Pi's temporary configuration, so Pi calls
-the requested provider and includes its current prices in each usage record.
-The adapter fails before inference if the required metadata is not available.
-OpenAI-compatible agents receive the token as `OPENAI_API_KEY` with the fixed
-router URL. No credential value is stored in the Bucket or run request.
-
-Harbor's HF Sandbox environment does not yet accept child labels. The small
-`LabeledHFSandboxEnvironment` subclass merges `harbor-hf-role=trial` and the run
-label and the configured namespace into the same API call that creates the
-child. The child cannot become live outside the controller's ownership scope.
+Parent and child execution is disabled. No parent receives a writable Bucket
+mount or persistent control credential. HF_TOKEN remains in the control Space;
+the inference secret is retained but unforwarded. The removed private Sandbox
+adapter is not a supported integration. Future execution must use a reviewed
+public Harbor CLI boundary without implementing Harbor-owned state or retries.
 
 ## Reconciliation
 

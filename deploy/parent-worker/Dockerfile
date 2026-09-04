@@ -27,4 +27,4 @@ RUN uv sync \
     && python -c "import harbor, harbor_hf_agents, huggingface_hub"
 
 WORKDIR /data
-CMD ["python", "-m", "harbor_hf_agents.parent_worker"]
+CMD ["harbor", "--help"]

@@ -5,12 +5,11 @@ import type { RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
 import { runRecordPath, runStatePath } from "@harbor-hf/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  compileAgentWorkbenchRecipe,
   ControlService,
-  fastAgentWorkbenchStarter,
   FilesystemObjectStore,
   type JobObservation,
   type JobsPort,
+  type ObjectStore,
   PresetCatalog,
   Projection,
   costLimitReached,
@@ -88,7 +87,29 @@ const input = {
 } as const;
 
 async function submit(key = "test-key") {
-  return service.submitPreset(input, key, "test-subject");
+  const { runId } = await import("@harbor-hf/contracts");
+  const id = runId(key);
+  const run: RunRecordV1 = {
+    schema_version: "v1",
+    run_id: id,
+    created_at: "2026-01-01T00:00:00Z",
+    submitted_by: "test-subject",
+    role: "final",
+    harbor_revision: "d".repeat(40),
+    submission: input,
+    harbor_job_config: presets.buildJobConfig(id, input, "/data"),
+  };
+  await createJson(store, runRecordPath(id), run);
+  await putJson(store, runStatePath(id), {
+    schema_version: "v1",
+    run_id: id,
+    revision: 0,
+    updated_at: run.created_at,
+    desired_state: "run",
+    actor: run.submitted_by,
+    parent_jobs: [],
+  });
+  return { run };
 }
 
 function trial(
@@ -104,344 +125,6 @@ function trial(
     exception_info: null,
   };
 }
-
-describe("run submission", () => {
-  it("resolves a reviewed preset into one Harbor job", async () => {
-    expect(
-      presets.benchmark("terminal-bench-2-1", "one-task-1-trial").job.environment,
-    ).toEqual({
-      type: "hf-sandbox",
-      kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
-    });
-    const result = await submit();
-    expect(result.created).toBe(true);
-    expect(result.run.harbor_job_config).toMatchObject({
-      job_name: "job",
-      jobs_dir: `/data/runs/${result.run.run_id}`,
-      n_attempts: 1,
-      n_concurrent_trials: 1,
-      agents: [
-        {
-          import_path: "harbor_hf_agents.pi.agent:PiAgent",
-          model_name: "huggingface/openai/gpt-oss-20b:together",
-          env: { HF_TOKEN: "$" + "{HF_INFERENCE_TOKEN}" },
-          kwargs: { version: "0.84.4", thinking: "off" },
-        },
-      ],
-      environment: {
-        import_path: "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
-        kwargs: {
-          flavor: "cpu-upgrade",
-          job_timeout: "30m",
-          run_label: result.run.run_id,
-        },
-      },
-    });
-    expect(projection.run(result.run.run_id)?.status).toBe("queued");
-  });
-
-  it("keeps the reviewed full-run CPU flavor in the Harbor job", async () => {
-    const result = await service.submitPreset(
-      {
-        ...input,
-        benchmark: { name: "terminal-bench-2-1", preset: "all-tasks-1-trial" },
-      },
-      "full-run",
-      "test-subject",
-    );
-    expect(result.run.harbor_job_config).toMatchObject({
-      n_attempts: 1,
-      n_concurrent_trials: 8,
-      environment: {
-        kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
-      },
-    });
-  });
-
-  it("submits a Workbench recipe through the same one-Run Harbor contract", async () => {
-    const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
-    const workbenchInput = {
-      ...input,
-      harness: { agent: "command-agent", version: preview.revision_id },
-      role: "diagnostic" as const,
-    };
-    const result = await service.submitWorkbench(
-      workbenchInput,
-      preview.harbor_agent,
-      "workbench-key",
-      "test-subject",
-    );
-    expect(result.run.role).toBe("diagnostic");
-    expect(result.run.harbor_job_config).toMatchObject({
-      job_name: "job",
-      jobs_dir: `/data/runs/${result.run.run_id}`,
-      n_attempts: 1,
-      n_concurrent_trials: 1,
-      agents: [
-        {
-          import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
-          model_name: "openai/openai/gpt-oss-20b:together",
-          env: {
-            OPENAI_BASE_URL: "https://router.huggingface.co/v1",
-            OPENAI_API_KEY: "$" + "{HF_INFERENCE_TOKEN}",
-          },
-        },
-      ],
-    });
-    const serialized = JSON.stringify(result.run);
-    expect(serialized).not.toContain("harness_profile");
-    expect(serialized).not.toContain("promotion");
-    expect(serialized).not.toContain("preparation");
-    expect(projection.run(result.run.run_id)?.status).toBe("queued");
-    await expect(
-      service.submitWorkbench(
-        { ...workbenchInput, model: { ...input.model, reasoning_effort: "high" } },
-        preview.harbor_agent,
-        "bad-workbench-reasoning",
-        "test-subject",
-      ),
-    ).rejects.toThrow("reasoning effort off only");
-    await expect(
-      service.submitWorkbench(
-        workbenchInput,
-        { ...preview.harbor_agent, import_path: "other.module:Agent" },
-        "bad-workbench-agent",
-        "test-subject",
-      ),
-    ).rejects.toThrow("reviewed command agent");
-  });
-
-  it("adopts a repeated request and rejects different input", async () => {
-    const first = await submit();
-    const second = await submit();
-    expect(second).toEqual({ created: false, run: first.run });
-    await expect(
-      service.submitPreset(
-        { ...input, cost_ceiling_usd_per_trial: 0.5 },
-        "test-key",
-        "test-subject",
-      ),
-    ).rejects.toThrow("different run");
-  });
-
-  it("validates preset and direct submission boundaries", async () => {
-    await expect(
-      service.submitPreset(
-        { ...input, model: { ...input.model, reasoning_effort: "extreme" } },
-        "bad-reasoning",
-        "test-subject",
-      ),
-    ).rejects.toThrow("reasoning effort");
-    for (const [key, modelId] of [
-      ["preset-credential-token", `hf_${"x".repeat(24)}`],
-      ["preset-credential-url", "https://user:password@example.test/model"],
-      ["preset-credential-query", "https://example.test/model?access_token=opaque"],
-      ["preset-credential-fragment", "https://example.test/model#signature=opaque"],
-    ] as const) {
-      await expect(
-        service.submitPreset(
-          { ...input, model: { ...input.model, id: modelId } },
-          key,
-          "test-subject",
-        ),
-      ).rejects.toThrow("credential material");
-    }
-    await expect(
-      service.submitConfig(
-        { jobs_dir: "/tmp", agents: [{ name: "pi" }] },
-        1,
-        "bad-config",
-        "test-subject",
-      ),
-    ).rejects.toThrow("jobs_dir");
-    const directInput = {
-      n_attempts: 1,
-      n_concurrent_trials: 1,
-      datasets: [
-        {
-          repo: "https://github.com/harbor-framework/terminal-bench-2-1.git@d49e28f1e4ddd13d289e85a5f312a66750951932",
-          path: "tasks",
-          task_names: ["adaptive-rejection-sampler"],
-        },
-      ],
-      agents: [
-        {
-          name: "pi",
-          model_name: "openai/openai/gpt-oss-20b:together",
-          kwargs: { version: "0.84.2", max_tokens: 1_000 },
-        },
-      ],
-      environment: { type: "hf-sandbox" },
-    };
-    await expect(
-      service.submitConfig(
-        {
-          ...directInput,
-          agents: [
-            {
-              ...directInput.agents[0],
-              env: { HF_TOKEN: "$" + "{HF_TOKEN}" },
-            },
-          ],
-        },
-        0.25,
-        "credential-template",
-        "test-subject",
-      ),
-    ).rejects.toThrow("credential material");
-    await expect(
-      service.submitConfig(
-        {
-          ...directInput,
-          agents: [
-            {
-              ...directInput.agents[0],
-              env: { FOO: `hf_${"x".repeat(24)}` },
-            },
-          ],
-        },
-        0.25,
-        "credential-literal",
-        "test-subject",
-      ),
-    ).rejects.toThrow("credential material");
-    await expect(
-      service.submitConfig(
-        {
-          ...directInput,
-          agents: [
-            {
-              ...directInput.agents[0],
-              env: { CUSTOM_AUTH: "opaque-credential" },
-            },
-          ],
-        },
-        0.25,
-        "opaque-agent-env",
-        "test-subject",
-      ),
-    ).rejects.toThrow("cannot set agent env");
-    for (const [key, repo] of [
-      ["credential-url", "https://user:password@example.test/repository"],
-      ["credential-query", "https://example.test/repository?token=opaque"],
-    ] as const) {
-      await expect(
-        service.submitConfig(
-          {
-            ...directInput,
-            datasets: [{ ...directInput.datasets[0], repo }],
-          },
-          0.25,
-          key,
-          "test-subject",
-        ),
-      ).rejects.toThrow("credential material");
-    }
-    await expect(
-      service.submitConfig(
-        { ...directInput, ignored_by_harbor: true },
-        0.25,
-        "unknown-field",
-        "test-subject",
-      ),
-    ).rejects.toThrow("strict Harbor JobConfig");
-    await expect(
-      service.submitConfig(
-        {
-          ...directInput,
-          agents: [{ ...directInput.agents[0], ignored_by_harbor: true }],
-        },
-        0.25,
-        "unknown-agent-field",
-        "test-subject",
-      ),
-    ).rejects.toThrow("strict Harbor JobConfig");
-    await expect(
-      service.submitConfig(
-        {
-          ...directInput,
-          datasets: [{ path: "/data/local-tasks" }],
-        },
-        0.25,
-        "local-dataset",
-        "test-subject",
-      ),
-    ).rejects.toThrow("local dataset path");
-    await expect(
-      service.submitConfig(
-        {
-          ...directInput,
-          datasets: [{ ...directInput.datasets[0], download_dir: "/data/cache" }],
-        },
-        0.25,
-        "local-dataset-download",
-        "test-subject",
-      ),
-    ).rejects.toThrow("dataset download path");
-    await expect(
-      service.submitConfig(
-        {
-          ...directInput,
-          datasets: [{ ...directInput.datasets[0], registry_path: "/data/registry" }],
-        },
-        0.25,
-        "local-dataset-registry",
-        "test-subject",
-      ),
-    ).rejects.toThrow("dataset registry path");
-    await expect(
-      service.submitConfig(
-        {
-          ...directInput,
-          extra_instruction_paths: ["/proc/self/environ"],
-        },
-        0.25,
-        "local-instruction",
-        "test-subject",
-      ),
-    ).rejects.toThrow("extra_instruction_paths");
-    for (const [field, value] of [
-      ["skills", ["/proc/self"]],
-      ["load_trajectory", "/proc/self/environ"],
-    ] as const) {
-      await expect(
-        service.submitConfig(
-          {
-            ...directInput,
-            agents: [{ ...directInput.agents[0], [field]: value }],
-          },
-          0.25,
-          `local-agent-${field}`,
-          "test-subject",
-        ),
-      ).rejects.toThrow(field);
-    }
-    const direct = await service.submitConfig(
-      directInput,
-      0.25,
-      "direct",
-      "test-subject",
-    );
-    expect(direct.run.role).toBe("diagnostic");
-    expect(direct.run.submission.model).toEqual({
-      id: "openai/gpt-oss-20b",
-      provider: "together",
-      reasoning_effort: "default",
-    });
-    expect(direct.run.harbor_job_config).toMatchObject({
-      agents: [
-        {
-          model_name: "huggingface/openai/gpt-oss-20b:together",
-          env: { HF_TOKEN: "$" + "{HF_INFERENCE_TOKEN}" },
-          kwargs: { version: "0.84.2", max_tokens: 1_000 },
-        },
-      ],
-      environment: {
-        import_path: "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
-      },
-    });
-  });
-});
 
 describe("status and projection", () => {
   it("applies the status precedence", () => {
@@ -591,137 +274,56 @@ describe("status and projection", () => {
   });
 });
 
-describe("reconciliation", () => {
-  it("starts one parent, adopts it, and respects capacity", async () => {
-    const first = await submit("first");
-    await submit("second");
-    await service.reconcile();
-    expect(jobs.starts).toBe(1);
-    expect(projection.run(first.run.run_id)?.state.parent_jobs).toHaveLength(1);
-    await service.reconcile();
-    expect(jobs.starts).toBe(1);
-  });
-
-  it("keeps a just-started parent in capacity during listing lag", async () => {
-    await submit("lag-first");
-    await submit("lag-second");
-    const originalList = jobs.list.bind(jobs);
-    jobs.list = async () => (jobs.starts === 0 ? originalList() : []);
-
-    await service.reconcile();
-
-    expect(jobs.starts).toBe(1);
-  });
-
-  it("cancels the parent and child on pause, then resumes Harbor", async () => {
-    const { run } = await submit("pause");
-    await service.reconcile();
-    jobs.values.push({
-      id: "child",
-      run_id: run.run_id,
-      role: "trial",
-      stage: "running",
-      created_at: new Date().toISOString(),
-      started_at: new Date().toISOString(),
-      finished_at: null,
-    });
-    await service.setDesiredState(run.run_id, "paused", "test-subject");
-    expect(jobs.cancelled).toEqual(["parent-1"]);
-    expect(jobs.values.find((job) => job.id === "child")?.stage).toBe("running");
-    await service.reconcile();
-    expect(jobs.cancelled).toEqual(["parent-1", "child"]);
-    expect(projection.run(run.run_id)?.status).toBe("paused");
-    await service.setDesiredState(run.run_id, "run", "test-subject");
-    await service.reconcile();
-    expect(jobs.starts).toBe(2);
-  });
-
-  it("keeps cancellation permanent when a parent start is in flight", async () => {
-    const { run } = await submit("cancel-race");
-    const originalStart = jobs.startParent.bind(jobs);
-    let releaseStart = (): void => undefined;
-    const startGate = new Promise<void>((resolve) => {
-      releaseStart = resolve;
-    });
-    let reportStarted = (): void => undefined;
-    const started = new Promise<void>((resolve) => {
-      reportStarted = resolve;
-    });
-    jobs.startParent = async (runIdValue: string) => {
-      reportStarted();
-      await startGate;
-      return originalStart(runIdValue);
-    };
-
-    const reconciliation = service.reconcile();
-    await started;
-    const cancellation = service.setDesiredState(
-      run.run_id,
-      "cancelled",
-      "test-subject",
+describe("disabled execution service", () => {
+  it("rejects untrusted input before inspecting properties or resolving dependencies", async () => {
+    const inaccessible = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("input or dependency inspected");
+        },
+        ownKeys() {
+          throw new Error("input or dependency enumerated");
+        },
+      },
     );
-    releaseStart();
-    await reconciliation;
-    const state = await cancellation;
-
-    expect(state.desired_state).toBe("cancelled");
-    expect(state.parent_jobs).toHaveLength(1);
-    expect(jobs.cancelled).toContain("parent-1");
-    await service.reconcile();
-    expect(jobs.starts).toBe(1);
-    expect(projection.run(run.run_id)?.status).toBe("cancelled");
+    const blocked = new ControlService(
+      inaccessible as ObjectStore,
+      inaccessible as Projection,
+      inaccessible as PresetCatalog,
+      inaccessible as JobsPort,
+      {
+        harborRevision: "d".repeat(40),
+        mountRoot: "/data",
+        maxActiveJobs: 1,
+        restartDelayMs: 0,
+      },
+    );
+    await expect(blocked.submitConfig(inaccessible, 1, "key", "actor")).rejects.toThrow(
+      "Execution is disabled",
+    );
+    await expect(blocked.reconcile()).rejects.toThrow("Execution is disabled");
+    await expect(
+      blocked.setDesiredState("unknown", "cancelled", "actor"),
+    ).rejects.toThrow("Execution is disabled");
   });
-
-  it("cleans an orphan before it starts a replacement parent", async () => {
-    const { run } = await submit("orphan");
-    jobs.values.push({
-      id: "orphan",
-      run_id: run.run_id,
-      role: "trial",
-      stage: "running",
-      created_at: new Date().toISOString(),
-      started_at: new Date().toISOString(),
-      finished_at: null,
-    });
-    await service.reconcile();
-    expect(jobs.cancelled).toContain("orphan");
-    expect(jobs.starts).toBe(1);
-  });
-
-  it("does not restart a cost-stopped run", async () => {
-    const { run } = await submit("cost");
-    await putJson(store, `runs/${run.run_id}/job/result.json`, { n_total_trials: 1 });
-    await putJson(store, `runs/${run.run_id}/job/task/result.json`, trial(0.5));
-    await service.reconcile();
+  it("rejects every direct mutation without persistence or Job calls", async () => {
+    await expect(service.submitPreset(input, "key", "actor")).rejects.toThrow(
+      "Execution is disabled",
+    );
+    await expect(service.submitWorkbench(input, {}, "key", "actor")).rejects.toThrow(
+      "Execution is disabled",
+    );
+    await expect(service.submitConfig({}, 1, "key", "actor")).rejects.toThrow(
+      "Execution is disabled",
+    );
+    for (const desired of ["run", "paused", "cancelled"] as const)
+      await expect(
+        service.setDesiredState("invalid", desired, "actor"),
+      ).rejects.toThrow("Execution is disabled");
+    await expect(service.reconcile()).rejects.toThrow("Execution is disabled");
+    expect(await store.list("runs/")).toEqual([]);
     expect(jobs.starts).toBe(0);
-    expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
-    expect(
-      await (await import("../src/store.js")).readJson(store, runStatePath(run.run_id)),
-    ).toMatchObject({
-      desired_state: "run",
-    });
-  });
-
-  it("rechecks cost receipts after it acquires the run lock", async () => {
-    const { run } = await submit("fresh-cost");
-    const attemptId = "55555555-5555-4555-8555-555555555555";
-    const originalList = store.list.bind(store);
-    let runListings = 0;
-    store.list = async (prefix) => {
-      if (prefix === "runs" && ++runListings === 2)
-        await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
-          schema_version: "v1",
-          attempt_id: attemptId,
-          trial_name: "task__trial",
-          cost_usd: 0.5,
-        });
-      return originalList(prefix);
-    };
-
-    await service.reconcile();
-
-    expect(runListings).toBeGreaterThanOrEqual(2);
-    expect(jobs.starts).toBe(0);
-    expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
+    expect(jobs.cancelled).toEqual([]);
   });
 });

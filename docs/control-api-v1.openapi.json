@@ -3,7 +3,7 @@
   "info": {
     "title": "Harbor-HF control API",
     "version": "v1",
-    "description": "Submit Harbor runs and inspect their projected state."
+    "description": "Execution-disabled configuration authoring and historical state inspection. Run and setup mutations return 503 execution_disabled."
   },
   "components": {
     "securitySchemes": {
@@ -571,6 +571,114 @@
         }
       }
     },
+    "/api/v1/workbench/configurations": {
+      "get": {
+        "summary": "List owner-scoped immutable native Harbor configurations",
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Save a named immutable native Harbor configuration without execution",
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workbench/preview": {
       "post": {
         "summary": "Compile and validate a Workbench recipe",
@@ -691,7 +799,7 @@
         }
       },
       "post": {
-        "summary": "Start a credentialless disposable setup test",
+        "summary": "Execution disabled: no admission or Job action",
         "security": [
           {
             "cookieSession": []
@@ -732,47 +840,7 @@
           }
         },
         "responses": {
-          "202": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Request error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "required": [
-                        "code",
-                        "message"
-                      ],
-                      "properties": {
-                        "code": {
-                          "type": "string"
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
+          "503": {
             "description": "Request error",
             "content": {
               "application/json": {
@@ -874,7 +942,7 @@
     },
     "/api/v1/workbench/setup-tests/{setup_test_id}/cancel": {
       "post": {
-        "summary": "Cancel one actor-owned setup test",
+        "summary": "Execution disabled: no admission or Job action",
         "security": [
           {
             "cookieSession": []
@@ -896,17 +964,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "404": {
+          "503": {
             "description": "Request error",
             "content": {
               "application/json": {
@@ -1138,7 +1196,7 @@
         }
       },
       "post": {
-        "summary": "Submit a reviewed preset or attested Workbench run",
+        "summary": "Execution disabled: no admission or Job action",
         "security": [
           {
             "cookieSession": []
@@ -1177,57 +1235,7 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Request error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "required": [
-                        "code",
-                        "message"
-                      ],
-                      "properties": {
-                        "code": {
-                          "type": "string"
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
+          "503": {
             "description": "Request error",
             "content": {
               "application/json": {
@@ -1262,7 +1270,7 @@
     },
     "/api/v1/runs/config": {
       "post": {
-        "summary": "Submit a direct Harbor JobConfig",
+        "summary": "Execution disabled: no admission or Job action",
         "security": [
           {
             "cookieSession": []
@@ -1303,57 +1311,7 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Request error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "required": [
-                        "code",
-                        "message"
-                      ],
-                      "properties": {
-                        "code": {
-                          "type": "string"
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
+          "503": {
             "description": "Request error",
             "content": {
               "application/json": {
@@ -1454,7 +1412,7 @@
     },
     "/api/v1/runs/{run_id}/pause": {
       "post": {
-        "summary": "Pause a run",
+        "summary": "Execution disabled: no admission or Job action",
         "security": [
           {
             "cookieSession": []
@@ -1475,17 +1433,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "404": {
+          "503": {
             "description": "Request error",
             "content": {
               "application/json": {
@@ -1520,7 +1468,7 @@
     },
     "/api/v1/runs/{run_id}/resume": {
       "post": {
-        "summary": "Resume a run",
+        "summary": "Execution disabled: no admission or Job action",
         "security": [
           {
             "cookieSession": []
@@ -1541,47 +1489,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Request error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "required": [
-                        "code",
-                        "message"
-                      ],
-                      "properties": {
-                        "code": {
-                          "type": "string"
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
+          "503": {
             "description": "Request error",
             "content": {
               "application/json": {
@@ -1616,7 +1524,7 @@
     },
     "/api/v1/runs/{run_id}/cancel": {
       "post": {
-        "summary": "Cancel a run",
+        "summary": "Execution disabled: no admission or Job action",
         "security": [
           {
             "cookieSession": []
@@ -1637,17 +1545,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "404": {
+          "503": {
             "description": "Request error",
             "content": {
               "application/json": {

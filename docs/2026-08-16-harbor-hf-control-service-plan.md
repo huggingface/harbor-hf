@@ -250,8 +250,9 @@ The control Space also enables Hugging Face OAuth for verified user identity.
 Hugging Face injects the OAuth client configuration; those platform-managed
 values are not additional operator-managed service credentials. An immutable
 private Bucket record holds the operator and reader access lists. Verified
-users outside both lists have no control access. Browser sessions and CSRF state remain disposable local
-state.
+users outside both lists now receive only the limited leaderboard submitter role
+(2026-09-04 update); they have no execution or global control-read access. Browser
+sessions and CSRF state remain disposable local state.
 
 The Space never injects `HF_TOKEN` into a Job and never gives a Job a writable
 mount of the canonical control Bucket. It derives a short-lived, signed worker

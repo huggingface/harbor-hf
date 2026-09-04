@@ -1,20 +1,6 @@
----
-title: Parent worker image
-author: Harbor-HF maintainers
-date: 2026-09-04
-tags: [deployment, harbor, jobs]
----
+# CLI-only Harbor image scaffold
 
-# Parent worker image
-
-This image runs one Harbor job from `runs/<run-id>/run.json` on a writable
-Bucket mount. Harbor starts each trial through its `hf-sandbox` environment.
-
-Build from the repository root:
-
-```bash
-docker build -f deploy/parent-worker/Dockerfile .
-```
-
-Production uses the image digest. Do not configure a mutable tag in the control
-Space.
+This image only runs `harbor --help` by default. It is not a supported runner.
+The parent worker, private Sandbox adapter, and image publication workflow have
+been removed. Do not attach credentials or use this scaffold for execution.
+The retained Dockerfile can be built locally for dependency compatibility only.

@@ -110,9 +110,10 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
   if (parsed.HARBOR_HF_WRITE_MODE === "enabled") {
     if (!parsed.HF_TOKEN || !parsed.HF_INFERENCE_TOKEN)
       throw new Error("write-enabled service requires both approved credentials");
-    if (!parsed.HARBOR_HF_PARENT_IMAGE)
-      throw new Error("write-enabled service requires HARBOR_HF_PARENT_IMAGE");
-    if (!/@sha256:[0-9a-f]{64}$/.test(parsed.HARBOR_HF_PARENT_IMAGE))
+    if (
+      parsed.HARBOR_HF_PARENT_IMAGE &&
+      !/@sha256:[0-9a-f]{64}$/.test(parsed.HARBOR_HF_PARENT_IMAGE)
+    )
       throw new Error("parent image must use an immutable digest");
     if (storeMode !== "bucket")
       throw new Error("write-enabled service requires Bucket storage");
