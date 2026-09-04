@@ -226,6 +226,129 @@ describe("execution-disabled boundary", () => {
       await app.close();
     },
   );
+  describe.each(["enabled", "disabled"] as const)(
+    "untrusted configuration with writes %s",
+    (mode) => {
+      it.each([
+        {
+          case: "agent import",
+          config: { agents: [{ import_path: "untrusted.module:Agent" }] },
+        },
+        {
+          case: "name import selector",
+          config: { agents: [{ name: "untrusted.module:Agent" }] },
+        },
+        {
+          case: "controller plugin",
+          config: { plugins: [{ import_path: "untrusted.module:Hook" }] },
+        },
+        {
+          case: "CLI arguments",
+          config: { args: ["--plugin", "untrusted.module:Hook"] },
+        },
+        {
+          case: "control forwarding",
+          config: {
+            environment: { type: "hf-sandbox", kwargs: { forward_hf_token: true } },
+          },
+        },
+        {
+          case: "environment binding",
+          config: { agents: [{ name: "pi", env: { HF_TOKEN: "$" + "{HF_TOKEN}" } }] },
+        },
+        {
+          case: "verifier hook",
+          config: { verifier: { import_path: "untrusted.module:Verifier" } },
+        },
+        {
+          case: "host paths",
+          config: { jobs_dir: "/controller", tasks: [{ path: "/controller/task" }] },
+        },
+      ])(
+        "rejects $case before config inspection or credential resolution",
+        async ({ config }) => {
+          const { runtime, app } = await setup(mode);
+          const credentialRead = vi.fn(() => {
+            throw new Error("credential access forbidden");
+          });
+          for (const key of ["hf_token", "hf_inference_token"])
+            Object.defineProperty(runtime.config, key, {
+              configurable: true,
+              get: credentialRead,
+            });
+          const network = vi.fn(() => {
+            throw new Error("network forbidden");
+          });
+          vi.stubGlobal("fetch", network);
+          const handlers = [
+            vi.spyOn(runtime.service, "submitConfig"),
+            vi.spyOn(runtime.store, "create"),
+            vi.spyOn(runtime.store, "put"),
+            vi.spyOn(runtime.service.jobs, "startParent"),
+            vi.spyOn(runtime.service.jobs, "cancel"),
+            vi.spyOn(runtime.reconciler, "start"),
+          ];
+          const response = await app.inject({
+            method: "POST",
+            url: "/api/v1/runs/config?preview=true",
+            headers: {
+              "idempotency-key": "offline-contract",
+              "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+            },
+            payload: config,
+          });
+          expect(response.statusCode).toBe(503);
+          expect(response.json().error.code).toBe("execution_disabled");
+          expect(response.body).not.toContain("untrusted.module");
+          runtime.start();
+          for (const spy of [...handlers, credentialRead, network])
+            expect(spy).not.toHaveBeenCalled();
+          expect(await runtime.store.list("runs/")).toEqual([]);
+          await app.close();
+        },
+      );
+    },
+  );
+  it.each([
+    { name: "pi", kwargs: { version: "0.84.4", thinking: "off" } },
+    { name: "codex", kwargs: { version: "0.118.0", reasoning_effort: "low" } },
+  ])(
+    "round-trips native $name configuration without granting execution",
+    async (agent) => {
+      const { runtime, app } = await setup();
+      const network = vi.fn(() => {
+        throw new Error("network forbidden");
+      });
+      vi.stubGlobal("fetch", network);
+      const input = {
+        name: "review-candidate",
+        harbor_job_config: {
+          agents: [agent],
+          environment: {
+            type: "hf-sandbox",
+            kwargs: { flavor: "cpu-basic", job_timeout: "30m" },
+          },
+        },
+      };
+      const saved = await app.inject({
+        method: "POST",
+        url: "/api/v1/workbench/configurations",
+        payload: input,
+      });
+      expect(saved.statusCode).toBe(200);
+      expect(saved.json().harbor_job_config).toEqual(input.harbor_job_config);
+      const rejected = await app.inject({
+        method: "POST",
+        url: "/api/v1/runs/config",
+        payload: saved.json().harbor_job_config,
+      });
+      expect(rejected.statusCode).toBe(503);
+      expect(rejected.json().error.code).toBe("execution_disabled");
+      expect(await runtime.store.list("runs/")).toEqual([]);
+      expect(network).not.toHaveBeenCalled();
+      await app.close();
+    },
+  );
   it("saves and reloads immutable native authoring data without creating a Run", async () => {
     const { runtime, app } = await setup();
     const input = {

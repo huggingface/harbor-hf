@@ -9,6 +9,7 @@ import {
   FilesystemObjectStore,
   type JobObservation,
   type JobsPort,
+  type ObjectStore,
   PresetCatalog,
   Projection,
   costLimitReached,
@@ -274,6 +275,38 @@ describe("status and projection", () => {
 });
 
 describe("disabled execution service", () => {
+  it("rejects untrusted input before inspecting properties or resolving dependencies", async () => {
+    const inaccessible = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("input or dependency inspected");
+        },
+        ownKeys() {
+          throw new Error("input or dependency enumerated");
+        },
+      },
+    );
+    const blocked = new ControlService(
+      inaccessible as ObjectStore,
+      inaccessible as Projection,
+      inaccessible as PresetCatalog,
+      inaccessible as JobsPort,
+      {
+        harborRevision: "d".repeat(40),
+        mountRoot: "/data",
+        maxActiveJobs: 1,
+        restartDelayMs: 0,
+      },
+    );
+    await expect(blocked.submitConfig(inaccessible, 1, "key", "actor")).rejects.toThrow(
+      "Execution is disabled",
+    );
+    await expect(blocked.reconcile()).rejects.toThrow("Execution is disabled");
+    await expect(
+      blocked.setDesiredState("unknown", "cancelled", "actor"),
+    ).rejects.toThrow("Execution is disabled");
+  });
   it("rejects every direct mutation without persistence or Job calls", async () => {
     await expect(service.submitPreset(input, "key", "actor")).rejects.toThrow(
       "Execution is disabled",

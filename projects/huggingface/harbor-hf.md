@@ -105,8 +105,9 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 
 ### Internal design and local compatibility amendment (2026-09-04)
 
-Status: approved
+Status: completed
 Approved at: 2026-09-04T22:23:44Z
+Completed at: 2026-09-04T22:32:42Z
 
 - Direct user instruction approves internal workarounds first and actual bounded
   internal design/local compatibility work. Produce a concrete control-Space
@@ -1097,3 +1098,27 @@ All pre-integration authorization records above are retained as well.
   design, independent security guards where needed, offline compatibility and
   regression tests, and local commits. Execution and all remote mutations remain
   excluded; unresolved Harbor-owned preparation and ownership gaps stay blocked.
+
+### 2026-09-04 internal design and local compatibility completion
+
+- Completed the bounded local design and regression phase only. Added
+  `docs/2026-09-04-internal-cli-contract.md` with source/history evidence,
+  threat model, staged flow, fixed CLI contract, credential map, and precise
+  unresolved preparation, ownership and cost-stop requirements.
+- Added 19 offline regressions at existing API/service boundaries: eight hostile
+  configuration shapes in both write modes, two native harness round trips that
+  cannot grant execution, and throwing input/dependency checks. Existing runtime
+  guards already suffice; no duplicate validator, planner, runner, schema, policy
+  change, pin upgrade, or fake execution was added.
+- Passed 417 TypeScript unit tests, eight mocked browser tests, formatting, lint,
+  types, build, generated checks, npm audit (zero vulnerabilities), DRY and the
+  non-baseline structure check. Both local Linux AMD64 Docker builds passed.
+  Agent package Ruff, formatting, ty and 32 pytest tests passed. No root Python
+  source changed; its full suite was not rerun in this phase.
+- Existing gates remain red: coverage is 72.83% lines, 70.22% statements,
+  68.59% functions and 63.14% branches against 85%; the structure baseline is
+  absent. No threshold was lowered or retired mutation tooling restored.
+- Authorization was committed before implementation. All new commits remain
+  local; no push, PR update, upstream mutation, live Space inspection, deployment,
+  Jobs, inference, spending, new resources, credentials or historical data changes
+  occurred. Execution remains disabled. This is not production or launch readiness.

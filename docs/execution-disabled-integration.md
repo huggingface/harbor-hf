@@ -15,6 +15,11 @@ new local discovery catalog. Reviewed upstream presets remain configuration data
 The old five-profile registry and its publication-dependent submission UI are
 not restored. Result-submission reconciliation remains incomplete in this draft.
 
+The [internal CLI contract](2026-09-04-internal-cli-contract.md) records the
+subsequent local design review, fresh public-source comparison, threat model,
+blocked preparation/ownership contracts, and offline regression evidence. It does
+not enable execution or authorize remote operations.
+
 ## Reviewed upstream boundary
 
 Harbor revision `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` was current upstream
