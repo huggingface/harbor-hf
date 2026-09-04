@@ -103,6 +103,43 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Harness library and New Run UX amendment (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T14:12:04Z
+
+- Directly approved local implementation and tests for the proposed Workbench
+  configuration flow: installation commands and settings, optional setup testing
+  as a user-facing goal, and named immutable versioned harness presets selectable
+  alongside built-in harnesses in New Run. New Run presents benchmark subset or
+  size, harness, model string, cost ceiling, and review before launch. Move the
+  mixed profile registry and provider or Endpoint details into Advanced without
+  bypassing server-side compatibility, authorization, or credential safeguards.
+- This initial pass is read-only upstream and architecture review plus this
+  authorization record only. Do not implement yet. Compare the pinned Harbor
+  source with freshly fetched public upstream history, identify landed features,
+  pin-upgrade effects and execution-owned gaps, and return a concrete plan.
+- Subsequent local implementation may cover wrapper-owned preset storage,
+  library, UI, and Harbor configuration submission after the review establishes
+  a safe path. Store accepted Harbor configuration rather than duplicate its
+  fields. Preserve old Run locks and saved recipe revisions; do not silently
+  recompile, promote, migrate, or reinterpret them on a pin upgrade.
+- A saved preset or successful setup test is not execution approval. Do not
+  bypass immutable profile or reviewed-worker gates in the current runtime to
+  simulate unrestricted model selection or optional setup. The simplification
+  plan's credential decision and paid-test preconditions remain unsatisfied by
+  this amendment; no runtime cutover or gate waiver is authorized here.
+- Stop and report any missing Harbor-owned execution behavior with a proposed
+  upstream change. No local Harbor patch, upstream issue, or upstream pull
+  request is approved. Reuse landed upstream features instead of implementing
+  them in Harbor-HF; any later pin update requires local compatibility checks.
+- Local authorization and implementation commits are permitted after privacy
+  review. No push, pull request, merge, release, deployment, activation, benchmark
+  or setup Job, inference, spending, new resource, credential access or transfer,
+  reset, migration, or real result publication is authorized by this amendment.
+  Do not inherit publication or deployment permission from earlier milestones.
+  Earlier deployment records remain intact and are not closed by this work.
+
 ### Workbench saved-configuration milestone (2026-09-04)
 
 Approved at: 2026-09-04T08:35:55Z
@@ -771,3 +808,12 @@ Approved at: 2026-09-04
   real result publication, pull request, merge, or default-branch update.
   Local management OAuth stays local to provider APIs and Bucket inspection;
   no browser before healthy readiness. Keep operational evidence owner-only.
+
+### 2026-09-04 harness library and New Run UX
+
+- At 2026-09-04T14:12:04Z, directly approved the local UX and harness-library
+  implementation scope recorded above, beginning with upstream compatibility and
+  architecture review and an authorization-only commit. This pass must not
+  implement. Preserve current execution safeguards, old locks, and saved recipe
+  revisions; stop on an unresolved Harbor-owned gap. No deployment, push,
+  spending, credential movement, migration, or upstream mutation is authorized.
