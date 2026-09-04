@@ -7,6 +7,11 @@ and proposed user-facing changes, not a completed personal-storage integration.
 
 - Deployment uses an operator's local HF authentication to inspect the existing
   resources and update the control Space. It is not copied into remote workers.
+  Installer verification/activation use a separate temporary browser session with
+  the existing Space OAuth login, not another manually created token. The planned
+  operator signs in interactively; cookies are neither exported nor persisted by
+  the installer. Explicitly configured approved application bearers remain an
+  optional automation transport, never a fallback to the management credential.
 - The control Space retains `HF_TOKEN`: a fine-grained credential with read/write
   access to the canonical artifact Bucket and Job management in the configured
   namespace. The installer no longer requires Endpoint-management permission for
@@ -89,4 +94,7 @@ admin-funded Jobs, modify presets, or publish directly. See
 This installer permission change concerns HF control-plane credentials, not
 Harbor execution. Checked `src/harbor/models/job/config.py` at Harbor revision
 `b37833221e27435a18d7acdd41d875cdc2831893` and canonical upstream history through
-`dcd0a7ac` before the change. No Harbor behavior or pin is changed.
+`dcd0a7ac` before the change. No Harbor behavior or pin is changed. For browser verification, also checked
+`src/harbor/cli/auth.py` at that pin and canonical history through `dcd0a7ac`;
+Harbor's login is for Harbor Hub via GitHub OAuth, not this control Space's HF
+browser session. No Harbor authentication implementation is imported or copied.

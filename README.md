@@ -199,8 +199,19 @@ receipts.
 
 ```bash
 npm run install:verify -- --space '<namespace>/<control-space>'
-npm run install:activate -- --space '<namespace>/<control-space>' --mode canary
+npm run install:activate -- --space '<namespace>/<control-space>'
 ```
+
+Both commands use the existing Hugging Face browser login by default. Sign in
+as the operator recorded in the installation plan in the opened browser. No
+extra manual token or OAuth application is needed. A local graphical display
+and Chromium are required (`npx playwright install chromium`); interactive
+login is not supported in a headless terminal. The temporary browser session
+is discarded when the command ends. If a Space restart expires the session,
+sign in again in the same browser. Login/startup is bounded to five minutes.
+An explicitly supplied `HARBOR_HF_CONTROL_BEARER_TOKEN` retains the approved
+automation path; never substitute a management credential. Configuration
+continues to check anonymous readiness without opening a browser.
 
 Verification is non-mutating and checks source, variables, secret names,
 hardware, application protection, health, and write mode. Inspect the service

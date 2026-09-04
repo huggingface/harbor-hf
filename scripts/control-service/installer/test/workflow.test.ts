@@ -1092,6 +1092,10 @@ describe("installer workflows", () => {
       HARBOR_HF_CONTROL_BEARER_TOKEN: "operator-bearer-placeholder",
     };
 
+    setupResult.dependencies.applicationAuth = () => {
+      throw new Error("An explicit bearer must not open a browser");
+    };
+
     await expect(
       activateInstall(
         {
@@ -1122,6 +1126,139 @@ describe("installer workflows", () => {
     expect(progress).toEqual([]);
   });
 
+  it("verifies and activates with an injected browser adapter without a bearer", async () => {
+    const result = await setup();
+    const provisioned = await bootstrap(result);
+    await complete(result, provisioned.receipt);
+    result.http.readyRequestCount = 0;
+    const queries: string[] = [];
+    result.dependencies.applicationAuth = (origin, username) => {
+      expect(origin).toBe(ORIGIN);
+      expect(username).toBe("example-user");
+      return {
+        async getJson(url) {
+          queries.push(url.pathname + url.search);
+          return result.http.getJson(url, { timeoutMs: 10000, maxBytes: 262144 });
+        },
+        async close() {},
+      };
+    };
+    expect(
+      (await verifyInstall(result.planPath, result.dependencies)).authenticated_system,
+    ).toBe("passed");
+    await activateInstall(
+      { planPath: result.planPath, bootstrapReceipt: provisioned.receipt },
+      result.dependencies,
+    );
+    expect(queries).toEqual([
+      "/api/v1/system",
+      "/api/v1/system",
+      "/api/v1/runs?limit=1",
+      "/api/v1/system",
+    ]);
+    expect(result.hf.state.space?.variables.HARBOR_HF_WRITE_MODE).toBe("enabled");
+    expect(result.http.requests.every((request) => !request.bearer)).toBe(true);
+  });
+
+  it.each(["authentication", "nonempty runs", "wrong source"])(
+    "blocks browser activation before mutation on %s failure",
+    async (failure) => {
+      const result = await setup();
+      const provisioned = await bootstrap(result);
+      await complete(result, provisioned.receipt);
+      result.hf.calls.length = 0;
+      result.http.readyRequestCount = 0;
+      result.dependencies.applicationAuth = () => ({
+        async getJson(url) {
+          if (failure === "authentication") throw new Error("Wrong operator");
+          const response = await result.http.getJson(url, {
+            timeoutMs: 10000,
+            maxBytes: 262144,
+          });
+          if (failure === "wrong source" && url.pathname === "/api/v1/system")
+            return { status: 200, body: { source_revision: OLD_REVISION } };
+          if (url.pathname === "/api/v1/runs")
+            return { status: 200, body: { items: [{}], next_cursor: null } };
+          return response;
+        },
+        async close() {},
+      });
+      await expect(
+        activateInstall(
+          { planPath: result.planPath, bootstrapReceipt: provisioned.receipt },
+          result.dependencies,
+        ),
+      ).rejects.toThrow();
+      expect(result.hf.calls).not.toContain("pause");
+      expect(result.hf.calls).not.toContain("setVariables");
+      expect(result.hf.state.space?.variables.HARBOR_HF_WRITE_MODE).toBe("disabled");
+    },
+  );
+
+  it("cancels after an awaited pause without enabling writes or restarting", async () => {
+    const result = await setup();
+    const provisioned = await bootstrap(result);
+    await complete(result, provisioned.receipt);
+    result.http.readyRequestCount = 0;
+    result.hf.calls.length = 0;
+    let cancelled = false;
+    result.dependencies.assertNotCancelled = () => {
+      if (cancelled) throw new Error("cancelled");
+    };
+    result.dependencies.applicationAuth = () => ({
+      getJson: (url) =>
+        result.http.getJson(url, { timeoutMs: 10000, maxBytes: 262144 }),
+      async close() {},
+    });
+    const pause = result.hf.pause.bind(result.hf);
+    result.hf.pause = async () => {
+      await pause();
+      cancelled = true;
+    };
+    const writes: string[] = [];
+    const setVariables = result.hf.setVariables.bind(result.hf);
+    result.hf.setVariables = async (id, file) => {
+      writes.push(await readFile(file, "utf8"));
+      await setVariables(id, file);
+    };
+    await expect(
+      activateInstall(
+        { planPath: result.planPath, bootstrapReceipt: provisioned.receipt },
+        result.dependencies,
+      ),
+    ).rejects.toThrow("disabled rollback verified");
+    expect(
+      writes.every((value) => value.includes("HARBOR_HF_WRITE_MODE=disabled")),
+    ).toBe(true);
+    expect(result.hf.calls).not.toContain("restart");
+    expect(result.hf.state.space?.runtimeStage).toBe("PAUSED");
+  });
+
+  it("rolls browser activation back when post-restart authentication fails", async () => {
+    const result = await setup();
+    const provisioned = await bootstrap(result);
+    await complete(result, provisioned.receipt);
+    result.http.readyRequestCount = 0;
+    let systemReads = 0;
+    result.dependencies.applicationAuth = () => ({
+      async getJson(url) {
+        if (url.pathname === "/api/v1/system" && ++systemReads === 2)
+          throw new Error("Session rejected after restart");
+        return result.http.getJson(url, { timeoutMs: 10000, maxBytes: 262144 });
+      },
+      async close() {},
+    });
+    await expect(
+      activateInstall(
+        { planPath: result.planPath, bootstrapReceipt: provisioned.receipt },
+        result.dependencies,
+      ),
+    ).rejects.toThrow();
+    expect(systemReads).toBe(2);
+    expect(result.hf.state.space?.variables.HARBOR_HF_WRITE_MODE).toBe("disabled");
+    expect(result.hf.state.space?.runtimeStage).toBe("PAUSED");
+  });
+
   it("does not activate without authenticated system verification", async () => {
     const setupResult = await setup();
     const bootstrapResult = await bootstrap(setupResult);
@@ -1137,7 +1274,9 @@ describe("installer workflows", () => {
         },
         setupResult.dependencies,
       ),
-    ).rejects.toThrow("HARBOR_HF_CONTROL_BEARER_TOKEN is required");
+    ).rejects.toThrow(
+      "Browser authentication or an explicitly supplied HARBOR_HF_CONTROL_BEARER_TOKEN is required",
+    );
     expect(setupResult.hf.calls).not.toContain("setVariables");
     expect(setupResult.hf.calls).not.toContain("pause");
   });

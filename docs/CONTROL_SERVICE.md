@@ -519,6 +519,27 @@ browser sessions because they are not durable control state. Expired and excess
 login flows and sessions are removed so anonymous login traffic cannot grow the
 database without a bound.
 
+The local installer uses this existing browser login for `install:verify` and
+`install:activate` unless an approved application bearer is explicitly supplied
+in `HARBOR_HF_CONTROL_BEARER_TOKEN`. This does not add a credential, OAuth
+application, endpoint, or store. A headed ephemeral Chromium context owns the
+session; the installer never exports cookies, saves storage state, or injects
+management tokens. A local graphical display and installed Playwright Chromium
+(`npx playwright install chromium`) are required. Headless interactive login is
+unsupported. Startup/sign-in is bounded to five minutes; response reads are
+bounded to ten seconds and 256 KiB. Errors never include callback URLs.
+
+Before each authenticated installer read, the server session must report
+`transport=session`, `role=operator`, and the saved plan's operator username.
+Programmatic queries use only the exact planned HTTPS origin and session,
+system, and empty-run-check routes, with redirects rejected. OAuth navigation
+through Hugging Face remains normal browser login. A restart-expired session
+requires signing in again in the same ephemeral context; command completion,
+failure, or cancellation closes the browser. Existing source revision,
+upload receipt, readiness, expected write mode, empty-run activation, and
+rollback checks remain mandatory. Configure's internal readiness check remains
+anonymous and does not prompt for browser login.
+
 Mutations require a session-bound CSRF token. Paid launches and destructive
 actions require an explicit confirmation screen that shows the resolved target,
 logical task count, cost ceiling, and effect. The verified OAuth actor is stored

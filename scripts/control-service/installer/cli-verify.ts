@@ -1,3 +1,4 @@
+import { withBrowserAuthentication } from "./cli-browser.js";
 import { cliMain, defaultDependencies, parseSavedPlanOptions } from "./cli.js";
 import { locateGitRepositoryRoot } from "./source.js";
 import {
@@ -22,9 +23,11 @@ await cliMain(async () => {
     await locateGitRepositoryRoot(),
   );
   const dependencies = defaultDependencies();
-  await withInstallerStateLock(options.space, stateRoot, async () => {
-    const planPath = await currentInstallPlanPath(options.space, stateRoot);
-    const result = await verifyInstall(planPath, dependencies);
-    process.stdout.write(`${JSON.stringify(result)}\n`);
-  });
+  await withBrowserAuthentication(dependencies, () =>
+    withInstallerStateLock(options.space, stateRoot, async () => {
+      const planPath = await currentInstallPlanPath(options.space, stateRoot);
+      const result = await verifyInstall(planPath, dependencies);
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+    }),
+  );
 });

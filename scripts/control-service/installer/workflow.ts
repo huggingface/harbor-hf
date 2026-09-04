@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, relative, resolve } from "node:path";
+import type { ApplicationAuthFactory } from "./browser-auth.js";
 import type { BucketWriteProbeAdapter } from "./bucket-write-probe.js";
 import { canonicalJson } from "./canonical.js";
 import type { InstallerClock } from "./clock.js";
@@ -38,6 +39,8 @@ export interface InstallerDependencies {
   hf: HfAdapter;
   identity: IdentityAdapter;
   http: HttpAdapter;
+  applicationAuth?: ApplicationAuthFactory;
+  assertNotCancelled?: () => void;
   source: SourceAdapter;
   clock: InstallerClock;
   configureStartupPolicy?: ConfigureStartupPolicy;
@@ -1186,15 +1189,20 @@ async function verifyPlan(
 
   const bearer = (dependencies.environment ?? process.env)
     .HARBOR_HF_CONTROL_BEARER_TOKEN;
-  if (options.requireAuthenticated && !bearer) {
+  if (options.requireAuthenticated && !bearer && !dependencies.applicationAuth) {
     throw new InstallerInputError(
-      "HARBOR_HF_CONTROL_BEARER_TOKEN is required for activation",
+      "Browser authentication or an explicitly supplied HARBOR_HF_CONTROL_BEARER_TOKEN is required for activation",
     );
   }
   let authenticatedSystem: VerificationResult["authenticated_system"] = "skipped";
-  if (bearer) {
-    const system = await dependencies.http.getJson(new URL("/api/v1/system", origin), {
-      bearer,
+  if (bearer || (options.requireAuthenticated && dependencies.applicationAuth)) {
+    const authenticatedHttp = bearer
+      ? dependencies.http
+      : dependencies.applicationAuth?.(origin, plan.principal.username);
+    if (!authenticatedHttp)
+      throw new InstallerInputError("Application authentication is required");
+    const system = await authenticatedHttp.getJson(new URL("/api/v1/system", origin), {
+      ...(bearer ? { bearer } : {}),
       timeoutMs: 10_000,
       maxBytes: 256 * 1024,
     });
@@ -1204,10 +1212,10 @@ async function verifyPlan(
     assertSystem(system.body, plan.source.revision, expectedWriteMode);
     authenticatedSystem = "passed";
     if (options.requireEmptyRuns) {
-      const runs = await dependencies.http.getJson(
+      const runs = await authenticatedHttp.getJson(
         new URL("/api/v1/runs?limit=1", origin),
         {
-          bearer,
+          ...(bearer ? { bearer } : {}),
           timeoutMs: 10_000,
           maxBytes: 256 * 1024,
         },
@@ -1240,7 +1248,9 @@ export async function verifyInstall(
   const { plan } = await readPrivatePlan(planPath);
   const version = await dependencies.hf.version();
   if (version !== plan.hf_cli_version) throw new Error("hf CLI version changed");
-  return await verifyPlan(plan, dependencies);
+  return await verifyPlan(plan, dependencies, undefined, {
+    requireAuthenticated: Boolean(dependencies.applicationAuth),
+  });
 }
 
 export interface ActivationResult {
@@ -1365,6 +1375,8 @@ export async function activateInstall(
   },
   dependencies: InstallerDependencies,
 ): Promise<ActivationResult> {
+  const active = () => dependencies.assertNotCancelled?.();
+  active();
   const loaded = await readPrivatePlan(input.planPath);
   const { plan } = loaded;
   const version = await dependencies.hf.version();
@@ -1388,9 +1400,12 @@ export async function activateInstall(
       "variables-disabled.env",
       variablesForWriteMode(plan, currentSpace.origin, "disabled"),
     );
-    if (!(dependencies.environment ?? process.env).HARBOR_HF_CONTROL_BEARER_TOKEN) {
+    if (
+      !(dependencies.environment ?? process.env).HARBOR_HF_CONTROL_BEARER_TOKEN &&
+      !dependencies.applicationAuth
+    ) {
       throw new InstallerInputError(
-        "HARBOR_HF_CONTROL_BEARER_TOKEN is required for activation",
+        "Browser authentication or an explicitly supplied HARBOR_HF_CONTROL_BEARER_TOKEN is required for activation",
       );
     }
     if (!input.bootstrapReceipt?.uploaded_sha) {
@@ -1407,16 +1422,20 @@ export async function activateInstall(
     );
     let mutationStarted = currentMode === "enabled";
     try {
+      active();
       if (currentSpace.runtimeStage !== "RUNNING") {
         mutationStarted = true;
         await dependencies.hf.restart(plan.targets.space_id);
+        active();
         await dependencies.hf.wait(plan.targets.space_id);
+        active();
       }
       const preflight = await verifyPlan(plan, dependencies, expectedUploadSha, {
         expectedWriteMode: currentMode,
         requireAuthenticated: true,
         requireEmptyRuns: currentMode === "disabled",
       });
+      active();
       if (currentMode === "enabled") {
         return {
           production_ready: false,
@@ -1428,19 +1447,25 @@ export async function activateInstall(
       }
       mutationStarted = true;
       await dependencies.hf.pause(plan.targets.space_id);
+      active();
       await dependencies.hf.setVariables(plan.targets.space_id, enabledFile);
+      active();
       observed = await dependencies.hf.observe(
         plan.targets.namespace,
         plan.targets.space_id,
         plan.targets.bucket_id,
       );
+      active();
       assertInstalledActivationState(plan, observed, "enabled");
       await dependencies.hf.restart(plan.targets.space_id);
+      active();
       await dependencies.hf.wait(plan.targets.space_id);
+      active();
       const verification = await verifyPlan(plan, dependencies, expectedUploadSha, {
         expectedWriteMode: "enabled",
         requireAuthenticated: true,
       });
+      active();
       return {
         production_ready: false,
         space_url: verification.space_url,
