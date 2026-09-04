@@ -112,6 +112,11 @@ Browser writes use the session cookie and CSRF token. CLI requests use an
 approved bearer token. Readers can use authenticated GET routes but cannot
 change runs.
 
+Pause and cancel first stop live parent Jobs. A later reconciliation stops any
+remaining labeled child after the parent is terminal. This order prevents the
+parent from recording the controlled child shutdown as a completed trial error,
+so a paused Harbor folder stays resumable.
+
 ## Startup
 
 The Space opens port 7860 before the Bucket scan. This lets the platform observe

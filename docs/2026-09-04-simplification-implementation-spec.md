@@ -292,15 +292,22 @@ Benchmark presets fix trial concurrency.
 
 For each run it applies these rules in order:
 
-1. If the desired state is paused or cancelled, cancel every live Job with the
-   run label.
-2. If an attempt receipt has no cost or the durable attempt costs crossed a
-   limit, cancel labeled Jobs and do not start a parent.
-3. If Harbor's job result is finished, do not start a parent.
-4. If one labeled parent is live, adopt it if needed and wait.
-5. Cancel orphaned labeled child Jobs.
-6. If capacity is available and the fixed restart delay has passed, start one
+1. If the desired state is paused or cancelled and a parent is live, cancel
+   every live parent and defer child cleanup to the next reconciliation.
+2. If the desired state is paused or cancelled and no parent is live, cancel
+   every live child with the run label.
+3. If an attempt receipt has no cost or the durable attempt costs crossed a
+   limit, stop parents before child cleanup and do not start another parent.
+4. If Harbor's job result is finished, do not start a parent.
+5. If one labeled parent is live, adopt it if needed and wait.
+6. Cancel orphaned labeled child Jobs.
+7. If capacity is available and the fixed restart delay has passed, start one
    parent and append it to `state.json`.
+
+Stopping parents before children prevents a child shutdown from becoming a
+completed error while its parent is still observing it. The later orphan pass
+then stops the child after the parent is terminal. This keeps the same Harbor
+folder resumable after a pause.
 
 The run status is computed, not stored:
 

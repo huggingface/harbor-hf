@@ -218,7 +218,9 @@ export class ControlService {
         const liveJobs = (await this.jobs.list()).filter(
           (job) => job.run_id === runIdValue && isLiveJob(job),
         );
-        await Promise.all(liveJobs.map((job) => this.jobs.cancel(job.id)));
+        const liveParents = liveJobs.filter((job) => job.role === "parent");
+        const jobsToStop = liveParents.length > 0 ? liveParents : liveJobs;
+        await Promise.all(jobsToStop.map((job) => this.jobs.cancel(job.id)));
       }
       return next;
     });
@@ -283,8 +285,13 @@ export class ControlService {
           state.desired_state !== "run" ||
           ["finished", "cost_stopped"].includes(projected.status);
         if (terminal) {
+          const liveParents = liveJobs.filter((job) => job.role === "parent");
+          if (liveParents.length > 0) {
+            await Promise.all(liveParents.map((job) => this.jobs.cancel(job.id)));
+            activeParents -= liveParents.length;
+            return;
+          }
           await Promise.all(liveJobs.map((job) => this.jobs.cancel(job.id)));
-          activeParents -= liveJobs.filter((job) => job.role === "parent").length;
           return;
         }
         if (liveParent) {

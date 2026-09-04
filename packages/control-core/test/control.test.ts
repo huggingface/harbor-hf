@@ -517,8 +517,10 @@ describe("reconciliation", () => {
       finished_at: null,
     });
     await service.setDesiredState(run.run_id, "paused", "test-subject");
+    expect(jobs.cancelled).toEqual(["parent-1"]);
+    expect(jobs.values.find((job) => job.id === "child")?.stage).toBe("running");
     await service.reconcile();
-    expect(jobs.cancelled.sort()).toEqual(["child", "parent-1"]);
+    expect(jobs.cancelled).toEqual(["parent-1", "child"]);
     expect(projection.run(run.run_id)?.status).toBe("paused");
     await service.setDesiredState(run.run_id, "run", "test-subject");
     await service.reconcile();

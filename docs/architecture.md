@@ -136,14 +136,18 @@ handles runs in creation order and applies the configured parent Job capacity.
 
 For each run it:
 
-1. cancels live labeled Jobs when the desired state is paused or cancelled;
-2. stops a run when durable trial cost crossed its ceiling;
-3. leaves a finished Harbor job unchanged;
-4. adopts an existing live parent;
-5. cancels live child Jobs that have no live parent; and
-6. starts a new parent after the restart delay when capacity is available.
+1. cancels live parents when the desired state is paused or cancelled;
+2. cancels their remaining children on a later reconciliation, after the parent
+   is terminal;
+3. stops a run when durable trial cost crossed its ceiling;
+4. leaves a finished Harbor job unchanged;
+5. adopts an existing live parent;
+6. cancels live child Jobs that have no live parent; and
+7. starts a new parent after the restart delay when capacity is available.
 
-A resumed parent uses the same `job/` folder. Harbor reads its existing result
+The parent-first stop keeps child shutdown from becoming a terminal trial error
+while the parent still observes it. A resumed parent uses the same `job/`
+folder. Harbor reads its existing result
 and lock files, then runs only missing trials.
 
 ## Projection and status
