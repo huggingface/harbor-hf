@@ -103,6 +103,42 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Execution-disabled UI-feedback deployment (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T17:46:12Z
+
+- The user explicitly approved deploying the current pushed feature to the
+  existing selected `<control-space>` for UI feedback. Record and commit this
+  amendment first; deploy the exact new clean committed HEAD including this
+  record. Normal push of this authorization commit to the existing feature
+  branch is approved; no default-branch update or PR merge is authorized.
+- Read the complete authorization, current operational contracts, and prior
+  installer evidence. Before remote mutation, freshly verify canonical ownership,
+  complete deployed bundle provenance, inventory and activity, and read-only
+  projection replay of existing records with the new code. Stop on incompatible
+  records; no migration, reset, deletion, compatibility patch, or invented proof.
+- Use only the supported existing-install workflow, preserving all receipts and
+  generations, Bucket data, Run state, hardware, protection, and existing secret
+  names and values. Local management OAuth is for provider APIs only, never
+  application authentication or remote runtime. Do not retrieve, copy, replace,
+  forward, or expose either persistent credential.
+- Permit one bounded supported configure attempt with closed stdin and without
+  credential replacement or application bearer. Keep writes disabled during
+  deployment and verification; execution must fail closed regardless of write
+  mode, before admission, credentials, setup tests, actions, or reconciliation.
+  Do not bypass empty-history, source, health, operator-authentication, or idle
+  gates or manually enable writes. No browser operation is authorized here.
+- On unclassified restart failure, preserve artifacts, leave disabled and paused,
+  report, and request one user restart rather than blindly retrying upload or
+  using an unreviewed manual startup path. Verify exact source, runtime revision,
+  release, anonymous health, and data preservation before claiming deployment.
+- No Jobs, inference, Run actions, new resources, credential or OAuth changes,
+  spending expansion, real result publication, migration, reset, or deletion.
+  Report honestly that native JobConfig authoring and configuration preview
+  replace the old Workbench flow; submission UI reconciliation remains pending.
+  Keep evidence owner-only and private; retain disclosed test-gate limitations.
+
 ### Execution-disabled integration amendment (2026-09-04)
 
 Status: completed
@@ -964,6 +1000,13 @@ All pre-integration authorization records above are retained as well.
 - The 2026-08-23 FX harness amendment does not authorize a canary, 89-task diagnostic, official five-trial run, new persistent resource, or credential. It only adds the harness to the existing campaign path and deploys the reviewed revision.
 - The later 2026-08-23 harness full-run repair amendment does not raise any campaign ceiling and does not add a persistent resource or credential. Retries stay inside each existing campaign's locked ceiling. The seven-campaign combined cap remains USD 74.20. The existing FX 89-task row stays inside its locked ceiling. Do not reopen sealed semantic, agent, verifier, policy, refusal, cancelled, or benchmark-timeout outcomes. Do not launch a second 89-task campaign for a harness that already has one.
 - Fresh runs start only after the exact deployed revision passes the unpaid control canary and bounded paid task canary. FX, Codex, and Claude Code remain excluded from fresh launch without a separate amendment.
+
+### 2026-09-04 UI-feedback deployment approval
+
+- Directly approved the execution-disabled UI-feedback deployment amendment
+  above, including its authorization-first commit and feature-only push.
+  This grants a bounded existing-resource deployment, not a policy bypass,
+  history migration, credential change, execution launch, or production claim.
 
 ### 2026-09-04 additive authorization-history repair
 
