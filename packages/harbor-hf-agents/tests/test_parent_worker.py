@@ -16,7 +16,9 @@ from harbor_hf_agents.hf_sandbox import (
     _resolve_inference_env,
 )
 from harbor_hf_agents.parent_worker import (
+    ControlledRunStop,
     CostCeilingExceeded,
+    cleanup_interrupted_trial,
     cost_ceiling,
     job_config,
     load_attempt_costs,
@@ -118,6 +120,33 @@ async def test_cost_hook_fails_closed_when_cost_is_unavailable(
 
     with pytest.raises(CostCeilingExceeded, match="did not report inference cost"):
         await hook(cast(Any, SimpleNamespace(result=Result("task", cost))))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("cost", "receipt_count"), [(None, 0), (0.1, 1)])
+async def test_controlled_stop_keeps_cost_and_removes_terminal_trial(
+    tmp_path: Path,
+    cost: float | None,
+    receipt_count: int,
+) -> None:
+    run_dir = tmp_path / "run"
+    hook = make_cost_hook(0.25, 1, run_dir)
+    trial_dir = run_dir / "job" / "task"
+    trial_dir.mkdir(parents=True)
+    (trial_dir / "result.json").write_text("interrupted", encoding="utf-8")
+    (run_dir / "job" / "result.json").write_text("interrupted", encoding="utf-8")
+    (run_dir / "state.json").write_text(
+        json.dumps({"desired_state": "paused"}), encoding="utf-8"
+    )
+
+    with pytest.raises(ControlledRunStop, match="controlled stop") as stopped:
+        await hook(cast(Any, SimpleNamespace(result=Result("task", cost))))
+    cleanup_interrupted_trial(run_dir, stopped.value.trial_name)
+
+    assert not trial_dir.exists()
+    assert not (run_dir / "job" / "result.json").exists()
+    assert len(load_attempt_costs(run_dir)) == receipt_count
+    make_cost_hook(0.25, 1, run_dir)
 
 
 @pytest.mark.asyncio

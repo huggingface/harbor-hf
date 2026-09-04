@@ -280,6 +280,13 @@ exceeds the per-trial ceiling, or if the sum of attempt costs exceeds the
 ceiling times the planned trial count, the callback stops the Harbor task group.
 Harbor has already written the trial and job result before this callback runs.
 
+If `state.json` shows a requested pause or cancellation, the callback preserves
+any non-null cost and raises a controlled-stop exception. After Harbor unwinds,
+the parent removes the interrupted trial folder and the incomplete job result.
+A stop before inference creates no cost receipt. On resume, Harbor therefore
+sees the controlled interruption as a missing trial and starts it again while
+keeping all cost from earlier provider use.
+
 This is a post-trial stop. It cannot prevent one trial from crossing its limit.
 With concurrency greater than one, already-running trials can also finish or be
 cancelled. The API and UI state this limitation.
@@ -304,10 +311,11 @@ For each run it applies these rules in order:
 7. If capacity is available and the fixed restart delay has passed, start one
    parent and append it to `state.json`.
 
-Stopping parents before children prevents a child shutdown from becoming a
-completed error while its parent is still observing it. The later orphan pass
-then stops the child after the parent is terminal. This keeps the same Harbor
-folder resumable after a pause.
+Stopping parents before children reduces the interval in which a child shutdown
+can become an error while its parent still observes it. If Harbor still returns
+an interrupted trial, the parent's controlled-stop callback removes that
+terminal view after it preserves any provider cost. The later orphan pass stops
+remaining children. This keeps the same Harbor folder resumable after a pause.
 
 The run status is computed, not stored:
 

@@ -145,10 +145,11 @@ For each run it:
 6. cancels live child Jobs that have no live parent; and
 7. starts a new parent after the restart delay when capacity is available.
 
-The parent-first stop keeps child shutdown from becoming a terminal trial error
-while the parent still observes it. A resumed parent uses the same `job/`
-folder. Harbor reads its existing result
-and lock files, then runs only missing trials.
+The parent-first stop reduces the child-shutdown race. If Harbor still reports
+an in-flight trial as terminal during a controlled stop, the parent preserves
+any reported provider cost and removes that interrupted trial result after
+Harbor unwinds. A resumed parent uses the same `job/` folder. Harbor reads its
+existing result and lock files, then runs only missing trials.
 
 ## Projection and status
 

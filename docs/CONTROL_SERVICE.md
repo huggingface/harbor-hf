@@ -113,9 +113,10 @@ approved bearer token. Readers can use authenticated GET routes but cannot
 change runs.
 
 Pause and cancel first stop live parent Jobs. A later reconciliation stops any
-remaining labeled child after the parent is terminal. This order prevents the
-parent from recording the controlled child shutdown as a completed trial error,
-so a paused Harbor folder stays resumable.
+remaining labeled child after the parent is terminal. If Harbor still reports
+an in-flight trial as terminal during this stop, the parent preserves any
+reported provider cost and removes the interrupted result before it exits. A
+paused Harbor folder therefore stays resumable without losing paid-use evidence.
 
 ## Startup
 

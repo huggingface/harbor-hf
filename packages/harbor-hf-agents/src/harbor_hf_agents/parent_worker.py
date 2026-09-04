@@ -7,6 +7,7 @@ import json
 import math
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
@@ -22,6 +23,14 @@ _RUN_ID = re.compile(r"^run-[0-9a-f]{24}$")
 
 class CostCeilingExceeded(RuntimeError):
     """Completed trial cost crossed an approved ceiling."""
+
+
+class ControlledRunStop(RuntimeError):
+    """A control request interrupted one in-flight Harbor trial."""
+
+    def __init__(self, trial_name: str) -> None:
+        super().__init__(f"controlled stop interrupted trial {trial_name}")
+        self.trial_name = trial_name
 
 
 class AttemptCostReceipt(BaseModel):
@@ -140,6 +149,37 @@ def load_attempt_costs(run_dir: Path) -> dict[UUID, AttemptCostReceipt]:
     return receipts
 
 
+def _desired_state(run_dir: Path) -> str:
+    try:
+        value = json.loads((run_dir / "state.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "run"
+    return value.get("desired_state", "run") if isinstance(value, dict) else "run"
+
+
+def cleanup_interrupted_trial(run_dir: Path, trial_name: str) -> None:
+    """Remove Harbor's terminal view of a control-interrupted trial."""
+    job_dir = (run_dir / "job").resolve()
+    trial_dir = (job_dir / trial_name).resolve()
+    if trial_dir.parent != job_dir:
+        raise RuntimeError("interrupted trial path escapes the Harbor job folder")
+    if trial_dir.exists():
+        shutil.rmtree(trial_dir)
+    (job_dir / "result.json").unlink(missing_ok=True)
+
+
+def _interrupted_trial_names(error: BaseException) -> list[str]:
+    if isinstance(error, ControlledRunStop):
+        return [error.trial_name]
+    if isinstance(error, BaseExceptionGroup):
+        return [
+            name
+            for nested in error.exceptions
+            for name in _interrupted_trial_names(nested)
+        ]
+    return []
+
+
 def _cost_violation(
     receipts: dict[UUID, AttemptCostReceipt], ceiling: float, planned_trials: int
 ) -> str | None:
@@ -174,10 +214,14 @@ def make_cost_hook(ceiling: float, planned_trials: int, run_dir: Path) -> HookCa
 
     async def check_cost(event: TrialHookEvent) -> None:
         receipt = _receipt_for(event.result)
-        _write_receipt(run_dir, receipt)
-        receipts.setdefault(receipt.attempt_id, receipt)
-        if violation := _cost_violation(receipts, ceiling, planned_trials):
-            raise CostCeilingExceeded(violation)
+        controlled = _desired_state(run_dir) in {"paused", "cancelled"}
+        if not controlled or receipt.cost_usd is not None:
+            _write_receipt(run_dir, receipt)
+            receipts.setdefault(receipt.attempt_id, receipt)
+            if violation := _cost_violation(receipts, ceiling, planned_trials):
+                raise CostCeilingExceeded(violation)
+        if controlled:
+            raise ControlledRunStop(receipt.trial_name)
 
     return check_cost
 
@@ -189,11 +233,12 @@ async def run_parent() -> None:
     record = load_run_record(mount_root, run_id)
     config = job_config(record, mount_root, run_id)
     job = await Job.create(config)
+    run_dir = mount_root / "runs" / run_id
     try:
         hook = make_cost_hook(
             cost_ceiling(record),
             len(job),
-            mount_root / "runs" / run_id,
+            run_dir,
         )
     except CostCeilingExceeded as error:
         print(str(error), flush=True)
@@ -201,6 +246,10 @@ async def run_parent() -> None:
     job.on_trial_ended(hook)
     try:
         await job.run()
+    except* ControlledRunStop as errors:
+        for trial_name in _interrupted_trial_names(errors):
+            cleanup_interrupted_trial(run_dir, trial_name)
+            print(f"controlled stop interrupted trial {trial_name}", flush=True)
     except* CostCeilingExceeded as errors:
         for error in errors.exceptions:
             print(str(error), flush=True)
