@@ -103,6 +103,36 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Authoring-only authenticated activation (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T23:00:29Z
+
+- Direct user approval covers one supported `install:activate` invocation for
+  the existing canonical `<control-space>` and unchanged sealed plan/upload
+  receipt at source `b7caedb3fe422f762c9be3cb093b72c36106ba44`.
+  Commit this additive record locally before activation; no push or redeployment.
+- Enable configuration authoring only after fresh installer-authenticated operator,
+  exact-source, health, disabled-write and empty-current-projection checks pass.
+  Preserve all 311 historical Bucket objects, paused evidence and accounting;
+  an empty current projection is not permission to erase or migrate history.
+- Use the reviewed Node and HF CLI versions and canonical installer state without
+  replanning or replacing receipts. Only supported write-mode activation and its
+  installer-owned phase handling, restart, verification and fail-closed rollback
+  are approved. Preserve all other configuration, hardware and resource settings.
+- Start the installer as one managed background process and return promptly for
+  manual sign-in in its ephemeral headed browser. Bind authentication to the
+  planned operator and exact origin. Do not export cookies or browser storage.
+  Local management OAuth remains local to provider APIs, never application
+  authorization or remote environment. No credential retrieval, copy or change.
+- The requested execution enablement is not fulfilled: execution remains hard
+  disabled regardless of write mode. No code or guard changes, runners, Jobs,
+  inference, spending expansion, new resources, Run actions, resume, deletion,
+  migration, reset or result publication. Neither persistent secret is forwarded.
+- Stop on failed gates; never bypass authentication or empty-projection checks.
+  Retain supported disabled-and-paused rollback after mutation failure. Do not
+  claim enabled writes until final authenticated installer verification succeeds.
+
 ### Reviewed design push and bounded deployment (2026-09-04)
 
 Status: approved
@@ -1167,3 +1197,9 @@ All pre-integration authorization records above are retained as well.
 - Directly approved the additive bounded push/deployment amendment above, including
   the reviewed local authorization records. Historical approvals remain unchanged;
   this permits no execution, credential change, migration or broader publication.
+
+### 2026-09-04 authoring-only activation approval
+
+- Directly approved the separable authenticated authoring activation above and
+  authorization-first local commit. Execution enablement remains unfulfilled and
+  prohibited by the current integration boundary; no publication is authorized.
