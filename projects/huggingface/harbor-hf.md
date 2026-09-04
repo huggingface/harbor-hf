@@ -161,6 +161,30 @@ Approved at: 2026-09-04T09:14:11Z
 - Personal-Bucket OAuth delegation remains deferred. No new credentials or
   persistent resources are authorized. Existing privacy and check gates remain.
 
+### Feature-branch publication and test deployment (2026-09-04)
+
+Approved at: 2026-09-04T10:29:15Z
+
+- Create `feat/leaderboard-submissions` from the completed local milestone and
+  push that branch to the canonical GitHub repository. Publish only reviewed,
+  privacy-checked code and metadata. No pull request, merge, or default-branch
+  push is authorized.
+- Deploy the exact committed branch revision to the previously selected existing
+  test control Space after verifying its canonical Space/Bucket ownership and
+  deployment provenance. Use the supported existing-install workflow, preserving
+  credentials, hardware, protection, Bucket data, and reviewed worker settings.
+- The user requested deployment after the remaining coverage, audit, and missing
+  tooling failures were disclosed. This is a test deployment request, not a
+  declaration that those checks pass or permission to lower their thresholds.
+- Read-only provenance and activity inspection is permitted. Stop on uncertain
+  resource ownership, installer binding mismatch, unexpected credential requests,
+  active work that makes reconfiguration unsafe, or failed deployment verification.
+  Do not fabricate missing source markers or replace private installer state.
+- No new resources, credential transfer/replacement/revocation, paid benchmark
+  launch, external-result migration, or actual public leaderboard publication is
+  authorized by this request. Enable application writes only after verifying the
+  existing installation and confirming no queued work would be launched.
+
 ### Scope
 
 - Diagnose the failed post-reset installation using sanitized read-only
@@ -626,3 +650,9 @@ authorization effect.
 
 - Approved prioritizing the proposed user submission/admin publication flow and
   a quick frontend presentation sweep, so the user can deploy and test afterward.
+
+### 2026-09-04 branch publication and test deployment
+
+- Approved creating and pushing the feature branch and deploying the completed
+  milestone to the previously selected existing test control Space. Preserve
+  the resource/credential boundaries and stop on failed provenance checks.
