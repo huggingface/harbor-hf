@@ -185,6 +185,25 @@ Approved at: 2026-09-04T10:29:15Z
   authorized by this request. Enable application writes only after verifying the
   existing installation and confirming no queued work would be launched.
 
+### Installer metadata reconciliation (2026-09-04)
+
+Approved at: 2026-09-04T10:50:12Z
+
+- Reconcile the existing test installation's source and bundle metadata against
+  the verified deployed release and paired canonical resources, then continue
+  the approved exact-source deployment on `feat/leaderboard-submissions`.
+- Establish the current deployed source and file digests from immutable evidence
+  before restoring metadata. Preserve the installer ownership ID and existing
+  private state; do not fabricate provenance or discard receipts to bypass checks.
+- Preserve secrets, Bucket contents, hardware, protection, and reviewed worker
+  settings. No credential transfer, resource creation, benchmark execution,
+  publication of real results, or legacy-result migration is approved.
+- Use the supported installer sequence after reconciliation. Verify source,
+  health, authentication, and idle control state before enabling writes. If a
+  further unexplained mismatch prevents proof, stop and report it.
+- Commit and push the authorization and any sanitized operational documentation
+  to the approved feature branch only; no default-branch push or merge.
+
 ### Scope
 
 - Diagnose the failed post-reset installation using sanitized read-only
@@ -656,3 +675,18 @@ authorization effect.
 - Approved creating and pushing the feature branch and deploying the completed
   milestone to the previously selected existing test control Space. Preserve
   the resource/credential boundaries and stop on failed provenance checks.
+- Feature branch publication completed. Deployment stopped before mutation:
+  the existing Space lacks its installer source-revision variable, and the live
+  manifest binding has no matching saved installer plan. The deployed release
+  record agrees with its Dockerfile and dependency-lock digests, but that does
+  not by itself reconcile the installation binding.
+- Pending approval: reconcile installer metadata against the verified deployed
+  release and existing paired resources, then retry the supported deployment.
+  Preserve all secrets, Bucket data, hardware, and ownership; do not fabricate
+  provenance, discard installer state, or launch execution. If reconciliation
+  cannot be proven, stop and report rather than forcing deployment.
+
+### 2026-09-04 installer metadata reconciliation
+
+- Approved the pending reconciliation request: repair only proven installation
+  metadata and then continue deployment, preserving credentials and Bucket data.
