@@ -13,7 +13,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildBundleManifest,
   expectedVariables,
-  INSTALL_PHASES,
   type InstallPlan,
   isSupportedHfCliVersion,
   manifestDigest,
@@ -21,7 +20,6 @@ import {
   readPrivatePlan,
   validateOrigin,
   validatePlan,
-  workbenchVariables,
   writePrivatePlan,
 } from "../model.js";
 
@@ -138,76 +136,6 @@ describe("installer model", () => {
     ]) {
       expect(() => validateOrigin(invalid)).toThrow();
     }
-  });
-
-  it("recognizes only a complete validated Workbench variable pair", () => {
-    const image = `example.invalid/workbench@sha256:${"b".repeat(64)}`;
-    expect(workbenchVariables({})).toBeNull();
-    for (const runner of ["disabled", "docker"] as const) {
-      expect(
-        workbenchVariables({
-          HARBOR_HF_WORKBENCH_RUNNER: runner,
-          HARBOR_HF_WORKBENCH_IMAGE: "example.invalid/workbench:development",
-        }),
-      ).toMatchObject({ HARBOR_HF_WORKBENCH_RUNNER: runner });
-    }
-    expect(
-      workbenchVariables({
-        HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
-        HARBOR_HF_WORKBENCH_IMAGE: image,
-      }),
-    ).toEqual({
-      HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
-      HARBOR_HF_WORKBENCH_IMAGE: image,
-    });
-    for (const phase of INSTALL_PHASES) {
-      expect(
-        expectedVariables(
-          "example",
-          "example/control-artifacts",
-          "https://placeholder-control.hf.space",
-          "stable-subject",
-          "a".repeat(40),
-          {
-            installId: "f".repeat(64),
-            manifestDigest: `sha256:${"c".repeat(64)}`,
-            phase,
-          },
-          {
-            HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
-            HARBOR_HF_WORKBENCH_IMAGE: image,
-          },
-        ),
-      ).toMatchObject({
-        HARBOR_HF_INSTALL_PHASE: phase,
-        HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
-        HARBOR_HF_WORKBENCH_IMAGE: image,
-      });
-    }
-    for (const variables of [
-      {
-        HARBOR_HF_WORKBENCH_RUNNER: "invalid",
-        HARBOR_HF_WORKBENCH_IMAGE: image,
-      },
-      {
-        HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
-        HARBOR_HF_WORKBENCH_IMAGE: "example.invalid/workbench:latest",
-      },
-      {
-        HARBOR_HF_WORKBENCH_RUNNER: "hf-jobs",
-      },
-      {
-        HARBOR_HF_WORKBENCH_IMAGE: image,
-      },
-    ]) {
-      expect(() => workbenchVariables(variables)).toThrow(/Workbench/);
-    }
-  });
-
-  it("omits Workbench variables from fresh install defaults", () => {
-    const value = plan("/state-placeholder");
-    expect(value.expected_variables).not.toHaveProperty("HARBOR_HF_WORKBENCH_RUNNER");
-    expect(value.expected_variables).not.toHaveProperty("HARBOR_HF_WORKBENCH_IMAGE");
   });
 
   it("writes and reads an owner-only plan with a stable byte digest", async () => {

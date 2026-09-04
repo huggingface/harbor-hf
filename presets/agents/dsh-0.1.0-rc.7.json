@@ -1,0 +1,11 @@
+{
+  "schema_version": "v1",
+  "agent": "dsh",
+  "version": "0.1.0-rc.7",
+  "harbor_agent": {
+    "import_path": "harbor_hf_agents.dsh.agent:DshAgent",
+    "kwargs": { "version": "0.1.0-rc.7" }
+  },
+  "reasoning_option": null,
+  "reasoning_values": ["default"]
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": "v1",
+  "agent": "codex",
+  "version": "0.118.0",
+  "harbor_agent": {
+    "name": "codex",
+    "kwargs": { "version": "0.118.0" }
+  },
+  "reasoning_option": "reasoning_effort",
+  "reasoning_values": ["minimal", "low", "medium", "high", "xhigh", "ultra"]
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "agent": "terminus-2",
+  "version": "2.0.0",
+  "harbor_agent": { "name": "terminus-2", "kwargs": {} },
+  "reasoning_option": "reasoning_effort",
+  "reasoning_values": [
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "default"
+  ]
+}

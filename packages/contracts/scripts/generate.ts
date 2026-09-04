@@ -30,7 +30,8 @@ for (const file of files) {
     unknownAny: true,
   });
   const outputName = `${stem}.ts`;
-  await writeFile(join(outputRoot, outputName), output, "utf8");
+  const cleanOutput = output.replace(/[ \t]+$/gm, "");
+  await writeFile(join(outputRoot, outputName), cleanOutput, "utf8");
   exports.push(`export type * from "./${stem}.js";`);
 }
 await writeFile(join(outputRoot, "index.ts"), `${exports.join("\n")}\n`, "utf8");

@@ -6,13 +6,13 @@ import Database from "better-sqlite3";
 import {
   authorizationCodeGrant,
   buildAuthorizationUrl,
-  type Configuration,
   calculatePKCECodeChallenge,
   discovery,
   fetchUserInfo,
   randomPKCECodeVerifier,
   randomState,
   skipSubjectCheck,
+  type Configuration,
 } from "openid-client";
 
 export type AuthRole = "operator" | "reader";

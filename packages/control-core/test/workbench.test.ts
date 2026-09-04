@@ -6,7 +6,7 @@ import {
 } from "../src/workbench.js";
 
 describe("Agent Workbench recipe compiler", () => {
-  it("compiles the Fast-Agent starter into one generic command-agent profile", () => {
+  it("compiles the Fast-Agent starter into one generic Harbor agent", () => {
     const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
     expect(preview.recipe.name).toBe("fast-agent");
     expect(preview.setup_command).toContain("uv_version=0.12.5");
@@ -27,28 +27,27 @@ describe("Agent Workbench recipe compiler", () => {
     expect(
       preview.environment.find((item) => item.name === "GENERIC_API_KEY"),
     ).toBeUndefined();
-    expect(preview.harness_profile).toMatchObject({
-      agent: "command-agent",
-      required_evidence: ["workspace", "verifier", "trajectory"],
-      harbor_agent: {
-        import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
-        override_setup_timeout_sec: 1800,
-        kwargs: {
-          config: {
-            route_api: "chat-completions",
-            outputs: [{ path: "fast-agent-results.json" }],
-            run: {
-              bindings: {
-                OPENAI_API_KEY: "model_api_key",
-                MODEL_BASE_URL: "model_base_url",
-              },
+    expect(preview.harbor_agent).toMatchObject({
+      import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
+      override_setup_timeout_sec: 1800,
+      kwargs: {
+        config: {
+          route_api: "chat-completions",
+          outputs: [{ path: "fast-agent-results.json" }],
+          run: {
+            bindings: {
+              OPENAI_API_KEY: "model_api_key",
+              MODEL_BASE_URL: "model_base_url",
             },
           },
         },
       },
     });
-    expect(JSON.stringify(preview.harness_profile)).not.toContain("route_base_url");
-    expect(JSON.stringify(preview.harness_profile)).not.toContain("route_api_key");
+    expect(JSON.stringify(preview.harbor_agent)).not.toContain("route_base_url");
+    expect(JSON.stringify(preview.harbor_agent)).not.toContain("route_api_key");
+    expect(JSON.stringify(preview)).not.toContain("harness_profile");
+    expect(JSON.stringify(preview)).not.toContain("promotion");
+    expect(JSON.stringify(preview)).not.toContain("preparation");
   });
 
   it("compiles the checksum-pinned FX starter through the generic recipe path", () => {
@@ -72,17 +71,13 @@ describe("Agent Workbench recipe compiler", () => {
       "0dfd53224c5ecede601bb8ce649f84fab6db05a39afbcd5b39e6091833f6c4d7",
     );
     expect(preview.run_command).toContain('fx" ask --yolo --json --');
-    expect(preview.harness_profile).toMatchObject({
-      agent: "command-agent",
-      required_evidence: ["workspace", "verifier"],
-      harbor_agent: {
-        import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
-        override_setup_timeout_sec: 600,
-        kwargs: {
-          config: {
-            route_api: "chat-completions",
-            outputs: [{ path: "fx-results.json" }],
-          },
+    expect(preview.harbor_agent).toMatchObject({
+      import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
+      override_setup_timeout_sec: 600,
+      kwargs: {
+        config: {
+          route_api: "chat-completions",
+          outputs: [{ path: "fx-results.json" }],
         },
       },
     });
@@ -192,7 +187,7 @@ describe("Agent Workbench recipe compiler", () => {
   it("keeps instructions as a path binding instead of command text", () => {
     const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
     expect(preview.run_command).toContain("/run/agent/instruction.txt");
-    expect(JSON.stringify(preview.harness_profile)).not.toContain("Setup test only");
+    expect(JSON.stringify(preview.harbor_agent)).not.toContain("Setup test only");
   });
 
   it("rejects run-only bindings from setup", () => {

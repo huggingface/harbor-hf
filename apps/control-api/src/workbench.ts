@@ -30,6 +30,7 @@ const MAX_FILES = 1_000;
 const MAX_PREVIEW_BYTES = 64 * 1024;
 const MAX_TOTAL_PREVIEW_BYTES = 1024 * 1024;
 const MAX_REMOTE_EVENTS = 4_096;
+const SETUP_ATTESTATION_TTL_MS = 60 * 60 * 1_000;
 
 export interface WorkbenchFile {
   file_id: string;
@@ -64,6 +65,7 @@ export interface WorkbenchSetupAttestation {
   recipe_digest: string;
   revision_id: string;
   completed_at: string;
+  expires_at: string;
 }
 
 interface SetupState extends WorkbenchSetupView {
@@ -694,11 +696,18 @@ export class WorkbenchRuntime {
       state.completed_at === null
     )
       throw new Error("setup test has not passed");
+    const completedAt = Date.parse(state.completed_at);
+    if (
+      !Number.isFinite(completedAt) ||
+      completedAt + SETUP_ATTESTATION_TTL_MS <= Date.now()
+    )
+      throw new Error("setup test has expired");
     return {
       setup_test_id: state.setup_test_id,
       recipe_digest: state.recipe_digest,
       revision_id: state.revision_id,
       completed_at: state.completed_at,
+      expires_at: new Date(completedAt + SETUP_ATTESTATION_TTL_MS).toISOString(),
     };
   }
 

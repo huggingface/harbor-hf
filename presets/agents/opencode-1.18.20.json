@@ -1,0 +1,11 @@
+{
+  "schema_version": "v1",
+  "agent": "opencode",
+  "version": "1.18.20",
+  "harbor_agent": {
+    "name": "opencode",
+    "kwargs": { "version": "1.18.20" }
+  },
+  "reasoning_option": null,
+  "reasoning_values": ["default"]
+}

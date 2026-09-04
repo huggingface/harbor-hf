@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, override
 
+from harbor.agents.capabilities import AgentCapabilities
 from harbor.agents.installed.base import with_prompt_template
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
@@ -23,9 +24,6 @@ from pydantic import (
     model_validator,
 )
 
-from harbor_hf_agents.support.direct_inference import (
-    with_agent_environment_cleanup,
-)
 from harbor_hf_agents.support.isolated_user import (
     AGENT_HOME,
     AGENT_USER,
@@ -202,8 +200,7 @@ def _read_config(
 class CommandAgent(IsolatedProviderAgent):
     """Execute a strict customer recipe without harness or model special cases."""
 
-    SUPPORTS_ATIF = True
-    SUPPORTS_CONFIG = True
+    capabilities = AgentCapabilities(atif=True, native_config=True)
 
     def __init__(
         self,
@@ -480,14 +477,7 @@ class CommandAgent(IsolatedProviderAgent):
         self._write_canonical_atif(trajectory)
         self._ingest_atif_metrics(trajectory, context)
 
-    @with_agent_environment_cleanup
-    async def _run_with_environment_cleanup(
-        self,
-        instruction: str,
-        environment: BaseEnvironment,
-        context: AgentContext,
-    ) -> None:
-        del instruction, context
+    async def _run_command(self, environment: BaseEnvironment) -> None:
         model_connection = self._prepare_model_connection()
         await self._execute(
             environment,
@@ -510,10 +500,6 @@ class CommandAgent(IsolatedProviderAgent):
             remote_path=_INSTRUCTION_PATH,
             content=instruction,
         )
-        await self._run_with_environment_cleanup(
-            instruction,
-            environment,
-            context,
-        )
+        await self._run_command(environment)
         await self._collect_outputs(environment)
         await self._ingest_atif(environment, context)

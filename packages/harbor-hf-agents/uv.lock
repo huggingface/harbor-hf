@@ -687,7 +687,7 @@ wheels = [
 [[package]]
 name = "harbor"
 version = "0.22.0"
-source = { git = "https://github.com/harbor-framework/harbor.git?rev=b37833221e27435a18d7acdd41d875cdc2831893#b37833221e27435a18d7acdd41d875cdc2831893" }
+source = { git = "https://github.com/harbor-framework/harbor.git?rev=dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e#dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e" }
 dependencies = [
     { name = "dirhash" },
     { name = "fastapi" },
@@ -712,12 +712,17 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
+[package.optional-dependencies]
+hf-sandbox = [
+    { name = "huggingface-hub" },
+]
+
 [[package]]
 name = "harbor-hf-agents"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "harbor" },
+    { name = "harbor", extra = ["hf-sandbox"] },
 ]
 
 [package.dev-dependencies]
@@ -729,7 +734,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "harbor", git = "https://github.com/harbor-framework/harbor.git?rev=b37833221e27435a18d7acdd41d875cdc2831893" }]
+requires-dist = [{ name = "harbor", extras = ["hf-sandbox"], git = "https://github.com/harbor-framework/harbor.git?rev=dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e" }]
 
 [package.metadata.requires-dev]
 dev = [

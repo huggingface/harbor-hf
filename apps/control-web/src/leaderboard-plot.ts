@@ -1,10 +1,9 @@
 export interface LeaderboardPlotRow {
-  publication_id: string;
+  key: string;
   model: string;
-  harness: string;
-  observed_microusd: number;
-  primary_metric_value: number;
-  primary_metric_unit: string;
+  agent: string;
+  cost_usd_per_trial: number;
+  pass_rate: number;
   pareto: boolean;
 }
 
@@ -21,7 +20,7 @@ export interface LeaderboardPlotLayout {
   plotHeight: number;
   points: LeaderboardPlotPoint[];
   frontier: Array<{ x: number; y: number }>;
-  xTicks: Array<{ x: number; labelMicrousd: number }>;
+  xTicks: Array<{ x: number; labelUsd: number }>;
   yTicks: Array<{ y: number; value: number }>;
 }
 
@@ -37,15 +36,13 @@ function span(values: number[]): { min: number; max: number } {
   const max = Math.max(...values);
   if (min === max) {
     const pad = min === 0 ? 1 : Math.abs(min) * 0.1;
-    return { min: min - pad, max: max + pad };
+    return { min: Math.max(0, min - pad), max: max + pad };
   }
   const pad = (max - min) * 0.08;
-  return { min: min - pad, max: max + pad };
+  return { min: Math.max(0, min - pad), max: max + pad };
 }
 
-/**
- * Place cost on X and score on Y. The frontier line follows rising cost.
- */
+/** Place observed cost per trial on X and pass rate on Y. */
 export function leaderboardPlotLayout(
   rows: readonly LeaderboardPlotRow[],
 ): LeaderboardPlotLayout {
@@ -63,20 +60,20 @@ export function leaderboardPlotLayout(
       yTicks: [],
     };
   }
-  const xSpan = span(rows.map((row) => row.observed_microusd));
-  const ySpan = span(rows.map((row) => row.primary_metric_value));
+  const xSpan = span(rows.map((row) => row.cost_usd_per_trial));
+  const ySpan = span(rows.map((row) => row.pass_rate));
   const xScale = (value: number) =>
     LEFT + ((value - xSpan.min) / (xSpan.max - xSpan.min)) * plotWidth;
   const yScale = (value: number) =>
     TOP + plotHeight - ((value - ySpan.min) / (ySpan.max - ySpan.min)) * plotHeight;
   const points = rows.map((row) => ({
-    x: xScale(row.observed_microusd),
-    y: yScale(row.primary_metric_value),
+    x: xScale(row.cost_usd_per_trial),
+    y: yScale(row.pass_rate),
     row,
   }));
   const frontier = [...points]
     .filter((point) => point.row.pareto)
-    .sort((left, right) => left.row.observed_microusd - right.row.observed_microusd)
+    .sort((left, right) => left.row.cost_usd_per_trial - right.row.cost_usd_per_trial)
     .map((point) => ({ x: point.x, y: point.y }));
   return {
     left: LEFT,
@@ -87,7 +84,7 @@ export function leaderboardPlotLayout(
     frontier,
     xTicks: [0, 0.5, 1].map((ratio) => ({
       x: LEFT + ratio * plotWidth,
-      labelMicrousd: xSpan.min + ratio * (xSpan.max - xSpan.min),
+      labelUsd: xSpan.min + ratio * (xSpan.max - xSpan.min),
     })),
     yTicks: [0, 0.5, 1].map((ratio) => ({
       y: TOP + plotHeight - ratio * plotHeight,

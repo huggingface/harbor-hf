@@ -6,6 +6,7 @@ import {
   workbenchDraftKey,
   type WorkbenchDraft,
 } from "../src/workbench-draft";
+
 const draft: WorkbenchDraft = {
   recipe: {
     schema_version: "v1",
@@ -17,19 +18,26 @@ const draft: WorkbenchDraft = {
     environment: [{ name: "X", source: "literal", value: "draft" }],
     outputs: { results_path: "", trajectory_path: null },
   },
-  selectedBenchmarkConfig: "reviewed",
-  hostedCeiling: 0,
+  benchmarkKey: "terminal-bench-2-1\none-task-1-trial",
+  model: "publisher/model",
+  provider: "provider",
+  ceiling: "0.25",
+  role: "diagnostic",
 };
+
 afterEach(() => {
   vi.restoreAllMocks();
   window.localStorage.clear();
 });
+
 describe("Workbench draft storage", () => {
-  it("round trips incomplete edits and selection without confirmation state", () => {
+  it("round trips incomplete edits without confirmation or setup state", () => {
     expect(saveWorkbenchDraft(draft)).toBe(true);
     expect(loadWorkbenchDraft()).toEqual(draft);
     expect(loadWorkbenchDraft()).not.toHaveProperty("confirmed");
+    expect(loadWorkbenchDraft()).not.toHaveProperty("setup");
   });
+
   it.each(["invalid JSON", "null", '{"recipe":{"environment":null}}'])(
     "ignores malformed storage: %s",
     (value) => {
@@ -37,6 +45,7 @@ describe("Workbench draft storage", () => {
       expect(loadWorkbenchDraft()).toBeNull();
     },
   );
+
   it("handles unavailable storage", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");

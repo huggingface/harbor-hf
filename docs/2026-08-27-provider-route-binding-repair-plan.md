@@ -7,14 +7,8 @@ tags: [profiles, providers, terminal-bench]
 
 # Repair provider route binding
 
-> **Historical record — superseded 2026-09-02.** The failure observations and
-> approved work below are retained as dated facts. The described inference
-> implementation is retired and must not be used for new work. Current agents
-> connect directly through the resolved Harbor `AgentConfig`; see
-> [`harbor-integration-contract.md`](harbor-integration-contract.md).
-
-**Historical status.** This was an approved repair plan with deployment and
-verification boundaries. It is now superseded by the notice above.
+**Status.** Approved repair plan. This work ends after the exact repaired
+revision is deployed and verified. It does not launch another canary.
 
 The first two-task reliability canary failed before it sent a provider request.
 Both tasks used both allowed attempts and reported the same infrastructure
@@ -27,8 +21,8 @@ provider segment `openai/`. The root bridge expects the same route after that
 first segment is removed. The provider suffix stays in both forms.
 
 The [control service specification](CONTROL_SERVICE.md#inference-model-route-binding)
-defines this binding. The [provider agent architecture](provider-agent-architecture.md)
-defines the wider custom-agent and bridge boundary.
+defines this historical binding. The [current architecture](architecture.md)
+defines the Harbor-owned model route boundary after the simplification.
 
 ## Scope
 

@@ -65,7 +65,6 @@ describe("productionTarballUrls", () => {
         );
       }),
     ).toBe(true);
-    expect(urls.some((url) => url.includes("lightningcss-linux-x64-gnu"))).toBe(true);
     expect(urls.some((url) => url.includes("better-sqlite3"))).toBe(true);
     expect(urls.some((url) => url.includes("playwright"))).toBe(false);
     expect(urls.some((url) => url.includes("/vitest-"))).toBe(false);

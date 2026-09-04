@@ -7,14 +7,9 @@ tags: [profiles, agents, runs]
 
 # Reuse harness profiles across models
 
-> **Historical record — superseded 2026-09-02.** This plan preserves the
-> profile migration reviewed at the time, including retired terminology and
-> harness examples. It does not authorize new work on those paths. Current
-> profile composition is defined by
-> [`CONTROL_SERVICE.md`](CONTROL_SERVICE.md).
-
-**Historical status.** The profile refactor was implemented under the recorded
-scope. Its former review and completion instructions are superseded.
+**Status.** Implemented. Review and CI are pending. This work ends when the
+source change has passed review and CI on its pull request. It does not merge,
+release, deploy, or run paid work.
 
 Harbor-HF currently selects separate model and harness profiles, but each
 harness profile still contains a model route. Pi profiles also repeat model
@@ -27,10 +22,11 @@ agent configurations after model-only values were removed. The active catalog
 now keeps one profile for each real agent configuration and builds the full run
 configuration before Harbor-HF admits paid work.
 
-The [control service specification](CONTROL_SERVICE.md#profile-ownership-and-run-composition)
-defines the durable contract. The [provider agent architecture](provider-agent-architecture.md#run-native-execution-contract)
-defines the agent boundary. The [Harbor compatibility contract](harbor-integration-contract.md#execution-input)
-defines how preparation uses the locked configuration.
+The [control service specification](CONTROL_SERVICE.md) defines the current
+durable contract. The [current architecture](architecture.md) defines the
+Harbor-owned agent boundary. The
+[historical Harbor compatibility contract](harbor-integration-contract.md)
+records the superseded preparation design.
 
 ## Ownership
 

@@ -1,8 +1,23 @@
-# Result Field Ownership
+---
+title: Historical result field ownership
+author: Harbor-HF maintainers
+date: 2026-09-04
+tags: [historical, results, harbor]
+---
 
-This inventory fixes the authority boundary between Harbor and `harbor-hf`.
-Dataset columns may repeat values for query performance, but repetition does
-not transfer ownership.
+# Historical result field ownership
+
+> **Status:** Historical record. The current result and storage contract is in
+> [Architecture](architecture.md) and the
+> [simplification implementation specification](2026-09-04-simplification-implementation-spec.md).
+> Publication tables, profiles, execution bundles, catalog fields, managed
+> Endpoints, and supersession rules below are obsolete. The retained Harbor
+> field ownership tables explain why Harbor remains the authority for trial
+> results, rewards, costs, exceptions, and trajectories.
+
+This inventory described the earlier authority boundary between Harbor and
+`harbor-hf`. Dataset columns could repeat values for query performance, but
+repetition did not transfer ownership.
 
 ## Harbor-Owned Values
 

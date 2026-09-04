@@ -1,36 +1,34 @@
-import { existsSync } from "node:fs";
 import type { OperatorAcl } from "@harbor-hf/contracts";
-import { deterministicId, sha256 } from "@harbor-hf/contracts";
 import {
   ControlService,
   FilesystemObjectStore,
-  type ImmutableObjectStore,
-  loadBuiltInProfiles,
+  type ObjectStore,
+  PresetCatalog,
   Projection,
   Reconciler,
-  ResultPublisher,
 } from "@harbor-hf/control-core";
 import {
-  attestInferenceToken,
-  HuggingFaceActions,
   HuggingFaceBucketStore,
+  HuggingFaceJobs,
   HuggingFaceWorkbenchJobs,
-  NoopActions,
+  NoopJobs,
+  ReadOnlyHuggingFaceJobs,
 } from "@harbor-hf/hf-adapters";
 import { AuthenticationService, AuthStore } from "./auth.js";
 import type { AppConfig } from "./config.js";
-import { LocalHarborRuntime } from "./local-harbor.js";
 import { WorkbenchRuntime } from "./workbench.js";
+
+const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
 
 export interface Runtime {
   config: AppConfig;
   projection: Projection;
-  store: ImmutableObjectStore;
+  store: ObjectStore;
   service: ControlService;
   auth: AuthenticationService;
   reconciler: Reconciler;
+  presets: PresetCatalog;
   workbench: WorkbenchRuntime;
-  localHarbor: LocalHarborRuntime;
   readonly ready: boolean;
   initialize(): Promise<void>;
   start(onReconcilerError?: (error: unknown) => void): void;
@@ -38,9 +36,9 @@ export interface Runtime {
 }
 
 export async function createRuntime(config: AppConfig): Promise<Runtime> {
-  if (config.store_mode === "filesystem" && !existsSync(config.bucket_root))
-    throw new Error("filesystem object-store root is missing");
-  const store: ImmutableObjectStore =
+  if (config.store_mode === "bucket" && !config.hf_token)
+    throw new Error("Bucket mode requires the control credential");
+  const store: ObjectStore =
     config.store_mode === "bucket"
       ? new HuggingFaceBucketStore({
           bucketId: config.bucket_id,
@@ -48,61 +46,64 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
         })
       : new FilesystemObjectStore(config.bucket_root);
   const projection = await Projection.open(config.projection_path);
-  const profiles = await loadBuiltInProfiles(config.profiles_root);
-  const service = new ControlService(config.namespace, store, projection, profiles);
-  service.configureCapacityProfile(config.capacity_profile_alias);
+  const presets = await PresetCatalog.load(config.presets_root);
+  const jobs =
+    config.store_mode === "filesystem"
+      ? new NoopJobs()
+      : config.write_mode === "enabled"
+        ? new HuggingFaceJobs({
+            namespace: config.namespace,
+            accessToken: config.hf_token ?? "",
+            inferenceToken: config.hf_inference_token ?? "",
+            bucketId: config.bucket_id,
+            parentImage: config.parent_image ?? "",
+            hardware: config.parent_hardware,
+            timeoutSeconds: config.parent_timeout_seconds,
+          })
+        : new ReadOnlyHuggingFaceJobs({
+            namespace: config.namespace,
+            accessToken: config.hf_token ?? "",
+          });
+  const service = new ControlService(store, projection, presets, jobs, {
+    harborRevision: HARBOR_REVISION,
+    mountRoot: "/data",
+    maxActiveJobs: config.max_active_jobs,
+    restartDelayMs: config.parent_restart_delay_ms,
+  });
+  const acl: OperatorAcl = {
+    schema_version: "v1",
+    kind: "operator.acl",
+    record_id: "bootstrap-operator-acl",
+    created_at: "1970-01-01T00:00:00.000Z",
+    actor: { subject: "harbor-hf-bootstrap", role: "service" },
+    operators: [...new Set(config.bootstrap_operator_subjects)].sort(),
+    readers: [],
+  };
   const authStore = await AuthStore.open(config.auth_path);
   const auth = new AuthenticationService(
     config.auth_mode,
     authStore,
     config.oauth,
-    () => projection.latestAcl(),
+    async () => acl,
   );
-  const hfActions = config.hf_token
-    ? new HuggingFaceActions({
-        namespace: config.namespace,
-        accessToken: config.hf_token,
-        taskImageMirrorRepository: config.task_image_mirror_repository,
-        ...(config.hf_inference_token
-          ? { inferenceToken: config.hf_inference_token }
-          : {}),
-        controlUrl: config.public_origin,
-      })
-    : null;
-  const external = hfActions ?? new NoopActions();
-  const publisher = new ResultPublisher(store, projection, service);
-  const workbenchJobs =
-    config.workbench_runner === "hf-jobs" && config.hf_token
+  const reconciler = new Reconciler(service, config.reconcile_interval_ms);
+  const remoteWorkbenchJobs =
+    config.workbench_runner === "hf-jobs"
       ? new HuggingFaceWorkbenchJobs({
           namespace: config.namespace,
-          accessToken: config.hf_token,
+          accessToken: config.hf_token ?? "",
           image: config.workbench_image,
           maxActiveJobs: config.max_active_jobs,
         })
       : null;
+  if (config.workbench_runner === "hf-jobs" && !config.hf_token)
+    throw new Error("hosted Workbench requires the control credential");
   const workbench = new WorkbenchRuntime(
     config.workbench_runner,
     config.workbench_image,
-    workbenchJobs,
+    remoteWorkbenchJobs,
   );
-  service.configureWorkbenchSetupAttestor((setupTestId, owner, recipe) =>
-    workbench.attestPassedSetup(setupTestId, owner, recipe),
-  );
-  const localHarbor = new LocalHarborRuntime(
-    config.node_env === "development" && config.auth_mode === "development",
-    config.hf_inference_token,
-    config.profiles_root,
-    profiles,
-  );
-  const reconciler = new Reconciler(service, projection, external, publisher, {
-    interval_ms: config.reconcile_interval_ms,
-    sync_interval_ms: config.sync_interval_ms,
-    observation_interval_ms: config.observe_interval_ms,
-    worker_receipt_grace_ms: config.worker_receipt_grace_ms,
-    batch_size: 16,
-  });
-  const abort = new AbortController();
-  let initializationReady = false;
+  let ready = false;
   return {
     config,
     projection,
@@ -110,59 +111,26 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     service,
     auth,
     reconciler,
+    presets,
     workbench,
-    localHarbor,
     get ready() {
-      return initializationReady && projection.system().ready;
+      return ready;
     },
     async initialize() {
-      initializationReady = false;
-      if (
-        config.hf_inference_token &&
-        !(config.node_env === "development" && config.auth_mode === "development")
-      )
-        await attestInferenceToken({ accessToken: config.hf_inference_token });
+      ready = false;
       await auth.initialize();
-      await projection.rebuild(store);
-      await service.initialize(profiles);
-      if (config.write_mode !== "disabled") {
-        if (!service.capacityProfileOrNull())
-          await service.setMaxActiveJobs(
-            config.max_active_jobs,
-            `capacity-bootstrap-${config.max_active_jobs}`,
-          );
-        service.requireCapacityProfile();
-      }
-      if (
-        !(await projection.latestAcl()) &&
-        config.bootstrap_operator_subjects.length > 0
-      ) {
-        const operators = [...new Set(config.bootstrap_operator_subjects)].sort();
-        const acl: OperatorAcl = {
-          schema_version: "v1",
-          kind: "operator.acl",
-          record_id: deterministicId("operator-acl", sha256(operators.join("\u0000"))),
-          created_at: new Date().toISOString(),
-          actor: { subject: "harbor-hf-bootstrap", role: "migration" },
-          operators,
-          readers: [],
-        };
-        await service.append(acl);
-      }
-      initializationReady = true;
+      await service.initialize();
+      ready = true;
     },
     start(onReconcilerError?: (error: unknown) => void) {
-      if (config.write_mode !== "disabled")
-        reconciler.start(abort.signal, onReconcilerError);
+      if (config.write_mode === "enabled") reconciler.start(onReconcilerError);
     },
     async close() {
-      initializationReady = false;
-      abort.abort();
+      ready = false;
       await reconciler.stop();
       await workbench.close();
-      await localHarbor.close();
       authStore.close();
-      await projection.close();
+      projection.close();
     },
   };
 }

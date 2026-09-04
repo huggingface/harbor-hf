@@ -1,188 +1,137 @@
 ---
 name: harbor-hf
-description: "Plan, launch, monitor, recover, verify, and publish Harbor benchmark Runs on Hugging Face infrastructure through the hosted Harbor-HF control service."
+description: "Submit, monitor, pause, resume, cancel, and inspect Harbor benchmark runs through the hosted Harbor-HF control service and Hugging Face Jobs."
 ---
 
 # Harbor-HF operations
 
-Use this skill for Harbor Runs on HF Jobs, direct Hugging Face inference, and
-managed Inference Endpoints.
+Use this skill for Harbor benchmark runs on Hugging Face infrastructure.
 
-The steady-state platform has one protected control Space and one private
-`<artifact-bucket>` Bucket. The Space runs the TypeScript API, reconciler,
-disposable SQLite projection, and React console. The Bucket stores immutable
-profiles, control records, Harbor locks, evidence, normalized results, and
-catalogs.
+Harbor-HF has two persistent resources:
 
-Do not create Run-specific persistent infrastructure. A new repository, Space,
-Bucket, Dataset, schedule, status store, result service, or other durable
-resource requires a documented access or failure-domain reason and explicit
-approval.
+- one private control Space
+- one private Bucket for run records and Harbor output
 
-`HF_TOKEN` remains in the control Space. An execution Job receives
-`HF_INFERENCE_TOKEN` only when its resolved deployment has an inference
-upstream. Harbor supplies that credential and the locked upstream directly to
-the selected reviewed agent through `AgentConfig.env`. Preparation and
-no-inference Jobs receive no inference credential. Jobs never receive a
-writable canonical Bucket mount.
+Do not create a run-specific repository, Space, Bucket, Dataset, endpoint, or
+coordination store. Use the existing control service and Bucket.
 
-## Read before operating
+## Read the current contract
 
-Read the relevant complete documents:
+Before an operation, read these files from the Harbor-HF repository:
 
+- `docs/2026-09-04-simplification-implementation-spec.md`
 - `docs/CONTROL_SERVICE.md`
 - `docs/architecture.md`
-- `docs/run-spec.md`
-- `docs/harbor-integration-contract.md`
-- `docs/trial-evidence-bundle.md`
-- `references/planning-and-capacity.md`
-- `references/launch-and-monitoring.md`
-- `references/recovery.md`
-- `references/evidence-and-publication.md`
-- `references/provider-agents-and-security.md`
-- `references/operator-checklists.md`
 
-Before any external mutation, also follow
-`.agents/skills/project-authorization/SKILL.md` and verify the exact approved
-scope in `projects/huggingface/harbor-hf.md`.
+Use the `paid-compute-launch` skill before a paid Job launch, retry, or resume.
+Use the Hugging Face CLI and Spaces skills for Hub and Space operations.
 
-## Keep one Harbor path
+## Keep credentials separate
 
-- Harbor resolves the benchmark and owns the task, agent, verifier, lock, and
-  native result.
-- A credential-free preparation Job stores the exact `JobLock` and prepared
-  trials before execution.
-- Every physical attempt reconstructs one prepared trial and uses Harbor's
-  public API.
-- Benchmark, model, and harness names remain data.
-- New harness code belongs in a Harbor agent plugin.
-- Unsupported model, API, harness, or deployment combinations fail before
-  launch; do not add translation or fallback behavior.
+The control Space has two secrets:
 
-For direct inference, confirm that the immutable model, harness, and deployment
-profiles resolve to one `AgentConfig`, that the provider suffix and APIs match,
-and that the exact upstream host is allowed. The agent calls the upstream
-directly.
+- `HF_TOKEN` controls the Bucket and HF Jobs.
+- `HF_INFERENCE_TOKEN` is for model inference through the Hugging Face router.
 
-## Required workflow
+Do not print either value. Do not put a credential literal in a run request,
+Bucket object, Job label, log, or result. The control service gives both secrets
+to the reviewed parent Job as ephemeral Job secrets. The parent uses the control
+token to start and label child Sandbox Jobs. The benchmark agent receives only
+the inference token through the fixed `${HF_INFERENCE_TOKEN}` template. Pi uses
+its built-in Hugging Face provider so model prices remain available for Harbor
+cost accounting.
 
-### 1. Inspect state and authorization
+Do not copy a token to another store. Use a configured token in place.
 
-Confirm the repository revision, working tree, project authorization, control
-service health, promoted profiles, existing Runs, active Jobs, owned Endpoints,
-and pending control actions.
+## Submit a run
+
+Prefer a reviewed preset in the web console or `POST /api/v1/runs`. A preset
+submission selects:
+
+- one benchmark preset
+- one model ID and provider
+- one agent preset and reasoning value
+- one positive maximum cost in USD per trial
+- a `final` or `diagnostic` role
+
+Use a unique `Idempotency-Key`. A repeated key with the same request adopts the
+existing run. A repeated key with different content is an error.
+
+Use a direct Harbor `JobConfig` only when a preset cannot express the test:
 
 ```bash
-export HARBOR_HF_CONTROL_URL=https://<control-space>.hf.space
-uv run harbor-hf status
-uv run harbor-hf profiles
-uv run harbor-hf capacity
+uv run harbor-hf submit \
+  --config job.yaml \
+  --cost-ceiling-usd-per-trial 0.25
+```
+
+The service replaces caller-controlled paths, environment, and router
+credentials. It rejects unknown fields, multiple agents, source jobs, local
+paths, caller-supplied agent environments or skills, custom environments,
+credential literals, and credentials in URLs. Direct runs are diagnostic and
+cannot enter the leaderboard.
+
+## Inspect and control runs
+
+Set these environment variables without printing their values:
+
+```text
+HARBOR_HF_CONTROL_URL
+HARBOR_HF_CONTROL_BEARER_TOKEN
+```
+
+Use the thin client:
+
+```bash
 uv run harbor-hf run list
-uv run harbor-hf jobs
-uv run harbor-hf endpoints
-uv run harbor-hf audit
-```
-
-Classify the request as planning, new execution, infrastructure recovery,
-publication recovery, audit, or migration. Do not turn one class into another
-without approval.
-
-### 2. Resolve immutable inputs
-
-Record:
-
-- benchmark source revision and exact task digests;
-- model route and observable revision;
-- inference provider, upstream, and API;
-- harness import path, exact version, configuration, and evidence policy;
-- Harbor and agent-package revisions;
-- worker and task image digests;
-- hardware, resources, timeouts, and output limit;
-- launch policy, physical-attempt limit, Run ceiling, and publication role.
-
-Aliases are submission conveniences. Review exact resolved profile records.
-
-### 3. Apply capacity and spend gates
-
-Use representative wall time, observed reliable concurrency, Job cost, model
-price, possible replacements, Endpoint active time, and cleanup time. Compare
-the conservative total with the Run ceiling and cumulative authorization.
-
-Stop if cost, hardware, model, API, route, task count, attempt policy, or
-checkpoint assumptions differ from approval.
-
-### 4. Submit once
-
-```bash
-uv run harbor-hf run submit \
-  --benchmark <benchmark-profile> \
-  --model <model-profile> \
-  --harness <harness-profile> \
-  --deployment <deployment-profile> \
-  --launch-policy <launch-policy-profile> \
-  --ceiling-microusd <approved-ceiling> \
-  --idempotency-key <stable-request-key> \
-  --yes
-```
-
-Preserve the Run ID, action ID, and idempotency key. After an ambiguous
-response, inspect durable state and deterministic remote identity; do not
-submit again blindly.
-
-### 5. Monitor logical and physical state
-
-```bash
 uv run harbor-hf run status <run-id>
 uv run harbor-hf jobs
-uv run harbor-hf endpoints
-uv run harbor-hf results
-uv run harbor-hf audit
+uv run harbor-hf presets
+uv run harbor-hf run pause <run-id>
+uv run harbor-hf run resume <run-id>
+uv run harbor-hf run cancel <run-id> --yes
 ```
 
-Logs are diagnostic. The authoritative outcome is the Bucket-backed selected
-attempt receipt with a verified evidence manifest and terminal logical state.
+A pause cancels the active parent and labeled child Jobs. Resume starts a new
+parent against the same Harbor `job/` folder. Harbor skips completed trials.
+Cancellation is permanent.
 
-### 6. Repair only infrastructure
+The Bucket is the durable source of truth. SQLite is a disposable three-table
+projection. HF Job state is an observation, not the run record.
 
-```bash
-uv run harbor-hf run retry-infrastructure <run-id> \
-  --task <task-id> \
-  --reason "<infrastructure reason>" \
-  --yes
-```
+## Cost and completion rules
 
-Require a typed replacement-eligible infrastructure failure, unchanged
-prepared trial, remaining physical-attempt allowance, and sufficient Run
-ceiling. Never rerun a valid semantic outcome.
+The cost ceiling is checked after each trial because Harbor writes the result
+before it calls the end hook. The parent writes one immutable cost receipt for
+each Harbor attempt before Harbor can remove a failed retry folder. It reloads
+these receipts after restart. A missing cost stops the run.
 
-### 7. Verify and publish
+One trial can cross its limit. With concurrent trials, work that is already
+active can also finish before cancellation.
 
-A Run is ready only when:
+Treat a run as complete only when:
 
-- every logical task is sealed;
-- no action remains pending;
-- selected evidence and checksums validate;
-- credential scanning passes;
-- spend remains within the ceiling;
-- every owned Endpoint is paused with zero ready replicas;
-- publication objects and receipts are durable; and
-- replaying the Bucket yields the same state.
+- Harbor wrote `job/result.json` with a finished status;
+- no labeled parent or child Job is active;
+- each expected trial has a durable Harbor result;
+- observed trial cost is within the approved limit; and
+- the projection rebuild gives the same run state.
 
-Publication recovery must not execute a task or call a model.
+Only completed `final` runs from a leaderboard-eligible preset, with at least
+one score, enter the public leaderboard.
 
 ## Stop conditions
 
-Stop immediately for:
+Stop automatic work and report evidence for:
 
-- credential, cookie, capability, or private-route exposure;
-- task, source, image, Harbor lock, model, agent, API, or upstream drift;
-- a deterministic shared worker or agent defect;
-- unsupported fallback, emulation, or request translation;
+- credential exposure or token reuse;
+- a Harbor, benchmark, image, or backend revision mismatch;
+- a deterministic shared parent or child defect;
 - duplicate logical execution;
-- spend beyond approval;
-- uncertain remote ownership after an ambiguous mutation;
-- Endpoint cleanup that cannot be verified; or
-- immutable-record or projection integrity failure.
+- cost outside the approved limit;
+- an immutable run-record conflict;
+- a Bucket integrity or Harbor resume failure; or
+- a labeled Job that the reconciler cannot stop.
 
-Record durable evidence and request an operator decision. Do not bypass a stop
-with a new resource, credential, Run identity, or unreviewed runtime.
+Do not bypass a stop by creating another resource, copying a credential, or
+using an unreviewed runtime.

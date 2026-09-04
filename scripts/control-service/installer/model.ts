@@ -14,13 +14,6 @@ export const INSTALL_PHASES = [
   "installed",
 ] as const;
 export type InstallPhase = (typeof INSTALL_PHASES)[number];
-export const WORKBENCH_RUNNERS = ["disabled", "docker", "hf-jobs"] as const;
-export type WorkbenchRunner = (typeof WORKBENCH_RUNNERS)[number];
-
-export interface WorkbenchVariables {
-  HARBOR_HF_WORKBENCH_RUNNER: WorkbenchRunner;
-  HARBOR_HF_WORKBENCH_IMAGE: string;
-}
 
 export interface BundleFile {
   path: string;
@@ -89,7 +82,6 @@ const REVISION = /^[a-f0-9]{40}$/;
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const HF_CLI_VERSION = /^1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 const INSTALL_ID = /^[a-f0-9]{64}$/;
-const DIGEST_PINNED_IMAGE = /^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[a-f0-9]{64}$/;
 
 export class UnsupportedInstallPlanError extends Error {}
 
@@ -153,36 +145,6 @@ export function validateOrigin(value: string): string {
   return url.origin;
 }
 
-function isWorkbenchRunner(value: string): value is WorkbenchRunner {
-  return WORKBENCH_RUNNERS.some((runner) => runner === value);
-}
-
-export function workbenchVariables(
-  variables: Readonly<Record<string, string | null | undefined>>,
-): WorkbenchVariables | null {
-  const runner = variables.HARBOR_HF_WORKBENCH_RUNNER;
-  const image = variables.HARBOR_HF_WORKBENCH_IMAGE;
-  if (runner === undefined && image === undefined) return null;
-  if (
-    typeof runner !== "string" ||
-    typeof image !== "string" ||
-    !isWorkbenchRunner(runner) ||
-    image.length < 1 ||
-    image.length > 1024 ||
-    image.includes("\n") ||
-    image.includes("\r")
-  ) {
-    throw new Error("Workbench variables are invalid");
-  }
-  if (runner === "hf-jobs" && !DIGEST_PINNED_IMAGE.test(image)) {
-    throw new Error("hosted Workbench image must be digest-pinned");
-  }
-  return {
-    HARBOR_HF_WORKBENCH_RUNNER: runner,
-    HARBOR_HF_WORKBENCH_IMAGE: image,
-  };
-}
-
 export function expectedVariables(
   namespace: string,
   bucketId: string,
@@ -194,14 +156,10 @@ export function expectedVariables(
     manifestDigest: string;
     phase: InstallPhase;
   },
-  workbench: WorkbenchVariables | null = null,
 ): Record<string, string | null> {
   if (!isInstallId(binding.installId) || !DIGEST.test(binding.manifestDigest)) {
     throw new Error("installer binding is invalid");
   }
-  const preservedWorkbench = workbenchVariables(
-    workbench === null ? {} : { ...workbench },
-  );
   return {
     HARBOR_HF_AUTH_MODE: "oauth",
     HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS: subject,
@@ -216,7 +174,6 @@ export function expectedVariables(
     HARBOR_HF_SOURCE_REVISION: revision,
     HARBOR_HF_STORE_MODE: "bucket",
     HARBOR_HF_WRITE_MODE: "disabled",
-    ...(preservedWorkbench ?? {}),
   };
 }
 
@@ -552,7 +509,6 @@ export function validatePlan(value: unknown): InstallPlan {
   }
   const remoteState = parseRemoteState(observed);
   const origin = remoteState.space?.origin ?? null;
-  const workbench = workbenchVariables(remoteState.space?.variables ?? {});
   const requiredVariables = expectedVariables(
     ids.namespace,
     ids.bucketId,
@@ -564,7 +520,6 @@ export function validatePlan(value: unknown): InstallPlan {
       manifestDigest: stringField(bundle, "manifest_digest"),
       phase: "installed",
     },
-    workbench,
   );
   if (canonicalJson(variableRecord) !== canonicalJson(requiredVariables)) {
     throw new Error("expected variables do not match the installer contract");

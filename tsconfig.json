@@ -4,7 +4,6 @@
     { "path": "packages/contracts" },
     { "path": "packages/control-core" },
     { "path": "packages/hf-adapters" },
-    { "path": "packages/test-fixtures" },
     { "path": "apps/control-api" },
     { "path": "apps/control-web" },
     { "path": "scripts/control-service/installer" }
