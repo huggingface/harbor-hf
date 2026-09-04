@@ -715,3 +715,31 @@ authorization effect.
 - Approved replacing the missing application-bearer requirement with existing
   HF browser login verification before continuing deployment. Preserve all
   verification gates and the two-token runtime credential boundary.
+
+### 2026-09-04 narrow deployment build repair
+
+Approved at: 2026-09-04
+
+- Directly approved another deployment-fix attempt after the user confirmed
+  they would stop manual restarts. Record this additively under the existing
+  browser-installer and feature-branch deployment approvals.
+- Repair only the installer-introduced production build boundary: exclude the
+  local browser installer from Space compilation while preserving its strict
+  local checks and browser dependencies. Add a regression check using the
+  actual release install with development dependencies omitted. No Harbor
+  runtime behavior or activation-gate change is authorized.
+- Run required checks, review the full diff and public metadata, commit and
+  push only `feat/leaderboard-submissions`, then plan the exact clean revision
+  and attempt supported existing-resource configuration once with writes
+  disabled and without credential replacement or input.
+- Preserve prior installer receipts, canonical resources, hardware, secrets,
+  worker configuration, Bucket objects, and Run state. Local management OAuth
+  remains local-to-provider only. Do not activate, launch a browser, create
+  resources, transfer credentials, launch Jobs or inference, publish results,
+  migrate/reset data, open a pull request, merge, or update the default branch.
+- On success verify anonymous source/health and canonical preservation, leaving
+  the service running with writes disabled. On failure leave it disabled and
+  paused, gather read-only diagnostics, and stop without a blind retry.
+- The fresh deterministic build failure does not establish the cause of the
+  earlier generic configuration failure. Previously disclosed coverage and
+  retired/missing tooling limitations remain disclosed, not waived thresholds.
