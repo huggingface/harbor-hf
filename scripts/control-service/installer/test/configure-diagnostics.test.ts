@@ -19,6 +19,23 @@ describe("closed configure failure categories", () => {
     expect(configureFailureCategory(error)).toBe(expected);
   });
 
+  it.each([
+    "runtime_stage_missing",
+    "json_decode",
+    "cli_validation",
+    "transport",
+    "cli_argument",
+  ] as const)("propagates only the closed %s label", (category) => {
+    expect(configureFailureCategory(new HfCommandFailure(category))).toBe(
+      `provider_${category}`,
+    );
+    const forged = new HfCommandFailure(category);
+    Object.defineProperty(forged, "category", {
+      value: `${category} https://example.invalid/?token=credential-placeholder`,
+    });
+    expect(configureFailureCategory(forged)).toBe("unclassified");
+  });
+
   it("does not leak arbitrary messages, causes, provider fields, or forged types", () => {
     const privateText = "https://example.invalid/private?token=credential-placeholder";
     const forgedProcess = new ProcessFailure("nonzero");

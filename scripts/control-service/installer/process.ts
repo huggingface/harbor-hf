@@ -44,9 +44,35 @@ export type ProviderFailureCategory =
   | "rate_limited"
   | "client_error"
   | "server_error"
-  | "quota_or_limit";
+  | "quota_or_limit"
+  | "runtime_stage_missing"
+  | "json_decode"
+  | "cli_validation"
+  | "transport"
+  | "cli_argument";
 
 function providerFailureCategory(stderr: string): ProviderFailureCategory | undefined {
+  // Diagnostic signatures, not root-cause claims. Never retain matched text.
+  if (/^\s*KeyError:\s*'stage'(?=\s|$)/m.test(stderr)) return "runtime_stage_missing";
+  if (/^\s*(?:json\.decoder\.|simplejson\.errors\.)?JSONDecodeError:/m.test(stderr)) {
+    return "json_decode";
+  }
+  if (
+    /^\s*httpx\.(?:ConnectError|ConnectTimeout|ReadError|ReadTimeout|WriteError|WriteTimeout|PoolTimeout|CloseError|ProxyError|UnsupportedProtocol|LocalProtocolError|RemoteProtocolError|NetworkError|TransportError|TimeoutException):/m.test(
+      stderr,
+    )
+  ) {
+    return "transport";
+  }
+  if (
+    /\b(?:No such option:|No such command |Missing argument |Missing option |Got unexpected extra argument)/.test(
+      stderr,
+    )
+  ) {
+    return "cli_argument";
+  }
+  // Click may discard the decoder exception type: this alone does not prove JSON.
+  if (/\bInvalid value\.(?=\s|$)/.test(stderr)) return "cli_validation";
   if (/\b401\b/.test(stderr)) return "unauthorized";
   if (/\b403\b/.test(stderr)) return "forbidden";
   if (/\b409\b/.test(stderr)) return "conflict";

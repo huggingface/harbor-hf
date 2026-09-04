@@ -59,6 +59,11 @@ const PROVIDER_CATEGORIES = new Set([
   "client_error",
   "server_error",
   "quota_or_limit",
+  "runtime_stage_missing",
+  "json_decode",
+  "cli_validation",
+  "transport",
+  "cli_argument",
 ]);
 
 // Exact closed labels only: never interpolate messages, causes, output or URLs.
