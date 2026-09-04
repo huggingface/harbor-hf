@@ -142,6 +142,25 @@ Approved at: 2026-09-04T09:04:31Z
 - Personal-Bucket delegation and a new leaderboard submission workflow remain
   design work, not approval to implement new storage or publication authority.
 
+### Leaderboard submission and presentation milestone (2026-09-04)
+
+Approved at: 2026-09-04T09:14:11Z
+
+- Prioritize authenticated user result submission with separate administrator
+  review and publication. Reuse the canonical Bucket, current result/evidence
+  contracts and publication authority; do not grant submitters operator access.
+- Support selection of authorized hosted results and bounded external Harbor
+  bundle intake where the existing Harbor validation boundary supports it.
+  Preserve provenance and never label external uploads as verified execution.
+  Report Harbor gaps rather than adding Harbor-owned behavior locally.
+- Tidy the frontend for a presentable desktop/mobile submission and review flow,
+  including clear permissions, states, confirmation, and publication copy.
+- Implement, test, document, and make local commits. Prepare for the user's own
+  deployment and testing. Do not deploy, launch paid work, publish actual results,
+  transfer credentials, create resources, push, or merge in this milestone.
+- Personal-Bucket OAuth delegation remains deferred. No new credentials or
+  persistent resources are authorized. Existing privacy and check gates remain.
+
 ### Scope
 
 - Diagnose the failed post-reset installation using sanitized read-only
@@ -602,3 +621,8 @@ authorization effect.
 - Approved public-documentation verification and removal of the unnecessary
   installer Endpoint permission requirement. The user emphasized easy submission
   of results to the admin leaderboard. No credential change is authorized.
+
+### 2026-09-04 leaderboard submission and presentation
+
+- Approved prioritizing the proposed user submission/admin publication flow and
+  a quick frontend presentation sweep, so the user can deploy and test afterward.
