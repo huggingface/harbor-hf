@@ -184,7 +184,7 @@ export function selectDeploymentAlias(
   model: string,
   harness: string,
 ): string {
-  const match = deployments.find((item) => {
+  const matches = deployments.filter((item) => {
     const models = item.spec.models;
     const harnesses = item.spec.harnesses;
     return (
@@ -195,6 +195,11 @@ export function selectDeploymentAlias(
       harnesses.includes(harness)
     );
   });
+  if (matches.length > 1)
+    throw new Error(
+      `Multiple approved ${kind} deployments match ${model} and ${harness}: ${matches.map((item) => item.alias).join(", ")}. Use a reviewed benchmark configuration with an explicit deployment.`,
+    );
+  const match = matches[0];
   if (!match)
     throw new Error(
       `no approved ${kind} deployment is available for ${model} and ${harness}`,

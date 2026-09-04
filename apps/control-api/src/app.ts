@@ -4,6 +4,7 @@ import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import type {
+  ActionIntent,
   Actor,
   AttemptReceipt,
   AttemptSubmissionV1,
@@ -2351,6 +2352,26 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     },
   );
 
+  // Jobs retain the latest observation, whose payload need not carry the launch role.
+  async function projectJob(
+    item: Awaited<ReturnType<typeof runtime.projection.jobs>>[number],
+  ) {
+    const launch = await runtime.projection.db
+      .selectFrom("actions")
+      .select("intent_body")
+      .where("action_id", "=", item.launch_action_id)
+      .executeTakeFirstOrThrow();
+    const intent = JSON.parse(launch.intent_body) as ActionIntent;
+    return {
+      ...item,
+      worker_role: intent.payload.worker_role ?? "execution",
+      inspect_url:
+        item.resource_id === null
+          ? null
+          : hubJobInspectUrl(runtime.config.namespace, item.resource_id),
+    };
+  }
+
   app.get(
     "/api/v1/jobs",
     {
@@ -2371,30 +2392,14 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       if (query.run_id) {
         const items = await runtime.projection.jobs(null, 0, query.run_id);
         return {
-          items: items.map((item) => ({
-            ...item,
-            inspect_url:
-              item.resource_id === null
-                ? null
-                : hubJobInspectUrl(runtime.config.namespace, item.resource_id),
-          })),
+          items: await Promise.all(items.map(projectJob)),
           next_cursor: null,
         };
       }
       const limit = query.limit ?? 50;
       const offset = cursorOffset(query.cursor);
       const items = await runtime.projection.jobs(limit + 1, offset);
-      return offsetPage(
-        items.map((item) => ({
-          ...item,
-          inspect_url:
-            item.resource_id === null
-              ? null
-              : hubJobInspectUrl(runtime.config.namespace, item.resource_id),
-        })),
-        offset,
-        limit,
-      );
+      return offsetPage(await Promise.all(items.map(projectJob)), offset, limit);
     },
   );
   app.get(

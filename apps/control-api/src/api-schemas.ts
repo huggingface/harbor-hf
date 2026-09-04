@@ -655,6 +655,7 @@ export const jobSchema = {
   additionalProperties: false,
   required: [
     ...actionSchema.required,
+    "worker_role",
     "launch_action_id",
     "inspect_url",
     "cost_microusd",
@@ -662,6 +663,7 @@ export const jobSchema = {
   ],
   properties: {
     ...actionSchema.properties,
+    worker_role: { type: "string", enum: ["preparation", "execution"], readOnly: true },
     launch_action_id: { type: "string" },
     inspect_url: nullableString,
     cost_microusd: integer,

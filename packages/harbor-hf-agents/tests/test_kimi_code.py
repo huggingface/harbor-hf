@@ -15,7 +15,7 @@ def no_ambient_inference(monkeypatch: pytest.MonkeyPatch) -> None:
         "KIMI_MODEL_BASE_URL",
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
-        "HARBOR_HF_MAX_OUTPUT_TOKENS",
+        "HARBOR_HF_OUTPUT_LIMIT",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -36,7 +36,7 @@ async def test_openai_settings_are_mapped_to_kimi_aliases(temp_dir) -> None:
         extra_env={
             "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
             "OPENAI_API_KEY": "direct-token",
-            "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+            "HARBOR_HF_OUTPUT_LIMIT": "32768",
         },
     )
     mock_env = AsyncMock()

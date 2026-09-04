@@ -384,7 +384,7 @@ def test_provider_command_composes_direct_harbor_agent_environment(
     assert agents[0]["env"] == {
         "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
         "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
-        "HARBOR_HF_MAX_OUTPUT_TOKENS": "4096",
+        "HARBOR_HF_OUTPUT_LIMIT": "4096",
         "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": "17.25",
     }
     assert agents[0]["extra_allowed_hosts"] == ["router.huggingface.co"]

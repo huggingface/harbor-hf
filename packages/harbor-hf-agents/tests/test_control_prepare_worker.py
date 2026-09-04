@@ -5,8 +5,9 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from harbor.models.job.lock import TrialLock
+from harbor.models.job.lock import JobLock, TrialLock
 from harbor.models.task.config import TaskConfig as TaskDefinitionConfig
+from harbor.models.trial.config import AgentConfig
 
 from harbor_hf_agents.support import control_prepare_worker as worker
 
@@ -100,15 +101,15 @@ def test_preserves_direct_inference_agent_environment() -> None:
     value["execution"]["harbor_agent"]["env"] = {
         "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
         "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
-        "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+        "HARBOR_HF_OUTPUT_LIMIT": "32768",
     }
 
     config = worker._job_config(value)
 
-    assert config.agents[0].env == {
+    assert config.model_dump(mode="json")["agents"][0]["env"] == {
         "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
         "OPENAI_BASE_URL": "https://router.huggingface.co/v1",
-        "HARBOR_HF_MAX_OUTPUT_TOKENS": "32768",
+        "HARBOR_HF_OUTPUT_LIMIT": "32768",
     }
 
 
@@ -244,6 +245,10 @@ def test_trial_submission_includes_python_origin_lock_digest() -> None:
                 "import_path": "example.agent:Agent",
                 "model_name": "openai/example/model:provider",
                 "override_setup_timeout_sec": 1200,
+                "env": {
+                    "HARBOR_HF_OUTPUT_LIMIT": "32768",
+                    "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
+                },
                 "kwargs": {},
             },
             "skills": [],
@@ -287,6 +292,20 @@ def test_trial_submission_includes_python_origin_lock_digest() -> None:
         },
     )
 
+    assert body["trial_lock"]["agent"]["env"] == harbor_lock.agent.env
+    # Execution revalidates and serializes the persisted trial before digest checks.
+    restored = TrialLock.model_validate(body["trial_lock"])
+    assert (
+        worker.digest_json(restored.model_dump(mode="json", exclude_unset=True))
+        == body["trial_lock_digest"]
+    )
+    job_lock = JobLock(
+        n_concurrent_trials=1, retry={"max_retries": 0}, trials=[restored]
+    )
+    assert (
+        job_lock.model_dump(mode="json")["trials"][0]["agent"]["env"]
+        == harbor_lock.agent.env
+    )
     assert body["trial_lock_digest"] == worker.digest_json(body["trial_lock"])
     assert body["agent_setup_timeout_seconds"] == 1200
     assert (
@@ -358,3 +377,23 @@ storage_mb = 1024
 
     with pytest.raises(RuntimeError, match="separate verifier image"):
         worker._task_definition(task)
+
+
+@pytest.mark.parametrize("host_value", [None, "32768", "4096"])
+def test_output_limit_round_trips_without_disabling_secret_redaction(
+    monkeypatch, host_value
+):
+    from harbor_hf_agents.support.direct_inference import MAX_OUTPUT_TOKENS_ENV
+
+    if host_value is None:
+        monkeypatch.delenv(MAX_OUTPUT_TOKENS_ENV, raising=False)
+    else:
+        monkeypatch.setenv(MAX_OUTPUT_TOKENS_ENV, host_value)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    agent = AgentConfig(
+        env={MAX_OUTPUT_TOKENS_ENV: "32768", "OPENAI_API_KEY": "fake-secret"}
+    )
+    serialized = agent.model_dump(mode="json")
+    assert serialized["env"][MAX_OUTPUT_TOKENS_ENV] == "32768"
+    assert serialized["env"]["OPENAI_API_KEY"] != "fake-secret"
+    assert AgentConfig.model_validate(serialized).model_dump(mode="json") == serialized

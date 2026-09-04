@@ -39,7 +39,9 @@ import {
 import { useControlState } from "./control-state";
 import { PageHeader } from "./layout";
 import { cn, formatDate, formatMoney } from "./lib";
+import { useProfiles } from "./queries";
 import { Badge, Button, Card, ErrorNotice } from "./ui";
+import { loadWorkbenchDraft, saveWorkbenchDraft } from "./workbench-draft";
 
 const sources = [
   "literal",
@@ -301,7 +303,8 @@ function WorkbenchFlow() {
       </ol>
       <p className="mt-4 text-sm text-slate-300">
         The model route, direct inference URL, and credential binding come from the
-        local deployment profile. They are not Workbench settings.
+        selected hosted deployment or local deployment profile. They are not recipe
+        settings.
       </p>
     </Card>
   );
@@ -309,8 +312,13 @@ function WorkbenchFlow() {
 
 export function WorkbenchPage() {
   const navigate = useNavigate();
+  const profiles = useProfiles();
   const { writesAllowed, writeMode } = useControlState();
-  const [recipe, setRecipe] = useState<WorkbenchRecipe>(copyStarter);
+  const [draft] = useState(loadWorkbenchDraft);
+  const [recipe, setRecipe] = useState<WorkbenchRecipe>(
+    () => draft?.recipe ?? copyStarter(),
+  );
+  const [draftSaved, setDraftSaved] = useState(true);
   const supportsDirectLocalRun = recipe.environment.some(
     (binding) => binding.source === "model_base_url",
   );
@@ -341,8 +349,10 @@ export function WorkbenchPage() {
   const [cancellingLocal, setCancellingLocal] = useState(false);
   const [benchmarkConfigs, setBenchmarkConfigs] = useState<BenchmarkConfig[]>([]);
   const [benchmarkConfigsError, setBenchmarkConfigsError] = useState<unknown>(null);
-  const [selectedBenchmarkConfig, setSelectedBenchmarkConfig] = useState("");
-  const [hostedCeiling, setHostedCeiling] = useState(0);
+  const [selectedBenchmarkConfig, setSelectedBenchmarkConfig] = useState(
+    draft?.selectedBenchmarkConfig ?? "",
+  );
+  const [hostedCeiling, setHostedCeiling] = useState(draft?.hostedCeiling ?? 0);
   const [hostedConfirmation, setHostedConfirmation] = useState<string | null>(null);
   const [hostedRunError, setHostedRunError] = useState<unknown>(null);
   const [startingHosted, setStartingHosted] = useState(false);
@@ -351,6 +361,12 @@ export function WorkbenchPage() {
   const activeSetupRef = useRef<HTMLDivElement | null>(null);
   const liveOutputRef = useRef<HTMLElement | null>(null);
   const liveOutput = `${logs.stdout}${logs.stderr ? `\n[stderr]\n${logs.stderr}` : ""}`;
+
+  useEffect(() => {
+    setDraftSaved(
+      saveWorkbenchDraft({ recipe, selectedBenchmarkConfig, hostedCeiling }),
+    );
+  }, [recipe, selectedBenchmarkConfig, hostedCeiling]);
 
   useEffect(() => {
     void listWorkbenchSetups()
@@ -376,13 +392,13 @@ export function WorkbenchPage() {
     void getBenchmarkConfigs()
       .then(({ items }) => {
         setBenchmarkConfigs(items);
-        const first = items[0];
+        const first = items.length === 1 ? items[0] : undefined;
         if (!first) return;
         setSelectedBenchmarkConfig((current) => current || first.name);
-        setHostedCeiling((current) => current || first.default_ceiling_microusd);
+        if (!draft) setHostedCeiling(first.default_ceiling_microusd);
       })
       .catch(setBenchmarkConfigsError);
-  }, []);
+  }, [draft]);
 
   useEffect(() => {
     const sequence = ++previewSequence.current;
@@ -484,6 +500,12 @@ export function WorkbenchPage() {
     : null;
   const selectedConfig = benchmarkConfigs.find(
     (config) => config.name === selectedBenchmarkConfig,
+  );
+  const resolvedDeployment = profiles.data?.items.find(
+    (profile) =>
+      profile.profile_kind === "deployment" &&
+      (profile.alias === selectedConfig?.deployment ||
+        profile.approved_aliases.includes(selectedConfig?.deployment ?? "")),
   );
   const hostedConfirmationKey =
     preview && setup && selectedConfig
@@ -666,6 +688,11 @@ export function WorkbenchPage() {
       />
 
       <WorkbenchFlow />
+      <p className="mb-4 text-sm text-slate-400" role="status">
+        {draftSaved
+          ? "Draft saved in this browser. Do not enter secrets in commands or literal values. Reload requires fresh launch confirmation."
+          : "Draft could not be saved in this browser. Copy your edits before reloading."}
+      </p>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)]">
         <div className="space-y-6">
@@ -1018,7 +1045,7 @@ export function WorkbenchPage() {
                 <PlayCircle className="text-cyan-300" size={20} />
                 <h2 className="font-semibold text-white">Run hosted</h2>
                 <Badge status={verifiedCurrent ? "complete" : "active"}>
-                  {verifiedCurrent ? "Setup passed" : "Awaiting setup"}
+                  {verifiedCurrent ? "Installation passed" : "Awaiting install test"}
                 </Badge>
               </div>
               <p className="mt-2 max-w-3xl text-sm text-slate-400">
@@ -1057,6 +1084,7 @@ export function WorkbenchPage() {
                   setHostedConfirmation(null);
                 }}
               >
+                <option value="">Select a reviewed configuration…</option>
                 {benchmarkConfigs.map((config) => (
                   <option key={config.name} value={config.name}>
                     {config.label}
@@ -1117,7 +1145,14 @@ export function WorkbenchPage() {
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-500">Deployment</dt>
+                  <dt className="text-slate-500">Resolved inference provider</dt>
+                  <dd className="mt-1 font-mono text-slate-300">
+                    {String(
+                      resolvedDeployment?.spec.inference_provider ??
+                        "Not reported in loaded profiles",
+                    )}
+                  </dd>
+                  <dt className="text-slate-500">Locked deployment</dt>
                   <dd className="mt-1 font-mono text-slate-300">
                     {selectedConfig.deployment}
                   </dd>
@@ -1203,7 +1238,9 @@ export function WorkbenchPage() {
                   <h2 className="font-semibold text-white">Run locally with Harbor</h2>
                   {localOptions ? (
                     <Badge status={localOptions.ready ? "complete" : "error"}>
-                      {localOptions.ready ? "Ready" : "Unavailable"}
+                      {localOptions.ready
+                        ? "Local prerequisites available"
+                        : "Unavailable"}
                     </Badge>
                   ) : null}
                 </div>
@@ -1445,8 +1482,9 @@ export function WorkbenchPage() {
                 </p>
                 {verifiedCurrent ? (
                   <p className="mt-2 max-w-xl text-sm text-slate-300">
-                    Setup passed for the current recipe. Hosted and local Harbor launch
-                    options are ready above.
+                    Installation passed for the current recipe. This does not verify
+                    hosted preparation, model connectivity, or inference. Review launch
+                    options above.
                   </p>
                 ) : null}
               </div>

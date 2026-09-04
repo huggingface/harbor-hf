@@ -566,7 +566,7 @@ def _provider_agent_environment(lock: ExecutionLock, base_url: str) -> dict[str,
         and not isinstance(max_output_tokens, bool)
         and max_output_tokens > 0
     ):
-        environment["HARBOR_HF_MAX_OUTPUT_TOKENS"] = str(max_output_tokens)
+        environment["HARBOR_HF_OUTPUT_LIMIT"] = str(max_output_tokens)
     return environment
 
 

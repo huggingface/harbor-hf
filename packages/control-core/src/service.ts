@@ -345,6 +345,41 @@ function subsetMatches(expected: unknown, actual: unknown): boolean {
   return Object.is(expected, actual);
 }
 
+// Only fixed root paths may enter diagnostics: even object keys can be secrets.
+function agentMismatchError(
+  phase: "trial" | "finalize",
+  expected: unknown,
+  actual: unknown,
+  validAgentShape = true,
+): PolicyError {
+  const safeRoots = new Set([
+    "import_path",
+    "model_name",
+    "env",
+    "kwargs",
+    "extra_allowed_hosts",
+  ]);
+  const paths = new Set<string>();
+  if (
+    validAgentShape &&
+    expected &&
+    typeof expected === "object" &&
+    !Array.isArray(expected) &&
+    actual &&
+    typeof actual === "object" &&
+    !Array.isArray(actual)
+  ) {
+    for (const [key, value] of Object.entries(expected)) {
+      if (!subsetMatches(value, (actual as Record<string, unknown>)[key]))
+        paths.add(safeRoots.has(key) ? `agent.${key}` : "agent.[redacted]");
+    }
+  }
+  if (paths.size === 0) paths.add("agent");
+  return new PolicyError(
+    `prepared Harbor agent does not match the locked execution contract (phase: ${phase}; differing field paths: ${[...paths].sort().join(", ")}; values redacted)`,
+  );
+}
+
 function normalizeGitUrl(value: string): string {
   return value.replace(/\.git$/, "");
 }
@@ -1130,9 +1165,7 @@ export class ControlService {
         throw new PolicyError("prepared task image repository does not match");
       const agent = objectValue(trialLock.agent, "prepared Harbor agent lock");
       if (!execution.harbor_agent || !subsetMatches(execution.harbor_agent, agent))
-        throw new PolicyError(
-          "prepared Harbor agent does not match the locked execution contract",
-        );
+        throw agentMismatchError("trial", execution.harbor_agent, agent);
       const deployment = execution.deployment;
       if (!deployment.trial_job_template)
         throw new PolicyError("prepared run has no trial Job deployment");
@@ -1224,8 +1257,11 @@ export class ControlService {
       agents.length !== 1 ||
       !subsetMatches(execution.harbor_agent, agents[0])
     )
-      throw new PolicyError(
-        "prepared Harbor agent does not match the locked execution contract",
+      throw agentMismatchError(
+        "finalize",
+        execution.harbor_agent,
+        Array.isArray(agents) ? agents[0] : undefined,
+        Array.isArray(agents) && agents.length === 1,
       );
     const retry = objectValue(jobConfig.retry, "prepared Harbor retry policy");
     if (retry.max_retries !== 0)

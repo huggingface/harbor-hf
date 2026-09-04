@@ -15,7 +15,9 @@ from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
 
 _AgentT = TypeVar("_AgentT")
 _RunMethod = Callable[[_AgentT, str, BaseEnvironment, AgentContext], Awaitable[None]]
-MAX_OUTPUT_TOKENS_ENV = "HARBOR_HF_MAX_OUTPUT_TOKENS"
+# Harbor treats any env key containing TOKEN as a secret during serialization.
+# Keep this non-secret numeric setting round-trippable in job and trial locks.
+MAX_OUTPUT_TOKENS_ENV = "HARBOR_HF_OUTPUT_LIMIT"
 
 
 def allowed_model_id(model_name: str | None) -> str:
