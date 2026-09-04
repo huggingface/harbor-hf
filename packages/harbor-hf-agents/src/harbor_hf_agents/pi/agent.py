@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import math
+from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast, override
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 from harbor.agents.capabilities import AgentCapabilities
 from harbor.agents.installed.pi import Pi
+from harbor.agents.model_connection import ResolvedModelConnection
+from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.trajectories import (
     Agent,
@@ -19,6 +27,152 @@ from harbor.models.trajectories import (
     Trajectory,
 )
 from harbor.utils.trajectory_utils import format_trajectory_json
+
+_HF_ROUTER_URL = "https://router.huggingface.co/v1"
+_PI_HF_CATALOG_URL = "https://pi.dev/api/models/providers/huggingface"
+_PI_CUSTOM_PROVIDER = "harbor-endpoint"
+
+JsonFetcher = Callable[[str], object]
+
+
+@lru_cache(maxsize=256)
+def _fetch_json(url: str) -> object:
+    request = Request(
+        url,
+        headers={"accept": "application/json", "User-Agent": "harbor-hf/0.1"},
+    )
+    try:
+        with urlopen(request, timeout=8) as response:  # noqa: S310 -- fixed HTTPS URLs
+            return json.load(response)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("required model metadata is unavailable") from error
+
+
+def _models(value: object) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, dict):
+        listed = value.get("models")
+        items = listed if isinstance(listed, list) else list(value.values())
+    else:
+        raise RuntimeError("Pi returned invalid Hugging Face model metadata")
+    return [cast(dict[str, Any], item) for item in items if isinstance(item, dict)]
+
+
+def _price(value: object, label: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        message = f"the selected provider did not report a valid {label} price"
+        raise RuntimeError(message)
+    return float(value)
+
+
+def _positive_int(value: object, message: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise RuntimeError(message)
+    return value
+
+
+def _base_model(model_id: str, fetch_json: JsonFetcher) -> dict[str, Any]:
+    model = next(
+        (
+            item
+            for item in _models(fetch_json(_PI_HF_CATALOG_URL))
+            if item.get("id") == model_id
+        ),
+        None,
+    )
+    if model is None:
+        raise RuntimeError("Pi did not report the selected Hugging Face model")
+    if model.get("api") != "openai-completions":
+        raise RuntimeError("the selected Pi model does not use chat completions")
+    return model
+
+
+def _provider_metadata(
+    model_id: str,
+    provider_id: str,
+    fetch_json: JsonFetcher,
+) -> dict[str, Any]:
+    router_url = f"{_HF_ROUTER_URL}/models/{quote(model_id, safe='/')}"
+    value = fetch_json(router_url)
+    if not isinstance(value, dict):
+        raise RuntimeError("Hugging Face returned invalid provider metadata")
+    data = value.get("data")
+    if not isinstance(data, dict):
+        raise RuntimeError("Hugging Face returned invalid provider metadata")
+    providers = data.get("providers")
+    if not isinstance(providers, list):
+        raise RuntimeError("Hugging Face did not report model providers")
+    provider = next(
+        (
+            cast(dict[str, Any], item)
+            for item in providers
+            if isinstance(item, dict) and item.get("provider") == provider_id
+        ),
+        None,
+    )
+    if provider is None or provider.get("status") != "live":
+        raise RuntimeError("the selected inference provider is not live for this model")
+    if provider.get("supports_tools") is not True:
+        raise RuntimeError("the selected inference provider does not support tools")
+    return provider
+
+
+def build_provider_pinned_model(
+    model_id: str,
+    *,
+    fetch_json: JsonFetcher = _fetch_json,
+) -> dict[str, Any]:
+    """Combine Pi model behavior with current provider price and context metadata."""
+    base_model_id, separator, provider_id = model_id.rpartition(":")
+    if not separator or not base_model_id or not provider_id:
+        raise ValueError("a provider-pinned model id is required")
+
+    base = _base_model(base_model_id, fetch_json)
+    provider = _provider_metadata(base_model_id, provider_id, fetch_json)
+    pricing = provider.get("pricing")
+    if not isinstance(pricing, dict):
+        raise RuntimeError("the selected inference provider did not report pricing")
+    context_window = _positive_int(
+        provider.get("context_length"),
+        "the selected inference provider did not report a context limit",
+    )
+    max_tokens = _positive_int(
+        base.get("maxTokens"), "Pi did not report a valid output limit"
+    )
+
+    model = {
+        key: base[key]
+        for key in (
+            "reasoning",
+            "thinkingLevelMap",
+            "input",
+            "samplingParams",
+            "compat",
+        )
+        if key in base
+    }
+    model.update(
+        {
+            "id": model_id,
+            "name": f"{base.get('name', base_model_id)} · {provider_id}",
+            "api": "openai-completions",
+            "cost": {
+                "input": _price(pricing.get("input"), "input"),
+                "output": _price(pricing.get("output"), "output"),
+                "cacheRead": 0,
+                "cacheWrite": 0,
+            },
+            "contextWindow": context_window,
+            "maxTokens": min(max_tokens, context_window),
+        }
+    )
+    return model
 
 
 def _text(content: object) -> str:
@@ -166,9 +320,50 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- event parser branches
 
 
 class PiAgent(Pi):
-    """Use Harbor's Pi agent and add the converter that is not upstream yet."""
+    """Use Harbor's Pi agent with priced provider pins and ATIF output."""
 
     capabilities = AgentCapabilities(atif=True, resume=True)
+    _provider_model: dict[str, Any] | None = None
+
+    @override
+    def _build_custom_models_json(
+        self,
+        access: ResolvedModelConnection,
+        model_id: str,
+    ) -> dict[str, Any] | None:
+        if self._provider_model is None:
+            return super()._build_custom_models_json(access, model_id)
+        api_key_env = self._api_key_env_name(access)
+        if api_key_env is None:
+            raise ValueError("Pi requires a Hugging Face token environment reference")
+        return {
+            "providers": {
+                _PI_CUSTOM_PROVIDER: {
+                    "baseUrl": _HF_ROUTER_URL,
+                    "apiKey": f"${api_key_env}",
+                    "api": "openai-completions",
+                    "models": [self._provider_model],
+                }
+            }
+        }
+
+    @override
+    async def run(
+        self,
+        instruction: str,
+        environment: BaseEnvironment,
+        context: AgentContext,
+    ) -> None:
+        if self.model_name and self.model_name.startswith("huggingface/"):
+            model_id = self.model_name.split("/", 1)[1]
+            if ":" in model_id:
+                self._provider_model = await asyncio.to_thread(
+                    build_provider_pinned_model, model_id
+                )
+        try:
+            await super().run(instruction, environment, context)
+        finally:
+            self._provider_model = None
 
     @override
     def populate_context_post_run(self, context: AgentContext) -> None:

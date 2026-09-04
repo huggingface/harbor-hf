@@ -264,8 +264,12 @@ labels argument. It can be removed when that API exposes child labels.
 The same adapter resolves the fixed `${HF_INFERENCE_TOKEN}` template only when
 it assembles an agent command environment. The value comes from the parent's
 ephemeral secret and does not replace the template in Harbor's persisted job
-configuration. Pi uses its built-in `huggingface` provider and provider-pinned
-model entry. This preserves Pi's provider price metadata so Harbor receives a
+configuration. Before Pi starts, its adapter combines the base model behavior
+from Pi's public Hugging Face catalog with the selected provider's live status,
+tool support, context limit and prices from the public Hugging Face router. It
+writes that provider-pinned entry to Pi's temporary configuration. The adapter
+fails before inference if this metadata is missing or unsafe. Pi therefore uses
+the requested provider and records its current prices so Harbor receives a
 non-null inference cost. Agents that need an OpenAI-compatible endpoint use the
 same inference secret through the fixed router URL.
 
