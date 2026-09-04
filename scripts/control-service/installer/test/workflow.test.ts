@@ -9,7 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   BucketWriteProbeAdapter,
   BucketWriteProbeInput,
@@ -2386,6 +2386,91 @@ describe("installer workflows", () => {
       ),
     ).toEqual(["setProtected", "wait", "uploadMirror", "setVariables", "wait"]);
   });
+
+  it.each([
+    "set_variables",
+    "observe_configured",
+    "restart",
+    "wait_runtime",
+    "verify",
+  ] as const)(
+    "reports sanitized %s failures without changing rollback",
+    async (operation) => {
+      const setupResult = await setup(OLD_REVISION);
+      if (!setupResult.hf.state.space) throw new Error("test Space is missing");
+      setupResult.hf.state.space.runtimeStage = "PAUSED";
+      const privateFailure = new Error(
+        "https://example.invalid/private?token=credential-placeholder",
+      );
+      if (operation === "set_variables") {
+        vi.spyOn(setupResult.hf, "setVariables").mockRejectedValueOnce(privateFailure);
+      } else if (operation === "observe_configured") {
+        setupResult.hf.afterSetVariables = () => {
+          vi.spyOn(setupResult.hf, "observe").mockRejectedValueOnce(privateFailure);
+        };
+      } else if (operation === "restart") {
+        vi.spyOn(setupResult.hf, "restart").mockRejectedValueOnce(privateFailure);
+      } else if (operation === "wait_runtime") {
+        setupResult.hf.waitFailure = privateFailure;
+      } else {
+        vi.spyOn(setupResult.http, "getJson").mockRejectedValueOnce(privateFailure);
+      }
+      await expect(
+        configureInstall({ planPath: setupResult.planPath }, setupResult.dependencies),
+      ).rejects.toThrow(
+        new Error(
+          `installation failed after remote mutation began; the Space was paused when possible; inspect remote diagnostics; operation: ${operation}; failure category: unclassified`,
+        ),
+      );
+      expect(setupResult.hf.state.space.runtimeStage).toBe("PAUSED");
+      expect(setupResult.hf.state.space.variables.HARBOR_HF_WRITE_MODE).toBe(
+        "disabled",
+      );
+      expect(setupResult.hf.secretWriteNames).toEqual([]);
+    },
+  );
+
+  it("identifies contract rejection during BUILDING before restart", async () => {
+    const setupResult = await setup(OLD_REVISION);
+    if (!setupResult.hf.state.space) throw new Error("test Space is missing");
+    setupResult.hf.state.space.runtimeStage = "PAUSED";
+    setupResult.hf.afterSetVariables = (state) => {
+      if (state.space) {
+        state.space.runtimeStage = "BUILDING";
+        state.space.requestedHardware = "unexpected-hardware";
+      }
+    };
+    await expect(
+      configureInstall({ planPath: setupResult.planPath }, setupResult.dependencies),
+    ).rejects.toThrow(
+      "operation: assert_configured; failure category: space_contract_mismatch",
+    );
+    expect(setupResult.hf.calls).not.toContain("restart");
+    expect(setupResult.hf.calls).not.toContain("wait");
+    expect(setupResult.hf.state.space.variables.HARBOR_HF_WRITE_MODE).toBe("disabled");
+  });
+
+  it.each(["PAUSED", "BUILDING", "RUNNING_BUILDING", "RUNNING"])(
+    "preserves pre-restart acceptance of %s with null current hardware",
+    async (runtimeStage) => {
+      const setupResult = await setup(OLD_REVISION);
+      if (!setupResult.hf.state.space) throw new Error("test Space is missing");
+      setupResult.hf.state.space.runtimeStage = "PAUSED";
+      setupResult.hf.afterSetVariables = (state) => {
+        if (state.space) {
+          state.space.runtimeStage = runtimeStage;
+          state.space.hardware = null;
+        }
+      };
+      await expect(
+        configureInstall({ planPath: setupResult.planPath }, setupResult.dependencies),
+      ).resolves.toMatchObject({ status: "installed" });
+      expect(setupResult.hf.calls).toContain("restart");
+      expect(setupResult.hf.state.space.variables.HARBOR_HF_WRITE_MODE).toBe(
+        "disabled",
+      );
+    },
+  );
 
   it("falls back to the paused completion path when online upgrade is ineligible", async () => {
     const setupResult = await setup(OLD_REVISION);

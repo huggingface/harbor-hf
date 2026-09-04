@@ -6,6 +6,7 @@ import type { ApplicationAuthFactory } from "./browser-auth.js";
 import type { BucketWriteProbeAdapter } from "./bucket-write-probe.js";
 import { canonicalJson } from "./canonical.js";
 import type { InstallerClock } from "./clock.js";
+import { ConfigureDiagnostics } from "./configure-diagnostics.js";
 import {
   type ControlTokenScopeAdapter,
   ControlTokenScopeError,
@@ -1904,6 +1905,7 @@ async function completeOnlineDisabledUpgrade(
   stagedBundle: string,
   variableTransition: boolean,
   dependencies: InstallerDependencies,
+  diagnostics: ConfigureDiagnostics,
   receipt?: BootstrapReceipt,
   persistReceipt?: (receipt: BootstrapReceipt) => Promise<void>,
 ): Promise<InstalledResult> {
@@ -1914,45 +1916,62 @@ async function completeOnlineDisabledUpgrade(
   const accepted = structuredClone(observed);
   let current = observed;
 
+  diagnostics.operation = "set_protected";
   await dependencies.hf.setProtected(plan.targets.space_id);
+  diagnostics.operation = "wait_runtime";
   await dependencies.hf.wait(plan.targets.space_id);
+  diagnostics.operation = "observe_protected";
   current = await observePlan(plan, dependencies);
+  diagnostics.operation = "assert_protected";
   assertExactOnlineState(
     accepted,
     current,
     "online upgrade state drifted after protection reassertion",
   );
+  diagnostics.operation = "assert_protected";
   assertOnlineDisabledUpgradeEligible(plan, current, variableTransition);
 
   let uploadSha = receipt?.uploaded_sha;
   let uploadedNow = false;
   if (!uploadSha) {
     uploadedNow = true;
+    diagnostics.operation = "upload";
     uploadSha = await dependencies.hf.uploadMirror(
       plan.targets.space_id,
       stagedBundle,
       plan.source.revision,
     );
+    diagnostics.operation = "observe_upload";
     current = await observePlan(plan, dependencies);
   }
+  diagnostics.operation = "assert_upload";
   assertOnlineUploadTransition(accepted, current, uploadSha, uploadedNow);
   if (uploadedNow && receipt) {
+    diagnostics.operation = "persist_receipt";
     await persistReceipt?.({ ...receipt, uploaded_sha: uploadSha });
   }
 
   const targetVariables = concreteVariables(plan, acceptedOrigin);
+  diagnostics.operation = "write_variables";
   const variablesFile = await writePrivateEnvironmentFile(
     dirname(stagedBundle),
     "variables-installed-online.env",
     targetVariables,
   );
+  diagnostics.operation = "observe_upload";
   current = await observePlan(plan, dependencies);
+  diagnostics.operation = "assert_upload";
   assertOnlineUploadTransition(accepted, current, uploadSha, uploadedNow);
+  diagnostics.operation = "set_variables";
   await dependencies.hf.setVariables(plan.targets.space_id, variablesFile);
+  diagnostics.operation = "observe_configured";
   current = await observePlan(plan, dependencies);
+  diagnostics.operation = "assert_configured";
   assertOnlineConfiguredState(plan, current, targetVariables, uploadSha);
 
+  diagnostics.operation = "wait_runtime";
   await waitForConfigureRuntime(plan.targets.space_id, dependencies);
+  diagnostics.operation = "verify";
   return {
     status: "installed",
     verification: await verifyPlan(plan, dependencies, uploadSha, {
@@ -1981,6 +2000,7 @@ async function completeInstall(
   }
   const environment = dependencies.environment ?? process.env;
   const tempDirectory = await mkdtemp(resolve(tmpdir(), "harbor-hf-install-"));
+  const diagnostics = new ConfigureDiagnostics();
   let remoteMutationStarted = false;
   let sourceUploadAttempted = false;
   let controlCredentialWarnings: string[] = [];
@@ -1995,6 +2015,7 @@ async function completeInstall(
     });
     assertManifestEqual(plan.bundle.manifest, await buildBundleManifest(stagedBundle));
     let current = observed;
+    diagnostics.operation = "assert_entry";
     let phase = freshContinuation
       ? assertFreshCompletionEntrySafe(plan, current)
       : assertCompletionState(plan, current, false, variableTransition);
@@ -2012,6 +2033,7 @@ async function completeInstall(
         stagedBundle,
         variableTransition,
         dependencies,
+        diagnostics,
         receipt,
         persistReceipt,
       );
@@ -2024,10 +2046,14 @@ async function completeInstall(
         current.space?.runtimeStage === "NO_APP_FILE"
       )
     ) {
+      diagnostics.operation = "pause";
       await dependencies.hf.pause(plan.targets.space_id);
     }
+    diagnostics.operation = "set_protected";
     await dependencies.hf.setProtected(plan.targets.space_id);
+    diagnostics.operation = "observe_protected";
     current = await observePlan(plan, dependencies);
+    diagnostics.operation = "assert_protected";
     phase = assertCompletionState(plan, current, freshContinuation, variableTransition);
     const releaseUploadIsSafelyStopped =
       freshContinuation && phase === "credentials_required"
@@ -2045,12 +2071,15 @@ async function completeInstall(
     let uploadSha = receipt?.uploaded_sha;
     if (!uploadSha) {
       sourceUploadAttempted = true;
+      diagnostics.operation = "upload";
       uploadSha = await dependencies.hf.uploadMirror(
         plan.targets.space_id,
         stagedBundle,
         plan.source.revision,
       );
+      diagnostics.operation = "observe_upload";
       current = await observePlan(plan, dependencies);
+      diagnostics.operation = "assert_upload";
       phase = assertCompletionState(
         plan,
         current,
@@ -2060,8 +2089,11 @@ async function completeInstall(
       if (!current.space || current.space.sha !== uploadSha) {
         throw new Error("Space upload revision does not match");
       }
+      diagnostics.operation = "pause";
       await dependencies.hf.pause(plan.targets.space_id);
+      diagnostics.operation = "observe_paused";
       current = await observePlan(plan, dependencies);
+      diagnostics.operation = "assert_paused";
       phase = assertCompletionState(
         plan,
         current,
@@ -2072,6 +2104,7 @@ async function completeInstall(
         throw new Error("Space is not safely paused after release upload");
       }
       if (receipt) {
+        diagnostics.operation = "persist_receipt";
         await persistReceipt?.({ ...receipt, uploaded_sha: uploadSha });
       }
     }
@@ -2083,14 +2116,19 @@ async function completeInstall(
         variablesForPhase(plan, current.space.origin, "source_staged"),
         current.space.origin,
       );
+      diagnostics.operation = "write_variables";
       variablesFile = await writePrivateEnvironmentFile(
         tempDirectory,
         "variables-source-staged.env",
         sourceStaged,
       );
+      diagnostics.operation = "set_variables";
       await dependencies.hf.setVariables(plan.targets.space_id, variablesFile);
+      diagnostics.operation = "pause";
       await dependencies.hf.pause(plan.targets.space_id);
+      diagnostics.operation = "observe_paused";
       current = await observePlan(plan, dependencies);
+      diagnostics.operation = "assert_paused";
       assertBootstrapPhase(plan, current, "source_staged", {
         requireBucket: true,
         requirePaused: true,
@@ -2099,7 +2137,9 @@ async function completeInstall(
         uploadSha,
       });
 
+      diagnostics.operation = "observe_paused";
       const reattested = await observePlan(plan, dependencies);
+      diagnostics.operation = "assert_paused";
       assertBootstrapPhase(plan, reattested, "source_staged", {
         requireBucket: true,
         requirePaused: true,
@@ -2111,6 +2151,7 @@ async function completeInstall(
         (name) => !reattested.space?.secretNames.includes(name),
       );
       if (missingSecrets.length > 0 || replaceCredentials) {
+        diagnostics.operation = "stage_credentials";
         const secrets = await secretValues(
           environment,
           SECRET_NAMES,
@@ -2130,8 +2171,11 @@ async function completeInstall(
           secrets,
         );
         await dependencies.hf.setSecrets(plan.targets.space_id, secretsFile);
+        diagnostics.operation = "pause";
         await dependencies.hf.pause(plan.targets.space_id);
+        diagnostics.operation = "observe_paused";
         current = await observePlan(plan, dependencies);
+        diagnostics.operation = "assert_paused";
         assertBootstrapPhase(plan, current, "source_staged", {
           requireBucket: true,
           requirePaused: true,
@@ -2139,6 +2183,7 @@ async function completeInstall(
           uploadSha,
         });
       } else {
+        diagnostics.operation = "assert_paused";
         assertBootstrapPhase(plan, reattested, "source_staged", {
           requireBucket: true,
           requirePaused: true,
@@ -2160,6 +2205,7 @@ async function completeInstall(
         throw new Error("installed bootstrap is missing credential names");
       }
       if (missingSecrets.length > 0 || planWasMissingSecrets || replaceCredentials) {
+        diagnostics.operation = "stage_credentials";
         const secrets = await secretValues(
           environment,
           SECRET_NAMES,
@@ -2179,8 +2225,11 @@ async function completeInstall(
           secrets,
         );
         await dependencies.hf.setSecrets(plan.targets.space_id, secretsFile);
+        diagnostics.operation = "pause";
         await dependencies.hf.pause(plan.targets.space_id);
+        diagnostics.operation = "observe_paused";
         current = await observePlan(plan, dependencies);
+        diagnostics.operation = "assert_paused";
         assertRemoteSafe(
           current,
           {
@@ -2194,14 +2243,18 @@ async function completeInstall(
     }
 
     if (!current.space) throw new Error("configured Space metadata is unavailable");
+    diagnostics.operation = "write_variables";
     variablesFile = await writePrivateEnvironmentFile(
       tempDirectory,
       "variables-installed.env",
       concreteVariables(plan, current.space.origin),
     );
+    diagnostics.operation = "set_variables";
     await dependencies.hf.setVariables(plan.targets.space_id, variablesFile);
+    diagnostics.operation = "observe_configured";
     current = await observePlan(plan, dependencies);
     if (!current.space) throw new Error("configured Space metadata is unavailable");
+    diagnostics.operation = "assert_configured";
     assertRemoteSafe(
       current,
       {
@@ -2214,8 +2267,11 @@ async function completeInstall(
     if (current.space.sha !== uploadSha) {
       throw new Error("configured Space upload revision does not match");
     }
+    diagnostics.operation = "restart";
     await dependencies.hf.restart(plan.targets.space_id);
+    diagnostics.operation = "wait_runtime";
     await waitForConfigureRuntime(plan.targets.space_id, dependencies);
+    diagnostics.operation = "verify";
     return {
       status: "installed",
       verification: await verifyPlan(plan, dependencies, uploadSha, {
@@ -2260,10 +2316,12 @@ async function completeInstall(
       }
       if (error instanceof InstallerInputError) throw error;
       throw new Error(
-        `installation failed after remote mutation began; the Space was paused when possible; inspect remote diagnostics${providerFailureSuffix(error)}`,
+        `installation failed after remote mutation began; the Space was paused when possible; inspect remote diagnostics${diagnostics.suffix(error)}${error instanceof InstallerReadinessTimeoutError ? "; verification category: readiness-timeout" : ""}`,
       );
     }
-    throw new Error("installation failed before remote mutation began");
+    throw new Error(
+      `installation failed before remote mutation began${diagnostics.suffix(error)}`,
+    );
   } finally {
     await rm(tempDirectory, { recursive: true, force: true });
   }
