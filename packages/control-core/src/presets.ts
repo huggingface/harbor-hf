@@ -234,6 +234,8 @@ export function prepareDirectJobConfig(
         throw new Error("direct Harbor JobConfig cannot use a local dataset path");
       if (dataset.download_dir !== undefined)
         throw new Error("direct Harbor JobConfig cannot set a dataset download path");
+      if (dataset.registry_path !== undefined)
+        throw new Error("direct Harbor JobConfig cannot set a dataset registry path");
     }
   }
   const environment = input.environment;

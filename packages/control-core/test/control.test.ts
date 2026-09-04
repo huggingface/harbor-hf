@@ -284,6 +284,28 @@ describe("run submission", () => {
       service.submitConfig(
         {
           ...directInput,
+          datasets: [{ ...directInput.datasets[0], download_dir: "/data/cache" }],
+        },
+        0.25,
+        "local-dataset-download",
+        "test-subject",
+      ),
+    ).rejects.toThrow("dataset download path");
+    await expect(
+      service.submitConfig(
+        {
+          ...directInput,
+          datasets: [{ ...directInput.datasets[0], registry_path: "/data/registry" }],
+        },
+        0.25,
+        "local-dataset-registry",
+        "test-subject",
+      ),
+    ).rejects.toThrow("dataset registry path");
+    await expect(
+      service.submitConfig(
+        {
+          ...directInput,
           extra_instruction_paths: ["/proc/self/environ"],
         },
         0.25,
