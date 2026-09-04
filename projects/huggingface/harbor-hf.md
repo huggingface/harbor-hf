@@ -103,6 +103,34 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Internal design and local compatibility amendment (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T22:23:44Z
+
+- Direct user instruction approves internal workarounds first and actual bounded
+  internal design/local compatibility work. Produce a concrete control-Space
+  Harbor CLI design, threat model, credential map, staged acceptance contract,
+  and precise public upstream gaps. Inspect pinned source and relevant history.
+- Local security-boundary guards and offline regression/compatibility tests are
+  approved where independent of unresolved Harbor execution gaps. Reuse existing
+  guards; do not build a duplicate planner, schema validator, controller, trial
+  loop, retry/resume implementation, private patch, or handle interception.
+- Commit this additive authorization before implementation. Local documentation,
+  tests, and in-scope guard commits are allowed after complete diff/metadata and
+  public-privacy review. No push, PR or upstream issue/comment mutation, merge,
+  reset, deployment, live inspection, Jobs, inference, spending, new resources,
+  credential access/transfer, OAuth grants or credential storage is authorized.
+- HF_TOKEN stays exclusively in the control Space. Neither persistent secret is
+  forwarded. Arbitrary plugins and controller hooks must never receive secrets.
+  One TypeScript control authority remains; execution stays disabled before
+  admission and credential resolution regardless of configuration write mode.
+- Isolated credential-free preparation with an exact native Harbor lock remains
+  a prerequisite, not permission to implement a resolver through Harbor imports.
+  Stop implementation at that upstream gap while completing independent local
+  design and nonexecuting boundary tests. Existing historical approvals do not
+  broaden this phase or waive policy, coverage, or paid-compute gates.
+
 ### UI cutover with preserved historical evidence (2026-09-04)
 
 Status: approved
@@ -1062,3 +1090,10 @@ All pre-integration authorization records above are retained as well.
   states and accounting preserved. The requested inference E2E remains blocked
   and unadmitted; no execution spending or recovery is authorized by this step.
   Apply the bounded configure and fail-closed restart limits above.
+
+### 2026-09-04 internal design and local compatibility approval
+
+- Directly approved the additive local-only amendment above: concrete internal
+  design, independent security guards where needed, offline compatibility and
+  regression tests, and local commits. Execution and all remote mutations remain
+  excluded; unresolved Harbor-owned preparation and ownership gaps stay blocked.
