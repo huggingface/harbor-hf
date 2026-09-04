@@ -103,6 +103,37 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Execution-disabled integration amendment (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-04T16:01:01Z
+
+- The user explicitly approved proceeding with execution-disabled integration:
+  merge fresh main into `feat/leaderboard-submissions`, reconcile authoring UX
+  with Harbor JobConfig, push only that feature branch without force, and open
+  or update one visibility PR against main. Do not merge the PR or push main.
+- Remove unsupported parent-worker execution, private Harbor or Hub patches,
+  and control-credential forwarding. Fail closed before Job admission,
+  reservations, Run actions, or execution credential resolution. Disable launch
+  and remote setup tests with a clear explanation; never return accepted Runs.
+- Preserve configure/save/load of immutable named harness configurations using
+  Harbor-accepted JobConfig fragments. New Run may preview only without remote
+  preparation. Do not restore removed profiles, invent Harbor-owned execution,
+  discovery, lock resolution or retry behavior, or add a parallel reconciler.
+- Preserve historical records and authorization history, the two-secret
+  configuration, and the control-only HF_TOKEN boundary. Neither persistent
+  secret is forwarded on the disabled path. No private Harbor patch is approved.
+- Future per-user OAuth scopes, user-account billing, and Jobs/inference
+  delegation are separate research for the parent agent, not implementation
+  authority. No token forwarding or new credential store is authorized.
+- No HF operational calls, deployment, Jobs, inference, spending, resources,
+  credential transfers, reset, migration, or Run actions are authorized.
+- Run required local checks and production Docker build, add security/API and
+  browser regressions, and disclose failures without weakening thresholds.
+  Publish a draft PR for intentionally disabled execution or incomplete gates.
+  Check public privacy and full actual diffs and metadata before every commit,
+  push, and PR. Include the pinned Harbor revision and files reviewed in the PR.
+
 ### Upstream compatibility, feature reconciliation, and PR visibility (2026-09-04)
 
 Status: approved
@@ -879,3 +910,10 @@ Status: completed
   visibility. No default-branch push or PR merge; no HF deployment, Jobs,
   credentials, resources, reset, or operational migration. Stop on material
   incompatibility rather than bypassing architecture or safety boundaries.
+
+### 2026-09-04 execution-disabled integration
+
+- Directly approved the execution-disabled integration amendment above. This
+  resolves the prior safety stop by disabling incompatible execution, not by
+  authorizing credential forwarding or a local Harbor patch. OAuth research
+  remains separate and deferred; all operational prohibitions remain in force.
