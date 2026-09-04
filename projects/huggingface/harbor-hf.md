@@ -743,3 +743,31 @@ Approved at: 2026-09-04
 - The fresh deterministic build failure does not establish the cause of the
   earlier generic configuration failure. Previously disclosed coverage and
   retired/missing tooling limitations remain disclosed, not waived thresholds.
+
+### 2026-09-04 sanitized configuration diagnostics completion
+
+Approved at: 2026-09-04
+
+- The user explicitly directed completion of the previously approved sanitized
+  failure diagnostics and deployment retry. The build repair did not complete
+  that diagnostic work. Add closed-allowlist operation and failure categories
+  with privacy regression tests; never expose subprocess stderr, arbitrary
+  provider messages, URLs, credentials, or private identifiers.
+- Preserve all safety, provenance, authentication, and activation gates. Review
+  and commit this additive record before implementation. Run the required
+  checks without lowering thresholds, inspect full diffs and public metadata,
+  and commit and push only `feat/leaderboard-submissions`.
+- After fresh read-only ownership, source, resource, worker, and activity
+  checks, permit at most one instrumented supported configure attempt from a
+  new exact committed plan. Keep stdin closed and writes disabled; do not
+  replace credentials or provide an application bearer. Preserve all prior
+  receipts, canonical resources, hardware, secrets, Bucket and Run records.
+- This is not approval for another unchanged retry. On failure leave the Space
+  disabled and paused, diagnose read-only, and report the precise sanitized
+  stage and proposed next fix. A straightforward in-scope local repair is
+  allowed, but another configure attempt requires review. On success leave
+  the service running with writes disabled, without activation.
+- No Jobs, inference, new resources, credential transfer, reset, migration,
+  real result publication, pull request, merge, or default-branch update.
+  Local management OAuth stays local to provider APIs and Bucket inspection;
+  no browser before healthy readiness. Keep operational evidence owner-only.
