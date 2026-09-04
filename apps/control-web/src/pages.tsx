@@ -161,6 +161,9 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
   const [ceiling, setCeiling] = useState("1");
   const [role, setRole] = useState<"final" | "diagnostic">("diagnostic");
   const [createdRun, setCreatedRun] = useState<string | null>(null);
+  const selectedBenchmark = presets.benchmarks.find(
+    (item) => `${item.benchmark}\n${item.preset}` === benchmarkKey,
+  );
   const selectedAgent = presets.agents.find(
     (item) => `${item.agent}\n${item.version}` === agentKey,
   );
@@ -207,10 +210,15 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
               key={`${item.benchmark}:${item.preset}`}
               value={`${item.benchmark}\n${item.preset}`}
             >
-              {item.benchmark} · {item.preset}
+              {item.benchmark} · {item.preset} · {item.job.environment_flavor}
             </option>
           ))}
         </select>
+        {selectedBenchmark ? (
+          <span className="mt-1 block text-xs text-slate-500">
+            {`${selectedBenchmark.job.environment_flavor} · ${selectedBenchmark.job.n_attempts} ${selectedBenchmark.job.n_attempts === 1 ? "attempt" : "attempts"} · ${selectedBenchmark.job.n_concurrent_trials} concurrent ${selectedBenchmark.job.n_concurrent_trials === 1 ? "trial" : "trials"}`}
+          </span>
+        ) : null}
       </label>
       <label className="block text-sm text-slate-300">
         Agent

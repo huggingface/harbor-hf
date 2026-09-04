@@ -122,8 +122,32 @@ describe("run submission", () => {
           kwargs: { version: "0.84.4", thinking: "off" },
         },
       ],
+      environment: {
+        import_path: "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
+        kwargs: { flavor: "cpu-upgrade" },
+      },
     });
+    expect(result.run.harbor_job_config).not.toHaveProperty("environment_flavor");
     expect(projection.run(result.run.run_id)?.status).toBe("queued");
+  });
+
+  it("keeps the reviewed full-run CPU flavor in the Harbor job", async () => {
+    const result = await service.submitPreset(
+      {
+        ...input,
+        benchmark: { name: "terminal-bench-2-1", preset: "all-tasks-1-trial" },
+      },
+      "full-run",
+      "test-subject",
+    );
+    expect(result.run.harbor_job_config).toMatchObject({
+      n_attempts: 1,
+      n_concurrent_trials: 8,
+      environment: {
+        kwargs: { flavor: "cpu-upgrade" },
+      },
+    });
+    expect(result.run.harbor_job_config).not.toHaveProperty("environment_flavor");
   });
 
   it("submits a Workbench recipe through the same one-Run Harbor contract", async () => {

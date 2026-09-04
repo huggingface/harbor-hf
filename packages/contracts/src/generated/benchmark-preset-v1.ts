@@ -38,6 +38,7 @@ n_tasks?: number
 })[]]
 n_attempts: number
 n_concurrent_trials: number
+environment_flavor: ("cpu-basic" | "cpu-upgrade")
 timeout_multiplier?: number
 agent_timeout_multiplier?: number
 verifier_timeout_multiplier?: number

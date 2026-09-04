@@ -15,6 +15,11 @@ export interface BenchmarkPreset {
   benchmark: string;
   preset: string;
   leaderboard_eligible: boolean;
+  job: {
+    n_attempts: number;
+    n_concurrent_trials: number;
+    environment_flavor: "cpu-basic" | "cpu-upgrade";
+  };
 }
 
 export interface AgentPreset {

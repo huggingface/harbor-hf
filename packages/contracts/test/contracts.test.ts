@@ -86,6 +86,7 @@ describe("contracts", () => {
           datasets: [{ repo: "https://example.test/repo.git@revision", path: "tasks" }],
           n_attempts: 1,
           n_concurrent_trials: 1,
+          environment_flavor: "cpu-upgrade",
         },
       }),
     ).toMatchObject({ preset: "one-task-1-trial" });

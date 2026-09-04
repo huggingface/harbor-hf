@@ -22,6 +22,11 @@ const presets = {
       benchmark: "terminal-bench-2-1",
       preset: "one-task-1-trial",
       leaderboard_eligible: true,
+      job: {
+        n_attempts: 1,
+        n_concurrent_trials: 1,
+        environment_flavor: "cpu-upgrade",
+      },
     },
   ],
   agents: [
