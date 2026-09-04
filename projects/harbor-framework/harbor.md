@@ -9,7 +9,7 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 Approved at: 2026-09-04T19:25:57+00:00
 
 ### Scope
@@ -35,3 +35,10 @@ Approved at: 2026-09-04T19:25:57+00:00
 - Direct user instruction authorized this specific issue and recording its
   concrete per-repository approval before publication, after canonical-source
   verification. This record authorizes only the scope above.
+
+### 2026-09-04 completion
+
+- Published and read-back verified https://github.com/harbor-framework/harbor/issues/3082.
+- Canonical sources and duplicate searches confirmed the narrow gap remains.
+- Authorization was committed before publication in `7ecda57`. No code changes,
+  pushes, deployments, Jobs, inference, or credential transfers were performed.
