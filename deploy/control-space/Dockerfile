@@ -51,10 +51,10 @@ LABEL org.opencontainers.image.revision=${HARBOR_HF_SOURCE_REVISION}
 WORKDIR /app
 
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
+# The clean workspace lock hoists production packages into this root tree.
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/apps/control-api/package.json ./apps/control-api/package.json
 COPY --from=build --chown=node:node /app/apps/control-api/dist ./apps/control-api/dist
-COPY --from=build --chown=node:node /app/apps/control-api/node_modules ./apps/control-api/node_modules
 COPY --from=build --chown=node:node /app/apps/control-web/package.json ./apps/control-web/package.json
 COPY --from=build --chown=node:node /app/apps/control-web/dist ./apps/control-web/dist
 COPY --from=build --chown=node:node /app/packages/contracts/package.json ./packages/contracts/package.json
