@@ -1,25 +1,25 @@
+"""Pi with the temporary Harbor-HF ATIF converter."""
+
+from __future__ import annotations
+
+import asyncio
 import json
 import math
-import os
-import re
-import shlex
-from collections.abc import Mapping
+from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast, override
-from urllib.parse import urlsplit
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
-from harbor.agents.installed.base import (
-    CliFlag,
-    NonZeroAgentExitCodeError,
-    with_prompt_template,
-)
-from harbor.agents.installed.node_install import nvm_node_install_snippet
+from harbor.agents.capabilities import AgentCapabilities
+from harbor.agents.installed.pi import Pi
+from harbor.agents.model_connection import ResolvedModelConnection
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.trajectories import (
     Agent,
     FinalMetrics,
-    Metrics,
     Observation,
     ObservationResult,
     Step,
@@ -27,32 +27,200 @@ from harbor.models.trajectories import (
     Trajectory,
 )
 from harbor.utils.trajectory_utils import format_trajectory_json
-from packaging.version import InvalidVersion, Version
 
-from harbor_hf_agents.support.direct_inference import (
-    with_agent_environment_cleanup,
-)
-from harbor_hf_agents.support.isolated_user import IsolatedProviderAgent
-from harbor_hf_agents.support.provider_outcome import validate_pi_terminal_output
+_HF_ROUTER_URL = "https://router.huggingface.co/v1"
+_PI_HF_CATALOG_URL = "https://pi.dev/api/models/providers/huggingface"
+_PI_CUSTOM_PROVIDER = "harbor-endpoint"
 
-_CURRENT_PI_PACKAGE = "@earendil-works/pi-coding-agent"
-_LEGACY_PI_PACKAGE = "@mariozechner/pi-coding-agent"
-_PI_PACKAGE_RENAME_VERSION = Version("0.74.0")
-_AGENT_TIMEOUT_ENV = "HARBOR_HF_AGENT_TIMEOUT_SECONDS"
-_AGENT_TIMEOUT_HEADROOM_SECONDS = 5
-_AGENT_TIMEOUT_MARKER = "harbor_hf_pi_execution_timeout"
+JsonFetcher = Callable[[str], object]
 
 
-def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
+@lru_cache(maxsize=256)
+def _fetch_json(url: str) -> object:
+    request = Request(
+        url,
+        headers={"accept": "application/json", "User-Agent": "harbor-hf/0.1"},
+    )
+    try:
+        with urlopen(request, timeout=8) as response:  # noqa: S310 -- fixed HTTPS URLs
+            return json.load(response)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("required model metadata is unavailable") from error
+
+
+def _models(value: object) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, dict):
+        listed = value.get("models")
+        items = listed if isinstance(listed, list) else list(value.values())
+    else:
+        raise RuntimeError("Pi returned invalid Hugging Face model metadata")
+    return [cast(dict[str, Any], item) for item in items if isinstance(item, dict)]
+
+
+def _price(value: object, label: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        message = f"the selected provider did not report a valid {label} price"
+        raise RuntimeError(message)
+    return float(value)
+
+
+def _positive_int(value: object, message: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise RuntimeError(message)
+    return value
+
+
+def _base_model(model_id: str, fetch_json: JsonFetcher) -> dict[str, Any]:
+    model = next(
+        (
+            item
+            for item in _models(fetch_json(_PI_HF_CATALOG_URL))
+            if item.get("id") == model_id
+        ),
+        None,
+    )
+    if model is None:
+        raise RuntimeError("Pi did not report the selected Hugging Face model")
+    if model.get("api") != "openai-completions":
+        raise RuntimeError("the selected Pi model does not use chat completions")
+    return model
+
+
+def _provider_metadata(
+    model_id: str,
+    provider_id: str,
+    fetch_json: JsonFetcher,
+) -> dict[str, Any]:
+    router_url = f"{_HF_ROUTER_URL}/models/{quote(model_id, safe='/')}"
+    value = fetch_json(router_url)
+    if not isinstance(value, dict):
+        raise RuntimeError("Hugging Face returned invalid provider metadata")
+    data = value.get("data")
+    if not isinstance(data, dict):
+        raise RuntimeError("Hugging Face returned invalid provider metadata")
+    providers = data.get("providers")
+    if not isinstance(providers, list):
+        raise RuntimeError("Hugging Face did not report model providers")
+    provider = next(
+        (
+            cast(dict[str, Any], item)
+            for item in providers
+            if isinstance(item, dict) and item.get("provider") == provider_id
+        ),
+        None,
+    )
+    if provider is None or provider.get("status") != "live":
+        raise RuntimeError("the selected inference provider is not live for this model")
+    if provider.get("supports_tools") is not True:
+        raise RuntimeError("the selected inference provider does not support tools")
+    return provider
+
+
+def build_provider_pinned_model(
+    model_id: str,
+    *,
+    fetch_json: JsonFetcher = _fetch_json,
+) -> dict[str, Any]:
+    """Combine Pi model behavior with current provider price and context metadata."""
+    base_model_id, separator, provider_id = model_id.rpartition(":")
+    if not separator or not base_model_id or not provider_id:
+        raise ValueError("a provider-pinned model id is required")
+
+    base = _base_model(base_model_id, fetch_json)
+    provider = _provider_metadata(base_model_id, provider_id, fetch_json)
+    pricing = provider.get("pricing")
+    if not isinstance(pricing, dict):
+        raise RuntimeError("the selected inference provider did not report pricing")
+    context_window = _positive_int(
+        provider.get("context_length"),
+        "the selected inference provider did not report a context limit",
+    )
+    max_tokens = _positive_int(
+        base.get("maxTokens"), "Pi did not report a valid output limit"
+    )
+
+    model = {
+        key: base[key]
+        for key in (
+            "reasoning",
+            "thinkingLevelMap",
+            "input",
+            "samplingParams",
+            "compat",
+        )
+        if key in base
+    }
+    model.update(
+        {
+            "id": model_id,
+            "name": f"{base.get('name', base_model_id)} · {provider_id}",
+            "api": "openai-completions",
+            "cost": {
+                "input": _price(pricing.get("input"), "input"),
+                "output": _price(pricing.get("output"), "output"),
+                "cacheRead": 0,
+                "cacheWrite": 0,
+            },
+            "contextWindow": context_window,
+            "maxTokens": min(max_tokens, context_window),
+        }
+    )
+    return model
+
+
+def _text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        value = item.get("text")
+        if isinstance(value, str) and item.get("type") in {"text", "thinking"}:
+            parts.append(value)
+    return "\n".join(parts)
+
+
+def _tool_calls(content: object) -> list[ToolCall]:
+    if not isinstance(content, list):
+        return []
+    calls: list[ToolCall] = []
+    for item in content:
+        if not isinstance(item, dict) or item.get("type") != "toolCall":
+            continue
+        name = item.get("name")
+        if not isinstance(name, str):
+            continue
+        raw = item.get("arguments")
+        arguments = cast(dict[str, Any], raw) if isinstance(raw, dict) else {"raw": raw}
+        calls.append(
+            ToolCall(
+                tool_call_id=str(item.get("id") or ""),
+                function_name=name,
+                arguments=arguments,
+            )
+        )
+    return calls
+
+
+def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- event parser branches
     path: Path | str,
     *,
     version: str,
     model_name: str | None,
 ) -> Trajectory | None:
     """Convert Pi's stable JSON event stream to an ATIF trajectory."""
-    path = Path(path)
     try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return None
     session_id = "unknown"
@@ -62,73 +230,14 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
             event = json.loads(line)
         except (json.JSONDecodeError, TypeError):
             continue
+        if not isinstance(event, dict):
+            continue
         if event.get("type") == "session" and isinstance(event.get("id"), str):
             session_id = event["id"]
-        if event.get("type") != "message_end":
-            continue
-        message = event.get("message")
-        if isinstance(message, dict):
-            messages.append(message)
-
-    def text_content(content: object) -> str:
-        if not isinstance(content, list):
-            return ""
-        texts: list[str] = []
-        for part in content:
-            if not isinstance(part, dict) or part.get("type") != "text":
-                continue
-            part_text = part.get("text")
-            if isinstance(part_text, str):
-                texts.append(part_text)
-        return "".join(texts)
-
-    def assistant_content(content: object) -> tuple[str, list[ToolCall]]:
-        if not isinstance(content, list):
-            return "", []
-        text: list[str] = []
-        calls: list[ToolCall] = []
-        for part in content:
-            if not isinstance(part, dict):
-                continue
-            part_text = part.get("text")
-            name = part.get("name")
-            if part.get("type") == "text" and isinstance(part_text, str):
-                text.append(part_text)
-            elif part.get("type") == "toolCall" and isinstance(name, str):
-                arguments = part.get("arguments")
-                calls.append(
-                    ToolCall(
-                        tool_call_id=str(part.get("id") or ""),
-                        function_name=name,
-                        arguments=(
-                            cast(dict[str, Any], arguments)
-                            if isinstance(arguments, dict)
-                            else {}
-                        ),
-                    )
-                )
-        return "".join(text), calls
-
-    def token_count(usage: Mapping[str, Any], key: str) -> int:
-        value = usage.get(key)
-        return value if isinstance(value, int) and not isinstance(value, bool) else 0
-
-    def metrics(usage: object) -> Metrics | None:
-        if not isinstance(usage, dict):
-            return None
-        typed_usage = cast(dict[str, Any], usage)
-        input_tokens = token_count(typed_usage, "input")
-        output_tokens = token_count(typed_usage, "output")
-        cache_read = token_count(typed_usage, "cacheRead")
-        cache_write = token_count(typed_usage, "cacheWrite")
-        if not (input_tokens or output_tokens or cache_read or cache_write):
-            return None
-        return Metrics(
-            prompt_tokens=input_tokens + cache_read or None,
-            completion_tokens=output_tokens or None,
-            cached_tokens=cache_read or None,
-            extra=({"cache_write_tokens": cache_write} if cache_write else None),
-        )
+        if event.get("type") == "message_end" and isinstance(
+            event.get("message"), dict
+        ):
+            messages.append(event["message"])
 
     steps: list[Step] = []
     total_input = 0
@@ -143,8 +252,7 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
                 Step(
                     step_id=len(steps) + 1,
                     source="user",
-                    message=text_content(message.get("content"))
-                    or "(empty user message)",
+                    message=_text(message.get("content")) or "(empty user message)",
                 )
             )
             index += 1
@@ -152,14 +260,22 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
         if role != "assistant":
             index += 1
             continue
-        text, calls = assistant_content(message.get("content"))
         usage = message.get("usage")
-        step_metrics = metrics(usage)
         if isinstance(usage, dict):
-            typed_usage = cast(dict[str, Any], usage)
-            total_input += token_count(typed_usage, "input")
-            total_output += token_count(typed_usage, "output")
-            total_cache += token_count(typed_usage, "cacheRead")
+            for field, target in (
+                ("input", "input"),
+                ("output", "output"),
+                ("cacheRead", "cache"),
+            ):
+                value = usage.get(field)
+                if isinstance(value, int) and value >= 0:
+                    if target == "input":
+                        total_input += value
+                    elif target == "output":
+                        total_output += value
+                    else:
+                        total_cache += value
+        calls = _tool_calls(message.get("content"))
         pending = {call.tool_call_id for call in calls if call.tool_call_id}
         results: list[ObservationResult] = []
         cursor = index + 1
@@ -171,7 +287,7 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
             results.append(
                 ObservationResult(
                     source_call_id=call_id or None,
-                    content=text_content(result.get("content")) or None,
+                    content=_text(result.get("content")) or None,
                 )
             )
             pending.discard(call_id)
@@ -180,11 +296,10 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
             Step(
                 step_id=len(steps) + 1,
                 source="agent",
-                message=text.strip() or "(no assistant text)",
+                message=_text(message.get("content")) or "(no assistant text)",
                 model_name=model_name,
                 tool_calls=calls or None,
                 observation=Observation(results=results) if results else None,
-                metrics=step_metrics,
             )
         )
         index = cursor
@@ -204,538 +319,56 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- parser branches
     )
 
 
-class PiAgent(IsolatedProviderAgent):
-    SUPPORTS_ATIF: bool = True
-    _OUTPUT_FILENAME = "pi.txt"
-    _MODELS_TEMPLATE_FILENAME = "pi.models.template.json"
+class PiAgent(Pi):
+    """Use Harbor's Pi agent with priced provider pins and ATIF output."""
 
-    def __init__(
+    capabilities = AgentCapabilities(atif=True, resume=True)
+    _provider_model: dict[str, Any] | None = None
+
+    @override
+    def _build_custom_models_json(
         self,
-        *args: Any,  # noqa: ANN401 -- Harbor API
-        model_runtime: dict[str, Any] | None = None,
-        models_json: dict[str, Any] | None = None,
-        provider_runtime: dict[str, Any] | None = None,
-        **kwargs: Any,  # noqa: ANN401 -- Harbor API
-    ) -> None:
-        super().__init__(*args, **kwargs)
-        if model_runtime is not None and models_json is not None:
-            raise ValueError("Pi accepts only one model runtime source")
-        # models_json remains a one-release public-interface compatibility input.
-        # Active control profiles use only the typed model_runtime contract.
-        self._models_json = (
-            self._models_json_from_runtime(model_runtime)
-            if model_runtime is not None
-            else models_json
-        )
-        if self._models_json is not None:
-            self._validate_models_json(self._models_json)
-        self._validate_provider_runtime(provider_runtime)
-
-    @staticmethod
-    def _validate_provider_runtime(value: dict[str, Any] | None) -> None:
-        if value is None:
-            return
-        if value.get("api") != "chat-completions":
-            raise ValueError("Pi requires the chat-completions API")
-        if set(value) != {"api", "timeout_seconds", "max_attempts"}:
-            raise ValueError("provider_runtime has unknown or missing fields")
-
-    @staticmethod
-    def _runtime_string(value: dict[str, Any], field: str) -> str:
-        item = value[field]
-        if not isinstance(item, str) or not item:
-            raise ValueError(f"Pi model_runtime {field} must be populated")
-        return item
-
-    @staticmethod
-    def _runtime_positive_integer(value: dict[str, Any], field: str) -> int:
-        item = value[field]
-        if not isinstance(item, int) or isinstance(item, bool) or item < 1:
-            raise ValueError(f"Pi model_runtime {field} must be a positive integer")
-        return item
-
-    @staticmethod
-    def _runtime_price(value: dict[str, Any], field: str) -> int | float:
-        item = value[field]
-        if (
-            not isinstance(item, (int, float))
-            or isinstance(item, bool)
-            or not math.isfinite(item)
-            or item < 0
-        ):
-            raise ValueError(f"Pi model_runtime {field} must be a non-negative number")
-        return item
-
-    @staticmethod
-    def _runtime_boolean(value: dict[str, Any], field: str) -> bool:
-        item = value[field]
-        if not isinstance(item, bool):
-            raise ValueError(f"Pi model_runtime {field} must be a boolean")
-        return item
-
-    @classmethod
-    def _models_json_from_runtime(cls, value: dict[str, Any]) -> dict[str, Any]:
-        required = {
-            "provider",
-            "base_url",
-            "api",
-            "model_id",
-            "context_window",
-            "max_tokens",
-            "input_price",
-            "output_price",
-            "cache_read_price",
-            "cache_write_price",
-            "reasoning",
-            "supports_developer_role",
-            "supports_reasoning_effort",
-            "max_tokens_field",
-        }
-        if set(value) != required:
-            raise ValueError("Pi model_runtime has unknown or missing fields")
-        provider = cls._runtime_string(value, "provider")
-        base_url = cls._runtime_string(value, "base_url")
-        api = cls._runtime_string(value, "api")
-        model_id = cls._runtime_string(value, "model_id")
-        if api != "openai-completions":
-            raise ValueError("Pi model_runtime requires the openai-completions API")
-        context_window = cls._runtime_positive_integer(value, "context_window")
-        max_tokens = cls._runtime_positive_integer(value, "max_tokens")
-        input_price = cls._runtime_price(value, "input_price")
-        output_price = cls._runtime_price(value, "output_price")
-        cache_read_price = cls._runtime_price(value, "cache_read_price")
-        cache_write_price = cls._runtime_price(value, "cache_write_price")
-        reasoning = cls._runtime_boolean(value, "reasoning")
-        supports_developer_role = cls._runtime_boolean(value, "supports_developer_role")
-        supports_reasoning_effort = cls._runtime_boolean(
-            value, "supports_reasoning_effort"
-        )
-        max_tokens_field = cls._runtime_string(value, "max_tokens_field")
-        if max_tokens_field != "max_tokens":
-            raise ValueError("Pi model_runtime max_tokens_field is unsupported")
+        access: ResolvedModelConnection,
+        model_id: str,
+    ) -> dict[str, Any] | None:
+        if self._provider_model is None:
+            return super()._build_custom_models_json(access, model_id)
+        api_key_env = self._api_key_env_name(access)
+        if api_key_env is None:
+            raise ValueError("Pi requires a Hugging Face token environment reference")
         return {
             "providers": {
-                provider: {
-                    "baseUrl": base_url,
-                    "api": api,
-                    "compat": {
-                        "supportsDeveloperRole": supports_developer_role,
-                        "supportsReasoningEffort": supports_reasoning_effort,
-                        "maxTokensField": max_tokens_field,
-                    },
-                    "models": [
-                        {
-                            "id": model_id,
-                            "name": model_id,
-                            "reasoning": reasoning,
-                            "input": ["text"],
-                            "contextWindow": context_window,
-                            "maxTokens": max_tokens,
-                            "cost": {
-                                "input": input_price,
-                                "output": output_price,
-                                "cacheRead": cache_read_price,
-                                "cacheWrite": cache_write_price,
-                            },
-                        }
-                    ],
+                _PI_CUSTOM_PROVIDER: {
+                    "baseUrl": _HF_ROUTER_URL,
+                    "apiKey": f"${api_key_env}",
+                    "api": "openai-completions",
+                    "models": [self._provider_model],
                 }
             }
         }
 
-    @classmethod
-    def _validate_models_json(cls, value: dict[str, Any]) -> None:
-        if set(value) != {"providers"} or not isinstance(value["providers"], dict):
-            raise ValueError("Pi models_json must contain exactly one providers object")
-        json.dumps(value, allow_nan=False)
-        for provider in value["providers"].values():
-            if not isinstance(provider, dict):
-                raise ValueError("Pi models_json providers must be objects")
-            base_url = provider.get("baseUrl")
-            if not isinstance(base_url, str) or not cls._safe_model_base_url(base_url):
-                raise ValueError(
-                    "Pi provider baseUrl must be an environment reference or a safe URL"
-                )
-            api_key = provider.get("apiKey")
-            if api_key is not None and not cls._environment_reference(api_key):
-                raise ValueError("Pi provider apiKey must be an environment reference")
-            headers = provider.get("headers", {})
-            if not isinstance(headers, dict) or any(
-                not cls._environment_reference(item) for item in headers.values()
-            ):
-                raise ValueError(
-                    "Pi provider header values must be environment references"
-                )
-            if cls._contains_shell_resolution(provider):
-                raise ValueError("Pi models_json must not execute shell commands")
-
-    @staticmethod
-    def _environment_reference(value: object) -> bool:
-        return (
-            isinstance(value, str)
-            and re.fullmatch(
-                r"\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})",
-                value,
-            )
-            is not None
-        )
-
-    @classmethod
-    def _safe_model_base_url(cls, value: str) -> bool:
-        if cls._environment_reference(value):
-            return True
-        parsed = urlsplit(value)
-        return (
-            parsed.scheme in {"http", "https"}
-            and bool(parsed.hostname)
-            and parsed.username is None
-            and parsed.password is None
-            and not parsed.query
-            and not parsed.fragment
-            and "/scopes/" not in parsed.path
-        )
-
-    @classmethod
-    def _contains_shell_resolution(cls, value: object) -> bool:
-        if isinstance(value, str):
-            return value.startswith("!")
-        if isinstance(value, dict):
-            return any(cls._contains_shell_resolution(item) for item in value.values())
-        if isinstance(value, list):
-            return any(cls._contains_shell_resolution(item) for item in value)
-        return False
-
-    CLI_FLAGS = [
-        CliFlag(
-            "thinking",
-            cli="--thinking",
-            type="enum",
-            choices=["off", "minimal", "low", "medium", "high", "xhigh"],
-        ),
-    ]
-
-    @staticmethod
     @override
-    def name() -> str:
-        return "pi"
-
-    @override
-    def get_version_command(self) -> str | None:
-        return "bash -lc " + shlex.quote(". ~/.nvm/nvm.sh; pi --version")
-
-    @override
-    def parse_version(self, stdout: str) -> str:
-        return stdout.strip().splitlines()[-1].strip()
-
-    @override
-    async def install(self, environment: BaseEnvironment) -> None:
-        await self.exec_as_root(
-            environment,
-            command=(
-                "apt-get update && apt-get install -y --no-install-recommends "
-                "ca-certificates curl passwd util-linux"
-            ),
-            env={"DEBIAN_FRONTEND": "noninteractive"},
-        )
-        package = _CURRENT_PI_PACKAGE
-        if self._version:
-            try:
-                if Version(self._version) < _PI_PACKAGE_RENAME_VERSION:
-                    package = _LEGACY_PI_PACKAGE
-            except InvalidVersion:
-                pass
-        version_spec = f"@{self._version}" if self._version else "@latest"
-        install_script = (
-            "set -euo pipefail; "
-            f"{nvm_node_install_snippet()} && "
-            f"npm install -g {package}{version_spec} && "
-            "pi --version"
-        )
-        # nvm is a bash function; the default exec shell is /bin/sh, where
-        # sourcing nvm.sh yields "nvm: not found" (exit 127). Run under bash.
-        await self.exec_as_agent(
-            environment,
-            command=f"bash -lc {shlex.quote(install_script)}",
-        )
-
-    def _build_register_skills_command(self) -> str | None:
-        """Return a shell command that copies skills to Pi's skills directory."""
-        if not self.skills_dir:
-            return None
-        return (
-            f"mkdir -p $HOME/.agents/skills && "
-            f"cp -r {shlex.quote(self.skills_dir)}/* "
-            f"$HOME/.agents/skills/ 2>/dev/null || true"
-        )
-
-    @staticmethod
-    def _materialize_runtime_config_command(
-        http_idle_timeout_ms: int | None,
-    ) -> str:
-        """Build Pi's runtime files using its guaranteed Node runtime."""
-        script = """
-const fs = require("node:fs");
-const path = require("node:path");
-
-const home = process.env.HOME;
-if (!home) {
-  throw new Error("HOME is required to materialize Pi configuration");
-}
-const configDirectory = path.join(home, ".pi", "agent");
-fs.mkdirSync(configDirectory, { recursive: true });
-
-const modelSource = "/logs/agent/pi.models.template.json";
-if (fs.existsSync(modelSource)) {
-  const modelDestination = path.join(configDirectory, "models.json");
-  const value = JSON.parse(fs.readFileSync(modelSource, "utf8"));
-  for (const provider of Object.values(value.providers)) {
-    const baseUrl = provider.baseUrl;
-    let environmentName = null;
-    if (baseUrl.startsWith("${") && baseUrl.endsWith("}")) {
-      environmentName = baseUrl.slice(2, -1);
-    } else if (baseUrl.startsWith("$")) {
-      environmentName = baseUrl.slice(1);
-    }
-    if (environmentName === null) {
-      continue;
-    }
-    const resolved = process.env[environmentName];
-    if (!resolved) {
-      throw new Error(`required Pi model environment ${environmentName} is missing`);
-    }
-    provider.baseUrl = resolved;
-  }
-  fs.writeFileSync(modelDestination, `${JSON.stringify(value, null, 2)}\\n`);
-  fs.chmodSync(modelDestination, 0o600);
-}
-
-const timeout = __HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS__;
-if (timeout !== null) {
-  if (!Number.isSafeInteger(timeout) || timeout < 1) {
-    throw new Error("Pi HTTP idle timeout is invalid");
-  }
-  const settingsDestination = path.join(configDirectory, "settings.json");
-  fs.writeFileSync(
-    settingsDestination,
-    `${JSON.stringify({ httpIdleTimeoutMs: timeout }, null, 2)}\\n`,
-  );
-  fs.chmodSync(settingsDestination, 0o600);
-}
-""".strip().replace(
-            "__HARBOR_HF_PI_HTTP_IDLE_TIMEOUT_MS__",
-            "null" if http_idle_timeout_ms is None else str(http_idle_timeout_ms),
-        )
-        node_command = "node -e " + shlex.quote(script)
-        return "bash -lc " + shlex.quote(f". ~/.nvm/nvm.sh; {node_command}")
-
-    def _http_idle_timeout_ms(self) -> int | None:
-        """Fit Pi's HTTP idle timeout inside the locked task budget."""
-        candidates: list[int] = []
-        inference_timeout = self._get_env("HARBOR_HF_PROVIDER_TIMEOUT_SECONDS")
-        if inference_timeout is not None:
-            if re.fullmatch(r"[1-9][0-9]*", inference_timeout) is None:
-                raise RuntimeError("locked inference timeout is invalid")
-            candidates.append(int(inference_timeout))
-        agent_timeout = os.environ.get(_AGENT_TIMEOUT_ENV)
-        if agent_timeout is not None:
-            if re.fullmatch(r"[1-9][0-9]*", agent_timeout) is None:
-                raise RuntimeError("locked Pi agent timeout is invalid")
-            agent_budget = int(agent_timeout) - 2 * _AGENT_TIMEOUT_HEADROOM_SECONDS
-            if agent_budget < 1:
-                raise RuntimeError("locked Pi agent timeout is too small")
-            candidates.append(agent_budget)
-        if not candidates:
-            return None
-        return min(candidates) * 1000
-
-    @staticmethod
-    def _execution_command(command: str) -> str:
-        raw_timeout = os.environ.get(_AGENT_TIMEOUT_ENV)
-        if raw_timeout is None:
-            return "bash -lc " + shlex.quote(command)
-        if re.fullmatch(r"[1-9][0-9]*", raw_timeout) is None:
-            raise RuntimeError("locked Pi agent timeout is invalid")
-        timeout_seconds = int(raw_timeout) - _AGENT_TIMEOUT_HEADROOM_SECONDS
-        if timeout_seconds < 1:
-            raise RuntimeError("locked Pi agent timeout is too small")
-        wrapped = (
-            f"timeout --signal=TERM --kill-after=2s {timeout_seconds}s "
-            f"bash -lc {shlex.quote(command)}; "
-            "status=$?; "
-            'if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then '
-            f"echo {_AGENT_TIMEOUT_MARKER} >&2; exit 124; fi; "
-            'exit "$status"'
-        )
-        return "bash -lc " + shlex.quote(wrapped)
-
-    @override
-    @with_prompt_template
-    @with_agent_environment_cleanup
-    async def run(  # noqa: C901 -- parser branches
+    async def run(
         self,
         instruction: str,
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        # Pi 0.84.2 parses a leading hyphen as an option and does not accept
-        # the later `--` terminator. A leading newline keeps the prompt text
-        # intact while making the positional argument unambiguous.
-        prompt = f"\n{instruction}" if instruction.startswith("-") else instruction
-        escaped_instruction = shlex.quote(prompt)
-
-        if not self.model_name or "/" not in self.model_name:
-            raise ValueError("Model name must be in the format provider/model_name")
-
-        provider, _ = self.model_name.split("/", 1)
-
-        env: dict[str, str] = {}
-        keys: list[str] = []
-
-        if provider == "amazon-bedrock":
-            keys.extend(["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"])
-        elif provider == "anthropic":
-            keys.extend(["ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"])
-        elif provider == "github-copilot":
-            keys.append("GITHUB_TOKEN")
-        elif provider == "google":
-            keys.extend(
-                [
-                    "GEMINI_API_KEY",
-                    "GOOGLE_GENERATIVE_AI_API_KEY",
-                    "GOOGLE_APPLICATION_CREDENTIALS",
-                    "GOOGLE_CLOUD_PROJECT",
-                    "GOOGLE_CLOUD_LOCATION",
-                    "GOOGLE_GENAI_USE_VERTEXAI",
-                    "GOOGLE_API_KEY",
-                ]
-            )
-        elif provider == "groq":
-            keys.append("GROQ_API_KEY")
-        elif provider == "huggingface":
-            keys.append("HF_TOKEN")
-        elif provider == "mistral":
-            keys.append("MISTRAL_API_KEY")
-        elif provider == "openai":
-            keys.extend(["OPENAI_API_KEY", "OPENAI_BASE_URL"])
-        elif provider == "openrouter":
-            keys.append("OPENROUTER_API_KEY")
-        elif provider == "xai":
-            keys.append("XAI_API_KEY")
-
-        for key in keys:
-            val = self._get_env(key)
-            if val:
-                env[key] = val
-
-        http_idle_timeout_ms = self._http_idle_timeout_ms()
-
-        model_args = (
-            f"--provider {provider} --model {self.model_name.split('/', 1)[1]} "
-        )
-
-        cli_flags = self.build_cli_flags()
-        if cli_flags:
-            cli_flags += " "
-
-        skills_command = self._build_register_skills_command()
-        if skills_command:
-            await self.exec_as_agent(environment, command=skills_command)
-
-        if self._models_json is not None:
-            template = self.logs_dir / self._MODELS_TEMPLATE_FILENAME
-            template.write_text(
-                json.dumps(self._models_json, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            if not environment.capabilities.mounted:
-                await environment.upload_file(
-                    template,
-                    f"/logs/agent/{self._MODELS_TEMPLATE_FILENAME}",
+        if self.model_name and self.model_name.startswith("huggingface/"):
+            model_id = self.model_name.split("/", 1)[1]
+            if ":" in model_id:
+                self._provider_model = await asyncio.to_thread(
+                    build_provider_pinned_model, model_id
                 )
-        if self._models_json is not None or http_idle_timeout_ms is not None:
-            await self.exec_as_agent(
-                environment,
-                command=self._materialize_runtime_config_command(http_idle_timeout_ms),
-                env=env,
-            )
-
-        timed_out = False
         try:
-            command = (
-                ". ~/.nvm/nvm.sh; "
-                "pi --print --mode json --session-dir /logs/agent/pi/sessions "
-                f"{model_args}"
-                f"{cli_flags}"
-                f"{escaped_instruction} "
-                "2>&1 </dev/null | "
-                'grep -v \'"type":"message_update"\' | '
-                f"stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}"
-            )
-            try:
-                result = await self.exec_as_agent(
-                    environment,
-                    command=self._execution_command(command),
-                    env=env,
-                )
-            except NonZeroAgentExitCodeError as error:
-                if _AGENT_TIMEOUT_MARKER not in str(error):
-                    raise
-                timed_out = True
-                raise TimeoutError("Pi reached the locked agent timeout") from error
-            validate_pi_terminal_output(
-                result.stdout if isinstance(result.stdout, str) else ""
-            )
+            await super().run(instruction, environment, context)
         finally:
-            if (
-                self._models_json is not None or http_idle_timeout_ms is not None
-            ) and not timed_out:
-                await self.exec_as_agent(
-                    environment,
-                    command=(
-                        "rm -f $HOME/.pi/agent/models.json "
-                        "$HOME/.pi/agent/settings.json"
-                    ),
-                    env=env,
-                )
+            self._provider_model = None
 
     @override
-    def populate_context_post_run(  # noqa: C901 -- parser branches
-        self, context: AgentContext
-    ) -> None:
+    def populate_context_post_run(self, context: AgentContext) -> None:
+        super().populate_context_post_run(context)
         output_file = self.logs_dir / self._OUTPUT_FILENAME
-        if not output_file.exists():
-            return
-
-        total_input_tokens = 0
-        total_output_tokens = 0
-        total_cache_read_tokens = 0
-        total_cache_write_tokens = 0
-        total_cost = 0.0
-
-        for line in output_file.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-                if event.get("type") == "message_end":
-                    message = event.get("message") or {}
-                    if message.get("role") == "assistant":
-                        usage = message.get("usage") or {}
-                        total_input_tokens += usage.get("input", 0)
-                        total_output_tokens += usage.get("output", 0)
-                        total_cache_read_tokens += usage.get("cacheRead", 0)
-                        total_cache_write_tokens += usage.get("cacheWrite", 0)
-                        cost = usage.get("cost") or {}
-                        total_cost += cost.get("total", 0.0)
-            except (json.JSONDecodeError, AttributeError, TypeError):
-                continue
-
-        context.n_input_tokens = total_input_tokens + total_cache_read_tokens
-        context.n_output_tokens = total_output_tokens
-        context.n_cache_tokens = total_cache_read_tokens
-        context.cost_usd = total_cost if total_cost > 0 else None
-
         try:
             trajectory = pi_jsonl_to_atif_trajectory(
                 output_file,
@@ -748,4 +381,4 @@ if (timeout !== null) {
                     encoding="utf-8",
                 )
         except Exception:
-            self.logger.exception("Failed to convert Pi JSON to trajectory")
+            self.logger.exception("Failed to convert Pi output to ATIF")

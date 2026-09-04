@@ -1,10 +1,10 @@
 [project]
 name = "harbor-hf-agents"
 version = "0.1.0"
-description = "Provider-backed custom Harbor agents for harbor-hf."
+description = "Harbor command-agent plugin and temporary ATIF converters for Harbor-HF."
 requires-python = ">=3.12"
 dependencies = [
-  "harbor @ git+https://github.com/harbor-framework/harbor.git@b37833221e27435a18d7acdd41d875cdc2831893",
+  "harbor[hf-sandbox] @ git+https://github.com/harbor-framework/harbor.git@dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e",
 ]
 
 [build-system]

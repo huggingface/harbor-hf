@@ -7,15 +7,12 @@ tags: [agents, codex, terminus, mini-swe-agent]
 
 # Add Terminus and standalone Codex harnesses
 
-> **Historical record — superseded 2026-09-02.** The matrix results and cost
-> estimates below are retained as dated facts. Retired harness entries and the
-> former inference implementation are not active support or launch guidance.
-> Current compatibility follows
-> [`harbor-integration-contract.md`](harbor-integration-contract.md).
-
-**Historical status.** The recorded runnable cells completed their two-task
-canaries. The compatibility observations remain factual, but the former next
-stage and retired harness entries are not active launch instructions.
+**Status.** The harnesses are implemented, and all nine runnable cells have a
+valid published two-task canary. GLM-5.3-Flash through Together plus standalone
+Codex is an unsupported cell: Codex 0.118.0 requires Responses, while the
+Together route provides Chat Completions. The matrix skips this cell without a
+run or benchmark failure. Qwen3.8-27B through DeepInfra plus Codex remains a
+native Responses cell. The next stage is nine one-trial, 89-task campaigns.
 
 ## Goal
 

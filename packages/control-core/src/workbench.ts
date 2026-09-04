@@ -1,4 +1,4 @@
-import type { AgentWorkbenchRecipeV1, HarnessProfileSpec } from "@harbor-hf/contracts";
+import type { AgentWorkbenchRecipeV1 } from "@harbor-hf/contracts";
 import {
   canonicalJson,
   deterministicId,
@@ -62,7 +62,11 @@ export interface AgentWorkbenchPreview {
   setup_command: string;
   run_command: string;
   environment: WorkbenchPreviewEnvironment[];
-  harness_profile: HarnessProfileSpec;
+  harbor_agent: {
+    import_path: string;
+    override_setup_timeout_sec: number;
+    kwargs: { config: Record<string, unknown> };
+  };
   warnings: string[];
 }
 
@@ -380,8 +384,6 @@ export function compileAgentWorkbenchRecipe(value: unknown): AgentWorkbenchPrevi
     .sort((left, right) => left.name.localeCompare(right.name));
   const values = new Map(environment.map((item) => [item.name, item.value]));
   const recipeDigest = sha256(canonicalJson(recipe));
-  const requiredEvidence = ["workspace", "verifier"];
-  if (recipe.outputs.trajectory_path) requiredEvidence.push("trajectory");
   return {
     recipe,
     recipe_digest: recipeDigest,
@@ -394,21 +396,11 @@ export function compileAgentWorkbenchRecipe(value: unknown): AgentWorkbenchPrevi
     setup_command: expandSimpleEnvironment(recipe.setup_command, values),
     run_command: expandSimpleEnvironment(recipe.run_command, values),
     environment,
-    harness_profile: {
-      contract_version: "v1",
-      agent: "command-agent",
-      revision: recipeDigest,
-      reasoning_effort: "off",
-      required_evidence: requiredEvidence,
-      capabilities: {
-        inference_apis: [recipe.route_api],
-      },
-      harbor_agent: {
-        import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
-        override_setup_timeout_sec: recipe.setup_timeout_seconds,
-        kwargs: {
-          config: commandAgentConfig(recipe),
-        },
+    harbor_agent: {
+      import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
+      override_setup_timeout_sec: recipe.setup_timeout_seconds,
+      kwargs: {
+        config: commandAgentConfig(recipe),
       },
     },
     warnings: recipe.outputs.trajectory_path

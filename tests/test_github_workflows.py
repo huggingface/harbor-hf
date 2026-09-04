@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 from typing import cast
 
@@ -38,6 +37,25 @@ def test_mutation_testing_paths_are_absent() -> None:
         assert "check_mutation.py" not in workflow.read_text()
 
 
+def test_superseded_profile_and_worker_paths_are_absent() -> None:
+    root = WORKFLOWS.parents[1]
+    obsolete_paths = (
+        "profiles",
+        "deploy/trial-worker",
+        "apps/control-api/src/api-schemas.ts",
+        "apps/control-api/src/local-harbor.ts",
+        "apps/control-web/src/hints.ts",
+        "apps/control-web/src/launch.ts",
+        "packages/control-core/src/execution-contract.ts",
+        "packages/control-core/src/run-configs.ts",
+        "packages/harbor-hf-agents/src/harbor_hf_agents/support/direct_inference.py",
+        "src/harbor_hf/harbor_adapter",
+    )
+
+    for relative in obsolete_paths:
+        assert not (root / relative).exists(), f"obsolete path returned: {relative}"
+
+
 def test_package_publication_has_no_mutation_preflight() -> None:
     workflow = _workflow("publish.yml")
     jobs = _record(workflow["jobs"])
@@ -47,14 +65,11 @@ def test_package_publication_has_no_mutation_preflight() -> None:
     assert "needs" not in publish
 
 
-def test_trial_worker_publication_pins_privileged_actions() -> None:
-    workflow = _workflow("publish-trial-worker.yml")
-    jobs = _record(workflow["jobs"])
-    publish = _record(jobs["publish"])
-    steps = publish["steps"]
-    assert isinstance(steps, list)
-
-    for step in steps:
-        uses = _record(step).get("uses")
-        if uses is not None:
-            assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", str(uses))
+def test_unsupported_execution_implementation_and_publication_are_absent() -> None:
+    assert not (WORKFLOWS / "publish-trial-worker.yml").exists()
+    agents = ROOT / "packages/harbor-hf-agents/src/harbor_hf_agents"
+    assert not (agents / "parent_worker.py").exists()
+    assert not (agents / "hf_sandbox.py").exists()
+    dockerfile = (ROOT / "deploy/parent-worker/Dockerfile").read_text()
+    assert 'CMD ["harbor", "--help"]' in dockerfile
+    assert "parent_worker" not in dockerfile

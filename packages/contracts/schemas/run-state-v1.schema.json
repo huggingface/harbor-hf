@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harbor-hf.example/schemas/run-state-v1.schema.json",
+  "title": "RunStateV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "revision",
+    "updated_at",
+    "desired_state",
+    "actor",
+    "parent_jobs"
+  ],
+  "properties": {
+    "schema_version": { "const": "v1" },
+    "run_id": { "type": "string", "pattern": "^run-[0-9a-f]{24}$" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "desired_state": { "enum": ["run", "paused", "cancelled"] },
+    "actor": { "type": "string", "minLength": 1, "maxLength": 320 },
+    "parent_jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "started_at"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "started_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

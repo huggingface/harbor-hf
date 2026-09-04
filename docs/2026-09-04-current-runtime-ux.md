@@ -1,3 +1,5 @@
+> Historical pre-integration design; superseded by [execution-disabled integration](execution-disabled-integration.md). Do not use these instructions to launch or deploy.
+
 # Current-runtime harness library and New Run
 
 This local UX milestone retains the current execution architecture. It does not

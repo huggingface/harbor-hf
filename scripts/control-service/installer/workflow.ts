@@ -1029,13 +1029,15 @@ function assertSystem(
 ): void {
   if (!isRecord(body)) throw new Error("system response is invalid");
   const projection = body.projection;
-  const contract = body.resource_contract;
+  const contract = body.resources;
   if (
     body.source_revision !== sourceRevision ||
     body.write_mode !== expectedWriteMode ||
     !isRecord(projection) ||
-    projection.ready !== true ||
-    projection.integrity_error !== null ||
+    !Number.isSafeInteger(projection.runs) ||
+    !Number.isSafeInteger(projection.trials) ||
+    !Number.isSafeInteger(projection.parent_jobs) ||
+    body.ready !== true ||
     !isRecord(contract) ||
     contract.spaces !== 1 ||
     contract.buckets !== 1 ||
@@ -1164,7 +1166,7 @@ async function verifyPlan(
         });
         break;
       }
-      if (ready.status !== 200 || !exactStatus(ready.body, "initializing")) {
+      if (ready.status !== 503 || !exactStatus(ready.body, "initializing")) {
         throw new Error("anonymous readiness verification failed");
       }
       if (afterRequest >= nextHeartbeat) {
@@ -1224,9 +1226,8 @@ async function verifyPlan(
       if (
         runs.status !== 200 ||
         !isRecord(runs.body) ||
-        !Array.isArray(runs.body.items) ||
-        runs.body.items.length !== 0 ||
-        runs.body.next_cursor !== null
+        !Array.isArray(runs.body.runs) ||
+        runs.body.runs.length !== 0
       ) {
         throw new Error("activation requires an empty run projection");
       }

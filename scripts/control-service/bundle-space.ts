@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 
 function run(command: string, args: string[]): string {
   const result = spawnSync(command, args, { encoding: "utf8" });

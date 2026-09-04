@@ -1,9 +1,10 @@
 /* Generated from JSON Schema. Do not edit. */
 
-export type SavedWorkbenchRecipe = import("./agent-workbench-v1.js").AgentWorkbenchRecipeV1
+export type SavedHarborConfiguration = import("./harbor-job-config-v1.js").HarborJobConfigV1
 
 export interface SavedWorkbenchConfigurationV1 {
 schema_version: "v1"
 revision: string
-recipe: SavedWorkbenchRecipe
+name: string
+harbor_job_config: SavedHarborConfiguration
 }

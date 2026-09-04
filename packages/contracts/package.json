@@ -6,13 +6,12 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
-    "./canonical-json": "./dist/canonical-json.mjs",
     "./schemas/*": "./schemas/*"
   },
   "scripts": {
     "build": "tsc -b",
     "generate": "tsx scripts/generate.ts",
-    "test": "vitest run"
+    "test": "vitest run --root ../.. packages/contracts/test"
   },
   "dependencies": {
     "ajv": "8.20.0"

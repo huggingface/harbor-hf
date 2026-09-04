@@ -1,3 +1,5 @@
+> Historical pre-integration design; superseded by [execution-disabled integration](execution-disabled-integration.md). Do not use these instructions to launch or deploy.
+
 # Workbench configuration library
 
 The Workbench saves named harness recipes in the existing private artifact

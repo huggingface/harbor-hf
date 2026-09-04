@@ -1,8 +1,31 @@
-# Harbor Compatibility Contract
+---
+title: Historical Harbor compatibility contract
+author: Harbor-HF maintainers
+date: 2026-09-04
+tags: [historical, harbor, integration]
+---
 
-This document defines the active boundary between Harbor and Harbor-HF.
-Historical evidence remains readable at its pinned revisions, but new
-preparation, execution, retry, and recovery use this contract.
+> **Execution-disabled integration (2026-09-04):** This greenfield branch is not
+> production-ready. Run submission, actions, remote setup tests, and automatic
+> reconciliation are disabled before admission or credential resolution, even
+> when configuration writes are enabled. Workbench saves native Harbor JobConfig
+> fragments; New Run previews configuration without task resolution or a Job.
+> HF_TOKEN stays exclusively in the control Space. Neither persistent secret is
+> forwarded. Parent-worker execution and private Hub/Harbor patches are removed.
+> Execution descriptions below are deferred design, not available behavior or
+> permission to launch. See [execution boundary](../docs/execution-disabled-integration.md).
+
+# Historical Harbor compatibility contract
+
+> **Status:** Historical record. The current contract is in
+> [Architecture](architecture.md) and the
+> [simplification implementation specification](2026-09-04-simplification-implementation-spec.md).
+> Profile composition, preparation, Harbor-HF retry and recovery loops,
+> publication, and managed Endpoint contracts below are obsolete. The retained
+> Harbor ownership notes explain the source of the current boundary.
+
+This document defined the earlier boundary between Harbor and Harbor-HF.
+Historical evidence remains readable at its pinned revisions.
 
 ## Ownership boundary
 
@@ -121,7 +144,7 @@ Direct-inference agents are loaded through Harbor's public
   "env": {
     "OPENAI_API_KEY": "${HF_INFERENCE_TOKEN}",
     "OPENAI_BASE_URL": "<approved-upstream>",
-    "HARBOR_HF_OUTPUT_LIMIT": "<locked-limit>",
+    "HARBOR_HF_MAX_OUTPUT_TOKENS": "<locked-limit>",
     "HARBOR_HF_PROVIDER_TIMEOUT_SECONDS": "<locked-timeout>"
   },
   "extra_allowed_hosts": ["<upstream-host>"]
@@ -131,13 +154,6 @@ Direct-inference agents are loaded through Harbor's public
 Harbor expands the credential reference in the execution Job. The selected
 agent configures its native runtime from these values and calls the upstream
 directly.
-
-The non-secret output limit uses `HARBOR_HF_OUTPUT_LIMIT`: Harbor's environment
-serializer treats names containing `TOKEN` as secrets, corrupting literal numeric
-limits during lock serialization. Keep credential redaction and strict execution
-contract validation enabled. Deploy the matching control service and worker image
-together; custom deployment profiles must pin the updated worker too. Existing Run
-locks are immutable: start a fresh Run rather than retrying an affected old lock.
 
 Approved immutable profiles for pinned historical workers may explicitly
 require the compatibility bridge instead. That launch path is selected by

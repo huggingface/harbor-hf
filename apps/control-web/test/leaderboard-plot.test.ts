@@ -5,35 +5,37 @@ describe("leaderboard plot layout", () => {
   it("places a cheaper higher-scoring point up and left of a dominated point", () => {
     const layout = leaderboardPlotLayout([
       {
-        publication_id: "cheap-strong",
+        key: "cheap-strong",
         model: "model-a",
-        harness: "opencode",
-        observed_microusd: 10_000,
-        primary_metric_value: 0.9,
-        primary_metric_unit: "score",
+        agent: "command-agent",
+        cost_usd_per_trial: 0.01,
+        pass_rate: 0.9,
         pareto: true,
       },
       {
-        publication_id: "costly-weak",
+        key: "costly-weak",
         model: "model-b",
-        harness: "pi",
-        observed_microusd: 90_000,
-        primary_metric_value: 0.2,
-        primary_metric_unit: "score",
+        agent: "pi",
+        cost_usd_per_trial: 0.09,
+        pass_rate: 0.2,
         pareto: false,
       },
     ]);
-    const cheap = layout.points.find(
-      (point) => point.row.publication_id === "cheap-strong",
-    );
-    const costly = layout.points.find(
-      (point) => point.row.publication_id === "costly-weak",
-    );
+    const cheap = layout.points.find((point) => point.row.key === "cheap-strong");
+    const costly = layout.points.find((point) => point.row.key === "costly-weak");
     expect(cheap).toBeDefined();
     expect(costly).toBeDefined();
     expect(cheap?.x).toBeLessThan(costly?.x ?? 0);
     expect(cheap?.y).toBeLessThan(costly?.y ?? 0);
-    expect(layout.frontier).toHaveLength(1);
-    expect(layout.frontier[0]).toEqual({ x: cheap?.x, y: cheap?.y });
+    expect(layout.frontier).toEqual([{ x: cheap?.x, y: cheap?.y }]);
+  });
+
+  it("returns an empty plot without invalid scales", () => {
+    expect(leaderboardPlotLayout([])).toMatchObject({
+      points: [],
+      frontier: [],
+      xTicks: [],
+      yTicks: [],
+    });
   });
 });

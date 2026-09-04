@@ -6,16 +6,16 @@ import Database from "better-sqlite3";
 import {
   authorizationCodeGrant,
   buildAuthorizationUrl,
-  type Configuration,
   calculatePKCECodeChallenge,
   discovery,
   fetchUserInfo,
   randomPKCECodeVerifier,
   randomState,
   skipSubjectCheck,
+  type Configuration,
 } from "openid-client";
 
-export type AuthRole = "operator" | "reader" | "submitter";
+export type AuthRole = "operator" | "reader";
 
 export class BearerRateLimitError extends Error {}
 export class InvalidBearerCredentialError extends Error {}
@@ -404,7 +404,7 @@ export class AuthenticationService {
     const acl = await this.acl();
     if (acl?.operators.includes(subject)) return "operator";
     if (acl?.readers.includes(subject)) return "reader";
-    return acl ? "submitter" : null;
+    return null;
   }
 
   csrfValid(session: SessionRow, token: string | undefined): boolean {

@@ -4,7 +4,7 @@
   "title": "Saved Workbench Configuration V1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "revision", "recipe"],
+  "required": ["schema_version", "revision", "name", "harbor_job_config"],
   "properties": {
     "schema_version": {
       "const": "v1"
@@ -13,10 +13,15 @@
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$"
     },
-    "recipe": {
-      "$ref": "agent-workbench-v1.schema.json",
-      "tsType": "import(\"./agent-workbench-v1.js\").AgentWorkbenchRecipeV1",
-      "title": "Saved Workbench Recipe"
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "harbor_job_config": {
+      "$ref": "harbor-job-config-v1.schema.json",
+      "tsType": "import(\"./harbor-job-config-v1.js\").HarborJobConfigV1",
+      "title": "Saved Harbor Configuration"
     }
   }
 }

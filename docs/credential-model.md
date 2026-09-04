@@ -1,3 +1,5 @@
+> Historical pre-integration design; superseded by [execution-disabled integration](execution-disabled-integration.md). Do not use these instructions to launch or deploy.
+
 # Minimal credential model
 
 Public documentation checked on 2026-09-04. This describes current credentials

@@ -2,8 +2,8 @@ import { createContext, type ReactNode, useContext } from "react";
 
 export interface DisplayActor {
   username: string;
-  role: "operator" | "reader" | "submitter";
-  transport: "session" | "development";
+  role: "operator" | "reader";
+  transport: "session" | "bearer" | "development";
 }
 
 interface ControlState {

@@ -9,7 +9,6 @@ __pycache__/
 build/
 coverage/
 dist/
-mutants/
 node_modules/
 playwright-report/
 test-results/

@@ -3,25 +3,28 @@ import {
   type SavedWorkbenchConfigurationV1,
   sha256,
   validateSavedWorkbench,
+  validateStrictHarborJobConfig,
 } from "@harbor-hf/contracts";
-import { createJson, type ImmutableObjectStore } from "./store.js";
-import { compileAgentWorkbenchRecipe } from "./workbench.js";
+import { createJson, type ObjectStore } from "./store.js";
+import { containsCredentialMaterial } from "./presets.js";
 
 function ownerPrefix(owner: string): string {
-  return `control/schema=v1/workbench/configurations/${sha256(owner).slice(7)}/`;
+  return `workbench/configurations/${sha256(owner)}/`;
 }
-
 export async function saveWorkbenchConfiguration(
-  store: ImmutableObjectStore,
+  store: ObjectStore,
   owner: string,
-  input: unknown,
+  input: { name: string; harbor_job_config: unknown },
 ): Promise<SavedWorkbenchConfigurationV1> {
-  const preview = compileAgentWorkbenchRecipe(input);
-  const record: SavedWorkbenchConfigurationV1 = {
+  if (containsCredentialMaterial(input))
+    throw new Error("configuration contains credential material");
+  const config = validateStrictHarborJobConfig(input.harbor_job_config);
+  const content = { name: input.name, harbor_job_config: config };
+  const record = validateSavedWorkbench({
     schema_version: "v1",
-    revision: preview.recipe_digest,
-    recipe: preview.recipe,
-  };
+    revision: `sha256:${sha256(canonicalJson(content))}`,
+    ...content,
+  });
   await createJson(
     store,
     `${ownerPrefix(owner)}${record.revision.slice(7)}.json`,
@@ -29,29 +32,33 @@ export async function saveWorkbenchConfiguration(
   );
   return record;
 }
-
 export async function listWorkbenchConfigurations(
-  store: ImmutableObjectStore,
+  store: ObjectStore,
   owner: string,
 ): Promise<SavedWorkbenchConfigurationV1[]> {
   const prefix = ownerPrefix(owner);
-  const entries = await store.list(prefix);
   const records = await Promise.all(
-    entries.map(async (entry) => {
-      const record = validateSavedWorkbench<SavedWorkbenchConfigurationV1>(
+    (await store.list(prefix)).map(async (entry) => {
+      const record = validateSavedWorkbench(
         JSON.parse(new TextDecoder().decode(await store.read(entry.key))),
       );
+      const digest =
+        "sha256:" +
+        sha256(
+          canonicalJson({
+            name: record.name,
+            harbor_job_config: record.harbor_job_config,
+          }),
+        );
       if (
-        record.revision !== sha256(canonicalJson(record.recipe)) ||
-        entry.key !== `${prefix}${record.revision.slice(7)}.json`
+        record.revision !== digest ||
+        entry.key !== `${prefix}${digest.slice(7)}.json`
       )
         throw new Error("saved configuration integrity check failed");
       return record;
     }),
   );
   return records.sort(
-    (a, b) =>
-      a.recipe.name.localeCompare(b.recipe.name) ||
-      a.revision.localeCompare(b.revision),
+    (a, b) => a.name.localeCompare(b.name) || a.revision.localeCompare(b.revision),
   );
 }

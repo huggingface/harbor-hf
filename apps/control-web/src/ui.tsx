@@ -269,11 +269,17 @@ export function ErrorNotice({
           <p className="font-medium text-slate-100">
             {stale ? "Showing saved data" : errorTitle(error)}
           </p>
-          <p className="mt-1 text-slate-400">
+          <p className="mt-1 whitespace-pre-line break-words text-slate-400">
             {stale
               ? `The latest refresh failed: ${normalized.message}`
               : normalized.message}
           </p>
+          {apiError ? (
+            <p className="mt-2 text-xs text-slate-500">
+              Code: {apiError.code} ·{" "}
+              {apiError.status > 0 ? `HTTP ${apiError.status}` : "network error"}
+            </p>
+          ) : null}
           {apiError?.retryAt ? (
             <p className="mt-1 text-xs text-slate-500">
               Retry after {new Date(apiError.retryAt).toLocaleTimeString()}.
