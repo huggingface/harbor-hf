@@ -117,6 +117,15 @@ const presets: PresetsResponse = {
       benchmark: "terminal-bench-2-1",
       preset: "one-task-1-trial",
       leaderboard_eligible: true,
+      job: {
+        datasets: [{ repo: "https://example.test/tasks.git@revision", path: "tasks" }],
+        n_attempts: 1,
+        n_concurrent_trials: 1,
+        environment: {
+          type: "hf-sandbox",
+          kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
+        },
+      },
     },
   ],
   agents: [
@@ -284,8 +293,15 @@ describe("restored control console", () => {
     for (const name of ["Leaderboard", "Overview", "Workbench", "Runs", "Jobs"])
       expect(screen.getAllByRole("link", { name }).length).toBeGreaterThan(0);
     expect(screen.getByText("Maximum active parent Jobs")).toBeVisible();
+    const model = await screen.findByLabelText("Model");
+    expect(
+      screen.getByRole("combobox", { name: /^Benchmark preset/ }),
+    ).toHaveTextContent("terminal-bench-2-1 · one-task-1-trial");
+    expect(
+      screen.getByText("Hardware: CPU Upgrade · 1 attempt · 1 concurrent trial"),
+    ).toBeVisible();
 
-    await user.type(await screen.findByLabelText("Model"), "publisher/new-model");
+    await user.type(model, "publisher/new-model");
     await user.type(screen.getByLabelText("Provider"), "provider");
     await user.click(screen.getByRole("button", { name: "Submit run" }));
     await waitFor(() => expect(apiMocks.submitRun).toHaveBeenCalledOnce());

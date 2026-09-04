@@ -107,6 +107,12 @@ function trial(
 
 describe("run submission", () => {
   it("resolves a reviewed preset into one Harbor job", async () => {
+    expect(
+      presets.benchmark("terminal-bench-2-1", "one-task-1-trial").job.environment,
+    ).toEqual({
+      type: "hf-sandbox",
+      kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
+    });
     const result = await submit();
     expect(result.created).toBe(true);
     expect(result.run.harbor_job_config).toMatchObject({
@@ -122,8 +128,34 @@ describe("run submission", () => {
           kwargs: { version: "0.84.4", thinking: "off" },
         },
       ],
+      environment: {
+        import_path: "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
+        kwargs: {
+          flavor: "cpu-upgrade",
+          job_timeout: "30m",
+          run_label: result.run.run_id,
+        },
+      },
     });
     expect(projection.run(result.run.run_id)?.status).toBe("queued");
+  });
+
+  it("keeps the reviewed full-run CPU flavor in the Harbor job", async () => {
+    const result = await service.submitPreset(
+      {
+        ...input,
+        benchmark: { name: "terminal-bench-2-1", preset: "all-tasks-1-trial" },
+      },
+      "full-run",
+      "test-subject",
+    );
+    expect(result.run.harbor_job_config).toMatchObject({
+      n_attempts: 1,
+      n_concurrent_trials: 8,
+      environment: {
+        kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
+      },
+    });
   });
 
   it("submits a Workbench recipe through the same one-Run Harbor contract", async () => {

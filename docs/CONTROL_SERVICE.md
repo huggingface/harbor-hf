@@ -16,6 +16,8 @@ and reconciles parent and child HF Jobs.
 The service is the only run control authority. Parent Jobs call Harbor and write
 Harbor's normal job folder to the mounted Bucket. They also keep one immutable
 cost receipt for each Harbor attempt, so retry cost survives a parent restart.
+Reviewed benchmark presets select either CPU Basic or CPU Upgrade for temporary
+task Jobs; they cannot select accelerator hardware.
 
 ## Persistent resources
 

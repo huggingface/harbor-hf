@@ -17,6 +17,7 @@ import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   actOnRun,
+  type BenchmarkPreset,
   type ParentJob,
   type PresetSubmission,
   type PresetsResponse,
@@ -145,6 +146,12 @@ function fieldClass(): string {
   return "mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-400";
 }
 
+function hardwareLabel(preset: BenchmarkPreset): string {
+  return preset.job.environment.kwargs.flavor === "cpu-upgrade"
+    ? "CPU Upgrade"
+    : "CPU Basic";
+}
+
 function SubmissionForm({ presets }: { presets: PresetsResponse }) {
   const client = useQueryClient();
   const firstBenchmark = presets.benchmarks[0];
@@ -161,6 +168,9 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
   const [ceiling, setCeiling] = useState("1");
   const [role, setRole] = useState<"final" | "diagnostic">("diagnostic");
   const [createdRun, setCreatedRun] = useState<string | null>(null);
+  const selectedBenchmark = presets.benchmarks.find(
+    (item) => `${item.benchmark}\n${item.preset}` === benchmarkKey,
+  );
   const selectedAgent = presets.agents.find(
     (item) => `${item.agent}\n${item.version}` === agentKey,
   );
@@ -211,6 +221,11 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
             </option>
           ))}
         </select>
+        {selectedBenchmark ? (
+          <span className="mt-1 block text-xs text-slate-500">
+            {`Hardware: ${hardwareLabel(selectedBenchmark)} · ${selectedBenchmark.job.n_attempts} ${selectedBenchmark.job.n_attempts === 1 ? "attempt" : "attempts"} · ${selectedBenchmark.job.n_concurrent_trials} concurrent ${selectedBenchmark.job.n_concurrent_trials === 1 ? "trial" : "trials"}`}
+          </span>
+        ) : null}
       </label>
       <label className="block text-sm text-slate-300">
         Agent

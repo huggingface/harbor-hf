@@ -13,7 +13,7 @@
     "job": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["datasets", "n_attempts", "n_concurrent_trials"],
+      "required": ["datasets", "n_attempts", "n_concurrent_trials", "environment"],
       "properties": {
         "datasets": {
           "type": "array",
@@ -41,6 +41,23 @@
         },
         "n_attempts": { "type": "integer", "minimum": 1, "maximum": 100 },
         "n_concurrent_trials": { "type": "integer", "minimum": 1, "maximum": 128 },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "kwargs"],
+          "properties": {
+            "type": { "const": "hf-sandbox" },
+            "kwargs": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["flavor", "job_timeout"],
+              "properties": {
+                "flavor": { "enum": ["cpu-basic", "cpu-upgrade"] },
+                "job_timeout": { "const": "30m" }
+              }
+            }
+          }
+        },
         "timeout_multiplier": { "type": "number", "exclusiveMinimum": 0 },
         "agent_timeout_multiplier": { "type": "number", "exclusiveMinimum": 0 },
         "verifier_timeout_multiplier": { "type": "number", "exclusiveMinimum": 0 },

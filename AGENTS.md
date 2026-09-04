@@ -22,22 +22,41 @@
   `uv run python scripts/check_public_privacy.py .`. Inspect the complete diff
   and public metadata. Remove private values before publication.
 
-## Harbor boundary
+## Harbor-first design
 
-- Harbor owns `JobConfig`, benchmark task resolution, trial execution,
-  concurrency, retries, resume, locks, results, rewards, costs, trajectories,
-  and built-in agents.
-- Harbor-HF owns authenticated submission, reviewed presets, the control Space
-  and Bucket, parent and child HF Job lifecycle, post-trial cost stops, the
-  SQLite projection, the web console, and the leaderboard.
-- Before adding behavior, check the pinned Harbor source. Name the checked file
-  in the pull request description.
-- Use Harbor's public APIs. Do not add a second task loop, retry loop, resume
-  rule, lock writer, result writer, or benchmark parser.
-- Keep benchmark and model names as data. Keep harness-specific behavior in a
-  Harbor agent plugin behind `import_path`.
-- If Harbor lacks required general behavior, document the gap and get approval
-  before adding a temporary compatibility implementation.
+- You MUST NOT duplicate behavior, configuration, state, or data that Harbor
+  already provides. This requirement is the first and controlling design rule
+  for all work in this repository.
+- You MUST read [the design principles](docs/DESIGN_PRINCIPLES.md) before you
+  design or implement a behavior change.
+- A feature request MUST NOT be treated as proof that Harbor lacks the feature.
+- Before you add a field, record, loop, parser, adapter, or UI control, you MUST
+  inspect the pinned Harbor source and relevant history. The pull request
+  description MUST name the checked files and public APIs.
+- When Harbor already has the behavior or field, you MUST use Harbor directly
+  through its native API and configuration. You MUST treat Harbor output as
+  authoritative. You MUST NOT add an alias, mirrored field, fallback reader,
+  second state machine, or renamed wrapper for the same concept. For example,
+  you MUST NOT add `environment_flavor` when Harbor already uses
+  `environment.kwargs.flavor`.
+- Harbor owns `JobConfig` and benchmark task resolution. Harbor owns trial
+  execution, including concurrency and retry behavior. It controls resume and
+  locking behavior. Harbor results are authoritative for rewards and reported
+  costs. The same rule applies to trajectories and built-in agent output.
+- Harbor-HF owns authenticated submission and reviewed restrictions. It also
+  owns the control Space and Bucket as well as HF Job lifecycle and cost stops.
+  The disposable SQLite projection and web console also belong in Harbor-HF.
+  Harbor-HF owns the leaderboard.
+- You MUST keep benchmark and model names as data. You MUST keep necessary
+  harness-specific behavior in a Harbor agent plugin behind `import_path`.
+- If you cannot prove that Harbor lacks required general behavior, you MUST stop
+  local design work and report the evidence. You MUST get explicit user
+  confirmation before you open a Harbor issue or pull request.
+- A temporary local implementation MUST have separate approval for an exact
+  upstream gap. It MUST name the Harbor revision that permits its removal.
+- Before you finish a behavior change, you MUST compare each changed schema or
+  persisted field with Harbor. You MUST make the same comparison for API and UI
+  values. You MUST remove any duplicate or renamed Harbor concept.
 
 ## Storage and resources
 

@@ -38,6 +38,13 @@ n_tasks?: number
 })[]]
 n_attempts: number
 n_concurrent_trials: number
+environment: {
+type: "hf-sandbox"
+kwargs: {
+flavor: ("cpu-basic" | "cpu-upgrade")
+job_timeout: "30m"
+}
+}
 timeout_multiplier?: number
 agent_timeout_multiplier?: number
 verifier_timeout_multiplier?: number

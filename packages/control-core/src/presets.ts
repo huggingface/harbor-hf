@@ -37,6 +37,19 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
+function labeledEnvironment(
+  environment: BenchmarkPresetV1["job"]["environment"],
+  runId: string,
+) {
+  return {
+    import_path: LABELED_ENVIRONMENT,
+    kwargs: {
+      ...clone(environment.kwargs),
+      run_label: runId,
+    },
+  };
+}
+
 async function jsonFiles<T>(
   directory: string,
   validator: (value: unknown) => T,
@@ -113,6 +126,7 @@ export class PresetCatalog {
       throw new Error("reasoning effort is not supported by the agent preset");
 
     const fragment = clone(agent.harbor_agent) as HarborAgentFragment;
+    const job = clone(benchmark.job);
     const kwargs = { ...(fragment.kwargs ?? {}) };
     if (agent.reasoning_option !== null)
       kwargs[agent.reasoning_option] = submission.model.reasoning_effort;
@@ -134,18 +148,11 @@ export class PresetCatalog {
       kwargs,
     };
     const config = {
-      ...clone(benchmark.job),
+      ...job,
       job_name: "job",
       jobs_dir: `${mountRoot}/runs/${runId}`,
       agents: [harborAgent],
-      environment: {
-        import_path: LABELED_ENVIRONMENT,
-        kwargs: {
-          flavor: "cpu-basic",
-          job_timeout: "30m",
-          run_label: runId,
-        },
-      },
+      environment: labeledEnvironment(job.environment, runId),
     };
     return validateHarborJobConfig(config);
   }
@@ -164,6 +171,7 @@ export class PresetCatalog {
       throw new Error("Workbench command agents support reasoning effort off only");
     if (fragment.import_path !== "harbor_hf_agents.command_agent.agent:CommandAgent")
       throw new Error("Workbench requires the reviewed command agent plugin");
+    const job = clone(benchmark.job);
     const harborAgent = {
       import_path: fragment.import_path,
       ...(fragment.override_setup_timeout_sec
@@ -177,18 +185,11 @@ export class PresetCatalog {
       kwargs: clone(fragment.kwargs ?? {}),
     };
     return validateHarborJobConfig({
-      ...clone(benchmark.job),
+      ...job,
       job_name: "job",
       jobs_dir: `${mountRoot}/runs/${runId}`,
       agents: [harborAgent],
-      environment: {
-        import_path: LABELED_ENVIRONMENT,
-        kwargs: {
-          flavor: "cpu-basic",
-          job_timeout: "30m",
-          run_label: runId,
-        },
-      },
+      environment: labeledEnvironment(job.environment, runId),
     });
   }
 }

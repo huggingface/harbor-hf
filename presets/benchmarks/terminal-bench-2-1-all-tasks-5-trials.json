@@ -12,6 +12,13 @@
     ],
     "n_attempts": 5,
     "n_concurrent_trials": 8,
+    "environment": {
+      "type": "hf-sandbox",
+      "kwargs": {
+        "flavor": "cpu-upgrade",
+        "job_timeout": "30m"
+      }
+    },
     "agent_timeout_multiplier": 4,
     "agent_setup_timeout_multiplier": 2
   }

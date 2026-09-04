@@ -32,7 +32,9 @@ Harbor-HF owns:
 
 The integration uses Harbor's public `Job.create()`, `Job.run()`,
 `Job.on_trial_ended()`, and `len(job)` APIs. It does not contain a second trial
-loop or result writer.
+loop or result writer. Each reviewed benchmark preset also selects `cpu-basic`
+or `cpu-upgrade` for its temporary task Jobs; presets cannot select accelerator
+hardware.
 
 ## Components
 
