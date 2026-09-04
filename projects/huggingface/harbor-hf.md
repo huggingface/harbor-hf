@@ -75,8 +75,9 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 
 ### Execution-disabled integration amendment (2026-09-04)
 
-Status: approved
+Status: completed
 Approved at: 2026-09-04T16:01:01Z
+Completed at: 2026-09-04T16:23:54Z
 
 - The user explicitly approved proceeding with execution-disabled integration:
   merge fresh main into `feat/leaderboard-submissions`, reconcile authoring UX
@@ -705,3 +706,25 @@ Status: completed
   resolves the prior safety stop by disabling incompatible execution, not by
   authorizing credential forwarding or a local Harbor patch. OAuth research
   remains separate and deferred; all operational prohibitions remain in force.
+
+### 2026-09-04 execution-disabled integration completion
+
+- Merged reviewed main into the feature branch in `e291f43`, pushed that branch
+  without force, and updated the existing canonical draft PR 179. The default
+  branch and PR were not merged. Authorization history is preserved additively.
+- Execution fails closed before admission and credentials. Removed the parent
+  worker, private Hub/Harbor patches and forwarding. Native immutable harness
+  authoring and configuration-only preview are available; the old publication
+  engine's submission UI was not restored and remains a disclosed follow-up.
+- Passed 398 unit tests, eight mocked browser tests, 46 root Python tests with
+  87.98% coverage, 32 agent-package tests, formatting/lint/types/build/generated
+  checks, dependency checks and audits, DRY, the non-baseline structure check,
+  public privacy, and both local Linux AMD64 Docker builds.
+- Remaining red gates are disclosed in the draft: TypeScript coverage below 85%
+  (72.83% lines, 70.22% statements, 68.59% functions, 63.14% branches), the absent
+  structure baseline, and the retired mutation script. No threshold was lowered.
+- No HF operational calls, deployment, Jobs, inference, resources, credential
+  transfers, reset, migration, Run actions, or real result publication occurred.
+  Per-user OAuth remains separate research, with no forwarding implementation.
+- This completes only the approved disabled integration and visibility scope,
+  not production readiness or any earlier operational milestone.
