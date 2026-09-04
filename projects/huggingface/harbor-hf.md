@@ -204,6 +204,25 @@ Approved at: 2026-09-04T10:50:12Z
 - Commit and push the authorization and any sanitized operational documentation
   to the approved feature branch only; no default-branch push or merge.
 
+### Browser-authenticated installer verification (2026-09-04)
+
+Approved at: 2026-09-04T11:01:54Z
+
+- Replace the installer's bearer-only activation requirement with verification
+  through the existing HF browser OAuth login. Implement and test this local
+  installer change without adding a new service credential, OAuth application,
+  server authentication authority, or persistent credential store.
+- Keep browser authentication scoped to the exact planned control origin and
+  operator identity. Do not export session cookies, copy local management
+  credentials into the browser or Space, persist browser login state, or log
+  credentials. Preserve existing source, health, write-mode, and activity gates.
+- Commit and push reviewed changes to `feat/leaderboard-submissions`, then
+  continue the previously approved provenance reconciliation and test deployment.
+  Browser sign-in may require the user's interactive participation; never bypass
+  it or claim authenticated verification without observing success.
+- Existing constraints remain: no new persistent resources, credential transfer,
+  benchmark execution, result publication/migration, default-branch push, or merge.
+
 ### Scope
 
 - Diagnose the failed post-reset installation using sanitized read-only
@@ -690,3 +709,9 @@ authorization effect.
 
 - Approved the pending reconciliation request: repair only proven installation
   metadata and then continue deployment, preserving credentials and Bucket data.
+
+### 2026-09-04 browser-authenticated installer verification
+
+- Approved replacing the missing application-bearer requirement with existing
+  HF browser login verification before continuing deployment. Preserve all
+  verification gates and the two-token runtime credential boundary.
