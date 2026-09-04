@@ -5,9 +5,7 @@
   "type": "module",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./profiles": "./dist/profiles.js",
-    "./workbench": "./dist/workbench.js"
+    ".": "./dist/index.js"
   },
   "dependencies": {
     "@harbor-hf/contracts": "0.1.0",

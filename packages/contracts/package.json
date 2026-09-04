@@ -6,7 +6,6 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
-    "./canonical-json": "./dist/canonical-json.mjs",
     "./schemas/*": "./schemas/*"
   },
   "scripts": {

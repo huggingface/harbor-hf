@@ -7,14 +7,9 @@ tags: [agents, opencode, providers]
 
 # Bind the OpenCode chat driver
 
-> **Historical record — superseded 2026-09-02.** The failure observations and
-> approved work below are retained as dated facts. The described inference
-> implementation is retired and must not be used for new work. Current agents
-> connect directly through the resolved Harbor `AgentConfig`; see
-> [`harbor-integration-contract.md`](harbor-integration-contract.md).
-
-**Historical status.** This was an approved implementation plan with a
-source-only completion boundary. It is now superseded by the notice above.
+**Status.** Approved implementation plan. This work ends after the tested source
+change is committed and pushed to the existing task branch. It does not deploy a
+worker or run a remote canary.
 
 Durable execution evidence showed that OpenCode sent a Responses request while
 the locked Job route allowed only Chat Completions. The strict loopback bridge

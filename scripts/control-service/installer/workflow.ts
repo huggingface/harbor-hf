@@ -28,7 +28,6 @@ import {
   SECRET_NAMES,
   type SpaceState,
   validateOrigin,
-  workbenchVariables,
   writePrivatePlan,
 } from "./model.js";
 import type { SourceAdapter } from "./source.js";
@@ -335,7 +334,6 @@ function variablesForPhase(
       manifestDigest: plan.bundle.manifest_digest,
       phase,
     },
-    workbenchVariables(plan.expected_variables),
   );
 }
 
@@ -513,7 +511,6 @@ function assertManagedVariablesForPause(plan: InstallPlan, space: SpaceState): v
       manifestDigest: bundleDigest as string,
       phase,
     },
-    workbenchVariables(plan.expected_variables),
   );
   if (
     canonicalJson(space.variables) !== canonicalJson(variables) &&
@@ -694,7 +691,6 @@ export async function planInstall(
     throw new Error("existing Space install ID is invalid");
   }
   const origin = observed.space?.origin ?? null;
-  const workbench = workbenchVariables(observed.space?.variables ?? {});
   const variables = expectedVariables(
     ids.namespace,
     ids.bucketId,
@@ -706,10 +702,9 @@ export async function planInstall(
       manifestDigest: bundleManifestDigest,
       phase: "installed",
     },
-    workbench,
   );
   const phase = observed.space ? observedPhase(observed.space) : null;
-  let variablesForObserved =
+  const variablesForObserved =
     phase && phase !== "installed"
       ? expectedVariables(
           ids.namespace,
@@ -722,19 +717,8 @@ export async function planInstall(
             manifestDigest: bundleManifestDigest,
             phase,
           },
-          workbench,
         )
       : variables;
-  const observedWriteMode = observed.space?.variables.HARBOR_HF_WRITE_MODE;
-  if (
-    phase === "installed" &&
-    (observedWriteMode === "enabled" || observedWriteMode === "disabled")
-  ) {
-    variablesForObserved = {
-      ...variablesForObserved,
-      HARBOR_HF_WRITE_MODE: observedWriteMode,
-    };
-  }
   if (observed.space && isLegacySpace(observed.space)) {
     assertLegacyInstalledSafe(observed, {
       spaceId: ids.spaceId,
@@ -1321,49 +1305,6 @@ function assertInstalledActivationState(
   return state.space;
 }
 
-function assertRecordedInstalledDisableState(
-  plan: InstallPlan,
-  state: RemoteState,
-  writeMode: WriteMode,
-): SpaceState {
-  assertPreconditionsEqual(plan.observed_preconditions, state);
-  const space = state.space;
-  if (!space || !state.bucket || observedPhase(space) !== "installed") {
-    throw new Error("disable preconditions are not an installed target");
-  }
-  const sourceRevision = space.variables.HARBOR_HF_SOURCE_REVISION;
-  const manifestDigest = space.variables.HARBOR_HF_BUNDLE_MANIFEST_DIGEST;
-  if (!sourceRevision || !manifestDigest) {
-    throw new Error("disable preconditions have an invalid install binding");
-  }
-  const variables = expectedVariables(
-    plan.targets.namespace,
-    plan.targets.bucket_id,
-    space.origin,
-    plan.principal.subject,
-    sourceRevision,
-    {
-      installId: plan.install_id,
-      manifestDigest,
-      phase: "installed",
-    },
-    workbenchVariables(plan.expected_variables),
-  );
-  assertRemoteSafe(
-    state,
-    {
-      spaceId: plan.targets.space_id,
-      bucketId: plan.targets.bucket_id,
-      variables: {
-        ...variables,
-        HARBOR_HF_WRITE_MODE: writeMode,
-      },
-    },
-    { requireRunning: false, requireAllSecrets: true },
-  );
-  return space;
-}
-
 async function forceDisabledAndPaused(
   plan: InstallPlan,
   dependencies: InstallerDependencies,
@@ -1533,12 +1474,7 @@ export async function disableInstall(
   );
   if (!observed.space) throw new Error("disable Space is missing");
   const currentMode = writeModeOf(observed.space);
-  let currentSpace: SpaceState;
-  try {
-    currentSpace = assertInstalledActivationState(plan, observed, currentMode);
-  } catch {
-    currentSpace = assertRecordedInstalledDisableState(plan, observed, currentMode);
-  }
+  const currentSpace = assertInstalledActivationState(plan, observed, currentMode);
   const tempDirectory = await mkdtemp(resolve(tmpdir(), "harbor-hf-disable-"));
   try {
     const disabledFile = await writePrivateEnvironmentFile(
@@ -1666,7 +1602,6 @@ function assertCredentialRebindSafe(plan: InstallPlan, state: RemoteState): void
           manifestDigest: manifest,
           phase: "credentials_required",
         },
-        workbenchVariables(plan.expected_variables),
       ),
     },
     { requireRunning: false, requireAllSecrets: false },
@@ -1813,180 +1748,6 @@ function assertCompletionState(
   return "installed";
 }
 
-function isOnlineDisabledUpgradeEligible(
-  plan: InstallPlan,
-  state: RemoteState,
-  options: {
-    freshContinuation: boolean;
-    replaceCredentials: boolean;
-  },
-): boolean {
-  const plannedSpace = plan.observed_preconditions.space;
-  const space = state.space;
-  return (
-    !options.freshContinuation &&
-    !options.replaceCredentials &&
-    !isLegacyMigrationPlan(plan) &&
-    plan.expected_variables.HARBOR_HF_WRITE_MODE === "disabled" &&
-    plannedSpace !== null &&
-    observedPhase(plannedSpace) === "installed" &&
-    state.bucket !== null &&
-    space !== null &&
-    observedPhase(space) === "installed" &&
-    space.runtimeStage === "RUNNING" &&
-    space.variables.HARBOR_HF_WRITE_MODE === "disabled" &&
-    sameStrings(space.secretNames, SECRET_NAMES)
-  );
-}
-
-function assertOnlineDisabledUpgradeEligible(
-  plan: InstallPlan,
-  state: RemoteState,
-  variableTransition: boolean,
-): void {
-  assertCompletionState(plan, state, false, variableTransition);
-  if (
-    !isOnlineDisabledUpgradeEligible(plan, state, {
-      freshContinuation: false,
-      replaceCredentials: false,
-    })
-  ) {
-    throw new Error("online upgrade eligibility changed");
-  }
-}
-
-function assertExactOnlineState(
-  expected: RemoteState,
-  observed: RemoteState,
-  message: string,
-): void {
-  if (canonicalJson(expected) !== canonicalJson(observed)) {
-    throw new Error(message);
-  }
-}
-
-function assertOnlineUploadTransition(
-  accepted: RemoteState,
-  observed: RemoteState,
-  uploadSha: string,
-  uploadedNow: boolean,
-): void {
-  if (!accepted.space || !accepted.bucket || !observed.space || !observed.bucket) {
-    throw new Error("online upgrade resources are incomplete");
-  }
-  if (!uploadedNow) {
-    assertExactOnlineState(
-      accepted,
-      observed,
-      "online upgrade state drifted before variable update",
-    );
-  } else {
-    const normalized = structuredClone(observed);
-    if (!normalized.space) throw new Error("online upgrade Space is missing");
-    normalized.space.sha = accepted.space.sha;
-    normalized.space.runtimeStage = accepted.space.runtimeStage;
-    assertExactOnlineState(
-      accepted,
-      normalized,
-      "online upgrade state changed outside the exact upload",
-    );
-  }
-  if (observed.space.sha !== uploadSha) {
-    throw new Error("Space upload revision does not match");
-  }
-}
-
-function assertOnlineConfiguredState(
-  plan: InstallPlan,
-  state: RemoteState,
-  variables: Record<string, string>,
-  uploadSha: string,
-): void {
-  assertRemoteSafe(
-    state,
-    {
-      spaceId: plan.targets.space_id,
-      bucketId: plan.targets.bucket_id,
-      variables,
-    },
-    { requireRunning: false, requireAllSecrets: true },
-  );
-  if (
-    !state.space ||
-    canonicalJson(state.space.variables) !== canonicalJson(variables)
-  ) {
-    throw new Error("configured Space variables do not exactly match");
-  }
-  if (state.space.sha !== uploadSha) {
-    throw new Error("configured Space upload revision does not match");
-  }
-}
-
-async function completeOnlineDisabledUpgrade(
-  plan: InstallPlan,
-  observed: RemoteState,
-  stagedBundle: string,
-  variableTransition: boolean,
-  dependencies: InstallerDependencies,
-  receipt?: BootstrapReceipt,
-  persistReceipt?: (receipt: BootstrapReceipt) => Promise<void>,
-): Promise<InstalledResult> {
-  if (!observed.space || !observed.bucket) {
-    throw new Error("online upgrade resources are incomplete");
-  }
-  const acceptedOrigin = observed.space.origin;
-  const accepted = structuredClone(observed);
-  let current = observed;
-
-  await dependencies.hf.setProtected(plan.targets.space_id);
-  await dependencies.hf.wait(plan.targets.space_id);
-  current = await observePlan(plan, dependencies);
-  assertExactOnlineState(
-    accepted,
-    current,
-    "online upgrade state drifted after protection reassertion",
-  );
-  assertOnlineDisabledUpgradeEligible(plan, current, variableTransition);
-
-  let uploadSha = receipt?.uploaded_sha;
-  let uploadedNow = false;
-  if (!uploadSha) {
-    uploadedNow = true;
-    uploadSha = await dependencies.hf.uploadMirror(
-      plan.targets.space_id,
-      stagedBundle,
-      plan.source.revision,
-    );
-    current = await observePlan(plan, dependencies);
-  }
-  assertOnlineUploadTransition(accepted, current, uploadSha, uploadedNow);
-  if (uploadedNow && receipt) {
-    await persistReceipt?.({ ...receipt, uploaded_sha: uploadSha });
-  }
-
-  const targetVariables = concreteVariables(plan, acceptedOrigin);
-  const variablesFile = await writePrivateEnvironmentFile(
-    dirname(stagedBundle),
-    "variables-installed-online.env",
-    targetVariables,
-  );
-  current = await observePlan(plan, dependencies);
-  assertOnlineUploadTransition(accepted, current, uploadSha, uploadedNow);
-  await dependencies.hf.setVariables(plan.targets.space_id, variablesFile);
-  current = await observePlan(plan, dependencies);
-  assertOnlineConfiguredState(plan, current, targetVariables, uploadSha);
-
-  await waitForConfigureRuntime(plan.targets.space_id, dependencies);
-  return {
-    status: "installed",
-    verification: await verifyPlan(plan, dependencies, uploadSha, {
-      pollConfigureReadiness: true,
-    }),
-    control_credential_warnings: [],
-    control_credential_warnings_reported: false,
-  };
-}
-
 async function completeInstall(
   plan: InstallPlan,
   observed: RemoteState,
@@ -2022,24 +1783,6 @@ async function completeInstall(
     let phase = freshContinuation
       ? assertFreshCompletionEntrySafe(plan, current)
       : assertCompletionState(plan, current, false, variableTransition);
-    if (
-      isOnlineDisabledUpgradeEligible(plan, current, {
-        freshContinuation,
-        replaceCredentials,
-      })
-    ) {
-      remoteMutationStarted = true;
-      sourceUploadAttempted = !receipt?.uploaded_sha;
-      return await completeOnlineDisabledUpgrade(
-        plan,
-        current,
-        stagedBundle,
-        variableTransition,
-        dependencies,
-        receipt,
-        persistReceipt,
-      );
-    }
     remoteMutationStarted = true;
     if (
       !(

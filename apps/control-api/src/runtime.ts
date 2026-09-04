@@ -15,8 +15,6 @@ import {
 } from "@harbor-hf/hf-adapters";
 import { AuthenticationService, AuthStore } from "./auth.js";
 import type { AppConfig } from "./config.js";
-import { LocalHarborRuntime } from "./local-harbor.js";
-import { WorkbenchRuntime } from "./workbench.js";
 
 const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
 
@@ -110,8 +108,6 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     async close() {
       ready = false;
       await reconciler.stop();
-      await workbench.close();
-      await localHarbor.close();
       authStore.close();
       projection.close();
     },

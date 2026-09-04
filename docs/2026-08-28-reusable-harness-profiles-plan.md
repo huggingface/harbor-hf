@@ -7,14 +7,9 @@ tags: [profiles, agents, runs]
 
 # Reuse harness profiles across models
 
-> **Historical record — superseded 2026-09-02.** This plan preserves the
-> profile migration reviewed at the time, including retired terminology and
-> harness examples. It does not authorize new work on those paths. Current
-> profile composition is defined by
-> [`CONTROL_SERVICE.md`](CONTROL_SERVICE.md).
-
-**Historical status.** The profile refactor was implemented under the recorded
-scope. Its former review and completion instructions are superseded.
+**Status.** Implemented. Review and CI are pending. This work ends when the
+source change has passed review and CI on its pull request. It does not merge,
+release, deploy, or run paid work.
 
 Harbor-HF currently selects separate model and harness profiles, but each
 harness profile still contains a model route. Pi profiles also repeat model

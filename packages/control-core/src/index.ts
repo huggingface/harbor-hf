@@ -4,4 +4,3 @@ export * from "./presets.js";
 export * from "./projection.js";
 export * from "./service.js";
 export * from "./store.js";
-export * from "./workbench.js";

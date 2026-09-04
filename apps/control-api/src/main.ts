@@ -28,13 +28,7 @@ try {
   // Listen before the Bucket projection rebuild. Hugging Face marks the
   // Space unhealthy if port 7860 stays closed for 30 minutes, and a full
   // rebuild of the live store now exceeds that window.
-  await app.listen({
-    host:
-      config.node_env === "development" && config.auth_mode === "development"
-        ? "127.0.0.1"
-        : "0.0.0.0",
-    port: config.port,
-  });
+  await app.listen({ host: "0.0.0.0", port: config.port });
   await runtime.initialize();
   runtime.start((error) => {
     app.log.error({ err: errorDetails(error) }, "reconciler tick failed");

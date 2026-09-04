@@ -14,4 +14,3 @@ node_modules/
 playwright-report/
 test-results/
 .fast-agent/
-.harbor-hf/

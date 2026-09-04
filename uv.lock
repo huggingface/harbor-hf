@@ -368,6 +368,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "mutmut" },
     { name = "pip" },
     { name = "pip-audit" },
     { name = "pytest" },

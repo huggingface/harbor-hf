@@ -83,48 +83,6 @@ export interface PresetSubmission {
   role: "final" | "diagnostic";
 }
 
-export type WorkbenchRecipe = AgentWorkbenchRecipeV1;
-export type WorkbenchPreview =
-  paths["/api/v1/workbench/preview"]["post"]["responses"][200]["content"]["application/json"];
-export type WorkbenchSetup =
-  paths["/api/v1/workbench/setup-tests"]["post"]["responses"][202]["content"]["application/json"];
-export type WorkbenchFile = WorkbenchSetup["files"][number];
-export type WorkbenchLogs =
-  paths["/api/v1/workbench/setup-tests/{setup_test_id}/logs"]["get"]["responses"][200]["content"]["application/json"];
-export type WorkbenchFileContent =
-  paths["/api/v1/workbench/setup-tests/{setup_test_id}/files/{file_id}"]["get"]["responses"][200]["content"]["application/json"];
-export type BenchmarkConfigList =
-  paths["/api/v1/workbench/benchmark-configs"]["get"]["responses"][200]["content"]["application/json"];
-export type BenchmarkConfig = BenchmarkConfigList["items"][number];
-
-export interface LocalHarborOptions {
-  enabled: boolean;
-  ready: boolean;
-  reason: string | null;
-  benchmark: string;
-  model: string;
-  task_names: string[];
-  harbor_version: string | null;
-  expected_harbor_version: string | null;
-}
-
-export interface LocalHarborRun {
-  local_run_id: string;
-  recipe_digest: string;
-  status: "queued" | "running" | "cancelling" | "cancelled" | "succeeded" | "failed";
-  benchmark: string;
-  model: string;
-  task_names: string[];
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-  exit_code: number | null;
-  error: string | null;
-  config_path: string;
-  result_path: string | null;
-  command: string[];
-}
-
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -176,7 +134,7 @@ export async function submitRun(
 ): Promise<{ run: RunView["record"] }> {
   return request("/api/v1/runs", {
     method: "POST",
-    headers: { "Idempotency-Key": idempotencyKey },
+    headers: { "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify(input),
   });
 }
@@ -192,125 +150,4 @@ export async function setRunState(
 
 export async function signOut(): Promise<void> {
   await request("/auth/logout", { method: "POST" });
-}
-
-export async function previewWorkbenchRecipe(
-  recipe: WorkbenchRecipe,
-): Promise<WorkbenchPreview> {
-  return request<WorkbenchPreview>("/api/v1/workbench/preview", {
-    method: "POST",
-    body: JSON.stringify(recipe),
-  });
-}
-
-export async function getBenchmarkConfigs(): Promise<BenchmarkConfigList> {
-  return request<BenchmarkConfigList>("/api/v1/workbench/benchmark-configs");
-}
-
-export async function startWorkbenchSetup(
-  recipe: WorkbenchRecipe,
-): Promise<WorkbenchSetup> {
-  return request<WorkbenchSetup>("/api/v1/workbench/setup-tests", {
-    method: "POST",
-    headers: { "Idempotency-Key": crypto.randomUUID() },
-    body: JSON.stringify({ recipe, confirmed: true }),
-  });
-}
-
-export async function listWorkbenchSetups(): Promise<WorkbenchSetup[]> {
-  return request<WorkbenchSetup[]>("/api/v1/workbench/setup-tests");
-}
-
-export async function getWorkbenchSetup(id: string): Promise<WorkbenchSetup> {
-  return request<WorkbenchSetup>(
-    `/api/v1/workbench/setup-tests/${encodeURIComponent(id)}`,
-  );
-}
-
-export async function cancelWorkbenchSetup(id: string): Promise<WorkbenchSetup> {
-  return request<WorkbenchSetup>(
-    `/api/v1/workbench/setup-tests/${encodeURIComponent(id)}/cancel`,
-    {
-      method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
-      body: JSON.stringify({ confirmed: true }),
-    },
-  );
-}
-
-export async function getWorkbenchLogs(id: string): Promise<WorkbenchLogs> {
-  return request<WorkbenchLogs>(
-    `/api/v1/workbench/setup-tests/${encodeURIComponent(id)}/logs`,
-  );
-}
-
-export async function getWorkbenchFile(
-  setupId: string,
-  fileId: string,
-): Promise<WorkbenchFileContent> {
-  return request<WorkbenchFileContent>(
-    `/api/v1/workbench/setup-tests/${encodeURIComponent(setupId)}/files/${encodeURIComponent(fileId)}`,
-  );
-}
-
-export async function getLocalHarborOptions(): Promise<LocalHarborOptions> {
-  return request<LocalHarborOptions>("/api/v1/workbench/local-runs/options");
-}
-
-export async function previewLocalHarborConfig(
-  recipe: WorkbenchRecipe,
-  taskNames: string[],
-): Promise<Record<string, unknown>> {
-  const result = await request<{ config: Record<string, unknown> }>(
-    "/api/v1/workbench/local-runs/preview",
-    {
-      method: "POST",
-      body: JSON.stringify({ recipe, task_names: taskNames }),
-    },
-  );
-  return result.config;
-}
-
-export async function startLocalHarborRun(
-  recipe: WorkbenchRecipe,
-  taskNames: string[],
-): Promise<LocalHarborRun> {
-  return request<LocalHarborRun>("/api/v1/workbench/local-runs", {
-    method: "POST",
-    headers: { "Idempotency-Key": crypto.randomUUID() },
-    body: JSON.stringify({
-      recipe,
-      task_names: taskNames,
-      confirmed: true,
-    }),
-  });
-}
-
-export async function listLocalHarborRuns(): Promise<LocalHarborRun[]> {
-  return request<LocalHarborRun[]>("/api/v1/workbench/local-runs");
-}
-
-export async function getLocalHarborRun(id: string): Promise<LocalHarborRun> {
-  return request<LocalHarborRun>(
-    `/api/v1/workbench/local-runs/${encodeURIComponent(id)}`,
-  );
-}
-
-export async function getLocalHarborLogs(
-  id: string,
-): Promise<{ stdout: string; stderr: string }> {
-  return request<{ stdout: string; stderr: string }>(
-    `/api/v1/workbench/local-runs/${encodeURIComponent(id)}/logs`,
-  );
-}
-
-export async function cancelLocalHarborRun(id: string): Promise<LocalHarborRun> {
-  return request<LocalHarborRun>(
-    `/api/v1/workbench/local-runs/${encodeURIComponent(id)}/cancel`,
-    {
-      method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
-      body: JSON.stringify({ confirmed: true }),
-    },
-  );
 }

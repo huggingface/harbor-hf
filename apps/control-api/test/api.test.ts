@@ -50,8 +50,6 @@ async function setup(writeMode: "disabled" | "enabled" = "enabled"): Promise<{
     reconcile_interval_ms: 1_000,
     parent_restart_delay_ms: 0,
     source_revision: "test-revision",
-    workbench_runner: "disabled",
-    workbench_image: "python:3.12-slim",
     bootstrap_operator_subjects: [],
   };
   const runtime = await createRuntime(config);

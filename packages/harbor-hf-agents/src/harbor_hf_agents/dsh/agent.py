@@ -128,7 +128,6 @@ class DshAgent(BaseInstalledAgent):
         self,
         _environment: BaseEnvironment,
     ) -> dict[str, str]:
-        del environment
         env: dict[str, str] = {
             "DSH_HOME": _DSH_HOME,
             "DSH_PERMISSION_MODE": "danger-full-access",

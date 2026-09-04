@@ -60,15 +60,11 @@ def _request(
             f"{_base_url()}{path}",
             headers=headers,
             json=payload,
-            timeout=timeout_seconds,
+            timeout=30,
             follow_redirects=False,
         )
     except httpx.HTTPError as error:
         _fail(f"control API request failed: {type(error).__name__}")
-    except ValueError as error:
-        _fail(f"control API request failed: {type(error).__name__}")
-    if transient and response.status_code in {429, 500, 502, 503, 504}:
-        raise TransientControlError
     if response.status_code >= 400:
         try:
             body = response.json()

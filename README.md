@@ -68,6 +68,7 @@ export HARBOR_HF_CONTROL_BEARER_TOKEN='<service-token>'
 Inspect runs and parent Jobs:
 
 ```bash
+harbor-hf run list
 harbor-hf run status <run-id>
 harbor-hf jobs
 harbor-hf presets
@@ -140,4 +141,4 @@ run storage details.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+[Apache-2.0](LICENSE)
