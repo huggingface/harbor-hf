@@ -7,12 +7,19 @@ tags: [architecture, harbor, design]
 
 # Harbor-HF design principles
 
-Harbor-HF adds hosted Hugging Face control around Harbor. It must not replace,
+Harbor-HF adds hosted Hugging Face control around Harbor. It MUST NOT replace,
 copy, or reinterpret behavior that Harbor already provides.
 
-This rule applies before code is written. A feature request is not evidence that
-Harbor lacks the feature. Check the pinned Harbor source first. Use its public
-configuration and APIs when they exist. Record the files that were checked.
+This rule applies before code is written. A feature request MUST NOT count as
+evidence that Harbor lacks the feature. A contributor MUST inspect the pinned
+Harbor source first and MUST use its public configuration and APIs when they
+exist. The pull request MUST record the files that were checked.
+
+## Requirement terms
+
+`MUST` and `MUST NOT` mark requirements. `SHOULD` and `SHOULD NOT` mark the
+expected design unless the pull request gives a concrete reason for an
+exception. `MAY` marks an allowed choice.
 
 ## Reason for the rule
 
@@ -32,22 +39,22 @@ This gives each fact one owner and makes failures easier to diagnose.
 
 ## The first design question
 
-Ask this before adding a field, record, loop, worker, parser, adapter, or UI
-control:
+A contributor MUST ask this before adding a field, record, loop, worker, parser,
+adapter, or UI control:
 
 > Does Harbor already represent or perform this?
 
-Inspect the pinned Harbor revision, including relevant history when the current
-shape is unclear. Name the checked Harbor files and public APIs in the pull
-request description.
+The contributor MUST inspect the pinned Harbor revision and relevant history
+when the current shape is unclear. The pull request description MUST name the
+checked Harbor files and public APIs.
 
-If Harbor already provides the behavior, use it directly. Do not add a local
-alias, mirrored field, fallback reader, second state machine, or wrapper that
-renames the same concept.
+If Harbor already provides the behavior, Harbor-HF MUST use it directly.
+Harbor-HF MUST NOT add a local alias, mirrored field, fallback reader, second
+state machine, or wrapper that renames the same concept.
 
 ## Harbor responsibilities
 
-Harbor owns the benchmark run itself. Harbor-HF must use Harbor for:
+Harbor owns the benchmark run itself. Harbor-HF MUST use Harbor for:
 
 - `JobConfig` validation and job construction
 - benchmark dataset and task resolution
@@ -69,7 +76,7 @@ project them for display, but it must not write a competing version.
 
 ## Harbor-HF responsibilities
 
-Harbor-HF owns behavior that exists outside a Harbor run:
+Harbor-HF MUST limit its ownership to behavior outside a Harbor run:
 
 - authenticated submission and operator access
 - reviewed choices that restrict which Harbor configurations can be launched
@@ -85,9 +92,9 @@ A reviewed preset should stay close to a Harbor `JobConfig` fragment. It can
 restrict values for safety or policy. It should not invent another name for a
 field that Harbor already has.
 
-## Work that must not be added
+## Work that MUST NOT be added
 
-Do not add any of the following to Harbor-HF:
+Harbor-HF MUST NOT add any of the following:
 
 - a second task resolver or benchmark registry parser
 - a second trial loop or attempt scheduler
@@ -101,9 +108,9 @@ Do not add any of the following to Harbor-HF:
 - user-facing names for Harbor concepts that require translation without adding
   a real product distinction
 
-A projection can copy Harbor facts into SQLite for queries. The projection is a
-cache and has no authority. It must rebuild from the Bucket and current Hugging
-Face Job observations.
+A projection MAY copy Harbor facts into SQLite for queries. The projection MUST
+NOT claim authority. It MUST rebuild from the Bucket and current Hugging Face
+Job observations.
 
 ## Repository ownership
 
@@ -122,8 +129,8 @@ not grant that confirmation.
 
 ## Native configuration
 
-Use Harbor's names and structures in persisted configuration. Translate only at
-an external platform boundary.
+Harbor-HF MUST use Harbor's names and structures in persisted configuration. It
+MUST translate a value only at an external platform boundary.
 
 For example, Hugging Face calls a hardware tier a `flavor`. Harbor passes that
 value through its HF Sandbox environment configuration. The run form can label
@@ -138,10 +145,10 @@ environment:
     job_timeout: 30m
 ```
 
-Harbor-HF can replace `type: hf-sandbox` with its labeled environment adapter
-when it compiles the final job. The adapter adds the run label required for
-owned Job cleanup and preserves the native environment arguments. It must not
-create a parallel field such as `environment_flavor`.
+Harbor-HF MAY replace `type: hf-sandbox` with its labeled environment adapter
+when it compiles the final job. The adapter MUST add only the run label required
+for owned Job cleanup and MUST preserve the native environment arguments. It
+MUST NOT create a parallel field such as `environment_flavor`.
 
 The same rule applies to attempts and concurrency. It applies to timeouts and
 retries. It also applies to agent and model settings. Keep native task names and
@@ -150,24 +157,25 @@ expresses the required value.
 
 ## Missing Harbor behavior
 
-A missing general capability belongs upstream in Harbor. Stop local design work
-and report:
+A missing general capability MUST go upstream in Harbor. The contributor MUST
+stop local design work and report:
 
 1. The user need that cannot be met.
 2. The pinned Harbor revision and files checked.
 3. The smallest public Harbor API or configuration change that would meet it.
 4. The Harbor-HF work that becomes unnecessary after that change.
 
-Get user confirmation before opening an upstream issue or pull request.
+The contributor MUST get user confirmation before opening an upstream issue or
+pull request.
 
-A temporary Harbor-HF implementation requires separate approval. It must have a
-narrow interface and a test for the exact gap. It must link to the approved
-upstream work and define a removal condition tied to a Harbor revision. It must
-not become a second owner of Harbor state or execution.
+A temporary Harbor-HF implementation MUST have separate approval. It MUST have
+a narrow interface and a test for the exact gap. It MUST link to the approved
+upstream work and MUST define a removal condition tied to a Harbor revision. It
+MUST NOT become a second owner of Harbor state or execution.
 
 ## Review evidence
 
-Every Harbor-HF behavior change must answer these questions:
+Every Harbor-HF behavior change MUST answer these questions:
 
 - Which repository owns the behavior?
 - Which pinned Harbor files and public APIs were checked?
@@ -177,9 +185,9 @@ Every Harbor-HF behavior change must answer these questions:
 - If an adapter is necessary, what exact upstream gap requires it?
 - What event or Harbor revision permits removal of temporary code?
 
-A pull request is not ready for review when these answers are missing. Reviewers
-should request deletion or simplification when Harbor already provides the
-behavior.
+A pull request MUST NOT be marked ready when these answers are missing.
+Reviewers MUST request deletion or simplification when Harbor already provides
+the behavior.
 
 ## Related documents
 

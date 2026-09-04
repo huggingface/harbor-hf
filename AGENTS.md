@@ -24,10 +24,21 @@
 
 ## Harbor-first design
 
-- Do not duplicate behavior, configuration, state, or data that Harbor already
-  provides. This is the first design rule for this repository.
-- Read [the design principles](docs/DESIGN_PRINCIPLES.md) before designing or
-  implementing a behavior change.
+- You MUST NOT duplicate behavior, configuration, state, or data that Harbor
+  already provides. This requirement is the first and controlling design rule
+  for all work in this repository.
+- You MUST read [the design principles](docs/DESIGN_PRINCIPLES.md) before you
+  design or implement a behavior change.
+- A feature request MUST NOT be treated as proof that Harbor lacks the feature.
+- Before you add a field, record, loop, parser, adapter, or UI control, you MUST
+  inspect the pinned Harbor source and relevant history. The pull request
+  description MUST name the checked files and public APIs.
+- When Harbor already has the behavior or field, you MUST use Harbor directly
+  through its native API and configuration. You MUST treat Harbor output as
+  authoritative. You MUST NOT add an alias, mirrored field, fallback reader,
+  second state machine, or renamed wrapper for the same concept. For example,
+  you MUST NOT add `environment_flavor` when Harbor already uses
+  `environment.kwargs.flavor`.
 - Harbor owns `JobConfig` and benchmark task resolution. Harbor owns trial
   execution, including concurrency and retry behavior. It controls resume and
   locking behavior. Harbor results are authoritative for rewards and reported
@@ -36,18 +47,16 @@
   owns the control Space and Bucket as well as HF Job lifecycle and cost stops.
   The disposable SQLite projection and web console also belong in Harbor-HF.
   Harbor-HF owns the leaderboard.
-- Before adding a field, record, loop, parser, adapter, or UI control, check the
-  pinned Harbor source and relevant history. Name the checked files and public
-  APIs in the pull request description.
-- When Harbor already has the behavior or field, use its native API or
-  configuration. Do not add an alias, mirrored field, fallback reader, second
-  state machine, or renamed wrapper for the same concept.
-- Keep benchmark and model names as data. Keep necessary harness-specific
-  behavior in a Harbor agent plugin behind `import_path`.
-- If Harbor lacks required general behavior, stop and report the upstream gap.
-  Get explicit user confirmation before opening a Harbor issue or pull request.
-- A temporary local implementation needs separate approval for an exact
-  upstream gap. Its removal condition must name a Harbor revision.
+- You MUST keep benchmark and model names as data. You MUST keep necessary
+  harness-specific behavior in a Harbor agent plugin behind `import_path`.
+- If you cannot prove that Harbor lacks required general behavior, you MUST stop
+  local design work and report the evidence. You MUST get explicit user
+  confirmation before you open a Harbor issue or pull request.
+- A temporary local implementation MUST have separate approval for an exact
+  upstream gap. It MUST name the Harbor revision that permits its removal.
+- Before you finish a behavior change, you MUST compare each changed schema or
+  persisted field with Harbor. You MUST make the same comparison for API and UI
+  values. You MUST remove any duplicate or renamed Harbor concept.
 
 ## Storage and resources
 
