@@ -1341,3 +1341,28 @@ All pre-integration authorization records above are retained as well.
 - The clarification permits the bounded nonsecret deadline gate and its cleanup
   on the existing control Space, without any probe Bucket claim or new resource.
   No implementation, provider request or deployment result is recorded here.
+
+### 2026-09-04 bounded device diagnostic observation and correction review
+
+- Completed the bounded deployment at source `ce3544a` with the diagnostic off,
+  then armed one fixed eight-minute window. A closed runtime result was
+  `rejected:invalid_request`. Removed the added deadline variable and verified
+  healthy disabled-write operation, unchanged historical data and receipts, and
+  no new or active Jobs. No login, token polling, exchange, activation, inference,
+  credential change or probe Bucket write occurred.
+- This is not evidence of unsupported managed-client device grants. Inspection
+  after the rejection found an assistant implementation defect: the request
+  omitted the documented `client_id` form field. The official sample retains
+  that field when adding Basic authentication for confidential clients. The
+  rejection alone does not prove its cause, and eligibility remains unknown.
+- The initial private observer expected newline-delimited logs; the provider
+  returns complete JSON chunks without trailing newlines. A bounded direct parse
+  recovered only the closed category and checked its timestamp. The observer was
+  stopped and the new gate removed; no raw log or grant contents were retained.
+- Pending amendment, separable from existing local implementation approval:
+  correct the request to match the documented form, test and review it, then
+  permit one further exact-source configure attempt and one new bounded window
+  on the same existing control Space. Retain all prior scope, credential,
+  execution, preservation and cleanup limits. No further deployment or provider
+  request is authorized by this pending entry. This is a concrete request-shape
+  correction, not a distributed-exactly-once requirement or architecture blocker.
