@@ -103,6 +103,35 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Headless CLI authentication implementation (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-05T11:40:59Z
+
+- Direct user approval covers implementing external-browser URL/code confirmation
+  for headless installer authentication, local mocked tests and local Conventional
+  Commits on the existing feature branch. Record authorization before code changes.
+- Inspect public provider discovery, official OAuth documentation and client source
+  first. Do not assume provider-wide device grants prove managed Space client
+  eligibility. Stop with precise evidence if that fundamental prerequisite remains
+  unresolved; do not ship a simulated working provider integration.
+- Prefer the existing Space OAuth client with only `openid profile`. A confidential
+  client secret must stay in the control Space. Narrow server coordination routes
+  are within implementation scope, but record the exact selected design before
+  implementing them. Any fresh provider-issued application token is ephemeral,
+  bound to the planned operator and exact application origin, never persisted or
+  substituted with local HF management OAuth. No cookie or browser-storage export.
+- Preserve fresh identity, source, health, idle and write-mode checks across
+  restart. Keep explicit browser authentication and execution-disabled guards.
+  No new OAuth app, persistent service credential, resource or auth authority.
+- This amendment authorizes no push, PR update, deployment, activation, write-mode
+  change, live device-code issuance or login, remote credential retrieval or
+  transfer, Jobs, inference or spending. Neither operator-managed secret changes
+  or leaves the control Space. Public read-only provider research needs no live
+  Space inspection; any later operational probe needs its own bounded review.
+- Inspect complete diffs and public metadata and run the privacy checker before
+  every commit. Use public placeholders rather than operator identifiers.
+
 ### Authoring-only authenticated activation (2026-09-04)
 
 Status: approved
@@ -1203,3 +1232,8 @@ All pre-integration authorization records above are retained as well.
 - Directly approved the separable authenticated authoring activation above and
   authorization-first local commit. Execution enablement remains unfulfilled and
   prohibited by the current integration boundary; no publication is authorized.
+
+### 2026-09-04 headless CLI authentication implementation approval
+
+- Directly approved the additive local implementation and testing scope above.
+  Earlier activation or publication approvals are not carried into this task.
