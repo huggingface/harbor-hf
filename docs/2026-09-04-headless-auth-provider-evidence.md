@@ -1,7 +1,8 @@
 # Headless installer authentication: provider eligibility evidence
 
-Status: implementation stopped before runtime changes. This is not a working
-headless login implementation or an assertion that Space device grants fail.
+Initial investigation stopped before runtime changes. The bounded diagnostic
+follow-up is documented below. This is not a working headless login
+implementation or an assertion that Space device grants fail.
 
 ## Verified from public sources
 
@@ -79,3 +80,41 @@ provider eligibility. No Harbor behavior, schema, persisted runtime field, API o
 UI changed. A subsequent behavior change still requires pinned Harbor source and
 history inspection. Local commits only: no push, deployment, write activation,
 remote resource mutation, credential transfer, Jobs or inference.
+
+## Bounded startup diagnostic implementation
+
+The additive project authorization now permits an eligibility-only deployment.
+Distributed exactly-once issuance was an assistant implementation choice, not a
+user requirement. The diagnostic has no Bucket claim, receipt, SQLite state,
+route, polling loop or new resource. It never performs login or token exchange.
+
+`HARBOR_HF_OAUTH_DEVICE_PROBE_UNTIL` is a nonsecret, default-absent startup gate.
+It must be a fixed UTC timestamp (`YYYY-MM-DDTHH:mm:ssZ`) within ten minutes of
+startup. Invalid, absent or expired values produce no HTTP request. The process
+attempts at most once; a new process during the same window can repeat issuance.
+This is deliberately not a distributed at-most-once guarantee.
+
+Deployment must first establish healthy exact-source operation with the gate
+absent and writes disabled. Only then may the operator set the reviewed absolute
+deadline. Observe only the closed `oauth device eligibility probe` result and
+remove that new variable afterward, preserving all other configuration. A missed
+window is not permission to rearm automatically. Accepted issuance establishes
+only issuance eligibility, not token exchange, authenticated access or execution.
+Transport or malformed-response outcomes do not establish unsupported grants.
+
+The request uses the existing server-held OAuth client configuration and the
+fixed official device endpoint, with only `openid profile`, no redirects, a ten
+second timeout and a 32 KiB streamed response limit. Grant contents and exception
+text are discarded; only closed result categories reach the server logger.
+Neither persistent HF token is used. There is no probe-owned persisted field,
+Harbor JobConfig field, API value or UI control to mirror.
+
+Harbor ownership review: pinned revision
+`dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`, `src/harbor/cli/auth.py`
+(`login`) and `src/harbor/auth/flows.py` (`login`), with relevant history
+`8552e6be`, `c2c3a726` and `5c02d101`. These APIs authenticate to the Harbor
+registry through GitHub and create registry API keys; they do not probe the HF
+managed Space client. This diagnostic belongs to the HF control authentication
+boundary and does not import Harbor or implement Harbor-owned run behavior.
+
+Live eligibility remains unverified until a deployed observation is recorded.

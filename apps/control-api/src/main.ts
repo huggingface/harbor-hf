@@ -1,5 +1,6 @@
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { probeDeviceEligibility } from "./oauth-device-probe.js";
 import { createRuntime } from "./runtime.js";
 
 const config = loadConfig();
@@ -30,6 +31,13 @@ try {
   // rebuild of the live store now exceeds that window.
   await app.listen({ host: "0.0.0.0", port: config.port });
   await runtime.initialize();
+  void probeDeviceEligibility(
+    config,
+    process.env.HARBOR_HF_OAUTH_DEVICE_PROBE_UNTIL,
+  ).then((result) => {
+    if (result && result !== "disabled")
+      app.log.info({ result }, "oauth device eligibility probe");
+  });
   runtime.start((error) => {
     app.log.error({ err: errorDetails(error) }, "reconciler tick failed");
   });
