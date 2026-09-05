@@ -121,6 +121,24 @@ describe("bounded device eligibility startup diagnostic", () => {
     },
   );
 
+  it.each([200, 302])("hides stream cancellation failures: %s", async (status) => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(32 * 1024 + 1));
+      },
+      cancel() {
+        throw new Error(canary);
+      },
+    });
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(body, { status }));
+    expect(await (await probe())(config(), until, request, () => now)).toBe(
+      "invalidresponse",
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it("bounds requests to ten seconds and hides transport exception text without retry", async () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
     const request = vi.fn<typeof fetch>().mockRejectedValue(new Error(canary));
