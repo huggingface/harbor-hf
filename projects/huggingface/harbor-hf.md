@@ -103,6 +103,28 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Canary-first local milestone (2026-09-05)
+
+Status: approved
+Approved at: 2026-09-05T20:57:38Z
+
+- Direct user confirmation approves local implementation, tests, and local
+  commits toward the established small-canary workflow before the larger saved
+  benchmark subset: authenticate, choose native configuration, configure an
+  agent/model, and eventually inspect native Harbor results and cleanup.
+- Inspect historical canary definitions and pinned Harbor APIs before choosing
+  the native preset. Keep benchmark selection as data, not a new resolver or
+  scheduler. Use a shared API and permissions for CLI and web; token login is
+  the initial priority and OAuth is conditional on supported public contracts.
+- Preserve the execution-disabled boundary. No deployment, public push, merge,
+  paid launch, inference, credential transfer, new resource, upstream mutation,
+  or historical-data change is authorized. Broad permission to use current
+  credentials does not permit forwarding the control credential or copying
+  locally configured credentials into remote stores.
+- Stop implementation of blocked execution behavior and report the exact
+  upstream gaps. A future launch requires separate review of the supported
+  execution path, model/agent, exact credential boundaries, and budget.
+
 ### Bounded eligibility probe scope clarification (2026-09-04)
 
 Status: approved
@@ -862,6 +884,13 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-05 canary-first local milestone
+
+- Approved local implementation, tests, and local commits for the small-canary
+  milestone before the larger benchmark subset, following the bounded scope
+  proposed in the conversation. Remote operations and credential movement
+  remain excluded; execution remains disabled.
 
 The entries below are immutable factual summaries of past approvals. Any
 reference to a retired inference implementation or removed harness is
