@@ -103,6 +103,47 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### One-shot managed OAuth device eligibility probe (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-05T17:49:15Z
+
+- Direct user approval covers implementing, locally testing and deploying only a
+  safe one-shot eligibility probe inside the existing `<control-space>`, with
+  additive authorization committed before code. Timestamp is the observed local
+  recording time; the heading preserves the user-supplied operation date.
+- Request only `openid profile` at the official fixed
+  `https://huggingface.co/oauth/device` endpoint, using HTTP Basic authentication
+  from the existing HF-managed OAuth client environment inside the Space. This
+  permits normal client authentication to that endpoint, not credential retrieval
+  locally or transfer between credential stores. Neither operator-managed secret
+  changes or leaves the Space; the control credential may write approved probe
+  metadata only to the existing Bucket from inside the Space.
+- Default off, exact-source-bound gate; consume an immutable durable claim before
+  any provider request. Overlapping instances and repeated restarts must issue at
+  most one request. Ambiguous outcomes remain consumed, with no automatic retry.
+  Only bounded versioned control metadata under
+  `control/oauth-device-probes/<approved-id>/` is permitted; preserve all existing
+  data, configuration, installation receipts, hardware and resource ownership.
+- Limit the provider request to ten seconds and a streamed 32 KiB JSON body;
+  reject redirects and untrusted endpoint bindings. Validate successful device
+  response fields without disclosing or persisting their contents. Report only
+  accepted, rejected or transporterror and a closed OAuth error category. Never
+  expose raw responses, descriptions, client identifiers, codes or login links.
+- No operator login, token polling or exchange, browser/cookie export, general
+  headless authentication, custom approval authority, new OAuth app, public-client
+  conversion, new resources, activation, write enablement, Jobs, inference, Run
+  migration, deletion or credential movement. Issuance proves eligibility only,
+  not permission for token exchange or a working complete authentication flow.
+- Any deployment must use the reviewed supported existing-install workflow,
+  fresh provenance, ownership, inventory, health and activity checks, disabled
+  writes and preserved installer history. Permit only one bounded configure
+  attempt with closed stdin and no credential replacement. Stop on an
+  unclassified restart failure; no blind retry or re-upload.
+- Local Conventional Commits are authorized after complete diff, public metadata
+  and privacy review. No merge, default-branch push, new PR or upstream issue is
+  authorized. Do not infer expanded publication scope from older approvals.
+
 ### Headless CLI authentication implementation (2026-09-04)
 
 Status: approved
@@ -1237,3 +1278,16 @@ All pre-integration authorization records above are retained as well.
 
 - Directly approved the additive local implementation and testing scope above.
   Earlier activation or publication approvals are not carried into this task.
+
+### 2026-09-04 one-shot device eligibility probe approval
+
+- Directly approved the narrow implementation, offline tests and existing-Space
+  deployment above. No provider request or remote mutation has occurred.
+- Pre-implementation inspection found that
+  `packages/hf-adapters/src/bucket-store.ts` serializes `create()` only within
+  one adapter instance and performs read-before-upload, not conditional creation.
+  The installed Hub client's `src/lib/commit.ts` Bucket path sends unconditional
+  `addFile` operations without a parent-commit or conditional-create guard.
+  Thus the existing mechanism does not establish a cross-instance at-most-once
+  claim. Stop before probe code or deployment rather than assume atomicity;
+  this is a storage-safety blocker, not a provider eligibility result.
