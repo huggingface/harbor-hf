@@ -12,6 +12,24 @@
   <img alt="harbor-hf" src="assets/harbor-hf-logo.svg" width="440">
 </p>
 
+## Current milestone: the two-task canary
+
+The first execution milestone is **login → choose `two-task-canary` → configure
+agent/model → run → inspect Harbor results and cleanup**, before larger subsets.
+The catalog now includes the historical Terminal-Bench 2.1 selection:
+`adaptive-rejection-sampler` and `modernize-scientific-stack`, at the existing
+pinned benchmark revision. It requests one attempt per task, sequential trials,
+and no retries. It is not leaderboard-eligible.
+
+**Available now:** native configuration authoring and preview, shared API bearer
+authentication, and web OAuth. **Not available:** executing this canary or CLI
+OAuth login. Saving or previewing it does not validate remote setup, resolve
+tasks, approve spending, or launch a Job. See the
+[canary milestone review](docs/2026-09-05-canary-milestone.md).
+
+The execution walkthroughs below describe deferred design, not working commands
+for this branch.
+
 Harbor-HF is a hosted control service for Harbor benchmark runs on Hugging Face.
 It submits runs, starts remote Jobs, keeps Harbor results in a Bucket, and shows
 run state and leaderboard results in a web console.
