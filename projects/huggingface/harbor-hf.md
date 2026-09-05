@@ -103,6 +103,44 @@ Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
 
+### Bounded eligibility probe scope clarification (2026-09-04)
+
+Status: approved
+Approved at: 2026-09-05T17:54:48Z (local recording time)
+
+- The current direct user instruction clarifies the previously approved narrow
+  eligibility diagnostic and deployment. Distributed exactly-once execution was
+  an assistant implementation choice, not a user requirement. The earlier strict
+  durable-claim wording and resulting storage blocker are superseded only for
+  this diagnostic; earlier approval entries remain unchanged as history.
+- Implement a default-disabled startup probe, once per process in memory, without
+  timers or retries. Arm only after the exact deployed source is healthy using
+  the new nonsecret `HARBOR_HF_OAUTH_DEVICE_PROBE_UNTIL` variable: a fixed UTC
+  deadline no more than ten minutes ahead at startup. Reject absent, malformed,
+  expired or excessively distant deadlines before HTTP or credential resolution.
+  An optional nonsecret probe identifier is permitted but not required.
+- Ordinary restarts within that fixed window may repeat device-grant issuance.
+  This limitation must be disclosed; no cross-replica guarantee, distributed
+  lease, SQLite claim, Bucket claim, receipt, or new resource is required or
+  authorized. Use the existing single-instance free-hardware control Space;
+  add no workers. A missed window requires explicit review, not automatic rearming.
+- Keep the prior fixed official endpoint, Basic client authentication inside the
+  Space, `openid profile` scope, ten-second timeout, streamed 32 KiB limit,
+  redirect rejection and closed result categories. Never log or persist grant
+  codes, user codes, URIs, raw responses, client identifiers or secrets. Issuance
+  eligibility does not prove token exchange or authorize access or work.
+- After bounded observation, remove only the newly added deadline variable (or
+  expire it), preserving every other variable and secret, and verify healthy
+  disabled-write operation. No login, token polling, grant exchange, activation,
+  inference, Jobs, new credentials, Bucket writes by the probe or historical
+  data changes. Persistent secrets remain exclusively in the control Space.
+- Preserve exact-source deployment and fresh ownership, health, inventory and
+  activity checks, canonical installer state and receipts. The existing one
+  bounded configure attempt and fail-closed recovery limits still apply.
+- This correction does not manufacture an earlier user promise or expand other
+  approval boundaries. Record and review this authorization diff before code.
+  Local commits are covered; no default-branch push, merge or new PR is granted.
+
 ### One-shot managed OAuth device eligibility probe (2026-09-04)
 
 Status: approved
@@ -1291,3 +1329,15 @@ All pre-integration authorization records above are retained as well.
   Thus the existing mechanism does not establish a cross-instance at-most-once
   claim. Stop before probe code or deployment rather than assume atomicity;
   this is a storage-safety blocker, not a provider eligibility result.
+
+### 2026-09-04 bounded device eligibility scope correction
+
+- The user explicitly clarified that the narrow diagnostic approval did not
+  require distributed exactly-once issuance. The assistant's durable-claim
+  requirement was an implementation choice, not a user-imposed limit. Retain
+  that earlier record as history, with the additive current clarification
+  controlling this diagnostic. Restarts can repeat issuance during the fixed
+  window; no login, token polling, access authorization or work is permitted.
+- The clarification permits the bounded nonsecret deadline gate and its cleanup
+  on the existing control Space, without any probe Bucket claim or new resource.
+  No implementation, provider request or deployment result is recorded here.
