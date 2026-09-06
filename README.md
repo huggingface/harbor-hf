@@ -1,4 +1,9 @@
-> **Execution-disabled integration (2026-09-04):** This greenfield branch is not
+> **Personal runner wiring:** `/personal` now connects supplied-token identity,
+> configured-run preview, approval-gated HF Job dispatch, personal Jobs/logs and
+> private native artifacts. It has not been live-canary validated. See
+> [personal execution](docs/personal-execution.md).
+>
+> **Historical execution-disabled integration (2026-09-04):** This greenfield branch is not
 > production-ready. Run submission, actions, remote setup tests, and automatic
 > reconciliation are disabled before admission or credential resolution, even
 > when configuration writes are enabled. Workbench saves native Harbor JobConfig
@@ -22,8 +27,9 @@ pinned benchmark revision. It requests one attempt per task, sequential trials,
 and no retries. It is not leaderboard-eligible.
 
 **Available now:** native configuration authoring and preview, shared API bearer
-authentication, and web OAuth. **Not available:** executing this canary or CLI
-OAuth login. Saving or previewing it does not validate remote setup, resolve
+authentication, web OAuth, and separately approval-gated personal runner wiring.
+**Still unverified:** real canary execution. CLI OAuth login remains unresolved.
+Saving or previewing does not validate remote setup, resolve
 tasks, approve spending, or launch a Job. See the
 [canary milestone review](docs/2026-09-05-canary-milestone.md).
 

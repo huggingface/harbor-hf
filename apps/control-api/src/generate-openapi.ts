@@ -65,7 +65,7 @@ const document = {
     title: "Harbor-HF control API",
     version: "v1",
     description:
-      "Execution-disabled configuration authoring and historical state inspection. Run and setup mutations return 503 execution_disabled.",
+      "Native configuration authoring and personal HF execution. Historical Run and setup mutations remain disabled. Personal dispatch requires exact server approval and a matching supplied user token.",
   },
   components: {
     securitySchemes: {
@@ -229,6 +229,50 @@ const document = {
     },
   },
   paths: {
+    "/api/v1/personal/{action}": {
+      post: {
+        summary: "Operate on the verified user's HF Jobs and private results",
+        description:
+          "Requires a supplied user token matching the authenticated identity. Session requests also require X-CSRF-Token. No credential is persisted. Launch additionally consumes an exact server-side approval; historical execution remains disabled.",
+        security: authenticated,
+        parameters: [
+          {
+            name: "action",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              enum: [
+                "identity",
+                "preview",
+                "approval",
+                "jobs",
+                "logs",
+                "cancel",
+                "results",
+                "artifact",
+                "launch",
+              ],
+            },
+          },
+          {
+            name: "X-HF-User-Token",
+            in: "header",
+            required: true,
+            schema: { type: "string", writeOnly: true },
+          },
+        ],
+        requestBody: { required: true, content: json },
+        responses: {
+          "200": ok,
+          "400": error,
+          "401": error,
+          "403": error,
+          "409": error,
+          "503": error,
+        },
+      },
+    },
     "/api/v1/session": {
       get: { summary: "Read the current session", responses: { "200": ok } },
     },

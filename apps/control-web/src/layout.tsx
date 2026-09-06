@@ -18,6 +18,7 @@ import { cn, humanize } from "./lib";
 import { Badge, Button, ErrorNotice } from "./ui";
 
 const operatorNavigation = [
+  ["/personal", "Personal execution", ServerCog],
   ["/overview", "Overview", Gauge],
   ["/workbench", "Workbench", Wrench],
   ["/runs", "Runs", ClipboardList],

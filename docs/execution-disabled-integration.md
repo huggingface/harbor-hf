@@ -1,5 +1,9 @@
 # Execution-disabled integration
 
+The historical routes described here remain disabled. The subsequent
+[personal execution path](personal-execution.md) is a separate supplied-user-token,
+exact-approval-gated dedicated runner. No live launch is approved by either document.
+
 This is a greenfield configuration-authoring integration, not a production-ready
 execution service. Writes may save configuration, but cannot admit Runs, reserve
 capacity, resolve execution credentials, launch or cancel Jobs, or reconcile Runs.

@@ -27,6 +27,7 @@ import {
   lookupHuggingFaceModelProviders,
 } from "./huggingface-models.js";
 import type { Runtime } from "./runtime.js";
+import { registerPersonalRoutes } from "./personal.js";
 
 export const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
 
@@ -133,7 +134,18 @@ function publicApi(path: string): boolean {
 }
 
 export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
-  const app = Fastify({ logger: runtime.config.node_env !== "test" });
+  const app = Fastify({
+    logger:
+      runtime.config.node_env === "test"
+        ? false
+        : {
+            redact: [
+              "req.headers.authorization",
+              'req.headers["x-hf-user-token"]',
+              "req.headers.cookie",
+            ],
+          },
+  });
   await app.register(cookie);
   await app.register(helmet, {
     contentSecurityPolicy: {
@@ -162,6 +174,19 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     const path = request.url.split("?", 1)[0] ?? request.url;
     if (!path.startsWith("/api/v1/") || publicApi(path)) return;
     if (!(await authenticate(runtime, request, reply))) return reply;
+    // Personal operations use their own verified user credential, not control
+    // write mode or administrator authority. Session CSRF still applies.
+    if (path.startsWith("/api/v1/personal/")) return;
+    if (
+      requireActor(request).role !== "operator" &&
+      !["/api/v1/system", "/api/v1/presets", "/api/v1/model-providers"].includes(path)
+    )
+      return error(
+        reply,
+        403,
+        "personal_access_only",
+        "Use personal account interfaces.",
+      );
     const mutation = request.method !== "GET" && request.method !== "HEAD";
     if (mutation && requireActor(request).role !== "operator")
       return error(reply, 403, "operator_required", "operator access is required");
@@ -175,6 +200,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     if (mutation && runtime.config.write_mode !== "enabled" && !workbenchPreview)
       return error(reply, 503, "write_disabled", "write mode is disabled");
   });
+
+  registerPersonalRoutes(app, runtime, requireActor);
 
   app.setErrorHandler((failure, _request, reply) => {
     if (reply.sent) return;

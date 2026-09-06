@@ -302,6 +302,105 @@ async function mockControl(page: Page, options: MockOptions = {}) {
   });
 }
 
+test("wires the personal workflow without real HF calls", async ({ page }) => {
+  await mockControl(page);
+  let dispatched = false;
+  const approvalDigest = "b".repeat(64);
+  await page.route("**/api/v1/personal/*", async (route) => {
+    const request = route.request();
+    expect(request.headers()["x-hf-user-token"]).toBe("hf_testusercredential");
+    expect(request.postData()).not.toContain("hf_testusercredential");
+    const action = new URL(request.url()).pathname.split("/").at(-1);
+    if (action === "identity") return json(route, { owner: "example-user" });
+    if (action === "preview") {
+      expect(request.postDataJSON().submission.model.id).toBe("publisher/model");
+      return json(route, {
+        config: { n_attempts: 1 },
+        native_config_sha256: "a".repeat(64),
+      });
+    }
+    if (action === "approval")
+      return json(route, {
+        approval: {
+          run_id: runId,
+          approval_sha256: approvalDigest,
+          results_bucket: "private-results",
+          submission: record.submission,
+          total_budget_usd: 3,
+          inference_limit_usd: 2,
+          runtime_seconds: 60,
+          job_timeout_seconds: 300,
+          expires_at: "2099-01-01T00:00:00Z",
+        },
+      });
+    if (action === "launch") {
+      expect(request.postDataJSON()).toEqual({
+        run_id: runId,
+        approval_sha256: approvalDigest,
+        confirm: true,
+        accept_best_effort_cleanup_and_external_cost_limits: true,
+      });
+      dispatched = true;
+      return json(route, { id: "example-job" });
+    }
+    if (action === "jobs")
+      return json(route, {
+        jobs: dispatched
+          ? [
+              {
+                id: "example-job",
+                stage: "RUNNING",
+                run_id: runId,
+                url: "https://huggingface.co/jobs/example-user/example-job",
+              },
+            ]
+          : [],
+      });
+    if (action === "logs")
+      return json(route, { text: "Private artifact upload completed." });
+    if (action === "results")
+      return json(route, {
+        files: [
+          {
+            path: `runs/${runId}/${runId}/result.json`,
+            size: 15,
+          },
+        ],
+      });
+    if (action === "artifact") return json(route, { text: '{"native":true}' });
+    throw new Error("Unexpected personal operation");
+  });
+  await page.goto("/personal");
+  await page.getByLabel("User HF token").fill("hf_testusercredential");
+  await page.getByRole("button", { name: "Verify token and load my Jobs" }).click();
+  await expect(page.getByText("Verified token owner: example-user")).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Benchmark", exact: true })
+    .selectOption("terminal-bench-2-1/one-task-1-trial");
+  await page
+    .getByRole("combobox", { name: "Agent and version" })
+    .selectOption("pi/0.84.4");
+  await page.getByLabel("Model (organization/model)").fill("publisher/model");
+  await page.getByLabel("HF inference provider").fill("provider");
+  await page.getByRole("button", { name: "Preview for launch approval" }).click();
+  await expect(page.getByText(/native_config_sha256/)).toBeVisible();
+  await page.getByRole("button", { name: "Load my exact launch approval" }).click();
+  const launch = page.getByRole("button", { name: "Dispatch the approved HF Job" });
+  await expect(launch).toBeDisabled();
+  await page.getByLabel(/I approve this exact launch/).check();
+  await launch.click();
+  await expect(page.getByRole("link", { name: "example-job" })).toHaveAttribute(
+    "href",
+    "https://huggingface.co/jobs/example-user/example-job",
+  );
+  await page.getByRole("button", { name: "Logs snapshot" }).click();
+  await expect(page.getByText("Private artifact upload completed.")).toBeVisible();
+  await page.getByRole("button", { name: "List native artifacts" }).click();
+  await page.getByRole("button", { name: /result.json/ }).click();
+  await expect(page.getByText('{"native":true}')).toBeVisible();
+  expect(dispatched).toBe(true);
+});
+
 test("shows the public leaderboard and starts sign-in from a private route", async ({
   page,
 }) => {

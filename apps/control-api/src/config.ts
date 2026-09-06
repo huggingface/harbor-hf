@@ -48,6 +48,8 @@ const schema = z.object({
   HARBOR_HF_WORKBENCH_RUNNER: z.enum(["disabled", "docker", "hf-jobs"]).optional(),
   HARBOR_HF_WORKBENCH_IMAGE: z.string().min(1).max(1024).optional(),
   HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS: z.string().default(""),
+  HARBOR_HF_PERSONAL_APPROVAL_FILE: z.string().min(1).optional(),
+  HARBOR_HF_ADMIN_USERNAMES: z.string().default(""),
 });
 
 interface OAuthConfig {
@@ -60,6 +62,8 @@ interface OAuthConfig {
 }
 
 export interface AppConfig {
+  personal_approval_file?: string;
+  admin_usernames?: string[];
   node_env: "development" | "test" | "production";
   port: number;
   namespace: string;
@@ -161,6 +165,12 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     };
   }
   return {
+    admin_usernames: parsed.HARBOR_HF_ADMIN_USERNAMES.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+    ...(parsed.HARBOR_HF_PERSONAL_APPROVAL_FILE
+      ? { personal_approval_file: resolve(parsed.HARBOR_HF_PERSONAL_APPROVAL_FILE) }
+      : {}),
     node_env: parsed.NODE_ENV,
     port: parsed.PORT,
     namespace: parsed.HARBOR_HF_NAMESPACE,

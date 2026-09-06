@@ -73,6 +73,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     authStore,
     config.oauth,
     async () => acl,
+    { adminUsernames: config.admin_usernames ?? [] },
   );
   const reconciler = new Reconciler(service, config.reconcile_interval_ms);
   const workbench = new WorkbenchRuntime("disabled", config.workbench_image, null);

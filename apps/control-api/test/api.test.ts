@@ -1,4 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { PersonalHuggingFace } from "@harbor-hf/hf-adapters";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -7,6 +9,7 @@ import {
 } from "@harbor-hf/control-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
+import { AuthenticationService } from "../src/auth.js";
 import type { AppConfig } from "../src/config.js";
 import { createRuntime, type Runtime } from "../src/runtime.js";
 
@@ -14,6 +17,7 @@ const roots: string[] = [];
 const runtimes: Runtime[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
   await Promise.all(
@@ -67,6 +71,248 @@ async function setup(writeMode: "disabled" | "enabled" = "enabled"): Promise<{
 }
 
 const workbenchPreview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+
+describe("personal execution wiring", () => {
+  const headers = { "x-hf-user-token": "hf_testusercredential" };
+  const runId = "run-0123456789abcdef01234567";
+  function identity() {
+    vi.spyOn(PersonalHuggingFace.prototype, "identity").mockResolvedValue({
+      id: "development-operator",
+      name: "example-user",
+    });
+  }
+  async function approve(runtime: Runtime) {
+    const submission = {
+      benchmark: { name: "terminal-bench-2-1", preset: "two-task-canary" },
+      harness: { agent: "terminus-2", version: "2.0.0" },
+      model: { id: "example/model", provider: "example", reasoning_effort: "default" },
+      cost_ceiling_usd_per_trial: 1,
+    };
+    const config = runtime.presets.buildJobConfig(runId, submission, "/data");
+    const file = join(runtime.config.bucket_root, "approval.json");
+    await writeFile(
+      file,
+      JSON.stringify({
+        run_id: runId,
+        owner: "example-user",
+        results_bucket: "private-results",
+        submission,
+        image: `example/runner@sha256:${"a".repeat(64)}`,
+        hardware: "cpu-basic",
+        runtime_seconds: 60,
+        job_timeout_seconds: 300,
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+        total_budget_usd: 3,
+        inference_limit_usd: 2,
+        native_config_sha256: createHash("sha256")
+          .update(JSON.stringify(config))
+          .digest("hex"),
+        credential_source: "supplied-user-token",
+        credential_destinations:
+          "control-request,hf-job-secret,harbor,sandbox,agent,hf-inference,hf-bucket",
+        deployment_scope: "dedicated-user-owned-hf-job",
+        cleanup: "selected-parent-only;children-best-effort",
+        limits_reviewed: true,
+      }),
+    );
+    runtime.config.personal_approval_file = file;
+  }
+  const launchPayload = {
+    run_id: runId,
+    approval_sha256: "0".repeat(64),
+    confirm: true,
+    accept_best_effort_cleanup_and_external_cost_limits: true,
+  };
+  async function acceptedPayload(app: Awaited<ReturnType<typeof buildApp>>) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/approval",
+      headers,
+    });
+    expect(response.statusCode).toBe(200);
+    return {
+      ...launchPayload,
+      approval_sha256: response.json().approval.approval_sha256,
+    };
+  }
+
+  it("does not fall back to control credentials", async () => {
+    const { app } = await setup();
+    const spy = vi.spyOn(PersonalHuggingFace.prototype, "identity");
+    const response = await app.inject({ method: "POST", url: "/api/v1/personal/jobs" });
+    expect(response.statusCode).toBe(401);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("rejects mismatched token identities even for administrators", async () => {
+    const { app } = await setup();
+    vi.spyOn(PersonalHuggingFace.prototype, "identity").mockResolvedValue({
+      id: "somebody-else",
+      name: "another-user",
+    });
+    const jobs = vi.spyOn(PersonalHuggingFace.prototype, "jobs");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/jobs",
+      headers,
+    });
+    expect(response.statusCode).toBe(403);
+    expect(jobs).not.toHaveBeenCalled();
+  });
+
+  it("allows a reader to access only personal interfaces", async () => {
+    const { runtime, app } = await setup("disabled");
+    identity();
+    vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+      subject: "development-operator",
+      username: "example-user",
+      role: "reader",
+      transport: "development",
+    });
+    vi.spyOn(PersonalHuggingFace.prototype, "jobs").mockResolvedValue([]);
+    expect(
+      (await app.inject({ method: "POST", url: "/api/v1/personal/jobs", headers }))
+        .statusCode,
+    ).toBe(200);
+    expect((await app.inject({ url: "/api/v1/runs" })).statusCode).toBe(403);
+  });
+
+  it("keeps dispatch disabled without exact approval", async () => {
+    const { app } = await setup();
+    identity();
+    const launch = vi.spyOn(PersonalHuggingFace.prototype, "launch");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/launch",
+      headers,
+      payload: launchPayload,
+    });
+    expect(response.statusCode).toBe(503);
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it("requires session CSRF for personal reads and mutations", async () => {
+    const { runtime, app } = await setup();
+    identity();
+    runtime.config.auth_mode = "oauth";
+    const session = runtime.auth.store.createSession(
+      "ordinary-subject",
+      "example-user",
+      3600,
+    );
+    const options = {
+      method: "POST" as const,
+      url: "/api/v1/personal/identity",
+      headers: { ...headers, cookie: `hhf_session=${session.id}` },
+    };
+    expect((await app.inject(options)).statusCode).toBe(403);
+    const accepted = await app.inject({
+      ...options,
+      headers: { ...options.headers, "x-csrf-token": session.csrf },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("uses the verified username allowlist without granting other users admin", async () => {
+    const { runtime } = await setup();
+    const auth = new AuthenticationService(
+      "development",
+      runtime.auth.store,
+      null,
+      async () => null,
+      { adminUsernames: ["example-admin"] },
+    );
+    expect(await auth.role("ordinary-subject", "example-user")).toBe("reader");
+    expect(await auth.role("admin-subject", "example-admin")).toBe("operator");
+    expect(await auth.role("example-admin")).toBe("reader");
+  });
+
+  it("dispatches exact approved native config once across app restart", async () => {
+    const { runtime, app } = await setup("disabled");
+    identity();
+    await approve(runtime);
+    const launch = vi.spyOn(PersonalHuggingFace.prototype, "launch").mockResolvedValue({
+      id: "example-job",
+      run_id: runId,
+      url: "https://huggingface.co/jobs/example-user/example-job",
+      sandbox_cleanup: "unverified",
+    });
+    const options = {
+      method: "POST" as const,
+      url: "/api/v1/personal/launch",
+      headers,
+      payload: await acceptedPayload(app),
+    };
+    expect((await app.inject(options)).statusCode).toBe(200);
+    expect(launch).toHaveBeenCalledWith(
+      expect.objectContaining({ owner: "example-user", runId }),
+    );
+    expect(JSON.stringify(launch.mock.calls)).not.toContain(headers["x-hf-user-token"]);
+    const restarted = await buildApp(runtime);
+    expect((await restarted.inject(options)).statusCode).toBe(409);
+    expect(launch).toHaveBeenCalledTimes(1);
+    await restarted.close();
+  });
+
+  it("consumes ambiguous dispatch approval and suppresses provider errors", async () => {
+    const { runtime, app } = await setup();
+    identity();
+    await approve(runtime);
+    const launch = vi
+      .spyOn(PersonalHuggingFace.prototype, "launch")
+      .mockRejectedValue(new Error(headers["x-hf-user-token"]));
+    const options = {
+      method: "POST" as const,
+      url: "/api/v1/personal/launch",
+      headers,
+      payload: await acceptedPayload(app),
+    };
+    const failed = await app.inject(options);
+    expect(failed.statusCode).toBe(400);
+    expect(failed.body).not.toContain(headers["x-hf-user-token"]);
+    expect((await app.inject(options)).statusCode).toBe(409);
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires renewed consent if an approval changes after review", async () => {
+    const { runtime, app } = await setup();
+    identity();
+    await approve(runtime);
+    const launch = vi.spyOn(PersonalHuggingFace.prototype, "launch");
+    const claim = vi.spyOn(runtime.store, "create");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/launch",
+      headers,
+      payload: launchPayload,
+    });
+    expect(response.statusCode).toBe(503);
+    expect(launch).not.toHaveBeenCalled();
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it("rejects artifact traversal before provider download", async () => {
+    const { app } = await setup();
+    identity();
+    const artifact = vi.spyOn(PersonalHuggingFace.prototype, "artifact");
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/personal/artifact",
+          headers,
+          payload: {
+            bucket: "private-results",
+            run_id: runId,
+            path: `runs/${runId}/../other/result.json`,
+          },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(artifact).not.toHaveBeenCalled();
+  });
+});
 
 describe("control API", () => {
   it("allows the Hugging Face page to embed the console", async () => {
@@ -198,7 +444,8 @@ describe("execution-disabled boundary", () => {
     "rejects direct execution APIs with writes %s before any side effect",
     async (mode) => {
       const { runtime, app } = await setup(mode);
-      expect(await runtime.auth.role("unlisted-subject")).toBeNull();
+      // Verified ordinary users can use personal APIs, not historical mutations.
+      expect(await runtime.auth.role("unlisted-subject")).toBe("reader");
       const create = vi.spyOn(runtime.store, "create");
       const put = vi.spyOn(runtime.store, "put");
       const start = vi.spyOn(runtime.service.jobs, "startParent");
