@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
-import { api, getModelProviders, getPresets, type PresetsResponse } from "./api";
+import {
+  api,
+  getModelProviders,
+  getPresets,
+  listSavedConfigurations,
+  type PresetsResponse,
+  type SavedConfiguration,
+} from "./api";
 
 interface Job {
   id: string;
   stage: string;
   url: string;
   run_id: string | null;
+  mode?: string | null;
 }
 interface Approval {
   approval_sha256: string;
@@ -17,6 +25,8 @@ interface Approval {
   runtime_seconds: number;
   job_timeout_seconds: number;
   expires_at: string;
+  mode?: "setup" | "benchmark";
+  setup_test_run_id?: string;
 }
 
 export function PersonalPage() {
@@ -24,7 +34,16 @@ export function PersonalPage() {
   const [owner, setOwner] = useState("");
   const [catalog, setCatalog] = useState<PresetsResponse | null>(null);
   const [benchmark, setBenchmark] = useState("terminal-bench-2-1/two-task-canary");
-  const [agent, setAgent] = useState("");
+  const [agent, setAgent] = useState(() => {
+    const revision = new URLSearchParams(window.location.search).get("workbench");
+    return revision ? `workbench/${revision}` : "";
+  });
+  const [saved, setSaved] = useState<SavedConfiguration[]>([]);
+  const [mode, setMode] = useState<"setup" | "benchmark">(() =>
+    new URLSearchParams(window.location.search).get("mode") === "setup"
+      ? "setup"
+      : "benchmark",
+  );
   const [model, setModel] = useState("");
   const [provider, setProvider] = useState("");
   const [providers, setProviders] = useState<string[]>([]);
@@ -44,6 +63,7 @@ export function PersonalPage() {
   const selectedAgent = catalog?.agents.find(
     (item) => `${item.agent}/${item.version}` === agent,
   );
+  const selectedSaved = saved.find((item) => `workbench/${item.revision}` === agent);
   useEffect(() => {
     void getPresets()
       .then((value) => {
@@ -60,6 +80,9 @@ export function PersonalPage() {
         }
       })
       .catch(() => setMessage("Catalog unavailable."));
+    void listSavedConfigurations()
+      .then((value) => setSaved(value.items))
+      .catch(() => setMessage("Saved Workbench configurations are unavailable."));
   }, []);
 
   async function request<T>(action: string, body: unknown = {}): Promise<T> {
@@ -135,6 +158,22 @@ export function PersonalPage() {
       <fieldset disabled={busy || !catalog} className="space-y-3">
         <legend className="text-xl">Select and preview a native run</legend>
         <label className="block">
+          Run purpose
+          <select
+            className={field}
+            value={mode}
+            onChange={(event) => setMode(event.target.value as "setup" | "benchmark")}
+          >
+            <option value="benchmark">Benchmark execution</option>
+            <option value="setup">Setup test — native Harbor install-only</option>
+          </select>
+        </label>
+        <p>
+          Setup mode skips the agent task run and verifier. Installation commands still
+          execute and can access the network; compute and credential approval is
+          required.
+        </p>
+        <label className="block">
           Benchmark
           <select
             className={field}
@@ -174,8 +213,22 @@ export function PersonalPage() {
                 {item.agent} / {item.version}
               </option>
             ))}
+            <optgroup label="My Workbench configurations">
+              {saved.map((item) => (
+                <option key={item.revision} value={`workbench/${item.revision}`}>
+                  {item.name} · {item.revision.slice(7, 15)} (saved)
+                </option>
+              ))}
+            </optgroup>
           </select>
         </label>
+        {selectedSaved ? (
+          <p>
+            Using exact Workbench version {selectedSaved.revision}. Agent settings stay
+            as saved. Benchmark execution requires a passed setup test for this version
+            and the approved execution context.
+          </p>
+        ) : null}
         <label className="block">
           Model (organization/model)
           <input
@@ -224,11 +277,15 @@ export function PersonalPage() {
           Reasoning effort
           <select
             className={field}
-            value={reasoning}
-            disabled={!selectedAgent}
+            value={selectedSaved ? "saved" : reasoning}
+            disabled={!selectedAgent || Boolean(selectedSaved)}
             onChange={(e) => setReasoning(e.target.value)}
           >
-            {!selectedAgent ? <option value="">Select an agent first</option> : null}
+            {selectedSaved ? (
+              <option value="saved">Use saved agent settings</option>
+            ) : !selectedAgent ? (
+              <option value="">Select an agent first</option>
+            ) : null}
             {selectedAgent?.reasoning_values.map((value) => (
               <option key={value} value={value}>
                 {value}
@@ -258,17 +315,28 @@ export function PersonalPage() {
         <button
           type="button"
           className={button}
-          disabled={!benchmark || !agent || !model.trim() || !provider || !reasoning}
+          disabled={
+            !benchmark ||
+            !agent ||
+            !model.trim() ||
+            !provider ||
+            (!selectedSaved && !reasoning)
+          }
           onClick={() =>
             void perform(async () => {
               const [name, preset] = benchmark.split("/");
               const [agentName, version] = agent.split("/");
               const preview = await request("preview", {
                 run_id: runId,
+                mode,
                 submission: {
                   benchmark: { name, preset },
                   harness: { agent: agentName, version },
-                  model: { id: model.trim(), provider, reasoning_effort: reasoning },
+                  model: {
+                    id: model.trim(),
+                    provider,
+                    reasoning_effort: selectedSaved ? "saved" : reasoning,
+                  },
                   cost_ceiling_usd_per_trial: Number(ceiling),
                 },
               });
@@ -357,6 +425,26 @@ export function PersonalPage() {
             {job.id}
           </a>
           <span>{job.stage}</span>
+          {job.mode === "setup" && job.run_id ? (
+            <button
+              type="button"
+              className={button}
+              disabled={busy}
+              onClick={() =>
+                void perform(async () => {
+                  const result = await request<{ status: string }>("setup-result", {
+                    run_id: job.run_id,
+                  });
+                  setOutput(JSON.stringify(result, null, 2));
+                  setMessage(
+                    `Setup ${result.status}. This is installation evidence, not a benchmark score.`,
+                  );
+                })
+              }
+            >
+              Check setup result
+            </button>
+          ) : null}
           {job.run_id ? (
             <button
               type="button"

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { fastAgentStarter, fxStarter } from "../src/workbench";
+import {
+  fastAgentWorkbenchStarter as fastAgentStarter,
+  fxWorkbenchStarter as fxStarter,
+} from "@harbor-hf/control-core";
 
 describe("historical Workbench starter recipes", () => {
   it("keeps the pinned Fast Agent installer and direct route bindings", () => {
@@ -7,7 +10,7 @@ describe("historical Workbench starter recipes", () => {
     expect(fastAgentStarter.setup_command).toContain(
       "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
     );
-    expect(fastAgentStarter.setup_command).toContain("fast-agent-mcp==0.10.16");
+    expect(fastAgentStarter.setup_command).toContain("fast-agent-mcp==0.10.19");
     expect(fastAgentStarter.environment.map((item) => item.source)).toEqual(
       expect.arrayContaining(["model_base_url", "model_api_key"]),
     );

@@ -330,6 +330,25 @@ export type SavedConfiguration =
 export function listSavedConfigurations() {
   return api<{ items: SavedConfiguration[] }>("/api/v1/workbench/configurations");
 }
+export interface WorkbenchStarter {
+  name: string;
+  label: string;
+  harbor_job_config: Record<string, unknown>;
+}
+export function getWorkbenchStarters() {
+  return api<{ items: WorkbenchStarter[] }>("/api/v1/workbench/starters");
+}
+export interface SavedSetupResult {
+  revision: string;
+  run_id: string;
+  context: string;
+  observed_at: string;
+  status: "passed";
+  evidence_origin: "user-owned-native-artifacts";
+}
+export function getSavedSetupResults() {
+  return api<{ items: SavedSetupResult[] }>("/api/v1/workbench/setup-results");
+}
 export function saveConfiguration(input: { name: string; harbor_job_config: unknown }) {
   return api<SavedConfiguration>("/api/v1/workbench/configurations", {
     method: "POST",

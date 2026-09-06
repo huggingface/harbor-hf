@@ -44,7 +44,13 @@ export class PersonalHuggingFace {
       stage: String(job.status.stage),
       url: `https://huggingface.co/jobs/${encodeURIComponent(owner)}/${encodeURIComponent(job.id)}`,
       run_id: job.labels?.["harbor-hf-run"] ?? null,
+      mode: job.labels?.["harbor-hf-mode"] ?? null,
     }));
+  }
+
+  async job(owner: string, jobId: string) {
+    const value = await getJob({ ...this.options(), namespace: owner, jobId });
+    return { id: value.id, stage: String(value.status.stage) };
   }
 
   async cancel(owner: string, jobId: string) {
@@ -163,7 +169,13 @@ export class PersonalHuggingFace {
       flavor: input.hardware,
       timeoutSeconds: input.jobTimeoutSeconds,
       attempts: 1,
-      labels: { "harbor-hf-role": "runner", "harbor-hf-run": input.runId },
+      labels: {
+        "harbor-hf-role": "runner",
+        "harbor-hf-run": input.runId,
+        "harbor-hf-mode": (input.config as { install_only?: boolean }).install_only
+          ? "setup"
+          : "benchmark",
+      },
       environment: {
         HARBOR_HF_OWNER: input.owner,
         HARBOR_HF_RESULTS_BUCKET: input.bucket,

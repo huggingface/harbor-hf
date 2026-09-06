@@ -50,6 +50,13 @@ the transfer. Result-publication plugins are rejected.
   This entrypoint is not a safe endpoint for arbitrary user configurations.
 - This increment accepts only the HF user token; additional inference-provider
   credentials need explicit destination approval and implementation.
+- Workbench saved agents are composed with catalog benchmark settings. Setup uses
+  native `install_only: true` through this same runner, not a separate setup worker.
+  Matching user-owned setup evidence is required for saved-version benchmark
+  admission; it is not independent verification. Fast-Agent 0.10.19 is the authoring
+  starter. FX's gateway-based benchmark route is not supported by HF-only credentials.
+- No published runner image or live paid setup/benchmark canary is claimed by this
+  UI integration. A digest-pinned image and separate exact approvals are prerequisites.
 - Set a provider Job timeout allowing Harbor runtime plus shutdown/upload time.
   Neither timeout is a dollar ceiling or an inference spending limit.
 - SIGTERM or runtime expiry requests local graceful shutdown, then kills the

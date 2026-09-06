@@ -194,6 +194,22 @@ async function mockControl(page: Page, options: MockOptions = {}) {
         write_mode: options.writeMode ?? system.write_mode,
       });
     if (path === "/api/v1/presets") return json(route, presets);
+    if (path === "/api/v1/workbench/starters")
+      return json(route, {
+        items: [
+          {
+            name: "fast-agent-0.10.19",
+            label: "Fast-Agent 0.10.19",
+            harbor_job_config: { agents: [{ name: "pi" }] },
+          },
+          {
+            name: "fx-0.0.6",
+            label: "FX 0.0.6",
+            harbor_job_config: { agents: [{ name: "fx" }] },
+          },
+        ],
+      });
+    if (path === "/api/v1/workbench/setup-results") return json(route, { items: [] });
     if (path === "/api/v1/workbench/configurations") {
       if (method === "GET") return json(route, { items: saved });
       const value = {
@@ -516,10 +532,45 @@ test("authoring saves and loads native fragments without setup or Run requests",
   await page.getByLabel("Harness name").fill("edited-harness");
   await page.getByRole("button", { name: "Load", exact: true }).click();
   await expect(page.getByLabel("Harness name")).toHaveValue("saved-harness");
-  await expect(page.getByRole("button", { name: "Test setup" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Test setup" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Use for benchmark" })).toBeEnabled();
   expect(executionRequests).toEqual([]);
 });
+for (const mode of ["setup", "benchmark"] as const) {
+  test(`Workbench snapshots and selects a saved version for ${mode} without launching`, async ({
+    page,
+  }) => {
+    await mockControl(page, { role: "reader", writeMode: "disabled" });
+    const executionRequests: string[] = [];
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        /\/api\/v1\/(personal|runs|workbench\/setup-tests)/.test(request.url())
+      )
+        executionRequests.push(request.url());
+    });
+    await page.goto("/workbench");
+    await page.getByRole("button", { name: "Start from Fast-Agent 0.10.19" }).click();
+    await page
+      .getByRole("button", {
+        name: mode === "setup" ? "Test setup" : "Use for benchmark",
+      })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`/personal\\?workbench=.*&mode=${mode}$`));
+    await expect(page.getByLabel("Agent and version")).toHaveValue(
+      `workbench/sha256:${"a".repeat(64)}`,
+    );
+    await expect(page.getByLabel("Run purpose")).toHaveValue(mode);
+    await expect(page.getByLabel("Reasoning effort")).toHaveValue("saved");
+    await expect(
+      page
+        .getByLabel("Agent and version")
+        .getByRole("option", { name: /fast-agent-0.10.19/ }),
+    ).toBeAttached();
+    expect(executionRequests).toEqual([]);
+  });
+}
+
 test("New Run previews saved native configuration without admission", async ({
   page,
 }) => {

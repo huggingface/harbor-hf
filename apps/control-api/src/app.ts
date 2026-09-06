@@ -8,6 +8,10 @@ import {
   leaderboard,
   listWorkbenchConfigurations,
   saveWorkbenchConfiguration,
+  compileAgentWorkbenchRecipe,
+  fastAgentWorkbenchStarter,
+  fxWorkbenchStarter,
+  executionPrefix,
 } from "@harbor-hf/control-core";
 import Fastify, {
   type FastifyInstance,
@@ -28,6 +32,7 @@ import {
 } from "./huggingface-models.js";
 import type { Runtime } from "./runtime.js";
 import { registerPersonalRoutes } from "./personal.js";
+import { setupReceipt } from "./setup-evidence.js";
 
 export const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
 
@@ -181,7 +186,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     if (
       (path === "/api/v1/workbench/configurations" &&
         ["GET", "POST"].includes(request.method)) ||
-      (path === "/api/v1/workbench/preview" && request.method === "POST")
+      (path === "/api/v1/workbench/preview" && request.method === "POST") ||
+      (["/api/v1/workbench/starters", "/api/v1/workbench/setup-results"].includes(
+        path,
+      ) &&
+        request.method === "GET")
     )
       return;
     if (
@@ -339,6 +348,40 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       items: await listWorkbenchConfigurations(
         runtime.store,
         requireActor(request).subject,
+      ),
+    };
+  });
+  app.get("/api/v1/workbench/starters", async () => ({
+    items: [
+      {
+        name: "fast-agent-0.10.19",
+        label: "Fast-Agent 0.10.19",
+        recipe: fastAgentWorkbenchStarter,
+      },
+      {
+        name: "fx-0.0.6",
+        label: "FX 0.0.6 (gateway benchmark route not supported)",
+        recipe: fxWorkbenchStarter,
+      },
+    ].map(({ recipe, ...item }) => ({
+      ...item,
+      harbor_job_config: { agents: [compileAgentWorkbenchRecipe(recipe).harbor_agent] },
+    })),
+  }));
+  app.get("/api/v1/workbench/setup-results", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const files = await runtime.store.list(
+      executionPrefix(requireActor(request).subject),
+    );
+    return {
+      items: await Promise.all(
+        files
+          .filter((entry) => entry.key.endsWith("/receipt.json"))
+          .map(async (entry) =>
+            setupReceipt.parse(
+              JSON.parse(new TextDecoder().decode(await runtime.store.read(entry.key))),
+            ),
+          ),
       ),
     };
   });

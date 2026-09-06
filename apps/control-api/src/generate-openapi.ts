@@ -252,6 +252,7 @@ const document = {
                 "results",
                 "artifact",
                 "launch",
+                "setup-result",
               ],
             },
           },
@@ -330,6 +331,20 @@ const document = {
           "Save an owner-scoped configuration independently of control write mode",
         security: authenticated,
         responses: { "200": ok, "400": error, "401": error, "403": error },
+      },
+    },
+    "/api/v1/workbench/starters": {
+      get: {
+        summary: "Read native Fast-Agent and FX authoring starters",
+        security: authenticated,
+        responses: { "200": ok, "401": error },
+      },
+    },
+    "/api/v1/workbench/setup-results": {
+      get: {
+        summary: "Read own setup evidence receipts, not leaderboard verification",
+        security: authenticated,
+        responses: { "200": ok, "401": error },
       },
     },
     "/api/v1/workbench/preview": {

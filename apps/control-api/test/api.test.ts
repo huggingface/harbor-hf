@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { PersonalHuggingFace } from "@harbor-hf/hf-adapters";
 import { tmpdir } from "node:os";
@@ -142,6 +142,137 @@ describe("personal execution wiring", () => {
     const response = await app.inject({ method: "POST", url: "/api/v1/personal/jobs" });
     expect(response.statusCode).toBe(401);
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("saves both central starters as native Workbench versions", async () => {
+    const { app } = await setup("disabled");
+    const starters = (await app.inject({ url: "/api/v1/workbench/starters" })).json()
+      .items;
+    expect(starters.map((item: { name: string }) => item.name)).toEqual([
+      "fast-agent-0.10.19",
+      "fx-0.0.6",
+    ]);
+    expect(JSON.stringify(starters[0])).toContain("fast-agent-mcp==0.10.19");
+    for (const starter of starters) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/workbench/configurations",
+        payload: { name: starter.name, harbor_job_config: starter.harbor_job_config },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+    }
+  });
+
+  it("requires matching setup evidence before a saved version can launch a benchmark", async () => {
+    const { runtime, app } = await setup("disabled");
+    identity();
+    const saved = (
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/workbench/configurations",
+        payload: {
+          name: "saved-pi",
+          harbor_job_config: { agents: [{ name: "pi", kwargs: { thinking: "off" } }] },
+        },
+      })
+    ).json();
+    await approve(runtime);
+    const file = runtime.config.personal_approval_file ?? "";
+    const approval = JSON.parse(await readFile(file, "utf8"));
+    approval.submission.harness = { agent: "workbench", version: saved.revision };
+    approval.submission.model.reasoning_effort = "saved";
+    approval.mode = "setup";
+    const preview = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/preview",
+      payload: { run_id: runId, submission: approval.submission, mode: "setup" },
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(preview.json().config.install_only).toBe(true);
+    approval.native_config_sha256 = preview.json().native_config_sha256;
+    await writeFile(file, JSON.stringify(approval));
+    vi.spyOn(PersonalHuggingFace.prototype, "launch").mockResolvedValue({
+      id: "example-setup",
+      run_id: runId,
+      url: "https://huggingface.co/jobs/example-user/example-setup",
+      sandbox_cleanup: "unverified",
+    });
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/personal/launch",
+          headers,
+          payload: await acceptedPayload(app),
+        })
+      ).statusCode,
+    ).toBe(200);
+    const setupRunId = runId;
+    approval.mode = "benchmark";
+    approval.run_id = "run-aaaaaaaaaaaaaaaaaaaaaaaa";
+    approval.setup_test_run_id = setupRunId;
+    approval.native_config_sha256 = (
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/personal/preview",
+        payload: { run_id: approval.run_id, submission: approval.submission },
+      })
+    ).json().native_config_sha256;
+    await writeFile(file, JSON.stringify(approval));
+    expect(
+      (await app.inject({ method: "POST", url: "/api/v1/personal/approval", headers }))
+        .statusCode,
+    ).toBe(400);
+    vi.spyOn(PersonalHuggingFace.prototype, "job").mockResolvedValue({
+      id: "example-setup",
+      stage: "STOPPED",
+    });
+    vi.spyOn(PersonalHuggingFace.prototype, "artifact").mockResolvedValue({
+      text: JSON.stringify({
+        finished_at: "2026-01-01T00:00:00Z",
+        n_total_trials: 2,
+        stats: {
+          n_completed_trials: 2,
+          n_errored_trials: 0,
+          n_running_trials: 0,
+          n_pending_trials: 0,
+          n_cancelled_trials: 0,
+        },
+      }),
+    });
+    const checked = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/setup-result",
+      headers,
+      payload: { run_id: setupRunId },
+    });
+    expect(checked.json().status).toBe("passed");
+    const approved = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/approval",
+      headers,
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/personal/launch",
+          headers,
+          payload: {
+            ...launchPayload,
+            run_id: approval.run_id,
+            approval_sha256: approved.json().approval.approval_sha256,
+          },
+        })
+      ).statusCode,
+    ).toBe(200);
+    approval.image = `example/runner@sha256:${"b".repeat(64)}`;
+    await writeFile(file, JSON.stringify(approval));
+    expect(
+      (await app.inject({ method: "POST", url: "/api/v1/personal/approval", headers }))
+        .statusCode,
+    ).toBe(400);
   });
 
   it("previews for ordinary users without token verification or side effects", async () => {

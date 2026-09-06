@@ -1,11 +1,17 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { containsCredentialMaterial } from "@harbor-hf/control-core";
+import {
+  buildSavedExecution,
+  containsCredentialMaterial,
+  executionPrefix,
+  setupContext,
+} from "@harbor-hf/control-core";
 import { PersonalHuggingFace } from "@harbor-hf/hf-adapters";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AuthenticatedActor } from "./auth.js";
 import type { Runtime } from "./runtime.js";
+import { checkSetup, setupReceipt } from "./setup-evidence.js";
 
 const component = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/);
 const submission = z
@@ -30,13 +36,18 @@ const approvalSchema = z
     owner: component,
     results_bucket: component,
     submission,
+    mode: z.enum(["setup", "benchmark"]).optional(),
+    setup_test_run_id: z
+      .string()
+      .regex(/^run-[0-9a-f]{24}$/)
+      .optional(),
     image: z.string().regex(/^[^\s]+@sha256:[0-9a-f]{64}$/),
     hardware: z.enum(["cpu-basic", "cpu-upgrade"]),
     runtime_seconds: z.number().int().positive().max(82_800),
     job_timeout_seconds: z.number().int().positive().max(86_400),
     expires_at: z.iso.datetime(),
     total_budget_usd: z.number().positive().finite(),
-    inference_limit_usd: z.number().positive().finite(),
+    inference_limit_usd: z.number().nonnegative().finite(),
     native_config_sha256: z.string().regex(/^[0-9a-f]{64}$/),
     credential_source: z.literal("supplied-user-token"),
     credential_destinations: z.literal(
@@ -48,7 +59,7 @@ const approvalSchema = z
   })
   .strict();
 
-async function approval(runtime: Runtime, owner: string) {
+async function approval(runtime: Runtime, owner: string, subject: string) {
   if (!runtime.config.personal_approval_file) return null;
   const value = approvalSchema.parse(
     JSON.parse(await readFile(runtime.config.personal_approval_file, "utf8")),
@@ -58,19 +69,49 @@ async function approval(runtime: Runtime, owner: string) {
     throw new Error("Submission contains credential material");
   if (
     value.job_timeout_seconds < value.runtime_seconds + 120 ||
-    value.inference_limit_usd > value.total_budget_usd
+    value.inference_limit_usd > value.total_budget_usd ||
+    (value.mode !== "setup" && value.inference_limit_usd === 0)
   )
     throw new Error("Invalid launch limits");
-  const config = runtime.presets.buildJobConfig(
+  const config = await buildSavedExecution(
+    runtime.store,
+    runtime.presets,
+    subject,
     value.run_id,
     value.submission,
-    "/data",
+    value.mode ?? "benchmark",
   );
+  const context = setupContext(
+    config,
+    value.submission.harness.version,
+    value.image,
+    value.hardware,
+  );
+  if (value.submission.harness.agent === "workbench" && value.mode !== "setup") {
+    if (!value.setup_test_run_id)
+      throw new Error("Workbench run requires a passed setup test");
+    const receipt = setupReceipt.parse(
+      JSON.parse(
+        new TextDecoder().decode(
+          await runtime.store.read(
+            `${executionPrefix(subject)}${value.setup_test_run_id}/receipt.json`,
+          ),
+        ),
+      ),
+    );
+    if (
+      receipt.owner !== owner ||
+      receipt.context !== context ||
+      receipt.revision !== value.submission.harness.version
+    )
+      throw new Error("Workbench setup test does not match this execution");
+  }
   const digest = createHash("sha256").update(JSON.stringify(config)).digest("hex");
   if (digest !== value.native_config_sha256) throw new Error("Approval is stale");
   return {
     value,
     config,
+    context,
     digest: createHash("sha256").update(JSON.stringify(value)).digest("hex"),
   };
 }
@@ -95,21 +136,29 @@ export function registerPersonalRoutes(
           "results",
           "artifact",
           "launch",
+          "setup-result",
         ]),
       })
       .parse(request.params);
     // Static catalog compilation needs login/CSRF, not Jobs credentials.
     if (action === "preview") {
       const input = z
-        .object({ run_id: component, submission })
+        .object({
+          run_id: component,
+          submission,
+          mode: z.enum(["setup", "benchmark"]).optional(),
+        })
         .strict()
         .parse(request.body);
       if (containsCredentialMaterial(input.submission))
         throw new Error("Harbor JobConfig submission contains credential material");
-      const config = runtime.presets.buildJobConfig(
+      const config = await buildSavedExecution(
+        runtime.store,
+        runtime.presets,
+        actorFor(request).subject,
         input.run_id,
         input.submission,
-        "/data",
+        input.mode ?? "benchmark",
       );
       return {
         config,
@@ -148,8 +197,21 @@ export function registerPersonalRoutes(
       const owner = component.parse(identity.name);
       if (action === "identity") return { owner };
       if (action === "jobs") return { jobs: await personal.jobs(owner) };
+      if (action === "setup-result") {
+        const input = z
+          .object({ run_id: z.string().regex(/^run-[0-9a-f]{24}$/) })
+          .strict()
+          .parse(request.body);
+        return await checkSetup(
+          runtime.store,
+          personal,
+          actor.subject,
+          owner,
+          input.run_id,
+        );
+      }
       if (action === "approval") {
-        const approved = await approval(runtime, owner);
+        const approved = await approval(runtime, owner, actor.subject);
         return {
           approval: approved
             ? { ...approved.value, approval_sha256: approved.digest }
@@ -198,7 +260,7 @@ export function registerPersonalRoutes(
         })
         .strict()
         .parse(request.body);
-      const approved = await approval(runtime, owner);
+      const approved = await approval(runtime, owner, actor.subject);
       if (
         !approved ||
         input.run_id !== approved.value.run_id ||
@@ -227,6 +289,20 @@ export function registerPersonalRoutes(
                 "Approval consumed. Inspect personal Jobs; do not blindly retry.",
             },
           });
+        const prefix = `${executionPrefix(actor.subject)}${value.run_id}/`;
+        await runtime.store.create(
+          `${prefix}execution.json`,
+          Buffer.from(
+            JSON.stringify({
+              owner,
+              run_id: value.run_id,
+              bucket: value.results_bucket,
+              mode: value.mode ?? "benchmark",
+              revision: value.submission.harness.version,
+              context: approved.context,
+            }),
+          ),
+        );
         const job = await personal.launch({
           owner,
           bucket: value.results_bucket,
@@ -241,6 +317,7 @@ export function registerPersonalRoutes(
           `personal-admissions/${value.run_id}/job.json`,
           Buffer.from(JSON.stringify(job)),
         );
+        await runtime.store.put(`${prefix}job.json`, Buffer.from(JSON.stringify(job)));
         return job;
       } finally {
         busy.delete(value.run_id);

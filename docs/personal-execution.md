@@ -25,12 +25,37 @@ Administrator status never bypasses the personal token identity check.
 7. Use direct provider Job links for diagnosis/cancellation, bounded provider
    log snapshots, and private native artifact listings/previews.
 
-**Workbench authoring:** any signed-in user can edit, save and load their own
-immutable native configurations, including while control execution writes are
-disabled. Administrators cannot list other users' saved configurations through
-this interface. Session CSRF and owner isolation still apply. Workbench remote
-setup tests and custom-config launch are not implemented; configured runs use
-the separate approved Personal execution path.
+**Workbench workflow:** signed-in users can start from Fast-Agent 0.10.19 or FX
+0.0.6, edit an agents-only native fragment, and save immutable versions. Saved
+versions appear under **My Workbench configurations** in the Personal agent
+dropdown. Model routing is injected at admission; agent kwargs stay as saved.
+Benchmark tasks, environment and retries remain owned by the benchmark catalog.
+Other top-level fragment fields are rejected for execution, not silently ignored.
+
+**Test setup** saves the current draft as an immutable version and opens Personal
+execution with that version and purpose **setup** selected. It does not immediately
+spend money. After exact setup approval, the same dedicated runner invokes native
+Harbor `install_only: true`, skipping agent task execution and verification.
+Installation commands still execute and may access the network and supplied
+credentials. Use **Check setup result** on the resulting Job to inspect the native
+result and record a receipt only when every expected trial finished without errors.
+Missing evidence, cancelled/failed Jobs, and incomplete results are not passes.
+
+**Use for benchmark** snapshots any edits too. Saved-version benchmark admission
+requires a passed setup receipt for the exact version, model, benchmark configuration,
+runner image and hardware. Changing any of those invalidates the match. A setup pass
+is only user-owned installation evidence, never benchmark success or independent
+verification. The user controls the evidence Bucket; this is not an anti-tampering
+attestation or leaderboard acceptance.
+
+Administrators cannot list other users' configurations or setup receipts through
+these APIs. Session CSRF and owner isolation apply even with control writes disabled.
+
+**FX limitation:** the retained 0.0.6 starter uses Vercel's AI Gateway. It is
+available for authoring and install-only testing, but FX benchmark dispatch is
+rejected by the HF-only credential path. The service does not substitute an HF
+token for a gateway key. A separately reviewed gateway credential/route integration
+is still needed for FX benchmark execution.
 
 The password field is page-memory-only, cleared on navigation/reload. Requests
 carry `X-HF-User-Token`; sessions also use existing CSRF protection. No token is
@@ -56,6 +81,13 @@ Its schema is `approvalSchema` in `apps/control-api/src/personal.ts`:
 
 - Unique `run_id`, verified `owner`, existing `results_bucket`.
 - Exact catalog `submission` (benchmark, harness, model and per-trial allowance).
+- For a saved agent, `submission.harness` is
+  `{ "agent": "workbench", "version": "sha256:<saved-version-digest>" }`, and
+  `submission.model.reasoning_effort` is `saved`.
+- `mode`: `setup` or `benchmark` (omitting it retains benchmark behavior).
+  Saved-version benchmark approvals also require `setup_test_run_id` naming the
+  matching passed setup Job's run ID. Setup can set `inference_limit_usd` to zero;
+  the explicit total compute budget and runtime limits remain required.
 - Immutable runner `image`, runner `hardware`.
 - `runtime_seconds`, `job_timeout_seconds` (at least 120 seconds longer),
   `expires_at`.
@@ -103,14 +135,16 @@ the supplied-token header. Responses use `Cache-Control: no-store`.
 | --- | --- |
 | `identity`, `jobs`, `approval` | `{}` |
 | `preview` | `run_id`, catalog `submission` |
+| `setup-result` | `run_id` for a previously dispatched setup owned by the caller |
 | `logs` | `job_id` |
 | `cancel` | `job_id`, `confirm: true` |
 | `results` | `bucket`, `run_id` |
 | `artifact` | `bucket`, `run_id`, relative `path` under that run |
 | `launch` | approved `run_id`, returned `approval_sha256`, `confirm: true`, `accept_best_effort_cleanup_and_external_cost_limits: true` |
 
-The existing HF bearer authentication can be used by API clients; the supplied
+Preview additionally accepts `mode`. The existing HF bearer authentication can be used by API clients; the supplied
 token must match that verified identity too. CLI OAuth remains unresolved.
 Provider errors are deliberately replaced with fixed diagnostics to avoid
 credential leakage. This path does not enable historical Run actions,
-Workbench setup execution, or reconciliation.
+legacy Workbench setup routes, or reconciliation. Native install-only tests use the
+personal dedicated-runner path instead of restoring that old setup worker.

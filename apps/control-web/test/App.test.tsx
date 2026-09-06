@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const apiMocks = vi.hoisted(() => ({
   actOnRun: vi.fn(),
   listSavedConfigurations: vi.fn(),
+  getWorkbenchStarters: vi.fn(),
+  getSavedSetupResults: vi.fn(),
   saveConfiguration: vi.fn(),
   cancelWorkbenchSetup: vi.fn(),
   getJobs: vi.fn(),
@@ -217,6 +219,8 @@ function renderAt(path: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   apiMocks.listSavedConfigurations.mockResolvedValue({ items: [] });
+  apiMocks.getWorkbenchStarters.mockResolvedValue({ items: [] });
+  apiMocks.getSavedSetupResults.mockResolvedValue({ items: [] });
   window.localStorage.clear();
   apiMocks.getSession.mockResolvedValue({
     authenticated: true,
@@ -377,12 +381,12 @@ describe("restored control console", () => {
       name: saved.name,
       harbor_job_config: saved.harbor_job_config,
     });
-    expect(screen.getByRole("button", { name: "Test setup" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Test setup" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Use for benchmark" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Load" }));
     expect(
       await screen.findByText(
-        "Loaded exact saved version; execution remains disabled.",
+        "Loaded exact saved version. Launch still requires approval.",
       ),
     ).toBeVisible();
     expect(apiMocks.startWorkbenchSetup).not.toHaveBeenCalled();

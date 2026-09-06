@@ -2,16 +2,23 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PersonalPage } from "../src/personal";
-import { api, getModelProviders, getPresets } from "../src/api";
+import {
+  api,
+  getModelProviders,
+  getPresets,
+  listSavedConfigurations,
+} from "../src/api";
 import type { AgentPreset } from "../src/api";
 
 vi.mock("../src/api", () => ({
   api: vi.fn(),
   getPresets: vi.fn(),
   getModelProviders: vi.fn(),
+  listSavedConfigurations: vi.fn(),
 }));
+beforeEach(() => vi.mocked(listSavedConfigurations).mockResolvedValue({ items: [] }));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();

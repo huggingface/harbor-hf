@@ -11,13 +11,41 @@ import { containsCredentialMaterial } from "./presets.js";
 function ownerPrefix(owner: string): string {
   return `workbench/configurations/${sha256(owner)}/`;
 }
+function object(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function containsSavedCredentialMaterial(input: {
+  name: string;
+  harbor_job_config: unknown;
+}) {
+  const copy = structuredClone(input);
+  const agents = object(copy.harbor_job_config).agents;
+  if (Array.isArray(agents)) {
+    for (const candidate of agents) {
+      const agent = object(candidate);
+      if (agent.import_path !== "harbor_hf_agents.command_agent.agent:CommandAgent")
+        continue;
+      const run = object(object(object(agent.kwargs).config).run);
+      const bindings = object(run.bindings);
+      // These are explicit late-bound references, not credential values. No
+      // exception for HF_TOKEN, arbitrary keys, other plugins or literal secrets.
+      for (const name of ["OPENAI_API_KEY", "AI_GATEWAY_API_KEY"]) {
+        if (bindings[name] === "model_api_key") delete bindings[name];
+      }
+    }
+  }
+  return containsCredentialMaterial(copy);
+}
 export async function saveWorkbenchConfiguration(
   store: ObjectStore,
   owner: string,
   input: { name: string; harbor_job_config: unknown },
 ): Promise<SavedWorkbenchConfigurationV1> {
-  if (containsCredentialMaterial(input))
-    throw new Error("configuration contains credential material");
+  if (containsSavedCredentialMaterial(input))
+    throw new Error("Workbench configuration contains credential material");
   const config = validateStrictHarborJobConfig(input.harbor_job_config);
   const content = { name: input.name, harbor_job_config: config };
   const record = validateSavedWorkbench({

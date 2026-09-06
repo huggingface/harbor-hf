@@ -1,167 +1,15 @@
 import { useEffect, useState } from "react";
-import type { WorkbenchRecipe, SavedConfiguration } from "./api";
-import { listSavedConfigurations, saveConfiguration } from "./api";
+import {
+  getSavedSetupResults,
+  getWorkbenchStarters,
+  listSavedConfigurations,
+  saveConfiguration,
+  type SavedConfiguration,
+  type SavedSetupResult,
+  type WorkbenchStarter,
+} from "./api";
 import { PageHeader } from "./layout";
 import { Button, Card, ErrorNotice } from "./ui";
-
-export const fastAgentStarter: WorkbenchRecipe = {
-  schema_version: "v1",
-  name: "fast-agent",
-  setup_command: [
-    "set -eu",
-    "uv_version=0.12.5",
-    "uv_sha256=68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
-    "python_version=3.12.14",
-    'case "$(uname -m)" in',
-    "  x86_64|amd64) uv_target=x86_64-unknown-linux-gnu ;;",
-    '  *) printf "unsupported setup architecture\\n" >&2; exit 2 ;;',
-    "esac",
-    "command -v /usr/lib/apt/apt-helper >/dev/null 2>&1",
-    "command -v tar >/dev/null 2>&1",
-    "command -v sha256sum >/dev/null 2>&1",
-    'mkdir -p "$AGENT_HOME/bin" "$AGENT_HOME/cache" "$AGENT_HOME/python"',
-    `uv_archive="$AGENT_HOME/cache/uv-\${uv_version}.tar.gz"`,
-    'uv_download_log="$AGENT_HOME/cache/uv-download.log"',
-    "if ! /usr/lib/apt/apt-helper \\",
-    "  -o Acquire::https::Verify-Peer=false \\",
-    "  -o Acquire::https::Verify-Host=false \\",
-    "  download-file \\",
-    `  "https://github.com/astral-sh/uv/releases/download/\${uv_version}/uv-\${uv_target}.tar.gz" \\`,
-    '  "$uv_archive" >"$uv_download_log" 2>&1',
-    "then",
-    '  printf "pinned uv download failed\\n" >&2',
-    "  exit 1",
-    "fi",
-    'printf "%s  %s\\n" "$uv_sha256" "$uv_archive" |',
-    "  sha256sum --check --strict",
-    'rm -rf "$AGENT_HOME/cache/uv-extract"',
-    'mkdir -p "$AGENT_HOME/cache/uv-extract"',
-    'tar -xzf "$uv_archive" \\',
-    '  -C "$AGENT_HOME/cache/uv-extract" \\',
-    "  --strip-components=1",
-    'install -m 0755 "$AGENT_HOME/cache/uv-extract/uv" "$AGENT_HOME/bin/uv"',
-    'UV_CACHE_DIR="$AGENT_HOME/cache/uv" \\',
-    'UV_PYTHON_INSTALL_DIR="$AGENT_HOME/python" \\',
-    "UV_NO_PROGRESS=1 \\",
-    '  "$AGENT_HOME/bin/uv" python install "$python_version"',
-    'UV_CACHE_DIR="$AGENT_HOME/cache/uv" \\',
-    'UV_PYTHON_INSTALL_DIR="$AGENT_HOME/python" \\',
-    "UV_NO_PROGRESS=1 \\",
-    '  "$AGENT_HOME/bin/uv" venv \\',
-    '  --python "$python_version" \\',
-    "  --python-preference only-managed \\",
-    '  "$AGENT_HOME/venv"',
-    'UV_CACHE_DIR="$AGENT_HOME/cache/uv" \\',
-    'UV_PYTHON_INSTALL_DIR="$AGENT_HOME/python" \\',
-    "UV_NO_PROGRESS=1 \\",
-    '  "$AGENT_HOME/bin/uv" pip install \\',
-    '  --python "$AGENT_HOME/venv/bin/python" \\',
-    "  fast-agent-mcp==0.10.16",
-    '"$AGENT_HOME/venv/bin/python" --version',
-    '"$AGENT_HOME/venv/bin/fast-agent" --version',
-  ].join("\n"),
-  run_command: [
-    '"$AGENT_HOME/venv/bin/fast-agent" go',
-    '  --model "$AGENT_MODEL"',
-    '  --base-url "$MODEL_BASE_URL"',
-    '  --prompt-file "$TASK_INSTRUCTION_PATH"',
-    '  --workspace "$TASK_WORKSPACE"',
-    '  --home "$AGENT_HOME/runtime"',
-    '  --results "$AGENT_RESULTS_PATH"',
-    '  --trajectory-output "$AGENT_TRAJECTORY_PATH"',
-    "  --shell",
-    "  --quiet",
-  ].join(" \\\n"),
-  route_api: "chat-completions",
-  setup_timeout_seconds: 1800,
-  environment: [
-    { name: "AGENT_HOME", source: "agent_home" },
-    { name: "AGENT_MODEL", source: "model_name" },
-    { name: "OPENAI_API_KEY", source: "model_api_key" },
-    { name: "MODEL_BASE_URL", source: "model_base_url" },
-    {
-      name: "AGENT_RESULTS_PATH",
-      source: "literal",
-      value: "/logs/agent/fast-agent-results.json",
-    },
-    {
-      name: "AGENT_TRAJECTORY_PATH",
-      source: "literal",
-      value: "/logs/agent/trajectory.json",
-    },
-    { name: "TASK_INSTRUCTION_PATH", source: "instruction_path" },
-    { name: "TASK_WORKSPACE", source: "workspace_path" },
-  ],
-  outputs: {
-    results_path: "/logs/agent/fast-agent-results.json",
-    trajectory_path: "/logs/agent/trajectory.json",
-  },
-};
-
-export const fxStarter: WorkbenchRecipe = {
-  schema_version: "v1",
-  name: "fx",
-  setup_command: [
-    "set -eu",
-    "fx_version=0.0.6",
-    'case "$(uname -m)" in',
-    "  x86_64|amd64)",
-    "    fx_target=x86_64",
-    "    fx_sha256=120fa992df8caf982e17ca9e9e3966c790b0d150480511eaf51392e66a0f0b84",
-    "    ;;",
-    "  aarch64|arm64)",
-    "    fx_target=aarch64",
-    "    fx_sha256=0dfd53224c5ecede601bb8ce649f84fab6db05a39afbcd5b39e6091833f6c4d7",
-    "    ;;",
-    '  *) printf "unsupported setup architecture\\n" >&2; exit 2 ;;',
-    "esac",
-    "command -v /usr/lib/apt/apt-helper >/dev/null 2>&1",
-    "command -v tar >/dev/null 2>&1",
-    "command -v sha256sum >/dev/null 2>&1",
-    'mkdir -p "$AGENT_HOME/bin" "$AGENT_HOME/cache"',
-    `fx_archive="$AGENT_HOME/cache/fx-\${fx_version}-\${fx_target}.tar.gz"`,
-    'fx_download_log="$AGENT_HOME/cache/fx-download.log"',
-    "if ! /usr/lib/apt/apt-helper \\",
-    "  -o Acquire::https::Verify-Peer=false \\",
-    "  -o Acquire::https::Verify-Host=false \\",
-    "  download-file \\",
-    `  "https://releases.fx.sh/v\${fx_version}/fx-linux-\${fx_target}.tar.gz" \\`,
-    '  "$fx_archive" >"$fx_download_log" 2>&1',
-    "then",
-    '  printf "pinned FX download failed\\n" >&2',
-    "  exit 1",
-    "fi",
-    'printf "%s  %s\\n" "$fx_sha256" "$fx_archive" |',
-    "  sha256sum --check --strict",
-    'tar -xzf "$fx_archive" -C "$AGENT_HOME/bin" fx',
-    'chmod 0755 "$AGENT_HOME/bin/fx"',
-    '"$AGENT_HOME/bin/fx" --version',
-  ].join("\n"),
-  run_command: [
-    'cd "$TASK_WORKSPACE"',
-    '"$AGENT_HOME/bin/fx" ask --yolo --json -- "$(cat "$TASK_INSTRUCTION_PATH")"',
-    '  < /dev/null > "$AGENT_RESULTS_PATH"',
-  ].join(" \\\n"),
-  route_api: "chat-completions",
-  setup_timeout_seconds: 600,
-  environment: [
-    { name: "AGENT_HOME", source: "agent_home" },
-    { name: "FX_MODEL", source: "model_name" },
-    { name: "AI_GATEWAY_API_KEY", source: "model_api_key" },
-    { name: "FX_AUTO_UPGRADE", source: "literal", value: "0" },
-    {
-      name: "AGENT_RESULTS_PATH",
-      source: "literal",
-      value: "/logs/agent/fx-results.json",
-    },
-    { name: "TASK_INSTRUCTION_PATH", source: "instruction_path" },
-    { name: "TASK_WORKSPACE", source: "workspace_path" },
-  ],
-  outputs: {
-    results_path: "/logs/agent/fx-results.json",
-    trajectory_path: null,
-  },
-};
 
 export function WorkbenchPage() {
   const [saving, setSaving] = useState(false);
@@ -171,6 +19,8 @@ export function WorkbenchPage() {
     '{"agents": [{"name": "terminus-2", "kwargs": {}}]}',
   );
   const [items, setItems] = useState<SavedConfiguration[]>([]);
+  const [starters, setStarters] = useState<WorkbenchStarter[]>([]);
+  const [tests, setTests] = useState<SavedSetupResult[]>([]);
   const [selected, setSelected] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState("");
@@ -179,6 +29,12 @@ export function WorkbenchPage() {
       .then((value) => setItems(value.items))
       .catch(setError)
       .finally(() => setLoading(false));
+    void getWorkbenchStarters()
+      .then((value) => setStarters(value.items))
+      .catch(setError);
+    void getSavedSetupResults()
+      .then((value) => setTests(value.items))
+      .catch(setError);
   }, []);
   async function save() {
     setSaving(true);
@@ -194,41 +50,64 @@ export function WorkbenchPage() {
       setSelected(item.revision);
       setMessage("Saved immutable harness version. No Job was launched.");
       setError(null);
+      return item;
     } catch (failure) {
       setError(failure);
+      return null;
     } finally {
       setSaving(false);
     }
+  }
+  async function prepare(mode: "setup" | "benchmark") {
+    // Snapshot the current draft first. Edits can never reuse an old test identity.
+    const item = await save();
+    if (item)
+      window.location.assign(
+        `/personal?workbench=${encodeURIComponent(item.revision)}&mode=${mode}`,
+      );
   }
   return (
     <>
       <PageHeader
         title="Agent Workbench"
-        description="Configure, save, and load named immutable Harbor JobConfig fragments."
+        description="Configure → test setup → save versions → select for benchmark runs."
       />
       <Card>
         <p role="status">
-          Configuration authoring is available to signed-in users. Remote setup tests
-          and custom Workbench launches are not implemented.
-        </p>
-        <p>
-          For configured, approved runs, use{" "}
-          <a href="/personal" className="text-cyan-300 underline">
-            Personal execution
-          </a>
-          .
+          Test setup snapshots this draft and opens a native Harbor install-only run.
+          Benchmark runs use the exact saved version and require a matching passed setup
+          test. Both are dedicated Jobs requiring explicit compute/credential approval.
         </p>
         <p className="my-4">
-          Use native Harbor agent settings, including installation commands in your
-          agent kwargs. Discover options with harbor agents list --json and harbor
-          agents schema NAME --json. Never enter secrets. Saving is not execution
-          approval.
+          Save an agents-only native Harbor fragment. Benchmark tasks, environment and
+          retries come from the selected benchmark. Model routing is selected in
+          Personal execution; agent kwargs (including reasoning) stay as saved. Never
+          enter secrets.
         </p>
-        <label className="block">
+        <div className="flex flex-wrap gap-3">
+          {starters.map((starter) => (
+            <Button
+              key={starter.name}
+              disabled={saving}
+              onClick={() => {
+                setName(starter.name);
+                setText(JSON.stringify(starter.harbor_job_config, null, 2));
+                setSelected("");
+                setMessage(
+                  "Loaded starter draft. Save or test it to create your own version.",
+                );
+              }}
+            >
+              Start from {starter.label}
+            </Button>
+          ))}
+        </div>
+        <label className="block mt-4">
           Harness name
           <input
             className="block w-full bg-slate-950 p-2"
             value={name}
+            disabled={saving}
             onChange={(event) => setName(event.target.value)}
           />
         </label>
@@ -238,16 +117,29 @@ export function WorkbenchPage() {
             className="block w-full bg-slate-950 p-2 font-mono"
             rows={16}
             value={text}
+            disabled={saving}
             onChange={(event) => setText(event.target.value)}
           />
         </label>
-        <div className="mt-4 flex gap-3">
+        <div className="mt-4 flex flex-wrap gap-3">
           <Button disabled={saving || loading} onClick={() => void save()}>
             Save configuration
           </Button>
-          <Button disabled>Test setup</Button>
-          <Button disabled>Launch Harbor run</Button>
+          <Button disabled={saving || loading} onClick={() => void prepare("setup")}>
+            Test setup
+          </Button>
+          <Button
+            disabled={saving || loading}
+            onClick={() => void prepare("benchmark")}
+          >
+            Use for benchmark
+          </Button>
         </div>
+        <p className="mt-4">
+          A setup pass checks installation only, not inference or benchmark quality.
+          Results are user-owned evidence, not independent verification. Changing the
+          version, model, benchmark environment or runner image requires a new test.
+        </p>
         {loading ? <p role="status">Loading your saved configurations…</p> : null}
         <label className="block mt-4">
           Load configuration
@@ -265,18 +157,26 @@ export function WorkbenchPage() {
           </select>
         </label>
         <Button
-          disabled={!selected}
+          disabled={!selected || saving}
           onClick={() => {
             const item = items.find((value) => value.revision === selected);
             if (item) {
               setName(item.name);
               setText(JSON.stringify(item.harbor_job_config, null, 2));
-              setMessage("Loaded exact saved version; execution remains disabled.");
+              setMessage("Loaded exact saved version. Launch still requires approval.");
             }
           }}
         >
           Load
         </Button>
+        {tests
+          .filter((result) => result.revision === selected)
+          .map((result) => (
+            <p key={result.run_id}>
+              Setup passed: {result.run_id} ({result.observed_at}). Only valid for its
+              recorded execution context.
+            </p>
+          ))}
         {message ? <p role="status">{message}</p> : null}
         {error ? <ErrorNotice error={error} /> : null}
       </Card>
