@@ -354,6 +354,11 @@ describe("restored control console", () => {
   });
 
   it("saves native harness configuration while setup and launch remain disabled", async () => {
+    apiMocks.getSession.mockResolvedValue({
+      authenticated: true,
+      actor: { username: "example-user", role: "reader", transport: "session" },
+    });
+    apiMocks.getSystem.mockResolvedValue({ ...system, write_mode: "disabled" });
     const user = userEvent.setup();
     const saved = {
       schema_version: "v1",

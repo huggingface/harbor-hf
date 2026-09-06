@@ -4,13 +4,76 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { PersonalPage } from "../src/personal";
-import { api, getPresets } from "../src/api";
+import { api, getModelProviders, getPresets } from "../src/api";
+import type { AgentPreset } from "../src/api";
 
-vi.mock("../src/api", () => ({ api: vi.fn(), getPresets: vi.fn() }));
+vi.mock("../src/api", () => ({
+  api: vi.fn(),
+  getPresets: vi.fn(),
+  getModelProviders: vi.fn(),
+}));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
   vi.restoreAllMocks();
+});
+
+it("allows selection and preview without a token, using the agent's reasoning options", async () => {
+  const agent: AgentPreset = {
+    schema_version: "v1",
+    agent: "pi",
+    version: "0.84.4",
+    harbor_agent: { name: "pi", kwargs: {} },
+    reasoning_option: "thinking",
+    reasoning_values: ["off", "high"],
+  };
+  vi.mocked(getPresets).mockResolvedValue({
+    benchmarks: [
+      {
+        schema_version: "v1",
+        benchmark: "terminal-bench-2-1",
+        preset: "two-task-canary",
+        leaderboard_eligible: false,
+        job: {},
+      },
+    ],
+    agents: [agent],
+  });
+  vi.mocked(getModelProviders).mockResolvedValue({
+    model: "example/model",
+    providers: ["example-provider"],
+  });
+  vi.mocked(api).mockResolvedValue({
+    native_config_sha256: "a".repeat(64),
+    config: {},
+  });
+  const user = userEvent.setup();
+  render(<PersonalPage />);
+  const select = screen.getByRole("combobox", { name: "Agent and version" });
+  await waitFor(() => expect(select).toBeEnabled());
+  expect(screen.getByRole("combobox", { name: "Benchmark" })).toBeEnabled();
+  await user.selectOptions(select, "pi/0.84.4");
+  expect(screen.getByRole("combobox", { name: "Reasoning effort" })).toHaveValue("off");
+  await user.type(screen.getByLabelText("Model (organization/model)"), "example/model");
+  await user.click(screen.getByRole("button", { name: "Find model providers" }));
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "HF inference provider" })).toHaveValue(
+      "example-provider",
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Preview for launch approval" }));
+  expect(api).toHaveBeenCalledWith(
+    "/api/v1/personal/preview",
+    expect.objectContaining({
+      method: "POST",
+      body: expect.stringContaining('"reasoning_effort":"off"'),
+    }),
+  );
+  expect(vi.mocked(api).mock.calls[0]?.[1]?.headers).toBeUndefined();
+  expect(
+    screen.getByRole("button", { name: "Load my exact launch approval" }),
+  ).toBeDisabled();
+  expect(screen.getByLabelText("User HF token")).toHaveValue("");
 });
 
 it("keeps supplied credentials out of browser storage and request bodies", async () => {

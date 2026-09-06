@@ -144,6 +144,118 @@ describe("personal execution wiring", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("previews for ordinary users without token verification or side effects", async () => {
+    const { runtime, app } = await setup("disabled");
+    vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+      subject: "ordinary-subject",
+      username: "example-user",
+      role: "reader",
+      transport: "development",
+    });
+    const identity = vi.spyOn(PersonalHuggingFace.prototype, "identity");
+    const create = vi.spyOn(runtime.store, "create");
+    const credentialRead = vi.fn(() => {
+      throw new Error("Credential access forbidden");
+    });
+    Object.defineProperty(runtime.config, "hf_token", { get: credentialRead });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/preview",
+      payload: {
+        run_id: runId,
+        submission: {
+          benchmark: { name: "terminal-bench-2-1", preset: "two-task-canary" },
+          harness: { agent: "pi", version: "0.84.4" },
+          model: { id: "example/model", provider: "example", reasoning_effort: "off" },
+          cost_ceiling_usd_per_trial: 1,
+        },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().config.n_attempts).toBe(1);
+    expect(response.json().native_config_sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(identity).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(credentialRead).not.toHaveBeenCalled();
+  });
+
+  it("allows owner-scoped Workbench authoring without enabling execution writes", async () => {
+    const { runtime, app } = await setup("disabled");
+    const actor = vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+      subject: "ordinary-subject",
+      username: "example-user",
+      role: "reader",
+      transport: "development",
+    });
+    const input = {
+      name: "my-harness",
+      harbor_job_config: { agents: [{ name: "pi" }] },
+    };
+    const saved = await app.inject({
+      method: "POST",
+      url: "/api/v1/workbench/configurations",
+      payload: input,
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(
+      (await app.inject({ url: "/api/v1/workbench/configurations" })).json().items,
+    ).toEqual([saved.json()]);
+    actor.mockReturnValue({
+      subject: "different-subject",
+      username: "another-user",
+      role: "operator",
+      transport: "development",
+    });
+    const other = await app.inject({ url: "/api/v1/workbench/configurations" });
+    expect(other.json().items).toEqual([]);
+    expect(other.headers["cache-control"]).toBe("no-store");
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/workbench/configurations",
+          payload: { ...input, owner: "ordinary-subject" },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/workbench/setup-tests",
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(503);
+    expect(await runtime.store.list("runs/")).toEqual([]);
+    expect(runtime.config.write_mode).toBe("disabled");
+  });
+
+  it("retains session CSRF for tokenless authoring", async () => {
+    const { runtime, app } = await setup("disabled");
+    runtime.config.auth_mode = "oauth";
+    const session = runtime.auth.store.createSession(
+      "ordinary-subject",
+      "example-user",
+      3600,
+    );
+    const options = {
+      method: "POST" as const,
+      url: "/api/v1/workbench/configurations",
+      headers: { cookie: `hhf_session=${session.id}` },
+      payload: { name: "my-harness", harbor_job_config: { agents: [{ name: "pi" }] } },
+    };
+    expect((await app.inject(options)).statusCode).toBe(403);
+    expect(
+      (
+        await app.inject({
+          ...options,
+          headers: { ...options.headers, "x-csrf-token": session.csrf },
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
+
   it("rejects mismatched token identities even for administrators", async () => {
     const { app } = await setup();
     vi.spyOn(PersonalHuggingFace.prototype, "identity").mockResolvedValue({

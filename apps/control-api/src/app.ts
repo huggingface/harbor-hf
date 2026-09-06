@@ -177,6 +177,13 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     // Personal operations use their own verified user credential, not control
     // write mode or administrator authority. Session CSRF still applies.
     if (path.startsWith("/api/v1/personal/")) return;
+    // Authoring is owner-scoped storage, not control execution authority.
+    if (
+      (path === "/api/v1/workbench/configurations" &&
+        ["GET", "POST"].includes(request.method)) ||
+      (path === "/api/v1/workbench/preview" && request.method === "POST")
+    )
+      return;
     if (
       requireActor(request).role !== "operator" &&
       !["/api/v1/system", "/api/v1/presets", "/api/v1/model-providers"].includes(path)
@@ -326,13 +333,17 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     };
   });
 
-  app.get("/api/v1/workbench/configurations", async (request) => ({
-    items: await listWorkbenchConfigurations(
-      runtime.store,
-      requireActor(request).subject,
-    ),
-  }));
-  app.post("/api/v1/workbench/configurations", async (request) => {
+  app.get("/api/v1/workbench/configurations", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return {
+      items: await listWorkbenchConfigurations(
+        runtime.store,
+        requireActor(request).subject,
+      ),
+    };
+  });
+  app.post("/api/v1/workbench/configurations", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
     const input = z
       .object({ name: z.string().min(1).max(80), harbor_job_config: z.unknown() })
       .strict()

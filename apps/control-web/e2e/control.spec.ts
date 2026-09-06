@@ -142,6 +142,8 @@ const leaderboard = {
 };
 
 interface MockOptions {
+  role?: "operator" | "reader";
+  writeMode?: "enabled" | "disabled";
   authenticated?: boolean;
   setupStatus?: "running" | "passed" | "failed";
   runStatus?: "queued" | "running" | "paused";
@@ -179,14 +181,18 @@ async function mockControl(page: Page, options: MockOptions = {}) {
               authenticated: true,
               actor: {
                 username: "test-operator",
-                role: "operator",
+                role: options.role ?? "operator",
                 transport: "development",
               },
             }
           : { authenticated: false, login_url: "/auth/login" },
       );
     if (path === "/api/v1/leaderboard") return json(route, leaderboard);
-    if (path === "/api/v1/system") return json(route, system);
+    if (path === "/api/v1/system")
+      return json(route, {
+        ...system,
+        write_mode: options.writeMode ?? system.write_mode,
+      });
     if (path === "/api/v1/presets") return json(route, presets);
     if (path === "/api/v1/workbench/configurations") {
       if (method === "GET") return json(route, { items: saved });
@@ -303,14 +309,16 @@ async function mockControl(page: Page, options: MockOptions = {}) {
 }
 
 test("wires the personal workflow without real HF calls", async ({ page }) => {
-  await mockControl(page);
+  await mockControl(page, { role: "reader", writeMode: "disabled" });
   let dispatched = false;
   const approvalDigest = "b".repeat(64);
   await page.route("**/api/v1/personal/*", async (route) => {
     const request = route.request();
-    expect(request.headers()["x-hf-user-token"]).toBe("hf_testusercredential");
     expect(request.postData()).not.toContain("hf_testusercredential");
     const action = new URL(request.url()).pathname.split("/").at(-1);
+    expect(request.headers()["x-hf-user-token"]).toBe(
+      action === "preview" ? undefined : "hf_testusercredential",
+    );
     if (action === "identity") return json(route, { owner: "example-user" });
     if (action === "preview") {
       expect(request.postDataJSON().submission.model.id).toBe("publisher/model");
@@ -371,9 +379,6 @@ test("wires the personal workflow without real HF calls", async ({ page }) => {
     throw new Error("Unexpected personal operation");
   });
   await page.goto("/personal");
-  await page.getByLabel("User HF token").fill("hf_testusercredential");
-  await page.getByRole("button", { name: "Verify token and load my Jobs" }).click();
-  await expect(page.getByText("Verified token owner: example-user")).toBeVisible();
   await page
     .getByRole("combobox", { name: "Benchmark", exact: true })
     .selectOption("terminal-bench-2-1/one-task-1-trial");
@@ -381,9 +386,21 @@ test("wires the personal workflow without real HF calls", async ({ page }) => {
     .getByRole("combobox", { name: "Agent and version" })
     .selectOption("pi/0.84.4");
   await page.getByLabel("Model (organization/model)").fill("publisher/model");
-  await page.getByLabel("HF inference provider").fill("provider");
+  await page.getByRole("button", { name: "Find model providers" }).click();
+  await expect(
+    page.getByRole("combobox", { name: "HF inference provider" }),
+  ).toHaveValue("provider");
+  await expect(page.getByRole("combobox", { name: "Reasoning effort" })).toHaveValue(
+    "off",
+  );
   await page.getByRole("button", { name: "Preview for launch approval" }).click();
   await expect(page.getByText(/native_config_sha256/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Load my exact launch approval" }),
+  ).toBeDisabled();
+  await page.getByLabel("User HF token").fill("hf_testusercredential");
+  await page.getByRole("button", { name: "Verify token and load my Jobs" }).click();
+  await expect(page.getByText("Verified token owner: example-user")).toBeVisible();
   await page.getByRole("button", { name: "Load my exact launch approval" }).click();
   const launch = page.getByRole("button", { name: "Dispatch the approved HF Job" });
   await expect(launch).toBeDisabled();
@@ -481,7 +498,7 @@ test("keeps direct authenticated route refreshes in the restored shell", async (
 test("authoring saves and loads native fragments without setup or Run requests", async ({
   page,
 }) => {
-  await mockControl(page);
+  await mockControl(page, { role: "reader", writeMode: "disabled" });
   const executionRequests: string[] = [];
   page.on("request", (request) => {
     if (

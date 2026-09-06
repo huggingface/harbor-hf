@@ -10,17 +10,27 @@ Administrator status never bypasses the personal token identity check.
 ## User workflow
 
 1. Sign in through the existing web OAuth flow.
-2. Open **Personal execution** and supply a purpose-scoped user HF token.
+2. Open **Personal execution**. Benchmark/agent selection, reasoning options,
+   model-provider lookup and native configuration preview work with login alone.
+   No execution token is needed for authoring.
+3. For Jobs, private results or launching, supply a purpose-scoped user HF token.
    The token needs Jobs, inference, and access to the selected existing private
    Bucket. Identity-only OAuth is not execution delegation.
-3. Verify the token and view your Jobs. Select a configured benchmark, agent,
+4. Verify the token and view your Jobs. Select a configured benchmark, agent,
    model and HF inference provider. Start with `two-task-canary`.
-4. Preview the native config and its SHA-256. This performs no task resolution
+5. Preview the native config and its SHA-256. This performs no task resolution
    or execution. Obtain exact launch approval as described below.
-5. Load the approval, review all its fields, explicitly accept credential
+6. Load the approval, review all its fields, explicitly accept credential
    delivery, cost-limit arrangements and cleanup limitations, then dispatch.
-6. Use direct provider Job links for diagnosis/cancellation, bounded provider
+7. Use direct provider Job links for diagnosis/cancellation, bounded provider
    log snapshots, and private native artifact listings/previews.
+
+**Workbench authoring:** any signed-in user can edit, save and load their own
+immutable native configurations, including while control execution writes are
+disabled. Administrators cannot list other users' saved configurations through
+this interface. Session CSRF and owner isolation still apply. Workbench remote
+setup tests and custom-config launch are not implemented; configured runs use
+the separate approved Personal execution path.
 
 The password field is page-memory-only, cleared on navigation/reload. Requests
 carry `X-HF-User-Token`; sessions also use existing CSRF protection. No token is
@@ -85,8 +95,9 @@ Provider links and honest unresolved-resource reporting remain essential.
 
 ## API
 
-All operations are authenticated `POST /api/v1/personal/<action>` requests with
-the supplied-token header; responses use `Cache-Control: no-store`.
+All operations are authenticated `POST /api/v1/personal/<action>` requests.
+`preview` does not require or transmit a supplied token; other actions require
+the supplied-token header. Responses use `Cache-Control: no-store`.
 
 | Action | Body |
 | --- | --- |

@@ -10,13 +10,14 @@ export interface paths {
         put?: never;
         /**
          * Operate on the verified user's HF Jobs and private results
-         * @description Requires a supplied user token matching the authenticated identity. Session requests also require X-CSRF-Token. No credential is persisted. Launch additionally consumes an exact server-side approval; historical execution remains disabled.
+         * @description Preview requires login only and makes no provider calls. All other actions require a supplied user token matching the authenticated identity. Session requests also require X-CSRF-Token. No credential is persisted. Launch additionally consumes an exact server-side approval; historical execution remains disabled.
          */
         post: {
             parameters: {
                 query?: never;
-                header: {
-                    "X-HF-User-Token": string;
+                header?: {
+                    /** @description Required for all actions except preview. */
+                    "X-HF-User-Token"?: string;
                 };
                 path: {
                     action: "identity" | "preview" | "approval" | "jobs" | "logs" | "cancel" | "results" | "artifact" | "launch";
@@ -375,7 +376,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** Save a named immutable native Harbor configuration without execution */
+        /** Save an owner-scoped configuration independently of control write mode */
         post: {
             parameters: {
                 query?: never;
@@ -409,7 +410,21 @@ export interface paths {
                     };
                 };
                 /** @description Request error */
-                503: {
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
                     headers: {
                         [name: string]: unknown;
                     };

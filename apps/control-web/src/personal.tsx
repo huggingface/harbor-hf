@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, getPresets, type PresetsResponse } from "./api";
+import { api, getModelProviders, getPresets, type PresetsResponse } from "./api";
 
 interface Job {
   id: string;
@@ -27,6 +27,7 @@ export function PersonalPage() {
   const [agent, setAgent] = useState("");
   const [model, setModel] = useState("");
   const [provider, setProvider] = useState("");
+  const [providers, setProviders] = useState<string[]>([]);
   const [reasoning, setReasoning] = useState("default");
   const [ceiling, setCeiling] = useState("1");
   const [bucket, setBucket] = useState("");
@@ -40,16 +41,31 @@ export function PersonalPage() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [consent, setConsent] = useState(false);
+  const selectedAgent = catalog?.agents.find(
+    (item) => `${item.agent}/${item.version}` === agent,
+  );
   useEffect(() => {
     void getPresets()
-      .then(setCatalog)
+      .then((value) => {
+        setCatalog(value);
+        if (
+          !value.benchmarks.some(
+            (item) =>
+              `${item.benchmark}/${item.preset}` ===
+              "terminal-bench-2-1/two-task-canary",
+          )
+        ) {
+          const first = value.benchmarks[0];
+          setBenchmark(first ? `${first.benchmark}/${first.preset}` : "");
+        }
+      })
       .catch(() => setMessage("Catalog unavailable."));
   }, []);
 
   async function request<T>(action: string, body: unknown = {}): Promise<T> {
     return api(`/api/v1/personal/${action}`, {
       method: "POST",
-      headers: { "X-HF-User-Token": token },
+      ...(action === "preview" ? {} : { headers: { "X-HF-User-Token": token } }),
       body: JSON.stringify(body),
     });
   }
@@ -72,6 +88,10 @@ export function PersonalPage() {
   return (
     <section className="space-y-5">
       <h1 className="text-2xl font-semibold">Personal execution</h1>
+      <p>
+        Choose and preview a configuration with your login alone. A verified user token
+        is needed only for Jobs, private results, and approved execution.
+      </p>
       <p>
         Jobs and evidence belong to your HF account, not the control Space. Supplied
         tokens are held in page memory and sent over authenticated requests; they are
@@ -112,7 +132,7 @@ export function PersonalPage() {
       </button>
       {owner ? <p>Verified token owner: {owner}</p> : null}
       <p role="status">{message}</p>
-      <fieldset disabled={busy || !owner} className="space-y-3">
+      <fieldset disabled={busy || !catalog} className="space-y-3">
         <legend className="text-xl">Select and preview a native run</legend>
         <label className="block">
           Benchmark
@@ -136,7 +156,14 @@ export function PersonalPage() {
           <select
             className={field}
             value={agent}
-            onChange={(e) => setAgent(e.target.value)}
+            onChange={(e) => {
+              setAgent(e.target.value);
+              const selected = catalog?.agents.find(
+                (item) => `${item.agent}/${item.version}` === e.target.value,
+              );
+              const values: readonly string[] = selected?.reasoning_values ?? [];
+              setReasoning(values.includes("default") ? "default" : (values[0] ?? ""));
+            }}
           >
             <option value="">Select an agent</option>
             {catalog?.agents.map((item) => (
@@ -154,24 +181,60 @@ export function PersonalPage() {
           <input
             className={field}
             value={model}
-            onChange={(e) => setModel(e.target.value)}
+            onChange={(e) => {
+              setModel(e.target.value);
+              setProvider("");
+              setProviders([]);
+            }}
           />
         </label>
+        <button
+          type="button"
+          className={button}
+          disabled={!model.trim()}
+          onClick={() =>
+            void perform(async () => {
+              const result = await getModelProviders(model.trim());
+              setProviders(result.providers);
+              setProvider(result.providers[0] ?? "");
+              if (!result.providers.length)
+                setMessage("No HF inference providers are available for this model.");
+            })
+          }
+        >
+          Find model providers
+        </button>
         <label className="block">
           HF inference provider
-          <input
+          <select
             className={field}
             value={provider}
+            disabled={!providers.length}
             onChange={(e) => setProvider(e.target.value)}
-          />
+          >
+            <option value="">Find providers for your model first</option>
+            {providers.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="block">
           Reasoning effort
-          <input
+          <select
             className={field}
             value={reasoning}
+            disabled={!selectedAgent}
             onChange={(e) => setReasoning(e.target.value)}
-          />
+          >
+            {!selectedAgent ? <option value="">Select an agent first</option> : null}
+            {selectedAgent?.reasoning_values.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="block">
           Requested per-trial USD allowance (not an enforced cap)
@@ -195,6 +258,7 @@ export function PersonalPage() {
         <button
           type="button"
           className={button}
+          disabled={!benchmark || !agent || !model.trim() || !provider || !reasoning}
           onClick={() =>
             void perform(async () => {
               const [name, preset] = benchmark.split("/");
@@ -204,7 +268,7 @@ export function PersonalPage() {
                 submission: {
                   benchmark: { name, preset },
                   harness: { agent: agentName, version },
-                  model: { id: model, provider, reasoning_effort: reasoning },
+                  model: { id: model.trim(), provider, reasoning_effort: reasoning },
                   cost_ceiling_usd_per_trial: Number(ceiling),
                 },
               });
@@ -215,6 +279,12 @@ export function PersonalPage() {
           Preview for launch approval
         </button>
       </fieldset>
+      {!owner ? (
+        <p>
+          Verify your user token above to access Jobs, private results, or launch
+          approval.
+        </p>
+      ) : null}
       <fieldset disabled={busy || !owner} className="space-y-3">
         <legend className="text-xl">Explicit approved launch</legend>
         <p>

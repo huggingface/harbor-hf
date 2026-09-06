@@ -98,6 +98,26 @@ export function registerPersonalRoutes(
         ]),
       })
       .parse(request.params);
+    // Static catalog compilation needs login/CSRF, not Jobs credentials.
+    if (action === "preview") {
+      const input = z
+        .object({ run_id: component, submission })
+        .strict()
+        .parse(request.body);
+      if (containsCredentialMaterial(input.submission))
+        throw new Error("Harbor JobConfig submission contains credential material");
+      const config = runtime.presets.buildJobConfig(
+        input.run_id,
+        input.submission,
+        "/data",
+      );
+      return {
+        config,
+        native_config_sha256: createHash("sha256")
+          .update(JSON.stringify(config))
+          .digest("hex"),
+      };
+    }
     const token = request.headers["x-hf-user-token"];
     if (
       typeof token !== "string" ||
@@ -134,25 +154,6 @@ export function registerPersonalRoutes(
           approval: approved
             ? { ...approved.value, approval_sha256: approved.digest }
             : null,
-        };
-      }
-      if (action === "preview") {
-        const input = z
-          .object({ run_id: component, submission })
-          .strict()
-          .parse(request.body);
-        if (containsCredentialMaterial(input.submission))
-          throw new Error("Submission contains credential material");
-        const config = runtime.presets.buildJobConfig(
-          input.run_id,
-          input.submission,
-          "/data",
-        );
-        return {
-          config,
-          native_config_sha256: createHash("sha256")
-            .update(JSON.stringify(config))
-            .digest("hex"),
         };
       }
       if (action === "logs" || action === "cancel") {

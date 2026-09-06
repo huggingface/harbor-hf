@@ -233,7 +233,7 @@ const document = {
       post: {
         summary: "Operate on the verified user's HF Jobs and private results",
         description:
-          "Requires a supplied user token matching the authenticated identity. Session requests also require X-CSRF-Token. No credential is persisted. Launch additionally consumes an exact server-side approval; historical execution remains disabled.",
+          "Preview requires login only and makes no provider calls. All other actions require a supplied user token matching the authenticated identity. Session requests also require X-CSRF-Token. No credential is persisted. Launch additionally consumes an exact server-side approval; historical execution remains disabled.",
         security: authenticated,
         parameters: [
           {
@@ -258,7 +258,8 @@ const document = {
           {
             name: "X-HF-User-Token",
             in: "header",
-            required: true,
+            required: false,
+            description: "Required for all actions except preview.",
             schema: { type: "string", writeOnly: true },
           },
         ],
@@ -325,9 +326,10 @@ const document = {
         responses: { "200": ok },
       },
       post: {
-        summary: "Save a named immutable native Harbor configuration without execution",
+        summary:
+          "Save an owner-scoped configuration independently of control write mode",
         security: authenticated,
-        responses: { "200": ok, "400": error, "503": error },
+        responses: { "200": ok, "400": error, "401": error, "403": error },
       },
     },
     "/api/v1/workbench/preview": {

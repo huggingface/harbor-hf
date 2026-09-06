@@ -3,7 +3,6 @@ import type { WorkbenchRecipe, SavedConfiguration } from "./api";
 import { listSavedConfigurations, saveConfiguration } from "./api";
 import { PageHeader } from "./layout";
 import { Button, Card, ErrorNotice } from "./ui";
-import { useControlState } from "./control-state";
 
 export const fastAgentStarter: WorkbenchRecipe = {
   schema_version: "v1",
@@ -165,7 +164,8 @@ export const fxStarter: WorkbenchRecipe = {
 };
 
 export function WorkbenchPage() {
-  const { writesAllowed } = useControlState();
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [name, setName] = useState("my-harness");
   const [text, setText] = useState(
     '{"agents": [{"name": "terminus-2", "kwargs": {}}]}',
@@ -177,9 +177,11 @@ export function WorkbenchPage() {
   useEffect(() => {
     void listSavedConfigurations()
       .then((value) => setItems(value.items))
-      .catch(setError);
+      .catch(setError)
+      .finally(() => setLoading(false));
   }, []);
   async function save() {
+    setSaving(true);
     try {
       const item = await saveConfiguration({
         name,
@@ -194,6 +196,8 @@ export function WorkbenchPage() {
       setError(null);
     } catch (failure) {
       setError(failure);
+    } finally {
+      setSaving(false);
     }
   }
   return (
@@ -204,8 +208,15 @@ export function WorkbenchPage() {
       />
       <Card>
         <p role="status">
-          Execution disabled: a supported Harbor runner and isolated credential boundary
-          are not yet available. Remote setup tests and launch are unavailable.
+          Configuration authoring is available to signed-in users. Remote setup tests
+          and custom Workbench launches are not implemented.
+        </p>
+        <p>
+          For configured, approved runs, use{" "}
+          <a href="/personal" className="text-cyan-300 underline">
+            Personal execution
+          </a>
+          .
         </p>
         <p className="my-4">
           Use native Harbor agent settings, including installation commands in your
@@ -231,12 +242,13 @@ export function WorkbenchPage() {
           />
         </label>
         <div className="mt-4 flex gap-3">
-          <Button disabled={!writesAllowed} onClick={() => void save()}>
+          <Button disabled={saving || loading} onClick={() => void save()}>
             Save configuration
           </Button>
           <Button disabled>Test setup</Button>
           <Button disabled>Launch Harbor run</Button>
         </div>
+        {loading ? <p role="status">Loading your saved configurations…</p> : null}
         <label className="block mt-4">
           Load configuration
           <select
