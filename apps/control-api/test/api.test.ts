@@ -227,6 +227,37 @@ describe("control API", () => {
     expect(detail.json().record.run_id).toBe(runId);
   });
 
+  it("does not offer or accept agents that need an unsupported model API", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+
+    const presets = await app.inject({ method: "GET", url: "/api/v1/presets" });
+    expect(presets.statusCode).toBe(200);
+    expect(
+      presets.json().agents.some((agent: { agent: string }) => agent.agent === "codex"),
+    ).toBe(false);
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "unsupported-model-api" },
+      payload: {
+        ...submission,
+        model: { ...submission.model, reasoning_effort: "minimal" },
+        harness: { agent: "codex", version: "0.118.0" },
+      },
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json()).toEqual({
+      error: {
+        code: "invalid_request",
+        message:
+          "the codex agent requires the OpenAI Responses API, which Hugging Face Inference Providers do not support",
+      },
+    });
+    expect(runtime.projection.listRuns()).toEqual([]);
+  });
+
   it("rejects an idempotency conflict and unknown input", async () => {
     const { runtime, app } = await setup();
     await runtime.initialize();
