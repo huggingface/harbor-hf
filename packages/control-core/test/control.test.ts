@@ -582,6 +582,62 @@ describe("status and projection", () => {
     expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
   });
 
+  it("accepts a zero receipt when agent execution did not start", async () => {
+    const { run } = await submit("pre-agent-zero");
+    const attemptId = "44444444-4444-4444-8444-444444444444";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: "2026-09-04T00:10:00Z",
+      n_total_trials: 1,
+    });
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, {
+      id: attemptId,
+      trial_name: "task__trial",
+      agent_result: null,
+      agent_execution: null,
+      step_results: null,
+      exception_info: { exception_type: "RuntimeError" },
+    });
+    await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
+      schema_version: "v1",
+      attempt_id: attemptId,
+      trial_name: "task__trial",
+      cost_usd: 0,
+    });
+
+    await service.refresh();
+
+    expect(projection.run(run.run_id)?.status).toBe("finished");
+    expect(projection.trials(run.run_id)).toMatchObject([
+      { cost_usd: null, status: "error" },
+    ]);
+  });
+
+  it("rejects a zero receipt when agent execution started without cost", async () => {
+    const { run } = await submit("post-agent-zero");
+    const attemptId = "44444444-4444-4444-8444-444444444444";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      n_total_trials: 1,
+    });
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, {
+      id: attemptId,
+      trial_name: "task__trial",
+      agent_result: {},
+      agent_execution: null,
+      step_results: null,
+      exception_info: { exception_type: "RuntimeError" },
+    });
+    await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
+      schema_version: "v1",
+      attempt_id: attemptId,
+      trial_name: "task__trial",
+      cost_usd: 0,
+    });
+
+    await expect(service.refresh()).rejects.toThrow(
+      "attempt cost receipt conflicts with Harbor result",
+    );
+  });
+
   it("rejects a cost receipt that conflicts with a Harbor result", async () => {
     const { run } = await submit("cost-conflict");
     const attemptId = "44444444-4444-4444-8444-444444444444";

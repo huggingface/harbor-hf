@@ -58,6 +58,23 @@ function trialCost(result: Record<string, unknown>): number | null {
   return costs.length > 0 ? costs.reduce((total, value) => total + value, 0) : null;
 }
 
+function agentExecutionStarted(result: Record<string, unknown>): boolean {
+  if (asRecord(result.agent_result)) return true;
+  const execution = asRecord(result.agent_execution);
+  if (execution?.started_at !== null && execution?.started_at !== undefined)
+    return true;
+  if (!Array.isArray(result.step_results)) return false;
+  return result.step_results.some((value) => {
+    const step = asRecord(value);
+    if (!step) return false;
+    if (asRecord(step.agent_result)) return true;
+    const stepExecution = asRecord(step.agent_execution);
+    return (
+      stepExecution?.started_at !== null && stepExecution?.started_at !== undefined
+    );
+  });
+}
+
 function trialReward(result: Record<string, unknown>): number | null {
   const rewards = asRecord(asRecord(result.verifier_result)?.rewards);
   if (!rewards) return null;
@@ -149,7 +166,14 @@ function authoritativeAttemptCosts(
       costs.push(trial.cost_usd);
       continue;
     }
-    if (receipt.trial_name !== trial.trial_name || receipt.cost_usd !== trial.cost_usd)
+    const preAgentZero =
+      receipt.cost_usd === 0 &&
+      trial.cost_usd === null &&
+      !agentExecutionStarted(trial.result);
+    if (
+      receipt.trial_name !== trial.trial_name ||
+      (receipt.cost_usd !== trial.cost_usd && !preAgentZero)
+    )
       throw new Error("attempt cost receipt conflicts with Harbor result");
   }
   return costs;
