@@ -140,6 +140,22 @@ describe("run submission", () => {
     expect(projection.run(result.run.run_id)?.status).toBe("queued");
   });
 
+  it("uses Harbor's fixed OpenHands reasoning default", async () => {
+    expect(presets.agent("openhands", "1.6.0").reasoning_values[0]).toBe("high");
+    const result = await service.submitPreset(
+      {
+        ...input,
+        model: { ...input.model, reasoning_effort: "high" },
+        harness: { agent: "openhands", version: "1.6.0" },
+      },
+      "openhands-default-reasoning",
+      "test-subject",
+    );
+    expect(result.run.harbor_job_config).toMatchObject({
+      agents: [{ kwargs: { reasoning_effort: "high" } }],
+    });
+  });
+
   it("keeps the reviewed full-run CPU flavor in the Harbor job", async () => {
     const result = await service.submitPreset(
       {

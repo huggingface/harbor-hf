@@ -8,5 +8,5 @@
     "override_setup_timeout_sec": 7200
   },
   "reasoning_option": "reasoning_effort",
-  "reasoning_values": ["default", "low", "medium", "high"]
+  "reasoning_values": ["high", "low", "medium"]
 }
