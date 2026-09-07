@@ -125,18 +125,6 @@ def _receipt_for(result: TrialResult) -> AttemptCostReceipt:
     )
 
 
-def _receipt_matches_result(receipt: AttemptCostReceipt, result: TrialResult) -> bool:
-    expected = _receipt_for(result)
-    if receipt == expected:
-        return True
-    return (
-        receipt.attempt_id == expected.attempt_id
-        and receipt.trial_name == expected.trial_name
-        and receipt.cost_usd is None
-        and expected.cost_usd == 0
-    )
-
-
 def _write_receipt(run_dir: Path, receipt: AttemptCostReceipt) -> None:
     directory = _attempts_dir(run_dir)
     directory.mkdir(parents=True, exist_ok=True)
@@ -178,7 +166,7 @@ def load_attempt_costs(run_dir: Path) -> dict[UUID, AttemptCostReceipt]:
             result = TrialResult.model_validate_json(path.read_text(encoding="utf-8"))
             existing = receipts.get(result.id)
             if existing is not None:
-                if not _receipt_matches_result(existing, result):
+                if existing != _receipt_for(result):
                     raise RuntimeError(
                         "attempt cost receipt conflicts with durable evidence"
                     )

@@ -16,10 +16,8 @@ from harbor_hf_agents.hf_sandbox import (
     _resolve_inference_env,
 )
 from harbor_hf_agents.parent_worker import (
-    AttemptCostReceipt,
     ControlledRunStop,
     CostCeilingExceeded,
-    _receipt_matches_result,
     cleanup_interrupted_trial,
     cost_ceiling,
     job_config,
@@ -119,17 +117,6 @@ async def test_cost_hook_restores_retry_cost_after_restart(tmp_path: Path) -> No
     resumed = make_cost_hook(0.25, 1, run_dir)
     with pytest.raises(CostCeilingExceeded, match="run ceiling"):
         await resumed(cast(Any, SimpleNamespace(result=Result("task", 0.2))))
-
-
-def test_legacy_null_setup_receipt_matches_the_harbor_result() -> None:
-    result = Result("setup-failure", None, agent_started=False)
-    receipt = AttemptCostReceipt(
-        attempt_id=result.id,
-        trial_name=result.trial_name,
-        cost_usd=None,
-    )
-
-    assert _receipt_matches_result(receipt, cast(Any, result))
 
 
 @pytest.mark.asyncio
