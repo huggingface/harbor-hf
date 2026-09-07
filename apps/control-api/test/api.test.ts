@@ -278,6 +278,11 @@ describe("personal execution wiring", () => {
     const approval = JSON.parse(await readFile(file, "utf8"));
     approval.submission.harness = { agent: "workbench", version: saved.revision };
     approval.submission.model.reasoning_effort = "saved";
+    approval.submission.model.id = "Declared model, independent of CLI spelling";
+    approval.submission.runtime = {
+      model_name: "hf.exact-cli-alias",
+      environment: [{ name: "MY_SETTING", value: "original" }],
+    };
     approval.mode = "setup";
     const preview = await app.inject({
       method: "POST",
@@ -286,6 +291,7 @@ describe("personal execution wiring", () => {
     });
     expect(preview.statusCode, preview.body).toBe(200);
     expect(preview.json().config.install_only).toBe(true);
+    expect(preview.json().config.agents[0].model_name).toBe("hf.exact-cli-alias");
     approval.native_config_sha256 = preview.json().native_config_sha256;
     await writeFile(file, JSON.stringify(approval));
     vi.spyOn(PersonalHuggingFace.prototype, "launch").mockResolvedValue({
@@ -364,6 +370,38 @@ describe("personal execution wiring", () => {
         })
       ).statusCode,
     ).toBe(200);
+    const recorded = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/configuration",
+      headers,
+      payload: { run_id: approval.run_id },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+    expect(recorded.json().approval.submission.model.id).toBe(
+      approval.submission.model.id,
+    );
+    expect(recorded.json().config.agents[0]).toMatchObject({
+      model_name: "hf.exact-cli-alias",
+      env: { MY_SETTING: "original" },
+    });
+    const originalIdentity = approval.submission.model.id;
+    approval.submission.model.id = "Different declared model";
+    const changedPreview = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/preview",
+      payload: { run_id: approval.run_id, submission: approval.submission },
+    });
+    // The actual CLI alias is unchanged, yet declared-identity changes also
+    // invalidate applicability of the old installation receipt.
+    expect(changedPreview.json().native_config_sha256).toBe(
+      approval.native_config_sha256,
+    );
+    await writeFile(file, JSON.stringify(approval));
+    expect(
+      (await app.inject({ method: "POST", url: "/api/v1/personal/approval", headers }))
+        .statusCode,
+    ).toBe(400);
+    approval.submission.model.id = originalIdentity;
     approval.image = `example/runner@sha256:${"b".repeat(64)}`;
     await writeFile(file, JSON.stringify(approval));
     expect(

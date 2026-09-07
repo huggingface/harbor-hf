@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api,
   getModelProviders,
@@ -34,6 +34,23 @@ export function PersonalPage({
 }: {
   initialSelection?: { revision: string; mode: "setup" | "benchmark" };
 } = {}) {
+  useEffect(() => {
+    let active = true;
+    if (initialSelection) {
+      setAgent(`workbench/${initialSelection.revision}`);
+      setMode(initialSelection.mode);
+    }
+    void listSavedConfigurations()
+      .then((value) => {
+        if (active) setSaved(value.items);
+      })
+      .catch(() => {
+        if (active) setMessage("Saved Workbench configurations are unavailable.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialSelection]);
   const [token, setToken] = useState("");
   const [owner, setOwner] = useState("");
   const [catalog, setCatalog] = useState<PresetsResponse | null>(null);
@@ -53,6 +70,11 @@ export function PersonalPage({
   );
   const [model, setModel] = useState("");
   const [provider, setProvider] = useState("");
+  const [modelRevision, setModelRevision] = useState("");
+  const [modelAlias, setModelAlias] = useState("");
+  const [endpoint, setEndpoint] = useState("https://router.huggingface.co/v1");
+  const [credentialMode, setCredentialMode] = useState("hf-inference");
+  const [environmentText, setEnvironmentText] = useState("[]");
   const [providers, setProviders] = useState<string[]>([]);
   const [reasoning, setReasoning] = useState("default");
   const [ceiling, setCeiling] = useState("1");
@@ -68,6 +90,30 @@ export function PersonalPage({
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [consent, setConsent] = useState(false);
+  const selection = JSON.stringify([
+    mode,
+    model,
+    provider,
+    modelRevision,
+    modelAlias,
+    endpoint,
+    credentialMode,
+    environmentText,
+    agent,
+    benchmark,
+    reasoning,
+    runId,
+    bucket,
+    ceiling,
+  ]);
+  const previousSelection = useRef(selection);
+  useEffect(() => {
+    if (previousSelection.current !== selection) {
+      previousSelection.current = selection;
+      setApproval(null);
+      setConsent(false);
+    }
+  }, [selection]);
   const selectedAgent = catalog?.agents.find(
     (item) => `${item.agent}/${item.version}` === agent,
   );
@@ -88,9 +134,6 @@ export function PersonalPage({
         }
       })
       .catch(() => setMessage("Catalog unavailable."));
-    void listSavedConfigurations()
-      .then((value) => setSaved(value.items))
-      .catch(() => setMessage("Saved Workbench configurations are unavailable."));
   }, []);
 
   async function request<T>(action: string, body: unknown = {}): Promise<T> {
@@ -269,13 +312,12 @@ export function PersonalPage({
           </p>
         ) : null}
         <label className="block">
-          Model (organization/model)
+          Declared model identity
           <input
             className={field}
             value={model}
             onChange={(e) => {
               setModel(e.target.value);
-              setProvider("");
               setProviders([]);
             }}
           />
@@ -288,7 +330,7 @@ export function PersonalPage({
             void perform(async () => {
               const result = await getModelProviders(model.trim());
               setProviders(result.providers);
-              setProvider(result.providers[0] ?? "");
+              if (!provider) setProvider(result.providers[0] ?? "");
               if (!result.providers.length)
                 setMessage("No HF inference providers are available for this model.");
             })
@@ -296,6 +338,27 @@ export function PersonalPage({
         >
           Find model providers
         </button>
+        <p>
+          The identity above is recorded for evaluation; it is not required to match the
+          CLI model string. Provider lookup is an optional HF hint.
+        </p>
+        <label className="block">
+          Declared provider
+          <input
+            className={field}
+            value={provider}
+            placeholder="Provider name, or leave unspecified"
+            onChange={(e) => setProvider(e.target.value)}
+          />
+        </label>
+        <label className="block">
+          Declared model revision (optional)
+          <input
+            className={field}
+            value={modelRevision}
+            onChange={(e) => setModelRevision(e.target.value)}
+          />
+        </label>
         <label className="block">
           HF inference provider
           <select
@@ -305,6 +368,9 @@ export function PersonalPage({
             onChange={(e) => setProvider(e.target.value)}
           >
             <option value="">Find providers for your model first</option>
+            {provider && !providers.includes(provider) ? (
+              <option value={provider}>{provider} (manual)</option>
+            ) : null}
             {providers.map((value) => (
               <option key={value} value={value}>
                 {value}
@@ -312,6 +378,76 @@ export function PersonalPage({
             ))}
           </select>
         </label>
+        <fieldset className="space-y-3 border border-slate-600 p-3">
+          <legend>Editable harness runtime configuration</legend>
+          <label className="block">
+            Exact harness model string
+            <input
+              className={field}
+              value={modelAlias}
+              placeholder="For example hf.… or codexresponses.…; passed unchanged"
+              onChange={(e) => setModelAlias(e.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className={button}
+            disabled={!model || !provider}
+            onClick={() => {
+              setModelAlias(
+                `${selectedAgent?.agent === "pi" ? "huggingface" : "openai"}/${model}:${provider}`,
+              );
+              setEndpoint("https://router.huggingface.co/v1");
+              setCredentialMode("hf-inference");
+            }}
+          >
+            Apply HF routing hints
+          </button>
+          <p>
+            Enter an exact CLI model string or apply HF routing hints. Metadata edits
+            never rewrite it. Invocation commands and configuration-file contents are
+            edited and versioned in Workbench.
+          </p>
+          <label className="block">
+            Model endpoint
+            <input
+              className={field}
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+            />
+          </label>
+          <label className="block">
+            Harness model credentials
+            <select
+              className={field}
+              value={credentialMode}
+              onChange={(e) => setCredentialMode(e.target.value)}
+            >
+              <option value="hf-inference">
+                HF inference reference — HF router only
+              </option>
+              <option value="none">
+                No model credentials — isolated command harness only
+              </option>
+            </select>
+          </label>
+          <label className="block">
+            Harness environment overrides (JSON)
+            <textarea
+              className={`${field} font-mono`}
+              rows={5}
+              value={environmentText}
+              onChange={(e) => setEnvironmentText(e.target.value)}
+            />
+          </label>
+          <p>
+            Use entries such as {`{"name":"MY_MODEL","value":"hf.my-alias"}`} or{" "}
+            {`{"name":"OPENAI_API_KEY","secret_ref":"hf-inference-token"}`}. Never enter
+            secret values. Literal overrides affect both setup and execution; credential
+            references are run-only. Other providers' secret references are not yet
+            supported.
+          </p>
+        </fieldset>
         <label className="block">
           Reasoning effort
           <select
@@ -358,7 +494,7 @@ export function PersonalPage({
             !benchmark ||
             !agent ||
             !model.trim() ||
-            !provider ||
+            !modelAlias ||
             (!selectedSaved && !reasoning)
           }
           onClick={() =>
@@ -373,10 +509,17 @@ export function PersonalPage({
                   harness: { agent: agentName, version },
                   model: {
                     id: model.trim(),
-                    provider,
+                    provider: provider || "unspecified",
+                    ...(modelRevision ? { revision: modelRevision } : {}),
                     reasoning_effort: selectedSaved ? "saved" : reasoning,
                   },
                   cost_ceiling_usd_per_trial: Number(ceiling),
+                  runtime: {
+                    model_name: modelAlias,
+                    endpoint,
+                    credentials: credentialMode,
+                    environment: JSON.parse(environmentText),
+                  },
                 },
               });
               setOutput(JSON.stringify(preview, null, 2));
@@ -464,6 +607,26 @@ export function PersonalPage({
             {job.id}
           </a>
           <span>{job.stage}</span>
+          {job.run_id ? (
+            <button
+              type="button"
+              className={button}
+              disabled={busy}
+              onClick={() =>
+                void perform(async () => {
+                  const configuration = await request("configuration", {
+                    run_id: job.run_id,
+                  });
+                  setOutput(JSON.stringify(configuration, null, 2));
+                  setMessage(
+                    "Recorded model declaration and effective configuration. This is provenance, not independent model verification.",
+                  );
+                })
+              }
+            >
+              Recorded configuration
+            </button>
+          ) : null}
           {job.mode === "setup" && job.run_id ? (
             <button
               type="button"

@@ -239,7 +239,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     if (message.includes("already identifies") || message.includes("cancelled run"))
       return error(reply, 409, "conflict", message);
     if (
-      /Idempotency-Key|preset|reasoning|cost ceiling|JobConfig|credential literal|environment|agent|Workbench|workbench|setup test|recipe/.test(
+      /Idempotency-Key|preset|reasoning|cost ceiling|JobConfig|credential literal|environment|agent|Workbench|workbench|setup test|recipe|Runtime|runtime endpoint|HF inference credentials|Model endpoint|Environment values|Only the declared|No model credentials/.test(
         message,
       )
     )

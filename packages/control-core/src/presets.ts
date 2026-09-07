@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { HarnessRuntimeOverrides } from "./runtime-overrides.js";
 import type {
   AgentPresetV1,
   BenchmarkPresetV1,
@@ -19,7 +20,13 @@ const CREDENTIAL_VALUE =
 
 export interface PresetSubmission {
   benchmark: { name: string; preset: string };
-  model: { id: string; provider: string; reasoning_effort: string };
+  model: {
+    id: string;
+    provider: string;
+    reasoning_effort: string;
+    revision?: string | undefined;
+  };
+  runtime?: HarnessRuntimeOverrides | undefined;
   harness: { agent: string; version: string };
   cost_ceiling_usd_per_trial: number;
   role?: "final" | "diagnostic";

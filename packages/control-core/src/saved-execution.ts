@@ -2,6 +2,7 @@ import { validateHarborJobConfig, sha256 } from "@harbor-hf/contracts";
 import { listWorkbenchConfigurations } from "./saved-workbench.js";
 import type { ObjectStore } from "./store.js";
 import type { PresetCatalog, PresetSubmission } from "./presets.js";
+import { applyRuntimeOverrides } from "./runtime-overrides.js";
 
 export type ExecutionMode = "setup" | "benchmark";
 
@@ -14,13 +15,26 @@ export async function buildSavedExecution(
   input: PresetSubmission,
   mode: ExecutionMode,
 ) {
+  if (
+    (input.runtime && !input.runtime.model_name) ||
+    (!input.runtime &&
+      (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(input.model.id) ||
+        !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(input.model.provider) ||
+        input.model.provider === "unspecified"))
+  )
+    throw new Error(
+      "Runtime model string is required for explicit overrides or free-form model declarations",
+    );
   if (input.harness.agent !== "workbench") {
     if (mode === "benchmark" && input.harness.agent === "fx")
       throw new Error(
         "FX gateway credentials are not supported by the HF inference runner",
       );
     const config = presets.buildJobConfig(runId, input, "/data");
-    return mode === "setup" ? { ...config, install_only: true } : config;
+    return applyRuntimeOverrides(
+      mode === "setup" ? { ...config, install_only: true } : config,
+      input.runtime,
+    );
   }
   const saved = (await listWorkbenchConfigurations(store, subject)).find(
     (item) => item.revision === input.harness.version,
@@ -38,6 +52,7 @@ export async function buildSavedExecution(
   const agent = fragment.agents[0] as Record<string, unknown>;
   if (
     mode === "benchmark" &&
+    input.runtime?.credentials !== "none" &&
     (agent.name === "fx" || JSON.stringify(agent).includes("AI_GATEWAY_API_KEY"))
   )
     throw new Error(
@@ -50,24 +65,27 @@ export async function buildSavedExecution(
   const pi =
     agent.name === "pi" || agent.import_path === "harbor_hf_agents.pi.agent:PiAgent";
   const job = presets.benchmark(input.benchmark.name, input.benchmark.preset).job;
-  return validateHarborJobConfig({
-    ...structuredClone(job),
-    job_name: "job",
-    jobs_dir: `/data/runs/${runId}`,
-    ...(mode === "setup" ? { install_only: true } : {}),
-    agents: [
-      {
-        ...structuredClone(agent),
-        model_name: `${pi ? "huggingface" : "openai"}/${input.model.id}:${input.model.provider}`,
-        env: pi
-          ? { HF_TOKEN: `\${HF_INFERENCE_TOKEN}` }
-          : {
-              OPENAI_BASE_URL: "https://router.huggingface.co/v1",
-              OPENAI_API_KEY: `\${HF_INFERENCE_TOKEN}`,
-            },
-      },
-    ],
-  });
+  return applyRuntimeOverrides(
+    validateHarborJobConfig({
+      ...structuredClone(job),
+      job_name: "job",
+      jobs_dir: `/data/runs/${runId}`,
+      ...(mode === "setup" ? { install_only: true } : {}),
+      agents: [
+        {
+          ...structuredClone(agent),
+          model_name: `${pi ? "huggingface" : "openai"}/${input.model.id}:${input.model.provider}`,
+          env: pi
+            ? { HF_TOKEN: `\${HF_INFERENCE_TOKEN}` }
+            : {
+                OPENAI_BASE_URL: "https://router.huggingface.co/v1",
+                OPENAI_API_KEY: `\${HF_INFERENCE_TOKEN}`,
+              },
+        },
+      ],
+    }),
+    input.runtime,
+  );
 }
 
 /** Run IDs and install-only mode differ; all effective setup inputs must match. */
@@ -76,12 +94,13 @@ export function setupContext(
   revision: string,
   image: string,
   hardware: string,
+  modelIdentity?: PresetSubmission["model"],
 ) {
   const native = structuredClone(config) as Record<string, unknown>;
   delete native.job_name;
   delete native.jobs_dir;
   delete native.install_only;
-  return sha256(JSON.stringify({ revision, image, hardware, native }));
+  return sha256(JSON.stringify({ revision, image, hardware, native, modelIdentity }));
 }
 
 export function executionPrefix(subject: string) {

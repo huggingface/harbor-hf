@@ -14,6 +14,35 @@ import type { Runtime } from "./runtime.js";
 import { checkSetup, setupReceipt } from "./setup-evidence.js";
 
 const component = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/);
+const label = z
+  .string()
+  .min(1)
+  .max(512)
+  .refine(
+    (value) =>
+      [...value].every(
+        (character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127,
+      ),
+    "Control characters are not allowed",
+  );
+const runtimeOverrides = z
+  .object({
+    model_name: label,
+    endpoint: z.string().url().max(2048).optional(),
+    credentials: z.enum(["hf-inference", "none"]).optional(),
+    environment: z
+      .array(
+        z.union([
+          z.object({ name: component, value: z.string().max(16384) }).strict(),
+          z
+            .object({ name: component, secret_ref: z.literal("hf-inference-token") })
+            .strict(),
+        ]),
+      )
+      .max(100)
+      .optional(),
+  })
+  .strict();
 const submission = z
   .object({
     benchmark: z.object({ name: component, preset: component }).strict(),
@@ -22,12 +51,14 @@ const submission = z
       .strict(),
     model: z
       .object({
-        id: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
-        provider: component,
+        id: label,
+        provider: label.default("unspecified"),
+        revision: label.optional(),
         reasoning_effort: component,
       })
       .strict(),
     cost_ceiling_usd_per_trial: z.number().positive().finite(),
+    runtime: runtimeOverrides.optional(),
   })
   .strict();
 const approvalSchema = z
@@ -86,6 +117,7 @@ async function approval(runtime: Runtime, owner: string, subject: string) {
     value.submission.harness.version,
     value.image,
     value.hardware,
+    value.submission.model,
   );
   if (value.submission.harness.agent === "workbench" && value.mode !== "setup") {
     if (!value.setup_test_run_id)
@@ -140,6 +172,7 @@ export function registerPersonalRoutes(
           "buckets",
           "create-bucket",
           "check-bucket",
+          "configuration",
         ]),
       })
       .parse(request.params);
@@ -243,6 +276,30 @@ export function registerPersonalRoutes(
         return { bucket: input.bucket, owner, private: true };
       }
       if (action === "jobs") return { jobs: await personal.jobs(owner) };
+      if (action === "configuration") {
+        const input = z
+          .object({ run_id: z.string().regex(/^run-[0-9a-f]{24}$/) })
+          .strict()
+          .parse(request.body);
+        const prefix = `${executionPrefix(actor.subject)}${input.run_id}/`;
+        const record = JSON.parse(
+          new TextDecoder().decode(await runtime.store.read(`${prefix}approval.json`)),
+        );
+        const approved = approvalSchema.parse(record);
+        if (approved.owner !== owner) throw new Error("Configuration owner mismatch");
+        const bytes = await runtime.store.read(`${prefix}native-config.json`);
+        const config = JSON.parse(new TextDecoder().decode(bytes));
+        if (
+          createHash("sha256").update(JSON.stringify(config)).digest("hex") !==
+          approved.native_config_sha256
+        )
+          throw new Error("Recorded configuration integrity mismatch");
+        return {
+          approval: approved,
+          config,
+          evidence_origin: "owner-declared-configuration",
+        };
+      }
       if (action === "setup-result") {
         const input = z
           .object({ run_id: z.string().regex(/^run-[0-9a-f]{24}$/) })
@@ -338,6 +395,14 @@ export function registerPersonalRoutes(
             },
           });
         const prefix = `${executionPrefix(actor.subject)}${value.run_id}/`;
+        await runtime.store.create(
+          `${prefix}approval.json`,
+          Buffer.from(JSON.stringify(value)),
+        );
+        await runtime.store.create(
+          `${prefix}native-config.json`,
+          Buffer.from(JSON.stringify(config)),
+        );
         await runtime.store.create(
           `${prefix}execution.json`,
           Buffer.from(

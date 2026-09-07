@@ -256,6 +256,7 @@ const document = {
                 "buckets",
                 "create-bucket",
                 "check-bucket",
+                "configuration",
               ],
             },
           },
@@ -263,7 +264,8 @@ const document = {
             name: "X-HF-User-Token",
             in: "header",
             required: false,
-            description: "Required for all actions except preview.",
+            description:
+              "Optional same-account override for session OAuth. API clients without a delegated session must supply it for actions other than preview.",
             schema: { type: "string", writeOnly: true },
           },
         ],

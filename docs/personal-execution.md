@@ -42,9 +42,74 @@ are rechecked on use. Listing and metadata checks do not prove upload permission
 **Workbench workflow:** signed-in users can start from Fast-Agent 0.10.19 or FX
 0.0.6, edit an agents-only native fragment, and save immutable versions. Saved
 versions appear under **My Workbench configurations** in the Personal agent
-dropdown. Model routing is injected at admission; agent kwargs stay as saved.
+dropdown. Preset model routing is a default; explicit runtime overrides are applied
+afterward. Commands and configuration-file provisioning remain versioned in the
+saved agent kwargs. Local files are not uploaded implicitly.
 Benchmark tasks, environment and retries remain owned by the benchmark catalog.
 Other top-level fragment fields are rejected for execution, not silently ignored.
+
+### Declared identity versus harness configuration
+
+`submission.model.id` is a free-form **declared identity**, not a forced CLI model
+string. `provider` can be entered manually (omission means `unspecified`), and an
+optional `revision` records the model revision. HF provider lookup is only a hint.
+
+An optional `submission.runtime` supplies explicit execution overrides:
+
+```json
+{
+  "model_name": "hf.my-model-alias",
+  "endpoint": "https://router.huggingface.co/v1",
+  "credentials": "hf-inference",
+  "environment": [
+    { "name": "MY_SETTING", "value": "custom" },
+    { "name": "OPENAI_API_KEY", "secret_ref": "hf-inference-token" }
+  ]
+}
+```
+
+The new UI requires an exact harness model string before preview; enter it manually
+or use **Apply HF routing hints**. When `submission.runtime` is supplied, the API
+requires `model_name`. It is passed unchanged, including harness-specific spellings
+such as `hf.…` or `codexresponses.…`. Legacy API submissions without `runtime`
+remain supported for a normal `org/model` identity plus provider, using the preset
+route. Free-form declared identities require an explicit runtime model string.
+Editing declared identity metadata does not rewrite the harness runtime.
+Applying HF hints is an explicit UI action, not ongoing synchronization.
+
+Non-secret environment entries override the named variables; in a command harness
+they become literals in both setup and run clean environments. That includes
+replacing a model-variable binding if explicitly requested. Credential references
+are run-only; they do not add setup credential bindings.
+
+Infrastructure variables, duplicate names and credentials in endpoint URLs are
+rejected. Secret detection uses heuristics, not a universal secret scanner:
+scripts, configuration-file contents and literal values must remain secret-free
+even when validation accepts them. Only the `hf-inference-token` reference bound to
+`OPENAI_API_KEY` is supported today, and HF credentials require the HF router.
+Other providers' secrets are **not** supported by this change.
+Validation checks known endpoint variables in the merged environment and command
+phase literals for conflicts with the HF credential route. This is not proof of
+network egress confinement: scripts or configuration can direct requests elsewhere.
+An isolated command harness can instead select `credentials: "none"` and a
+different HTTP(S) endpoint. Its implicit model credential bindings are removed,
+and endpoint bindings become non-secret literals. The CLI must itself support
+that anonymous route. This does not remove the HF credential needed by the parent
+runner for Jobs and private Bucket access.
+
+Before provider dispatch, admission immutably records the approved submission,
+runner image, model declaration, explicit overrides, and effective native
+JobConfig. **Recorded configuration** on a Job retrieves the owner's snapshot,
+including invocation scripts/configuration-file provisioning and symbolic
+credential references, never credential values. Older runs without these snapshots
+cannot be reconstructed by this endpoint.
+
+The setup context now includes declared model identity/revision as well as the
+effective native configuration. Changing either invalidates an incompatible setup
+receipt, even if the CLI model alias stays unchanged. Older receipts that predate
+this identity binding require a new setup test before new benchmark admission.
+These records support review; they do not independently attest which model served
+requests and do not cause leaderboard publication.
 
 **Test setup** saves the current draft as an immutable version and opens an inline
 Workbench execution panel with that version and purpose **setup** selected. It does not immediately
@@ -154,6 +219,7 @@ applies to both. Responses use `Cache-Control: no-store`.
 | `buckets` | `{}`; first page of own private Buckets only |
 | `check-bucket` | `bucket`; validates private metadata access and remembers selection |
 | `create-bucket` | `bucket`, `confirm: true`; creates privately and remembers selection |
+| `configuration` | `run_id`; own immutable approved submission and effective native config |
 | `preview` | `run_id`, catalog `submission` |
 | `setup-result` | `run_id` for a previously dispatched setup owned by the caller |
 | `logs` | `job_id` |

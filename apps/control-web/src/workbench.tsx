@@ -83,9 +83,10 @@ export function WorkbenchPage() {
         </p>
         <p className="my-4">
           Save an agents-only native Harbor fragment. Benchmark tasks, environment and
-          retries come from the selected benchmark. Model routing is selected in
-          Personal execution; agent kwargs (including reasoning) stay as saved. Never
-          enter secrets.
+          retries come from the selected benchmark. The execution panel separates
+          declared model identity from editable model aliases and environment overrides.
+          Invocation commands and configuration-file provisioning stay versioned here.
+          Never enter secrets.
         </p>
         <div className="flex flex-wrap gap-3">
           {starters.map((starter) => (
@@ -187,10 +188,7 @@ export function WorkbenchPage() {
         <Card>
           <p>Execution uses the snapshot below, not subsequent edits to the draft.</p>
           <Button onClick={() => setExecution(null)}>Close execution panel</Button>
-          <PersonalPage
-            key={`${execution.revision}/${execution.mode}`}
-            initialSelection={execution}
-          />
+          <PersonalPage initialSelection={execution} />
         </Card>
       ) : null}
     </>

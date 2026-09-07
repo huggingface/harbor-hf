@@ -401,7 +401,7 @@ test("wires the personal workflow without real HF calls", async ({ page }) => {
   await page
     .getByRole("combobox", { name: "Agent and version" })
     .selectOption("pi/0.84.4");
-  await page.getByLabel("Model (organization/model)").fill("publisher/model");
+  await page.getByLabel("Declared model identity").fill("publisher/model");
   await page.getByRole("button", { name: "Find model providers" }).click();
   await expect(
     page.getByRole("combobox", { name: "HF inference provider" }),
@@ -409,6 +409,7 @@ test("wires the personal workflow without real HF calls", async ({ page }) => {
   await expect(page.getByRole("combobox", { name: "Reasoning effort" })).toHaveValue(
     "off",
   );
+  await page.getByRole("button", { name: "Apply HF routing hints" }).click();
   await page.getByRole("button", { name: "Preview for launch approval" }).click();
   await expect(page.getByText(/native_config_sha256/)).toBeVisible();
   await expect(
@@ -570,6 +571,43 @@ for (const mode of ["setup", "benchmark"] as const) {
     expect(executionRequests).toEqual([]);
   });
 }
+
+test("Workbench previews explicit model and environment overrides without HF discovery or launch", async ({
+  page,
+}) => {
+  await mockControl(page, { role: "reader", writeMode: "disabled" });
+  let preview: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/personal/preview", async (route) => {
+    expect(route.request().headers()["x-hf-user-token"]).toBeUndefined();
+    preview = route.request().postDataJSON();
+    return json(route, { config: {}, native_config_sha256: "a".repeat(64) });
+  });
+  await page.goto("/workbench");
+  await page.getByRole("button", { name: "Start from Fast-Agent 0.10.19" }).click();
+  await page.getByRole("button", { name: "Test setup" }).click();
+  await page
+    .getByLabel("Declared model identity", { exact: true })
+    .fill("A declared model");
+  await page.getByLabel("Declared provider", { exact: true }).fill("custom provider");
+  await page.getByLabel("Exact harness model string").fill("hf.my-alias");
+  await page
+    .getByLabel("Harness environment overrides (JSON)")
+    .fill('[{"name":"MY_SETTING","value":"custom"}]');
+  await page.getByRole("button", { name: "Preview for launch approval" }).click();
+  await expect
+    .poll(() => preview)
+    .toMatchObject({
+      mode: "setup",
+      submission: {
+        model: { id: "A declared model", provider: "custom provider" },
+        runtime: {
+          model_name: "hf.my-alias",
+          environment: [{ name: "MY_SETTING", value: "custom" }],
+        },
+      },
+    });
+  await expect(page).toHaveURL(/\/workbench$/);
+});
 
 test("New Run previews saved native configuration without admission", async ({
   page,

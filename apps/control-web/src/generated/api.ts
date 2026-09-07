@@ -16,11 +16,11 @@ export interface paths {
             parameters: {
                 query?: never;
                 header?: {
-                    /** @description Required for all actions except preview. */
+                    /** @description Optional same-account override for session OAuth. API clients without a delegated session must supply it for actions other than preview. */
                     "X-HF-User-Token"?: string;
                 };
                 path: {
-                    action: "identity" | "preview" | "approval" | "jobs" | "logs" | "cancel" | "results" | "artifact" | "launch" | "setup-result" | "buckets" | "create-bucket" | "check-bucket";
+                    action: "identity" | "preview" | "approval" | "jobs" | "logs" | "cancel" | "results" | "artifact" | "launch" | "setup-result" | "buckets" | "create-bucket" | "check-bucket" | "configuration";
                 };
                 cookie?: never;
             };
