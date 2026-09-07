@@ -128,7 +128,19 @@ environments, and configurations with more than one agent.
 
 The cost check runs after each trial because Harbor saves a result before it
 calls the end hook. One trial can exceed its limit. When trials run at the same
-time, active work can also finish before cancellation completes.
+time, active work can also finish before cancellation completes. A trial with
+no reported cost after agent execution keeps its `null` value and reserves the
+per-trial ceiling in the aggregate cost check. A failure before agent execution
+records zero cost.
+
+The parent stops when a cost limit is crossed and more work can spend money. If
+Harbor proves that every configured trial is terminal and retries are disabled,
+the parent lets Harbor finish the same job and write `finished_at`. While that
+already-live parent finalizes, the reconciler leaves it running. It never starts
+a replacement parent for a cost-stopped run. Missing, incomplete, or
+retry-enabled state stops the live parent as before. The run still appears as
+`cost_stopped`. `finished_at` means execution is complete and does not mean that
+the run complied with its cost limit.
 
 ## Local development
 

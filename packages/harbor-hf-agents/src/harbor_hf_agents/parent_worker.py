@@ -14,9 +14,10 @@ from uuid import UUID, uuid4
 
 from harbor.job import Job
 from harbor.models.job.config import JobConfig
+from harbor.models.job.result import JobResult
 from harbor.models.trial.result import TrialResult
 from harbor.trial.hooks import HookCallback, TrialHookEvent
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 _RUN_ID = re.compile(r"^run-[0-9a-f]{24}$")
 
@@ -94,9 +95,30 @@ def _attempts_dir(run_dir: Path) -> Path:
     return run_dir / "attempt-costs"
 
 
-def _receipt_for(result: TrialResult) -> AttemptCostReceipt:
+def _agent_execution_started(result: TrialResult) -> bool:
+    if result.agent_result is not None:
+        return True
+    if result.agent_execution and result.agent_execution.started_at is not None:
+        return True
+    return any(
+        step.agent_result is not None
+        or (
+            step.agent_execution is not None
+            and step.agent_execution.started_at is not None
+        )
+        for step in result.step_results or []
+    )
+
+
+def _reported_cost(result: TrialResult) -> float | None:
     *_, cost = result.compute_token_cost_totals()
-    safe_cost = cost if cost is None or math.isfinite(cost) and cost >= 0 else None
+    return cost if cost is not None and math.isfinite(cost) and cost >= 0 else None
+
+
+def _receipt_for(result: TrialResult) -> AttemptCostReceipt:
+    safe_cost = _reported_cost(result)
+    if safe_cost is None and not _agent_execution_started(result):
+        safe_cost = 0.0
     return AttemptCostReceipt(
         attempt_id=result.id,
         trial_name=result.trial_name,
@@ -143,9 +165,16 @@ def load_attempt_costs(run_dir: Path) -> dict[UUID, AttemptCostReceipt]:
     if job_dir.exists():
         for path in sorted(job_dir.glob("*/result.json")):
             result = TrialResult.model_validate_json(path.read_text(encoding="utf-8"))
+            existing = receipts.get(result.id)
+            if existing is not None:
+                if existing != _receipt_for(result):
+                    raise RuntimeError(
+                        "attempt cost receipt conflicts with durable evidence"
+                    )
+                continue
             receipt = _receipt_for(result)
             _write_receipt(run_dir, receipt)
-            receipts.setdefault(receipt.attempt_id, receipt)
+            receipts[receipt.attempt_id] = receipt
     return receipts
 
 
@@ -183,11 +212,6 @@ def _interrupted_trial_names(error: BaseException) -> list[str]:
 def _cost_violation(
     receipts: dict[UUID, AttemptCostReceipt], ceiling: float, planned_trials: int
 ) -> str | None:
-    unavailable = next(
-        (item for item in receipts.values() if item.cost_usd is None), None
-    )
-    if unavailable:
-        return f"trial {unavailable.trial_name} did not report inference cost"
     expensive = next(
         (
             item
@@ -198,28 +222,80 @@ def _cost_violation(
     )
     if expensive:
         return f"trial {expensive.trial_name} reported cost above its ceiling"
-    total = sum(item.cost_usd or 0 for item in receipts.values())
-    if total > ceiling * planned_trials:
-        return "completed trial cost exceeded the run ceiling"
+    exposure = sum(
+        item.cost_usd if item.cost_usd is not None else ceiling
+        for item in receipts.values()
+    )
+    if exposure > ceiling * planned_trials:
+        return "completed trial cost exposure exceeded the run ceiling"
     return None
 
 
-def make_cost_hook(ceiling: float, planned_trials: int, run_dir: Path) -> HookCallback:
+def _harbor_job_is_terminal(
+    run_dir: Path, planned_trials: int, max_retries: int
+) -> bool:
+    """Return whether Harbor proves that no configured work can spend."""
+    if max_retries != 0:
+        return False
+    try:
+        result = JobResult.model_validate_json(
+            (run_dir / "job" / "result.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValidationError):
+        return False
+
+    progress = (
+        result.stats.n_completed_trials,
+        result.stats.n_running_trials,
+        result.stats.n_pending_trials,
+    )
+    if any(value < 0 for value in progress):
+        return False
+    return (
+        result.n_total_trials == planned_trials
+        and result.stats.n_completed_trials == planned_trials
+        and result.stats.n_running_trials == 0
+        and result.stats.n_pending_trials == 0
+    )
+
+
+def _enforce_cost_ceiling(
+    receipts: dict[UUID, AttemptCostReceipt],
+    ceiling: float,
+    planned_trials: int,
+    run_dir: Path,
+    max_retries: int,
+) -> None:
+    violation = _cost_violation(receipts, ceiling, planned_trials)
+    if violation is None or _harbor_job_is_terminal(
+        run_dir, planned_trials, max_retries
+    ):
+        return
+    raise CostCeilingExceeded(violation)
+
+
+def make_cost_hook(
+    ceiling: float,
+    planned_trials: int,
+    run_dir: Path,
+    *,
+    max_retries: int,
+) -> HookCallback:
     """Return Harbor's durable post-trial cost callback."""
     if planned_trials <= 0:
         raise ValueError("planned trial count must be positive")
     receipts = load_attempt_costs(run_dir)
-    if violation := _cost_violation(receipts, ceiling, planned_trials):
-        raise CostCeilingExceeded(violation)
+    _enforce_cost_ceiling(receipts, ceiling, planned_trials, run_dir, max_retries)
 
     async def check_cost(event: TrialHookEvent) -> None:
         receipt = _receipt_for(event.result)
         controlled = _desired_state(run_dir) in {"paused", "cancelled"}
-        if not controlled or receipt.cost_usd is not None:
+        if not controlled or _reported_cost(event.result) is not None:
             _write_receipt(run_dir, receipt)
             receipts.setdefault(receipt.attempt_id, receipt)
-            if violation := _cost_violation(receipts, ceiling, planned_trials):
-                raise CostCeilingExceeded(violation)
+            _enforce_cost_ceiling(
+                receipts, ceiling, planned_trials, run_dir, max_retries
+            )
         if controlled:
             raise ControlledRunStop(receipt.trial_name)
 
@@ -239,6 +315,7 @@ async def run_parent() -> None:
             cost_ceiling(record),
             len(job),
             run_dir,
+            max_retries=config.retry.max_retries,
         )
     except CostCeilingExceeded as error:
         print(str(error), flush=True)

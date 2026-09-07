@@ -36,6 +36,43 @@ function positiveCeiling(value: number): void {
     throw new Error("cost ceiling must be a finite positive USD value");
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function nonnegativeInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function harborJobReadyToFinalize(
+  record: RunRecordV1,
+  result: Record<string, unknown> | null,
+): boolean {
+  if (!result || (result.finished_at !== null && result.finished_at !== undefined))
+    return false;
+  const stats = asRecord(result.stats);
+  const total = nonnegativeInteger(result.n_total_trials);
+  const completed = nonnegativeInteger(stats?.n_completed_trials);
+  const running = nonnegativeInteger(stats?.n_running_trials);
+  const pending = nonnegativeInteger(stats?.n_pending_trials);
+  const retryValue = record.harbor_job_config.retry;
+  const retry = retryValue === undefined ? null : asRecord(retryValue);
+  if (retryValue !== undefined && retry === null) return false;
+  const maxRetries = nonnegativeInteger(retry?.max_retries ?? 0);
+  return (
+    total !== null &&
+    total > 0 &&
+    completed === total &&
+    running === 0 &&
+    pending === 0 &&
+    maxRetries === 0
+  );
+}
+
 function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
   return (
     canonicalJson({
@@ -316,9 +353,15 @@ export class ControlService {
         );
         const liveJobs = runJobs.filter(isLiveJob);
         const liveParent = liveJobs.find((job) => job.role === "parent");
+        const keepFinalizingParent =
+          state.desired_state === "run" &&
+          projected.status === "cost_stopped" &&
+          liveParent !== undefined &&
+          harborJobReadyToFinalize(projected.record, projected.result);
         const terminal =
           state.desired_state !== "run" ||
-          ["finished", "cost_stopped"].includes(projected.status);
+          (["finished", "cost_stopped"].includes(projected.status) &&
+            !keepFinalizingParent);
         if (terminal) {
           const liveParents = liveJobs.filter((job) => job.role === "parent");
           if (liveParents.length > 0) {

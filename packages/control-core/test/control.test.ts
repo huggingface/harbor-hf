@@ -471,7 +471,12 @@ describe("status and projection", () => {
     expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [0.2, 0.2])).toBe(
       true,
     );
-    expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [null])).toBe(true);
+    expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [null])).toBe(
+      false,
+    );
+    expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [null, 0.01])).toBe(
+      true,
+    );
     expect(statusFor(record, state, null, [], [])).toBe("queued");
     expect(
       statusFor(
@@ -507,6 +512,16 @@ describe("status and projection", () => {
     expect(statusFor(record, state, { finished_at: record.created_at }, [], [])).toBe(
       "finished",
     );
+    expect(
+      statusFor(
+        record,
+        state,
+        { finished_at: record.created_at, n_total_trials: 1 },
+        [cheap],
+        [],
+        [null],
+      ),
+    ).toBe("finished");
     expect(
       statusFor(
         record,
@@ -565,6 +580,98 @@ describe("status and projection", () => {
     await service.refresh();
 
     expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
+  });
+
+  it("keeps a finalized over-limit run cost-stopped after rebuild", async () => {
+    const { run } = await submit("final-cost-stop");
+    const attemptId = "66666666-6666-4666-8666-666666666666";
+    const finishedAt = "2026-09-04T00:10:00Z";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: finishedAt,
+      n_total_trials: 1,
+    });
+    await putJson(
+      store,
+      `runs/${run.run_id}/job/task/result.json`,
+      trial(0.5, 1, attemptId),
+    );
+    await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
+      schema_version: "v1",
+      attempt_id: attemptId,
+      trial_name: "task__trial",
+      cost_usd: 0.5,
+    });
+
+    await service.refresh();
+
+    expect(projection.run(run.run_id)).toMatchObject({
+      status: "cost_stopped",
+      result: { finished_at: finishedAt },
+    });
+    expect(projection.trials(run.run_id)).toMatchObject([
+      {
+        trial_name: "task__trial",
+        reward: 1,
+        cost_usd: 0.5,
+        status: "completed",
+      },
+    ]);
+  });
+
+  it("accepts a zero receipt when agent execution did not start", async () => {
+    const { run } = await submit("pre-agent-zero");
+    const attemptId = "44444444-4444-4444-8444-444444444444";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: "2026-09-04T00:10:00Z",
+      n_total_trials: 1,
+    });
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, {
+      id: attemptId,
+      trial_name: "task__trial",
+      agent_result: null,
+      agent_execution: null,
+      step_results: null,
+      exception_info: { exception_type: "RuntimeError" },
+    });
+    await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
+      schema_version: "v1",
+      attempt_id: attemptId,
+      trial_name: "task__trial",
+      cost_usd: 0,
+    });
+
+    await service.refresh();
+
+    expect(projection.run(run.run_id)?.status).toBe("finished");
+    expect(projection.trials(run.run_id)).toMatchObject([
+      { cost_usd: null, status: "error" },
+    ]);
+  });
+
+  it("rejects a zero receipt when agent execution started without cost", async () => {
+    const { run } = await submit("post-agent-zero");
+    const attemptId = "44444444-4444-4444-8444-444444444444";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      n_total_trials: 1,
+    });
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, {
+      id: attemptId,
+      trial_name: "task__trial",
+      agent_result: {},
+      agent_execution: null,
+      step_results: null,
+      exception_info: { exception_type: "RuntimeError" },
+    });
+    await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
+      schema_version: "v1",
+      attempt_id: attemptId,
+      trial_name: "task__trial",
+      cost_usd: 0,
+    });
+
+    await expect(service.refresh()).rejects.toThrow(
+      "attempt cost receipt conflicts with Harbor result",
+    );
   });
 
   it("rejects a cost receipt that conflicts with a Harbor result", async () => {
@@ -700,6 +807,101 @@ describe("reconciliation", () => {
     ).toMatchObject({
       desired_state: "run",
     });
+  });
+
+  it("keeps a completed cost-stopped parent alive until Harbor finalizes", async () => {
+    const { run } = await submit("finalizing-cost");
+    await service.reconcile();
+    const result = {
+      finished_at: null,
+      n_total_trials: 1,
+      stats: {
+        n_completed_trials: 1,
+        n_running_trials: 0,
+        n_pending_trials: 0,
+      },
+    };
+    await putJson(store, `runs/${run.run_id}/job/result.json`, result);
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, trial(0.5));
+
+    await service.reconcile();
+
+    expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
+    expect(jobs.cancelled).not.toContain("parent-1");
+    expect(jobs.starts).toBe(1);
+
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      ...result,
+      finished_at: "2026-09-07T12:00:00Z",
+    });
+    await service.reconcile();
+
+    expect(jobs.cancelled).toContain("parent-1");
+    expect(jobs.starts).toBe(1);
+  });
+
+  it("cancels a cost-stopped parent when native progress is incomplete", async () => {
+    const { run } = await submit("incomplete-cost");
+    await service.reconcile();
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: null,
+      n_total_trials: 1,
+      stats: {
+        n_completed_trials: 0,
+        n_running_trials: 0,
+        n_pending_trials: 1,
+      },
+    });
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, trial(0.5));
+
+    await service.reconcile();
+
+    expect(jobs.cancelled).toContain("parent-1");
+    expect(jobs.starts).toBe(1);
+  });
+
+  it("cancels a complete cost-stopped parent when retries are enabled", async () => {
+    const { run } = await submit("retry-cost");
+    await putJson(store, runRecordPath(run.run_id), {
+      ...run,
+      harbor_job_config: {
+        ...run.harbor_job_config,
+        retry: { max_retries: 1 },
+      },
+    });
+    await service.reconcile();
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: null,
+      n_total_trials: 1,
+      stats: {
+        n_completed_trials: 1,
+        n_running_trials: 0,
+        n_pending_trials: 0,
+      },
+    });
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, trial(0.5));
+
+    await service.reconcile();
+
+    expect(jobs.cancelled).toContain("parent-1");
+    expect(jobs.starts).toBe(1);
+  });
+
+  it("restarts a run after a null-cost attempt", async () => {
+    const { run } = await submit("unknown-cost");
+    const attemptId = "44444444-4444-4444-8444-444444444444";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, { n_total_trials: 2 });
+    await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
+      schema_version: "v1",
+      attempt_id: attemptId,
+      trial_name: "task__trial",
+      cost_usd: null,
+    });
+
+    await service.reconcile();
+
+    expect(jobs.starts).toBe(1);
+    expect(projection.run(run.run_id)?.status).toBe("running");
   });
 
   it("rechecks cost receipts after it acquires the run lock", async () => {

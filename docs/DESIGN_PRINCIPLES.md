@@ -92,6 +92,44 @@ A reviewed preset should stay close to a Harbor `JobConfig` fragment. It can
 restrict values for safety or policy. It should not invent another name for a
 field that Harbor already has.
 
+Harbor-HF MUST preserve a null cost when Harbor reports one after agent
+execution. It MUST NOT record that cost as observed zero or as an observed
+ceiling charge. A failure before agent execution MUST record zero cost. The cost
+guard MUST reserve the per-trial ceiling for an unknown post-execution cost and
+MUST let Harbor continue while total observed and reserved exposure remains
+within the run ceiling. A missing cost by itself MUST NOT stop unrelated trials.
+
+## Cost stops and native finalization
+
+Harbor MUST remain the only owner of job completion and finalization. Harbor-HF
+MUST use Harbor's public `JobResult` as the sole completion authority. It MUST
+NOT count trial folders, persist duplicate progress, read private queue fields,
+or reproduce Harbor's retry rules.
+
+Harbor-HF MUST write the immutable attempt-cost receipt before it decides
+whether to raise its cost-stop exception. This rule applies to checks of
+existing receipts before `Job.run()` and to direct or aggregate violations after
+a trial ends.
+
+The guard MUST raise while more work can spend money or while completion is
+uncertain. It MAY suppress the exception only when the native total matches the
+configured job size, completed equals total, running and pending are zero, and
+`retry.max_retries` is zero. A missing, malformed, inconsistent, incomplete,
+running, pending, mismatched-total, or retry-enabled result MUST fail closed.
+
+When those strict checks prove completion, Harbor-HF MUST let the same
+`Job.run()` call perform Harbor's normal final aggregation and write
+`finished_at`. While that already-live parent finalizes, the reconciler MUST
+leave it running when the native counters show completed equal to total, zero
+running and pending trials, and zero retries. It MUST NOT start a replacement
+parent for a cost-stopped run. Missing, inconsistent, incomplete, or
+retry-enabled state MUST fail closed and stop the live parent. An operator pause
+or cancellation MUST also stop it.
+
+The projection MUST still report `cost_stopped` when a cost limit was crossed.
+`finished_at` means execution is complete. It MUST NOT be treated as proof that
+the run complied with the cost policy.
+
 ## Work that MUST NOT be added
 
 Harbor-HF MUST NOT add any of the following:

@@ -187,6 +187,11 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     if (path === "/api/v1/leaderboard") return json(route, leaderboard);
     if (path === "/api/v1/system") return json(route, system);
     if (path === "/api/v1/presets") return json(route, presets);
+    if (path === "/api/v1/model-providers")
+      return json(route, {
+        model: url.searchParams.get("model"),
+        providers: ["provider", "retry-provider"],
+      });
     if (path === "/api/v1/jobs") return json(route, { jobs: [job] });
     if (path === "/api/v1/runs" && method === "GET")
       return json(route, { runs: [currentRun] });
@@ -337,8 +342,12 @@ test("validates and submits the overview form without losing selected values", a
   await mockControl(page, { onRunPost: (payload) => (submitted = payload) });
   await page.goto("/overview");
   await expect(page.getByRole("button", { name: "Submit run" })).toBeVisible();
-  await page.getByLabel("Model").fill("publisher/new-model");
-  await page.getByLabel("Provider").fill("provider");
+  const model = page.getByRole("textbox", { name: "Model", exact: true });
+  await model.fill("publisher/new-model");
+  await model.blur();
+  await page
+    .getByRole("combobox", { name: "Provider", exact: true })
+    .selectOption("provider");
   await page.getByRole("button", { name: "Submit run" }).click();
   await expect(page.getByRole("link", { name: "Open it" })).toHaveAttribute(
     "href",
@@ -348,20 +357,26 @@ test("validates and submits the overview form without losing selected values", a
     model: { id: "publisher/new-model", provider: "provider" },
     harness: { agent: "pi", version: "0.84.4" },
   });
-  await expect(page.getByLabel("Model")).toHaveValue("publisher/new-model");
+  await expect(model).toHaveValue("publisher/new-model");
 });
 
 test("retains overview values after a failed submission", async ({ page }) => {
   await mockControl(page, { runPostError: true });
   await page.goto("/overview");
-  await page.getByLabel("Model").fill("publisher/retry-model");
-  await page.getByLabel("Provider").fill("retry-provider");
+  const model = page.getByRole("textbox", { name: "Model", exact: true });
+  const provider = page.getByRole("combobox", {
+    name: "Provider",
+    exact: true,
+  });
+  await model.fill("publisher/retry-model");
+  await model.blur();
+  await provider.selectOption("retry-provider");
   await page.getByLabel("Cost limit per trial").fill("0.75");
   await page.getByLabel("Result role").selectOption("final");
   await page.getByRole("button", { name: "Submit run" }).click();
   await expect(page.getByRole("alert")).toContainText("submission rejected");
-  await expect(page.getByLabel("Model")).toHaveValue("publisher/retry-model");
-  await expect(page.getByLabel("Provider")).toHaveValue("retry-provider");
+  await expect(model).toHaveValue("publisher/retry-model");
+  await expect(provider).toHaveValue("retry-provider");
   await expect(page.getByLabel("Cost limit per trial")).toHaveValue("0.75");
   await expect(page.getByLabel("Result role")).toHaveValue("final");
 });

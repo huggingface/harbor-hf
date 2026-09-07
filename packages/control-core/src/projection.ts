@@ -58,6 +58,23 @@ function trialCost(result: Record<string, unknown>): number | null {
   return costs.length > 0 ? costs.reduce((total, value) => total + value, 0) : null;
 }
 
+function agentExecutionStarted(result: Record<string, unknown>): boolean {
+  if (asRecord(result.agent_result)) return true;
+  const execution = asRecord(result.agent_execution);
+  if (execution?.started_at !== null && execution?.started_at !== undefined)
+    return true;
+  if (!Array.isArray(result.step_results)) return false;
+  return result.step_results.some((value) => {
+    const step = asRecord(value);
+    if (!step) return false;
+    if (asRecord(step.agent_result)) return true;
+    const stepExecution = asRecord(step.agent_execution);
+    return (
+      stepExecution?.started_at !== null && stepExecution?.started_at !== undefined
+    );
+  });
+}
+
 function trialReward(result: Record<string, unknown>): number | null {
   const rewards = asRecord(asRecord(result.verifier_result)?.rewards);
   if (!rewards) return null;
@@ -101,10 +118,13 @@ export function costLimitReached(
   attemptCosts: readonly (number | null)[] = trials.map((trial) => trial.cost_usd),
 ): boolean {
   const ceiling = record.submission.cost_ceiling_usd_per_trial;
-  if (attemptCosts.some((cost) => cost === null || cost > ceiling)) return true;
-  const total = attemptCosts.reduce<number>((sum, cost) => sum + (cost ?? 0), 0);
+  if (attemptCosts.some((cost) => cost !== null && cost > ceiling)) return true;
+  const exposure = attemptCosts.reduce<number>(
+    (sum, cost) => sum + (cost ?? ceiling),
+    0,
+  );
   const planned = numeric(result?.n_total_trials);
-  return planned !== null && planned > 0 && total > ceiling * planned;
+  return planned !== null && planned > 0 && exposure > ceiling * planned;
 }
 
 export function statusFor(
@@ -146,7 +166,14 @@ function authoritativeAttemptCosts(
       costs.push(trial.cost_usd);
       continue;
     }
-    if (receipt.trial_name !== trial.trial_name || receipt.cost_usd !== trial.cost_usd)
+    const preAgentZero =
+      receipt.cost_usd === 0 &&
+      trial.cost_usd === null &&
+      !agentExecutionStarted(trial.result);
+    if (
+      receipt.trial_name !== trial.trial_name ||
+      (receipt.cost_usd !== trial.cost_usd && !preAgentZero)
+    )
       throw new Error("attempt cost receipt conflicts with Harbor result");
   }
   return costs;
