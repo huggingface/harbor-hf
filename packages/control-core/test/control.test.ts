@@ -158,6 +158,36 @@ describe("run submission", () => {
     });
   });
 
+  it("resolves the Pi Code Mode preset without changing Harbor's run contract", async () => {
+    const result = await service.submitPreset(
+      {
+        ...input,
+        model: {
+          id: "deepseek-ai/DeepSeek-V4-Flash-0731",
+          provider: "baseten",
+          reasoning_effort: "high",
+        },
+        harness: {
+          agent: "pi",
+          version: "0.84.4+code-mode.0.3.0",
+        },
+      },
+      "pi-code-mode-run",
+      "test-subject",
+    );
+    expect(result.run.harbor_job_config).toMatchObject({
+      n_attempts: 1,
+      agents: [
+        {
+          import_path: "harbor_hf_agents.pi_code_mode.agent:PiCodeModeAgent",
+          model_name: "huggingface/deepseek-ai/DeepSeek-V4-Flash-0731:baseten",
+          env: { HF_TOKEN: "$" + "{HF_INFERENCE_TOKEN}" },
+          kwargs: { version: "0.84.4", thinking: "high" },
+        },
+      ],
+    });
+  });
+
   it("submits a Workbench recipe through the same one-Run Harbor contract", async () => {
     const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
     const workbenchInput = {

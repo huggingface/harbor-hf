@@ -113,7 +113,10 @@ environment.
 
 Agent presets select one Harbor agent or import path, a fixed version, allowed
 reasoning values, and nonsecret options. A request cannot override the preset
-fragment.
+fragment. The Pi Code Mode preset subclasses the existing Pi adapter only to
+install the reviewed extension package that the parent image built for the
+child architecture. Harbor still owns Pi installation, model configuration,
+execution, results, and resume.
 
 A direct `JobConfig` is available for diagnostic work. The API rejects unsafe
 and unknown fields and validates the result with a closed form of the JSON

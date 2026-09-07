@@ -1,0 +1,11 @@
+{
+  "schema_version": "v1",
+  "agent": "pi",
+  "version": "0.84.4+code-mode.0.3.0",
+  "harbor_agent": {
+    "import_path": "harbor_hf_agents.pi_code_mode.agent:PiCodeModeAgent",
+    "kwargs": { "version": "0.84.4" }
+  },
+  "reasoning_option": "thinking",
+  "reasoning_values": ["off", "minimal", "low", "medium", "high", "xhigh"]
+}

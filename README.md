@@ -45,6 +45,10 @@ After a model ID is entered, the console queries the Hugging Face Hub and
 enables the provider select with only providers that currently report a live
 mapping for that model.
 
+The Pi version `0.84.4+code-mode.0.3.0` runs the normal Harbor Pi adapter with
+the reviewed Pi Code Mode extension bundled in the parent image. It keeps
+Harbor's native trial lifecycle, provider pin, result, and cost handling.
+
 A `final` run can enter the leaderboard only when it uses an eligible benchmark
 preset and has at least one scored trial. A `diagnostic` run never enters the
 leaderboard.
