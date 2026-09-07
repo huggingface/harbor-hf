@@ -54,6 +54,17 @@ describe("control API configuration", () => {
     ).toThrow("production service requires OAuth authentication");
   });
 
+  it("allows configuration writes without an execution image", () => {
+    const config = loadConfig({
+      ...environment,
+      HARBOR_HF_WRITE_MODE: "enabled",
+      HARBOR_HF_STORE_MODE: "bucket",
+      HF_TOKEN: "control-placeholder",
+      HF_INFERENCE_TOKEN: "inference-placeholder",
+    });
+    expect(config.parent_image).toBeNull();
+  });
+
   it("requires two distinct credentials and an immutable image in write mode", () => {
     expect(() =>
       loadConfig({ ...environment, HARBOR_HF_WRITE_MODE: "enabled" }),

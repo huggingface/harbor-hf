@@ -167,7 +167,7 @@ export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        "rounded-xl border border-slate-800 bg-slate-950/70 p-5 shadow-sm",
+        "min-w-0 rounded-xl border border-slate-800 bg-slate-950/70 p-4 shadow-sm sm:p-5",
         className,
       )}
       {...props}

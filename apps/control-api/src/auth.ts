@@ -80,6 +80,12 @@ class BearerLookupLimiter {
 }
 
 export class AuthStore {
+  // Intentionally memory-only: never write delegated tokens into SQLite, cookies
+  // or artifacts. Restart requires a fresh OAuth consent/login.
+  private readonly credentials = new Map<
+    string,
+    { token: string; expiresAt: number }
+  >();
   private constructor(private readonly database: Database.Database) {}
 
   static async open(path: string): Promise<AuthStore> {
@@ -193,10 +199,34 @@ export class AuthStore {
   }
 
   deleteSession(id: string): void {
+    this.credentials.delete(id);
     this.database.prepare("DELETE FROM sessions WHERE id = ?").run(id);
   }
 
+  retainCredential(id: string, token: string, ttlSeconds: number): void {
+    for (const [key, value] of this.credentials) {
+      if (value.expiresAt <= Date.now() || !this.session(key))
+        this.credentials.delete(key);
+    }
+    const session = this.session(id);
+    if (!session || !Number.isFinite(ttlSeconds) || ttlSeconds <= 0) return;
+    this.credentials.set(id, {
+      token,
+      expiresAt: Math.min(session.expires_at, Date.now() + ttlSeconds * 1000),
+    });
+  }
+
+  executionCredential(id: string): string | null {
+    const credential = this.credentials.get(id);
+    if (!this.session(id) || !credential || credential.expiresAt <= Date.now()) {
+      this.credentials.delete(id);
+      return null;
+    }
+    return credential.token;
+  }
+
   close(): void {
+    this.credentials.clear();
     this.database.close();
   }
 }
@@ -234,7 +264,7 @@ export class AuthenticationService {
   private oidc: Configuration | null = null;
   private readonly bearerCache = new Map<
     string,
-    { subject: string | null; expires_at: number }
+    { subject: string | null; expires_at: number; username?: string }
   >();
   private readonly bearerLookupLimiter = new BearerLookupLimiter();
 
@@ -243,6 +273,7 @@ export class AuthenticationService {
     readonly store: AuthStore,
     readonly oauth: OAuthConfig | null,
     readonly acl: () => Promise<OperatorAcl | null>,
+    readonly personalAccess: { adminUsernames: readonly string[] } | null = null,
   ) {}
 
   async initialize(): Promise<void> {
@@ -295,18 +326,21 @@ export class AuthenticationService {
       tokens.claims()?.sub ?? skipSubjectCheck,
     );
     if (!user.sub) throw new Error("OAuth user info has no stable subject");
-    if (!(await this.role(user.sub)))
-      throw new UnauthorizedSubjectError("OAuth identity is not authorized");
     const username =
       typeof user.preferred_username === "string"
         ? user.preferred_username
-        : typeof user.name === "string"
-          ? user.name
-          : "Hugging Face user";
+        : "Hugging Face user";
+    if (!(await this.role(user.sub, username)))
+      throw new UnauthorizedSubjectError("OAuth identity is not authorized");
     const session = this.store.createSession(
       user.sub,
       username,
       this.oauth.session_ttl_seconds,
+    );
+    this.store.retainCredential(
+      session.id,
+      tokens.access_token,
+      typeof tokens.expires_in === "number" ? tokens.expires_in : 0,
     );
     return {
       session_id: session.id,
@@ -321,7 +355,7 @@ export class AuthenticationService {
   ): Promise<{ actor: AuthenticatedActor; session: SessionRow } | null> {
     const session = this.store.session(sessionId);
     if (!session) return null;
-    const role = await this.role(session.subject);
+    const role = await this.role(session.subject, session.username ?? undefined);
     if (!role) {
       this.store.deleteSession(session.id);
       return null;
@@ -368,18 +402,25 @@ export class AuthenticationService {
           "bearer token identity has no stable subject",
         );
       }
-      this.rememberBearer(key, subject, 300_000);
+      this.rememberBearer(
+        key,
+        subject,
+        300_000,
+        typeof body.name === "string" ? body.name : undefined,
+      );
     }
-    const role = await this.role(subject);
+    const username = this.bearerCache.get(key)?.username;
+    const role = await this.role(subject, username);
     if (!role)
       throw new InvalidBearerCredentialError("bearer identity is not authorized");
-    return { subject, role, transport: "bearer", username: "API client" };
+    return { subject, role, transport: "bearer", username: username ?? "API client" };
   }
 
   private rememberBearer(
     key: string,
     subject: string | null,
     ttlMilliseconds: number,
+    username?: string,
   ): void {
     if (!this.bearerCache.has(key) && this.bearerCache.size >= 4096) {
       const oldest = this.bearerCache.keys().next().value;
@@ -388,6 +429,7 @@ export class AuthenticationService {
     this.bearerCache.set(key, {
       subject,
       expires_at: Date.now() + ttlMilliseconds,
+      ...(username ? { username } : {}),
     });
   }
 
@@ -400,11 +442,13 @@ export class AuthenticationService {
     };
   }
 
-  async role(subject: string): Promise<AuthRole | null> {
+  async role(subject: string, username?: string): Promise<AuthRole | null> {
+    if (username && this.personalAccess?.adminUsernames.includes(username))
+      return "operator";
     const acl = await this.acl();
     if (acl?.operators.includes(subject)) return "operator";
     if (acl?.readers.includes(subject)) return "reader";
-    return null;
+    return this.personalAccess ? "reader" : null;
   }
 
   csrfValid(session: SessionRow, token: string | undefined): boolean {

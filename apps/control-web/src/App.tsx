@@ -16,6 +16,7 @@ import { useSession, useSystem } from "./queries";
 import { ErrorNotice, Loading, QueryContent } from "./ui";
 import { WorkbenchPage } from "./workbench";
 import { LeaderboardPage } from "./leaderboard-page";
+import { PersonalPage } from "./personal";
 
 function isPublicBoard(path: string): boolean {
   return path === "/" || path === "/leaderboard";
@@ -80,6 +81,7 @@ function AuthenticatedApp({
               <Route path="/runs/:runId" element={<RunPage />} />
               <Route path="/runs/:runId/trials/:trialName" element={<TrialPage />} />
               <Route path="/jobs" element={<JobsPage />} />
+              <Route path="/personal" element={<PersonalPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </>
           ) : (

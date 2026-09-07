@@ -1,3 +1,13 @@
+> **Execution-disabled integration (2026-09-04):** This greenfield branch is not
+> production-ready. Run submission, actions, remote setup tests, and automatic
+> reconciliation are disabled before admission or credential resolution, even
+> when configuration writes are enabled. Workbench saves native Harbor JobConfig
+> fragments; New Run previews configuration without task resolution or a Job.
+> HF_TOKEN stays exclusively in the control Space. Neither persistent secret is
+> forwarded. Parent-worker execution and private Hub/Harbor patches are removed.
+> Execution descriptions below are deferred design, not available behavior or
+> permission to launch. See [execution boundary](docs/execution-disabled-integration.md).
+
 # Repository instructions
 
 ## Public repository privacy
@@ -75,10 +85,9 @@
 - The control Space has two operator-managed secrets. `HF_TOKEN` is the
   purpose-scoped control credential. `HF_INFERENCE_TOKEN` is the separate
   inference credential. Their values must differ.
-- The reviewed parent Job receives both as ephemeral Job secrets. It uses the
-  control credential to start and label child HF Sandbox Jobs. The benchmark
-  agent receives only the inference credential through the fixed environment
-  template.
+- HF_TOKEN must remain inside the control Space. It must not be passed to a
+  parent Job, worker, or Sandbox. Execution is disabled; neither persistent secret
+  is forwarded. Per-user OAuth delegation is deferred research only.
 - Never put credential values in variables, source, requests, run records,
   Bucket objects, image arguments, labels, logs, tests, or results.
 - Never copy a locally configured personal or broad account credential to a
@@ -129,7 +138,7 @@ uv run slophammer-py check . --baseline
 uv run slophammer-py dry .
 ```
 
-Build both Dockerfiles for `linux/amd64`. Run Ruff, ty, and pytest in
+Build the control and CLI-only scaffold Dockerfiles for `linux/amd64`. Run Ruff, ty, and pytest in
 `packages/harbor-hf-agents`.
 
 ## Operations

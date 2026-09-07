@@ -12,13 +12,7 @@ export type SessionResponse =
 
 export type BenchmarkPreset = BenchmarkPresetV1;
 
-export interface AgentPreset {
-  schema_version: "v1";
-  agent: string;
-  version: string;
-  reasoning_option: string | null;
-  reasoning_values: string[];
-}
+export type AgentPreset = import("@harbor-hf/contracts").AgentPresetV1;
 
 export interface PresetsResponse {
   benchmarks: BenchmarkPreset[];
@@ -329,4 +323,35 @@ export const getWorkbenchFile = (setupId: string, fileId: string) =>
 
 export async function signOut(): Promise<void> {
   await api("/auth/logout", { method: "POST" });
+}
+
+export type SavedConfiguration =
+  import("@harbor-hf/contracts").SavedWorkbenchConfigurationV1;
+export function listSavedConfigurations() {
+  return api<{ items: SavedConfiguration[] }>("/api/v1/workbench/configurations");
+}
+export interface WorkbenchStarter {
+  name: string;
+  label: string;
+  harbor_job_config: Record<string, unknown>;
+}
+export function getWorkbenchStarters() {
+  return api<{ items: WorkbenchStarter[] }>("/api/v1/workbench/starters");
+}
+export interface SavedSetupResult {
+  revision: string;
+  run_id: string;
+  context: string;
+  observed_at: string;
+  status: "passed";
+  evidence_origin: "user-owned-native-artifacts";
+}
+export function getSavedSetupResults() {
+  return api<{ items: SavedSetupResult[] }>("/api/v1/workbench/setup-results");
+}
+export function saveConfiguration(input: { name: string; harbor_job_config: unknown }) {
+  return api<SavedConfiguration>("/api/v1/workbench/configurations", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }

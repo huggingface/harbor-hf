@@ -1,6 +1,40 @@
+> **Personal runner wiring:** `/personal` now connects supplied-token identity,
+> configured-run preview, approval-gated HF Job dispatch, personal Jobs/logs and
+> private native artifacts. It has not been live-canary validated. See
+> [personal execution](docs/personal-execution.md).
+>
+> **Historical execution-disabled integration (2026-09-04):** This greenfield branch is not
+> production-ready. Run submission, actions, remote setup tests, and automatic
+> reconciliation are disabled before admission or credential resolution, even
+> when configuration writes are enabled. Workbench saves native Harbor JobConfig
+> fragments; New Run previews configuration without task resolution or a Job.
+> HF_TOKEN stays exclusively in the control Space. Neither persistent secret is
+> forwarded. Parent-worker execution and private Hub/Harbor patches are removed.
+> Execution descriptions below are deferred design, not available behavior or
+> permission to launch. See [execution boundary](docs/execution-disabled-integration.md).
+
 <p align="center">
   <img alt="harbor-hf" src="assets/harbor-hf-logo.svg" width="440">
 </p>
+
+## Current milestone: the two-task canary
+
+The first execution milestone is **login → choose `two-task-canary` → configure
+agent/model → run → inspect Harbor results and cleanup**, before larger subsets.
+The catalog now includes the historical Terminal-Bench 2.1 selection:
+`adaptive-rejection-sampler` and `modernize-scientific-stack`, at the existing
+pinned benchmark revision. It requests one attempt per task, sequential trials,
+and no retries. It is not leaderboard-eligible.
+
+**Available now:** native configuration authoring and preview, shared API bearer
+authentication, web OAuth, and separately approval-gated personal runner wiring.
+**Still unverified:** real canary execution. CLI OAuth login remains unresolved.
+Saving or previewing does not validate remote setup, resolve
+tasks, approve spending, or launch a Job. See the
+[canary milestone review](docs/2026-09-05-canary-milestone.md).
+
+The execution walkthroughs below describe deferred design, not working commands
+for this branch.
 
 Harbor-HF is a hosted control service for Harbor benchmark runs on Hugging Face.
 It submits runs, starts remote Jobs, keeps Harbor results in a Bucket, and shows

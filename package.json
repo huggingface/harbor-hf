@@ -30,7 +30,7 @@
     "lint": "biome lint .",
     "start": "node apps/control-api/dist/main.js",
     "test": "vitest run",
-    "test:e2e": "playwright test -c apps/control-web/playwright.config.ts",
+    "test:e2e": "playwright test -c apps/control-web/playwright.config.ts && playwright test -c scripts/control-service/installer/e2e/playwright.config.ts",
     "typecheck": "tsc -b --pretty false",
     "typecheck:space": "tsc -b tsconfig.space.json --pretty false"
   },

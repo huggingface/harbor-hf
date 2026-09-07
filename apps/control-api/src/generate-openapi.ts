@@ -64,7 +64,8 @@ const document = {
   info: {
     title: "Harbor-HF control API",
     version: "v1",
-    description: "Submit Harbor runs and inspect their projected state.",
+    description:
+      "Native configuration authoring and personal HF execution. Historical Run and setup mutations remain disabled. Personal dispatch requires exact server approval and a matching supplied user token.",
   },
   components: {
     securitySchemes: {
@@ -228,6 +229,57 @@ const document = {
     },
   },
   paths: {
+    "/api/v1/personal/{action}": {
+      post: {
+        summary: "Operate on the verified user's HF Jobs and private results",
+        description:
+          "Preview requires login only and makes no provider calls. All other actions require a supplied user token matching the authenticated identity. Session requests also require X-CSRF-Token. No credential is persisted. Launch additionally consumes an exact server-side approval; historical execution remains disabled.",
+        security: authenticated,
+        parameters: [
+          {
+            name: "action",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              enum: [
+                "identity",
+                "preview",
+                "approval",
+                "jobs",
+                "logs",
+                "cancel",
+                "results",
+                "artifact",
+                "launch",
+                "setup-result",
+                "buckets",
+                "create-bucket",
+                "check-bucket",
+                "configuration",
+              ],
+            },
+          },
+          {
+            name: "X-HF-User-Token",
+            in: "header",
+            required: false,
+            description:
+              "Optional same-account override for session OAuth. API clients without a delegated session must supply it for actions other than preview.",
+            schema: { type: "string", writeOnly: true },
+          },
+        ],
+        requestBody: { required: true, content: json },
+        responses: {
+          "200": ok,
+          "400": error,
+          "401": error,
+          "403": error,
+          "409": error,
+          "503": error,
+        },
+      },
+    },
     "/api/v1/session": {
       get: { summary: "Read the current session", responses: { "200": ok } },
     },
@@ -271,6 +323,33 @@ const document = {
           "404": error,
           "502": error,
         },
+      },
+    },
+    "/api/v1/workbench/configurations": {
+      get: {
+        summary: "List owner-scoped immutable native Harbor configurations",
+        security: authenticated,
+        responses: { "200": ok },
+      },
+      post: {
+        summary:
+          "Save an owner-scoped configuration independently of control write mode",
+        security: authenticated,
+        responses: { "200": ok, "400": error, "401": error, "403": error },
+      },
+    },
+    "/api/v1/workbench/starters": {
+      get: {
+        summary: "Read native Fast-Agent and FX authoring starters",
+        security: authenticated,
+        responses: { "200": ok, "401": error },
+      },
+    },
+    "/api/v1/workbench/setup-results": {
+      get: {
+        summary: "Read own setup evidence receipts, not leaderboard verification",
+        security: authenticated,
+        responses: { "200": ok, "401": error },
       },
     },
     "/api/v1/workbench/preview": {
@@ -452,9 +531,26 @@ const document = {
   },
 } as const;
 
+const disabledDocument: OpenAPI3 = structuredClone(document) as unknown as OpenAPI3;
+for (const [path, item] of Object.entries(disabledDocument.paths ?? {})) {
+  if (
+    item &&
+    "post" in item &&
+    item.post &&
+    !("$ref" in item.post) &&
+    (path.startsWith("/api/v1/runs") ||
+      path.startsWith("/api/v1/workbench/setup-tests"))
+  ) {
+    item.post.summary = "Execution disabled: no admission or Job action";
+    item.post.responses = { "503": error } as unknown as NonNullable<
+      typeof item.post.responses
+    >;
+  }
+}
+
 const documentPath = join(repository, "docs", "control-api-v1.openapi.json");
-await writeFile(documentPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
-const generated = astToString(await openapiTS(document as unknown as OpenAPI3));
+await writeFile(documentPath, `${JSON.stringify(disabledDocument, null, 2)}\n`, "utf8");
+const generated = astToString(await openapiTS(disabledDocument));
 const outputPath = join(
   repository,
   "apps",

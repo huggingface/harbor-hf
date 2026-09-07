@@ -68,6 +68,16 @@ async function attest(
 }
 
 describe("control credential scope attestation", () => {
+  it.each([
+    { type: "user", name: "example" },
+    { type: "org", name: "example-org" },
+  ])("accepts Jobs-only access for a $type namespace", async (entity) => {
+    const { scope } = adapter(
+      scopeResponse([bucketScope, { entity, permissions: ["job.write"] }]),
+    );
+    await expect(attest(scope, entity.name)).resolves.toEqual({ warnings: [] });
+  });
+
   it("accepts the provider-coupled Endpoint permissions", async () => {
     const { scope, requests } = adapter(scopeResponse([userScope, bucketScope]));
 
@@ -160,16 +170,6 @@ describe("control credential scope attestation", () => {
         {
           ...userScope,
           permissions: ["inference.endpoints.infer.write", "inference.endpoints.write"],
-        },
-      ]),
-    },
-    {
-      name: "a missing Endpoint-management permission",
-      body: scopeResponse([
-        bucketScope,
-        {
-          ...userScope,
-          permissions: ["inference.endpoints.infer.write", "job.write"],
         },
       ]),
     },

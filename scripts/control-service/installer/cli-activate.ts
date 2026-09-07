@@ -1,3 +1,4 @@
+import { withBrowserAuthentication } from "./cli-browser.js";
 import {
   cliMain,
   defaultDependencies,
@@ -28,16 +29,18 @@ await cliMain(async () => {
     await locateGitRepositoryRoot(),
   );
   const dependencies = defaultDependencies();
-  await withInstallerStateLock(options.space, stateRoot, async () => {
-    const planPath = await currentInstallPlanPath(options.space, stateRoot);
-    const receipt = await readBootstrapReceipt(planPath);
-    const result = await activateInstall(
-      {
-        planPath,
-        ...(receipt ? { bootstrapReceipt: receipt } : {}),
-      },
-      dependencies,
-    );
-    process.stdout.write(formatActivationOutput(options.space, result));
-  });
+  await withBrowserAuthentication(dependencies, () =>
+    withInstallerStateLock(options.space, stateRoot, async () => {
+      const planPath = await currentInstallPlanPath(options.space, stateRoot);
+      const receipt = await readBootstrapReceipt(planPath);
+      const result = await activateInstall(
+        {
+          planPath,
+          ...(receipt ? { bootstrapReceipt: receipt } : {}),
+        },
+        dependencies,
+      );
+      process.stdout.write(formatActivationOutput(options.space, result));
+    }),
+  );
 });

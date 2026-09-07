@@ -1,9 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "dist/space",
-    "tsBuildInfoFile": "dist/space.tsbuildinfo"
-  },
-  "include": ["*.ts"],
-  "exclude": ["test"]
-}

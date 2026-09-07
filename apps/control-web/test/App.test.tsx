@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiMocks = vi.hoisted(() => ({
   actOnRun: vi.fn(),
+  listSavedConfigurations: vi.fn(),
+  getWorkbenchStarters: vi.fn(),
+  getSavedSetupResults: vi.fn(),
+  saveConfiguration: vi.fn(),
   cancelWorkbenchSetup: vi.fn(),
   getJobs: vi.fn(),
   getLeaderboard: vi.fn(),
@@ -214,6 +218,9 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  apiMocks.listSavedConfigurations.mockResolvedValue({ items: [] });
+  apiMocks.getWorkbenchStarters.mockResolvedValue({ items: [] });
+  apiMocks.getSavedSetupResults.mockResolvedValue({ items: [] });
   window.localStorage.clear();
   apiMocks.getSession.mockResolvedValue({
     authenticated: true,
@@ -313,17 +320,12 @@ describe("restored control console", () => {
       expect(apiMocks.getModelProviders).toHaveBeenCalledWith("publisher/new-model"),
     );
     await user.selectOptions(screen.getByLabelText("Provider"), "provider");
-    await user.click(screen.getByRole("button", { name: "Submit run" }));
-    await waitFor(() => expect(apiMocks.submitRun).toHaveBeenCalledOnce());
-    expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
-      benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
-      model: { id: "publisher/new-model", provider: "provider" },
-      harness: { agent: "pi", version: "0.84.4" },
-    });
-    expect(await screen.findByRole("link", { name: "Open it" })).toHaveAttribute(
-      "href",
-      `/runs/${runId}`,
-    );
+    await user.click(screen.getByRole("button", { name: "Preview configuration" }));
+    expect(
+      screen.getByText("Configuration preview (not a resolved Harbor lock)"),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: /Submit run/ })).toBeDisabled();
+    expect(apiMocks.submitRun).not.toHaveBeenCalled();
   });
 
   it("shows complete run detail and targets run actions", async () => {
@@ -338,7 +340,8 @@ describe("restored control console", () => {
     );
     expect(screen.getByText("job-parent-one")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Pause" }));
-    await waitFor(() => expect(apiMocks.actOnRun).toHaveBeenCalledWith(runId, "pause"));
+    expect(screen.getByRole("button", { name: "Pause" })).toBeDisabled();
+    expect(apiMocks.actOnRun).not.toHaveBeenCalled();
   });
 
   it("renders trial evidence as text instead of HTML", async () => {
@@ -354,69 +357,40 @@ describe("restored control console", () => {
     expect(document.querySelector("script")).toBeNull();
   });
 
-  it("runs the Workbench configure, setup, and standard Harbor submission flow", async () => {
-    const user = userEvent.setup();
-    renderAt("/workbench");
-    expect(
-      await screen.findByRole("heading", { name: "Agent Workbench" }),
-    ).toBeVisible();
-    expect(screen.getByText("Configure → Test → Run")).toBeVisible();
-    await waitFor(() => expect(apiMocks.previewWorkbenchRecipe).toHaveBeenCalled());
-
-    await user.click(
-      screen.getByLabelText(
-        "Start one disposable CPU setup test for this exact recipe.",
-      ),
-    );
-    await user.click(screen.getByRole("button", { name: "Run setup test" }));
-    expect(await screen.findByText("Setup passed")).toBeVisible();
-    expect(await screen.findByText("setup ready")).toBeVisible();
-
-    const runCard =
-      screen.getByRole("heading", { name: "3. Run with Harbor" }).closest("section") ??
-      screen.getByRole("heading", { name: "3. Run with Harbor" }).parentElement
-        ?.parentElement;
-    expect(runCard).not.toBeNull();
-    const scope = within(runCard as HTMLElement);
-    await user.type(scope.getByLabelText("Model"), "publisher/workbench-model");
-    await user.type(scope.getByLabelText("Provider"), "provider");
-    await user.click(
-      scope.getByLabelText(
-        "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
-      ),
-    );
-    await user.click(scope.getByRole("button", { name: "Launch Harbor run" }));
-    await waitFor(() => expect(apiMocks.submitRun).toHaveBeenCalledOnce());
-    expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
-      model: {
-        id: "publisher/workbench-model",
-        provider: "provider",
-        reasoning_effort: "off",
-      },
-      workbench: { setup_test_id: setup.setup_test_id },
+  it("saves native harness configuration while setup and launch remain disabled", async () => {
+    apiMocks.getSession.mockResolvedValue({
+      authenticated: true,
+      actor: { username: "example-user", role: "reader", transport: "session" },
     });
-  });
-
-  it("restores a Workbench draft without restoring approval state", async () => {
+    apiMocks.getSystem.mockResolvedValue({ ...system, write_mode: "disabled" });
     const user = userEvent.setup();
-    const view = renderAt("/workbench");
-    const name = await screen.findByLabelText("Recipe name");
-    await user.clear(name);
-    await user.type(name, "recovered-draft");
-    view.unmount();
-
+    const saved = {
+      schema_version: "v1",
+      revision: `sha256:${"a".repeat(64)}`,
+      name: "my-harness",
+      harbor_job_config: { agents: [{ name: "terminus-2", kwargs: {} }] },
+    };
+    apiMocks.saveConfiguration.mockResolvedValue(saved);
     renderAt("/workbench");
-    expect(await screen.findByLabelText("Recipe name")).toHaveValue("recovered-draft");
+    expect(await screen.findByLabelText("Harbor JobConfig fragment")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Save configuration" }));
     expect(
-      screen.getByLabelText(
-        "Start one disposable CPU setup test for this exact recipe.",
-      ),
-    ).not.toBeChecked();
+      await screen.findByText("Saved immutable harness version. No Job was launched."),
+    ).toBeVisible();
+    expect(apiMocks.saveConfiguration).toHaveBeenCalledWith({
+      name: saved.name,
+      harbor_job_config: saved.harbor_job_config,
+    });
+    expect(screen.getByRole("button", { name: "Test setup" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Use for benchmark" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Load" }));
     expect(
-      screen.getByLabelText(
-        "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+      await screen.findByText(
+        "Loaded exact saved version. Launch still requires approval.",
       ),
-    ).not.toBeChecked();
+    ).toBeVisible();
+    expect(apiMocks.startWorkbenchSetup).not.toHaveBeenCalled();
+    expect(apiMocks.submitRun).not.toHaveBeenCalled();
   });
 
   it("keeps unknown authenticated routes inside the restored shell", async () => {

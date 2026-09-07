@@ -5,6 +5,16 @@ date: 2026-09-04
 tags: [architecture, harbor, runs, api, cutover]
 ---
 
+> **Execution-disabled integration (2026-09-04):** This greenfield branch is not
+> production-ready. Run submission, actions, remote setup tests, and automatic
+> reconciliation are disabled before admission or credential resolution, even
+> when configuration writes are enabled. Workbench saves native Harbor JobConfig
+> fragments; New Run previews configuration without task resolution or a Job.
+> HF_TOKEN stays exclusively in the control Space. Neither persistent secret is
+> forwarded. Parent-worker execution and private Hub/Harbor patches are removed.
+> Execution descriptions below are deferred design, not available behavior or
+> permission to launch. See [execution boundary](../docs/execution-disabled-integration.md).
+
 # Harbor-centered cutover specification
 
 ## In short
@@ -244,56 +254,13 @@ It sets `job_name`, `jobs_dir`, the labeled environment import path, and the
 router credential template. Other accepted fields stay unchanged. Direct runs
 are stored with role `diagnostic` and do not enter the leaderboard.
 
-## Parent Job
+## Parent Job (withdrawn)
 
-The control service starts one CPU parent Job with:
-
-- an immutable parent image reference
-- one writable mount of the canonical Bucket at `/data`
-- the run id as an environment value and Job label
-- the control and inference credentials as ephemeral Job secrets
-- one attempt and no public port
-
-The parent reads `run.json` and validates `harbor_job_config`. It then calls
-`Job.create()` and `Job.run()` from Harbor. It does not implement a task loop,
-retry loop, resume rule, result writer, or lock writer.
-
-`LabeledHFSandboxEnvironment` subclasses Harbor's `HFSandboxEnvironment`. It
-adds ownership labels and the configured namespace to the same
-`HfApi.run_job` call that creates the child. This prevents an unowned or
-out-of-scope child if the parent stops during Sandbox startup. The small,
-context-scoped integration exists because the pinned Hub Sandbox API has no
-labels argument. It can be removed when that API exposes child labels.
-
-The same adapter resolves the fixed `${HF_INFERENCE_TOKEN}` template only when
-it assembles an agent command environment. The value comes from the parent's
-ephemeral secret and does not replace the template in Harbor's persisted job
-configuration. Before Pi starts, its adapter combines the base model behavior
-from Pi's public Hugging Face catalog with the selected provider's live status,
-tool support, context limit and prices from the public Hugging Face router. It
-writes that provider-pinned entry to Pi's temporary configuration. The adapter
-fails before inference if this metadata is missing or unsafe. Pi therefore uses
-the requested provider and records its current prices so Harbor receives a
-non-null inference cost. Agents that need an OpenAI-compatible endpoint use the
-same inference secret through the fixed router URL.
-
-The parent adds one `on_trial_ended` callback. The callback reads the completed
-trial's Harbor cost and writes its immutable attempt receipt before Harbor can
-remove a failed retry folder. If the cost is unavailable, if that attempt
-exceeds the per-trial ceiling, or if the sum of attempt costs exceeds the
-ceiling times the planned trial count, the callback stops the Harbor task group.
-Harbor has already written the trial and job result before this callback runs.
-
-If `state.json` shows a requested pause or cancellation, the callback preserves
-any non-null cost and raises a controlled-stop exception. After Harbor unwinds,
-the parent removes the interrupted trial folder and the incomplete job result.
-A stop before inference creates no cost receipt. On resume, Harbor therefore
-sees the controlled interruption as a missing trial and starts it again while
-keeping all cost from earlier provider use.
-
-This is a post-trial stop. It cannot prevent one trial from crossing its limit.
-With concurrency greater than one, already-running trials can also finish or be
-cancelled. The API and UI state this limitation.
+The proposed parent integration is withdrawn. Forwarding the control credential
+is prohibited; its private Hub/Harbor patches and interrupted-trial manipulation
+have been removed. Execution remains disabled pending a public Harbor CLI
+integration and a reviewed isolated credential boundary. No user-token forwarding
+or OAuth implementation is authorized by this specification.
 
 ## Reconciliation and status
 

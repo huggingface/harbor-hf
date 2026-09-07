@@ -5,7 +5,6 @@
     { "path": "packages/control-core" },
     { "path": "packages/hf-adapters" },
     { "path": "apps/control-api/tsconfig.space.json" },
-    { "path": "apps/control-web" },
-    { "path": "scripts/control-service/installer/tsconfig.space.json" }
+    { "path": "apps/control-web" }
   ]
 }

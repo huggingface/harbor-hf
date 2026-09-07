@@ -142,6 +142,8 @@ const leaderboard = {
 };
 
 interface MockOptions {
+  role?: "operator" | "reader";
+  writeMode?: "enabled" | "disabled";
   authenticated?: boolean;
   setupStatus?: "running" | "passed" | "failed";
   runStatus?: "queued" | "running" | "paused";
@@ -162,6 +164,7 @@ async function mockControl(page: Page, options: MockOptions = {}) {
   const authenticated = options.authenticated ?? true;
   const currentRun = { ...run, status: options.runStatus ?? run.status };
   let setupStatus = options.setupStatus ?? "passed";
+  const saved: unknown[] = [];
   await page.route("**/auth/login**", (route) =>
     route.fulfill({ status: 200, contentType: "text/plain", body: "sign in" }),
   );
@@ -178,15 +181,47 @@ async function mockControl(page: Page, options: MockOptions = {}) {
               authenticated: true,
               actor: {
                 username: "test-operator",
-                role: "operator",
+                role: options.role ?? "operator",
                 transport: "development",
               },
             }
           : { authenticated: false, login_url: "/auth/login" },
       );
     if (path === "/api/v1/leaderboard") return json(route, leaderboard);
-    if (path === "/api/v1/system") return json(route, system);
+    if (path === "/api/v1/system")
+      return json(route, {
+        ...system,
+        write_mode: options.writeMode ?? system.write_mode,
+      });
     if (path === "/api/v1/presets") return json(route, presets);
+    if (path === "/api/v1/workbench/starters")
+      return json(route, {
+        items: [
+          {
+            name: "fast-agent-0.10.19",
+            label: "Fast-Agent 0.10.19",
+            harbor_job_config: { agents: [{ name: "pi" }] },
+          },
+          {
+            name: "fx-0.0.6",
+            label: "FX 0.0.6",
+            harbor_job_config: { agents: [{ name: "fx" }] },
+          },
+        ],
+      });
+    if (path === "/api/v1/workbench/setup-results") return json(route, { items: [] });
+    if (path === "/api/v1/workbench/configurations") {
+      if (method === "GET") return json(route, { items: saved });
+      const value = {
+        schema_version: "v1",
+        revision: `sha256:${"a".repeat(64)}`,
+        ...request.postDataJSON(),
+      };
+      saved.push(value);
+      return json(route, value);
+    }
+    if (path === "/api/v1/model-providers")
+      return json(route, { model: "publisher/model", providers: ["provider"] });
     if (path === "/api/v1/jobs") return json(route, { jobs: [job] });
     if (path === "/api/v1/runs" && method === "GET")
       return json(route, { runs: [currentRun] });
@@ -289,6 +324,117 @@ async function mockControl(page: Page, options: MockOptions = {}) {
   });
 }
 
+test("wires the personal workflow without real HF calls", async ({ page }) => {
+  await mockControl(page, { role: "reader", writeMode: "disabled" });
+  let dispatched = false;
+  const approvalDigest = "b".repeat(64);
+  await page.route("**/api/v1/personal/*", async (route) => {
+    const request = route.request();
+    expect(request.postData()).not.toContain("hf_testusercredential");
+    const action = new URL(request.url()).pathname.split("/").at(-1);
+    expect(request.headers()["x-hf-user-token"]).toBe(
+      action === "preview" ? undefined : "hf_testusercredential",
+    );
+    if (action === "identity") return json(route, { owner: "example-user" });
+    if (action === "preview") {
+      expect(request.postDataJSON().submission.model.id).toBe("publisher/model");
+      return json(route, {
+        config: { n_attempts: 1 },
+        native_config_sha256: "a".repeat(64),
+      });
+    }
+    if (action === "approval")
+      return json(route, {
+        approval: {
+          run_id: runId,
+          approval_sha256: approvalDigest,
+          results_bucket: "private-results",
+          submission: record.submission,
+          total_budget_usd: 3,
+          inference_limit_usd: 2,
+          runtime_seconds: 60,
+          job_timeout_seconds: 300,
+          expires_at: "2099-01-01T00:00:00Z",
+        },
+      });
+    if (action === "launch") {
+      expect(request.postDataJSON()).toEqual({
+        run_id: runId,
+        approval_sha256: approvalDigest,
+        confirm: true,
+        accept_best_effort_cleanup_and_external_cost_limits: true,
+      });
+      dispatched = true;
+      return json(route, { id: "example-job" });
+    }
+    if (action === "jobs")
+      return json(route, {
+        jobs: dispatched
+          ? [
+              {
+                id: "example-job",
+                stage: "RUNNING",
+                run_id: runId,
+                url: "https://huggingface.co/jobs/example-user/example-job",
+              },
+            ]
+          : [],
+      });
+    if (action === "logs")
+      return json(route, { text: "Private artifact upload completed." });
+    if (action === "results")
+      return json(route, {
+        files: [
+          {
+            path: `runs/${runId}/${runId}/result.json`,
+            size: 15,
+          },
+        ],
+      });
+    if (action === "artifact") return json(route, { text: '{"native":true}' });
+    throw new Error("Unexpected personal operation");
+  });
+  await page.goto("/personal");
+  await page
+    .getByRole("combobox", { name: "Benchmark", exact: true })
+    .selectOption("terminal-bench-2-1/one-task-1-trial");
+  await page
+    .getByRole("combobox", { name: "Agent and version" })
+    .selectOption("pi/0.84.4");
+  await page.getByLabel("Declared model identity").fill("publisher/model");
+  await page.getByRole("button", { name: "Find model providers" }).click();
+  await expect(
+    page.getByRole("combobox", { name: "HF inference provider" }),
+  ).toHaveValue("provider");
+  await expect(page.getByRole("combobox", { name: "Reasoning effort" })).toHaveValue(
+    "off",
+  );
+  await page.getByRole("button", { name: "Apply HF routing hints" }).click();
+  await page.getByRole("button", { name: "Preview for launch approval" }).click();
+  await expect(page.getByText(/native_config_sha256/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Load my exact launch approval" }),
+  ).toBeDisabled();
+  await page.getByLabel("User HF token").fill("hf_testusercredential");
+  await page.getByRole("button", { name: "Verify token and load my Jobs" }).click();
+  await expect(page.getByText("Verified token owner: example-user")).toBeVisible();
+  await page.getByRole("button", { name: "Load my exact launch approval" }).click();
+  const launch = page.getByRole("button", { name: "Dispatch the approved HF Job" });
+  await expect(launch).toBeDisabled();
+  await page.getByLabel(/I approve this exact launch/).check();
+  await launch.click();
+  await expect(page.getByRole("link", { name: "example-job" })).toHaveAttribute(
+    "href",
+    "https://huggingface.co/jobs/example-user/example-job",
+  );
+  await page.getByRole("button", { name: "Logs snapshot" }).click();
+  await expect(page.getByText("Private artifact upload completed.")).toBeVisible();
+  await page.getByRole("button", { name: "List native artifacts" }).click();
+  await page.getByRole("button", { name: /result.json/ }).click();
+  await expect(page.getByText('{"native":true}')).toBeVisible();
+  expect(dispatched).toBe(true);
+});
+
 test("shows the public leaderboard and starts sign-in from a private route", async ({
   page,
 }) => {
@@ -330,42 +476,6 @@ test("shows the restored overview on desktop and mobile", async ({
   });
 });
 
-test("validates and submits the overview form without losing selected values", async ({
-  page,
-}) => {
-  let submitted: unknown = null;
-  await mockControl(page, { onRunPost: (payload) => (submitted = payload) });
-  await page.goto("/overview");
-  await expect(page.getByRole("button", { name: "Submit run" })).toBeVisible();
-  await page.getByLabel("Model").fill("publisher/new-model");
-  await page.getByLabel("Provider").fill("provider");
-  await page.getByRole("button", { name: "Submit run" }).click();
-  await expect(page.getByRole("link", { name: "Open it" })).toHaveAttribute(
-    "href",
-    `/runs/${runId}`,
-  );
-  expect(submitted).toMatchObject({
-    model: { id: "publisher/new-model", provider: "provider" },
-    harness: { agent: "pi", version: "0.84.4" },
-  });
-  await expect(page.getByLabel("Model")).toHaveValue("publisher/new-model");
-});
-
-test("retains overview values after a failed submission", async ({ page }) => {
-  await mockControl(page, { runPostError: true });
-  await page.goto("/overview");
-  await page.getByLabel("Model").fill("publisher/retry-model");
-  await page.getByLabel("Provider").fill("retry-provider");
-  await page.getByLabel("Cost limit per trial").fill("0.75");
-  await page.getByLabel("Result role").selectOption("final");
-  await page.getByRole("button", { name: "Submit run" }).click();
-  await expect(page.getByRole("alert")).toContainText("submission rejected");
-  await expect(page.getByLabel("Model")).toHaveValue("publisher/retry-model");
-  await expect(page.getByLabel("Provider")).toHaveValue("retry-provider");
-  await expect(page.getByLabel("Cost limit per trial")).toHaveValue("0.75");
-  await expect(page.getByLabel("Result role")).toHaveValue("final");
-});
-
 test("navigates from runs to complete run and trial evidence", async ({ page }) => {
   await mockControl(page);
   await page.goto("/runs");
@@ -382,27 +492,6 @@ test("navigates from runs to complete run and trial evidence", async ({ page }) 
   ).toBeVisible();
 });
 
-test("targets pause and cancel at the open run", async ({ page }) => {
-  const actions: string[] = [];
-  await mockControl(page, { onAction: (action) => actions.push(action) });
-  await page.goto(`/runs/${runId}`);
-  await page.getByRole("button", { name: "Pause" }).click();
-  await expect.poll(() => actions).toContain("pause");
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect.poll(() => actions).toContain("cancel");
-});
-
-test("resumes the open paused run", async ({ page }) => {
-  const actions: string[] = [];
-  await mockControl(page, {
-    runStatus: "paused",
-    onAction: (action) => actions.push(action),
-  });
-  await page.goto(`/runs/${runId}`);
-  await page.getByRole("button", { name: "Resume" }).click();
-  await expect.poll(() => actions).toContain("resume");
-});
-
 test("shows parent Jobs with links to their runs", async ({ page }) => {
   await mockControl(page);
   await page.goto("/jobs");
@@ -414,83 +503,6 @@ test("shows parent Jobs with links to their runs", async ({ page }) => {
   );
 });
 
-test("completes Workbench configure, setup, and normal Run submission", async ({
-  page,
-}) => {
-  let submitted: unknown = null;
-  await mockControl(page, { onRunPost: (payload) => (submitted = payload) });
-  await page.goto("/workbench");
-  await expect(page.getByRole("heading", { name: "Agent Workbench" })).toBeVisible();
-  await expect(page.getByText("Configure → Test → Run")).toBeVisible();
-  await expect(page.getByText(/agent-recipe-/).first()).toBeVisible();
-  await page
-    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
-    .check();
-  await page.getByRole("button", { name: "Run setup test" }).click();
-  await expect(page.getByText("Setup passed")).toBeVisible();
-  await expect(page.getByText("setup ready")).toBeVisible();
-  await page.getByLabel("Model").last().fill("publisher/workbench-model");
-  await page.getByLabel("Provider").last().fill("provider");
-  await page
-    .getByLabel(
-      "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
-    )
-    .check();
-  await page.getByRole("button", { name: "Launch Harbor run" }).click();
-  await expect.poll(() => submitted).not.toBeNull();
-  expect(submitted).toMatchObject({
-    model: {
-      id: "publisher/workbench-model",
-      provider: "provider",
-      reasoning_effort: "off",
-    },
-    workbench: { setup_test_id: setupId },
-  });
-});
-
-test("invalidates Workbench launch approval after a recipe edit", async ({ page }) => {
-  await mockControl(page);
-  await page.goto("/workbench");
-  await page
-    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
-    .check();
-  await page.getByRole("button", { name: "Run setup test" }).click();
-  await expect(page.getByText("Setup passed")).toBeVisible();
-  await page.getByLabel("Model").last().fill("publisher/workbench-model");
-  await page.getByLabel("Provider").last().fill("provider");
-  await page
-    .getByLabel(
-      "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
-    )
-    .check();
-  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeEnabled();
-
-  await page.getByLabel("Recipe name").fill("edited-agent");
-  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
-});
-
-test("shows Workbench setup failure without enabling Run launch", async ({ page }) => {
-  await mockControl(page, { setupStatus: "failed" });
-  await page.goto("/workbench");
-  await page
-    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
-    .check();
-  await page.getByRole("button", { name: "Run setup test" }).click();
-  await expect(page.getByText("setup failed safely")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
-});
-
-test("cancels only the active Workbench setup", async ({ page }) => {
-  await mockControl(page, { setupStatus: "running" });
-  await page.goto("/workbench");
-  await page
-    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
-    .check();
-  await page.getByRole("button", { name: "Run setup test" }).click();
-  await page.getByRole("button", { name: "Cancel setup" }).click();
-  await expect(page.getByText("cancelled")).toBeVisible();
-});
-
 test("keeps direct authenticated route refreshes in the restored shell", async ({
   page,
 }) => {
@@ -498,4 +510,138 @@ test("keeps direct authenticated route refreshes in the restored shell", async (
   await page.goto(`/runs/${runId}/trials/${trialName}`);
   await expect(page.getByRole("heading", { name: "Trial detail" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Workbench" }).first()).toBeVisible();
+});
+
+test("authoring saves and loads native fragments without setup or Run requests", async ({
+  page,
+}) => {
+  await mockControl(page, { role: "reader", writeMode: "disabled" });
+  const executionRequests: string[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      /\/api\/v1\/(runs|workbench\/setup-tests)/.test(request.url())
+    )
+      executionRequests.push(request.url());
+  });
+  await page.goto("/workbench");
+  await page.getByLabel("Harness name").fill("saved-harness");
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect(
+    page.getByText("Saved immutable harness version. No Job was launched."),
+  ).toBeVisible();
+  await page.getByLabel("Harness name").fill("edited-harness");
+  await page.getByRole("button", { name: "Load", exact: true }).click();
+  await expect(page.getByLabel("Harness name")).toHaveValue("saved-harness");
+  await expect(page.getByRole("button", { name: "Test setup" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Use for benchmark" })).toBeEnabled();
+  expect(executionRequests).toEqual([]);
+});
+for (const mode of ["setup", "benchmark"] as const) {
+  test(`Workbench snapshots and selects a saved version for ${mode} without launching`, async ({
+    page,
+  }) => {
+    await mockControl(page, { role: "reader", writeMode: "disabled" });
+    const executionRequests: string[] = [];
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        /\/api\/v1\/(personal|runs|workbench\/setup-tests)/.test(request.url())
+      )
+        executionRequests.push(request.url());
+    });
+    await page.goto("/workbench");
+    await page.getByRole("button", { name: "Start from Fast-Agent 0.10.19" }).click();
+    await page
+      .getByRole("button", {
+        name: mode === "setup" ? "Test setup" : "Use for benchmark",
+      })
+      .click();
+    await expect(page).toHaveURL(/\/workbench$/);
+    await expect(page.getByLabel("Agent and version")).toHaveValue(
+      `workbench/sha256:${"a".repeat(64)}`,
+    );
+    await expect(page.getByLabel("Run purpose")).toHaveValue(mode);
+    await expect(page.getByLabel("Reasoning effort")).toHaveValue("saved");
+    await expect(
+      page
+        .getByLabel("Agent and version")
+        .getByRole("option", { name: /fast-agent-0.10.19/ }),
+    ).toBeAttached();
+    expect(executionRequests).toEqual([]);
+  });
+}
+
+test("Workbench previews explicit model and environment overrides without HF discovery or launch", async ({
+  page,
+}) => {
+  await mockControl(page, { role: "reader", writeMode: "disabled" });
+  let preview: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/personal/preview", async (route) => {
+    expect(route.request().headers()["x-hf-user-token"]).toBeUndefined();
+    preview = route.request().postDataJSON();
+    return json(route, { config: {}, native_config_sha256: "a".repeat(64) });
+  });
+  await page.goto("/workbench");
+  await page.getByRole("button", { name: "Start from Fast-Agent 0.10.19" }).click();
+  await page.getByRole("button", { name: "Test setup" }).click();
+  await page
+    .getByLabel("Declared model identity", { exact: true })
+    .fill("A declared model");
+  await page.getByLabel("Declared provider", { exact: true }).fill("custom provider");
+  await page.getByLabel("Exact harness model string").fill("hf.my-alias");
+  await page
+    .getByLabel("Harness environment overrides (JSON)")
+    .fill('[{"name":"MY_SETTING","value":"custom"}]');
+  await page.getByRole("button", { name: "Preview for launch approval" }).click();
+  await expect
+    .poll(() => preview)
+    .toMatchObject({
+      mode: "setup",
+      submission: {
+        model: { id: "A declared model", provider: "custom provider" },
+        runtime: {
+          model_name: "hf.my-alias",
+          environment: [{ name: "MY_SETTING", value: "custom" }],
+        },
+      },
+    });
+  await expect(page).toHaveURL(/\/workbench$/);
+});
+
+test("New Run previews saved native configuration without admission", async ({
+  page,
+}) => {
+  let submitted: unknown = null;
+  await mockControl(page, {
+    onRunPost: (value) => {
+      submitted = value;
+    },
+  });
+  await page.goto("/workbench");
+  await page.getByLabel("Harness name").fill("selected-harness");
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect(
+    page.getByText("Saved immutable harness version. No Job was launched."),
+  ).toBeVisible();
+  await page.goto("/overview");
+  await page
+    .getByRole("combobox", { name: "Agent", exact: true })
+    .selectOption(`sha256:${"a".repeat(64)}`);
+  await page.getByLabel("Model", { exact: true }).fill("publisher/model");
+  await page.getByLabel("Model", { exact: true }).blur();
+  await page
+    .getByRole("combobox", { name: "Provider", exact: true })
+    .selectOption("provider");
+  await page.getByRole("button", { name: "Preview configuration" }).click();
+  await expect(
+    page.getByText("Configuration preview (not a resolved Harbor lock)"),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /Submit run/ })).toBeDisabled();
+  expect(submitted).toBeNull();
+  await page.goto(`/runs/${runId}`);
+  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Cancel", exact: true }),
+  ).toBeDisabled();
 });

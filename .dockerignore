@@ -23,3 +23,8 @@ apps/control-api/test
 apps/control-web/test
 packages/*/test
 packages/*/tests
+
+**/mutants
+**/__pycache__
+.fast-agent
+.harbor-hf

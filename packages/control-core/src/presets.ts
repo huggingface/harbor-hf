@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { HarnessRuntimeOverrides } from "./runtime-overrides.js";
 import type {
   AgentPresetV1,
   BenchmarkPresetV1,
@@ -14,13 +15,18 @@ import {
 
 const ROUTER_URL = "https://router.huggingface.co/v1";
 const INFERENCE_TOKEN_TEMPLATE = "$" + "{HF_INFERENCE_TOKEN}";
-const LABELED_ENVIRONMENT = "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment";
 const CREDENTIAL_VALUE =
   /(?:hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|Bearer\s+\S{16,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/;
 
 export interface PresetSubmission {
   benchmark: { name: string; preset: string };
-  model: { id: string; provider: string; reasoning_effort: string };
+  model: {
+    id: string;
+    provider: string;
+    reasoning_effort: string;
+    revision?: string | undefined;
+  };
+  runtime?: HarnessRuntimeOverrides | undefined;
   harness: { agent: string; version: string };
   cost_ceiling_usd_per_trial: number;
   role?: "final" | "diagnostic";
@@ -35,19 +41,6 @@ export interface HarborAgentFragment {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
-}
-
-function labeledEnvironment(
-  environment: BenchmarkPresetV1["job"]["environment"],
-  runId: string,
-) {
-  return {
-    import_path: LABELED_ENVIRONMENT,
-    kwargs: {
-      ...clone(environment.kwargs),
-      run_label: runId,
-    },
-  };
 }
 
 async function jsonFiles<T>(
@@ -152,7 +145,7 @@ export class PresetCatalog {
       job_name: "job",
       jobs_dir: `${mountRoot}/runs/${runId}`,
       agents: [harborAgent],
-      environment: labeledEnvironment(job.environment, runId),
+      environment: clone(job.environment),
     };
     return validateHarborJobConfig(config);
   }
@@ -189,7 +182,7 @@ export class PresetCatalog {
       job_name: "job",
       jobs_dir: `${mountRoot}/runs/${runId}`,
       agents: [harborAgent],
-      environment: labeledEnvironment(job.environment, runId),
+      environment: clone(job.environment),
     });
   }
 }
@@ -320,11 +313,10 @@ export function prepareDirectJobConfig(
       },
     ],
     environment: {
-      import_path: LABELED_ENVIRONMENT,
+      type: "hf-sandbox",
       kwargs: {
         flavor: "cpu-basic",
         job_timeout: "30m",
-        run_label: runId,
       },
     },
   };

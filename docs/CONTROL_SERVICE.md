@@ -5,6 +5,16 @@ date: 2026-09-04
 tags: [operations, api, space, jobs]
 ---
 
+> **Execution-disabled integration (2026-09-04):** This greenfield branch is not
+> production-ready. Run submission, actions, remote setup tests, and automatic
+> reconciliation are disabled before admission or credential resolution, even
+> when configuration writes are enabled. Workbench saves native Harbor JobConfig
+> fragments; New Run previews configuration without task resolution or a Job.
+> HF_TOKEN stays exclusively in the control Space. Neither persistent secret is
+> forwarded. Parent-worker execution and private Hub/Harbor patches are removed.
+> Execution descriptions below are deferred design, not available behavior or
+> permission to launch. See [execution boundary](../docs/execution-disabled-integration.md).
+
 # Control service
 
 ## Purpose
@@ -51,8 +61,8 @@ The service reads these Space variables:
 | `HARBOR_HF_STORE_MODE` | no | `bucket` | use `filesystem` in tests |
 | `HARBOR_HF_BUCKET_ROOT` | no | `/data` | local filesystem store root |
 | `HARBOR_HF_PRESETS_ROOT` | no | `./presets` | reviewed presets |
-| `HARBOR_HF_WRITE_MODE` | no | `disabled` | permit Job lifecycle changes |
-| `HARBOR_HF_PARENT_IMAGE` | in write mode | none | immutable parent image digest |
+| `HARBOR_HF_WRITE_MODE` | no | `disabled` | permit configuration writes, never execution |
+| `HARBOR_HF_PARENT_IMAGE` | no | none | unused execution configuration; supplied values must be immutable |
 | `HARBOR_HF_PARENT_HARDWARE` | no | `cpu-basic` | parent Job hardware |
 | `HARBOR_HF_PARENT_TIMEOUT_SECONDS` | no | `86400` | parent Job timeout |
 | `HARBOR_HF_MAX_ACTIVE_JOBS` | no | `16` | live parent Job limit |
@@ -66,8 +76,8 @@ The service reads these Space variables:
 | `HARBOR_HF_WORKBENCH_IMAGE` | for hosted setup | parent image | immutable setup Job image |
 | `HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS` | no | empty | comma-separated operator subjects |
 
-Write mode fails startup unless both secrets and an image reference ending in
-`@sha256:<64 lowercase hex characters>` are present.
+Configuration write mode requires both distinct secrets and Bucket storage, but
+no execution image. HF_TOKEN remains control-only; neither secret is forwarded.
 
 Hugging Face supplies the OAuth client values to the Space. OAuth mode requires
 `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, and `OPENID_PROVIDER_URL`. The service
@@ -145,48 +155,13 @@ and projection available without starting or stopping Jobs. The read-only Jobs
 port still lists owned Jobs, so live state does not disappear from the
 projection during deployment.
 
-## Parent image
+## Disabled execution and deployment
 
-The parent image is built from `deploy/parent-worker/Dockerfile`. It pins Harbor
-to the revision recorded in `packages/harbor-hf-agents/pyproject.toml` and
-contains the Harbor parent runner, the reviewed agents, the generic Workbench
-command agent, and the labeled HF Sandbox adapter.
-
-Publish an `linux/amd64` image with the `Publish parent worker` workflow. Record
-the registry digest from the workflow output. Configure the control Space with
-the full immutable reference. A tag alone is rejected.
-
-The package path retains the existing container repository name to avoid a
-second persistent registry resource. The image role is now the parent worker.
-
-## Deployment
-
-A release bundle comes from a clean commit:
-
-```bash
-npm run bundle:space -- /tmp/harbor-hf-space
-npm run deploy:space -- '<namespace>/<control-space>'
-```
-
-The bundle records the exact source revision and lockfile digest. Deployment
-uses the authenticated `hf` CLI in place and does not copy a credential.
-
-Before enabling writes:
-
-1. publish and test the parent image;
-2. set `HARBOR_HF_PARENT_IMAGE` to its immutable digest;
-3. set `HARBOR_HF_WORKBENCH_RUNNER=hf-jobs` and use the same immutable image for
-   `HARBOR_HF_WORKBENCH_IMAGE` when hosted setup tests are required;
-4. verify that the two Space secrets are present and distinct;
-5. keep `HARBOR_HF_WRITE_MODE=disabled` for the first startup;
-6. verify liveness, readiness, OAuth, presets, Bucket projection, Workbench
-   runner state, and the source revision; and
-7. set write mode to `enabled` and restart once.
-
-After deployment, verify the intended repository revision, runtime revision,
-Space stage, build logs, runtime logs, and authenticated `/api/v1/system`
-response. A private Space can return an unsigned 404, so use an authenticated or
-signed application probe.
+The retained CLI-only image defaults to `harbor --help`; it is not a runner.
+The parent worker, private Sandbox adapter, and image publication workflow are
+removed. No image digest or write-mode setting re-enables execution. This branch
+is not production-ready. Local builds and mocked integration tests do not grant
+deployment, Job, credential-transfer, or result-publication authorization.
 
 ## Validation
 

@@ -3,6 +3,16 @@ name: harbor-hf
 description: "Submit, monitor, pause, resume, cancel, and inspect Harbor benchmark runs through the hosted Harbor-HF control service and Hugging Face Jobs."
 ---
 
+> **Execution-disabled integration (2026-09-04):** This greenfield branch is not
+> production-ready. Run submission, actions, remote setup tests, and automatic
+> reconciliation are disabled before admission or credential resolution, even
+> when configuration writes are enabled. Workbench saves native Harbor JobConfig
+> fragments; New Run previews configuration without task resolution or a Job.
+> HF_TOKEN stays exclusively in the control Space. Neither persistent secret is
+> forwarded. Parent-worker execution and private Hub/Harbor patches are removed.
+> Execution descriptions below are deferred design, not available behavior or
+> permission to launch. See [execution boundary](../../../docs/execution-disabled-integration.md).
+
 # Harbor-HF operations
 
 Use this skill for Harbor benchmark runs on Hugging Face infrastructure.
@@ -33,15 +43,11 @@ The control Space has two secrets:
 - `HF_TOKEN` controls the Bucket and HF Jobs.
 - `HF_INFERENCE_TOKEN` is for model inference through the Hugging Face router.
 
-Do not print either value. Do not put a credential literal in a run request,
-Bucket object, Job label, log, or result. The control service gives both secrets
-to the reviewed parent Job as ephemeral Job secrets. The parent uses the control
-token to start and label child Sandbox Jobs. The benchmark agent receives only
-the inference token through the fixed `${HF_INFERENCE_TOKEN}` template. Pi uses
-its built-in Hugging Face provider so model prices remain available for Harbor
-cost accounting.
-
-Do not copy a token to another store. Use a configured token in place.
+Do not print either value or store it in requests, Bucket objects, labels, logs,
+or results. HF_TOKEN must remain inside the control Space. Execution is disabled;
+neither persistent secret may be forwarded. Do not copy a token to another store.
+Future user-account OAuth delegation requires separately verified scopes,
+billing, and consent. This skill does not authorize that implementation.
 
 ## Submit a run
 

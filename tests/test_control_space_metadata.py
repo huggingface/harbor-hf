@@ -16,8 +16,10 @@ def _frontmatter() -> dict[str, object]:
     return cast(dict[str, object], parsed)
 
 
-def test_control_space_uses_default_oauth_identity_scopes() -> None:
+def test_control_space_requests_only_reviewed_execution_scopes() -> None:
     metadata = _frontmatter()
 
     assert metadata["hf_oauth"] is True
-    assert "hf_oauth_scopes" not in metadata
+    # Identity scopes are included by HF. Do not request broad repository
+    # management rights on the assumption that they cover private Buckets.
+    assert metadata["hf_oauth_scopes"] == ["jobs", "inference-api"]
