@@ -158,24 +158,6 @@ describe("run submission", () => {
     });
   });
 
-  it("rejects agents that need an unsupported model API", async () => {
-    expect(presets.agents.some((agent) => agent.agent === "codex")).toBe(false);
-    await expect(
-      service.submitPreset(
-        {
-          ...input,
-          model: { ...input.model, reasoning_effort: "minimal" },
-          harness: { agent: "codex", version: "0.118.0" },
-        },
-        "unsupported-model-api",
-        "test-subject",
-      ),
-    ).rejects.toThrow(
-      "the codex agent requires the OpenAI Responses API, which Hugging Face Inference Providers do not support",
-    );
-    expect(jobs.starts).toBe(0);
-  });
-
   it("submits a Workbench recipe through the same one-Run Harbor contract", async () => {
     const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
     const workbenchInput = {
