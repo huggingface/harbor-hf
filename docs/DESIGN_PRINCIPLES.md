@@ -92,6 +92,13 @@ A reviewed preset should stay close to a Harbor `JobConfig` fragment. It can
 restrict values for safety or policy. It should not invent another name for a
 field that Harbor already has.
 
+Harbor-HF MUST preserve a null cost when Harbor reports one after agent
+execution. It MUST NOT record that cost as observed zero or as an observed
+ceiling charge. A failure before agent execution MUST record zero cost. The cost
+guard MUST reserve the per-trial ceiling for an unknown post-execution cost and
+MUST let Harbor continue while total observed and reserved exposure remains
+within the run ceiling. A missing cost by itself MUST NOT stop unrelated trials.
+
 ## Work that MUST NOT be added
 
 Harbor-HF MUST NOT add any of the following:

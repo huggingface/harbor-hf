@@ -101,10 +101,13 @@ export function costLimitReached(
   attemptCosts: readonly (number | null)[] = trials.map((trial) => trial.cost_usd),
 ): boolean {
   const ceiling = record.submission.cost_ceiling_usd_per_trial;
-  if (attemptCosts.some((cost) => cost === null || cost > ceiling)) return true;
-  const total = attemptCosts.reduce<number>((sum, cost) => sum + (cost ?? 0), 0);
+  if (attemptCosts.some((cost) => cost !== null && cost > ceiling)) return true;
+  const exposure = attemptCosts.reduce<number>(
+    (sum, cost) => sum + (cost ?? ceiling),
+    0,
+  );
   const planned = numeric(result?.n_total_trials);
-  return planned !== null && planned > 0 && total > ceiling * planned;
+  return planned !== null && planned > 0 && exposure > ceiling * planned;
 }
 
 export function statusFor(

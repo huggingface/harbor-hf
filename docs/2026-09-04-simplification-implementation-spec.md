@@ -177,11 +177,12 @@ each Harbor trial attempt:
 }
 ```
 
-The attempt ID is Harbor's trial result ID. The cost can be `null` when Harbor
-cannot report inference cost. A missing cost stops the run. The parent loads all
-receipts before resume and backfills a receipt for each current Harbor trial
-result. Thus, Harbor can remove a failed retry folder without removing its cost
-evidence.
+The attempt ID is Harbor's trial result ID. A failure before agent execution
+records zero cost. The cost remains `null` when Harbor cannot report cost after
+agent execution. Each null receipt reserves the per-trial ceiling in the
+aggregate cost calculation. The parent loads all receipts before resume and
+backfills a receipt for each current Harbor trial result. Thus, Harbor can remove
+a failed retry folder without removing its cost evidence.
 
 The projection validates these receipts and combines them with current Harbor
 trial results by attempt ID. This keeps retry costs after a parent restart
@@ -279,10 +280,13 @@ same inference secret through the fixed router URL.
 
 The parent adds one `on_trial_ended` callback. The callback reads the completed
 trial's Harbor cost and writes its immutable attempt receipt before Harbor can
-remove a failed retry folder. If the cost is unavailable, if that attempt
-exceeds the per-trial ceiling, or if the sum of attempt costs exceeds the
-ceiling times the planned trial count, the callback stops the Harbor task group.
-Harbor has already written the trial and job result before this callback runs.
+remove a failed retry folder. A failure before agent execution records zero
+cost. A null cost after agent execution remains null in that receipt and
+reserves the per-trial ceiling for aggregate budget control. The callback stops
+the Harbor task group only when a reported attempt exceeds the per-trial ceiling
+or total observed and reserved exposure exceeds the ceiling times the planned
+trial count. Harbor has already written the trial and job result before this
+callback runs.
 
 If `state.json` shows a requested pause or cancellation, the callback preserves
 any non-null cost and raises a controlled-stop exception. After Harbor unwinds,
@@ -307,7 +311,7 @@ For each run it applies these rules in order:
    every live parent and defer child cleanup to the next reconciliation.
 2. If the desired state is paused or cancelled and no parent is live, cancel
    every live child with the run label.
-3. If an attempt receipt has no cost or the durable attempt costs crossed a
+3. If a reported attempt or total observed and reserved cost exposure crossed a
    limit, stop parents before child cleanup and do not start another parent.
 4. If Harbor's job result is finished, do not start a parent.
 5. If one labeled parent is live, adopt it if needed and wait.

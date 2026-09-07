@@ -177,8 +177,11 @@ SQLite has three tables:
 The projection combines `run.json`, `state.json`, attempt cost receipts, Harbor
 result files, and Job observations. It deduplicates current results and receipts
 by Harbor trial result ID. Desired cancellation and pause have the highest
-status priority. A missing cost or cost stop comes before normal completion, so
-an unaccounted or expensive attempt cannot enter the leaderboard.
+status priority. A reported per-trial overage or an aggregate exposure overage
+comes before normal completion, so an expensive run cannot enter the
+leaderboard. A null cost after agent execution stays unknown and reserves the
+per-trial ceiling in the aggregate calculation. A failure before agent
+execution records zero cost.
 
 The public leaderboard reads finished `final` runs that use an eligible preset
 and have at least one numeric reward. Rows group by benchmark preset, agent and
@@ -193,7 +196,10 @@ credential literals.
 Cost enforcement occurs after a trial result is written. The parent preserves
 an immutable receipt before Harbor can remove a failed retry folder. It reloads
 all receipts after restart. One trial can cross its limit, and concurrent work
-can finish before cancellation. A missing cost stops the run.
+can finish before cancellation. A null cost after agent execution reserves the
+full per-trial ceiling without claiming that amount was observed. A failure
+before agent execution records zero cost. Harbor continues unless reported cost
+or total observed and reserved exposure crosses a limit.
 
 A failed parent can restart after the fixed delay. A cancelled run cannot
 resume. A projection rebuild failure, immutable run conflict, unlabeled child,

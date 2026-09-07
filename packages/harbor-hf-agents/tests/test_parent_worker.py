@@ -16,8 +16,10 @@ from harbor_hf_agents.hf_sandbox import (
     _resolve_inference_env,
 )
 from harbor_hf_agents.parent_worker import (
+    AttemptCostReceipt,
     ControlledRunStop,
     CostCeilingExceeded,
+    _receipt_matches_result,
     cleanup_interrupted_trial,
     cost_ceiling,
     job_config,
@@ -69,10 +71,19 @@ def test_loads_and_validates_the_assigned_record(tmp_path: Path) -> None:
 
 
 class Result:
-    def __init__(self, trial_name: str, cost: float | None) -> None:
+    def __init__(
+        self,
+        trial_name: str,
+        cost: float | None,
+        *,
+        agent_started: bool = True,
+    ) -> None:
         self.id = uuid4()
         self.trial_name = trial_name
         self.cost = cost
+        self.agent_result = SimpleNamespace() if agent_started else None
+        self.agent_execution = None
+        self.step_results = None
 
     def compute_token_cost_totals(
         self,
@@ -110,23 +121,77 @@ async def test_cost_hook_restores_retry_cost_after_restart(tmp_path: Path) -> No
         await resumed(cast(Any, SimpleNamespace(result=Result("task", 0.2))))
 
 
+def test_legacy_null_setup_receipt_matches_the_harbor_result() -> None:
+    result = Result("setup-failure", None, agent_started=False)
+    receipt = AttemptCostReceipt(
+        attempt_id=result.id,
+        trial_name=result.trial_name,
+        cost_usd=None,
+    )
+
+    assert _receipt_matches_result(receipt, cast(Any, result))
+
+
+@pytest.mark.asyncio
+async def test_cost_hook_records_zero_when_agent_did_not_start(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    hook = make_cost_hook(0.25, 1, run_dir)
+
+    await hook(
+        cast(
+            Any,
+            SimpleNamespace(result=Result("setup-failure", None, agent_started=False)),
+        )
+    )
+
+    receipt = next(iter(load_attempt_costs(run_dir).values()))
+    assert receipt.cost_usd == 0
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cost", [None, float("inf"), -1.0])
-async def test_cost_hook_fails_closed_when_cost_is_unavailable(
+async def test_cost_hook_reserves_ceiling_when_cost_is_unavailable(
     tmp_path: Path,
     cost: float | None,
 ) -> None:
-    hook = make_cost_hook(0.25, 1, tmp_path / "run")
+    run_dir = tmp_path / "run"
+    hook = make_cost_hook(0.25, 2, run_dir)
 
-    with pytest.raises(CostCeilingExceeded, match="did not report inference cost"):
-        await hook(cast(Any, SimpleNamespace(result=Result("task", cost))))
+    await hook(cast(Any, SimpleNamespace(result=Result("unknown", cost))))
+    await hook(cast(Any, SimpleNamespace(result=Result("known", 0.24))))
+
+    receipts = {
+        receipt.trial_name: receipt for receipt in load_attempt_costs(run_dir).values()
+    }
+    assert len(receipts) == 2
+    assert receipts["unknown"].cost_usd is None
+    assert receipts["known"].cost_usd == 0.24
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("cost", "receipt_count"), [(None, 0), (0.1, 1)])
+async def test_cost_hook_stops_when_reserved_and_observed_cost_cross_run_ceiling(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    hook = make_cost_hook(0.25, 1, run_dir)
+
+    await hook(cast(Any, SimpleNamespace(result=Result("task", None))))
+
+    with pytest.raises(CostCeilingExceeded, match="cost exposure"):
+        await hook(cast(Any, SimpleNamespace(result=Result("task", 0.01))))
+
+    assert len(load_attempt_costs(run_dir)) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("cost", "agent_started", "receipt_count"),
+    [(None, True, 0), (None, False, 0), (0.1, True, 1)],
+)
 async def test_controlled_stop_keeps_cost_and_removes_terminal_trial(
     tmp_path: Path,
     cost: float | None,
+    agent_started: bool,
     receipt_count: int,
 ) -> None:
     run_dir = tmp_path / "run"
@@ -140,7 +205,14 @@ async def test_controlled_stop_keeps_cost_and_removes_terminal_trial(
     )
 
     with pytest.raises(ControlledRunStop, match="controlled stop") as stopped:
-        await hook(cast(Any, SimpleNamespace(result=Result("task", cost))))
+        await hook(
+            cast(
+                Any,
+                SimpleNamespace(
+                    result=Result("task", cost, agent_started=agent_started)
+                ),
+            )
+        )
     cleanup_interrupted_trial(run_dir, stopped.value.trial_name)
 
     assert not trial_dir.exists()

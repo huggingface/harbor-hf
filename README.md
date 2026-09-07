@@ -128,7 +128,11 @@ environments, and configurations with more than one agent.
 
 The cost check runs after each trial because Harbor saves a result before it
 calls the end hook. One trial can exceed its limit. When trials run at the same
-time, active work can also finish before cancellation completes.
+time, active work can also finish before cancellation completes. A trial with
+no reported cost after agent execution keeps its `null` value and reserves the
+per-trial ceiling in the aggregate cost check. A failure before agent execution
+records zero cost. The error remains visible while Harbor continues the other
+trials.
 
 ## Local development
 

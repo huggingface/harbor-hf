@@ -133,6 +133,13 @@ an in-flight trial as terminal during this stop, the parent preserves any
 reported provider cost and removes the interrupted result before it exits. A
 paused Harbor folder therefore stays resumable without losing paid-use evidence.
 
+The parent keeps the cost that Harbor reports for each attempt. A failure before
+agent execution records zero cost. A null cost after agent execution remains
+null in its immutable receipt and reserves that run's per-trial ceiling for
+budget control. The parent continues other trials until a reported trial exceeds
+its ceiling or total observed and reserved exposure exceeds the aggregate run
+ceiling.
+
 ## Startup
 
 The Space opens port 7860 before the Bucket scan. This lets the platform observe
