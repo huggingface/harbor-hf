@@ -15,6 +15,10 @@ import {
 const ROUTER_URL = "https://router.huggingface.co/v1";
 const INFERENCE_TOKEN_TEMPLATE = "$" + "{HF_INFERENCE_TOKEN}";
 const LABELED_ENVIRONMENT = "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment";
+const NATIVE_HUGGING_FACE_PI_AGENTS = new Set([
+  "harbor_hf_agents.pi.agent:PiAgent",
+  "harbor_hf_agents.pi_code_mode.agent:PiCodeModeAgent",
+]);
 const CREDENTIAL_VALUE =
   /(?:hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|Bearer\s+\S{16,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/;
 
@@ -290,7 +294,8 @@ export function prepareDirectJobConfig(
   const preparedAgent = clone(agent);
   const usesNativeHuggingFace =
     preparedAgent.name === "pi" ||
-    preparedAgent.import_path === "harbor_hf_agents.pi.agent:PiAgent";
+    (typeof preparedAgent.import_path === "string" &&
+      NATIVE_HUGGING_FACE_PI_AGENTS.has(preparedAgent.import_path));
   if (usesNativeHuggingFace) {
     if (typeof preparedAgent.model_name === "string") {
       const separator = preparedAgent.model_name.indexOf("/");

@@ -470,6 +470,36 @@ describe("run submission", () => {
         import_path: "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
       },
     });
+
+    const codeMode = await service.submitConfig(
+      {
+        ...directInput,
+        agents: [
+          {
+            import_path: "harbor_hf_agents.pi_code_mode.agent:PiCodeModeAgent",
+            model_name: "openai/deepseek-ai/DeepSeek-V4-Flash-0731:baseten",
+            kwargs: {
+              version: "0.84.4",
+              thinking: "high",
+              model_api: "openai-completions",
+            },
+          },
+        ],
+      },
+      1,
+      "direct-code-mode",
+      "test-subject",
+    );
+    expect(codeMode.run.harbor_job_config).toMatchObject({
+      agents: [
+        {
+          import_path: "harbor_hf_agents.pi_code_mode.agent:PiCodeModeAgent",
+          model_name: "huggingface/deepseek-ai/DeepSeek-V4-Flash-0731:baseten",
+          env: { HF_TOKEN: "$" + "{HF_INFERENCE_TOKEN}" },
+          kwargs: { version: "0.84.4", thinking: "high" },
+        },
+      ],
+    });
   });
 });
 
