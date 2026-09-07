@@ -5,6 +5,9 @@ sdk: docker
 app_port: 7860
 hf_oauth: true
 hf_oauth_expiration_minutes: 720
+hf_oauth_scopes:
+  - jobs
+  - inference-api
 suggested_hardware: cpu-upgrade
 ---
 

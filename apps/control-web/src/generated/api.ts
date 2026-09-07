@@ -20,7 +20,7 @@ export interface paths {
                     "X-HF-User-Token"?: string;
                 };
                 path: {
-                    action: "identity" | "preview" | "approval" | "jobs" | "logs" | "cancel" | "results" | "artifact" | "launch" | "setup-result";
+                    action: "identity" | "preview" | "approval" | "jobs" | "logs" | "cancel" | "results" | "artifact" | "launch" | "setup-result" | "buckets" | "create-bucket" | "check-bucket";
                 };
                 cookie?: never;
             };

@@ -316,7 +316,10 @@
                 "results",
                 "artifact",
                 "launch",
-                "setup-result"
+                "setup-result",
+                "buckets",
+                "create-bucket",
+                "check-bucket"
               ]
             }
           },

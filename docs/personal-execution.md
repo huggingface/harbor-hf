@@ -13,9 +13,15 @@ Administrator status never bypasses the personal token identity check.
 2. Open **Personal execution**. Benchmark/agent selection, reasoning options,
    model-provider lookup and native configuration preview work with login alone.
    No execution token is needed for authoring.
-3. For Jobs, private results or launching, supply a purpose-scoped user HF token.
-   The token needs Jobs, inference, and access to the selected existing private
-   Bucket. Identity-only OAuth is not execution delegation.
+3. For Jobs, private results or launching, leave the token field empty to use the
+   signed-in OAuth credential, or supply a purpose-scoped **same-account override**.
+   The Space requests `jobs` and `inference-api` scopes, subject to user consent.
+   Bucket permissions are checked separately; the documented OAuth scope list does
+   not establish Bucket coverage. Use an appropriately scoped override if needed.
+   OAuth credentials are retained only in server memory, never SQLite or browser
+   storage. Logout, token/session expiry, or restart removes access. After restart
+   the login session can remain valid but execution requires signing in again.
+   An invalid explicit override never falls back to OAuth or control credentials.
 4. Verify the token and view your Jobs. Select a configured benchmark, agent,
    model and HF inference provider. Start with `two-task-canary`.
 5. Preview the native config and its SHA-256. This performs no task resolution
@@ -25,6 +31,14 @@ Administrator status never bypasses the personal token identity check.
 7. Use direct provider Job links for diagnosis/cancellation, bounded provider
    log snapshots, and private native artifact listings/previews.
 
+The private results panel (also available inline in Workbench) lists the first
+page of the caller's private Buckets. You can also enter a name and validate it,
+or explicitly confirm creation of a private Bucket. Existing Buckets are never
+changed to private automatically. Creation may incur storage charges and is not
+automatically retried after failure. The last validated/created Bucket name is
+remembered server-side for that authenticated subject; permissions and privacy
+are rechecked on use. Listing and metadata checks do not prove upload permission.
+
 **Workbench workflow:** signed-in users can start from Fast-Agent 0.10.19 or FX
 0.0.6, edit an agents-only native fragment, and save immutable versions. Saved
 versions appear under **My Workbench configurations** in the Personal agent
@@ -32,8 +46,8 @@ dropdown. Model routing is injected at admission; agent kwargs stay as saved.
 Benchmark tasks, environment and retries remain owned by the benchmark catalog.
 Other top-level fragment fields are rejected for execution, not silently ignored.
 
-**Test setup** saves the current draft as an immutable version and opens Personal
-execution with that version and purpose **setup** selected. It does not immediately
+**Test setup** saves the current draft as an immutable version and opens an inline
+Workbench execution panel with that version and purpose **setup** selected. It does not immediately
 spend money. After exact setup approval, the same dedicated runner invokes native
 Harbor `install_only: true`, skipping agent task execution and verification.
 Installation commands still execute and may access the network and supplied
@@ -89,12 +103,14 @@ Its schema is `approvalSchema` in `apps/control-api/src/personal.ts`:
   matching passed setup Job's run ID. Setup can set `inference_limit_usd` to zero;
   the explicit total compute budget and runtime limits remain required.
 - Immutable runner `image`, runner `hardware`.
+- `credential_source` is `oauth-session` for delegated OAuth or
+  `supplied-user-token` for an explicit override. Admission rejects a different
+  source from the one approved.
 - `runtime_seconds`, `job_timeout_seconds` (at least 120 seconds longer),
   `expires_at`.
 - Positive `total_budget_usd` and `inference_limit_usd` within that budget.
 - `native_config_sha256` returned by the preview for that same run ID and
   submission. Catalog changes invalidate approval.
-- `credential_source`: `supplied-user-token`.
 - `credential_destinations`:
   `control-request,hf-job-secret,harbor,sandbox,agent,hf-inference,hf-bucket`.
 - `deployment_scope`: `dedicated-user-owned-hf-job`.
@@ -128,12 +144,16 @@ Provider links and honest unresolved-resource reporting remain essential.
 ## API
 
 All operations are authenticated `POST /api/v1/personal/<action>` requests.
-`preview` does not require or transmit a supplied token; other actions require
-the supplied-token header. Responses use `Cache-Control: no-store`.
+`preview` does not require or transmit an execution token; other actions use the
+session's OAuth credential or the explicit supplied-token header. Session CSRF
+applies to both. Responses use `Cache-Control: no-store`.
 
 | Action | Body |
 | --- | --- |
 | `identity`, `jobs`, `approval` | `{}` |
+| `buckets` | `{}`; first page of own private Buckets only |
+| `check-bucket` | `bucket`; validates private metadata access and remembers selection |
+| `create-bucket` | `bucket`, `confirm: true`; creates privately and remembers selection |
 | `preview` | `run_id`, catalog `submission` |
 | `setup-result` | `run_id` for a previously dispatched setup owned by the caller |
 | `logs` | `job_id` |

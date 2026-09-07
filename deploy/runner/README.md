@@ -22,7 +22,7 @@ Required environment:
 - `HARBOR_HF_RESULTS_BUCKET`: existing Bucket name, without namespace.
 - `HARBOR_HF_RUN_ID`: unique, admission-assigned run identifier.
 - `HARBOR_HF_RUNTIME_SECONDS`: positive Harbor runtime allowance.
-- `HARBOR_HF_USER_TOKEN`: explicitly supplied user token, delivered as an HF
+- `HARBOR_HF_USER_TOKEN`: delegated OAuth or explicitly supplied same-account user token, delivered as an HF
   Job secret, never as an argument or image build input.
 
 The runner verifies token identity and Bucket privacy with public SDK methods.
@@ -50,6 +50,9 @@ the transfer. Result-publication plugins are rejected.
   This entrypoint is not a safe endpoint for arbitrary user configurations.
 - This increment accepts only the HF user token; additional inference-provider
   credentials need explicit destination approval and implementation.
+- The control UI can use a server-memory OAuth credential or a same-account token
+  override. The exact approval binds that credential source. OAuth expiry can
+  interrupt provider operations; the runner never falls back to control credentials.
 - Workbench saved agents are composed with catalog benchmark settings. Setup uses
   native `install_only: true` through this same runner, not a separate setup worker.
   Matching user-owned setup evidence is required for saved-version benchmark

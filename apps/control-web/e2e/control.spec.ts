@@ -556,7 +556,7 @@ for (const mode of ["setup", "benchmark"] as const) {
         name: mode === "setup" ? "Test setup" : "Use for benchmark",
       })
       .click();
-    await expect(page).toHaveURL(new RegExp(`/personal\\?workbench=.*&mode=${mode}$`));
+    await expect(page).toHaveURL(/\/workbench$/);
     await expect(page.getByLabel("Agent and version")).toHaveValue(
       `workbench/sha256:${"a".repeat(64)}`,
     );

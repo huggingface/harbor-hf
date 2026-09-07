@@ -21,6 +21,39 @@ vi.mock("@huggingface/hub", async (original) => ({
 afterEach(() => vi.resetAllMocks());
 
 describe("personal HF adapter", () => {
+  it("lists only private own Buckets and never follows pagination with credentials", async () => {
+    const transport = vi.fn().mockResolvedValue(
+      Response.json(
+        [
+          { id: "example-user/private-results", private: true },
+          { id: "example-user/public-results", private: false },
+          { id: "other-user/private-results", private: true },
+        ],
+        { headers: { link: '<https://example.invalid/next>; rel="next"' } },
+      ),
+    );
+    const client = new PersonalHuggingFace("hf_usercredential", transport);
+    expect(await client.buckets("example-user")).toEqual({
+      items: [{ name: "private-results" }],
+      first_page_only: true,
+    });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates only a private Bucket without modifying conflicts or retrying", async () => {
+    const transport = vi.fn().mockResolvedValue(new Response("", { status: 409 }));
+    const client = new PersonalHuggingFace("hf_usercredential", transport);
+    await expect(
+      client.createBucket("example-user", "private-results"),
+    ).rejects.toThrow("creation failed");
+    expect(transport).toHaveBeenCalledExactlyOnceWith(
+      "https://huggingface.co/api/buckets/example-user/private-results",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ private: true }),
+      }),
+    );
+  });
   it("redacts the supplied token across provider log chunks", async () => {
     vi.mocked(streamJobLogs).mockImplementation(async function* () {
       yield { message: "hf_user", timestamp: new Date() };

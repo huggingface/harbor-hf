@@ -110,6 +110,43 @@ it("keeps supplied credentials out of browser storage and request bodies", async
   ).not.toBeInTheDocument();
 });
 
+it("uses OAuth without a token header and requires explicit private Bucket creation consent", async () => {
+  vi.mocked(getPresets).mockResolvedValue({ benchmarks: [], agents: [] });
+  vi.mocked(api).mockImplementation(async (path) => {
+    if (path.endsWith("identity"))
+      return { owner: "example-user", results_bucket: "private-results" };
+    if (path.endsWith("jobs")) return { jobs: [] };
+    return {};
+  });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  const user = userEvent.setup();
+  render(<PersonalPage />);
+  await user.click(
+    screen.getByRole("button", { name: "Verify token and load my Jobs" }),
+  );
+  await screen.findByText("Verified token owner: example-user");
+  expect(api).toHaveBeenCalledWith("/api/v1/personal/identity", {
+    method: "POST",
+    body: "{}",
+  });
+  expect(screen.getByLabelText("Existing private Bucket name")).toHaveValue(
+    "private-results",
+  );
+  await user.click(screen.getByRole("button", { name: "Create private Bucket" }));
+  expect(api).not.toHaveBeenCalledWith(
+    "/api/v1/personal/create-bucket",
+    expect.anything(),
+  );
+  confirm.mockReturnValue(true);
+  await user.click(screen.getByRole("button", { name: "Create private Bucket" }));
+  await waitFor(() =>
+    expect(api).toHaveBeenCalledWith("/api/v1/personal/create-bucket", {
+      method: "POST",
+      body: JSON.stringify({ bucket: "private-results", confirm: true }),
+    }),
+  );
+});
+
 it("does not cancel until the user confirms the exact Job", async () => {
   vi.mocked(getPresets).mockResolvedValue({ benchmarks: [], agents: [] });
   vi.mocked(api).mockImplementation(async (path) => {

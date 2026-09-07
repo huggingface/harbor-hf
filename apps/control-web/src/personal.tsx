@@ -29,20 +29,27 @@ interface Approval {
   setup_test_run_id?: string;
 }
 
-export function PersonalPage() {
+export function PersonalPage({
+  initialSelection,
+}: {
+  initialSelection?: { revision: string; mode: "setup" | "benchmark" };
+} = {}) {
   const [token, setToken] = useState("");
   const [owner, setOwner] = useState("");
   const [catalog, setCatalog] = useState<PresetsResponse | null>(null);
   const [benchmark, setBenchmark] = useState("terminal-bench-2-1/two-task-canary");
   const [agent, setAgent] = useState(() => {
+    if (initialSelection) return `workbench/${initialSelection.revision}`;
     const revision = new URLSearchParams(window.location.search).get("workbench");
     return revision ? `workbench/${revision}` : "";
   });
   const [saved, setSaved] = useState<SavedConfiguration[]>([]);
   const [mode, setMode] = useState<"setup" | "benchmark">(() =>
-    new URLSearchParams(window.location.search).get("mode") === "setup"
-      ? "setup"
-      : "benchmark",
+    initialSelection
+      ? initialSelection.mode
+      : new URLSearchParams(window.location.search).get("mode") === "setup"
+        ? "setup"
+        : "benchmark",
   );
   const [model, setModel] = useState("");
   const [provider, setProvider] = useState("");
@@ -50,6 +57,7 @@ export function PersonalPage() {
   const [reasoning, setReasoning] = useState("default");
   const [ceiling, setCeiling] = useState("1");
   const [bucket, setBucket] = useState("");
+  const [buckets, setBuckets] = useState<Array<{ name: string }>>([]);
   const [runId, setRunId] = useState(
     () => `run-${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`,
   );
@@ -88,7 +96,9 @@ export function PersonalPage() {
   async function request<T>(action: string, body: unknown = {}): Promise<T> {
     return api(`/api/v1/personal/${action}`, {
       method: "POST",
-      ...(action === "preview" ? {} : { headers: { "X-HF-User-Token": token } }),
+      ...(action === "preview" || !token
+        ? {}
+        : { headers: { "X-HF-User-Token": token } }),
       body: JSON.stringify(body),
     });
   }
@@ -110,10 +120,17 @@ export function PersonalPage() {
   const button = "rounded border border-slate-500 px-3 py-2 disabled:opacity-40";
   return (
     <section className="space-y-5">
-      <h1 className="text-2xl font-semibold">Personal execution</h1>
+      <h1 className="text-2xl font-semibold">
+        {initialSelection
+          ? initialSelection.mode === "setup"
+            ? "Workbench setup test"
+            : "Workbench benchmark"
+          : "Personal execution"}
+      </h1>
       <p>
-        Choose and preview a configuration with your login alone. A verified user token
-        is needed only for Jobs, private results, and approved execution.
+        Use your signed-in HF account for Jobs, private results, and approved execution.
+        The token field is an optional same-account override. Sign in again if your
+        OAuth credential expires or the service restarts.
       </p>
       <p>
         Jobs and evidence belong to your HF account, not the control Space. Supplied
@@ -134,6 +151,7 @@ export function PersonalPage() {
             setOwner("");
             setJobs([]);
             setFiles([]);
+            setBuckets([]);
             setOutput("");
             setApproval(null);
             setConsent(false);
@@ -143,16 +161,25 @@ export function PersonalPage() {
       <button
         type="button"
         className={button}
-        disabled={busy || !token}
+        disabled={busy}
         onClick={() =>
           void perform(async () => {
-            setOwner((await request<{ owner: string }>("identity")).owner);
+            const identity = await request<{
+              owner: string;
+              results_bucket?: string | null;
+            }>("identity");
+            setOwner(identity.owner);
+            setBucket(identity.results_bucket ?? "");
             await refreshJobs();
           })
         }
       >
         Verify token and load my Jobs
       </button>
+      <p>
+        Leave the token empty to use OAuth. Jobs and inference permissions require
+        consent; Bucket permissions are checked separately.
+      </p>
       {owner ? <p>Verified token owner: {owner}</p> : null}
       <p role="status">{message}</p>
       <fieldset disabled={busy || !catalog} className="space-y-3">
@@ -499,6 +526,41 @@ export function PersonalPage() {
       ))}
       <fieldset disabled={busy || !owner} className="space-y-3">
         <legend className="text-xl">Private native results</legend>
+        <button
+          type="button"
+          className={button}
+          onClick={() =>
+            void perform(async () => {
+              const value = await request<{ items: Array<{ name: string }> }>(
+                "buckets",
+              );
+              setBuckets(value.items);
+              setMessage(
+                "Loaded the first page of private Buckets. You can also enter a name and validate it.",
+              );
+            })
+          }
+        >
+          Find my private Buckets
+        </button>
+        <label className="block">
+          Select a private Bucket
+          <select
+            className={field}
+            value={bucket}
+            onChange={(event) => {
+              setBucket(event.target.value);
+              setFiles([]);
+            }}
+          >
+            <option value="">Select a Bucket</option>
+            {buckets.map((item) => (
+              <option key={item.name} value={item.name}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="block">
           Existing private Bucket name
           <input
@@ -510,6 +572,44 @@ export function PersonalPage() {
             }}
           />
         </label>
+        <button
+          type="button"
+          className={button}
+          disabled={!bucket}
+          onClick={() =>
+            void perform(async () => {
+              await request("check-bucket", { bucket });
+              setMessage(
+                "Private Bucket access verified. Upload/write access is checked during execution.",
+              );
+            })
+          }
+        >
+          Validate private Bucket
+        </button>
+        <button
+          type="button"
+          className={button}
+          disabled={!bucket}
+          onClick={() => {
+            if (
+              !window.confirm(
+                `Create private Bucket ${owner}/${bucket}? Storage may incur charges. No existing Bucket will be modified.`,
+              )
+            )
+              return;
+            void perform(async () => {
+              await request("create-bucket", { bucket, confirm: true });
+              setBuckets((current) => [
+                ...current.filter((item) => item.name !== bucket),
+                { name: bucket },
+              ]);
+              setMessage("Private Bucket created. No Job was launched.");
+            });
+          }}
+        >
+          Create private Bucket
+        </button>
         <p>Uses the Run ID above. Evidence is not submitted or published.</p>
         <button
           type="button"

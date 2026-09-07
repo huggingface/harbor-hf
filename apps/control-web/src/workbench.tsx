@@ -10,6 +10,7 @@ import {
 } from "./api";
 import { PageHeader } from "./layout";
 import { Button, Card, ErrorNotice } from "./ui";
+import { PersonalPage } from "./personal";
 
 export function WorkbenchPage() {
   const [saving, setSaving] = useState(false);
@@ -24,6 +25,10 @@ export function WorkbenchPage() {
   const [selected, setSelected] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState("");
+  const [execution, setExecution] = useState<{
+    revision: string;
+    mode: "setup" | "benchmark";
+  } | null>(null);
   useEffect(() => {
     void listSavedConfigurations()
       .then((value) => setItems(value.items))
@@ -61,10 +66,7 @@ export function WorkbenchPage() {
   async function prepare(mode: "setup" | "benchmark") {
     // Snapshot the current draft first. Edits can never reuse an old test identity.
     const item = await save();
-    if (item)
-      window.location.assign(
-        `/personal?workbench=${encodeURIComponent(item.revision)}&mode=${mode}`,
-      );
+    if (item) setExecution({ revision: item.revision, mode });
   }
   return (
     <>
@@ -74,9 +76,10 @@ export function WorkbenchPage() {
       />
       <Card>
         <p role="status">
-          Test setup snapshots this draft and opens a native Harbor install-only run.
-          Benchmark runs use the exact saved version and require a matching passed setup
-          test. Both are dedicated Jobs requiring explicit compute/credential approval.
+          Test setup snapshots this draft and prepares a native Harbor install-only run
+          here. Benchmark runs use the exact saved version and require a matching passed
+          setup test. Both are dedicated Jobs requiring explicit compute/credential
+          approval.
         </p>
         <p className="my-4">
           Save an agents-only native Harbor fragment. Benchmark tasks, environment and
@@ -180,6 +183,16 @@ export function WorkbenchPage() {
         {message ? <p role="status">{message}</p> : null}
         {error ? <ErrorNotice error={error} /> : null}
       </Card>
+      {execution ? (
+        <Card>
+          <p>Execution uses the snapshot below, not subsequent edits to the draft.</p>
+          <Button onClick={() => setExecution(null)}>Close execution panel</Button>
+          <PersonalPage
+            key={`${execution.revision}/${execution.mode}`}
+            initialSelection={execution}
+          />
+        </Card>
+      ) : null}
     </>
   );
 }

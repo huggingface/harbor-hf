@@ -49,7 +49,7 @@ const approvalSchema = z
     total_budget_usd: z.number().positive().finite(),
     inference_limit_usd: z.number().nonnegative().finite(),
     native_config_sha256: z.string().regex(/^[0-9a-f]{64}$/),
-    credential_source: z.literal("supplied-user-token"),
+    credential_source: z.enum(["supplied-user-token", "oauth-session"]),
     credential_destinations: z.literal(
       "control-request,hf-job-secret,harbor,sandbox,agent,hf-inference,hf-bucket",
     ),
@@ -137,6 +137,9 @@ export function registerPersonalRoutes(
           "artifact",
           "launch",
           "setup-result",
+          "buckets",
+          "create-bucket",
+          "check-bucket",
         ]),
       })
       .parse(request.params);
@@ -167,16 +170,22 @@ export function registerPersonalRoutes(
           .digest("hex"),
       };
     }
-    const token = request.headers["x-hf-user-token"];
+    const override = request.headers["x-hf-user-token"];
+    const token =
+      override === undefined && actorFor(request).transport === "session"
+        ? runtime.auth.store.executionCredential(request.cookies.hhf_session ?? "")
+        : override;
     if (
       typeof token !== "string" ||
-      !/^hf_[A-Za-z0-9]{8,256}$/.test(token) ||
+      !token ||
+      (override !== undefined && !/^hf_[A-Za-z0-9]{8,256}$/.test(token)) ||
       token === runtime.config.hf_token
     )
       return reply.code(401).send({
         error: {
           code: "user_token_required",
-          message: "Supply a separate user token.",
+          message:
+            "Sign in again to authorize account access, or supply a separate same-account user token.",
         },
       });
     const personal = new PersonalHuggingFace(token);
@@ -195,7 +204,44 @@ export function registerPersonalRoutes(
           },
         });
       const owner = component.parse(identity.name);
-      if (action === "identity") return { owner };
+      const preferenceKey = `${executionPrefix(actor.subject)}bucket-preference.json`;
+      if (action === "identity") {
+        const exists = (await runtime.store.list(executionPrefix(actor.subject))).some(
+          (entry) => entry.key === preferenceKey,
+        );
+        const preference = exists
+          ? z
+              .object({ bucket: component })
+              .strict()
+              .parse(
+                JSON.parse(
+                  new TextDecoder().decode(await runtime.store.read(preferenceKey)),
+                ),
+              )
+          : null;
+        return { owner, results_bucket: preference?.bucket ?? null };
+      }
+      if (action === "buckets") return await personal.buckets(owner);
+      if (action === "create-bucket" || action === "check-bucket") {
+        const input = z
+          .object({
+            bucket: component,
+            confirm: z.boolean().optional(),
+          })
+          .strict()
+          .parse(request.body);
+        if (action === "create-bucket") {
+          if (input.confirm !== true)
+            throw new Error("Confirm private Bucket creation");
+          await personal.createBucket(owner, input.bucket);
+        }
+        await personal.privateBucket(owner, input.bucket);
+        await runtime.store.put(
+          preferenceKey,
+          Buffer.from(JSON.stringify({ bucket: input.bucket })),
+        );
+        return { bucket: input.bucket, owner, private: true };
+      }
       if (action === "jobs") return { jobs: await personal.jobs(owner) };
       if (action === "setup-result") {
         const input = z
@@ -263,6 +309,8 @@ export function registerPersonalRoutes(
       const approved = await approval(runtime, owner, actor.subject);
       if (
         !approved ||
+        approved.value.credential_source !==
+          (override === undefined ? "oauth-session" : "supplied-user-token") ||
         input.run_id !== approved.value.run_id ||
         input.approval_sha256 !== approved.digest
       )

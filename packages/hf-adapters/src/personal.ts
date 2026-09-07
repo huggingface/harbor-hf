@@ -101,6 +101,53 @@ export class PersonalHuggingFace {
       throw new Error("An existing private personal Bucket is required");
   }
 
+  async buckets(owner: string) {
+    const response = await this.transport(
+      `https://huggingface.co/api/buckets/${encodeURIComponent(owner)}`,
+      {
+        headers: { Authorization: `Bearer ${this.accessToken}` },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!response.ok) throw new Error("Bucket listing permission is unavailable");
+    const values: unknown = await response.json();
+    if (!Array.isArray(values)) throw new Error("Invalid Bucket listing");
+    // Do not follow provider pagination links with credentials. Manual selection
+    // and validation remain available for Buckets outside this first page.
+    const items = values.flatMap((value) => {
+      if (
+        !value ||
+        typeof value !== "object" ||
+        value.private !== true ||
+        typeof value.id !== "string" ||
+        !value.id.startsWith(`${owner}/`)
+      )
+        return [];
+      const name = value.id.slice(owner.length + 1);
+      return /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(name) ? [{ name }] : [];
+    });
+    return { items, first_page_only: true };
+  }
+
+  async createBucket(owner: string, bucket: string) {
+    const response = await this.transport(
+      `https://huggingface.co/api/buckets/${encodeURIComponent(owner)}/${encodeURIComponent(bucket)}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ private: true }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    if (!response.ok)
+      throw new Error(
+        "Private Bucket creation failed; inspect existing Buckets before retrying",
+      );
+  }
+
   async results(owner: string, bucket: string, runId: string) {
     await this.privateBucket(owner, bucket);
     const files = [];

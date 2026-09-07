@@ -80,6 +80,12 @@ class BearerLookupLimiter {
 }
 
 export class AuthStore {
+  // Intentionally memory-only: never write delegated tokens into SQLite, cookies
+  // or artifacts. Restart requires a fresh OAuth consent/login.
+  private readonly credentials = new Map<
+    string,
+    { token: string; expiresAt: number }
+  >();
   private constructor(private readonly database: Database.Database) {}
 
   static async open(path: string): Promise<AuthStore> {
@@ -193,10 +199,34 @@ export class AuthStore {
   }
 
   deleteSession(id: string): void {
+    this.credentials.delete(id);
     this.database.prepare("DELETE FROM sessions WHERE id = ?").run(id);
   }
 
+  retainCredential(id: string, token: string, ttlSeconds: number): void {
+    for (const [key, value] of this.credentials) {
+      if (value.expiresAt <= Date.now() || !this.session(key))
+        this.credentials.delete(key);
+    }
+    const session = this.session(id);
+    if (!session || !Number.isFinite(ttlSeconds) || ttlSeconds <= 0) return;
+    this.credentials.set(id, {
+      token,
+      expiresAt: Math.min(session.expires_at, Date.now() + ttlSeconds * 1000),
+    });
+  }
+
+  executionCredential(id: string): string | null {
+    const credential = this.credentials.get(id);
+    if (!this.session(id) || !credential || credential.expiresAt <= Date.now()) {
+      this.credentials.delete(id);
+      return null;
+    }
+    return credential.token;
+  }
+
   close(): void {
+    this.credentials.clear();
     this.database.close();
   }
 }
@@ -306,6 +336,11 @@ export class AuthenticationService {
       user.sub,
       username,
       this.oauth.session_ttl_seconds,
+    );
+    this.store.retainCredential(
+      session.id,
+      tokens.access_token,
+      typeof tokens.expires_in === "number" ? tokens.expires_in : 0,
     );
     return {
       session_id: session.id,

@@ -144,6 +144,103 @@ describe("personal execution wiring", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("uses session OAuth with CSRF and never falls back from an invalid override", async () => {
+    const { runtime, app } = await setup();
+    identity();
+    runtime.config.auth_mode = "oauth";
+    const session = runtime.auth.store.createSession(
+      "ordinary-subject",
+      "example-user",
+      3600,
+    );
+    runtime.auth.store.retainCredential(session.id, "oauth-example-credential", 3600);
+    const lookup = vi.spyOn(runtime.auth.store, "executionCredential");
+    const options = {
+      method: "POST" as const,
+      url: "/api/v1/personal/identity",
+      headers: { cookie: `hhf_session=${session.id}`, "x-csrf-token": session.csrf },
+    };
+    expect(
+      (await app.inject({ ...options, headers: { cookie: options.headers.cookie } }))
+        .statusCode,
+    ).toBe(403);
+    expect((await app.inject(options)).statusCode).toBe(200);
+    expect(lookup).toHaveBeenCalledWith(session.id);
+    lookup.mockClear();
+    expect(
+      (
+        await app.inject({
+          ...options,
+          headers: { ...options.headers, "x-hf-user-token": "invalid" },
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(lookup).not.toHaveBeenCalled();
+    runtime.auth.store.deleteSession(session.id);
+    expect((await app.inject(options)).statusCode).toBe(401);
+  });
+
+  it("rejects a credential source different from the exact launch approval", async () => {
+    const { runtime, app } = await setup();
+    identity();
+    await approve(runtime);
+    const file = runtime.config.personal_approval_file ?? "";
+    const value = JSON.parse(await readFile(file, "utf8"));
+    value.credential_source = "oauth-session";
+    await writeFile(file, JSON.stringify(value));
+    const launch = vi.spyOn(PersonalHuggingFace.prototype, "launch");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/launch",
+      headers,
+      payload: await acceptedPayload(app),
+    });
+    expect(response.statusCode).toBe(503);
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it("requires explicit confirmation for private Bucket creation and binds the owner", async () => {
+    const { app } = await setup();
+    identity();
+    const create = vi
+      .spyOn(PersonalHuggingFace.prototype, "createBucket")
+      .mockResolvedValue();
+    vi.spyOn(PersonalHuggingFace.prototype, "privateBucket").mockResolvedValue();
+    const options = {
+      method: "POST" as const,
+      url: "/api/v1/personal/create-bucket",
+      headers,
+    };
+    expect(
+      (await app.inject({ ...options, payload: { bucket: "private-results" } }))
+        .statusCode,
+    ).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+    expect(
+      (
+        await app.inject({
+          ...options,
+          payload: { bucket: "private-results", confirm: true, owner: "other-owner" },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          ...options,
+          payload: { bucket: "private-results", confirm: true },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(create).toHaveBeenCalledExactlyOnceWith("example-user", "private-results");
+    const recalled = await app.inject({
+      method: "POST",
+      url: "/api/v1/personal/identity",
+      headers,
+    });
+    expect(recalled.json().results_bucket).toBe("private-results");
+  });
+
   it("saves both central starters as native Workbench versions", async () => {
     const { app } = await setup("disabled");
     const starters = (await app.inject({ url: "/api/v1/workbench/starters" })).json()
