@@ -128,7 +128,10 @@ export class PresetCatalog {
     const fragment = clone(agent.harbor_agent) as HarborAgentFragment;
     const job = clone(benchmark.job);
     const kwargs = { ...(fragment.kwargs ?? {}) };
-    if (agent.reasoning_option !== null)
+    if (
+      agent.reasoning_option !== null &&
+      submission.model.reasoning_effort !== "default"
+    )
       kwargs[agent.reasoning_option] = submission.model.reasoning_effort;
 
     const usesNativeHuggingFace = agent.agent === "pi";

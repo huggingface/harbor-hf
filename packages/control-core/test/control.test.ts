@@ -156,6 +156,21 @@ describe("run submission", () => {
     });
   });
 
+  it("leaves mini-SWE-agent's provider reasoning default unset", async () => {
+    const result = await service.submitPreset(
+      {
+        ...input,
+        model: { ...input.model, reasoning_effort: "default" },
+        harness: { agent: "mini-swe-agent", version: "2.4.6" },
+      },
+      "mini-swe-default-reasoning",
+      "test-subject",
+    );
+    expect(result.run.harbor_job_config.agents[0]?.kwargs).not.toHaveProperty(
+      "reasoning_effort",
+    );
+  });
+
   it("keeps the reviewed full-run CPU flavor in the Harbor job", async () => {
     const result = await service.submitPreset(
       {
