@@ -17,12 +17,6 @@ const INFERENCE_TOKEN_TEMPLATE = "$" + "{HF_INFERENCE_TOKEN}";
 const LABELED_ENVIRONMENT = "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment";
 const CREDENTIAL_VALUE =
   /(?:hf_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|Bearer\s+\S{16,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/;
-const INCOMPATIBLE_INFERENCE_PROVIDER_AGENTS = new Map([
-  [
-    "codex",
-    "the codex agent requires the OpenAI Responses API, which Hugging Face Inference Providers do not support",
-  ],
-]);
 
 export interface PresetSubmission {
   benchmark: { name: string; preset: string };
@@ -80,7 +74,7 @@ export class PresetCatalog {
       join(root, "benchmarks"),
       validateBenchmarkPreset,
     );
-    const allAgents = await jsonFiles(join(root, "agents"), validateAgentPreset);
+    const agents = await jsonFiles(join(root, "agents"), validateAgentPreset);
     const benchmarkKeys = new Set<string>();
     for (const item of benchmarks) {
       const key = `${item.benchmark}\u0000${item.preset}`;
@@ -88,16 +82,13 @@ export class PresetCatalog {
       benchmarkKeys.add(key);
     }
     const agentKeys = new Set<string>();
-    for (const item of allAgents) {
+    for (const item of agents) {
       const key = `${item.agent}\u0000${item.version}`;
       if (agentKeys.has(key)) throw new Error("duplicate agent preset");
       agentKeys.add(key);
       if (item.reasoning_option === null && item.reasoning_values.join() !== "default")
         throw new Error("agent without a reasoning option must use only default");
     }
-    const agents = allAgents.filter(
-      (item) => !INCOMPATIBLE_INFERENCE_PROVIDER_AGENTS.has(item.agent),
-    );
     return new PresetCatalog(benchmarks, agents);
   }
 
@@ -110,8 +101,6 @@ export class PresetCatalog {
   }
 
   agent(name: string, version: string): AgentPresetV1 {
-    const incompatibility = INCOMPATIBLE_INFERENCE_PROVIDER_AGENTS.get(name);
-    if (incompatibility) throw new Error(incompatibility);
     const found = this.agents.find(
       (item) => item.agent === name && item.version === version,
     );
