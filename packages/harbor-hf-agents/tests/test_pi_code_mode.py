@@ -35,7 +35,11 @@ async def test_installs_bundled_code_mode_package(tmp_path, monkeypatch) -> None
     )
     command = environment.exec.call_args_list[-1].kwargs["command"]
     assert "dist/runtime/linux-x64/pi-code-mode-host" in command
-    assert "pi install /tmp/harbor-pi-code-mode" in command
+    assert (
+        "PI_CODING_AGENT_DIR=/tmp/harbor-pi-agent pi install /tmp/harbor-pi-code-mode"
+    ) in command
+    assert "PI_CODING_AGENT_DIR=/tmp/harbor-pi-agent pi list" in command
+    assert "$HOME/.pi/agent" not in command
     assert '{"mode":"codex"}' in command
 
 

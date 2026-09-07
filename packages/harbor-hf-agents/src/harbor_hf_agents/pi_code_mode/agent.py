@@ -13,6 +13,7 @@ from harbor_hf_agents.pi.agent import PiAgent
 _LOCAL_PACKAGE = Path("/opt/harbor-hf/pi-code-mode/pi-code-mode.tgz")
 _REMOTE_PACKAGE = "/tmp/harbor-pi-code-mode.tgz"
 _REMOTE_PACKAGE_DIR = "/tmp/harbor-pi-code-mode"
+_REMOTE_PI_AGENT_DIR = "/tmp/harbor-pi-agent"
 _REMOTE_CONFIG_DIR = "$HOME/.config/pi-code-mode"
 _CODE_MODE_CONFIG = '{"mode":"codex"}'
 
@@ -39,7 +40,6 @@ class PiCodeModeAgent(PiAgent):
             command=(
                 "set -euo pipefail; "
                 ". ~/.nvm/nvm.sh; "
-                'agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; '
                 f"rm -rf {package_dir}; "
                 f"mkdir -p {package_dir}; "
                 f"tar -xzf {package} -C {package_dir} --strip-components=1; "
@@ -47,9 +47,9 @@ class PiCodeModeAgent(PiAgent):
                 f"mkdir -p {_REMOTE_CONFIG_DIR}; "
                 f"printf '%s\\n' {config} > {_REMOTE_CONFIG_DIR}/config.json; "
                 f"chmod 600 {_REMOTE_CONFIG_DIR}/config.json; "
-                'PI_CODING_AGENT_DIR="$agent_dir" pi install '
+                f"PI_CODING_AGENT_DIR={_REMOTE_PI_AGENT_DIR} pi install "
                 f"{package_dir}; "
-                'PI_CODING_AGENT_DIR="$agent_dir" pi list; '
+                f"PI_CODING_AGENT_DIR={_REMOTE_PI_AGENT_DIR} pi list; "
                 "pi --version"
             ),
         )
