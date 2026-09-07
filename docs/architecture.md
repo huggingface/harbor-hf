@@ -155,8 +155,11 @@ For each run it:
 1. cancels live parents when the desired state is paused or cancelled;
 2. cancels their remaining children on a later reconciliation, after the parent
    is terminal;
-3. stops a run when durable trial cost crossed its ceiling;
-4. leaves a finished Harbor job unchanged;
+3. stops a run when durable trial cost crossed its ceiling, except that it
+   leaves an already-live parent running when native zero-retry progress proves
+   all trials terminal and Harbor has not written `finished_at` yet;
+4. never starts a replacement parent for a cost-stopped run and leaves a
+   finished Harbor job unchanged;
 5. adopts an existing live parent;
 6. cancels live child Jobs that have no live parent; and
 7. starts a new parent after the restart delay when capacity is available.
@@ -211,10 +214,15 @@ trials, and zero configured retries. Missing, malformed, inconsistent, or
 retry-enabled state fails closed.
 
 When the strict check proves that all work is terminal, the parent does not
-raise. The same Harbor `Job.run()` call writes `finished_at`. Harbor-HF does not
-count trial folders or store its own completion state. The projection still
-reports the run as `cost_stopped`, because `finished_at` records execution
-completion rather than cost compliance.
+raise. The same Harbor `Job.run()` call writes `finished_at`. During this short
+interval, the reconciler leaves the already-live parent running when the native
+counters show completed equal to total, zero running and pending trials, and
+zero retries. It does not start a replacement for a cost-stopped run. Any
+uncertain state, or a pause or cancellation, still stops the parent.
+
+Harbor-HF does not count trial folders or store its own completion state. The
+projection still reports the run as `cost_stopped`, because `finished_at`
+records execution completion rather than cost compliance.
 
 A failed parent can restart after the fixed delay. A cancelled run cannot
 resume. A projection rebuild failure, immutable run conflict, unlabeled child,

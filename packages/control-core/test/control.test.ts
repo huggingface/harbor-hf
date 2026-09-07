@@ -809,6 +809,84 @@ describe("reconciliation", () => {
     });
   });
 
+  it("keeps a completed cost-stopped parent alive until Harbor finalizes", async () => {
+    const { run } = await submit("finalizing-cost");
+    await service.reconcile();
+    const result = {
+      finished_at: null,
+      n_total_trials: 1,
+      stats: {
+        n_completed_trials: 1,
+        n_running_trials: 0,
+        n_pending_trials: 0,
+      },
+    };
+    await putJson(store, `runs/${run.run_id}/job/result.json`, result);
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, trial(0.5));
+
+    await service.reconcile();
+
+    expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
+    expect(jobs.cancelled).not.toContain("parent-1");
+    expect(jobs.starts).toBe(1);
+
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      ...result,
+      finished_at: "2026-09-07T12:00:00Z",
+    });
+    await service.reconcile();
+
+    expect(jobs.cancelled).toContain("parent-1");
+    expect(jobs.starts).toBe(1);
+  });
+
+  it("cancels a cost-stopped parent when native progress is incomplete", async () => {
+    const { run } = await submit("incomplete-cost");
+    await service.reconcile();
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: null,
+      n_total_trials: 1,
+      stats: {
+        n_completed_trials: 0,
+        n_running_trials: 0,
+        n_pending_trials: 1,
+      },
+    });
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, trial(0.5));
+
+    await service.reconcile();
+
+    expect(jobs.cancelled).toContain("parent-1");
+    expect(jobs.starts).toBe(1);
+  });
+
+  it("cancels a complete cost-stopped parent when retries are enabled", async () => {
+    const { run } = await submit("retry-cost");
+    await putJson(store, runRecordPath(run.run_id), {
+      ...run,
+      harbor_job_config: {
+        ...run.harbor_job_config,
+        retry: { max_retries: 1 },
+      },
+    });
+    await service.reconcile();
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: null,
+      n_total_trials: 1,
+      stats: {
+        n_completed_trials: 1,
+        n_running_trials: 0,
+        n_pending_trials: 0,
+      },
+    });
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, trial(0.5));
+
+    await service.reconcile();
+
+    expect(jobs.cancelled).toContain("parent-1");
+    expect(jobs.starts).toBe(1);
+  });
+
   it("restarts a run after a null-cost attempt", async () => {
     const { run } = await submit("unknown-cost");
     const attemptId = "44444444-4444-4444-8444-444444444444";

@@ -119,9 +119,16 @@ running, pending, mismatched-total, or retry-enabled result MUST fail closed.
 
 When those strict checks prove completion, Harbor-HF MUST let the same
 `Job.run()` call perform Harbor's normal final aggregation and write
-`finished_at`. The projection MUST still report `cost_stopped` when a cost limit
-was crossed. `finished_at` means execution is complete. It MUST NOT be treated
-as proof that the run complied with the cost policy.
+`finished_at`. While that already-live parent finalizes, the reconciler MUST
+leave it running when the native counters show completed equal to total, zero
+running and pending trials, and zero retries. It MUST NOT start a replacement
+parent for a cost-stopped run. Missing, inconsistent, incomplete, or
+retry-enabled state MUST fail closed and stop the live parent. An operator pause
+or cancellation MUST also stop it.
+
+The projection MUST still report `cost_stopped` when a cost limit was crossed.
+`finished_at` means execution is complete. It MUST NOT be treated as proof that
+the run complied with the cost policy.
 
 ## Work that MUST NOT be added
 

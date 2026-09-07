@@ -322,7 +322,11 @@ For each run it applies these rules in order:
 2. If the desired state is paused or cancelled and no parent is live, cancel
    every live child with the run label.
 3. If a reported attempt or total observed and reserved cost exposure crossed a
-   limit, stop parents before child cleanup and do not start another parent.
+   limit, keep an already-live parent only when Harbor's native result shows
+   completed equal to total, zero running and pending trials, zero retries, and
+   no `finished_at` yet. This gives that parent time to finish the same Harbor
+   job. In all other cases, stop parents before child cleanup. Never start a
+   replacement parent for a cost-stopped run.
 4. If Harbor's job result is finished, do not start a parent.
 5. If one labeled parent is live, adopt it if needed and wait.
 6. Cancel orphaned labeled child Jobs.

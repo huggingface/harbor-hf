@@ -135,9 +135,12 @@ records zero cost.
 
 The parent stops when a cost limit is crossed and more work can spend money. If
 Harbor proves that every configured trial is terminal and retries are disabled,
-the parent lets Harbor finish the same job and write `finished_at`. The run
-still appears as `cost_stopped`. `finished_at` means execution is complete and
-does not mean that the run complied with its cost limit.
+the parent lets Harbor finish the same job and write `finished_at`. While that
+already-live parent finalizes, the reconciler leaves it running. It never starts
+a replacement parent for a cost-stopped run. Missing, incomplete, or
+retry-enabled state stops the live parent as before. The run still appears as
+`cost_stopped`. `finished_at` means execution is complete and does not mean that
+the run complied with its cost limit.
 
 ## Local development
 

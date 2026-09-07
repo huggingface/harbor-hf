@@ -148,10 +148,17 @@ disabled. Missing, malformed, inconsistent, incomplete, running, pending,
 mismatched-total, or retry-enabled state fails closed.
 
 A proven complete run stays in the same `Job.run()` call so Harbor can perform
-normal final aggregation and write `finished_at`. The control projection still
-reports `cost_stopped`. The timestamp means execution is complete and does not
-mean that the run complied with its cost limit. Harbor-HF does not count trial
-folders, copy retry logic, or store another completion value.
+normal final aggregation and write `finished_at`. During this short interval,
+the reconciler leaves the already-live parent running when Harbor's native
+counters show completed equal to total, zero running and pending trials, and
+zero retries. It never starts a replacement parent for a cost-stopped run. A
+missing, inconsistent, incomplete, or retry-enabled state still stops the live
+parent. Pause and cancel also still stop it.
+
+The control projection still reports `cost_stopped`. The timestamp means
+execution is complete and does not mean that the run complied with its cost
+limit. Harbor-HF does not count trial folders, copy retry logic, or store
+another completion value.
 
 ## Startup
 
