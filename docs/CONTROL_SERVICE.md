@@ -136,9 +136,22 @@ paused Harbor folder therefore stays resumable without losing paid-use evidence.
 The parent keeps the cost that Harbor reports for each attempt. A failure before
 agent execution records zero cost. A null cost after agent execution remains
 null in its immutable receipt and reserves that run's per-trial ceiling for
-budget control. The parent continues other trials until a reported trial exceeds
-its ceiling or total observed and reserved exposure exceeds the aggregate run
-ceiling.
+budget control. The parent checks existing receipts before `Job.run()` and
+writes each new receipt before it makes a stop decision.
+
+When a reported trial or total observed and reserved exposure crosses its
+ceiling, the parent reads Harbor's current `JobResult`. It raises the cost-stop
+exception while more work can spend money or while completion is uncertain. It
+suppresses the exception only when the native total matches the configured job
+size, completed equals total, running and pending are zero, and retries are
+disabled. Missing, malformed, inconsistent, incomplete, running, pending,
+mismatched-total, or retry-enabled state fails closed.
+
+A proven complete run stays in the same `Job.run()` call so Harbor can perform
+normal final aggregation and write `finished_at`. The control projection still
+reports `cost_stopped`. The timestamp means execution is complete and does not
+mean that the run complied with its cost limit. Harbor-HF does not count trial
+folders, copy retry logic, or store another completion value.
 
 ## Startup
 

@@ -18,6 +18,7 @@ Harbor owns:
 - trial creation, concurrency, retry, and resume
 - job and trial locks
 - results, rewards, costs, and trajectories
+- job finalization and `finished_at`
 - built-in agent implementations
 
 Harbor-HF owns:
@@ -179,9 +180,10 @@ result files, and Job observations. It deduplicates current results and receipts
 by Harbor trial result ID. Desired cancellation and pause have the highest
 status priority. A reported per-trial overage or an aggregate exposure overage
 comes before normal completion, so an expensive run cannot enter the
-leaderboard. A null cost after agent execution stays unknown and reserves the
-per-trial ceiling in the aggregate calculation. A failure before agent
-execution records zero cost.
+leaderboard. This priority still applies when Harbor has written `finished_at`.
+A null cost after agent execution stays unknown and reserves the per-trial
+ceiling in the aggregate calculation. A failure before agent execution records
+zero cost.
 
 The public leaderboard reads finished `final` runs that use an eligible preset
 and have at least one numeric reward. Rows group by benchmark preset, agent and
@@ -195,11 +197,24 @@ credential literals.
 
 Cost enforcement occurs after a trial result is written. The parent preserves
 an immutable receipt before Harbor can remove a failed retry folder. It reloads
-all receipts after restart. One trial can cross its limit, and concurrent work
-can finish before cancellation. A null cost after agent execution reserves the
-full per-trial ceiling without claiming that amount was observed. A failure
-before agent execution records zero cost. Harbor continues unless reported cost
-or total observed and reserved exposure crosses a limit.
+all receipts after restart and applies the same cost check before `Job.run()`.
+One trial can cross its limit, and concurrent work can finish before
+cancellation. A null cost after agent execution reserves the full per-trial
+ceiling without claiming that amount was observed. A failure before agent
+execution records zero cost.
+
+When reported cost or total observed and reserved exposure crosses a limit, the
+parent reads Harbor's current `JobResult`. It raises immediately if work can
+still spend money or if the result does not prove completion. The proof requires
+a matching native total, completed equal to total, zero running and pending
+trials, and zero configured retries. Missing, malformed, inconsistent, or
+retry-enabled state fails closed.
+
+When the strict check proves that all work is terminal, the parent does not
+raise. The same Harbor `Job.run()` call writes `finished_at`. Harbor-HF does not
+count trial folders or store its own completion state. The projection still
+reports the run as `cost_stopped`, because `finished_at` records execution
+completion rather than cost compliance.
 
 A failed parent can restart after the fixed delay. A cancelled run cannot
 resume. A projection rebuild failure, immutable run conflict, unlabeled child,

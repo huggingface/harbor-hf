@@ -582,6 +582,42 @@ describe("status and projection", () => {
     expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
   });
 
+  it("keeps a finalized over-limit run cost-stopped after rebuild", async () => {
+    const { run } = await submit("final-cost-stop");
+    const attemptId = "66666666-6666-4666-8666-666666666666";
+    const finishedAt = "2026-09-04T00:10:00Z";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: finishedAt,
+      n_total_trials: 1,
+    });
+    await putJson(
+      store,
+      `runs/${run.run_id}/job/task/result.json`,
+      trial(0.5, 1, attemptId),
+    );
+    await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
+      schema_version: "v1",
+      attempt_id: attemptId,
+      trial_name: "task__trial",
+      cost_usd: 0.5,
+    });
+
+    await service.refresh();
+
+    expect(projection.run(run.run_id)).toMatchObject({
+      status: "cost_stopped",
+      result: { finished_at: finishedAt },
+    });
+    expect(projection.trials(run.run_id)).toMatchObject([
+      {
+        trial_name: "task__trial",
+        reward: 1,
+        cost_usd: 0.5,
+        status: "completed",
+      },
+    ]);
+  });
+
   it("accepts a zero receipt when agent execution did not start", async () => {
     const { run } = await submit("pre-agent-zero");
     const attemptId = "44444444-4444-4444-8444-444444444444";

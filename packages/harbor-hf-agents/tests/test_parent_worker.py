@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -9,6 +10,14 @@ from uuid import uuid4
 import huggingface_hub._sandbox as sandbox_module
 import pytest
 from harbor.environments.hf_sandbox import HFSandboxEnvironment
+from harbor.job import Job
+from harbor.models.agent.context import AgentContext
+from harbor.models.job.config import JobConfig
+from harbor.models.job.result import JobResult
+from harbor.models.trial.config import AgentConfig, TaskConfig, TrialConfig
+from harbor.models.trial.result import AgentInfo, TrialResult
+from harbor.trial.hooks import HookCallback, TrialEvent, TrialHookEvent
+from harbor.trial.trial import Trial
 from huggingface_hub import HfApi
 
 from harbor_hf_agents.hf_sandbox import (
@@ -18,6 +27,7 @@ from harbor_hf_agents.hf_sandbox import (
 from harbor_hf_agents.parent_worker import (
     ControlledRunStop,
     CostCeilingExceeded,
+    _harbor_job_is_terminal,
     cleanup_interrupted_trial,
     cost_ceiling,
     job_config,
@@ -89,12 +99,91 @@ class Result:
         return None, None, None, self.cost
 
 
+def write_job_result(
+    run_dir: Path,
+    *,
+    total: int,
+    completed: int,
+    running: int,
+    pending: int,
+) -> Path:
+    path = run_dir / "job" / "result.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "id": str(uuid4()),
+                "started_at": "2026-09-07T00:00:00Z",
+                "n_total_trials": total,
+                "stats": {
+                    "n_completed_trials": completed,
+                    "n_running_trials": running,
+                    "n_pending_trials": pending,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_native_completion_requires_exact_zero_retry_progress(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    write_job_result(run_dir, total=2, completed=2, running=0, pending=0)
+
+    assert _harbor_job_is_terminal(run_dir, 2, 0)
+
+
+@pytest.mark.parametrize(
+    ("total", "completed", "running", "pending", "planned", "max_retries"),
+    [
+        (2, 2, 0, 0, 1, 0),
+        (2, 1, 0, 0, 2, 0),
+        (2, 1, 1, 0, 2, 0),
+        (2, 1, 0, 1, 2, 0),
+        (1, 1, -1, 1, 1, 0),
+        (1, 1, 0, 0, 1, 1),
+    ],
+)
+def test_native_completion_fails_closed_for_unproved_state(
+    tmp_path: Path,
+    total: int,
+    completed: int,
+    running: int,
+    pending: int,
+    planned: int,
+    max_retries: int,
+) -> None:
+    run_dir = tmp_path / "run"
+    write_job_result(
+        run_dir,
+        total=total,
+        completed=completed,
+        running=running,
+        pending=pending,
+    )
+
+    assert not _harbor_job_is_terminal(run_dir, planned, max_retries)
+
+
+def test_native_completion_fails_closed_for_missing_or_malformed_result(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    assert not _harbor_job_is_terminal(run_dir, 1, 0)
+
+    path = run_dir / "job" / "result.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("not-json", encoding="utf-8")
+    assert not _harbor_job_is_terminal(run_dir, 1, 0)
+
+
 @pytest.mark.asyncio
 async def test_cost_hook_stops_only_after_an_expensive_trial(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "run"
-    hook = make_cost_hook(0.25, 2, run_dir)
+    hook = make_cost_hook(0.25, 2, run_dir, max_retries=0)
     cheap = SimpleNamespace(result=Result("cheap", 0.25))
     expensive = SimpleNamespace(result=Result("expensive", 0.26))
 
@@ -105,16 +194,16 @@ async def test_cost_hook_stops_only_after_an_expensive_trial(
         await hook(cast(Any, expensive))
     assert len(load_attempt_costs(run_dir)) == 2
     with pytest.raises(ValueError, match="planned trial count"):
-        make_cost_hook(0.25, 0, run_dir)
+        make_cost_hook(0.25, 0, run_dir, max_retries=0)
 
 
 @pytest.mark.asyncio
 async def test_cost_hook_restores_retry_cost_after_restart(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
-    first = make_cost_hook(0.25, 1, run_dir)
+    first = make_cost_hook(0.25, 1, run_dir, max_retries=0)
     await first(cast(Any, SimpleNamespace(result=Result("task", 0.2))))
 
-    resumed = make_cost_hook(0.25, 1, run_dir)
+    resumed = make_cost_hook(0.25, 1, run_dir, max_retries=0)
     with pytest.raises(CostCeilingExceeded, match="run ceiling"):
         await resumed(cast(Any, SimpleNamespace(result=Result("task", 0.2))))
 
@@ -122,7 +211,7 @@ async def test_cost_hook_restores_retry_cost_after_restart(tmp_path: Path) -> No
 @pytest.mark.asyncio
 async def test_cost_hook_records_zero_when_agent_did_not_start(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
-    hook = make_cost_hook(0.25, 1, run_dir)
+    hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
 
     await hook(
         cast(
@@ -142,7 +231,7 @@ async def test_cost_hook_reserves_ceiling_when_cost_is_unavailable(
     cost: float | None,
 ) -> None:
     run_dir = tmp_path / "run"
-    hook = make_cost_hook(0.25, 2, run_dir)
+    hook = make_cost_hook(0.25, 2, run_dir, max_retries=0)
 
     await hook(cast(Any, SimpleNamespace(result=Result("unknown", cost))))
     await hook(cast(Any, SimpleNamespace(result=Result("known", 0.24))))
@@ -160,7 +249,7 @@ async def test_cost_hook_stops_when_reserved_and_observed_cost_cross_run_ceiling
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "run"
-    hook = make_cost_hook(0.25, 1, run_dir)
+    hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
 
     await hook(cast(Any, SimpleNamespace(result=Result("task", None))))
 
@@ -168,6 +257,119 @@ async def test_cost_hook_stops_when_reserved_and_observed_cost_cross_run_ceiling
         await hook(cast(Any, SimpleNamespace(result=Result("task", 0.01))))
 
     assert len(load_attempt_costs(run_dir)) == 2
+
+
+@pytest.mark.asyncio
+async def test_cost_hook_allows_final_direct_overage(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    write_job_result(run_dir, total=1, completed=1, running=0, pending=0)
+    hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
+
+    await hook(cast(Any, SimpleNamespace(result=Result("task", 0.26))))
+
+    receipt = next(iter(load_attempt_costs(run_dir).values()))
+    assert receipt.cost_usd == 0.26
+
+
+@pytest.mark.asyncio
+async def test_cost_hook_allows_final_aggregate_overage(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
+    await hook(cast(Any, SimpleNamespace(result=Result("task", None))))
+    write_job_result(run_dir, total=1, completed=1, running=0, pending=0)
+
+    await hook(cast(Any, SimpleNamespace(result=Result("task", 0.01))))
+
+    assert len(load_attempt_costs(run_dir)) == 2
+
+
+@pytest.mark.asyncio
+async def test_existing_overage_allows_only_zero_retry_finalization(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "run"
+    hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
+    with pytest.raises(CostCeilingExceeded, match="above its ceiling"):
+        await hook(cast(Any, SimpleNamespace(result=Result("task", 0.26))))
+    write_job_result(run_dir, total=1, completed=1, running=0, pending=0)
+
+    make_cost_hook(0.25, 1, run_dir, max_retries=0)
+    with pytest.raises(CostCeilingExceeded, match="above its ceiling"):
+        make_cost_hook(0.25, 1, run_dir, max_retries=1)
+
+
+class NoInferenceTrial:
+    def __init__(self, config: TrialConfig, result: TrialResult) -> None:
+        self.config = config
+        self.result = result
+        self.hooks: dict[TrialEvent, list[HookCallback]] = {
+            event: [] for event in TrialEvent
+        }
+
+    def add_hook(self, event: TrialEvent, hook: HookCallback) -> None:
+        self.hooks[event].append(hook)
+
+    async def run(self) -> TrialResult:
+        for event in (TrialEvent.START, TrialEvent.END):
+            hook_event = TrialHookEvent.model_construct(
+                event=event,
+                task_name=self.result.task_name,
+                config=self.config,
+                result=self.result,
+                lock=cast(Any, None),
+                timestamp=datetime.now(UTC),
+            )
+            for hook in self.hooks[event]:
+                await hook(hook_event)
+        return self.result
+
+
+@pytest.mark.asyncio
+async def test_pinned_harbor_finalizes_after_the_final_cost_violation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir = tmp_path / "run"
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    task = TaskConfig(path=task_dir)
+    config = JobConfig(
+        job_name="job",
+        jobs_dir=run_dir,
+        n_attempts=1,
+        n_concurrent_trials=1,
+        quiet=True,
+        tasks=[task],
+        agents=[AgentConfig(name="nop")],
+    )
+    job = await Job.create(config)
+    trial_config = cast(Any, job)._trial_configs[0]
+    result = TrialResult(
+        task_name=task_dir.name,
+        trial_name=trial_config.trial_name,
+        trial_uri="file://no-inference-trial",
+        task_id=task.get_task_id(),
+        task_checksum="sha256:" + "0" * 64,
+        config=trial_config,
+        agent_info=AgentInfo(name="nop", version="test"),
+        agent_result=AgentContext(cost_usd=0.26),
+    )
+
+    async def create_trial(_config: TrialConfig) -> NoInferenceTrial:
+        return NoInferenceTrial(_config, result)
+
+    monkeypatch.setattr(Trial, "create", staticmethod(create_trial))
+    job.on_trial_ended(make_cost_hook(0.25, len(job), run_dir, max_retries=0))
+
+    final = await job.run()
+    persisted = JobResult.model_validate_json(
+        (run_dir / "job" / "result.json").read_text(encoding="utf-8")
+    )
+
+    assert final.finished_at is not None
+    assert persisted.finished_at == final.finished_at
+    assert persisted.stats.n_completed_trials == 1
+    assert len(load_attempt_costs(run_dir)) == 1
 
 
 @pytest.mark.asyncio
@@ -182,7 +384,7 @@ async def test_controlled_stop_keeps_cost_and_removes_terminal_trial(
     receipt_count: int,
 ) -> None:
     run_dir = tmp_path / "run"
-    hook = make_cost_hook(0.25, 1, run_dir)
+    hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
     trial_dir = run_dir / "job" / "task"
     trial_dir.mkdir(parents=True)
     (trial_dir / "result.json").write_text("interrupted", encoding="utf-8")
@@ -205,7 +407,7 @@ async def test_controlled_stop_keeps_cost_and_removes_terminal_trial(
     assert not trial_dir.exists()
     assert not (run_dir / "job" / "result.json").exists()
     assert len(load_attempt_costs(run_dir)) == receipt_count
-    make_cost_hook(0.25, 1, run_dir)
+    make_cost_hook(0.25, 1, run_dir, max_retries=0)
 
 
 @pytest.mark.asyncio

@@ -282,11 +282,21 @@ The parent adds one `on_trial_ended` callback. The callback reads the completed
 trial's Harbor cost and writes its immutable attempt receipt before Harbor can
 remove a failed retry folder. A failure before agent execution records zero
 cost. A null cost after agent execution remains null in that receipt and
-reserves the per-trial ceiling for aggregate budget control. The callback stops
-the Harbor task group only when a reported attempt exceeds the per-trial ceiling
-or total observed and reserved exposure exceeds the ceiling times the planned
-trial count. Harbor has already written the trial and job result before this
-callback runs.
+reserves the per-trial ceiling for aggregate budget control. The same cost check
+runs after the parent loads existing receipts and after the callback writes a
+new receipt.
+
+When an attempt or aggregate exposure crosses a limit, the parent reads Harbor's
+current `JobResult`. It raises `CostCeilingExceeded` if more work can spend money
+or if completion cannot be proved. It suppresses the exception only when the
+native total matches the configured job size, completed equals total, running
+and pending are zero, and `retry.max_retries` is zero. The same `Job.run()` call
+then performs Harbor's final aggregation and writes `finished_at`.
+
+A missing, malformed, inconsistent, incomplete, running, pending,
+mismatched-total, or retry-enabled result fails closed. Harbor-HF does not count
+trial folders, read private queue fields, reproduce Harbor retry rules, or store
+a second completion value. The receipt is always durable before this decision.
 
 If `state.json` shows a requested pause or cancellation, the callback preserves
 any non-null cost and raises a controlled-stop exception. After Harbor unwinds,
@@ -331,10 +341,13 @@ The run status is computed, not stored:
 | --- | --- |
 | `cancelled` | Desired state is cancelled. |
 | `paused` | Desired state is paused. |
-| `finished` | Harbor `result.json` has `finished_at`. |
-| `cost_stopped` | A completed trial crossed a cost limit. |
+| `cost_stopped` | An attempt or aggregate exposure crossed a cost limit, including when Harbor has written `finished_at`. |
+| `finished` | Harbor `result.json` has `finished_at` and no cost limit was crossed. |
 | `running` | A labeled parent Job is live. |
 | `queued` | No rule above applies. |
+
+A `cost_stopped` run can have `finished_at`. This means Harbor completed its
+execution and does not mean that the run complied with the cost policy.
 
 A parent that stops before Harbor finishes is not a new logical attempt. A later
 parent opens the same Harbor job folder and uses Harbor's resume behavior.
