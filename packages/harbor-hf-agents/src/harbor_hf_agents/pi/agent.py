@@ -348,6 +348,12 @@ class PiAgent(Pi):
         }
 
     @override
+    def build_cli_flags(self) -> str:
+        """Terminate Pi options before Harbor appends the task instruction."""
+        flags = super().build_cli_flags()
+        return f"{flags} --" if flags else "--"
+
+    @override
     async def run(
         self,
         instruction: str,

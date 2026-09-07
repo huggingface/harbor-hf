@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 from harbor.agents.model_connection import ResolvedModelConnection
+from harbor.environments.base import BaseEnvironment
+from harbor.models.agent.context import AgentContext
 
 from harbor_hf_agents.pi.agent import (
     PiAgent,
@@ -144,6 +147,41 @@ def test_supplies_provider_pin_to_pi_custom_model_config(tmp_path: Path) -> None
             }
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_terminates_cli_options_before_instruction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = PiAgent(
+        logs_dir=tmp_path,
+        model_name="openai/test-model",
+        thinking="high",
+    )
+    commands: list[str] = []
+
+    async def capture_command(
+        _environment: BaseEnvironment,
+        *,
+        command: str,
+        env: dict[str, str] | None = None,
+    ) -> None:
+        assert env == {}
+        commands.append(command)
+
+    monkeypatch.setattr(agent, "exec_as_agent", capture_command)
+    instruction = "- prompt begins with a hyphen\nsecond line"
+
+    await agent.run(
+        instruction,
+        cast(BaseEnvironment, object()),
+        cast(AgentContext, object()),
+    )
+
+    assert len(commands) == 1
+    expected = "--thinking high -- '- prompt begins with a hyphen\nsecond line'"
+    assert expected in commands[0]
 
 
 def test_converts_pi_events_to_atif(tmp_path: Path) -> None:
