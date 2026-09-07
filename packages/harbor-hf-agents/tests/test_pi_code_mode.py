@@ -38,7 +38,9 @@ async def test_installs_bundled_code_mode_package(tmp_path, monkeypatch) -> None
     assert (
         "PI_CODING_AGENT_DIR=/tmp/harbor-pi-agent pi install /tmp/harbor-pi-code-mode"
     ) in command
+    assert "; pi install /tmp/harbor-pi-code-mode; " in command
     assert "PI_CODING_AGENT_DIR=/tmp/harbor-pi-agent pi list" in command
+    assert "; pi list; " in command
     assert "$HOME/.pi/agent" not in command
     assert '{"mode":"codex"}' in command
 

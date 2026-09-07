@@ -49,7 +49,9 @@ class PiCodeModeAgent(PiAgent):
                 f"chmod 600 {_REMOTE_CONFIG_DIR}/config.json; "
                 f"PI_CODING_AGENT_DIR={_REMOTE_PI_AGENT_DIR} pi install "
                 f"{package_dir}; "
+                f"pi install {package_dir}; "
                 f"PI_CODING_AGENT_DIR={_REMOTE_PI_AGENT_DIR} pi list; "
+                "pi list; "
                 "pi --version"
             ),
         )
