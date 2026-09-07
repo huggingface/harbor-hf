@@ -92,6 +92,7 @@ it("keeps supplied credentials out of browser storage and request bodies", async
   const user = userEvent.setup();
   render(<PersonalPage />);
   await user.type(screen.getByLabelText("User HF token"), "hf_testusercredential");
+  expect(screen.getByText("Authentication: explicit token override")).toBeVisible();
   await user.click(
     screen.getByRole("button", { name: "Verify token and load my Jobs" }),
   );
@@ -121,9 +122,8 @@ it("uses OAuth without a token header and requires explicit private Bucket creat
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   const user = userEvent.setup();
   render(<PersonalPage />);
-  await user.click(
-    screen.getByRole("button", { name: "Verify token and load my Jobs" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Connect with OAuth" }));
+  expect(screen.getByText("Authentication: OAuth — no token required")).toBeVisible();
   await screen.findByText("Verified token owner: example-user");
   expect(api).toHaveBeenCalledWith("/api/v1/personal/identity", {
     method: "POST",

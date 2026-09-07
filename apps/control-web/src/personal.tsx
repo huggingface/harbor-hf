@@ -139,11 +139,19 @@ export function PersonalPage({
         delivered.
       </p>
       <label className="block">
+        <strong className="block mb-2">
+          {token
+            ? "Authentication: explicit token override"
+            : "Authentication: OAuth — no token required"}
+        </strong>
         User HF token
         <input
           className={field}
           type="password"
           autoComplete="off"
+          placeholder="Optional override — leave empty to use your signed-in HF account"
+          aria-label="User HF token"
+          aria-describedby="execution-token-help"
           value={token}
           disabled={busy}
           onChange={(event) => {
@@ -158,6 +166,10 @@ export function PersonalPage({
           }}
         />
       </label>
+      <p id="execution-token-help">
+        This is an override, not a required field. With OAuth, leave it empty and
+        connect below.
+      </p>
       <button
         type="button"
         className={button}
@@ -174,7 +186,7 @@ export function PersonalPage({
           })
         }
       >
-        Verify token and load my Jobs
+        {token ? "Verify token and load my Jobs" : "Connect with OAuth"}
       </button>
       <p>
         Leave the token empty to use OAuth. Jobs and inference permissions require
