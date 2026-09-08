@@ -180,6 +180,13 @@ environment aliases. It must preserve the resolved model, API, and upstream.
 Package-backed tools use exact package versions; Git-backed tools use full
 commits.
 
+FX uses `harbor_hf_agents.fx.agent:FxAgent` instead of Harbor's native Vercel
+Gateway-only implementation. The adapter installs the pinned FX release from
+the GitHub release asset, starts a root-owned loopback translator for FX's
+gateway protocol, and forwards only the locked model to the Hugging Face
+Chat Completions route. The translator receives the inference credential only
+in its short-lived root process and exposes a local placeholder key to FX.
+
 The registry validates import paths, revisions, API capabilities, permitted
 arguments, session requirements, trace formats, and retry taxonomy. Generic
 worker and evidence code must not contain agent-name branches.

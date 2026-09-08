@@ -3,7 +3,7 @@
   "agent": "fx",
   "version": "0.0.5",
   "harbor_agent": {
-    "name": "fx",
+    "import_path": "harbor_hf_agents.fx.agent:FxAgent",
     "kwargs": { "version": "0.0.5" }
   },
   "reasoning_option": "reasoning_effort",

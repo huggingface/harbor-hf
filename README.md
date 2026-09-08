@@ -135,6 +135,10 @@ paths, labeled HF Sandbox environment, and router credential template. It
 rejects credential values, local paths, source jobs, user agents, custom
 environments, and configurations with more than one agent.
 
+The reviewed FX preset uses a Harbor-HF adapter that installs a pinned FX
+release and translates FX gateway requests through the locked Hugging Face
+router. It does not require a Vercel credential.
+
 The cost check runs after each trial because Harbor saves a result before it
 calls the end hook. One trial can exceed its limit. When trials run at the same
 time, active work can also finish before cancellation completes. A trial with
