@@ -81,6 +81,7 @@ class FxAgent(IsolatedProviderAgent, Fx):
             "python3",
             "tar",
             "tmux",
+            "util-linux",
         )
         checks = " && ".join(
             f"command -v {shlex.quote(command)} >/dev/null 2>&1"
@@ -91,8 +92,10 @@ class FxAgent(IsolatedProviderAgent, Fx):
                 "sha256sum",
                 "stdbuf",
                 "tar",
+                "tr",
                 "tmux",
                 "useradd",
+                "runuser",
             )
         )
         packages = shlex.join(dependencies)

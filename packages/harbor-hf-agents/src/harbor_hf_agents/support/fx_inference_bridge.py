@@ -16,10 +16,12 @@ from harbor.environments.base import BaseEnvironment
 
 _LOCAL_API_KEY = "harbor-local-fx-bridge"
 _LOCAL_PORT = 18080
-_BRIDGE_PID_PATH = Path("/tmp/harbor-fx-inference-bridge.pid")
-_BRIDGE_TOKEN_PATH = Path("/tmp/harbor-fx-inference.token")
-_BRIDGE_USAGE_PATH = Path("/tmp/harbor-fx-inference-usage.json")
-_BRIDGE_LOG_PATH = Path("/tmp/harbor-fx-inference-bridge.log")
+_BRIDGE_DIR = Path("/run/harbor-hf-fx")
+_BRIDGE_PID_PATH = _BRIDGE_DIR / "bridge.pid"
+_BRIDGE_TOKEN_PATH = _BRIDGE_DIR / "inference.token"
+_BRIDGE_USAGE_PATH = _BRIDGE_DIR / "usage.json"
+_BRIDGE_LOG_PATH = _BRIDGE_DIR / "bridge.log"
+_BRIDGE_MARKER = "harbor-hf-fx-bridge-v1"
 _FX_GATEWAY_PATH = "/v3/ai/language-model"
 _HF_ROUTER_URL = "https://router.huggingface.co/v1"
 _MAX_REQUESTS = 512
@@ -347,6 +349,7 @@ def _fx_gateway_response(body: bytes) -> bytes:  # noqa: C901 -- strict protocol
 def _bridge_script() -> str:
     """Build the isolated Python program executed inside each task sandbox."""
     source = [
+        f"# {_BRIDGE_MARKER}",
         "from __future__ import annotations",
         "import json",
         "import os",
@@ -574,49 +577,108 @@ def _run_bridge() -> None:  # noqa: C901 -- isolated bridge server
 def _start_command(script: str) -> str:
     """Return a root command that starts and health-checks the bridge."""
     quoted_script = shlex.quote(script)
+    bridge_dir = shlex.quote(str(_BRIDGE_DIR))
+    pid_path = shlex.quote(str(_BRIDGE_PID_PATH))
+    token_path = shlex.quote(str(_BRIDGE_TOKEN_PATH))
+    usage_path = shlex.quote(str(_BRIDGE_USAGE_PATH))
+    log_path = shlex.quote(str(_BRIDGE_LOG_PATH))
+    temporary_usage_path = shlex.quote(str(_BRIDGE_USAGE_PATH) + ".tmp")
+    pid_guard = (
+        "bridge_pid_is_current() { "
+        '[ -r "/proc/$1/cmdline" ] || return 1; '
+        r"""case "$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null)" in """
+        f"*{_BRIDGE_MARKER}*) return 0 ;; "
+        "*) return 1 ;; "
+        "esac; "
+        "}"
+    )
+    stop_existing = (
+        f"if [ -f {pid_path} ]; then "
+        f"pid=$(cat {pid_path}); "
+        'if bridge_pid_is_current "$pid"; then '
+        'kill "$pid" 2>/dev/null || true; '
+        "for attempt in $(seq 1 20); do "
+        'if ! kill -0 "$pid" 2>/dev/null; then break; fi; sleep 0.1; '
+        "done; "
+        'if kill -0 "$pid" 2>/dev/null; then '
+        'kill -KILL "$pid" 2>/dev/null || true; '
+        "fi; "
+        "fi; "
+        "fi; "
+    )
     readiness = shlex.quote(
         "import socket,time\n"
         "deadline=time.monotonic()+10\n"
         "while time.monotonic()<deadline:\n"
         "  try:\n"
-        "    with socket.create_connection(('127.0.0.1',18080),timeout=.25): break\n"
+        f"    with socket.create_connection("
+        f"('127.0.0.1',{_LOCAL_PORT}),timeout=.25): break\n"
         "  except OSError: time.sleep(.1)\n"
         "else: raise SystemExit('FX bridge did not become ready')"
     )
     return (
         "set -euo pipefail; "
-        f"rm -f {shlex.quote(str(_BRIDGE_PID_PATH))} "
-        f"{shlex.quote(str(_BRIDGE_TOKEN_PATH))} "
-        f"{shlex.quote(str(_BRIDGE_USAGE_PATH))} "
-        f"{shlex.quote(str(_BRIDGE_LOG_PATH))} "
-        f"{shlex.quote(str(_BRIDGE_USAGE_PATH) + '.tmp')}; "
+        f"{pid_guard}; "
+        f"if [ -L {bridge_dir} ] || "
+        f"{{ [ -e {bridge_dir} ] && [ ! -d {bridge_dir} ]; }}; then exit 1; fi; "
+        f"install -d -m 0700 -o root -g root {bridge_dir}; "
+        f"{stop_existing}"
+        f"rm -f {pid_path} {token_path} {usage_path} {log_path} "
+        f"{temporary_usage_path}; "
         f"umask 077; printf '%s' \"$HARBOR_FX_BRIDGE_TOKEN\" > "
-        f"{shlex.quote(str(_BRIDGE_TOKEN_PATH))}; "
+        f"{token_path}; "
         f"nohup env -u HARBOR_FX_BRIDGE_TOKEN python3 -c {quoted_script} "
-        f"> {shlex.quote(str(_BRIDGE_LOG_PATH))} 2>&1 & "
-        f"printf '%s' \"$!\" > {shlex.quote(str(_BRIDGE_PID_PATH))}; "
-        f"python3 -c {readiness}"
+        f"> {log_path} 2>&1 & "
+        'bridge_pid="$!"; '
+        f'printf "%s" "$bridge_pid" > {pid_path}; '
+        f"if ! python3 -c {readiness}; then "
+        'if bridge_pid_is_current "$bridge_pid"; then '
+        'kill "$bridge_pid" 2>/dev/null || true; '
+        'wait "$bridge_pid" 2>/dev/null || true; '
+        "fi; "
+        f"rm -f {pid_path} {token_path} {usage_path} "
+        f"{temporary_usage_path} {log_path}; "
+        "exit 1; "
+        "fi"
     )
 
 
 def _stop_command() -> str:
     """Return a root command that stops the bridge and emits safe usage data."""
+    pid_guard = (
+        "bridge_pid_is_current() { "
+        '[ -r "/proc/$1/cmdline" ] || return 1; '
+        r"""case "$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null)" in """
+        f"*{_BRIDGE_MARKER}*) return 0 ;; "
+        "*) return 1 ;; "
+        "esac; "
+        "}"
+    )
     pid_path = shlex.quote(str(_BRIDGE_PID_PATH))
     token_path = shlex.quote(str(_BRIDGE_TOKEN_PATH))
     usage_path = shlex.quote(str(_BRIDGE_USAGE_PATH))
     log_path = shlex.quote(str(_BRIDGE_LOG_PATH))
+    temporary_usage_path = shlex.quote(str(_BRIDGE_USAGE_PATH) + ".tmp")
     return (
         "set -euo pipefail; "
+        f"{pid_guard}; "
         f"if [ -f {pid_path} ]; then "
-        f'pid=$(cat {pid_path}); kill "$pid" 2>/dev/null || true; '
+        f"pid=$(cat {pid_path}); "
+        'if bridge_pid_is_current "$pid"; then '
+        'kill "$pid" 2>/dev/null || true; '
         "for attempt in $(seq 1 20); do "
         'if ! kill -0 "$pid" 2>/dev/null; then break; fi; sleep 0.1; '
-        'done; kill -KILL "$pid" 2>/dev/null || true; fi; '
+        "done; "
+        'if kill -0 "$pid" 2>/dev/null; then '
+        'kill -KILL "$pid" 2>/dev/null || true; '
+        "fi; "
+        "fi; "
+        "fi; "
         f"rm -f {pid_path} {token_path}; "
         f"if [ -f {usage_path} ]; then cat {usage_path}; fi; "
         f"if [ -f {log_path} ]; then "
         f"install -m 0644 {log_path} /logs/agent/fx-inference-bridge.log; fi; "
-        f"rm -f {usage_path} {shlex.quote(str(_BRIDGE_USAGE_PATH) + '.tmp')} "
+        f"rm -f {usage_path} {temporary_usage_path} "
         f"{log_path}"
     )
 

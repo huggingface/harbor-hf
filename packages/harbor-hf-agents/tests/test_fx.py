@@ -13,6 +13,8 @@ from harbor_hf_agents.support.fx_inference_bridge import (
     _fx_gateway_request,
     _fx_gateway_response,
     _parse_usage,
+    _start_command,
+    _stop_command,
     _validate_upstream,
 )
 
@@ -90,6 +92,18 @@ def test_fx_bridge_script_is_self_contained() -> None:
     compile(_bridge_script(), "fx-bridge", "exec")
 
 
+def test_fx_bridge_commands_use_private_paths_and_cleanup() -> None:
+    start = _start_command("print('bridge')")
+    stop = _stop_command()
+
+    assert "/run/harbor-hf-fx" in start
+    assert "harbor-hf-fx-bridge-v1" in start
+    assert "if ! python3 -c" in start
+    assert 'kill "$bridge_pid"' in start
+    assert "harbor-hf-fx-bridge-v1" in stop
+    assert "install -m 0644" in stop
+
+
 def test_parses_only_valid_usage_records() -> None:
     assert _parse_usage(
         '{"schema_version":"v1","requests":2,"input_tokens":10,"output_tokens":4}\n'
@@ -120,6 +134,8 @@ async def test_install_uses_pinned_github_artifact(tmp_path: Path) -> None:
     assert any(
         "Acquire::Check-Valid-Until=false" in command for command in root_commands
     )
+    assert any("util-linux" in command for command in root_commands)
+    assert any("runuser" in command for command in root_commands)
     assert any(
         "github.com/vercel-labs/fx/releases/download/v0.0.5" in command
         for command in agent_commands
