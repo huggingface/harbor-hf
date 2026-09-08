@@ -9,7 +9,7 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 
 ### Combined Workbench execution and UX pull request
 
@@ -29,6 +29,8 @@ Implementation and validation recorded on 2026-09-08:
 - Passed 455 unit tests, 17 browser tests, 111 agent-package tests, and 46 root tests with 87.98% CLI coverage. Formatting, lint, type checks, generated contracts, both Docker builds, Slophammer check/DRY, Python dependency audit, and privacy checks passed.
 - Draft PR is required until the existing js-yaml audit failure is resolved. Existing global TypeScript and supplementary agent-package coverage gaps are disclosed in the PR; no gate is weakened. The mutation script and optional Slophammer baseline file are absent; normal Slophammer checks pass.
 - No merge, deployment, new remote run, credential transfer, or upstream publication has been performed.
+
+Completed on 2026-09-08: opened draft PR #190 at https://github.com/huggingface/harbor-hf/pull/190 with the combined repairs and disclosed validation blockers. Merge, deployment, and further execution remain unapproved.
 
 Workbench model-field PR approved at: 2026-09-08T20:55:35+00:00
 Approved at: 2026-08-17T06:48:55Z
