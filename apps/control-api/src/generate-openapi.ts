@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import openapiTS, { astToString, type OpenAPI3 } from "openapi-typescript";
 import { z } from "zod";
+import { hardwareCatalogSchema } from "./huggingface-hardware.js";
 import { catalogSchema, validationSchema } from "./launch.js";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -251,6 +252,22 @@ const document = {
         summary: "List benchmark and agent presets",
         security: authenticated,
         responses: { "200": ok, "401": error },
+      },
+    },
+    "/api/v1/hardware": {
+      get: {
+        summary: "Read HF Jobs hardware specifications and prices",
+        security: authenticated,
+        responses: {
+          "200": {
+            description: "Current HF catalog; not a capacity or quota guarantee",
+            content: {
+              "application/json": { schema: z.toJSONSchema(hardwareCatalogSchema) },
+            },
+          },
+          "401": error,
+          "503": error,
+        },
       },
     },
     "/api/v1/agents": {

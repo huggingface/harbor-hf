@@ -242,8 +242,8 @@ async def test_resolved_task_urls_are_checked_before_download(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("sources", "agents", "attempts", "concurrency", "retries"),
-    [(1, 2, 2, 4, 0), (9, 9, 11, 65, 4)],
+    ("sources", "agents", "attempts", "concurrency", "retries", "flavor"),
+    [(1, 2, 2, 4, 0, "cpu-basic"), (9, 9, 11, 65, 4, "a100-large")],
 )
 async def test_real_native_plan_expands_agents_and_attempts_without_execution(
     tmp_path: Path,
@@ -253,6 +253,7 @@ async def test_real_native_plan_expands_agents_and_attempts_without_execution(
     attempts: int,
     concurrency: int,
     retries: int,
+    flavor: str,
 ) -> None:
     from harbor.tasks.client import TaskDownloadResult
 
@@ -273,6 +274,7 @@ async def test_real_native_plan_expands_agents_and_attempts_without_execution(
     job.n_attempts = attempts
     job.n_concurrent_trials = concurrency
     job.retry.max_retries = retries
+    job.environment.kwargs["flavor"] = flavor
     download = TaskDownloadResult(
         path=task_dir, download_time_sec=0, cached=True, resolved_git_commit_id=SHA
     )

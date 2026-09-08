@@ -197,6 +197,39 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     if (path === "/api/v1/leaderboard") return json(route, leaderboard);
     if (path === "/api/v1/system") return json(route, system);
     if (path === "/api/v1/presets") return json(route, presets);
+    if (path === "/api/v1/hardware")
+      return json(route, [
+        {
+          name: "cpu-basic",
+          prettyName: "CPU Basic",
+          cpu: "2 vCPU",
+          ram: "16 GB",
+          ephemeralStorage: "50 GB",
+          accelerator: null,
+          unitCostUSD: 0.000167,
+          unitLabel: "minute",
+        },
+        {
+          name: "cpu-upgrade",
+          prettyName: "CPU Upgrade",
+          cpu: "8 vCPU",
+          ram: "32 GB",
+          ephemeralStorage: "50 GB",
+          accelerator: null,
+          unitCostUSD: 0.0005,
+          unitLabel: "minute",
+        },
+        {
+          name: "a100-large",
+          prettyName: "A100",
+          cpu: "12 vCPU",
+          ram: "142 GB",
+          ephemeralStorage: "1000 GB",
+          accelerator: { quantity: 1, model: "A100", vram: "80 GB" },
+          unitCostUSD: 0.04,
+          unitLabel: "minute",
+        },
+      ]);
     if (path === "/api/v1/model-providers")
       return json(route, {
         model: url.searchParams.get("model"),
@@ -588,6 +621,10 @@ test("edits and validates native launch configuration on desktop and mobile", as
     .selectOption("provider");
   await page.getByText("Agent configuration", { exact: true }).click();
   await page.getByRole("textbox", { name: "Version", exact: true }).fill("0.84.3");
+  await page
+    .getByRole("combobox", { name: "Sandbox flavor", exact: true })
+    .selectOption("a100-large");
+  await expect(page.getByText(/80 GB/)).toBeVisible();
   await page.getByRole("button", { name: "Validate", exact: true }).click();
   await expect(page.getByText("1 resolved tasks · 1 agents · 1 trials")).toBeVisible();
   await page.screenshot({
@@ -607,7 +644,14 @@ test("edits and validates native launch configuration on desktop and mobile", as
     fullPage: true,
     animations: "disabled",
   });
-  await page.reload();
+  await page.getByRole("button", { name: "Copy draft link", exact: true }).click();
+  const sharedUrl = await page.getByLabel("Draft link", { exact: true }).inputValue();
+  expect(new URL(sharedUrl).searchParams.has("draft")).toBe(true);
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(sharedUrl);
+  await expect(page.getByLabel("HF model", { exact: true })).toHaveValue(
+    "publisher/model",
+  );
   await expect(
     page.getByRole("button", { name: "Launch", exact: true }),
   ).toBeDisabled();
@@ -623,6 +667,28 @@ test("edits and validates native launch configuration on desktop and mobile", as
         kwargs: { version: "0.84.3" },
       },
     ],
-    environment: { kwargs: { flavor: "cpu-upgrade" } },
+    environment: { kwargs: { flavor: "a100-large" } },
   });
+});
+
+test("preserves safe draft links through sign-in and rejects credential-bearing links", async ({
+  page,
+}) => {
+  await mockControl(page, { authenticated: false });
+  const draft = { agents: [], n_attempts: 2, extra_instructions: ["Unicode ü + text"] };
+  await page.goto(
+    `/runs/new?draft=${encodeURIComponent(JSON.stringify(draft))}&cost_ceiling_usd_per_trial=2.5`,
+  );
+  await expect(page).toHaveURL(/\/auth\/login\?/);
+  const returnTo = new URL(page.url()).searchParams.get("return_to");
+  const restored = new URL(returnTo ?? "", "https://example.test");
+  expect(restored.pathname).toBe("/runs/new");
+  expect(JSON.parse(restored.searchParams.get("draft") ?? "")).toEqual(draft);
+  expect(restored.searchParams.get("cost_ceiling_usd_per_trial")).toBe("2.5");
+  const unsafe = { agents: [{ env: { HF_TOKEN: "test-only" } }] };
+  await page.goto(`/runs/new?draft=${encodeURIComponent(JSON.stringify(unsafe))}`);
+  await expect(page.getByRole("alert")).toHaveText(
+    "Invalid launch draft link. No draft was loaded.",
+  );
+  expect(new URL(page.url()).pathname).toBe("/runs/new");
 });

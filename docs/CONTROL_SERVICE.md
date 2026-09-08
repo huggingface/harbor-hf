@@ -116,8 +116,11 @@ The overview form submits Harbor's native `n_concurrent_trials` value. The
 all-task presets default to 64, and the form accepts values from 1 through 128.
 
 The separate [New Job page](CONFIGURABLE_LAUNCH.md) edits native configuration
-through the existing direct submission route. Its initial admission limit is 64
-concurrent trials. Preset and Workbench submission remain available.
+through the existing direct submission route. It uses native Harbor concurrency
+validation and an aggregate inspection budget, not a separate concurrency cap.
+Its hardware choices come from the HF Jobs catalog. Native JSON draft links can
+restore editable input but never authorize a launch. Preset and Workbench
+submission remain available.
 
 ## HTTP API
 
@@ -142,6 +145,7 @@ Authenticated read routes are:
 - `GET /api/v1/system`
 - `GET /api/v1/presets`
 - `GET /api/v1/agents`
+- `GET /api/v1/hardware`
 - `GET /api/v1/model-providers?model=...`
 - `GET /api/v1/workbench/setup-tests`
 - `GET /api/v1/workbench/setup-tests/{setup_test_id}`

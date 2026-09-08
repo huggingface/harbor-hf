@@ -14,6 +14,7 @@ import {
 } from "../src/launch-draft";
 import { JsonInput, SchemaFields } from "../src/launch-fields";
 import { LaunchPage } from "../src/launch-page";
+import { draftUrl } from "../src/launch-url";
 
 vi.mock("../src/api", () => ({
   api: vi.fn(),
@@ -56,6 +57,16 @@ const catalog = {
     },
   },
 };
+const hardware = ["cpu-basic", "cpu-upgrade", "a100-large"].map((name) => ({
+  name,
+  prettyName: name,
+  cpu: "2 vCPU",
+  ram: "16 GB",
+  ephemeralStorage: "50 GB",
+  accelerator: null,
+  unitCostUSD: 0.01,
+  unitLabel: "minute",
+}));
 const validation = {
   harbor_revision: "a".repeat(40),
   tasks: 3,
@@ -77,9 +88,11 @@ beforeEach(() => {
   vi.mocked(api).mockImplementation(async (path) =>
     path === "/api/v1/agents"
       ? catalog
-      : path === "/api/v1/runs/validate"
-        ? validation
-        : { run: { run_id: "run-created" } },
+      : path === "/api/v1/hardware"
+        ? hardware
+        : path === "/api/v1/runs/validate"
+          ? validation
+          : { run: { run_id: "run-created" } },
   );
 });
 afterEach(() => {
@@ -92,12 +105,13 @@ afterEach(() => {
 function page(
   role: "operator" | "reader" = "operator",
   writeMode: "enabled" | "disabled" = "enabled",
+  entry = "/runs/new",
 ) {
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <MemoryRouter initialEntries={["/runs/new"]}>
+      <MemoryRouter initialEntries={[entry]}>
         <ControlStateProvider
           actor={{ username: "test", role, transport: "development" }}
           writeMode={writeMode}
@@ -113,6 +127,57 @@ function page(
 }
 
 describe("native launch draft", () => {
+  it("loads a URL before local storage, shares native configuration, and requires validation", async () => {
+    saveDraft({ agents: [], extra_instructions: ["older local draft"] });
+    const shared = new URL(draftUrl("https://example.test", draft, "2.5"));
+    page("operator", "enabled", shared.pathname + shared.search);
+    await screen.findByDisplayValue("example/model");
+    expect(
+      (screen.getByLabelText("Post-trial cost limit (USD)") as HTMLInputElement).value,
+    ).toBe("2.5");
+    expect(
+      (screen.getByRole("button", { name: "Launch" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.every(
+          ([path]) =>
+            path !== "/api/v1/runs/validate" && path !== "/api/v1/runs/config",
+        ),
+    ).toBe(true);
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("combobox", { name: "Sandbox flavor" }) as HTMLSelectElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Sandbox flavor" }), {
+      target: { value: "a100-large" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Copy draft link" }));
+    const link = await screen.findByLabelText("Draft link");
+    const url = new URL((link as HTMLInputElement).value);
+    expect(JSON.parse(url.searchParams.get("draft") ?? "")).toMatchObject({
+      environment: { kwargs: { flavor: "a100-large" } },
+    });
+    expect(url.searchParams.get("cost_ceiling_usd_per_trial")).toBe("2.5");
+    fireEvent.change(screen.getByLabelText("Post-trial cost limit (USD)"), {
+      target: { value: "3" },
+    });
+    expect(screen.queryByLabelText("Draft link")).toBeNull();
+  });
+  it("rejects a bad URL without silently loading or overwriting the local draft", async () => {
+    saveDraft(draft);
+    page("operator", "enabled", "/runs/new?draft=broken");
+    await screen.findByText("Draft link contains malformed JSON");
+    expect(screen.queryByDisplayValue("example/model")).toBeNull();
+    expect(loadDraft()).toEqual(draft);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Clear draft" }));
+    await waitFor(() => expect(loadDraft()).toEqual(initialDraft()));
+    expect(screen.queryByText("Draft link contains malformed JSON")).toBeNull();
+  });
   it("preserves false, zero, null, empty text and unset", () => {
     const value = { flag: false, count: 0, optional: null, text: "", list: [] };
     expect(saveDraft(value)).toBe(true);
@@ -314,7 +379,9 @@ describe("launch page", () => {
         { label: "acp", config: { name: "acp" }, options_schema: {} },
       ],
     };
-    vi.mocked(api).mockImplementation(async () => entries);
+    vi.mocked(api).mockImplementation(async (path) =>
+      path === "/api/v1/hardware" ? hardware : entries,
+    );
     page();
     fireEvent.click(screen.getByRole("button", { name: "Add agent", exact: true }));
     await screen.findByRole("option", { name: "openclaw" });
@@ -413,7 +480,9 @@ describe("launch page", () => {
     vi.mocked(api).mockImplementation(async (path) =>
       path === "/api/v1/agents"
         ? catalog
-        : { ...validation, credentials_available: false },
+        : path === "/api/v1/hardware"
+          ? hardware
+          : { ...validation, credentials_available: false },
     );
     page();
     await waitFor(() =>
@@ -434,7 +503,12 @@ describe("launch page", () => {
   });
   it("shows catalog and model-provider lookup failures without selecting a fallback", async () => {
     saveDraft(draft);
-    vi.mocked(api).mockRejectedValueOnce(new Error("Catalog unavailable"));
+    let catalogFailures = 1;
+    vi.mocked(api).mockImplementation(async (path) => {
+      if (path === "/api/v1/hardware") return hardware;
+      if (catalogFailures-- > 0) throw new Error("Catalog unavailable");
+      return catalog;
+    });
     vi.mocked(getModelProviders).mockRejectedValue(new Error("Lookup unavailable"));
     page();
     await screen.findByText(/Native agent catalog unavailable/);

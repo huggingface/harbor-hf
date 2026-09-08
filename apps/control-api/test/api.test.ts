@@ -232,6 +232,37 @@ describe("control API", () => {
     expect(detail.json().record.run_id).toBe(runId);
   });
 
+  it("serves the HF hardware catalog and reports provider outages as 503", async () => {
+    const { runtime, app } = await setup("disabled");
+    await runtime.initialize();
+    const hardware = [
+      {
+        name: "cpu-basic",
+        prettyName: "CPU Basic",
+        cpu: "2 vCPU",
+        ram: "16 GB",
+        ephemeralStorage: "50 GB",
+        accelerator: null,
+        unitCostUSD: 0.000167,
+        unitLabel: "minute",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(hardware)),
+    );
+    const response = await app.inject({ url: "/api/v1/hardware" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(hardware);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("unavailable", { status: 503 })),
+    );
+    const unavailable = await app.inject({ url: "/api/v1/hardware" });
+    expect(unavailable.statusCode).toBe(503);
+    expect(unavailable.json().error.code).toBe("hardware_unavailable");
+  });
+
   it("returns native agent identity in trial lists and details", async () => {
     const { runtime, app } = await setup();
     await runtime.initialize();

@@ -1,10 +1,25 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
+import { lookupHuggingFaceHardware } from "../src/huggingface-hardware.js";
 import { lookupHuggingFaceModelProviders } from "../src/huggingface-models.js";
 import { NativeLaunch } from "../src/launch.js";
+
+const hardware = {
+  name: "cpu-basic",
+  prettyName: "CPU Basic",
+  cpu: "2 vCPU",
+  ram: "16 GB",
+  ephemeralStorage: "50 GB",
+  accelerator: null,
+  unitCostUSD: 0.000167,
+  unitLabel: "minute",
+};
+vi.mock("../src/huggingface-hardware.js", () => ({
+  lookupHuggingFaceHardware: vi.fn(),
+}));
 
 vi.mock("../src/huggingface-models.js", () => ({
   lookupHuggingFaceModelProviders: vi.fn(async () => ["provider"]),
@@ -46,6 +61,9 @@ async function fixture(body: string) {
     launch_python: executable,
   };
 }
+beforeEach(() => {
+  vi.mocked(lookupHuggingFaceHardware).mockResolvedValue([hardware]);
+});
 afterEach(async () => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
@@ -56,6 +74,23 @@ afterEach(async () => {
 });
 
 describe("bounded native inspector", () => {
+  it("checks the selected flavor against the current HF catalog without rewriting it", async () => {
+    const config = await fixture(
+      `console.log(${JSON.stringify(JSON.stringify(inspection))});`,
+    );
+    const launch = new NativeLaunch(config);
+    const gpu = {
+      ...input,
+      environment: { type: "hf-sandbox", kwargs: { flavor: "a100-large" } },
+    };
+    await expect(launch.validate(gpu)).rejects.toMatchObject({ status: 400 });
+    vi.mocked(lookupHuggingFaceHardware).mockResolvedValue([
+      { ...hardware, name: "a100-large" },
+    ]);
+    expect((await launch.validate(gpu)).effective_config).toMatchObject({
+      environment: { kwargs: { flavor: "a100-large" } },
+    });
+  });
   it("rejects concurrent inspection instead of starting a queue", async () => {
     const config = await fixture(
       `console.log(${JSON.stringify(JSON.stringify({ harbor_revision: revision, agents: [], job_schema: {} }))});`,

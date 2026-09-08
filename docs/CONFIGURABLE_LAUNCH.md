@@ -41,6 +41,10 @@ use their reviewed preset options, but cannot accept new arbitrary kwargs.
    clears the provider. There is no automatic provider substitution.
 5. Add another agent card to compare a different version in the same Harbor job.
 6. Select sandbox hardware, attempts, concurrency, and the post-trial cost limit.
+   Hardware choices come from the current HF Jobs catalog. The page shows CPU,
+   RAM, storage, accelerator details, and prices in USD. CPU Basic remains the
+   default. This selects each trial's task hardware, not the control Space,
+   parent worker, or hosted model provider.
 7. Select **Validate**, inspect the native counts and effective configuration,
    then select **Launch**.
 
@@ -119,6 +123,7 @@ ETA remain unavailable without measured evidence.
 | --- | --- |
 | Read reviewed agent options and native job schema | `GET /api/v1/agents` |
 | Read current model providers | `GET /api/v1/model-providers?model=...` |
+| Read HF hardware specifications and prices | `GET /api/v1/hardware` |
 | Inspect a native configuration without creating a run | `POST /api/v1/runs/validate` |
 | Revalidate and submit a diagnostic configuration | `POST /api/v1/runs/config` |
 
@@ -129,6 +134,15 @@ submission endpoint retains `Idempotency-Key` and
 or policy change returns 409 and requires another review. CLI callers can still
 use `harbor-hf submit --config ...`; the server performs fresh inspection before
 creating the run.
+
+Hardware data comes from HF's public `/api/jobs/hardware` catalog, also exposed
+by `HfApi.list_jobs_hardware()`. The response retains the provider's field names.
+Only `environment.kwargs.flavor` enters the native job configuration. Validation
+checks the selected name against a fresh catalog; it does not substitute another
+flavor. Catalog failure blocks validation, and unknown prices are shown as
+unavailable, not free. A listed flavor does not guarantee account quota, available
+capacity, or task-image compatibility. Selecting GPU hardware does not authorize
+paid work by itself.
 
 Validation returns counts from native `JobPlan`, the effective native
 configuration, the Harbor revision, warnings, and checks not performed. The
@@ -152,7 +166,32 @@ same run; conflicting reuse is rejected.
 The browser saves only bounded drafts that pass the shared credential-material
 check. It never saves a successful validation or launch authorization. Invalid
 JSON stays visible and blocks both actions. Unset, null, false, zero, and empty
-values stay distinct. No draft is placed in a shareable URL.
+values stay distinct.
+
+## Draft links
+
+Select **Copy draft link** to share the current editable configuration. Sharing
+is explicit; typing does not put the draft into the address bar. The link opens
+`/runs/new?draft=<URL-encoded JSON>&cost_ceiling_usd_per_trial=<USD>`.
+The `draft` value is a native Harbor `JobConfig` object, not a separate form
+format. The cost query uses the existing service field and defaults to USD 1
+when absent. It is input, not spending approval.
+
+A valid URL draft takes precedence over a saved local draft and is preserved
+through the existing sign-in return path. Invalid drafts are not forwarded to
+sign-in. Loading a link does not validate, install, submit, or launch anything.
+The recipient must validate again.
+**Clear draft** also removes the query. Malformed JSON, repeated parameters,
+credential material, invalid cost values, and links above the 8 KiB URL budget
+are rejected. The budget also covers encoding inside the sign-in return URL.
+Rejected links do not silently load or overwrite a different saved draft. Large
+configurations can still use the native JSON editor instead of a link.
+
+URLs are not private. They can appear in browser history, server logs, and copied
+messages. The credential check blocks recognized credential fields and values;
+it is not proof that arbitrary instructions contain no private information.
+Review the configuration before sharing. There is no remote draft store or URL
+shortener.
 
 ## Results and deployment
 

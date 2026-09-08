@@ -19,6 +19,10 @@ import {
 } from "./auth.js";
 import { HARBOR_REVISION } from "./harbor-revision.js";
 import {
+  HuggingFaceHardwareLookupError,
+  lookupHuggingFaceHardware,
+} from "./huggingface-hardware.js";
+import {
   HuggingFaceModelLookupError,
   HuggingFaceModelNotFoundError,
   lookupHuggingFaceModelProviders,
@@ -257,6 +261,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           : 500;
       return error(reply, status, code, failure.message);
     }
+    if (failure instanceof HuggingFaceHardwareLookupError)
+      return error(reply, 503, "hardware_unavailable", failure.message);
     if (failure instanceof LaunchError)
       return error(
         reply,
@@ -541,6 +547,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       return runtime.service.setDesiredState(run_id, desired, actor.subject);
     });
   }
+
+  app.get("/api/v1/hardware", async () => lookupHuggingFaceHardware());
 
   app.get("/api/v1/runs/:run_id/trials", async (request) => {
     const { run_id } = runParameters.parse(request.params);

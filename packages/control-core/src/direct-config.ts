@@ -117,11 +117,8 @@ export function prepareDirectJobConfig(
     if (!["flavor", "job_timeout"].includes(key))
       throw new Error(`environment.kwargs.${key} is not admitted`);
   }
-  if (
-    kwargs.flavor !== undefined &&
-    !["cpu-basic", "cpu-upgrade"].includes(String(kwargs.flavor))
-  )
-    throw new Error("HF Sandbox flavor must be cpu-basic or cpu-upgrade");
+  if (kwargs.flavor !== undefined && typeof kwargs.flavor !== "string")
+    throw new Error("HF Sandbox flavor must be a string");
   if (
     kwargs.job_timeout !== undefined &&
     (typeof kwargs.job_timeout !== "string" ||

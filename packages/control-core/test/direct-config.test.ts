@@ -24,6 +24,14 @@ const config = {
 const prepare = (value: unknown) => prepareDirectJobConfig(id, value, "/data");
 
 describe("direct native configuration", () => {
+  it("preserves GPU hardware without a local hardware allowlist", () => {
+    expect(
+      prepare({
+        ...config,
+        environment: { ...config.environment, kwargs: { flavor: "a100-large" } },
+      }).environment,
+    ).toMatchObject({ kwargs: { flavor: "a100-large" } });
+  });
   it("preserves hardware, native options, sources, agents, retries, and false values", () => {
     const input = {
       ...config,
@@ -140,7 +148,7 @@ describe("direct native configuration", () => {
     expect(() =>
       prepare({
         ...config,
-        environment: { ...config.environment, kwargs: { flavor: "a100-large" } },
+        environment: { ...config.environment, kwargs: { flavor: 4 } },
       }),
     ).toThrow("flavor");
   });

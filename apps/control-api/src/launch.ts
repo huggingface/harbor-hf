@@ -8,6 +8,7 @@ import { canonicalJson } from "@harbor-hf/contracts";
 import { prepareDirectJobConfig } from "@harbor-hf/control-core";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
+import { lookupHuggingFaceHardware } from "./huggingface-hardware.js";
 import { lookupHuggingFaceModelProviders } from "./huggingface-models.js";
 
 const object = z.record(z.string(), z.unknown());
@@ -219,6 +220,15 @@ export class NativeLaunch implements LaunchPort {
     const native = parsed.data;
     if (native.harbor_revision !== REVISION)
       throw new LaunchError(503, "Native launch validator revision mismatch");
+    const environment = z
+      .object({ kwargs: z.object({ flavor: z.string() }) })
+      .parse(effective.environment);
+    const hardware = await lookupHuggingFaceHardware();
+    if (!hardware.some((item) => item.name === environment.kwargs.flavor))
+      throw new LaunchError(
+        400,
+        "Selected sandbox flavor is not in the current HF hardware catalog",
+      );
     const agents = z
       .array(z.object({ model_name: z.string() }))
       .parse(effective.agents);

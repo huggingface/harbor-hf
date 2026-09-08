@@ -135,6 +135,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/hardware": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read HF Jobs hardware specifications and prices */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Current HF catalog; not a capacity or quota guarantee */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            name: string;
+                            prettyName: string;
+                            cpu: string;
+                            ram: string;
+                            ephemeralStorage: string;
+                            accelerator: {
+                                quantity: number;
+                                model: string;
+                                vram: string;
+                            } | null;
+                            unitCostMicroUSD?: number | null;
+                            unitCostUSD?: number | null;
+                            unitLabel: string;
+                        }[];
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents": {
         parameters: {
             query?: never;

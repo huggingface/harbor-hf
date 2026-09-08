@@ -1,7 +1,7 @@
 import { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, getModelProviders, getPresets, type RunRecord } from "./api";
 import { useControlState } from "./control-state";
 import type { paths } from "./generated/api";
@@ -20,6 +20,9 @@ import {
   JsonInput,
   SchemaFields,
 } from "./launch-fields";
+
+import { LaunchHardware } from "./launch-hardware";
+import { draftUrl, loadDraftUrl } from "./launch-url";
 
 type Catalog =
   paths["/api/v1/agents"]["get"]["responses"][200]["content"]["application/json"];
@@ -361,14 +364,35 @@ function SourceCard({
 }
 
 export function LaunchPage() {
+  const { search } = useLocation();
+  return <LaunchForm key={search} search={search} />;
+}
+
+function LaunchForm({ search }: { search: string }) {
   const navigate = useNavigate();
   const control = useControlState();
-  const [draft, setDraft] = useState(loadDraft);
+  const [initial] = useState(() => {
+    try {
+      return {
+        ...(loadDraftUrl(search) ?? { draft: loadDraft(), ceiling: "1" }),
+        error: null,
+      };
+    } catch (failure) {
+      return {
+        draft: initialDraft(),
+        ceiling: "1",
+        error: failure instanceof Error ? failure.message : "Invalid draft link",
+      };
+    }
+  });
+  const [draft, setDraft] = useState(initial.draft);
   const [saved, setSaved] = useState(true);
-  const [ceiling, setCeiling] = useState("1");
+  const [ceiling, setCeiling] = useState(initial.ceiling);
+  const [sharedLink, setSharedLink] = useState<string | null>(null);
+  const [shareStatus, setShareStatus] = useState("");
   const [errors, setErrors] = useState<Set<string>>(new Set());
   const [validation, setValidation] = useState<Validation | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initial.error);
   const [pending, setPending] = useState(false);
   const errorRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
@@ -397,6 +421,8 @@ export function LaunchPage() {
     if (failed) {
       revision.current++;
       setValidation(null);
+      setSharedLink(null);
+      setShareStatus("");
     }
   }, []);
   const change = (value: NativeObject) => {
@@ -404,6 +430,8 @@ export function LaunchPage() {
     key.current = crypto.randomUUID();
     setValidation(null);
     setError(null);
+    setSharedLink(null);
+    setShareStatus("");
     setDraft(value);
   };
   const replace = (value: unknown) => {
@@ -418,8 +446,9 @@ export function LaunchPage() {
     });
   };
   useEffect(() => {
-    setSaved(saveDraft(draft));
-  }, [draft]);
+    // A rejected URL must not replace the user's saved local draft.
+    if (!initial.error || draft !== initial.draft) setSaved(saveDraft(draft));
+  }, [draft, initial]);
   const updateCard = (
     field: "datasets" | "tasks" | "agents",
     index: number,
@@ -446,6 +475,26 @@ export function LaunchPage() {
     !Number.isFinite(Number(ceiling)) ||
     Number(ceiling) <= 0 ||
     Number(ceiling) > 10000;
+  const share = async () => {
+    setError(null);
+    try {
+      const url = draftUrl(window.location.href, draft, ceiling);
+      setSharedLink(url);
+      try {
+        await navigator.clipboard.writeText(url);
+        setShareStatus("Draft link copied. Opening it does not launch a job.");
+      } catch {
+        setShareStatus(
+          "Select the link below to copy it. Opening it does not launch a job.",
+        );
+      }
+    } catch (failure) {
+      setSharedLink(null);
+      setError(
+        failure instanceof Error ? failure.message : "Could not create a draft link",
+      );
+    }
+  };
   const validate = async () => {
     const current = revision.current;
     setPending(true);
@@ -522,6 +571,30 @@ export function LaunchPage() {
       <fieldset disabled={pending} className="space-y-6">
         <section className="rounded border border-slate-800 p-5 space-y-4">
           <h2 className="text-xl">Starting preset</h2>
+          <p className="text-sm text-slate-400">
+            Draft links include configuration and may appear in browser history and
+            server logs. Do not share private instructions or credentials.
+          </p>
+          <button
+            className={buttonClass}
+            type="button"
+            disabled={pending || errors.size > 0 || secret}
+            onClick={() => void share()}
+          >
+            Copy draft link
+          </button>
+          {sharedLink && (
+            <label className="block text-sm">
+              Draft link
+              <input
+                className={inputClass}
+                readOnly
+                value={sharedLink}
+                onFocus={(event) => event.target.select()}
+              />
+            </label>
+          )}
+          {shareStatus && <p role="status">{shareStatus}</p>}
           <label className="block text-sm">
             Benchmark preset
             <select
@@ -552,7 +625,12 @@ export function LaunchPage() {
             className={buttonClass}
             type="button"
             onClick={() => {
-              if (window.confirm("Clear the draft?")) replace(initialDraft());
+              if (window.confirm("Clear the draft?")) {
+                const empty = initialDraft();
+                saveDraft(empty);
+                replace(empty);
+                if (search) navigate("/runs/new", { replace: true });
+              }
             }}
           >
             Clear draft
@@ -659,26 +737,19 @@ export function LaunchPage() {
             />
           )}
           <div className="grid gap-3 md:grid-cols-3">
-            <label className="text-sm">
-              Sandbox flavor
-              <select
-                className={inputClass}
-                value={String(envKwargs.flavor ?? "cpu-basic")}
-                onChange={(event) =>
-                  change({
-                    ...draft,
-                    environment: {
-                      ...environment,
-                      type: "hf-sandbox",
-                      kwargs: { ...envKwargs, flavor: event.target.value },
-                    },
-                  })
-                }
-              >
-                <option value="cpu-basic">CPU Basic</option>
-                <option value="cpu-upgrade">CPU Upgrade</option>
-              </select>
-            </label>
+            <LaunchHardware
+              value={String(envKwargs.flavor ?? "cpu-basic")}
+              onChange={(flavor) =>
+                change({
+                  ...draft,
+                  environment: {
+                    ...environment,
+                    type: "hf-sandbox",
+                    kwargs: { ...envKwargs, flavor },
+                  },
+                })
+              }
+            />
             <label className="text-sm">
               Sandbox idle timeout
               <input
@@ -707,6 +778,8 @@ export function LaunchPage() {
                 value={ceiling}
                 onChange={(event) => {
                   setCeiling(event.target.value);
+                  setSharedLink(null);
+                  setShareStatus("");
                   revision.current++;
                   key.current = crypto.randomUUID();
                   setValidation(null);
