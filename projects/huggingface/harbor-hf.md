@@ -185,6 +185,20 @@ Approved at: 2026-09-04T10:29:15Z
   authorized by this request. Enable application writes only after verifying the
   existing installation and confirming no queued work would be launched.
 
+### Runs trial-matrix dashboard (2026-09-08)
+
+Approved at: 2026-09-08T22:30:33Z (approval recorded)
+
+- Implement and test a Runs dashboard with a trial-by-run matrix, distinct
+  running, completed, errored and zero-reward states, and informative hover
+  details. Reuse existing control projections and Harbor-owned trial outcomes.
+- Record authorization, commit implementation, push a feature branch to the
+  canonical repository, and open a pull request after privacy review and checks.
+- No deployment, paid execution, resource creation, credential movement, merge,
+  or default-branch push. Preserve unrelated local changes and private data.
+- Direct approval: the user requested implementation, tests, commit, branch push,
+  and a pull request.
+
 ### Scope
 
 - Diagnose the failed post-reset installation using sanitized read-only
