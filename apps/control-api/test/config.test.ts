@@ -21,6 +21,7 @@ describe("control API configuration", () => {
     expect(config.write_mode).toBe("disabled");
     expect(config.workbench_runner).toBe("disabled");
     expect(config.workbench_image).toBe("python:3.12-slim");
+    expect(config.oauth?.session_ttl_seconds).toBe(30 * 24 * 60 * 60);
   });
 
   it("normalizes an origin trailing slash before deriving OAuth URLs", () => {

@@ -32,7 +32,8 @@ outside `runs/` remain in the Bucket but are not loaded by the current service.
 ## Web console
 
 The public page shows leaderboard results. Approved Hugging Face users can sign
-in to use the run controls.
+in to use the run controls. The hosted OAuth session is remembered for 30 days
+unless the user logs out, loses authorization, or clears browser cookies.
 
 The submission form has four groups:
 

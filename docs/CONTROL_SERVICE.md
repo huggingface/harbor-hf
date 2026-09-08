@@ -71,7 +71,8 @@ Write mode fails startup unless both secrets and an image reference ending in
 
 Hugging Face supplies the OAuth client values to the Space. OAuth mode requires
 `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, and `OPENID_PROVIDER_URL`. The service
-uses a 12-hour session and `openid profile` scopes by default.
+uses a 30-day browser session and `openid profile` scopes by default. Logging
+out, losing authorization, or clearing browser cookies ends the session sooner.
 
 ## HTTP API
 

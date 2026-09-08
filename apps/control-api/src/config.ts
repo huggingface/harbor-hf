@@ -156,7 +156,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
       client_secret: parsed.OAUTH_CLIENT_SECRET,
       scopes: parsed.OAUTH_SCOPES,
       callback_url: `${publicOrigin}/auth/callback`,
-      session_ttl_seconds: 12 * 60 * 60,
+      session_ttl_seconds: 30 * 24 * 60 * 60,
     };
   }
   return {
