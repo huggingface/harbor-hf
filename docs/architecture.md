@@ -228,3 +228,10 @@ A failed parent can restart after the fixed delay. A cancelled run cannot
 resume. A projection rebuild failure, immutable run conflict, unlabeled child,
 or Job cancellation failure requires operator review rather than a second
 control path.
+
+## Planned launch configuration
+
+The [configurable launch plan](2026-09-08-configurable-launch-plan.md) describes
+one native configuration editor for multiple sources, built-in and custom agents,
+and HF launch restrictions. It is planned work; the current submission behavior
+above remains unchanged.
