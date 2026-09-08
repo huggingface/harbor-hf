@@ -47,13 +47,14 @@ const submissionSchema = z
     harness: z
       .object({ agent: z.string().min(1), version: z.string().min(1) })
       .strict(),
+    n_concurrent_trials: z.number().int().min(1).max(128).optional(),
     cost_ceiling_usd_per_trial: z.number().positive().max(10_000),
     role: z.enum(["final", "diagnostic"]).default("final"),
   })
   .strict();
 
 const workbenchSubmissionSchema = submissionSchema
-  .omit({ harness: true })
+  .omit({ harness: true, n_concurrent_trials: true })
   .extend({
     model: z
       .object({

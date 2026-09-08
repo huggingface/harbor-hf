@@ -22,6 +22,7 @@ export interface PresetSubmission {
   benchmark: { name: string; preset: string };
   model: { id: string; provider: string; reasoning_effort: string };
   harness: { agent: string; version: string };
+  n_concurrent_trials?: number | undefined;
   cost_ceiling_usd_per_trial: number;
   role?: "final" | "diagnostic";
 }
@@ -127,6 +128,9 @@ export class PresetCatalog {
 
     const fragment = clone(agent.harbor_agent) as HarborAgentFragment;
     const job = clone(benchmark.job);
+    // Override Harbor's native fan-out field without introducing a second concept.
+    if (submission.n_concurrent_trials !== undefined)
+      job.n_concurrent_trials = submission.n_concurrent_trials;
     const kwargs = { ...(fragment.kwargs ?? {}) };
     if (
       agent.reasoning_option !== null &&

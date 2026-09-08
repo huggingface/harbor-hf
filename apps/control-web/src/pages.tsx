@@ -160,6 +160,9 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
   const [benchmarkKey, setBenchmarkKey] = useState(
     firstBenchmark ? `${firstBenchmark.benchmark}\n${firstBenchmark.preset}` : "",
   );
+  const [concurrentTrials, setConcurrentTrials] = useState(
+    String(firstBenchmark?.job.n_concurrent_trials ?? 1),
+  );
   const [agentKey, setAgentKey] = useState(
     firstAgent ? `${firstAgent.agent}\n${firstAgent.version}` : "",
   );
@@ -201,6 +204,7 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
         reasoning_effort: reasoning,
       },
       harness: { agent, version },
+      n_concurrent_trials: Number(concurrentTrials),
       cost_ceiling_usd_per_trial: Number(ceiling),
       role,
     });
@@ -214,7 +218,13 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
           className={fieldClass()}
           required
           value={benchmarkKey}
-          onChange={(event) => setBenchmarkKey(event.target.value)}
+          onChange={(event) => {
+            setBenchmarkKey(event.target.value);
+            const next = presets.benchmarks.find(
+              (item) => `${item.benchmark}\n${item.preset}` === event.target.value,
+            );
+            setConcurrentTrials(String(next?.job.n_concurrent_trials ?? 1));
+          }}
         >
           {presets.benchmarks.map((item) => (
             <option
@@ -227,7 +237,7 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
         </select>
         {selectedBenchmark ? (
           <span className="mt-1 block text-xs text-slate-500">
-            {`Hardware: ${hardwareLabel(selectedBenchmark)} · ${selectedBenchmark.job.n_attempts} ${selectedBenchmark.job.n_attempts === 1 ? "attempt" : "attempts"} · ${selectedBenchmark.job.n_concurrent_trials} concurrent ${selectedBenchmark.job.n_concurrent_trials === 1 ? "trial" : "trials"}`}
+            {`Hardware: ${hardwareLabel(selectedBenchmark)} · ${selectedBenchmark.job.n_attempts} ${selectedBenchmark.job.n_attempts === 1 ? "attempt" : "attempts"} · ${concurrentTrials} concurrent ${Number(concurrentTrials) === 1 ? "trial" : "trials"}`}
           </span>
         ) : null}
       </label>
@@ -306,7 +316,7 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
         </label>
       </div>
       {modelProviders.isError ? <ErrorNotice error={modelProviders.error} /> : null}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-4">
         <label className="block text-sm text-slate-300">
           Reasoning
           <select
@@ -318,6 +328,19 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
               <option key={value}>{value}</option>
             ))}
           </select>
+        </label>
+        <label className="block text-sm text-slate-300">
+          Concurrent trials
+          <input
+            className={fieldClass()}
+            min="1"
+            max="128"
+            step="1"
+            type="number"
+            required
+            value={concurrentTrials}
+            onChange={(event) => setConcurrentTrials(event.target.value)}
+          />
         </label>
         <label className="block text-sm text-slate-300">
           Cost limit per trial

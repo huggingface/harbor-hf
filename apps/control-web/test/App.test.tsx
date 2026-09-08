@@ -307,18 +307,23 @@ describe("restored control console", () => {
     ).toBeVisible();
 
     expect(screen.getByLabelText("Provider")).toBeDisabled();
+    const concurrentTrials = screen.getByLabelText("Concurrent trials");
+    expect(concurrentTrials).toHaveValue(1);
     await user.type(model, "publisher/new-model");
     await user.tab();
     await waitFor(() =>
       expect(apiMocks.getModelProviders).toHaveBeenCalledWith("publisher/new-model"),
     );
     await user.selectOptions(screen.getByLabelText("Provider"), "provider");
+    await user.clear(concurrentTrials);
+    await user.type(concurrentTrials, "4");
     await user.click(screen.getByRole("button", { name: "Submit run" }));
     await waitFor(() => expect(apiMocks.submitRun).toHaveBeenCalledOnce());
     expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
       benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
       model: { id: "publisher/new-model", provider: "provider" },
       harness: { agent: "pi", version: "0.84.4" },
+      n_concurrent_trials: 4,
     });
     expect(await screen.findByRole("link", { name: "Open it" })).toHaveAttribute(
       "href",

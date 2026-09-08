@@ -124,6 +124,7 @@ export interface SystemResponse {
 }
 
 export interface PresetSubmission extends RunSubmission {
+  n_concurrent_trials?: number;
   role: "final" | "diagnostic";
 }
 

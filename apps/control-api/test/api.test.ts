@@ -227,6 +227,21 @@ describe("control API", () => {
     expect(detail.json().record.run_id).toBe(runId);
   });
 
+  it("accepts a native Harbor trial concurrency override", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "custom-concurrency" },
+      payload: { ...submission, n_concurrent_trials: 64 },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json().run.harbor_job_config.n_concurrent_trials).toBe(64);
+    expect(response.json().run.submission).not.toHaveProperty("n_concurrent_trials");
+  });
+
   it("rejects an idempotency conflict and unknown input", async () => {
     const { runtime, app } = await setup();
     await runtime.initialize();
@@ -254,6 +269,15 @@ describe("control API", () => {
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().error.code).toBe("invalid_request");
     expect(invalid.json().error.message).toContain("extra");
+
+    const invalidConcurrency = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "invalid-concurrency" },
+      payload: { ...submission, n_concurrent_trials: 129 },
+    });
+    expect(invalidConcurrency.statusCode).toBe(400);
+    expect(invalidConcurrency.json().error.message).toContain("n_concurrent_trials");
 
     const invalidProvider = await app.inject({
       method: "POST",

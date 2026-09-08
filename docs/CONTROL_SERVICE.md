@@ -74,6 +74,9 @@ Hugging Face supplies the OAuth client values to the Space. OAuth mode requires
 uses a 30-day browser session and `openid profile` scopes by default. Logging
 out, losing authorization, or clearing browser cookies ends the session sooner.
 
+The overview form submits Harbor's native `n_concurrent_trials` value. The
+all-task presets default to 64, and the form accepts values from 1 through 128.
+
 ## HTTP API
 
 Health routes are public:

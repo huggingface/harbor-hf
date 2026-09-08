@@ -195,16 +195,17 @@ first.
 
 | Group | Fields |
 | --- | --- |
-| Benchmark | Benchmark name and a size preset. |
+| Benchmark | Benchmark name, size preset, and concurrent-trial count. |
 | Model | Model id, reasoning effort. Runtime is fixed to Inference Providers. |
 | Harness | Agent name, agent version. |
 | Cost control | Cost ceiling per trial in USD. |
 
 The size preset fixes the task selection and the number of trials per task.
 The first presets are one task with one trial, all tasks with one trial, and
-all tasks with five trials. Fixed presets keep runs comparable across
-submitters. A preset is a plain `JobConfig` fragment with the dataset
-reference, the task filter, `n_attempts` and a concurrency limit.
+all tasks with five trials. All-task presets default to 64 concurrent trials.
+The overview form can select another value from 1 through 128. A preset is a
+plain `JobConfig` fragment with the dataset reference, the task filter,
+`n_attempts` and a concurrency limit.
 
 The harness list comes from Harbor. Its `harbor agent schema` command lists each
 agent and its accepted options, so the form reads that list instead of keeping
@@ -237,7 +238,7 @@ second one.
   "harbor_job_config": {
     "datasets": [{ "name": "terminal-bench@2.1" }],
     "n_attempts": 5,
-    "n_concurrent_trials": 8,
+    "n_concurrent_trials": 64,
     "agents": [
       {
         "name": "pi",
@@ -250,11 +251,13 @@ second one.
 }
 ```
 
-The `submission` block is what the person chose. The `harbor_job_config` block
-is what Harbor received, stored as Harbor accepts it. Harbor-HF validates it
-with Harbor's own config parser and adds no field of its own to it. The run
-record together with Harbor's `config.json`, `lock.json` and `result.json` is
-the full reproducibility record.
+The `submission` block records Harbor-HF launch choices. The
+`harbor_job_config` block is what Harbor received, stored as Harbor accepts it.
+Native execution choices, including the selected concurrency, stay in that
+block instead of being copied into a second run-record field. Harbor-HF
+validates it with Harbor's own config parser and adds no field of its own to it.
+The run record together with Harbor's `config.json`, `lock.json` and
+`result.json` is the full reproducibility record.
 
 Reasoning effort lives on the agent config only, because that is where Harbor
 puts it. The model profile's `revision` field goes away. For a provider-routed
@@ -307,10 +310,11 @@ the control rule starts a parent Job on its next pass. Harbor resumes from the
 trials that already have a `result.json`.
 
 Capacity is bounded by two numbers. A configured cap on live parent Jobs, and
-the fixed `n_concurrent_trials` in each preset. Their product bounds the child
-Jobs in the namespace. A submission above the cap waits in the queued state
-until a parent Job slot frees up. This replaces the token bucket in
-`job-admission.ts`.
+the selected Harbor `n_concurrent_trials` value. Its product with the parent
+cap bounds the child Jobs in the namespace. All-task presets default to 64,
+while the overview form accepts values from 1 through 128. A submission above
+the cap waits in the queued state until a parent Job slot frees up. This
+replaces the token bucket in `job-admission.ts`.
 
 ### Cost ceiling
 

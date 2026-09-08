@@ -1222,6 +1222,8 @@ export interface components {
                 agent: string;
                 version: string;
             };
+            /** @description Harbor trial concurrency override. */
+            n_concurrent_trials?: number;
             cost_ceiling_usd_per_trial: number;
             /**
              * @default final

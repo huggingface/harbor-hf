@@ -171,6 +171,15 @@ describe("run submission", () => {
     );
   });
 
+  it("uses the requested Harbor trial concurrency", async () => {
+    const result = await service.submitPreset(
+      { ...input, n_concurrent_trials: 32 },
+      "custom-concurrency",
+      "test-subject",
+    );
+    expect(result.run.harbor_job_config.n_concurrent_trials).toBe(32);
+  });
+
   it("keeps the reviewed full-run CPU flavor in the Harbor job", async () => {
     const result = await service.submitPreset(
       {
@@ -182,7 +191,7 @@ describe("run submission", () => {
     );
     expect(result.run.harbor_job_config).toMatchObject({
       n_attempts: 1,
-      n_concurrent_trials: 8,
+      n_concurrent_trials: 64,
       environment: {
         kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
       },
