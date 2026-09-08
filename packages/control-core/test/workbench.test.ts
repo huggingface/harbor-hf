@@ -14,7 +14,7 @@ describe("Agent Workbench recipe compiler", () => {
       "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
     );
     expect(preview.setup_command).toContain("python_version=3.12.14");
-    expect(preview.setup_command).toContain("fast-agent-mcp==0.10.16");
+    expect(preview.setup_command).toContain("fast-agent-mcp==0.10.20");
     expect(preview.setup_command).not.toContain('python -m venv "$AGENT_HOME/venv"');
     expect(preview.run_command).toContain("--base-url");
     expect(preview.run_command).toContain("<injected-model-base-url>");
@@ -96,6 +96,15 @@ describe("Agent Workbench recipe compiler", () => {
     expect(second.revision_id).toBe(first.revision_id);
     expect(changed.recipe_digest).not.toBe(first.recipe_digest);
     expect(changed.revision_id).not.toBe(first.revision_id);
+    const previousPin = compileAgentWorkbenchRecipe({
+      ...structuredClone(fastAgentWorkbenchStarter),
+      setup_command: fastAgentWorkbenchStarter.setup_command.replace(
+        "fast-agent-mcp==0.10.20",
+        "fast-agent-mcp==0.10.16",
+      ),
+    });
+    expect(previousPin.recipe_digest).not.toBe(first.recipe_digest);
+    expect(previousPin.revision_id).not.toBe(first.revision_id);
   });
 
   it("rejects duplicate, reserved, and credential-like literals", () => {

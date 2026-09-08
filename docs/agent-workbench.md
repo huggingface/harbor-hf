@@ -91,6 +91,40 @@ A diagnostic role is the safe default. Final runs can enter the public
 leaderboard only when the selected benchmark is eligible and Harbor records at
 least one numeric reward.
 
+## Fast-agent HF routing
+
+The reviewed fast-agent starter installs `fast-agent-mcp==0.10.20` and uses
+fast-agent's native Hugging Face adapter.
+The current shared run builder still records `openai/<model>:<provider>` for
+Workbench. At the executable boundary, this starter removes that imposed prefix
+and passes `hf.<model>:<provider>` to fast-agent, preserving the selected Hub model
+ID and HF inference provider. Other Workbench recipes and preset agents are unchanged.
+
+For example, to select the Together route for DeepSeek V4 Flash:
+
+- Model: `deepseek-ai/DeepSeek-V4-Flash-0731`
+- Provider: `together`
+- fast-agent receives: `hf.deepseek-ai/DeepSeek-V4-Flash-0731:together`
+
+Confirm provider availability before launch. The Model field still expects the
+full Hub model ID, not a fast-agent shortcode or provider-prefixed string.
+Arbitrary native strings, alias defaults, and non-HF backend authentication are
+not added by this tactical recipe change.
+
+The run already receives an inference-only key through its `model_api_key`
+binding. The starter exposes that same key as `HF_TOKEN` only for the fast-agent
+process, because its native HF adapter uses that environment name. It does not
+read or forward the control Space's `HF_TOKEN`, add a persistent secret, write
+credential values into files, or give inference credentials to setup tests.
+The generic command-agent plugin and results/ATIF output paths remain unchanged;
+Harbor continues to own trial execution and reported cost handling.
+
+Browser-saved drafts keep their old command. After deploying this change, select
+the fast-agent starter again (preserve any custom recipe edits separately), check
+the new run command, and rerun setup. Recipe changes invalidate the old setup
+attestation. First run a small diagnostic with a bounded per-trial cost limit;
+a successful setup alone does not test model access or inference behavior.
+
 ## Setup runners
 
 Local development uses Docker. The container has bounded CPU, memory, process,
