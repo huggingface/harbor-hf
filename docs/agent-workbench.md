@@ -93,7 +93,8 @@ least one numeric reward.
 
 ## Fast-agent HF routing
 
-The reviewed fast-agent starter uses fast-agent's native Hugging Face adapter.
+The reviewed fast-agent starter installs `fast-agent-mcp==0.10.20` and uses
+fast-agent's native Hugging Face adapter.
 The current shared run builder still records `openai/<model>:<provider>` for
 Workbench. At the executable boundary, this starter removes that imposed prefix
 and passes `hf.<model>:<provider>` to fast-agent, preserving the selected Hub model
@@ -115,8 +116,8 @@ binding. The starter exposes that same key as `HF_TOKEN` only for the fast-agent
 process, because its native HF adapter uses that environment name. It does not
 read or forward the control Space's `HF_TOKEN`, add a persistent secret, write
 credential values into files, or give inference credentials to setup tests.
-The pinned agent and existing results/ATIF outputs remain unchanged; Harbor
-continues to own trial execution and reported cost handling.
+The generic command-agent plugin and results/ATIF output paths remain unchanged;
+Harbor continues to own trial execution and reported cost handling.
 
 Browser-saved drafts keep their old command. After deploying this change, select
 the fast-agent starter again (preserve any custom recipe edits separately), check

@@ -94,7 +94,7 @@ export const fastAgentStarter: WorkbenchRecipe = {
     "UV_NO_PROGRESS=1 \\",
     '  "$AGENT_HOME/bin/uv" pip install \\',
     '  --python "$AGENT_HOME/venv/bin/python" \\',
-    "  fast-agent-mcp==0.10.16",
+    "  fast-agent-mcp==0.10.20",
     '"$AGENT_HOME/venv/bin/python" --version',
     '"$AGENT_HOME/venv/bin/fast-agent" --version',
   ].join("\n"),
