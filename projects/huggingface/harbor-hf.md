@@ -404,3 +404,22 @@ Approved at: 2026-09-08T20:55:35+00:00
   creation, image publication, credential handling, Job launch/cancellation,
   inference, or spending is approved by this amendment. Existing unrelated
   work and Jobs must remain untouched.
+
+### 2026-09-08 — Shared Workbench concurrency follow-up
+
+Approved at: 2026-09-08T21:29:10+00:00
+
+- The user approved exposing Workbench concurrency through the same native
+  setting as Overview, reusing code where practical, and rejected 64 as a
+  normal default in favor of typical values such as 8, 10, 12, and 16.
+- Implement the shared form control, existing native submission override,
+  preset-default selection, browser draft persistence, confirmation reset,
+  tests, and documentation. Use 8 for new multi-task preset submissions and
+  retain 1 for the one-task preset; retain explicit higher values within the
+  existing supported range. Do not rewrite existing runs or explicit drafts.
+- Continue the approved topic-branch/PR #188 workflow for this bounded
+  follow-up. No deployment, merge, credential change, resource mutation,
+  benchmark or setup launch, unrelated Job action, or spend is authorized.
+- Unrestricted model-string passthrough, provider credential delivery, and
+  separately recorded reasoning remain distinct follow-up work; this amendment
+  does not claim they are implemented.
