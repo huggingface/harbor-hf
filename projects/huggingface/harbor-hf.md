@@ -10,6 +10,7 @@ default_branch: main
 ## Current authorization
 
 Status: approved
+Workbench model-field PR approved at: 2026-09-08T20:55:35+00:00
 Approved at: 2026-08-17T06:48:55Z
 Amended at: 2026-09-01T18:11:42Z
 Session-retention amendment approved at: 2026-09-08T07:27:00Z
@@ -384,3 +385,22 @@ No project-scope amendment remains pending. Operational gates still apply:
 
 - At 2026-09-08T07:27:00Z, approved changing hosted OAuth browser session persistence from 12 hours to 30 days, with focused tests, documentation, deployment, and no credential, authorization-role, resource, or paid-Job changes.
 - At 2026-09-08T07:31:00Z, approved exposing Harbor's native `n_concurrent_trials` in the overview preset form, defaulting all-task benchmark presets to 64 within Harbor's supported range, adding tests and documentation, and deploying without launching a run or changing resources, credentials, benchmark identities, model identities, or campaign ceilings.
+
+### 2026-09-08 — Workbench model fields and deployment instructions
+
+Approved at: 2026-09-08T20:55:35+00:00
+
+- The user requested a branch and pull request for separate **Recorded model**
+  and **Harness model string** fields, with simple deployment instructions for
+  the existing Space supplied in the conversation. Base this bounded change on
+  current upstream main and preserve the guided Workbench architecture.
+- Keep recorded identity separate from Harbor's native `AgentConfig.model_name`.
+  Explain existing environment bindings and credential restrictions; do not add
+  secret types, move credentials, or treat literal configuration as a secret store.
+- Approved local implementation, tests, commits, topic-branch push, and one
+  public pull request. Keep the deployment target and other operator-specific
+  identifiers out of public repository content and metadata.
+- Provide deployment instructions only. No merge, actual deployment, resource
+  creation, image publication, credential handling, Job launch/cancellation,
+  inference, or spending is approved by this amendment. Existing unrelated
+  work and Jobs must remain untouched.
