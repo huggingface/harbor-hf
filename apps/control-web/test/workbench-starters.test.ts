@@ -1,3 +1,4 @@
+import { fastAgentWorkbenchStarter } from "@harbor-hf/control-core";
 import { describe, expect, it } from "vitest";
 import { fastAgentStarter, fxStarter } from "../src/workbench";
 
@@ -8,6 +9,11 @@ describe("historical Workbench starter recipes", () => {
       "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
     );
     expect(fastAgentStarter.setup_command).toContain("fast-agent-mcp==0.10.16");
+    expect(fastAgentStarter.run_command).toBe(fastAgentWorkbenchStarter.run_command);
+    expect(fastAgentStarter.run_command).toContain('HF_TOKEN="$OPENAI_API_KEY"');
+    expect(fastAgentStarter.run_command).toContain(
+      `--model "hf.\${AGENT_MODEL#openai/}"`,
+    );
     expect(fastAgentStarter.environment.map((item) => item.source)).toEqual(
       expect.arrayContaining(["model_base_url", "model_api_key"]),
     );
