@@ -232,6 +232,43 @@ describe("control API", () => {
     expect(detail.json().record.run_id).toBe(runId);
   });
 
+  it("returns native agent identity in trial lists and details", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "trial-identity" },
+      payload: submission,
+    });
+    const runId = response.json().run.run_id;
+    const trial = {
+      run_id: runId,
+      trial_name: "task__attempt",
+      reward: 1,
+      cost_usd: 0.1,
+      status: "completed" as const,
+      result: {
+        config: {
+          agent: {
+            name: "openclaw",
+            model_name: "openai/example/model:provider",
+            kwargs: { version: "2026.7.1-2" },
+          },
+        },
+        agent_info: { name: "openclaw", version: "2026.7.1-2" },
+      },
+    };
+    vi.spyOn(runtime.projection, "trials").mockReturnValue([trial]);
+    const list = await app.inject({ url: `/api/v1/runs/${runId}/trials` });
+    const detail = await app.inject({
+      url: `/api/v1/runs/${runId}/trials/${trial.trial_name}`,
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().trials).toEqual([trial]);
+    expect(detail.json()).toEqual(trial);
+  });
+
   it("accepts a native Harbor trial concurrency override", async () => {
     const { runtime, app } = await setup();
     await runtime.initialize();

@@ -545,11 +545,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.get("/api/v1/runs/:run_id/trials", async (request) => {
     const { run_id } = runParameters.parse(request.params);
     if (!runtime.projection.run(run_id)) throw new Error("run was not found");
-    return {
-      trials: runtime.projection
-        .trials(run_id)
-        .map(({ result: _result, ...trial }) => trial),
-    };
+    return { trials: runtime.projection.trials(run_id) };
   });
 
   app.get("/api/v1/runs/:run_id/trials/:trial_name", async (request) => {
