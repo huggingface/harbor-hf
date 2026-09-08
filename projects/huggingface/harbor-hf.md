@@ -12,6 +12,7 @@ default_branch: main
 Status: approved
 Approved at: 2026-08-17T06:48:55Z
 Amended at: 2026-09-01T18:11:42Z
+Session-retention amendment approved at: 2026-09-08T07:27:00Z
 Inference-token amendment approved at: 2026-08-17T15:37:46Z
 Sandbox-lifecycle amendment approved at: 2026-08-17T18:39:15Z
 Finalization amendment approved at: 2026-08-18T00:25:01Z
@@ -77,6 +78,7 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 
 - Add the project-authorization skill and this repository-indexed project file through the normal contribution workflow.
 - Finish deployment and hard cutover of the hosted TypeScript control service described by the approved control-service plan.
+- Change hosted OAuth browser sessions to persist for 30 days, add regression coverage and documentation, and deploy the reviewed control-service revision.
 - Install the retained purpose-scoped service credential as the control Space's `HF_TOKEN` control secret.
 - Run the hosted no-inference recovery and cutover canaries, plus only bounded paid canaries required by the approved plan.
 - Promote the verified historical migration and enable production writes only after every required gate passes.
@@ -150,6 +152,7 @@ Historical-Run continuation successor-repair amendment approved at: 2026-09-02T0
 ### Limits
 
 - Deploy an exact merged source revision with writes disabled first.
+- Limit session retention to 30 days. Do not change OAuth providers, credentials, authorization roles, or persistent resources.
 - Use `cpu-upgrade` at USD 0.03 per active hour for the always-on control service.
 - Keep total project spend within USD 300. This includes campaign, recovery, provider and endpoint costs plus the control service.
 - For the next Terminal-Bench 2.1 production campaign, use the later explicitly approved USD 300 hard campaign ceiling. This campaign-specific amendment supersedes the preceding cumulative limit for that campaign only. Preserve and report all earlier spend separately.
@@ -339,3 +342,7 @@ No project-scope amendment remains pending. Operational gates still apply:
 ### 2026-09-02
 
 - At 2026-09-02T07:03:36Z, approved one immutable successor worker-repair attachment for each of the seven existing continuation repairs after the first repair-aware worker exposed a cross-language continuation-digest defect. Each successor binds to the original continuation and prior repair digests and may change only the worker image digest and source revision. Existing records, Run IDs, ceilings, prepared inputs, settings, evidence, and selected outcomes remain unchanged. The same unresolved OpenHands task must prove the corrected image before other historical work is admitted.
+
+### 2026-09-08
+
+- At 2026-09-08T07:27:00Z, approved changing hosted OAuth browser session persistence from 12 hours to 30 days, with focused tests, documentation, deployment, and no credential, authorization-role, resource, or paid-Job changes.
