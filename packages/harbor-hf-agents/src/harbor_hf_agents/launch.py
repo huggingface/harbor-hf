@@ -143,8 +143,6 @@ def check_task(task: TaskConfig) -> None:
 
 
 def check_sources(config: JobConfig) -> None:
-    if not 1 <= len(config.datasets) + len(config.tasks) <= 8:
-        raise ValueError("Choose between one and eight sources")
     for source in config.datasets:
         check_dataset(source)
     for task in config.tasks:
@@ -253,22 +251,22 @@ async def inspect(
     config_value: object, root: Path, approved: list[object]
 ) -> dict[str, object]:
     config = JobConfig.model_validate(config_value)
-    if (
-        not 1 <= len(config.agents) <= 8
-        or not 1 <= config.n_attempts <= 10
-        or not 1 <= config.n_concurrent_trials <= 64
-    ):
-        raise ValueError("Limits: 1–8 agents, 1–10 attempts, 1–64 concurrent trials")
-    if not 0 <= config.retry.max_retries <= 3:
-        raise ValueError("Hosted launch permits zero to three retries")
+    # Harbor permits an empty agent list and nonpositive attempts. Hosted
+    # diagnostic submissions need at least one scored trial. Harbor already
+    # validates concurrency and retry minima; do not repeat those rules here.
+    if not config.agents or config.n_attempts < 1:
+        raise ValueError("Diagnostic jobs require at least one agent and attempt")
     check_sources(config)
     check_agents(config, catalog(root), approved)
     await check_metrics(config)
     tasks = await JobPlan.resolve_task_configs(config)
     for task_config in tasks:
         check_task(task_config)
+    # Native planning eagerly materializes every TrialConfig and trial lock.
+    # Bound that work before downloads and plan allocation in the control Space;
+    # do not impose separate caps on sources, agents, attempts, or concurrency.
     if len(tasks) * len(config.agents) * config.n_attempts > 10000:
-        raise ValueError("The resolved plan exceeds 10,000 trials")
+        raise ValueError("The resolved plan exceeds the 10,000-trial inspection budget")
     EnvironmentFactory.validate_resource_policies(config.environment)
     plan = JobPlan.from_resolved(
         config,

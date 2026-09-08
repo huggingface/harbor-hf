@@ -46,12 +46,8 @@ export function prepareDirectJobConfig(
   }
   if (containsCredentialMaterial(input))
     throw new Error("direct Harbor JobConfig contains credential material");
-  if (
-    !Array.isArray(input.agents) ||
-    input.agents.length < 1 ||
-    input.agents.length > 8
-  )
-    throw new Error("direct Harbor JobConfig must contain one to eight agents");
+  if (!Array.isArray(input.agents) || input.agents.length < 1)
+    throw new Error("direct Harbor JobConfig must contain at least one agent");
   const agents = input.agents.map((item) => {
     const agent = record(item, "agent");
     for (const field of [

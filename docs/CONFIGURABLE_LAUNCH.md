@@ -90,8 +90,15 @@ receive neither the control credential nor the canonical Bucket mount.
   It does not replace agent, trial, or parent wall-clock limits.
 - Each task needs a prebuilt Docker image. Image builds, resource overrides, and
   enforced network allowlists are not offered by this page.
-- Initial limits: eight sources, eight agents, ten attempts, 64 concurrent trials,
-  three retries, and 10,000 resolved trials per job.
+- There are no separate hosted maximums for source count, agent count, attempts,
+  concurrency, or retries. Harbor validates concurrency and retry values. Hosted
+  diagnostic jobs require at least one agent and one attempt; Harbor rejects a
+  plan without tasks.
+- Inspection admits at most 10,000 resolved trials. Native planning builds a
+  `TrialConfig` and lock entry for each trial in control-Space memory. This check
+  runs before task downloads and plan allocation. It bounds planning work, not
+  spending or runtime concurrency. The subprocess timeout and response limit
+  remain in place. Higher concurrency and retries can increase cost before a stop.
 - Nonsecret environment keys: `LANG`, `LC_ALL`, `TZ`, `NO_COLOR`, and `TERM`.
   Credential literals, user expansion templates, local paths, external registries,
   arbitrary imports, MCP servers, trajectory loading, and agent skills are rejected.

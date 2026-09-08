@@ -241,8 +241,18 @@ async def test_resolved_task_urls_are_checked_before_download(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sources", "agents", "attempts", "concurrency", "retries"),
+    [(1, 2, 2, 4, 0), (9, 9, 11, 65, 4)],
+)
 async def test_real_native_plan_expands_agents_and_attempts_without_execution(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sources: int,
+    agents: int,
+    attempts: int,
+    concurrency: int,
+    retries: int,
 ) -> None:
     from harbor.tasks.client import TaskDownloadResult
 
@@ -257,10 +267,12 @@ async def test_real_native_plan_expands_agents_and_attempts_without_execution(
     task = TaskConfig(git_url=URL, git_commit_id=SHA, path=Path("task"))
     job = config()
     job.datasets = []
-    job.tasks = [task]
-    job.agents.append(job.agents[0].model_copy(deep=True))
+    job.tasks = [task.model_copy(deep=True) for _ in range(sources)]
+    job.agents = [job.agents[0].model_copy(deep=True) for _ in range(agents)]
     job.agents[1].kwargs["version"] = "0.84.3"
-    job.n_attempts = 2
+    job.n_attempts = attempts
+    job.n_concurrent_trials = concurrency
+    job.retry.max_retries = retries
     download = TaskDownloadResult(
         path=task_dir, download_time_sec=0, cached=True, resolved_git_commit_id=SHA
     )
@@ -270,9 +282,71 @@ async def test_real_native_plan_expands_agents_and_attempts_without_execution(
         AsyncMock(return_value={task.get_task_id(): download}),
     )
     result = await launch.inspect(job.model_dump(mode="json"), ROOT, [])
-    assert (result["tasks"], result["agents"], result["trials"]) == (1, 2, 4)
+    expected_trials = sources * agents * attempts
+    assert (result["tasks"], result["agents"], result["trials"]) == (
+        sources,
+        agents,
+        expected_trials,
+    )
     job.n_concurrent_trials = 1
-    assert (await launch.inspect(job.model_dump(mode="json"), ROOT, []))["trials"] == 4
+    assert (await launch.inspect(job.model_dump(mode="json"), ROOT, []))[
+        "trials"
+    ] == expected_trials
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("n_concurrent_trials", 0), ("retry", {"max_retries": -1})],
+)
+async def test_native_validation_owns_concurrency_and_retry_minima(
+    field: str, value: object
+) -> None:
+    from pydantic import ValidationError
+
+    data = config().model_dump(mode="json")
+    data[field] = value
+    with pytest.raises(ValidationError) as failure:
+        await launch.inspect(data, ROOT, [])
+    assert failure.value.errors()[0]["loc"][0] == field
+
+
+@pytest.mark.asyncio
+async def test_native_resolution_rejects_missing_sources() -> None:
+    job = config()
+    job.datasets = []
+    with pytest.raises(ValueError, match="Either datasets or tasks must be provided"):
+        await launch.inspect(job.model_dump(mode="json"), ROOT, [])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("empty_agents", [True, False])
+async def test_diagnostic_jobs_require_scored_trials(empty_agents: bool) -> None:
+    job = config()
+    if empty_agents:
+        job.agents = []
+    else:
+        job.n_attempts = 0
+    with pytest.raises(ValueError, match="at least one agent and attempt"):
+        await launch.inspect(job.model_dump(mode="json"), ROOT, [])
+
+
+@pytest.mark.asyncio
+async def test_inspection_budget_precedes_downloads_and_plan_allocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = config()
+    job.datasets = []
+    job.tasks = [TaskConfig(git_url=URL, git_commit_id=SHA, path=Path("task"))]
+    job.n_attempts = 10001
+    download = AsyncMock()
+    build = Mock()
+    monkeypatch.setattr(launch.JobPlan, "cache_tasks", download)
+    monkeypatch.setattr(launch.JobPlan, "from_resolved", build)
+    with pytest.raises(ValueError, match="10,000-trial inspection budget"):
+        await launch.inspect(job.model_dump(mode="json"), ROOT, [])
+    download.assert_not_called()
+    build.assert_not_called()
 
 
 def test_installed_revision_is_attested() -> None:

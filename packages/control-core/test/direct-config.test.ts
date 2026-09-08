@@ -50,6 +50,27 @@ describe("direct native configuration", () => {
     expect(directSubmission(output, 0.25)).not.toHaveProperty("model");
     expect(directSubmission(output, 0.25)).not.toHaveProperty("harness");
   });
+  it("preserves values above the former per-field launch caps", () => {
+    const input = {
+      ...config,
+      datasets: Array.from({ length: 9 }, () => ({ ...config.datasets[0] })),
+      agents: Array.from({ length: 9 }, () => structuredClone(agent)),
+      n_attempts: 11,
+      n_concurrent_trials: 65,
+      retry: { max_retries: 4 },
+    };
+    const output = prepare(input);
+    expect(output.agents).toHaveLength(9);
+    expect(output.datasets).toEqual(input.datasets);
+    expect(output).toMatchObject({
+      n_attempts: 11,
+      n_concurrent_trials: 65,
+      retry: { max_retries: 4 },
+    });
+  });
+  it("still rejects a diagnostic job without agents", () => {
+    expect(() => prepare({ ...config, agents: [] })).toThrow("at least one agent");
+  });
   it("does not silently rewrite Pi routes or discard model_api", () => {
     expect(
       prepare({ ...config, agents: [{ ...agent, name: "pi" }] }).agents,
