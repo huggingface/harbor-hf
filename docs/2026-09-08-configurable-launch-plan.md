@@ -77,6 +77,7 @@ Generate the schema catalog from the worker's exact revision, not a moving branc
 | `src/harbor/agents/model_connection.py` | Native endpoint and credential resolution declarations | Use native connection requirements instead of a copied provider map. |
 | `src/harbor/models/agent/acp_source.py` | `AcpAgentSource`, `AcpSourceManifest`, `AcpPythonUvRuntime` | Use the native repository and manifest contract. |
 | `src/harbor/agents/installed/acp.py` | `AcpOptions.source`, source verification, sandbox installation, ACP execution, source provenance | Delegate custom-agent execution to Harbor. |
+| `src/harbor/agents/installed/pi.py` | `PiOptions`, inherited `version`, Pi package installation, native execution and usage output | Distinguish a Pi CLI release from a different harness implementation. |
 | `src/harbor/environments/hf_sandbox.py` and `capabilities.py` | `HFSandboxEnvironment`, flavor and idle timeout, declared capability limits | Expose only supported HF settings. |
 
 Relevant history includes custom repository agents in `488af1b1`, structured agent
@@ -169,6 +170,123 @@ Never import user repository code into the Space or parent process. A submitted
 `import_path`, including an import-path shorthand in `name`, must not bypass the
 reviewed agent allowlist. Source and option validation must occur before agent,
 environment, or metric factories can load user-selected Python code.
+
+### Worked example: a specific Pi version
+
+A released Pi version is an option of the Pi agent, not a new agent type or a
+custom repository source. The following walkthrough describes the planned UI;
+it does not claim that the current preset form already has these controls.
+
+1. Open New Job and select a benchmark source or load a reviewed preset.
+2. Select Add agent, choose the built-in/installed agent path, and select Pi from
+   the reviewed catalog. Show the actual Harbor implementation in the card's
+   configuration details.
+3. Expand Agent options and set Version to `0.84.4`, or another exact approved
+   release. This edits `agents[].kwargs.version`. Set Thinking to `high` if
+   supported; this edits `agents[].kwargs.thinking`.
+4. Enter the HF model ID and select a live, compatible inference provider. These
+   choices belong to this agent card, independently of its Pi version.
+5. Set attempts, concurrency, the cost limit, and diagnostic role. Select Validate.
+6. Review the resolved tasks, Pi implementation, requested version, thinking,
+   model route, sandbox hardware, and remaining runtime checks. Select Launch.
+7. Open the run and inspect its trial results, Pi output, trajectory, and observed
+   agent version. A successful launch request alone does not prove which version
+   executed. An observed version mismatch must fail the reproducibility check.
+
+For the currently reviewed Pi integration, the native agent fragment is:
+
+```json
+{
+  "import_path": "harbor_hf_agents.pi.agent:PiAgent",
+  "model_name": "huggingface/<publisher>/<model>:<provider>",
+  "kwargs": {
+    "version": "0.84.4",
+    "thinking": "high"
+  }
+}
+```
+
+This fragment omits the service-injected credential template. It is not a complete
+submission. The import path is selected from the reviewed catalog; it is not a
+free-text Python import field. This integration currently adds provider-pinned
+pricing and ATIF output around Harbor's native Pi agent. Keep those required
+behaviors when considering a later native implementation replacement.
+
+The checked Harbor Pi installer uses the version to install the corresponding
+published Pi CLI package inside each task sandbox. It does not use the Pi
+installation, packages, credentials, or personal instructions on the operator's
+computer. A version-only change does not require another parent image when the
+existing reviewed integration supports that release. Reject unsupported releases
+instead of silently choosing a different one. Hosted reproducible runs must use
+an exact approved version even though native Harbor can default to latest.
+
+The planned card should make these separate choices visible:
+
+| UI value | Meaning | Native location or source |
+| --- | --- | --- |
+| Agent: Pi | Reviewed Harbor implementation that runs Pi | `agents[].name` or the admitted `import_path` |
+| Version: `0.84.4` | Pi CLI release installed in the task sandbox | `agents[].kwargs.version` |
+| Thinking: `high` | Pi thinking option | `agents[].kwargs.thinking` |
+| Model and provider | LLM route used by this Pi instance | Native `model_name` and approved runtime environment |
+| Execution details | Harbor revision and reviewed parent image | Existing run and deployment evidence, not editable Pi options |
+
+The schema of the selected Harbor implementation governs the fields. A feature
+available in a newer local Pi installation does not automatically become an
+option of the pinned Harbor integration.
+
+### Worked example: a special Pi harness
+
+Distinguish a Pi release from a harness that changes tools, packages, prompts, or
+execution behavior. A Git branch, a package URL, or a name such as Pi with custom
+tools must not be placed in the Version field and treated as a supported release.
+
+If an existing reviewed installed Harbor agent already provides the harness:
+
+1. Select that implementation from the same agent catalog. Its display label can
+   explain the behavior, while details expose its real native name or import path.
+2. Set its declared options, including a Pi version if that implementation exposes
+   one. Do not create a separate persisted `variant` or `harness_profile` field.
+3. Select the model route, validate, and launch through the same run endpoint.
+4. Show the selected implementation and available native version/source evidence
+   in the review and results. Do not report the harness as plain Pi if that would
+   hide a material difference in the program that ran.
+
+Adding a new installed implementation requires a reviewed code change, option
+schema, tests, and a new pinned parent image before it appears in the catalog.
+The UI cannot install an arbitrary Python plugin into the parent. Adding another
+approved version of an already supported Pi CLI is a different, smaller action.
+
+Pi has public package and extension mechanisms, but the checked Harbor Pi option
+schema does not expose an arbitrary extension-package selector. Do not add a
+fictional `extensions` kwarg, assume a generic `config` field loads packages, or
+invent a shell-command escape hatch. A behavioral extension should use Pi's public
+interfaces without changing its internals; supporting its setup through Harbor
+requires evidence from the selected integration. If that support is absent,
+report the exact upstream gap and seek approval before designing a new adapter.
+This plan does not select extension hooks or change Pi session formats.
+
+If the supplied harness is already packaged as a supported ACP repository agent,
+choose Custom Git repository instead. Enter its repository URL, approved commit,
+source directory, and native manifest path. The UI validates the native source
+fields and exposes ACP options. It must not reuse Pi-specific Thinking or Version
+controls unless the selected native interface actually declares them. Model
+selection still needs compatibility evidence for that ACP implementation.
+
+A plain Pi source repository or a Pi extension package is not automatically an ACP
+agent. The checked custom-source runtime is Python/uv; do not imply that choosing a
+Node repository will build or run it. A required unsupported harness remains
+blocked pending an approved upstream capability, not silently routed through the
+old command-agent recipe system.
+
+### Worked example: comparing two approved Pi configurations
+
+Select Add agent twice. Choose the same reviewed Pi implementation on both cards,
+set two exact approved versions or different declared thinking values, and select
+the intended model/provider on each. The resulting native `agents[]` has two
+entries. Harbor runs both against the selected tasks and attempts within the
+configured concurrency. It does not require two profile records or a new campaign
+scheduler. A comparison is valid only if the intended controlled settings and
+observed version identities are preserved in the results.
 
 ### HF routes, hardware, and credentials
 
@@ -362,6 +480,13 @@ or proof of model compatibility.
   trials. Changing concurrency does not change the scored attempt count.
 - Preset selection fills native fields; edits use the same path as direct JSON.
 - Agent controls match the pinned schemas, including enums and unset/null behavior.
+- The Pi walkthrough preserves the admitted implementation, exact CLI version,
+  thinking value, and model route in native configuration and result inspection.
+  A version change uses the existing supported integration; an unsupported release
+  or extension-package kwarg is rejected without fallback.
+- Two Pi cards produce two native agent entries with separate result attribution.
+  A special harness retains its real implementation identity; a plain Node or Pi
+  package repository is not accepted as a supported ACP source merely by its name.
 - Catalog, validator, and worker revision mismatches block launch.
 - Form-to-JSON-to-form round-trips preserve all admitted native values.
 - Validation has no compute or inference side effect. Its response labels checks
