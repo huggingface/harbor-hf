@@ -498,6 +498,7 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
     .getByLabel("Harness model string", { exact: true })
     .fill("hf.publisher/runtime-model:together");
   await page.getByLabel("Recorded provider (optional)").fill("provider");
+  await page.getByLabel("Concurrent trials").fill("12");
   await page
     .getByLabel(
       "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
@@ -511,6 +512,7 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
       provider: "provider",
       reasoning_effort: "off",
     },
+    n_concurrent_trials: 12,
     workbench: {
       setup_test_id: setupId,
       harbor_agent: { model_name: "hf.publisher/runtime-model:together" },
@@ -561,6 +563,7 @@ test("model edits reset launch consent without rewriting the harness string", as
   );
   for (const [label, value] of [
     ["Recorded model", "publisher/recorded-model"],
+    ["Concurrent trials", "16"],
     ["Recorded provider (optional)", "together"],
     ["Harness model string", "hf.publisher/another-model:together"],
   ]) {
@@ -577,6 +580,7 @@ test("model edits reset launch consent without rewriting the harness string", as
   await page.getByLabel("Recorded provider (optional)").fill("");
   await expect(harness).toHaveValue("hf.publisher/another-model:together");
   await page.reload();
+  await expect(page.getByLabel("Concurrent trials")).toHaveValue("16");
   await expect(harness).toHaveValue("hf.publisher/another-model:together");
   await expect(consent).not.toBeChecked();
   await expect(page.getByText("Setup passed")).not.toBeVisible();

@@ -180,6 +180,59 @@ describe("run submission", () => {
     expect(result.run.harbor_job_config.n_concurrent_trials).toBe(32);
   });
 
+  it.each(["one-task-1-trial", "all-tasks-1-trial", "all-tasks-5-trials"])(
+    "shares native defaults and overrides for preset and Workbench submissions: %s",
+    async (preset) => {
+      const submission = { ...input, benchmark: { ...input.benchmark, preset } };
+      const fragment = compileAgentWorkbenchRecipe(
+        fastAgentWorkbenchStarter,
+      ).harbor_agent;
+      const defaultRun = await service.submitWorkbench(
+        submission,
+        fragment,
+        "default-concurrency",
+        "test-subject",
+      );
+      const expected = preset === "one-task-1-trial" ? 1 : 8;
+      expect(defaultRun.run.harbor_job_config.n_concurrent_trials).toBe(expected);
+      for (const n_concurrent_trials of [8, 10, 12, 16, 64, 128]) {
+        const override = { ...submission, n_concurrent_trials };
+        const workbench = await service.submitWorkbench(
+          override,
+          fragment,
+          `workbench-${n_concurrent_trials}`,
+          "test-subject",
+        );
+        const normal = await service.submitPreset(
+          override,
+          `preset-${n_concurrent_trials}`,
+          "test-subject",
+        );
+        expect(workbench.run.harbor_job_config.n_concurrent_trials).toBe(
+          n_concurrent_trials,
+        );
+        expect(normal.run.harbor_job_config.n_concurrent_trials).toBe(
+          n_concurrent_trials,
+        );
+        expect(workbench.run.harbor_job_config.n_attempts).toBe(
+          defaultRun.run.harbor_job_config.n_attempts,
+        );
+        expect(workbench.run.submission).not.toHaveProperty("n_concurrent_trials");
+      }
+      await expect(
+        service.submitWorkbench(
+          { ...submission, n_concurrent_trials: 12 },
+          fragment,
+          "default-concurrency",
+          "test-subject",
+        ),
+      ).rejects.toThrow("different run");
+      expect(
+        presets.benchmark(submission.benchmark.name, preset).job.n_concurrent_trials,
+      ).toBe(expected);
+    },
+  );
+
   it("keeps the reviewed full-run CPU flavor in the Harbor job", async () => {
     const result = await service.submitPreset(
       {
@@ -191,7 +244,7 @@ describe("run submission", () => {
     );
     expect(result.run.harbor_job_config).toMatchObject({
       n_attempts: 1,
-      n_concurrent_trials: 64,
+      n_concurrent_trials: 8,
       environment: {
         kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
       },

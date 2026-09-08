@@ -327,3 +327,30 @@ export function QueryContent({
     </>
   );
 }
+
+/** Shared Overview/Workbench input for Harbor's native trial limit. */
+export function ConcurrentTrialsField({
+  value,
+  onChange,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className: string;
+}) {
+  return (
+    <label className="block text-sm text-slate-300">
+      Concurrent trials
+      <input
+        className={className}
+        min="1"
+        max="128"
+        step="1"
+        type="number"
+        required
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}

@@ -28,7 +28,7 @@ import { useControlState } from "./control-state";
 import { PageHeader } from "./layout";
 import { cn, formatDate, formatMoneyUsd } from "./lib";
 import { usePresets, useSystem } from "./queries";
-import { Badge, Button, Card, ErrorNotice, Loading } from "./ui";
+import { Badge, Button, Card, ConcurrentTrialsField, ErrorNotice, Loading } from "./ui";
 import { loadWorkbenchDraft, saveWorkbenchDraft } from "./workbench-draft";
 
 const sources = [
@@ -298,6 +298,14 @@ export function WorkbenchPage() {
   } | null>(null);
   const [fileError, setFileError] = useState<unknown>(null);
   const [benchmarkKey, setBenchmarkKey] = useState(draft?.benchmarkKey ?? "");
+  const [concurrentTrials, setConcurrentTrials] = useState<string | null>(
+    draft?.n_concurrent_trials ?? null,
+  );
+  const selectedBenchmark = presets.data?.benchmarks.find(
+    (item) => `${item.benchmark}\n${item.preset}` === benchmarkKey,
+  );
+  const concurrencyValue =
+    concurrentTrials ?? String(selectedBenchmark?.job.n_concurrent_trials ?? 1);
   const [model, setModel] = useState(draft?.model ?? "");
   const [provider, setProvider] = useState(draft?.provider ?? "");
   const [harnessModel, setHarnessModel] = useState(
@@ -317,6 +325,9 @@ export function WorkbenchPage() {
       saveWorkbenchDraft({
         recipe,
         benchmarkKey,
+        n_concurrent_trials: selectedBenchmark
+          ? concurrencyValue
+          : (concurrentTrials ?? undefined),
         model,
         provider,
         ceiling,
@@ -325,7 +336,18 @@ export function WorkbenchPage() {
       }),
     );
     setLaunchConfirmed(false);
-  }, [recipe, benchmarkKey, model, provider, ceiling, role, harnessModel]);
+  }, [
+    recipe,
+    benchmarkKey,
+    model,
+    provider,
+    ceiling,
+    role,
+    harnessModel,
+    concurrentTrials,
+    selectedBenchmark,
+    concurrencyValue,
+  ]);
 
   useEffect(() => {
     void listWorkbenchSetups()
@@ -496,6 +518,7 @@ export function WorkbenchPage() {
           provider: provider.trim() || "unspecified",
           reasoning_effort: "off",
         },
+        n_concurrent_trials: Number(concurrencyValue),
         cost_ceiling_usd_per_trial: Number(ceiling),
         role,
         workbench: {
@@ -963,7 +986,10 @@ export function WorkbenchPage() {
                   className={fieldClass()}
                   required
                   value={benchmarkKey}
-                  onChange={(event) => setBenchmarkKey(event.target.value)}
+                  onChange={(event) => {
+                    setBenchmarkKey(event.target.value);
+                    setConcurrentTrials(null);
+                  }}
                 >
                   {(presets.data?.benchmarks ?? []).map((item) => (
                     <option
@@ -1022,6 +1048,16 @@ export function WorkbenchPage() {
                 supported. Other providers require a reviewed credential path; the FX
                 starter requires a Vercel AI Gateway key and cannot launch through this
                 HF-only path.
+              </p>
+              <ConcurrentTrialsField
+                value={concurrencyValue}
+                onChange={setConcurrentTrials}
+                className={fieldClass()}
+              />
+              <p className="text-sm text-slate-400">
+                Maximum simultaneous Harbor trials, not attempts per task. Changing the
+                benchmark preset restores its default. Higher concurrency can increase
+                resource use and provider rate-limit pressure.
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-sm text-slate-300">

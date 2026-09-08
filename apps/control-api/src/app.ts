@@ -61,7 +61,7 @@ const submissionSchema = z
   .strict();
 
 const workbenchSubmissionSchema = submissionSchema
-  .omit({ harness: true, n_concurrent_trials: true })
+  .omit({ harness: true })
   .extend({
     model: z
       .object({
@@ -484,6 +484,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           benchmark: input.benchmark,
           model: input.model,
           harness: { agent: "command-agent", version: preview.revision_id },
+          n_concurrent_trials: input.n_concurrent_trials,
           cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
           role: input.role,
         },

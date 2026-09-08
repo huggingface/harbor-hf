@@ -630,6 +630,58 @@ describe("control API", () => {
     },
   );
 
+  it.each([8, 10, 12, 16, 128, 0, 129, 1.5, "12"])(
+    "uses shared concurrency admission for Workbench: %s",
+    async (n_concurrent_trials) => {
+      const { runtime, app } = await setup();
+      await runtime.initialize();
+      const attestation = vi
+        .spyOn(runtime.workbench, "attestPassedSetup")
+        .mockResolvedValue({
+          setup_test_id: workbenchSetup.setup_test_id,
+          recipe_digest: workbenchSetup.recipe_digest,
+          revision_id: workbenchSetup.revision_id,
+          completed_at: workbenchSetup.completed_at ?? "",
+          expires_at: "2026-01-01T01:00:02.000Z",
+        });
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/runs",
+        headers: { "idempotency-key": "workbench-concurrency" },
+        payload: {
+          benchmark: submission.benchmark,
+          model: submission.model,
+          n_concurrent_trials,
+          cost_ceiling_usd_per_trial: 0.25,
+          role: "diagnostic",
+          workbench: {
+            recipe: workbenchRecipe,
+            setup_test_id: workbenchSetup.setup_test_id,
+          },
+        },
+      });
+      if (
+        typeof n_concurrent_trials === "number" &&
+        Number.isInteger(n_concurrent_trials) &&
+        n_concurrent_trials >= 1 &&
+        n_concurrent_trials <= 128
+      ) {
+        expect(response.statusCode).toBe(201);
+        expect(response.json().run.harbor_job_config.n_concurrent_trials).toBe(
+          n_concurrent_trials,
+        );
+        expect(response.json().run.submission).not.toHaveProperty(
+          "n_concurrent_trials",
+        );
+        expect(attestation).toHaveBeenCalledOnce();
+      } else {
+        expect(response.statusCode).toBe(400);
+        expect(attestation).not.toHaveBeenCalled();
+        expect(runtime.projection.listRuns()).toEqual([]);
+      }
+    },
+  );
+
   it("does not create a Run when setup attestation is stale", async () => {
     const { runtime, app } = await setup();
     await runtime.initialize();

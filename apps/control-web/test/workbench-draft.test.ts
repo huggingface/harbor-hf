@@ -19,6 +19,7 @@ const draft: WorkbenchDraft = {
     outputs: { results_path: "", trajectory_path: null },
   },
   benchmarkKey: "terminal-bench-2-1\none-task-1-trial",
+  n_concurrent_trials: "64",
   model: "publisher/model",
   provider: "provider",
   harbor_agent: { model_name: "hf.publisher/runtime-model:together" },
@@ -40,10 +41,15 @@ describe("Workbench draft storage", () => {
   });
 
   it("loads older drafts without inventing a harness model string", () => {
-    const { harbor_agent: _agent, ...legacy } = draft;
+    const {
+      harbor_agent: _agent,
+      n_concurrent_trials: _concurrency,
+      ...legacy
+    } = draft;
     expect(saveWorkbenchDraft(legacy)).toBe(true);
     expect(loadWorkbenchDraft()).toEqual(legacy);
     expect(loadWorkbenchDraft()).not.toHaveProperty("harbor_agent");
+    expect(loadWorkbenchDraft()).not.toHaveProperty("n_concurrent_trials");
   });
 
   it.each(["invalid JSON", "null", '{"recipe":{"environment":null}}'])(

@@ -53,7 +53,16 @@ import {
   useTrials,
 } from "./queries";
 import { runIdentity } from "./run-identity";
-import { Badge, Button, Card, Empty, ErrorNotice, Progress, QueryContent } from "./ui";
+import {
+  Badge,
+  Button,
+  Card,
+  ConcurrentTrialsField,
+  Empty,
+  ErrorNotice,
+  Progress,
+  QueryContent,
+} from "./ui";
 
 function stats(run: RunView): Record<string, unknown> | null {
   return asRecord(run.result?.stats);
@@ -330,19 +339,11 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
             ))}
           </select>
         </label>
-        <label className="block text-sm text-slate-300">
-          Concurrent trials
-          <input
-            className={fieldClass()}
-            min="1"
-            max="128"
-            step="1"
-            type="number"
-            required
-            value={concurrentTrials}
-            onChange={(event) => setConcurrentTrials(event.target.value)}
-          />
-        </label>
+        <ConcurrentTrialsField
+          value={concurrentTrials}
+          onChange={setConcurrentTrials}
+          className={fieldClass()}
+        />
         <label className="block text-sm text-slate-300">
           Cost limit per trial
           <input

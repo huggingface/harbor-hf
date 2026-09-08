@@ -112,8 +112,10 @@ The anonymous session endpoint returns one 401 response; it does not create a
 session or grant access. Existing deployments may retain older sensitive logs;
 handle those privately under the deployment's log-retention policy.
 
-The overview form submits Harbor's native `n_concurrent_trials` value. The
-all-task presets default to 64, and the form accepts values from 1 through 128.
+Overview and Workbench share the input and native `n_concurrent_trials`
+submission behavior. The all-task presets default to 8, the one-task preset to
+1, and both forms accept explicit values from 1 through 128. This change affects
+new submissions only, not stored runs or explicitly saved draft values.
 
 The separate [New Job page](CONFIGURABLE_LAUNCH.md) edits native configuration
 through the existing direct submission route. It uses native Harbor concurrency

@@ -91,6 +91,24 @@ A diagnostic role is the safe default. Final runs can enter the public
 leaderboard only when the selected benchmark is eligible and Harbor records at
 least one numeric reward.
 
+## Trial concurrency
+
+Workbench and Overview use the same **Concurrent trials** input, API validation,
+and native configuration override. The selected benchmark supplies the default:
+8 for the all-task presets, 1 for the one-task preset. Values such as 8, 10, 12,
+and 16 can be entered directly; the existing supported range remains 1–128.
+
+This is Harbor's `n_concurrent_trials`, not the number of attempts per task, a
+new scheduler, or a hard spending limit. Higher values can increase resource use
+and provider rate-limit pressure. Setup testing is still one disposable setup
+Job and does not use benchmark concurrency.
+
+Changing the benchmark resets the input to its preset default. Explicit draft
+edits survive reload, including older higher values; reload never restores
+launch approval. Concurrency edits invalidate launch confirmation. Submission
+stores the value only in the native Harbor job configuration. Existing run
+records, retry settings, hardware, budgets, and attempts are not rewritten.
+
 ## Fast-agent HF routing
 
 The reviewed fast-agent starter installs `fast-agent-mcp==0.10.20` and uses

@@ -1518,6 +1518,8 @@ export interface components {
             };
         };
         WorkbenchSubmission: {
+            /** @description Harbor trial concurrency override. */
+            n_concurrent_trials?: number;
             benchmark: {
                 name: string;
                 preset: string;

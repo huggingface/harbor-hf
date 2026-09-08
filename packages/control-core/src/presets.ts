@@ -116,24 +116,27 @@ export class PresetCatalog {
     return this.benchmark(name, preset).leaderboard_eligible;
   }
 
+  private benchmarkJob(submission: PresetSubmission): BenchmarkPresetV1["job"] {
+    const job = clone(
+      this.benchmark(submission.benchmark.name, submission.benchmark.preset).job,
+    );
+    // Both forms override Harbor's native field; no separate fan-out state.
+    if (submission.n_concurrent_trials !== undefined)
+      job.n_concurrent_trials = submission.n_concurrent_trials;
+    return job;
+  }
+
   buildJobConfig(
     runId: string,
     submission: PresetSubmission,
     mountRoot: string,
   ): HarborJobConfigV1 {
-    const benchmark = this.benchmark(
-      submission.benchmark.name,
-      submission.benchmark.preset,
-    );
+    const job = this.benchmarkJob(submission);
     const agent = this.agent(submission.harness.agent, submission.harness.version);
     if (!agent.reasoning_values.includes(submission.model.reasoning_effort))
       throw new Error("reasoning effort is not supported by the agent preset");
 
     const fragment = clone(agent.harbor_agent) as HarborAgentFragment;
-    const job = clone(benchmark.job);
-    // Override Harbor's native fan-out field without introducing a second concept.
-    if (submission.n_concurrent_trials !== undefined)
-      job.n_concurrent_trials = submission.n_concurrent_trials;
     const kwargs = { ...(fragment.kwargs ?? {}) };
     if (
       agent.reasoning_option !== null &&
@@ -173,10 +176,7 @@ export class PresetCatalog {
     mountRoot: string,
     fragment: HarborAgentFragment,
   ): HarborJobConfigV1 {
-    const benchmark = this.benchmark(
-      submission.benchmark.name,
-      submission.benchmark.preset,
-    );
+    const job = this.benchmarkJob(submission);
     if (submission.model.reasoning_effort !== "off")
       throw new Error("Workbench command agents support reasoning effort off only");
     if (fragment.import_path !== "harbor_hf_agents.command_agent.agent:CommandAgent")
@@ -192,7 +192,6 @@ export class PresetCatalog {
         containsCredentialMaterial(fragment.model_name))
     )
       throw new Error("Harness model string must be non-empty and credential-free");
-    const job = clone(benchmark.job);
     const harborAgent = {
       import_path: fragment.import_path,
       ...(fragment.override_setup_timeout_sec
