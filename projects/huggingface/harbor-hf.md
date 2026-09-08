@@ -86,6 +86,21 @@ Approved at: 2026-09-08T10:15:32.647433+00:00
 - Preserve the existing local checkout and its uncommitted changes. No merge,
   deployment, credential transfer, resource change, or paid execution is approved.
 
+### Tactical fast-agent Workbench HF routing (2026-09-08)
+
+Approved at: 2026-09-08T15:06:25.990859+00:00
+
+- The user approved a tactical model-resolution repair and a separate pull request
+  against current main so Workbench can use fast-agent's native HF adapter.
+- Limit the change to reviewed recipe configuration, regression tests, and usage
+  documentation. Preserve shared run contracts, other harnesses, and cost controls.
+- The recipe may bind the already-injected inference credential to fast-agent's
+  process-local HF credential environment; never use or transfer the control token.
+- Local commits, branch publication, and a pull request are approved. No merge,
+  deployment, live credential movement, paid run, or infrastructure change is approved.
+- Arbitrary model-string inputs, aliases, and non-HF credential provisioning remain
+  separate work; this patch retains the existing Model/Provider form.
+
 ### Scope
 
 - Add the project-authorization skill and this repository-indexed project file through the normal contribution workflow.
