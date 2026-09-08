@@ -78,8 +78,18 @@ out, losing authorization, or clearing browser cookies ends the session sooner.
 
 Open the app directly and start a fresh login at `/auth/login`; do not reload
 an old callback URL. A completed OAuth exchange does not itself grant operator
-access: the stable subject must belong to the existing operator or reader ACL.
-`HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS` only initializes a missing ACL.
+access. At every service startup, `apps/control-api/src/runtime.ts` constructs
+an in-memory ACL from `HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS`; there is no
+separate ACL file in the Bucket. The configured subjects become operators,
+and the reader list is empty.
+
+To grant operator access, append the account's stable Hugging Face user ID
+(not its username or organization name) to that Space variable's comma-separated
+list, preserving existing operators. Restart the Space to reload the list,
+then start a fresh login. Despite its bootstrap name, the variable is read on
+every startup, not only during initial installation. Keep account IDs in private
+Space configuration, not repository files. `HARBOR_HF_WRITE_MODE` controls
+operations, not sign-in authorization.
 
 Callback failures emit `OAuth callback failed` with the request ID, a fixed
 `oauth_stage`, and `code`. No callback query strings, request headers, cookies,
