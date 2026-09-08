@@ -20,7 +20,7 @@ const gpu = {
   ...cpu,
   name: "a100-large",
   prettyName: "A100",
-  accelerator: { quantity: 1, model: "A100", vram: "80 GB" },
+  accelerator: { quantity: "1", model: "A100", vram: "80 GB" },
   unitCostUSD: 0.04,
 };
 afterEach(() => {

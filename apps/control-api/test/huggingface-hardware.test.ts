@@ -7,7 +7,7 @@ const hardware = {
   cpu: "12 vCPU",
   ram: "142 GB",
   ephemeralStorage: "1000 GB",
-  accelerator: { quantity: 1, model: "A100", vram: "80 GB" },
+  accelerator: { quantity: "1", model: "A100", vram: "80 GB" },
   unitCostMicroUSD: 41667,
   unitCostUSD: 0.041667,
   unitLabel: "minute",
@@ -24,6 +24,22 @@ describe("HF hardware catalog", () => {
     );
     expect(fetcher.mock.calls[0]?.[1]).not.toHaveProperty("headers.Authorization");
   });
+  it.each([1, "0", "-1", "1.5", "many"])(
+    "rejects an invalid provider quantity: %s",
+    async (quantity) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          Response.json([
+            { ...hardware, accelerator: { ...hardware.accelerator, quantity } },
+          ]),
+        ),
+      );
+      await expect(lookupHuggingFaceHardware()).rejects.toThrow(
+        "hardware catalog is unavailable",
+      );
+    },
+  );
   it("preserves unknown prices instead of reporting free hardware", async () => {
     vi.stubGlobal(
       "fetch",

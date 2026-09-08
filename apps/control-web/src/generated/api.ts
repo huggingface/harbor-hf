@@ -165,7 +165,7 @@ export interface paths {
                             ram: string;
                             ephemeralStorage: string;
                             accelerator: {
-                                quantity: number;
+                                quantity: string;
                                 model: string;
                                 vram: string;
                             } | null;

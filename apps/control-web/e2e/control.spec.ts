@@ -225,7 +225,7 @@ async function mockControl(page: Page, options: MockOptions = {}) {
           cpu: "12 vCPU",
           ram: "142 GB",
           ephemeralStorage: "1000 GB",
-          accelerator: { quantity: 1, model: "A100", vram: "80 GB" },
+          accelerator: { quantity: "1", model: "A100", vram: "80 GB" },
           unitCostUSD: 0.04,
           unitLabel: "minute",
         },

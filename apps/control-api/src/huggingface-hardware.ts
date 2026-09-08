@@ -10,7 +10,7 @@ export const hardwareSchema = z.object({
   ephemeralStorage: z.string(),
   accelerator: z
     .object({
-      quantity: z.number().int().positive(),
+      quantity: z.string().regex(/^[1-9][0-9]*$/),
       model: z.string(),
       vram: z.string(),
     })
