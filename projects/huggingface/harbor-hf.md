@@ -10,6 +10,17 @@ default_branch: main
 ## Current authorization
 
 Status: approved
+
+### Combined Workbench execution and UX pull request
+
+Approved at: 2026-09-08T23:35:00.428453+00:00
+
+- The user explicitly approved updating the generic command-agent to use Harbor's default task user and raising a pull request together with the completed Workbench improvements.
+- Include stable environment-row identity and deferred draft persistence, plus Fast-Agent 0.10.20 native routing, inference-key mapping, and verified CA-bundle defaults. Preserve saved recipes and existing runs.
+- Audit the task/parent boundary before changing execution permissions; retain explicit environment bindings, scoped credential delivery, native Harbor execution and cleanup, and evidence handling. Do not introduce benchmark/model/harness-specific control branches.
+- Approved operations: local implementation and tests, public privacy review, commit, branch push, and one pull request against main. No merge, deployment, new remote execution, credential movement, or upstream issue/pull request is authorized.
+- Earlier local improvements were implemented in commits 7607316 and abf3f07; this combined authorization supersedes their local-only publication limits for the reviewed combined diff.
+
 Workbench model-field PR approved at: 2026-09-08T20:55:35+00:00
 Approved at: 2026-08-17T06:48:55Z
 Amended at: 2026-09-01T18:11:42Z
