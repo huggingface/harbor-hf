@@ -263,6 +263,7 @@ const document = {
             content: { "application/json": { schema: z.toJSONSchema(catalogSchema) } },
           },
           "401": error,
+          "503": error,
         },
       },
     },
@@ -437,7 +438,13 @@ const document = {
           },
         ],
         requestBody: { required: true, content: json },
-        responses: { "200": ok, "201": ok, "400": error, "409": error },
+        responses: {
+          "200": ok,
+          "201": ok,
+          "400": error,
+          "409": error,
+          "503": error,
+        },
       },
     },
     "/api/v1/runs/{run_id}": {

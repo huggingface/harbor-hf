@@ -189,6 +189,20 @@ export interface paths {
                         };
                     };
                 };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
             };
         };
         put?: never;
@@ -931,6 +945,20 @@ export interface paths {
                 };
                 /** @description Request error */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
