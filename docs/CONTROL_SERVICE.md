@@ -471,7 +471,7 @@ Those Admin routes require Hugging Face login.
 | --- | --- |
 | `/` | Public official leaderboard: snapshot table and cost-versus-score Pareto plot. |
 | `/overview` | Queue, active runs, failures, spend and endpoint safety. Authenticated. |
-| `/runs` | Searchable and filterable run list. |
+| `/runs` | Trial-by-run progress dashboard; switch to List for the searchable run table. |
 | `/runs/:runId` | Run progress, task states, HF Jobs, cost, publication, cleanup, endpoint safety, and timeline. |
 | `/runs/:runId/tasks/:taskId` | Logical outcome, every physical attempt, and the HF Jobs that ran for the run. |
 | `/jobs` | Current HF Job identity, Hub inspect links, latest observed state, recorded hardware cost, ownership, timing and infrastructure failures. |
@@ -492,6 +492,28 @@ rejected the request, agent ended without a score, and the other catalogued
 outcomes. Raw tokens such as `policy` and `agent` are not shown. Hover the
 badge for the sealed-versus-retryable distinction. A finished run with
 sealed non-success tasks is labeled Completed with failures, not Completed.
+
+### Runs matrix
+
+The dashboard shows logical trials as rows and runs as columns. Rows align only
+when both task identity and input digest match; different inputs remain separate.
+Physical retries stay within the trial's detail page, not new matrix rows.
+Symbols distinguish running, completed, errored, zero reward, queued, awaiting
+result, cancelled, and unknown states. A dash means the trial is absent from that
+run, not pending. Failed reads show unavailable or explicitly stale data.
+
+Completion is not a passing score. Zero reward requires an explicit selected
+reward of zero and a completed outcome; absent rewards remain unknown. Running
+or queued replacements take precedence over an older sealed outcome. Hover or
+keyboard focus shows selected reward, attempt count, latest outcome, observed job
+state, recorded attempt cost, last receipt time, and selected attempt identity.
+Cells link to the existing trial detail page.
+
+The existing task-list API adds read-only summaries from task, attempt, and Job
+projections. No durable records, execution rules, or scoring rules change. The UI
+requests at most eight runs at a time, refreshes visible columns every 15 seconds
+and through existing control events, and renders 50 searchable rows per page.
+The outer run cursor, status filter, and Dashboard/List selection remain usable.
 
 ## Authentication and authorization
 

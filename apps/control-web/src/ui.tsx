@@ -51,6 +51,7 @@ export function Hint({
 }) {
   const id = useId();
   const anchor = useRef<HTMLSpanElement>(null);
+  const tooltipAnchor = useRef<HTMLSpanElement>(null);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{
     left: number;
@@ -65,9 +66,13 @@ export function Hint({
       Math.max(bounds.left, 12),
       Math.max(12, window.innerWidth - width - 12),
     );
-    if (bounds.top > 180)
-      setPosition({ left, bottom: window.innerHeight - bounds.top + 8 });
-    else setPosition({ left, top: bounds.bottom + 8 });
+    const height = tooltipAnchor.current?.getBoundingClientRect().height ?? 0;
+    const preferredTop =
+      bounds.top >= height + 20 ? bounds.top - height - 8 : bounds.bottom + 8;
+    setPosition({
+      left,
+      top: Math.max(12, Math.min(preferredTop, window.innerHeight - height - 12)),
+    });
   }, []);
   const show = () => {
     updatePosition();
@@ -117,11 +122,12 @@ export function Hint({
       ? null
       : createPortal(
           <span
+            ref={tooltipAnchor}
             aria-hidden={!open}
             id={id}
             role="tooltip"
             className={cn(
-              "pointer-events-none fixed z-[100] w-72 max-w-[calc(100vw-1.5rem)] rounded-lg border border-cyan-500/50 bg-slate-800 p-3 text-left text-xs font-normal normal-case leading-5 tracking-normal text-slate-100 shadow-2xl ring-1 ring-black/50",
+              "pointer-events-none fixed z-[100] w-72 whitespace-pre-line [overflow-wrap:anywhere] max-w-[calc(100vw-1.5rem)] rounded-lg border border-cyan-500/50 bg-slate-800 p-3 text-left text-xs font-normal normal-case leading-5 tracking-normal text-slate-100 shadow-2xl ring-1 ring-black/50",
               open ? "visible opacity-100" : "invisible opacity-0",
             )}
             style={position}

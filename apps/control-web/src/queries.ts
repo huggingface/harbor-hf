@@ -149,14 +149,14 @@ export const useCapacity = (id: string) =>
     retry: retryTransient,
     retryDelay: queryRetryDelay,
   });
-export const useTasks = (id: string) =>
-  useQuery({
-    queryKey: keys.tasks(id),
-    queryFn: () => request<TaskList>(`/api/v1/runs/${encodeURIComponent(id)}/tasks`),
-    enabled: Boolean(id),
-    retry: retryTransient,
-    retryDelay: queryRetryDelay,
-  });
+export const taskQueryOptions = (id: string) => ({
+  queryKey: keys.tasks(id),
+  queryFn: () => request<TaskList>(`/api/v1/runs/${encodeURIComponent(id)}/tasks`),
+  enabled: Boolean(id),
+  retry: retryTransient,
+  retryDelay: queryRetryDelay,
+});
+export const useTasks = (id: string) => useQuery(taskQueryOptions(id));
 export const useTask = (run: string, task: string) =>
   useQuery({
     queryKey: keys.task(run, task),

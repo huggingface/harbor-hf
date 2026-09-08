@@ -945,3 +945,111 @@ test("submits hosted results with a limited account and separate admin approval"
   await page.getByRole("button", { name: "Approve & publish" }).click();
   await expect(page.getByText("Approved", { exact: true })).toBeVisible();
 });
+
+for (const viewport of [
+  { width: 1440, height: 1000 },
+  { width: 390, height: 844 },
+]) {
+  test(`shows the trial matrix and hover details at ${viewport.width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize(viewport);
+    const runs = ["run-alpha", "run-beta"].map((run_id) => ({
+      run_id,
+      status: "active",
+      total_tasks: 5,
+      terminal_tasks: 3,
+      successful_tasks: 2,
+      observed_microusd: 0,
+      ceiling_microusd: 0,
+      created_at: "2026-09-08T00:00:00Z",
+    }));
+    await page.route("**/api/v1/**", (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("auth/session")) return route.fulfill({ json: session });
+      if (path.endsWith("/system")) return route.fulfill({ json: system() });
+      if (path.endsWith("/events"))
+        return route.fulfill({ contentType: "text/event-stream", body: "" });
+      if (path.endsWith("/runs"))
+        return route.fulfill({ json: { items: runs, next_cursor: null } });
+      if (path.endsWith("/tasks")) {
+        const run_id = path.split("/").at(-2);
+        return route.fulfill({
+          json: {
+            items: [
+              { task_id: "trial-complete", terminal_outcome: "complete", reward: 1 },
+              { task_id: "trial-zero", terminal_outcome: "complete", reward: 0 },
+              { task_id: "trial-error", terminal_outcome: "verifier", reward: null },
+              {
+                task_id: "trial-running",
+                terminal_outcome: null,
+                reward: null,
+                pending_job_state: "RUNNING",
+              },
+              { task_id: "trial-queued", terminal_outcome: null, reward: null },
+            ].map((task) => ({
+              run_id,
+              input_digest: `sha256:${"a".repeat(64)}`,
+              selected_attempt_id: null,
+              attempt_count: 1,
+              latest_outcome: task.terminal_outcome,
+              last_attempt_at: "2026-09-08T00:00:00Z",
+              cost_microusd: 100_000,
+              pending_job_state: null,
+              ...task,
+            })),
+            next_cursor: null,
+          },
+        });
+      }
+      return route.fulfill({ json: { items: [], next_cursor: null } });
+    });
+    await page.goto("/runs");
+    await expect(
+      page.getByRole("button", { name: "Dashboard", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const zero = page.getByRole("link", {
+      name: "trial-zero in run-alpha: Zero reward",
+    });
+    await expect(zero).toBeVisible();
+    await zero.focus();
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toContainText("Selected reward: 0");
+    await expect(tooltip).toContainText("Recorded attempts: 1");
+    const bounds = await tooltip.boundingBox();
+    expect(bounds).not.toBeNull();
+    if (bounds) {
+      expect(bounds.y).toBeGreaterThanOrEqual(0);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+    }
+    await zero.blur();
+    await zero.locator("span").first().hover();
+    await expect(tooltip).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("runs-matrix.png"),
+      fullPage: true,
+    });
+    await expect(
+      page.getByRole("link", { name: "trial-error in run-alpha: Errored" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "trial-running in run-alpha: Running" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.getByRole("button", { name: "List", exact: true }).click();
+    await expect(page).toHaveURL(/view=list/);
+    await expect(
+      page.getByRole("region", { name: "Trial progress matrix" }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+    await page.getByRole("button", { name: "Active", exact: true }).click();
+    await expect(page).toHaveURL(/view=matrix/);
+    await expect(page).toHaveURL(/status=active/);
+    await expect(zero).toBeVisible();
+  });
+}

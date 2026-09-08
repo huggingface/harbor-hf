@@ -5386,7 +5386,13 @@
                           "task_id",
                           "input_digest",
                           "terminal_outcome",
-                          "selected_attempt_id"
+                          "selected_attempt_id",
+                          "reward",
+                          "attempt_count",
+                          "latest_outcome",
+                          "last_attempt_at",
+                          "cost_microusd",
+                          "pending_job_state"
                         ],
                         "properties": {
                           "run_id": {
@@ -5409,6 +5415,53 @@
                             ]
                           },
                           "selected_attempt_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reward": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "attempt_count": {
+                            "type": "integer"
+                          },
+                          "latest_outcome": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "last_attempt_at": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "cost_microusd": {
+                            "type": "integer"
+                          },
+                          "pending_job_state": {
                             "anyOf": [
                               {
                                 "type": "string"

@@ -69,7 +69,7 @@ import {
   sessionSchema,
   systemSchema,
   taskDetailSchema,
-  taskSchema,
+  taskSummarySchema,
   workbenchFileContentSchema,
   workbenchLogsSchema,
   workbenchPreviewSchema,
@@ -2220,13 +2220,13 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     {
       schema: {
         tags: ["runs"],
-        response: { 200: itemList(taskSchema) },
+        response: { 200: itemList(taskSummarySchema) },
       },
     },
     async (request) => {
       const { run_id } = request.params as { run_id: string };
       return {
-        items: await runtime.projection.tasks(run_id),
+        items: await runtime.projection.taskSummaries(run_id),
         next_cursor: null,
       };
     },

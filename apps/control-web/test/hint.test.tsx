@@ -27,3 +27,35 @@ describe("Hint", () => {
     expect(screen.getByRole("tooltip")).toBeVisible();
   });
 });
+
+it("keeps a tall tooltip within the viewport instead of assuming a short hint", async () => {
+  render(<Hint text={"Details\n".repeat(12)}>Trial details</Hint>);
+  const tooltip = screen.getByRole("tooltip", { hidden: true });
+  const anchor = screen.getByText("Trial details").parentElement;
+  if (!anchor) throw new Error("missing hint anchor");
+  anchor.getBoundingClientRect = () => ({
+    top: 200,
+    bottom: 224,
+    left: 20,
+    right: 80,
+    width: 60,
+    height: 24,
+    x: 20,
+    y: 200,
+    toJSON: () => ({}),
+  });
+  tooltip.getBoundingClientRect = () => ({
+    top: 0,
+    bottom: 400,
+    left: 0,
+    right: 288,
+    width: 288,
+    height: 400,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  });
+  await userEvent.setup().tab();
+  expect(tooltip).toHaveStyle({ top: "232px" });
+  expect(tooltip).toHaveClass("whitespace-pre-line");
+});

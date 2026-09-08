@@ -1525,6 +1525,14 @@ describe("control API", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().items).toHaveLength(126);
+    expect(response.json().items[0]).toMatchObject({
+      reward: null,
+      attempt_count: 0,
+      latest_outcome: null,
+      last_attempt_at: null,
+      cost_microusd: 0,
+      pending_job_state: null,
+    });
     expect(response.json().next_cursor).toBeNull();
     await app.close();
   });
@@ -2648,6 +2656,17 @@ describe("control API", () => {
         inspect_url: expect.stringContaining("https://huggingface.co/jobs/test/"),
       },
     });
+    const summaries = await app.inject({
+      method: "GET",
+      url: `/api/v1/runs/${runId}/tasks`,
+    });
+    expect(summaries.statusCode).toBe(200);
+    expect(summaries.json().items[0]).toMatchObject({
+      attempt_count: 1,
+      latest_outcome: "complete",
+      pending_job_state: null,
+    });
+    expect(summaries.json().items[0]).not.toHaveProperty("evidence_path");
     expect(taskDetail.json().attempts[0]).not.toHaveProperty("evidence_path");
     expect(taskDetail.json().attempts[0]).not.toHaveProperty("evidence_digest");
     expect(JSON.stringify(taskDetail.json())).not.toContain(manifestPath);

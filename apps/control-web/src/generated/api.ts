@@ -2353,6 +2353,12 @@ export interface paths {
                                 input_digest: string;
                                 terminal_outcome: string | null;
                                 selected_attempt_id: string | null;
+                                reward: number | null;
+                                attempt_count: number;
+                                latest_outcome: string | null;
+                                last_attempt_at: string | null;
+                                cost_microusd: number;
+                                pending_job_state: string | null;
                             }[];
                             next_cursor: string | null;
                         };

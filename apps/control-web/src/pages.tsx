@@ -82,6 +82,7 @@ import {
   useTask,
   useTasks,
 } from "./queries";
+import { RunsMatrix } from "./runs-matrix";
 import {
   Badge,
   Button,
@@ -1634,15 +1635,42 @@ export function RunsPage() {
             <Button
               key={status}
               variant={filter === status ? "secondary" : "ghost"}
-              onClick={() => setSearchParams(status === "all" ? {} : { status })}
+              onClick={() => {
+                const updated = new URLSearchParams(searchParams);
+                if (status === "all") updated.delete("status");
+                else updated.set("status", status);
+                setSearchParams(updated);
+              }}
             >
               {humanize(status)}
             </Button>
           ),
         )}
       </nav>
+      <fieldset className="mb-4 flex gap-2" aria-label="Runs view">
+        {(["matrix", "list"] as const).map((view) => (
+          <Button
+            key={view}
+            variant={
+              (searchParams.get("view") ?? "matrix") === view ? "secondary" : "ghost"
+            }
+            aria-pressed={(searchParams.get("view") ?? "matrix") === view}
+            onClick={() => {
+              const updated = new URLSearchParams(searchParams);
+              updated.set("view", view);
+              setSearchParams(updated);
+            }}
+          >
+            {view === "matrix" ? "Dashboard" : "List"}
+          </Button>
+        ))}
+      </fieldset>
       <QueryContent query={query}>
-        <DataTable columns={columns} data={items} empty="No runs match this filter" />
+        {searchParams.get("view") === "list" ? (
+          <DataTable columns={columns} data={items} empty="No runs match this filter" />
+        ) : (
+          <RunsMatrix key={`${navigation.cursor ?? ""}:${filter}`} runs={items} />
+        )}
         <CursorPager navigation={navigation} nextCursor={query.data?.next_cursor} />
       </QueryContent>
     </>

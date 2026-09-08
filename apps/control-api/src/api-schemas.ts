@@ -547,6 +547,30 @@ export const taskSchema = {
   },
 } as const;
 
+export const taskSummarySchema = {
+  ...taskSchema,
+  required: [
+    ...taskSchema.required,
+    "reward",
+    "attempt_count",
+    "latest_outcome",
+    "last_attempt_at",
+    "cost_microusd",
+    "pending_job_state",
+  ],
+  properties: {
+    ...taskSchema.properties,
+    reward: { anyOf: [{ type: "number" }, { type: "null" }] },
+    attempt_count: integer,
+    latest_outcome: nullableString,
+    last_attempt_at: {
+      anyOf: [{ type: "string", format: "date-time" }, { type: "null" }],
+    },
+    cost_microusd: integer,
+    pending_job_state: nullableString,
+  },
+} as const;
+
 export const attemptSchema = {
   type: "object",
   additionalProperties: false,

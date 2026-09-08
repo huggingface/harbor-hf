@@ -1229,7 +1229,7 @@ describe("control web", () => {
         throw new Error(`unexpected request: ${path}`);
       }),
     );
-    renderApp("/runs");
+    renderApp("/runs?view=list");
     const user = userEvent.setup();
 
     expect(await screen.findByText("run-first")).toBeInTheDocument();
@@ -1295,7 +1295,7 @@ describe("control web", () => {
         throw new Error(`unexpected request: ${path}`);
       }),
     );
-    renderApp("/runs");
+    renderApp("/runs?view=list");
     expect(await screen.findByText("Completed with failures")).toBeInTheDocument();
     expect(screen.getByText("Completed with failures").className).toContain("amber");
     const cancelledBadge = screen
@@ -1466,7 +1466,7 @@ describe("control web", () => {
         throw new Error(`unexpected request: ${path}`);
       }),
     );
-    renderApp("/runs");
+    renderApp("/runs?view=list");
     const table = await screen.findByRole("table");
     expect(table).toHaveClass("table-fixed");
     expect(table.parentElement).toHaveClass("max-h-[70vh]", "overflow-auto");

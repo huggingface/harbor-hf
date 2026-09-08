@@ -3051,6 +3051,68 @@ export class Projection {
       : query.limit(limit).offset(offset).execute();
   }
 
+  /** Read-only display data; selection and scoring remain owned by Harbor records. */
+  async taskSummaries(runId: string) {
+    const [tasks, attempts, jobs] = await Promise.all([
+      this.tasks(runId),
+      this.runAttempts(runId),
+      this.db
+        .selectFrom("jobs")
+        .innerJoin("actions as launch", "launch.action_id", "jobs.launch_action_id")
+        .select([
+          "jobs.launch_action_id",
+          "jobs.assigned_task_ids_body",
+          "jobs.observed_state",
+        ])
+        .where("jobs.run_id", "=", runId)
+        .orderBy("launch.created_at", "desc")
+        .orderBy("jobs.launch_action_id", "desc")
+        .execute(),
+    ]);
+    const attemptsByTask = new Map<string, typeof attempts>();
+    for (const attempt of attempts) {
+      const group = attemptsByTask.get(attempt.task_id) ?? [];
+      group.push(attempt);
+      attemptsByTask.set(attempt.task_id, group);
+    }
+    const jobsByTask = new Map<string, (typeof jobs)[number]>();
+    for (const job of jobs) {
+      if (job.observed_state?.toUpperCase().startsWith("SUPPRESSED-")) continue;
+      for (const taskId of JSON.parse(job.assigned_task_ids_body) as string[]) {
+        if (!jobsByTask.has(taskId)) jobsByTask.set(taskId, job);
+      }
+    }
+    return tasks.map((task) => {
+      const taskAttempts = attemptsByTask.get(task.task_id) ?? [];
+      const selected = taskAttempts.find(
+        (attempt) => attempt.attempt_id === task.selected_attempt_id,
+      );
+      const metrics = selected
+        ? (JSON.parse(selected.metrics_body) as Record<string, number>)
+        : {};
+      const latest = taskAttempts.at(-1);
+      const job = jobsByTask.get(task.task_id);
+      const pendingJob =
+        job &&
+        !taskAttempts.some((attempt) => attempt.action_id === job.launch_action_id);
+      return {
+        ...task,
+        reward:
+          typeof metrics.reward === "number" && Number.isFinite(metrics.reward)
+            ? metrics.reward
+            : null,
+        attempt_count: taskAttempts.length,
+        latest_outcome: latest?.outcome ?? null,
+        last_attempt_at: latest?.created_at ?? null,
+        cost_microusd: taskAttempts.reduce(
+          (sum, attempt) => sum + attempt.cost_microusd,
+          0,
+        ),
+        pending_job_state: pendingJob ? (job.observed_state ?? "QUEUED") : null,
+      };
+    });
+  }
+
   async task(
     runId: string,
     taskId: string,
