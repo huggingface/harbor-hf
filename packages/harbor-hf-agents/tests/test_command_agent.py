@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -43,6 +45,7 @@ def _environment(
     mounted: bool = True,
 ) -> AsyncMock:
     environment = AsyncMock()
+    environment.default_user = None
     environment.capabilities.mounted = mounted
     environment.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
     if logs_root is not None:
@@ -241,8 +244,10 @@ def test_config_can_be_loaded_through_harbor_config_path(temp_dir: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_setup_and_run_argv_are_unprivileged_and_ambient_free(
+@pytest.mark.parametrize("default_user", [None, "task-user", 1001])
+async def test_setup_and_run_argv_use_harbor_user_and_are_ambient_free(
     temp_dir: Path,
+    default_user: str | int | None,
 ) -> None:
     agent = CommandAgent(
         logs_dir=temp_dir,
@@ -267,6 +272,7 @@ async def test_setup_and_run_argv_are_unprivileged_and_ambient_free(
         version="1.2.3",
     )
     environment = _environment(temp_dir)
+    environment.default_user = default_user
 
     await agent.setup(environment)
     await agent.run("do not place me in a command", environment, AgentContext())
@@ -275,10 +281,12 @@ async def test_setup_and_run_argv_are_unprivileged_and_ambient_free(
     run = _phase_call(environment, "run")
     for call in (setup, run):
         command = call.kwargs["command"]
-        assert "runuser -u harbor-agent" in command
+        assert "runuser" not in command
+        assert 'USER="$(id -un)"' in command
+        assert 'LOGNAME="$(id -un)"' in command
         assert "env -i" in command
         assert call.kwargs["cwd"] == "/app"
-        assert call.kwargs["user"] == "root"
+        assert call.kwargs["user"] is None
     assert "python3 -m pip install example==1.2.3" in setup.kwargs["command"]
     assert "agent-cli --flag" in run.kwargs["command"]
     assert "value with spaces" in run.kwargs["command"]
@@ -293,6 +301,12 @@ async def test_setup_and_run_argv_are_unprivileged_and_ambient_free(
     assert (temp_dir / "instruction.txt").read_text() == (
         "do not place me in a command"
     )
+
+    commands = [call.kwargs["command"] for call in environment.exec.call_args_list]
+    assert not any("useradd" in command for command in commands)
+    assert not any("/app/data" in command for command in commands)
+    owner = str(default_user or "root")
+    assert any(f"install -d -m 0750 -o {owner}" in command for command in commands)
 
 
 @pytest.mark.asyncio
@@ -322,14 +336,17 @@ async def test_scripts_are_staged_verbatim_and_process_logs_are_bounded(
     assert (temp_dir / "command-agent" / "setup.sh").read_text() == setup_script
     assert (temp_dir / "command-agent" / "run.sh").read_text() == run_script
     commands = [call.kwargs["command"] for call in environment.exec.call_args_list]
-    user_create = next(command for command in commands if "useradd" in command)
+    home_create = next(
+        command
+        for command in commands
+        if "install -d -m 0750 -o root /tmp/harbor-agent-home" in command
+    )
     setup_chown = next(
         command
         for command in commands
-        if ("chown harbor-agent:harbor-agent /logs/agent/command-agent/setup.sh")
-        in command
+        if ("chown root /logs/agent/command-agent/setup.sh") in command
     )
-    assert commands.index(user_create) < commands.index(setup_chown)
+    assert commands.index(home_create) < commands.index(setup_chown)
     setup = _phase_call(environment, "setup")
     run = _phase_call(environment, "run")
     assert "/logs/agent/command-agent/setup.sh" in setup.kwargs["command"]
@@ -535,3 +552,50 @@ def test_fast_agent_0_10_16_starter_uses_the_generic_recipe() -> None:
     assert config.setup is not None
     assert config.setup.argv[-1] == "fast-agent-mcp==0.10.16"
     assert config.run.bindings["MODEL_BASE_URL"] == "model_base_url"
+
+
+@pytest.mark.asyncio
+async def test_clean_shell_preserves_task_identity_without_ambient_credentials(
+    temp_dir: Path,
+) -> None:
+    agent = CommandAgent(logs_dir=temp_dir, config=_config())
+    environment = _environment()
+
+    async def run_shell(
+        *, command: str, env: dict[str, str], **_kwargs: object
+    ) -> SimpleNamespace:
+        process = await asyncio.create_subprocess_exec(
+            "/bin/bash",
+            "-c",
+            command,
+            cwd=temp_dir,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "HF_TOKEN": "fixture-control",
+                "HF_INFERENCE_TOKEN": "fixture-parent-inference",
+                "HARBOR_HF_WORKER_CAPABILITY": "fixture-capability",
+                **env,
+            },
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        return SimpleNamespace(
+            return_code=process.returncode,
+            stdout=stdout.decode(),
+            stderr=stderr.decode(),
+        )
+
+    environment.exec.side_effect = run_shell
+    await agent._exec_clean(
+        environment,
+        command=(
+            'set -eu; test "$USER" = "$(id -un)"; '
+            'test "$LOGNAME" = "$(id -un)"; '
+            'test -z "${HF_TOKEN+x}"; test -z "${HF_INFERENCE_TOKEN+x}"; '
+            'test -z "${HARBOR_HF_WORKER_CAPABILITY+x}"; '
+            'test "$OPENAI_API_KEY" = fixture-inference'
+        ),
+        env={"OPENAI_API_KEY": "fixture-inference"},
+    )
+    assert environment.exec.call_args.kwargs["user"] is None

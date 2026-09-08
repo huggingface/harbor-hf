@@ -29,7 +29,7 @@ import { PageHeader } from "./layout";
 import { cn, formatDate, formatMoneyUsd } from "./lib";
 import { usePresets, useSystem } from "./queries";
 import { Badge, Button, Card, ConcurrentTrialsField, ErrorNotice, Loading } from "./ui";
-import { loadWorkbenchDraft, saveWorkbenchDraft } from "./workbench-draft";
+import { createWorkbenchDraftSaver, loadWorkbenchDraft } from "./workbench-draft";
 
 const sources = [
   "literal",
@@ -99,7 +99,8 @@ export const fastAgentStarter: WorkbenchRecipe = {
     '"$AGENT_HOME/venv/bin/fast-agent" --version',
   ].join("\n"),
   // This reviewed recipe selects fast-agent's native HF adapter. The process-local
-  // HF_TOKEN below is the injected inference key, never the control credential.
+  // HF_TOKEN is the inference key; certifi supplies verified TLS roots when the
+  // task image lacks a system trust store. Both mappings are process-local.
   run_command: [
     "set -eu",
     'case "$AGENT_MODEL" in',
@@ -107,11 +108,14 @@ export const fastAgentStarter: WorkbenchRecipe = {
     `  openai/*/*:*) harness_model="hf.\${AGENT_MODEL#openai/}" ;;`,
     '  *) printf "%s\\n" "Expected a full Hub model ID and HF provider from Workbench" >&2; exit 2 ;;',
     "esac",
+    ': "${OPENAI_API_KEY:?Injected inference key is missing or empty}"',
+    `ca_bundle="$("$AGENT_HOME/venv/bin/python" -c 'import certifi; print(certifi.where())')"`,
+    'test -r "$ca_bundle" || { printf "%s\\n" "certifi CA bundle is not readable" >&2; exit 1; }',
     [
       'HF_TOKEN="$OPENAI_API_KEY"',
+      'SSL_CERT_FILE="$ca_bundle"',
       '"$AGENT_HOME/venv/bin/fast-agent" go',
       '  --model "$harness_model"',
-      '  --base-url "$MODEL_BASE_URL"',
       '  --prompt-file "$TASK_INSTRUCTION_PATH"',
       '  --workspace "$TASK_WORKSPACE"',
       '  --home "$AGENT_HOME/runtime"',
@@ -281,7 +285,20 @@ export function WorkbenchPage() {
   const [recipe, setRecipe] = useState<WorkbenchRecipe>(
     () => draft?.recipe ?? copyStarter(),
   );
-  const [draftSaved, setDraftSaved] = useState(true);
+  const [draftSaved, setDraftSaved] = useState<boolean | null>(true);
+  const [draftSaver] = useState(() => createWorkbenchDraftSaver(setDraftSaved));
+  // UI-only identity: never send row IDs to the recipe compiler or storage.
+  const bindingIds = useRef(
+    new WeakMap<WorkbenchRecipe["environment"][number], string>(),
+  );
+  function bindingKey(binding: WorkbenchRecipe["environment"][number]) {
+    let id = bindingIds.current.get(binding);
+    if (!id) {
+      id = crypto.randomUUID();
+      bindingIds.current.set(binding, id);
+    }
+    return id;
+  }
   const [preview, setPreview] = useState<WorkbenchPreview | null>(null);
   const [previewError, setPreviewError] = useState<unknown>(null);
   const [checking, setChecking] = useState(false);
@@ -321,22 +338,22 @@ export function WorkbenchPage() {
   const liveOutputRef = useRef<HTMLPreElement | null>(null);
 
   useEffect(() => {
-    setDraftSaved(
-      saveWorkbenchDraft({
-        recipe,
-        benchmarkKey,
-        n_concurrent_trials: selectedBenchmark
-          ? concurrencyValue
-          : (concurrentTrials ?? undefined),
-        model,
-        provider,
-        ceiling,
-        role,
-        harbor_agent: { model_name: harnessModel },
-      }),
-    );
+    setDraftSaved(null);
+    draftSaver.schedule({
+      recipe,
+      benchmarkKey,
+      n_concurrent_trials: selectedBenchmark
+        ? concurrencyValue
+        : (concurrentTrials ?? undefined),
+      model,
+      provider,
+      ceiling,
+      role,
+      harbor_agent: { model_name: harnessModel },
+    });
     setLaunchConfirmed(false);
   }, [
+    draftSaver,
     recipe,
     benchmarkKey,
     model,
@@ -348,6 +365,19 @@ export function WorkbenchPage() {
     selectedBenchmark,
     concurrencyValue,
   ]);
+
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") draftSaver.flush();
+    };
+    window.addEventListener("pagehide", draftSaver.flush);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("pagehide", draftSaver.flush);
+      document.removeEventListener("visibilitychange", onHidden);
+      draftSaver.flush();
+    };
+  }, [draftSaver]);
 
   useEffect(() => {
     void listWorkbenchSetups()
@@ -440,14 +470,13 @@ export function WorkbenchPage() {
   }
 
   function updateEnvironment(
-    index: number,
+    previous: WorkbenchRecipe["environment"][number],
     next: WorkbenchRecipe["environment"][number],
   ) {
+    bindingIds.current.set(next, bindingKey(previous));
     changeRecipe({
       ...recipe,
-      environment: recipe.environment.map((item, itemIndex) =>
-        itemIndex === index ? next : item,
-      ),
+      environment: recipe.environment.map((item) => (item === previous ? next : item)),
     });
   }
 
@@ -543,9 +572,11 @@ export function WorkbenchPage() {
       />
       <WorkbenchFlow />
       <p className="mb-4 text-sm text-slate-400" role="status">
-        {draftSaved
-          ? "Draft saved in this browser. Do not enter secrets in commands or literal values. Reload requires fresh setup and launch confirmation."
-          : "Draft could not be saved in this browser. Copy your edits before reloading."}
+        {draftSaved === null
+          ? "Saving draft in this browser…"
+          : draftSaved
+            ? "Draft saved in this browser. Do not enter secrets in commands or literal values. Reload requires fresh setup and launch confirmation."
+            : "Draft could not be saved in this browser. Copy your edits before reloading."}
       </p>
       <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.2fr)_minmax(24rem,0.8fr)]">
         <div className="space-y-6">
@@ -663,14 +694,17 @@ export function WorkbenchPage() {
               {recipe.environment.map((binding, index) => (
                 <div
                   className="grid gap-2 rounded-lg border border-slate-800 p-3 sm:grid-cols-[1fr_1fr_1.25fr_auto]"
-                  key={binding.name}
+                  key={bindingKey(binding)}
                 >
                   <input
                     aria-label={`Binding ${index + 1} name`}
                     className={fieldClass()}
                     value={binding.name}
                     onChange={(event) =>
-                      updateEnvironment(index, { ...binding, name: event.target.value })
+                      updateEnvironment(binding, {
+                        ...binding,
+                        name: event.target.value,
+                      })
                     }
                   />
                   <select
@@ -680,7 +714,7 @@ export function WorkbenchPage() {
                     onChange={(event) => {
                       const source = event.target.value as (typeof sources)[number];
                       updateEnvironment(
-                        index,
+                        binding,
                         source === "literal"
                           ? { name: binding.name, source, value: "" }
                           : { name: binding.name, source },
@@ -697,7 +731,7 @@ export function WorkbenchPage() {
                       className={fieldClass()}
                       value={binding.value ?? ""}
                       onChange={(event) =>
-                        updateEnvironment(index, {
+                        updateEnvironment(binding, {
                           ...binding,
                           value: event.target.value,
                         })

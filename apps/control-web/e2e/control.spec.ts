@@ -747,3 +747,28 @@ test("preserves safe draft links through sign-in and rejects credential-bearing 
   );
   expect(new URL(page.url()).pathname).toBe("/runs/new");
 });
+
+test("binding name typing retains focus and reload preserves pending edits", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.goto("/workbench");
+  const name = page.getByLabel("Binding 2 name", { exact: true });
+  await name.fill("");
+  await name.pressSequentially("CUSTOM_KEY", { delay: 15 });
+  await expect(name).toBeFocused();
+  await expect(name).toHaveValue("CUSTOM_KEY");
+  await name.press("Home");
+  await name.press("ArrowRight");
+  await name.pressSequentially("_", { delay: 15 });
+  await expect(name).toHaveValue("C_USTOM_KEY");
+  await expect(name).toBeFocused();
+  expect(await name.evaluate((input: HTMLInputElement) => input.selectionStart)).toBe(
+    2,
+  );
+  // Reload before the debounce expires: pagehide must flush the latest edit.
+  await page.reload();
+  await expect(page.getByLabel("Binding 2 name", { exact: true })).toHaveValue(
+    "C_USTOM_KEY",
+  );
+});

@@ -456,6 +456,55 @@ describe("restored control console", () => {
     },
   );
 
+  it("keeps binding inputs mounted while renaming, changing source and deleting rows", async () => {
+    const user = userEvent.setup();
+    renderAt("/workbench");
+    const first = await screen.findByLabelText("Binding 1 name");
+    const second = screen.getByLabelText("Binding 2 name");
+    await user.clear(second);
+    await user.type(second, "RENAMED_KEY");
+    expect(second).toHaveFocus();
+    expect(second).toHaveValue("RENAMED_KEY");
+    expect(screen.getByLabelText("Binding 2 name")).toBe(second);
+    await user.selectOptions(screen.getByLabelText("Binding 2 source"), "literal");
+    expect(screen.getByLabelText("Binding 2 name")).toBe(second);
+    await user.clear(first);
+    await user.type(first, "RENAMED_KEY");
+    // Duplicate/incomplete names must remain independently editable.
+    expect(screen.getByLabelText("Binding 1 name")).toBe(first);
+    expect(screen.getByLabelText("Binding 2 name")).toBe(second);
+    await user.click(
+      screen.getAllByRole("button", { name: "Remove binding RENAMED_KEY" })[0],
+    );
+    expect(screen.getByLabelText("Binding 1 name")).toBe(second);
+    await user.click(second);
+    await user.keyboard("{End}_MORE");
+    expect(second).toHaveFocus();
+    expect(second).toHaveValue("RENAMED_KEY_MORE");
+  });
+
+  it.each(["pagehide", "visibilitychange"])(
+    "flushes pending draft edits on %s",
+    async (event) => {
+      const user = userEvent.setup();
+      renderAt("/workbench");
+      const name = await screen.findByLabelText("Recipe name");
+      await user.clear(name);
+      await user.type(name, "pagehide-draft");
+      if (event === "visibilitychange") {
+        vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+        document.dispatchEvent(new Event(event));
+      } else {
+        window.dispatchEvent(new Event(event));
+      }
+      expect(
+        JSON.parse(
+          window.localStorage.getItem("harbor-hf.workbench.draft.v1") ?? "null",
+        ).recipe.name,
+      ).toBe("pagehide-draft");
+    },
+  );
+
   it("restores a Workbench draft without restoring approval state", async () => {
     const user = userEvent.setup();
     const view = renderAt("/workbench");

@@ -11,6 +11,11 @@ describe("historical Workbench starter recipes", () => {
     expect(fastAgentStarter.setup_command).toContain("fast-agent-mcp==0.10.20");
     expect(fastAgentStarter.run_command).toBe(fastAgentWorkbenchStarter.run_command);
     expect(fastAgentStarter.run_command).toContain('HF_TOKEN="$OPENAI_API_KEY"');
+    expect(fastAgentStarter.run_command).toContain('SSL_CERT_FILE="$ca_bundle"');
+    expect(fastAgentStarter.run_command).toContain(
+      "import certifi; print(certifi.where())",
+    );
+    expect(fastAgentStarter.run_command).not.toContain("--base-url");
     expect(fastAgentStarter.run_command).toContain('--model "$harness_model"');
     expect(fastAgentStarter.environment.map((item) => item.source)).toEqual(
       expect.arrayContaining(["model_base_url", "model_api_key"]),

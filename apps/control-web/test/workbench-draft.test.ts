@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createWorkbenchDraftSaver,
   loadWorkbenchDraft,
   saveWorkbenchDraft,
   workbenchDraftKey,
@@ -28,6 +29,7 @@ const draft: WorkbenchDraft = {
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   window.localStorage.clear();
 });
@@ -69,5 +71,52 @@ describe("Workbench draft storage", () => {
     });
     expect(loadWorkbenchDraft()).toBeNull();
     expect(saveWorkbenchDraft(draft)).toBe(false);
+  });
+});
+
+describe("deferred Workbench persistence", () => {
+  it("coalesces typing and serializes only the latest draft after idle", () => {
+    vi.useFakeTimers();
+    const write = vi.spyOn(Storage.prototype, "setItem");
+    const onSaved = vi.fn();
+    const saver = createWorkbenchDraftSaver(onSaved);
+    saver.schedule(draft);
+    vi.advanceTimersByTime(300);
+    saver.schedule({ ...draft, model: "edited" });
+    vi.advanceTimersByTime(399);
+    expect(write).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(loadWorkbenchDraft()?.model).toBe("edited");
+    expect(onSaved).toHaveBeenCalledWith(true);
+  });
+
+  it("flushes pending changes once and cancels the delayed write", () => {
+    vi.useFakeTimers();
+    const write = vi.spyOn(Storage.prototype, "setItem");
+    const saver = createWorkbenchDraftSaver(vi.fn());
+    saver.schedule(draft);
+    saver.flush();
+    saver.flush();
+    vi.runAllTimers();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(loadWorkbenchDraft()).toEqual(draft);
+  });
+
+  it("reports storage failure and can save a later edit", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => {
+      throw new Error("quota exceeded");
+    });
+    const onSaved = vi.fn();
+    const saver = createWorkbenchDraftSaver(onSaved);
+    saver.schedule(draft);
+    vi.advanceTimersByTime(400);
+    expect(onSaved).toHaveBeenLastCalledWith(false);
+    saver.schedule({ ...draft, model: "recovered" });
+    saver.flush();
+    expect(onSaved).toHaveBeenLastCalledWith(true);
+    expect(loadWorkbenchDraft()?.model).toBe("recovered");
   });
 });

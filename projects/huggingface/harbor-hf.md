@@ -21,6 +21,15 @@ Approved at: 2026-09-08T23:35:00.428453+00:00
 - Approved operations: local implementation and tests, public privacy review, commit, branch push, and one pull request against main. No merge, deployment, new remote execution, credential movement, or upstream issue/pull request is authorized.
 - Earlier local improvements were implemented in commits 7607316 and abf3f07; this combined authorization supersedes their local-only publication limits for the reviewed combined diff.
 
+Implementation and validation recorded on 2026-09-08:
+
+- Combined all three repairs without changing model routing restrictions, timeout settings, saved recipes, existing runs, or deployment configuration.
+- Command-agent execution now uses Harbor's public task-user API and clean explicit bindings. Root staging follows ACP's ownership pattern; benchmark data ownership is no longer rewritten. A contract test verifies no parent credential forwarding or parent mounts in task Sandbox creation. The separate parent-worker credential/storage defect remains unchanged.
+- Reviewed Harbor installed/base.py, installed/acp.py, installed/acp_runner.py, environments/base.py, and environments/hf_sandbox.py at dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e, plus upstream history through 90e28af3. No upstream change or pin update is required for this adapter correction.
+- Passed 455 unit tests, 17 browser tests, 111 agent-package tests, and 46 root tests with 87.98% CLI coverage. Formatting, lint, type checks, generated contracts, both Docker builds, Slophammer check/DRY, Python dependency audit, and privacy checks passed.
+- Draft PR is required until the existing js-yaml audit failure is resolved. Existing global TypeScript and supplementary agent-package coverage gaps are disclosed in the PR; no gate is weakened. The mutation script and optional Slophammer baseline file are absent; normal Slophammer checks pass.
+- No merge, deployment, new remote run, credential transfer, or upstream publication has been performed.
+
 Workbench model-field PR approved at: 2026-09-08T20:55:35+00:00
 Approved at: 2026-08-17T06:48:55Z
 Amended at: 2026-09-01T18:11:42Z
