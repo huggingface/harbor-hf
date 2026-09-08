@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -273,7 +273,10 @@ beforeEach(() => {
   apiMocks.signOut.mockResolvedValue(undefined);
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("restored control console", () => {
   it("shows the public leaderboard without private navigation", async () => {
@@ -383,8 +386,19 @@ describe("restored control console", () => {
         ?.parentElement;
     expect(runCard).not.toBeNull();
     const scope = within(runCard as HTMLElement);
-    await user.type(scope.getByLabelText("Model"), "publisher/workbench-model");
-    await user.type(scope.getByLabelText("Provider"), "provider");
+    await user.type(
+      scope.getByLabelText("Recorded model"),
+      "publisher/workbench-model",
+    );
+    expect(scope.getByLabelText("Concurrent trials")).toHaveValue(1);
+    await user.clear(scope.getByLabelText("Concurrent trials"));
+    await user.type(scope.getByLabelText("Concurrent trials"), "12");
+    await user.type(scope.getByLabelText("Recorded provider (optional)"), "together");
+    await user.clear(scope.getByLabelText("Recorded provider (optional)"));
+    await user.type(
+      scope.getByLabelText("Harness model string"),
+      "hf.publisher/runtime-model:together",
+    );
     await user.click(
       scope.getByLabelText(
         "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
@@ -393,14 +407,54 @@ describe("restored control console", () => {
     await user.click(scope.getByRole("button", { name: "Launch Harbor run" }));
     await waitFor(() => expect(apiMocks.submitRun).toHaveBeenCalledOnce());
     expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
+      n_concurrent_trials: 12,
       model: {
         id: "publisher/workbench-model",
-        provider: "provider",
+        provider: "unspecified",
         reasoning_effort: "off",
       },
-      workbench: { setup_test_id: setup.setup_test_id },
+      workbench: {
+        setup_test_id: setup.setup_test_id,
+        harbor_agent: { model_name: "hf.publisher/runtime-model:together" },
+      },
     });
   });
+
+  it.each(["/overview", "/workbench"])(
+    "uses the same concurrency field and preset defaults at %s",
+    async (path) => {
+      const user = userEvent.setup();
+      const first = presets.benchmarks[0];
+      if (!first) throw new Error("missing test preset");
+      apiMocks.getPresets.mockResolvedValue({
+        ...presets,
+        benchmarks: [
+          first,
+          {
+            ...first,
+            preset: "all-tasks-1-trial",
+            job: { ...first.job, n_concurrent_trials: 8 },
+          },
+        ],
+      });
+      renderAt(path);
+      const field = await screen.findByLabelText("Concurrent trials");
+      expect(field).toHaveValue(1);
+      await user.clear(field);
+      await user.type(field, "16");
+      expect(field).toHaveValue(16);
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: /^Benchmark preset/ }),
+        "terminal-bench-2-1\nall-tasks-1-trial",
+      );
+      expect(field).toHaveValue(8);
+      await user.selectOptions(
+        screen.getByRole("combobox", { name: /^Benchmark preset/ }),
+        "terminal-bench-2-1\none-task-1-trial",
+      );
+      expect(field).toHaveValue(1);
+    },
+  );
 
   it("restores a Workbench draft without restoring approval state", async () => {
     const user = userEvent.setup();

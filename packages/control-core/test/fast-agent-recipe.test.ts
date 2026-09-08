@@ -84,18 +84,25 @@ describe("fast-agent native HF recipe", () => {
     expect(result.stderr).toBe("");
   });
 
-  it.each([
-    "glimmer",
-    "openai/glimmer:hf",
-    "hf.example-org/model:together",
-    "openai/example-org/model",
-  ])("rejects an unexpected route instead of silently rewriting %s", async (model) => {
-    await expect(runRecipe(model)).rejects.toMatchObject({
-      code: 2,
-      stdout: "",
-      stderr: "Expected a full Hub model ID and HF provider from Workbench\n",
-    });
-  });
+  it.each(["hf.example-org/model:together", "hf.other-org/other-model:deepinfra"])(
+    "preserves the explicit native model string %s",
+    async (model) => {
+      const result = await runRecipe(model);
+      const args = result.stdout.trim().split("\n");
+      expect(args[args.indexOf("--model") + 1]).toBe(model);
+    },
+  );
+
+  it.each(["glimmer", "openai/glimmer:hf", "openai/example-org/model"])(
+    "rejects an unexpected route instead of silently rewriting %s",
+    async (model) => {
+      await expect(runRecipe(model)).rejects.toMatchObject({
+        code: 2,
+        stdout: "",
+        stderr: "Expected a full Hub model ID and HF provider from Workbench\n",
+      });
+    },
+  );
 
   it("fails closed without the injected inference key instead of using a parent token", async () => {
     await expect(

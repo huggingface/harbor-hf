@@ -62,6 +62,13 @@ const idempotencyHeader = {
 } as const;
 const authenticated = [{ cookieSession: [] }, { bearerToken: [] }] as const;
 
+const concurrentTrialsSchema = {
+  type: "integer",
+  minimum: 1,
+  maximum: 128,
+  description: "Harbor trial concurrency override.",
+} as const;
+
 const document = {
   openapi: "3.1.0",
   info: {
@@ -108,12 +115,7 @@ const document = {
               version: { type: "string" },
             },
           },
-          n_concurrent_trials: {
-            type: "integer",
-            minimum: 1,
-            maximum: 128,
-            description: "Harbor trial concurrency override.",
-          },
+          n_concurrent_trials: concurrentTrialsSchema,
           cost_ceiling_usd_per_trial: {
             type: "number",
             exclusiveMinimum: 0,
@@ -189,6 +191,7 @@ const document = {
           "workbench",
         ],
         properties: {
+          n_concurrent_trials: concurrentTrialsSchema,
           benchmark: {
             type: "object",
             additionalProperties: false,
@@ -221,6 +224,14 @@ const document = {
             properties: {
               recipe: { $ref: "#/components/schemas/WorkbenchRecipe" },
               setup_test_id: { type: "string", minLength: 1, maxLength: 160 },
+              harbor_agent: {
+                type: "object",
+                additionalProperties: false,
+                required: ["model_name"],
+                properties: {
+                  model_name: { type: "string", minLength: 1, maxLength: 320 },
+                },
+              },
             },
           },
         },

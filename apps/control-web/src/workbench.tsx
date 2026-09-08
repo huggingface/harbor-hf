@@ -28,7 +28,7 @@ import { useControlState } from "./control-state";
 import { PageHeader } from "./layout";
 import { cn, formatDate, formatMoneyUsd } from "./lib";
 import { usePresets, useSystem } from "./queries";
-import { Badge, Button, Card, ErrorNotice, Loading } from "./ui";
+import { Badge, Button, Card, ConcurrentTrialsField, ErrorNotice, Loading } from "./ui";
 import { loadWorkbenchDraft, saveWorkbenchDraft } from "./workbench-draft";
 
 const sources = [
@@ -103,13 +103,14 @@ export const fastAgentStarter: WorkbenchRecipe = {
   run_command: [
     "set -eu",
     'case "$AGENT_MODEL" in',
-    "  openai/*/*:*) ;;",
+    '  hf.*/*:*) harness_model="$AGENT_MODEL" ;;',
+    `  openai/*/*:*) harness_model="hf.\${AGENT_MODEL#openai/}" ;;`,
     '  *) printf "%s\\n" "Expected a full Hub model ID and HF provider from Workbench" >&2; exit 2 ;;',
     "esac",
     [
       'HF_TOKEN="$OPENAI_API_KEY"',
       '"$AGENT_HOME/venv/bin/fast-agent" go',
-      `  --model "hf.\${AGENT_MODEL#openai/}"`,
+      '  --model "$harness_model"',
       '  --base-url "$MODEL_BASE_URL"',
       '  --prompt-file "$TASK_INSTRUCTION_PATH"',
       '  --workspace "$TASK_WORKSPACE"',
@@ -297,8 +298,19 @@ export function WorkbenchPage() {
   } | null>(null);
   const [fileError, setFileError] = useState<unknown>(null);
   const [benchmarkKey, setBenchmarkKey] = useState(draft?.benchmarkKey ?? "");
+  const [concurrentTrials, setConcurrentTrials] = useState<string | null>(
+    draft?.n_concurrent_trials ?? null,
+  );
+  const selectedBenchmark = presets.data?.benchmarks.find(
+    (item) => `${item.benchmark}\n${item.preset}` === benchmarkKey,
+  );
+  const concurrencyValue =
+    concurrentTrials ?? String(selectedBenchmark?.job.n_concurrent_trials ?? 1);
   const [model, setModel] = useState(draft?.model ?? "");
   const [provider, setProvider] = useState(draft?.provider ?? "");
+  const [harnessModel, setHarnessModel] = useState(
+    draft?.harbor_agent?.model_name ?? "",
+  );
   const [ceiling, setCeiling] = useState(draft?.ceiling ?? "1");
   const [role, setRole] = useState<"final" | "diagnostic">(draft?.role ?? "diagnostic");
   const [launchConfirmed, setLaunchConfirmed] = useState(false);
@@ -310,9 +322,32 @@ export function WorkbenchPage() {
 
   useEffect(() => {
     setDraftSaved(
-      saveWorkbenchDraft({ recipe, benchmarkKey, model, provider, ceiling, role }),
+      saveWorkbenchDraft({
+        recipe,
+        benchmarkKey,
+        n_concurrent_trials: selectedBenchmark
+          ? concurrencyValue
+          : (concurrentTrials ?? undefined),
+        model,
+        provider,
+        ceiling,
+        role,
+        harbor_agent: { model_name: harnessModel },
+      }),
     );
-  }, [recipe, benchmarkKey, model, provider, ceiling, role]);
+    setLaunchConfirmed(false);
+  }, [
+    recipe,
+    benchmarkKey,
+    model,
+    provider,
+    ceiling,
+    role,
+    harnessModel,
+    concurrentTrials,
+    selectedBenchmark,
+    concurrencyValue,
+  ]);
 
   useEffect(() => {
     void listWorkbenchSetups()
@@ -472,7 +507,7 @@ export function WorkbenchPage() {
     )
       return;
     const [benchmark, preset] = benchmarkKey.split("\n");
-    if (!(benchmark && preset && model.trim() && provider.trim())) return;
+    if (!(benchmark && preset && model.trim() && harnessModel.trim())) return;
     setLaunching(true);
     setLaunchError(null);
     try {
@@ -480,12 +515,17 @@ export function WorkbenchPage() {
         benchmark: { name: benchmark, preset },
         model: {
           id: model.trim(),
-          provider: provider.trim(),
+          provider: provider.trim() || "unspecified",
           reasoning_effort: "off",
         },
+        n_concurrent_trials: Number(concurrencyValue),
         cost_ceiling_usd_per_trial: Number(ceiling),
         role,
-        workbench: { recipe, setup_test_id: setup.setup_test_id },
+        workbench: {
+          recipe,
+          setup_test_id: setup.setup_test_id,
+          harbor_agent: { model_name: harnessModel },
+        },
       });
       navigate(`/runs/${response.run.run_id}`);
     } catch (error) {
@@ -946,7 +986,10 @@ export function WorkbenchPage() {
                   className={fieldClass()}
                   required
                   value={benchmarkKey}
-                  onChange={(event) => setBenchmarkKey(event.target.value)}
+                  onChange={(event) => {
+                    setBenchmarkKey(event.target.value);
+                    setConcurrentTrials(null);
+                  }}
                 >
                   {(presets.data?.benchmarks ?? []).map((item) => (
                     <option
@@ -959,7 +1002,7 @@ export function WorkbenchPage() {
                 </select>
               </label>
               <label className="block text-sm text-slate-300">
-                Model
+                Recorded model
                 <input
                   className={fieldClass()}
                   maxLength={320}
@@ -970,16 +1013,52 @@ export function WorkbenchPage() {
                 />
               </label>
               <label className="block text-sm text-slate-300">
-                Provider
+                Recorded provider (optional)
                 <input
                   className={fieldClass()}
                   pattern="[a-z0-9][a-z0-9-]{0,62}"
-                  placeholder="provider"
-                  required
+                  placeholder="unspecified"
                   value={provider}
                   onChange={(event) => setProvider(event.target.value)}
                 />
               </label>
+              <p className="text-sm text-slate-400">
+                Recorded model and provider label this evaluation. They do not select or
+                verify the model used by your harness.
+              </p>
+              <label className="block text-sm text-slate-300">
+                Harness model string
+                <input
+                  className={fieldClass()}
+                  maxLength={320}
+                  placeholder="Exact model string accepted by your harness"
+                  required
+                  value={harnessModel}
+                  onChange={(event) => setHarnessModel(event.target.value)}
+                />
+              </label>
+              <p className="text-sm text-slate-400">
+                Stored unchanged as Harbor agents[0].model_name. The model_name
+                environment binding delivers it to your command. The Fast-Agent starter
+                accepts hf.&lt;namespace&gt;/&lt;model&gt;:&lt;provider&gt;.
+              </p>
+              <p className="text-sm text-slate-400">
+                Environment bindings deliver credentials; literal values and scripts
+                must never contain keys. Only the configured HF inference credential is
+                supported. Other providers require a reviewed credential path; the FX
+                starter requires a Vercel AI Gateway key and cannot launch through this
+                HF-only path.
+              </p>
+              <ConcurrentTrialsField
+                value={concurrencyValue}
+                onChange={setConcurrentTrials}
+                className={fieldClass()}
+              />
+              <p className="text-sm text-slate-400">
+                Maximum simultaneous Harbor trials, not attempts per task. Changing the
+                benchmark preset restores its default. Higher concurrency can increase
+                resource use and provider rate-limit pressure.
+              </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-sm text-slate-300">
                   Cost limit per trial

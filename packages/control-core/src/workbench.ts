@@ -131,13 +131,14 @@ export const fastAgentWorkbenchStarter: AgentWorkbenchRecipeV1 = {
   run_command: [
     "set -eu",
     'case "$AGENT_MODEL" in',
-    "  openai/*/*:*) ;;",
+    '  hf.*/*:*) harness_model="$AGENT_MODEL" ;;',
+    `  openai/*/*:*) harness_model="hf.\${AGENT_MODEL#openai/}" ;;`,
     '  *) printf "%s\\n" "Expected a full Hub model ID and HF provider from Workbench" >&2; exit 2 ;;',
     "esac",
     [
       'HF_TOKEN="$OPENAI_API_KEY"',
       '"$AGENT_HOME/venv/bin/fast-agent" go',
-      `  --model "hf.\${AGENT_MODEL#openai/}"`,
+      '  --model "$harness_model"',
       '  --base-url "$MODEL_BASE_URL"',
       '  --prompt-file "$TASK_INSTRUCTION_PATH"',
       '  --workspace "$TASK_WORKSPACE"',

@@ -180,6 +180,59 @@ describe("run submission", () => {
     expect(result.run.harbor_job_config.n_concurrent_trials).toBe(32);
   });
 
+  it.each(["one-task-1-trial", "all-tasks-1-trial", "all-tasks-5-trials"])(
+    "shares native defaults and overrides for preset and Workbench submissions: %s",
+    async (preset) => {
+      const submission = { ...input, benchmark: { ...input.benchmark, preset } };
+      const fragment = compileAgentWorkbenchRecipe(
+        fastAgentWorkbenchStarter,
+      ).harbor_agent;
+      const defaultRun = await service.submitWorkbench(
+        submission,
+        fragment,
+        "default-concurrency",
+        "test-subject",
+      );
+      const expected = preset === "one-task-1-trial" ? 1 : 8;
+      expect(defaultRun.run.harbor_job_config.n_concurrent_trials).toBe(expected);
+      for (const n_concurrent_trials of [8, 10, 12, 16, 64, 128]) {
+        const override = { ...submission, n_concurrent_trials };
+        const workbench = await service.submitWorkbench(
+          override,
+          fragment,
+          `workbench-${n_concurrent_trials}`,
+          "test-subject",
+        );
+        const normal = await service.submitPreset(
+          override,
+          `preset-${n_concurrent_trials}`,
+          "test-subject",
+        );
+        expect(workbench.run.harbor_job_config.n_concurrent_trials).toBe(
+          n_concurrent_trials,
+        );
+        expect(normal.run.harbor_job_config.n_concurrent_trials).toBe(
+          n_concurrent_trials,
+        );
+        expect(workbench.run.harbor_job_config.n_attempts).toBe(
+          defaultRun.run.harbor_job_config.n_attempts,
+        );
+        expect(workbench.run.submission).not.toHaveProperty("n_concurrent_trials");
+      }
+      await expect(
+        service.submitWorkbench(
+          { ...submission, n_concurrent_trials: 12 },
+          fragment,
+          "default-concurrency",
+          "test-subject",
+        ),
+      ).rejects.toThrow("different run");
+      expect(
+        presets.benchmark(submission.benchmark.name, preset).job.n_concurrent_trials,
+      ).toBe(expected);
+    },
+  );
+
   it("keeps the reviewed full-run CPU flavor in the Harbor job", async () => {
     const result = await service.submitPreset(
       {
@@ -191,7 +244,7 @@ describe("run submission", () => {
     );
     expect(result.run.harbor_job_config).toMatchObject({
       n_attempts: 1,
-      n_concurrent_trials: 64,
+      n_concurrent_trials: 8,
       environment: {
         kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
       },
@@ -249,6 +302,53 @@ describe("run submission", () => {
         "test-subject",
       ),
     ).rejects.toThrow("reviewed command agent");
+  });
+
+  it.each(["hf.example-org/model:together", "another-harness/exact-model"])(
+    "keeps recorded identity separate from native model_name %s",
+    async (model_name) => {
+      const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+      const result = await service.submitWorkbench(
+        input,
+        { ...preview.harbor_agent, model_name },
+        "explicit-model",
+        "test-subject",
+      );
+      expect(result.run.submission.model).toEqual(input.model);
+      expect(result.run.harbor_job_config.agents?.[0]?.model_name).toBe(model_name);
+      expect(result.run.submission).not.toHaveProperty("harbor_agent");
+      await expect(
+        service.submitWorkbench(
+          input,
+          { ...preview.harbor_agent, model_name: "changed-model" },
+          "explicit-model",
+          "test-subject",
+        ),
+      ).rejects.toThrow("different run");
+    },
+  );
+
+  it.each([
+    "",
+    "  ",
+    "a\nb",
+    "a\u0000b",
+    "a\u007fb",
+    "a".repeat(321),
+    `hf_${"x".repeat(24)}`,
+    "https://user:password@example.test/model",
+    "$" + "{HF_TOKEN}",
+  ])("rejects invalid or credential-bearing harness strings", async (model_name) => {
+    const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+    await expect(
+      service.submitWorkbench(
+        input,
+        { ...preview.harbor_agent, model_name },
+        "invalid-model",
+        "test-subject",
+      ),
+    ).rejects.toThrow("Harness model string");
+    expect(projection.listRuns()).toEqual([]);
   });
 
   it("adopts a repeated request and rejects different input", async () => {

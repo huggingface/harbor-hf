@@ -91,25 +91,67 @@ A diagnostic role is the safe default. Final runs can enter the public
 leaderboard only when the selected benchmark is eligible and Harbor records at
 least one numeric reward.
 
+## Trial concurrency
+
+Workbench and Overview use the same **Concurrent trials** input, API validation,
+and native configuration override. The selected benchmark supplies the default:
+8 for the all-task presets, 1 for the one-task preset. Values such as 8, 10, 12,
+and 16 can be entered directly; the existing supported range remains 1–128.
+
+This is Harbor's `n_concurrent_trials`, not the number of attempts per task, a
+new scheduler, or a hard spending limit. Higher values can increase resource use
+and provider rate-limit pressure. Setup testing is still one disposable setup
+Job and does not use benchmark concurrency.
+
+Changing the benchmark resets the input to its preset default. Explicit draft
+edits survive reload, including older higher values; reload never restores
+launch approval. Concurrency edits invalidate launch confirmation. Submission
+stores the value only in the native Harbor job configuration. Existing run
+records, retry settings, hardware, budgets, and attempts are not rewritten.
+
 ## Fast-agent HF routing
 
 The reviewed fast-agent starter installs `fast-agent-mcp==0.10.20` and uses
 fast-agent's native Hugging Face adapter.
-The current shared run builder still records `openai/<model>:<provider>` for
-Workbench. At the executable boundary, this starter removes that imposed prefix
-and passes `hf.<model>:<provider>` to fast-agent, preserving the selected Hub model
-ID and HF inference provider. Other Workbench recipes and preset agents are unchanged.
+The guided Run form separates evaluation labels from execution:
 
-For example, to select the Together route for DeepSeek V4 Flash:
+- **Recorded model** is the identity saved in `submission.model.id`. It does not
+  select or verify the model used by the harness.
+- **Recorded provider** is optional metadata, stored as `unspecified` when blank.
+- **Harness model string** is stored unchanged in Harbor's
+  `agents[0].model_name`. The recipe's `model_name` environment binding delivers
+  it to the invocation command. The command remains responsible for consuming it.
 
-- Model: `deepseek-ai/DeepSeek-V4-Flash-0731`
-- Provider: `together`
-- fast-agent receives: `hf.deepseek-ai/DeepSeek-V4-Flash-0731:together`
+For example:
 
-Confirm provider availability before launch. The Model field still expects the
-full Hub model ID, not a fast-agent shortcode or provider-prefixed string.
-Arbitrary native strings, alias defaults, and non-HF backend authentication are
-not added by this tactical recipe change.
+- Recorded model: `example-org/model-one`
+- Recorded provider: `together`
+- Harness model string: `hf.example-org/model-one:together`
+
+The Fast-Agent starter passes an explicit `hf.<model>:<provider>` string unchanged
+into its native HF adapter. For older API clients that omit
+`workbench.harbor_agent.model_name`, the builder retains the existing
+`openai/<model>:<provider>` default; the starter converts that legacy form at the
+CLI boundary. Other recipes define their own model-string conventions. There is
+no harness-name switch in the submission service.
+
+Editing recorded identity does not rewrite the harness string. Changing run
+settings clears launch confirmation. Browser drafts preserve the two values
+separately, but never preserve setup or launch approval; older drafts require
+entering the harness string explicitly. Preset submission and the native New Job
+page are unchanged.
+
+These fields do not enable new credential routes. Environment bindings deliver
+credentials from the configured source; they do not authorize arbitrary secrets.
+`model_api_key` still supplies only the existing HF inference credential. Never
+paste keys into commands, literal environment values, model strings, or config
+files. A non-HF provider needs its own reviewed credential source and delivery
+path before execution can be supported.
+
+In particular, the bundled FX 0.0.6 recipe consumes `model_name` as `FX_MODEL` and
+expects a Vercel AI Gateway key as `AI_GATEWAY_API_KEY`. An HF provider selection
+or HF token does not satisfy that requirement. The FX starter remains available
+for editing and setup testing, not benchmark launch through this HF-only path.
 
 The run already receives an inference-only key through its `model_api_key`
 binding. The starter exposes that same key as `HF_TOKEN` only for the fast-agent

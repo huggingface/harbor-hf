@@ -61,7 +61,7 @@ const submissionSchema = z
   .strict();
 
 const workbenchSubmissionSchema = submissionSchema
-  .omit({ harness: true, n_concurrent_trials: true })
+  .omit({ harness: true })
   .extend({
     model: z
       .object({
@@ -74,6 +74,10 @@ const workbenchSubmissionSchema = submissionSchema
       .object({
         recipe: z.unknown(),
         setup_test_id: z.string().min(1).max(160),
+        harbor_agent: z
+          .object({ model_name: z.string().min(1).max(320) })
+          .strict()
+          .optional(),
       })
       .strict(),
   })
@@ -480,10 +484,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           benchmark: input.benchmark,
           model: input.model,
           harness: { agent: "command-agent", version: preview.revision_id },
+          n_concurrent_trials: input.n_concurrent_trials,
           cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
           role: input.role,
         },
-        preview.harbor_agent,
+        { ...preview.harbor_agent, ...input.workbench.harbor_agent },
         idempotencyKey(request),
         actor.subject,
       );

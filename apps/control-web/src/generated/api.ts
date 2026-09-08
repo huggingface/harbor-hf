@@ -1518,6 +1518,8 @@ export interface components {
             };
         };
         WorkbenchSubmission: {
+            /** @description Harbor trial concurrency override. */
+            n_concurrent_trials?: number;
             benchmark: {
                 name: string;
                 preset: string;
@@ -1534,6 +1536,9 @@ export interface components {
             workbench: {
                 recipe: components["schemas"]["WorkbenchRecipe"];
                 setup_test_id: string;
+                harbor_agent?: {
+                    model_name: string;
+                };
             };
         };
         ModelProvidersResponse: {
