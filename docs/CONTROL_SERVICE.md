@@ -74,6 +74,42 @@ Hugging Face supplies the OAuth client values to the Space. OAuth mode requires
 uses a 30-day browser session and `openid profile` scopes by default. Logging
 out, losing authorization, or clearing browser cookies ends the session sooner.
 
+### Sign-in diagnostics
+
+Open the app directly and start a fresh login at `/auth/login`; do not reload
+an old callback URL. A completed OAuth exchange does not itself grant operator
+access. At every service startup, `apps/control-api/src/runtime.ts` constructs
+an in-memory ACL from `HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS`; there is no
+separate ACL file in the Bucket. The configured subjects become operators,
+and the reader list is empty.
+
+To grant operator access, append the account's stable Hugging Face user ID
+(not its username or organization name) to that Space variable's comma-separated
+list, preserving existing operators. Restart the Space to reload the list,
+then start a fresh login. Despite its bootstrap name, the variable is read on
+every startup, not only during initial installation. Keep account IDs in private
+Space configuration, not repository files. `HARBOR_HF_WRITE_MODE` controls
+operations, not sign-in authorization.
+
+Callback failures emit `OAuth callback failed` with the request ID, a fixed
+`oauth_stage`, and `code`. No callback query strings, request headers, cookies,
+provider error messages, or token responses belong in these diagnostics.
+
+| Stage | Check |
+| --- | --- |
+| `configuration` | Space-supplied OAuth configuration and initialization |
+| `flow` | Start a fresh login; check cookies and whether the Space restarted |
+| `token_exchange` | Callback origin, provider configuration, and a fresh authorization flow |
+| `user_info` | Provider user-info availability and identity response |
+| `authorization` | `access_denied` (403) means the identity is not in the ACL; `oauth_failed` means the ACL lookup failed |
+| `session` | Local session-store availability |
+
+These stages identify where sign-in failed, not necessarily its root cause.
+Do not copy callback URLs, cookies, tokens, or raw runtime logs into public issues.
+The anonymous session endpoint returns one 401 response; it does not create a
+session or grant access. Existing deployments may retain older sensitive logs;
+handle those privately under the deployment's log-retention policy.
+
 The overview form submits Harbor's native `n_concurrent_trials` value. The
 all-task presets default to 64, and the form accepts values from 1 through 128.
 

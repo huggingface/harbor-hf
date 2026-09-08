@@ -11,9 +11,10 @@ import Fastify, {
 } from "fastify";
 import { z } from "zod";
 import {
-  BearerRateLimitError,
   type AuthenticatedActor,
+  BearerRateLimitError,
   InvalidBearerCredentialError,
+  OAuthCallbackError,
   type SessionRow,
 } from "./auth.js";
 import {
@@ -183,7 +184,17 @@ function publicApi(path: string): boolean {
 }
 
 export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
-  const app = Fastify({ logger: runtime.config.node_env !== "test" });
+  const app = Fastify({
+    logger: runtime.config.node_env !== "test" && {
+      // Allowlist request metadata: no query strings, headers, or cookies.
+      serializers: {
+        req: (request: FastifyRequest) => ({
+          method: request.method,
+          url: request.url.split("?", 1)[0] ?? "/",
+        }),
+      },
+    },
+  });
   await app.register(cookie);
   await app.register(helmet, {
     contentSecurityPolicy: {
@@ -231,8 +242,18 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       return error(reply, 503, "write_disabled", "write mode is disabled");
   });
 
-  app.setErrorHandler((failure, _request, reply) => {
+  app.setErrorHandler((failure, request, reply) => {
     if (reply.sent) return;
+    if (failure instanceof OAuthCallbackError) {
+      const code = failure.denied ? "access_denied" : "oauth_failed";
+      request.log.error({ oauth_stage: failure.stage, code }, "OAuth callback failed");
+      const status = failure.denied
+        ? 403
+        : failure.stage === "flow" || failure.stage === "token_exchange"
+          ? 400
+          : 500;
+      return error(reply, status, code, failure.message);
+    }
     if (failure instanceof z.ZodError)
       return error(
         reply,
@@ -286,7 +307,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.get("/auth/callback", async (request, reply) => {
     const flowId = request.cookies.hhf_oauth_flow;
-    if (!flowId) return error(reply, 400, "oauth_failed", "OAuth flow is missing");
+    if (!flowId) throw new OAuthCallbackError("flow");
     const callback = await runtime.auth.callback(
       flowId,
       new URL(request.url, runtime.config.public_origin),
@@ -318,8 +339,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   });
 
   app.get("/api/v1/session", async (request, reply) => {
-    if (!(await authenticate(runtime, request, reply)))
-      return { authenticated: false, login_url: "/auth/login" };
+    if (!(await authenticate(runtime, request, reply))) return reply;
     const actor = requireActor(request);
     return {
       authenticated: true,
