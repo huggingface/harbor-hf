@@ -101,6 +101,12 @@ Approved at: 2026-09-08T15:06:25.990859+00:00
 - Arbitrary model-string inputs, aliases, and non-HF credential provisioning remain
   separate work; this patch retains the existing Model/Provider form.
 
+### Fast-agent default pin update (2026-09-08)
+
+- The user approved updating the default Workbench fast-agent package to 0.10.20
+  in the existing tactical routing pull request, including tests and documentation.
+- Preserve the prior limits: no merge, deployment, credential transfer, or paid run.
+
 ### Scope
 
 - Add the project-authorization skill and this repository-indexed project file through the normal contribution workflow.
