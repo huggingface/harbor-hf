@@ -9,7 +9,7 @@ default_branch: main
 
 ## Current authorization
 
-Status: completed
+Status: approved
 
 ### Combined Workbench execution and UX pull request
 
@@ -445,3 +445,12 @@ Approved at: 2026-09-08T21:29:10+00:00
 - Unrestricted model-string passthrough, provider credential delivery, and
   separately recorded reasoning remain distinct follow-up work; this amendment
   does not claim they are implemented.
+
+### Dependency repair, merge, and deployment
+
+Approved at: 2026-09-08T23:50:36.203970+00:00
+
+- The user explicitly approved resolving the dependency audit failure, merging PR #190 after validation, and deploying the combined improvements.
+- Update only the affected dependency resolution as needed; preserve audit and test gates. Publish the parent image through the existing workflow and registry; deploy merged source to the previously selected shared control Space and update its parent/setup image references to verified immutable digests.
+- Preserve execution mode, hardware, visibility, namespace, Bucket configuration, and persistent secrets. Do not create resources, copy credentials, or launch benchmark/inference Jobs. Existing control credential and writable-parent-storage defects are not repaired by this deployment.
+- Verify release provenance, image contents, runtime health, and configured image references. Stop for unexpected active-run compatibility issues or any required credential movement.
