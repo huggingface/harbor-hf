@@ -38,6 +38,7 @@ const draftSchema = z.object({
   }),
   benchmarkKey: z.string(),
   model: z.string(),
+  harbor_agent: z.object({ model_name: z.string() }).optional(),
   provider: z.string(),
   ceiling: z.string(),
   role: z.enum(["final", "diagnostic"]),

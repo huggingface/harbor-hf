@@ -221,6 +221,14 @@ const document = {
             properties: {
               recipe: { $ref: "#/components/schemas/WorkbenchRecipe" },
               setup_test_id: { type: "string", minLength: 1, maxLength: 160 },
+              harbor_agent: {
+                type: "object",
+                additionalProperties: false,
+                required: ["model_name"],
+                properties: {
+                  model_name: { type: "string", minLength: 1, maxLength: 320 },
+                },
+              },
             },
           },
         },

@@ -491,8 +491,13 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
   await page.getByRole("button", { name: "Run setup test" }).click();
   await expect(page.getByText("Setup passed")).toBeVisible();
   await expect(page.getByText("setup ready")).toBeVisible();
-  await page.getByLabel("Model").last().fill("publisher/workbench-model");
-  await page.getByLabel("Provider").last().fill("provider");
+  await page
+    .getByLabel("Recorded model", { exact: true })
+    .fill("publisher/workbench-model");
+  await page
+    .getByLabel("Harness model string", { exact: true })
+    .fill("hf.publisher/runtime-model:together");
+  await page.getByLabel("Recorded provider (optional)").fill("provider");
   await page
     .getByLabel(
       "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
@@ -506,7 +511,10 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
       provider: "provider",
       reasoning_effort: "off",
     },
-    workbench: { setup_test_id: setupId },
+    workbench: {
+      setup_test_id: setupId,
+      harbor_agent: { model_name: "hf.publisher/runtime-model:together" },
+    },
   });
 });
 
@@ -518,8 +526,13 @@ test("invalidates Workbench launch approval after a recipe edit", async ({ page 
     .check();
   await page.getByRole("button", { name: "Run setup test" }).click();
   await expect(page.getByText("Setup passed")).toBeVisible();
-  await page.getByLabel("Model").last().fill("publisher/workbench-model");
-  await page.getByLabel("Provider").last().fill("provider");
+  await page
+    .getByLabel("Recorded model", { exact: true })
+    .fill("publisher/workbench-model");
+  await page
+    .getByLabel("Harness model string", { exact: true })
+    .fill("hf.publisher/runtime-model:together");
+  await page.getByLabel("Recorded provider (optional)").fill("provider");
   await page
     .getByLabel(
       "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
@@ -529,6 +542,44 @@ test("invalidates Workbench launch approval after a recipe edit", async ({ page 
 
   await page.getByLabel("Recipe name").fill("edited-agent");
   await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
+});
+
+test("model edits reset launch consent without rewriting the harness string", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.goto("/workbench");
+  await page
+    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
+    .check();
+  await page.getByRole("button", { name: "Run setup test" }).click();
+  await expect(page.getByText("Setup passed")).toBeVisible();
+  const harness = page.getByLabel("Harness model string", { exact: true });
+  await harness.fill("hf.publisher/runtime-model:together");
+  const consent = page.getByLabel(
+    "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+  );
+  for (const [label, value] of [
+    ["Recorded model", "publisher/recorded-model"],
+    ["Recorded provider (optional)", "together"],
+    ["Harness model string", "hf.publisher/another-model:together"],
+  ]) {
+    await consent.check();
+    await page.getByLabel(label, { exact: true }).fill(value);
+    await expect(consent).not.toBeChecked();
+    await expect(
+      page.getByRole("button", { name: "Launch Harbor run" }),
+    ).toBeDisabled();
+  }
+  await expect(page.getByLabel("Recorded model", { exact: true })).toHaveValue(
+    "publisher/recorded-model",
+  );
+  await page.getByLabel("Recorded provider (optional)").fill("");
+  await expect(harness).toHaveValue("hf.publisher/another-model:together");
+  await page.reload();
+  await expect(harness).toHaveValue("hf.publisher/another-model:together");
+  await expect(consent).not.toBeChecked();
+  await expect(page.getByText("Setup passed")).not.toBeVisible();
 });
 
 test("shows Workbench setup failure without enabling Run launch", async ({ page }) => {

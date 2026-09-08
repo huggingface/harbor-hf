@@ -74,6 +74,10 @@ const workbenchSubmissionSchema = submissionSchema
       .object({
         recipe: z.unknown(),
         setup_test_id: z.string().min(1).max(160),
+        harbor_agent: z
+          .object({ model_name: z.string().min(1).max(320) })
+          .strict()
+          .optional(),
       })
       .strict(),
   })
@@ -483,7 +487,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
           role: input.role,
         },
-        preview.harbor_agent,
+        { ...preview.harbor_agent, ...input.workbench.harbor_agent },
         idempotencyKey(request),
         actor.subject,
       );

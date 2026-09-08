@@ -383,8 +383,16 @@ describe("restored control console", () => {
         ?.parentElement;
     expect(runCard).not.toBeNull();
     const scope = within(runCard as HTMLElement);
-    await user.type(scope.getByLabelText("Model"), "publisher/workbench-model");
-    await user.type(scope.getByLabelText("Provider"), "provider");
+    await user.type(
+      scope.getByLabelText("Recorded model"),
+      "publisher/workbench-model",
+    );
+    await user.type(scope.getByLabelText("Recorded provider (optional)"), "together");
+    await user.clear(scope.getByLabelText("Recorded provider (optional)"));
+    await user.type(
+      scope.getByLabelText("Harness model string"),
+      "hf.publisher/runtime-model:together",
+    );
     await user.click(
       scope.getByLabelText(
         "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
@@ -395,10 +403,13 @@ describe("restored control console", () => {
     expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
       model: {
         id: "publisher/workbench-model",
-        provider: "provider",
+        provider: "unspecified",
         reasoning_effort: "off",
       },
-      workbench: { setup_test_id: setup.setup_test_id },
+      workbench: {
+        setup_test_id: setup.setup_test_id,
+        harbor_agent: { model_name: "hf.publisher/runtime-model:together" },
+      },
     });
   });
 

@@ -17,6 +17,7 @@ import {
   ROUTER_URL,
 } from "./hf-config.js";
 
+import { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
 export { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
 
 export interface PresetSubmission {
@@ -29,6 +30,7 @@ export interface PresetSubmission {
 }
 
 export interface HarborAgentFragment {
+  model_name?: string;
   name?: string;
   import_path?: string;
   kwargs?: Record<string, unknown>;
@@ -179,13 +181,26 @@ export class PresetCatalog {
       throw new Error("Workbench command agents support reasoning effort off only");
     if (fragment.import_path !== "harbor_hf_agents.command_agent.agent:CommandAgent")
       throw new Error("Workbench requires the reviewed command agent plugin");
+    if (
+      fragment.model_name !== undefined &&
+      (!fragment.model_name.trim() ||
+        fragment.model_name.length > 320 ||
+        [...fragment.model_name].some(
+          (character) =>
+            character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+        ) ||
+        containsCredentialMaterial(fragment.model_name))
+    )
+      throw new Error("Harness model string must be non-empty and credential-free");
     const job = clone(benchmark.job);
     const harborAgent = {
       import_path: fragment.import_path,
       ...(fragment.override_setup_timeout_sec
         ? { override_setup_timeout_sec: fragment.override_setup_timeout_sec }
         : {}),
-      model_name: `openai/${submission.model.id}:${submission.model.provider}`,
+      model_name:
+        fragment.model_name ??
+        `openai/${submission.model.id}:${submission.model.provider}`,
       env: {
         OPENAI_BASE_URL: ROUTER_URL,
         OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,

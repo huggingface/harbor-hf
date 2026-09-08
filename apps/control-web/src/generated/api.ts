@@ -1534,6 +1534,9 @@ export interface components {
             workbench: {
                 recipe: components["schemas"]["WorkbenchRecipe"];
                 setup_test_id: string;
+                harbor_agent?: {
+                    model_name: string;
+                };
             };
         };
         ModelProvidersResponse: {

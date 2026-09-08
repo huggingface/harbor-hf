@@ -251,6 +251,53 @@ describe("run submission", () => {
     ).rejects.toThrow("reviewed command agent");
   });
 
+  it.each(["hf.example-org/model:together", "another-harness/exact-model"])(
+    "keeps recorded identity separate from native model_name %s",
+    async (model_name) => {
+      const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+      const result = await service.submitWorkbench(
+        input,
+        { ...preview.harbor_agent, model_name },
+        "explicit-model",
+        "test-subject",
+      );
+      expect(result.run.submission.model).toEqual(input.model);
+      expect(result.run.harbor_job_config.agents?.[0]?.model_name).toBe(model_name);
+      expect(result.run.submission).not.toHaveProperty("harbor_agent");
+      await expect(
+        service.submitWorkbench(
+          input,
+          { ...preview.harbor_agent, model_name: "changed-model" },
+          "explicit-model",
+          "test-subject",
+        ),
+      ).rejects.toThrow("different run");
+    },
+  );
+
+  it.each([
+    "",
+    "  ",
+    "a\nb",
+    "a\u0000b",
+    "a\u007fb",
+    "a".repeat(321),
+    `hf_${"x".repeat(24)}`,
+    "https://user:password@example.test/model",
+    "$" + "{HF_TOKEN}",
+  ])("rejects invalid or credential-bearing harness strings", async (model_name) => {
+    const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+    await expect(
+      service.submitWorkbench(
+        input,
+        { ...preview.harbor_agent, model_name },
+        "invalid-model",
+        "test-subject",
+      ),
+    ).rejects.toThrow("Harness model string");
+    expect(projection.listRuns()).toEqual([]);
+  });
+
   it("adopts a repeated request and rejects different input", async () => {
     const first = await submit();
     const second = await submit();

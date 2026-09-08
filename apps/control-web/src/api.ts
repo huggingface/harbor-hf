@@ -1,4 +1,5 @@
 import type { AgentWorkbenchRecipeV1, BenchmarkPresetV1 } from "@harbor-hf/contracts";
+import type { components } from "./generated/api";
 
 export interface Actor {
   username: string;
@@ -178,13 +179,7 @@ export interface WorkbenchSetup {
   files: WorkbenchFile[];
 }
 
-export interface WorkbenchSubmission {
-  benchmark: { name: string; preset: string };
-  model: { id: string; provider: string; reasoning_effort: "off" };
-  cost_ceiling_usd_per_trial: number;
-  role: "final" | "diagnostic";
-  workbench: { recipe: WorkbenchRecipe; setup_test_id: string };
-}
+export type WorkbenchSubmission = components["schemas"]["WorkbenchSubmission"];
 
 interface ErrorBody {
   error?: {

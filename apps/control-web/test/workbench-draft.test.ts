@@ -21,6 +21,7 @@ const draft: WorkbenchDraft = {
   benchmarkKey: "terminal-bench-2-1\none-task-1-trial",
   model: "publisher/model",
   provider: "provider",
+  harbor_agent: { model_name: "hf.publisher/runtime-model:together" },
   ceiling: "0.25",
   role: "diagnostic",
 };
@@ -36,6 +37,13 @@ describe("Workbench draft storage", () => {
     expect(loadWorkbenchDraft()).toEqual(draft);
     expect(loadWorkbenchDraft()).not.toHaveProperty("confirmed");
     expect(loadWorkbenchDraft()).not.toHaveProperty("setup");
+  });
+
+  it("loads older drafts without inventing a harness model string", () => {
+    const { harbor_agent: _agent, ...legacy } = draft;
+    expect(saveWorkbenchDraft(legacy)).toBe(true);
+    expect(loadWorkbenchDraft()).toEqual(legacy);
+    expect(loadWorkbenchDraft()).not.toHaveProperty("harbor_agent");
   });
 
   it.each(["invalid JSON", "null", '{"recipe":{"environment":null}}'])(

@@ -541,56 +541,94 @@ describe("control API", () => {
     );
   });
 
-  it("submits an attested Workbench recipe as one normal Harbor run", async () => {
-    const { runtime, app } = await setup();
-    await runtime.initialize();
-    const attestation = vi
-      .spyOn(runtime.workbench, "attestPassedSetup")
-      .mockResolvedValue({
-        setup_test_id: workbenchSetup.setup_test_id,
-        recipe_digest: workbenchSetup.recipe_digest,
-        revision_id: workbenchSetup.revision_id,
-        completed_at: workbenchSetup.completed_at ?? "",
-        expires_at: "2026-01-01T01:00:02.000Z",
+  it.each([undefined, "hf.example-org/runtime-model:together"])(
+    "submits an attested Workbench recipe with native model override %s",
+    async (model_name) => {
+      const { runtime, app } = await setup();
+      await runtime.initialize();
+      const attestation = vi
+        .spyOn(runtime.workbench, "attestPassedSetup")
+        .mockResolvedValue({
+          setup_test_id: workbenchSetup.setup_test_id,
+          recipe_digest: workbenchSetup.recipe_digest,
+          revision_id: workbenchSetup.revision_id,
+          completed_at: workbenchSetup.completed_at ?? "",
+          expires_at: "2026-01-01T01:00:02.000Z",
+        });
+      const payload = {
+        benchmark: submission.benchmark,
+        model: submission.model,
+        cost_ceiling_usd_per_trial: 0.25,
+        role: "diagnostic",
+        workbench: {
+          recipe: workbenchRecipe,
+          setup_test_id: workbenchSetup.setup_test_id,
+          ...(model_name === undefined ? {} : { harbor_agent: { model_name } }),
+        },
+      };
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/v1/runs",
+        headers: { "idempotency-key": "workbench-run" },
+        payload,
       });
-    const payload = {
-      benchmark: submission.benchmark,
-      model: submission.model,
-      cost_ceiling_usd_per_trial: 0.25,
-      role: "diagnostic",
-      workbench: {
-        recipe: workbenchRecipe,
-        setup_test_id: workbenchSetup.setup_test_id,
-      },
-    };
-    const first = await app.inject({
-      method: "POST",
-      url: "/api/v1/runs",
-      headers: { "idempotency-key": "workbench-run" },
-      payload,
-    });
-    const repeated = await app.inject({
-      method: "POST",
-      url: "/api/v1/runs",
-      headers: { "idempotency-key": "workbench-run" },
-      payload,
-    });
-    expect(first.statusCode).toBe(201);
-    expect(repeated.statusCode).toBe(200);
-    const record = first.json().run;
-    expect(record.submission.harness).toEqual({
-      agent: "command-agent",
-      version: workbenchPreview.revision_id,
-    });
-    expect(record.harbor_job_config.agents).toHaveLength(1);
-    expect(record.harbor_job_config.agents[0]).toMatchObject({
-      import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
-      model_name: "openai/openai/gpt-oss-20b:together",
-    });
-    expect(JSON.stringify(record)).not.toContain("harness_profile");
-    expect(JSON.stringify(record)).not.toContain("promotion");
-    expect(attestation).toHaveBeenCalledTimes(2);
-  });
+      const repeated = await app.inject({
+        method: "POST",
+        url: "/api/v1/runs",
+        headers: { "idempotency-key": "workbench-run" },
+        payload,
+      });
+      expect(first.statusCode).toBe(201);
+      expect(repeated.statusCode).toBe(200);
+      const record = first.json().run;
+      expect(record.submission.harness).toEqual({
+        agent: "command-agent",
+        version: workbenchPreview.revision_id,
+      });
+      expect(record.harbor_job_config.agents).toHaveLength(1);
+      expect(record.harbor_job_config.agents[0]).toMatchObject({
+        import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
+        model_name: model_name ?? "openai/openai/gpt-oss-20b:together",
+      });
+      expect(record.submission.model).toEqual(submission.model);
+      expect(JSON.stringify(record)).not.toContain("harness_profile");
+      expect(JSON.stringify(record)).not.toContain("promotion");
+      expect(attestation).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each([
+    { model_name: "model", env: { OPENAI_API_KEY: "fixture" } },
+    { model_name: "model", import_path: "other.module:Agent" },
+    { model_name: "" },
+    { model_name: 42 },
+  ])(
+    "rejects unsupported native agent overrides before attestation",
+    async (harbor_agent) => {
+      const { runtime, app } = await setup();
+      await runtime.initialize();
+      const attestation = vi.spyOn(runtime.workbench, "attestPassedSetup");
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/runs",
+        headers: { "idempotency-key": "invalid-native-agent" },
+        payload: {
+          benchmark: submission.benchmark,
+          model: submission.model,
+          cost_ceiling_usd_per_trial: 0.25,
+          role: "diagnostic",
+          workbench: {
+            recipe: workbenchRecipe,
+            setup_test_id: workbenchSetup.setup_test_id,
+            harbor_agent,
+          },
+        },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(attestation).not.toHaveBeenCalled();
+      expect(runtime.projection.listRuns()).toEqual([]);
+    },
+  );
 
   it("does not create a Run when setup attestation is stale", async () => {
     const { runtime, app } = await setup();
