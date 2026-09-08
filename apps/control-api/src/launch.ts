@@ -232,16 +232,42 @@ export class NativeLaunch implements LaunchPort {
     const agents = z
       .array(z.object({ model_name: z.string() }))
       .parse(effective.agents);
+    const models = new Map<string, Set<string>>();
     for (const agent of agents) {
       const route = /^(?:openai|huggingface)\/(.+):([^:]+)$/.exec(agent.model_name);
       if (!route?.[1] || !route[2])
         throw new LaunchError(400, "Each model must include an explicit HF provider");
-      const providers = await lookupHuggingFaceModelProviders(route[1]);
-      if (!providers.includes(route[2]))
-        throw new LaunchError(
-          400,
-          "Selected HF model provider is not currently available",
-        );
+      const providers = models.get(route[1]) ?? new Set<string>();
+      providers.add(route[2]);
+      models.set(route[1], providers);
+    }
+    // Bound network work, not Harbor's agent count. Reuse each model response
+    // within this inspection and cancel all remaining work on failure.
+    const pending = models.entries();
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]);
+    const inspectModels = async () => {
+      for (const [model, selected] of pending) {
+        signal.throwIfAborted();
+        const providers = await lookupHuggingFaceModelProviders(model, signal);
+        signal.throwIfAborted();
+        if ([...selected].some((provider) => !providers.includes(provider)))
+          throw new LaunchError(
+            400,
+            "Selected HF model provider is not currently available",
+          );
+      }
+    };
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(4, models.size) }, inspectModels),
+      );
+    } catch (error) {
+      if (signal.aborted)
+        throw new LaunchError(503, "HF model provider inspection timed out; try again");
+      throw error;
+    } finally {
+      controller.abort();
     }
     return {
       ...native,

@@ -196,6 +196,84 @@ describe("bounded native inspector", () => {
       "provider is not currently available",
     );
   });
+  it("deduplicates model checks and limits concurrent Hub requests", async () => {
+    const config = await fixture(
+      `console.log(${JSON.stringify(JSON.stringify(inspection))});`,
+    );
+    let active = 0;
+    let maximum = 0;
+    const lookup = vi.mocked(lookupHuggingFaceModelProviders).mockClear();
+    lookup.mockImplementation(async () => {
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return ["provider", "other"];
+    });
+    await new NativeLaunch(config).validate({
+      ...input,
+      agents: Array.from({ length: 100 }, (_, index) => ({
+        ...input.agents[0],
+        model_name: `openai/example/model-${index % 10}:${index < 50 ? "provider" : "other"}`,
+      })),
+    });
+    expect(lookup).toHaveBeenCalledTimes(10);
+    expect(maximum).toBe(4);
+  });
+  it("uses one deadline and stops queued model checks after it expires", async () => {
+    const config = await fixture(
+      `console.log(${JSON.stringify(JSON.stringify(inspection))});`,
+    );
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const lookup = vi.mocked(lookupHuggingFaceModelProviders).mockClear();
+    lookup.mockImplementation(async (_model, signal) => {
+      deadline.abort();
+      signal?.throwIfAborted();
+      return ["provider"];
+    });
+    await expect(
+      new NativeLaunch(config).validate({
+        ...input,
+        agents: Array.from({ length: 20 }, (_, index) => ({
+          ...input.agents[0],
+          model_name: `openai/example/model-${index}:provider`,
+        })),
+      }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
+  it("cancels in-flight model checks on provider rejection", async () => {
+    const config = await fixture(
+      `console.log(${JSON.stringify(JSON.stringify(inspection))});`,
+    );
+    let cancelled = 0;
+    const lookup = vi.mocked(lookupHuggingFaceModelProviders).mockClear();
+    lookup.mockImplementation(async (model, signal) => {
+      if (model.endsWith("-0")) return [];
+      return new Promise<string[]>((_resolve, reject) => {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            cancelled++;
+            reject(new Error("aborted"));
+          },
+          { once: true },
+        );
+      });
+    });
+    await expect(
+      new NativeLaunch(config).validate({
+        ...input,
+        agents: Array.from({ length: 10 }, (_, index) => ({
+          ...input.agents[0],
+          model_name: `openai/example/model-${index}:provider`,
+        })),
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(lookup).toHaveBeenCalledTimes(4);
+    expect(cancelled).toBe(3);
+  });
   it("does not treat one reused credential as separate credentials", async () => {
     const config = await fixture(
       `console.log(${JSON.stringify(JSON.stringify(inspection))});`,

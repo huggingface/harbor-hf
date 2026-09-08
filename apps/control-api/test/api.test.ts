@@ -290,13 +290,19 @@ describe("control API", () => {
         agent_info: { name: "openclaw", version: "2026.7.1-2" },
       },
     };
-    vi.spyOn(runtime.projection, "trials").mockReturnValue([trial]);
+    const identity = { ...trial, result: { agent_info: trial.result.agent_info } };
+    const readTrials = vi
+      .spyOn(runtime.projection, "trials")
+      .mockImplementation((_runId, result) =>
+        result === "identity" ? [identity] : [trial],
+      );
     const list = await app.inject({ url: `/api/v1/runs/${runId}/trials` });
     const detail = await app.inject({
       url: `/api/v1/runs/${runId}/trials/${trial.trial_name}`,
     });
     expect(list.statusCode).toBe(200);
-    expect(list.json().trials).toEqual([trial]);
+    expect(list.json().trials).toEqual([identity]);
+    expect(readTrials).toHaveBeenCalledWith(runId, "identity");
     expect(detail.json()).toEqual(trial);
   });
 

@@ -597,6 +597,41 @@ describe("status and projection", () => {
     ]);
   });
 
+  it("projects native trial identity without full agent inputs or result bodies", async () => {
+    const { run } = await submit("trial-list-identity");
+    const native = {
+      ...trial(0.1, 1),
+      config: {
+        agent: {
+          name: "openclaw",
+          import_path: null,
+          model_name: "openai/example/model:provider",
+          kwargs: { instructions: "large input".repeat(10_000) },
+        },
+      },
+      agent_info: { name: "openclaw", version: "2026.7.1-2" },
+      agent_result: {
+        cost_usd: 0.1,
+        metadata: { output: "large output".repeat(10_000) },
+      },
+    };
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, native);
+    await service.refresh();
+    const summary = projection.trials(run.run_id, "identity");
+    expect(summary[0]?.result).toEqual({
+      config: {
+        agent: {
+          name: "openclaw",
+          import_path: null,
+          model_name: "openai/example/model:provider",
+        },
+      },
+      agent_info: { version: "2026.7.1-2" },
+    });
+    expect(JSON.stringify(summary).length).toBeLessThan(1000);
+    expect(projection.trials(run.run_id)[0]?.result).toEqual(native);
+  });
+
   it("retains failed retry cost in the rebuilt projection", async () => {
     const { run } = await submit("retry-cost");
     const previousId = "22222222-2222-4222-8222-222222222222";

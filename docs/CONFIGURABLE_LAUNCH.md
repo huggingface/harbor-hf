@@ -144,6 +144,11 @@ unavailable, not free. A listed flavor does not guarantee account quota, availab
 capacity, or task-image compatibility. Selecting GPU hardware does not authorize
 paid work by itself.
 
+Model-provider inspection looks up each distinct model once per validation. It
+uses at most four concurrent HF requests and one shared 10-second deadline for
+all model lookups. A failure cancels remaining requests. This bounds control
+service work without adding a separate agent-count limit.
+
 Validation returns counts from native `JobPlan`, the effective native
 configuration, the Harbor revision, warnings, and checks not performed. The
 output path uses a fixed preview run ID; the real run receives its own managed
@@ -194,6 +199,11 @@ Review the configuration before sharing. There is no remote draft store or URL
 shortener.
 
 ## Results and deployment
+
+The polling trial list reads only native agent name, import path, model name,
+and reported version from the disposable SQLite projection. It does not return
+agent options or full result bodies. The trial detail route retains the full
+native result. These are views of Harbor output, not additional stored fields.
 
 Native configuration and trial results identify every agent and model. Mixed
 runs do not fill singular submission metadata with the first agent. The trial
