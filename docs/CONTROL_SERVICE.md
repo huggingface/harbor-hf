@@ -74,6 +74,32 @@ Hugging Face supplies the OAuth client values to the Space. OAuth mode requires
 uses a 30-day browser session and `openid profile` scopes by default. Logging
 out, losing authorization, or clearing browser cookies ends the session sooner.
 
+### Sign-in diagnostics
+
+Open the app directly and start a fresh login at `/auth/login`; do not reload
+an old callback URL. A completed OAuth exchange does not itself grant operator
+access: the stable subject must belong to the existing operator or reader ACL.
+`HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS` only initializes a missing ACL.
+
+Callback failures emit `OAuth callback failed` with the request ID, a fixed
+`oauth_stage`, and `code`. No callback query strings, request headers, cookies,
+provider error messages, or token responses belong in these diagnostics.
+
+| Stage | Check |
+| --- | --- |
+| `configuration` | Space-supplied OAuth configuration and initialization |
+| `flow` | Start a fresh login; check cookies and whether the Space restarted |
+| `token_exchange` | Callback origin, provider configuration, and a fresh authorization flow |
+| `user_info` | Provider user-info availability and identity response |
+| `authorization` | `access_denied` (403) means the identity is not in the ACL; `oauth_failed` means the ACL lookup failed |
+| `session` | Local session-store availability |
+
+These stages identify where sign-in failed, not necessarily its root cause.
+Do not copy callback URLs, cookies, tokens, or raw runtime logs into public issues.
+The anonymous session endpoint returns one 401 response; it does not create a
+session or grant access. Existing deployments may retain older sensitive logs;
+handle those privately under the deployment's log-retention policy.
+
 The overview form submits Harbor's native `n_concurrent_trials` value. The
 all-task presets default to 64, and the form accepts values from 1 through 128.
 

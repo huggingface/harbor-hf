@@ -7,6 +7,7 @@ import {
 } from "@harbor-hf/control-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
+import { InvalidBearerCredentialError, OAuthCallbackError } from "../src/auth.js";
 import type { AppConfig } from "../src/config.js";
 import { createRuntime, type Runtime } from "../src/runtime.js";
 
@@ -15,13 +16,17 @@ const runtimes: Runtime[] = [];
 
 afterEach(async () => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   await Promise.all(runtimes.splice(0).map((runtime) => runtime.close()));
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
 });
 
-async function setup(writeMode: "disabled" | "enabled" = "enabled"): Promise<{
+async function setup(
+  writeMode: "disabled" | "enabled" = "enabled",
+  logging = false,
+): Promise<{
   runtime: Runtime;
   app: Awaited<ReturnType<typeof buildApp>>;
 }> {
@@ -32,7 +37,7 @@ async function setup(writeMode: "disabled" | "enabled" = "enabled"): Promise<{
   await Promise.all([mkdir(bucket), mkdir(web)]);
   await writeFile(join(web, "index.html"), "<!doctype html><title>Harbor-HF</title>");
   const config: AppConfig = {
-    node_env: "test",
+    node_env: logging ? "development" : "test",
     port: 7860,
     namespace: "test",
     bucket_id: "test/artifacts",
@@ -537,5 +542,137 @@ describe("control API", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json().error.message).toBe("setup test has expired");
     expect(runtime.projection.listRuns()).toEqual([]);
+  });
+});
+
+describe("authentication response and log safety", () => {
+  function captureLogs() {
+    const lines: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    return lines;
+  }
+
+  it.each(["anonymous", "expired", "invalid-bearer"])(
+    "sends exactly one response for an %s session",
+    async (kind) => {
+      const logs = captureLogs();
+      const { runtime, app } = await setup("disabled", true);
+      runtime.config.auth_mode = "oauth";
+      vi.spyOn(runtime.auth, "sessionActor").mockResolvedValue(null);
+      vi.spyOn(runtime.auth, "bearerActor").mockRejectedValue(
+        new InvalidBearerCredentialError(),
+      );
+      const response = await app.inject({
+        url: "/api/v1/session",
+        cookies: kind === "expired" ? { hhf_session: "fixture-only" } : {},
+        headers:
+          kind === "invalid-bearer" ? { authorization: "Bearer fixture-only" } : {},
+      });
+      await app.close();
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toMatchObject({ error: { code: "unauthorized" } });
+      expect(logs.join("")).not.toMatch(
+        /FST_ERR_REP_ALREADY_SENT|Reply was already sent/,
+      );
+      expect(logs.join("").match(/request completed/g)).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ["flow", false, 400],
+    ["token_exchange", false, 400],
+    ["user_info", false, 500],
+    ["authorization", true, 403],
+    ["authorization", false, 500],
+    ["configuration", false, 500],
+    ["session", false, 500],
+  ] as const)(
+    "safely reports %s callback failures (denied=%s)",
+    async (stage, denied, status) => {
+      const logs = captureLogs();
+      const { runtime, app } = await setup("disabled", true);
+      vi.spyOn(runtime.auth, "callback").mockRejectedValue(
+        new OAuthCallbackError(stage, denied),
+      );
+      const response = await app.inject({
+        url: "/auth/callback?code=private-code-marker&state=private-state-marker",
+        cookies: { hhf_oauth_flow: "private-cookie-marker" },
+        headers: { authorization: "Bearer private-header-marker" },
+      });
+      await app.close();
+      expect(response.statusCode).toBe(status);
+      expect(response.json()).toMatchObject({
+        error: { code: denied ? "access_denied" : "oauth_failed" },
+      });
+      expect(response.headers["set-cookie"]).toBeUndefined();
+      const output = logs.join("");
+      expect(output).toContain(`"oauth_stage":"${stage}"`);
+      expect(output).toContain('"url":"/auth/callback"');
+      expect(output).not.toContain("private-");
+      const diagnostic = logs
+        .map((line) => JSON.parse(line))
+        .find((line) => line.msg === "OAuth callback failed");
+      expect(diagnostic.reqId).toEqual(expect.any(String));
+    },
+  );
+
+  it("preserves successful callback cookies, redirect, and authenticated sessions", async () => {
+    const { runtime, app } = await setup();
+    vi.spyOn(runtime.auth, "callback").mockResolvedValue({
+      session_id: "fixture-session",
+      csrf: "fixture-csrf",
+      expires_at: Date.now() + 60_000,
+      return_to: "/runs",
+    });
+    const response = await app.inject({
+      url: "/auth/callback?code=fixture-code",
+      cookies: { hhf_oauth_flow: "fixture-flow" },
+    });
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe("/runs");
+    expect(response.cookies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "hhf_oauth_flow",
+          value: "",
+          path: "/auth/callback",
+        }),
+        expect.objectContaining({
+          name: "hhf_session",
+          value: "fixture-session",
+          httpOnly: true,
+          secure: true,
+          sameSite: "None",
+          partitioned: true,
+        }),
+        expect.objectContaining({
+          name: "hhf_csrf",
+          value: "fixture-csrf",
+          secure: true,
+          sameSite: "None",
+          partitioned: true,
+        }),
+      ]),
+    );
+    const session = await app.inject({ url: "/api/v1/session" });
+    expect(session.statusCode).toBe(200);
+    expect(session.json()).toMatchObject({
+      authenticated: true,
+      actor: { role: "operator" },
+    });
+    await app.close();
+  });
+
+  it("reports a missing flow cookie without invoking the provider", async () => {
+    const { runtime, app } = await setup();
+    const callback = vi.spyOn(runtime.auth, "callback");
+    const response = await app.inject({ url: "/auth/callback" });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: "oauth_failed" } });
+    expect(callback).not.toHaveBeenCalled();
+    await app.close();
   });
 });

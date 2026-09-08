@@ -9,18 +9,6 @@ default_branch: main
 
 ## Current authorization
 
-### OAuth callback repair and pull request (2026-09-08)
-
-Approved at: 2026-09-08T10:15:32.647433+00:00
-
-- The user approved repairing hosted OAuth callback diagnostics, removing sensitive
-  callback data from request logs, and correcting duplicate session responses.
-- Implement and test on a separate branch based on current upstream main; commit,
-  push that branch, and open a pull request against main after privacy checks.
-- Preserve the existing local checkout and its uncommitted changes. No merge,
-  deployment, credential transfer, resource change, or paid execution is approved.
-
-
 Status: approved
 Approved at: 2026-08-17T06:48:55Z
 Amended at: 2026-09-01T18:11:42Z
@@ -86,6 +74,17 @@ GLM-5.3-Flash streaming-replacement amendment approved at: 2026-09-01T14:07:05Z
 Historical-Run continuation amendment approved at: 2026-09-01T18:11:42Z
 Historical-Run continuation worker-repair amendment approved at: 2026-09-01T22:13:57Z
 Historical-Run continuation successor-repair amendment approved at: 2026-09-02T07:03:36Z
+
+### OAuth callback repair and pull request (2026-09-08)
+
+Approved at: 2026-09-08T10:15:32.647433+00:00
+
+- The user approved repairing hosted OAuth callback diagnostics, removing sensitive
+  callback data from request logs, and correcting duplicate session responses.
+- Implement and test on a separate branch based on current upstream main; commit,
+  push that branch, and open a pull request against main after privacy checks.
+- Preserve the existing local checkout and its uncommitted changes. No merge,
+  deployment, credential transfer, resource change, or paid execution is approved.
 
 ### Scope
 

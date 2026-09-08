@@ -6,13 +6,13 @@ import Database from "better-sqlite3";
 import {
   authorizationCodeGrant,
   buildAuthorizationUrl,
+  type Configuration,
   calculatePKCECodeChallenge,
   discovery,
   fetchUserInfo,
   randomPKCECodeVerifier,
   randomState,
   skipSubjectCheck,
-  type Configuration,
 } from "openid-client";
 
 export type AuthRole = "operator" | "reader";
@@ -20,6 +20,30 @@ export type AuthRole = "operator" | "reader";
 export class BearerRateLimitError extends Error {}
 export class InvalidBearerCredentialError extends Error {}
 export class UnauthorizedSubjectError extends Error {}
+
+export type OAuthCallbackStage =
+  | "configuration"
+  | "flow"
+  | "token_exchange"
+  | "user_info"
+  | "authorization"
+  | "session";
+
+// Never retain provider errors, responses, or callback URLs in diagnostics.
+export class OAuthCallbackError extends Error {
+  override name = "OAuthCallbackError";
+
+  constructor(
+    readonly stage: OAuthCallbackStage,
+    readonly denied = false,
+  ) {
+    super(
+      denied
+        ? "this identity is not authorized"
+        : "sign in could not be completed; start a fresh login",
+    );
+  }
+}
 
 export interface AuthenticatedActor extends Actor {
   role: AuthRole;
@@ -280,40 +304,50 @@ export class AuthenticationService {
     return_to: string;
     expires_at: number;
   }> {
-    if (!this.oidc || !this.oauth) throw new Error("OAuth is not configured");
-    const flow = this.store.takeFlow(flowId);
-    if (!flow) throw new Error("OAuth flow is missing or expired");
-    const tokens = await authorizationCodeGrant(this.oidc, currentUrl, {
-      pkceCodeVerifier: flow.verifier,
-      expectedState: flow.state,
-    });
-    if (!tokens.access_token)
-      throw new Error("OAuth token response has no access token");
-    const user = await fetchUserInfo(
-      this.oidc,
-      tokens.access_token,
-      tokens.claims()?.sub ?? skipSubjectCheck,
-    );
-    if (!user.sub) throw new Error("OAuth user info has no stable subject");
-    if (!(await this.role(user.sub)))
-      throw new UnauthorizedSubjectError("OAuth identity is not authorized");
-    const username =
-      typeof user.preferred_username === "string"
-        ? user.preferred_username
-        : typeof user.name === "string"
-          ? user.name
-          : "Hugging Face user";
-    const session = this.store.createSession(
-      user.sub,
-      username,
-      this.oauth.session_ttl_seconds,
-    );
-    return {
-      session_id: session.id,
-      csrf: session.csrf,
-      return_to: flow.return_to,
-      expires_at: session.expires_at,
-    };
+    let stage: OAuthCallbackStage = "configuration";
+    try {
+      if (!this.oidc || !this.oauth) throw new Error("OAuth is not configured");
+      stage = "flow";
+      const flow = this.store.takeFlow(flowId);
+      if (!flow) throw new Error("OAuth flow is missing or expired");
+      stage = "token_exchange";
+      const tokens = await authorizationCodeGrant(this.oidc, currentUrl, {
+        pkceCodeVerifier: flow.verifier,
+        expectedState: flow.state,
+      });
+      if (!tokens.access_token)
+        throw new Error("OAuth token response has no access token");
+      stage = "user_info";
+      const user = await fetchUserInfo(
+        this.oidc,
+        tokens.access_token,
+        tokens.claims()?.sub ?? skipSubjectCheck,
+      );
+      if (!user.sub) throw new Error("OAuth user info has no stable subject");
+      stage = "authorization";
+      if (!(await this.role(user.sub)))
+        throw new UnauthorizedSubjectError("OAuth identity is not authorized");
+      const username =
+        typeof user.preferred_username === "string"
+          ? user.preferred_username
+          : typeof user.name === "string"
+            ? user.name
+            : "Hugging Face user";
+      stage = "session";
+      const session = this.store.createSession(
+        user.sub,
+        username,
+        this.oauth.session_ttl_seconds,
+      );
+      return {
+        session_id: session.id,
+        csrf: session.csrf,
+        return_to: flow.return_to,
+        expires_at: session.expires_at,
+      };
+    } catch (failure) {
+      throw new OAuthCallbackError(stage, failure instanceof UnauthorizedSubjectError);
+    }
   }
 
   async sessionActor(
