@@ -4,6 +4,7 @@ import {
   CircleDollarSign,
   Clock3,
   Cpu,
+  Link2,
   ListChecks,
   Pause,
   Play,
@@ -145,6 +146,35 @@ function JsonDetails({ label, value }: { label: string; value: unknown }) {
 
 function fieldClass(): string {
   return "mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-400";
+}
+
+function CopyLinkButton() {
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function copyLink(): Promise<void> {
+    try {
+      if (!navigator.clipboard) throw new Error("the Clipboard API is unavailable");
+      await navigator.clipboard.writeText(window.location.href);
+      setStatus("copied");
+    } catch {
+      setStatus("failed");
+    }
+  }
+
+  return (
+    <Button
+      aria-label="Copy link to this page"
+      variant="outline"
+      onClick={() => void copyLink()}
+    >
+      <Link2 size={14} aria-hidden="true" />
+      {status === "copied"
+        ? "Link copied"
+        : status === "failed"
+          ? "Copy failed"
+          : "Copy link"}
+    </Button>
+  );
 }
 
 function hardwareLabel(preset: BenchmarkPreset): string {
@@ -667,7 +697,12 @@ export function RunPage() {
       <PageHeader
         title="Run detail"
         description={item.record.run_id}
-        action={<RunActions run={item} />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <CopyLinkButton />
+            <RunActions run={item} />
+          </div>
+        }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Stat
@@ -867,9 +902,12 @@ export function TrialPage() {
         title="Trial detail"
         description={trial.trial_name}
         action={
-          <Link className="text-sm text-cyan-300" to={`/runs/${trial.run_id}`}>
-            Back to run
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <CopyLinkButton />
+            <Link className="text-sm text-cyan-300" to={`/runs/${trial.run_id}`}>
+              Back to run
+            </Link>
+          </div>
         }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">

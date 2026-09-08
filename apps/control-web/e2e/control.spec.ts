@@ -310,6 +310,10 @@ test("shows the public leaderboard and starts sign-in from a private route", asy
   await page.goto("/overview");
   await expect.poll(() => new URL(page.url()).pathname).toBe("/auth/login");
   expect(new URL(page.url()).searchParams.get("return_to")).toBe("/overview");
+
+  await page.goto(`/runs/${runId}`);
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/auth/login");
+  expect(new URL(page.url()).searchParams.get("return_to")).toBe(`/runs/${runId}`);
 });
 
 test("shows the restored overview on desktop and mobile", async ({

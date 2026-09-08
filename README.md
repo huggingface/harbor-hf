@@ -69,6 +69,10 @@ command agent into a normal Harbor run. It does not create profiles, preparation
 Jobs, or a second execution system. See
 [Agent Workbench](docs/agent-workbench.md).
 
+Run and trial detail pages include a `Copy link` action. The copied URL opens
+that exact page after the colleague signs in with an approved Hugging Face
+account.
+
 ## Command-line client
 
 Install the Python package with `uv`:
