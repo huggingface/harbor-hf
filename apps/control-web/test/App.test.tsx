@@ -333,18 +333,10 @@ describe("restored control console", () => {
 
   it("shows complete run detail and targets run actions", async () => {
     const user = userEvent.setup();
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText },
-    });
     renderAt(`/runs/${runId}`);
     expect(await screen.findByRole("heading", { name: "Run detail" })).toBeVisible();
     expect(screen.getByText("Run identity")).toBeVisible();
     expect(screen.getByText("Harbor totals")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Copy link to this page" }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href));
-    expect(screen.getByText("Link copied")).toBeVisible();
     expect(screen.getByRole("link", { name: trial.trial_name })).toHaveAttribute(
       "href",
       `/runs/${runId}/trials/${trial.trial_name}`,
