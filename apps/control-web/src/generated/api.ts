@@ -135,6 +135,256 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/hardware": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read HF Jobs hardware specifications and prices */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Current HF catalog; not a capacity or quota guarantee */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            name: string;
+                            prettyName: string;
+                            cpu: string;
+                            ram: string;
+                            ephemeralStorage: string;
+                            accelerator: {
+                                quantity: string;
+                                model: string;
+                                vram: string;
+                            } | null;
+                            unitCostMicroUSD?: number | null;
+                            unitCostUSD?: number | null;
+                            unitLabel: string;
+                        }[];
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List reviewed installed agents and native option schemas */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Pinned Harbor catalog */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            harbor_revision: string;
+                            agents: {
+                                label: string;
+                                config: {
+                                    [key: string]: unknown;
+                                };
+                                options_schema: {
+                                    [key: string]: unknown;
+                                };
+                            }[];
+                            job_schema: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Inspect native configuration without creating a run or executing agent code */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Native plan counts and effective configuration; not an installation or inference test */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            harbor_revision: string;
+                            tasks: number;
+                            agents: number;
+                            trials: number;
+                            warnings: string[];
+                            not_performed: string[];
+                            effective_config: {
+                                [key: string]: unknown;
+                            };
+                            fingerprint: string;
+                            credentials_available: boolean;
+                        };
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/model-providers": {
         parameters: {
             query?: never;
@@ -720,12 +970,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Submit a direct Harbor JobConfig */
+        /** Validate and submit a diagnostic native Harbor JobConfig */
         post: {
             parameters: {
                 query?: never;
                 header: {
                     "Idempotency-Key": string;
+                    /** @description Fingerprint from Validate. A changed configuration or policy returns 409. */
+                    "X-Harbor-HF-Validation"?: string;
                     "X-Harbor-HF-Cost-Ceiling-USD-Per-Trial": number;
                 };
                 path?: never;
@@ -771,6 +1023,20 @@ export interface paths {
                 };
                 /** @description Request error */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };

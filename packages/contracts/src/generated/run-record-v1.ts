@@ -1,8 +1,8 @@
 /* Generated from JSON Schema. Do not edit. */
 
-export type RunRecordSlug = string
-
-export interface RunRecordV1 {
+export type RunRecordV1 = ({
+[k: string]: unknown
+} & {
 schema_version: "v1"
 run_id: string
 created_at: string
@@ -14,12 +14,12 @@ benchmark: {
 name: RunRecordSlug
 preset: RunRecordSlug
 }
-model: {
+model?: {
 id: string
 provider: RunRecordSlug
 reasoning_effort: string
 }
-harness: {
+harness?: {
 agent: RunRecordSlug
 version: string
 }
@@ -28,4 +28,5 @@ cost_ceiling_usd_per_trial: number
 harbor_job_config: {
 [k: string]: unknown
 }
-}
+})
+export type RunRecordSlug = string

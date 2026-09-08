@@ -57,7 +57,17 @@ const record = {
     harness: { agent: "pi", version: "0.84.4" },
     cost_ceiling_usd_per_trial: 0.25,
   },
-  harbor_job_config: { job_name: "job", n_attempts: 1 },
+  harbor_job_config: {
+    job_name: "job",
+    n_attempts: 1,
+    agents: [
+      {
+        name: "pi",
+        model_name: "huggingface/publisher/model:provider",
+        kwargs: { version: "0.84.4" },
+      },
+    ],
+  },
 };
 
 const state = {
@@ -187,6 +197,39 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     if (path === "/api/v1/leaderboard") return json(route, leaderboard);
     if (path === "/api/v1/system") return json(route, system);
     if (path === "/api/v1/presets") return json(route, presets);
+    if (path === "/api/v1/hardware")
+      return json(route, [
+        {
+          name: "cpu-basic",
+          prettyName: "CPU Basic",
+          cpu: "2 vCPU",
+          ram: "16 GB",
+          ephemeralStorage: "50 GB",
+          accelerator: null,
+          unitCostUSD: 0.000167,
+          unitLabel: "minute",
+        },
+        {
+          name: "cpu-upgrade",
+          prettyName: "CPU Upgrade",
+          cpu: "8 vCPU",
+          ram: "32 GB",
+          ephemeralStorage: "50 GB",
+          accelerator: null,
+          unitCostUSD: 0.0005,
+          unitLabel: "minute",
+        },
+        {
+          name: "a100-large",
+          prettyName: "A100",
+          cpu: "12 vCPU",
+          ram: "142 GB",
+          ephemeralStorage: "1000 GB",
+          accelerator: { quantity: "1", model: "A100", vram: "80 GB" },
+          unitCostUSD: 0.04,
+          unitLabel: "minute",
+        },
+      ]);
     if (path === "/api/v1/model-providers")
       return json(route, {
         model: url.searchParams.get("model"),
@@ -517,4 +560,135 @@ test("keeps direct authenticated route refreshes in the restored shell", async (
   await page.goto(`/runs/${runId}/trials/${trialName}`);
   await expect(page.getByRole("heading", { name: "Trial detail" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Workbench" }).first()).toBeVisible();
+});
+
+test("edits and validates native launch configuration on desktop and mobile", async ({
+  page,
+}, testInfo) => {
+  await mockControl(page);
+  page.on("dialog", (dialog) => dialog.accept());
+  const implementation = "harbor_hf_agents.pi.agent:PiAgent";
+  await page.route("**/api/v1/agents", (route) =>
+    json(route, {
+      harbor_revision: "a".repeat(40),
+      agents: [
+        {
+          label: "pi",
+          config: {
+            import_path: implementation,
+            model_name: "huggingface/",
+            kwargs: { version: "0.84.4" },
+          },
+          options_schema: {
+            properties: {
+              version: { type: "string", title: "Version" },
+              thinking: { type: "string", enum: ["off", "high"] },
+            },
+          },
+        },
+      ],
+      job_schema: { properties: { n_attempts: { type: "integer", default: 1 } } },
+    }),
+  );
+  await page.route("**/api/v1/runs/validate", (route) =>
+    json(route, {
+      harbor_revision: "a".repeat(40),
+      tasks: 1,
+      agents: 1,
+      trials: 1,
+      warnings: [],
+      not_performed: ["Model inference"],
+      effective_config: route.request().postDataJSON(),
+      fingerprint: "checked",
+      credentials_available: true,
+    }),
+  );
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/runs/config", (route) => {
+    submitted = route.request().postDataJSON();
+    return json(route, { run: record }, 201);
+  });
+  await page.goto("/runs/new");
+  await expect(
+    page.getByRole("heading", { name: "New Job", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Benchmark preset").selectOption("0");
+  await page.getByRole("button", { name: "Add agent", exact: true }).click();
+  await page.getByLabel("Agent implementation").selectOption(implementation);
+  await page.getByLabel("HF model", { exact: true }).fill("publisher/model");
+  await page
+    .getByRole("combobox", { name: "HF provider", exact: true })
+    .selectOption("provider");
+  await page.getByText("Agent configuration", { exact: true }).click();
+  await page.getByRole("textbox", { name: "Version", exact: true }).fill("0.84.3");
+  await page
+    .getByRole("combobox", { name: "Sandbox flavor", exact: true })
+    .selectOption("a100-large");
+  await expect(page.getByText(/80 GB/)).toBeVisible();
+  await page.getByRole("button", { name: "Validate", exact: true }).click();
+  await expect(page.getByText("1 resolved tasks · 1 agents · 1 trials")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("launch-desktop.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "Launch", exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("launch-mobile.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Copy draft link", exact: true }).click();
+  const sharedUrl = await page.getByLabel("Draft link", { exact: true }).inputValue();
+  expect(new URL(sharedUrl).searchParams.has("draft")).toBe(true);
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(sharedUrl);
+  await expect(page.getByLabel("HF model", { exact: true })).toHaveValue(
+    "publisher/model",
+  );
+  await expect(
+    page.getByRole("button", { name: "Launch", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Validate", exact: true }).click();
+  await expect(page.getByText("1 resolved tasks · 1 agents · 1 trials")).toBeVisible();
+  await page.getByRole("button", { name: "Launch", exact: true }).click();
+  await expect(page).toHaveURL(`/runs/${runId}`);
+  expect(submitted).toMatchObject({
+    agents: [
+      {
+        import_path: implementation,
+        model_name: "huggingface/publisher/model:provider",
+        kwargs: { version: "0.84.3" },
+      },
+    ],
+    environment: { kwargs: { flavor: "a100-large" } },
+  });
+});
+
+test("preserves safe draft links through sign-in and rejects credential-bearing links", async ({
+  page,
+}) => {
+  await mockControl(page, { authenticated: false });
+  const draft = { agents: [], n_attempts: 2, extra_instructions: ["Unicode ü + text"] };
+  await page.goto(
+    `/runs/new?draft=${encodeURIComponent(JSON.stringify(draft))}&cost_ceiling_usd_per_trial=2.5`,
+  );
+  await expect(page).toHaveURL(/\/auth\/login\?/);
+  const returnTo = new URL(page.url()).searchParams.get("return_to");
+  const restored = new URL(returnTo ?? "", "https://example.test");
+  expect(restored.pathname).toBe("/runs/new");
+  expect(JSON.parse(restored.searchParams.get("draft") ?? "")).toEqual(draft);
+  expect(restored.searchParams.get("cost_ceiling_usd_per_trial")).toBe("2.5");
+  const unsafe = { agents: [{ env: { HF_TOKEN: "test-only" } }] };
+  await page.goto(`/runs/new?draft=${encodeURIComponent(JSON.stringify(unsafe))}`);
+  await expect(page.getByRole("alert")).toHaveText(
+    "Invalid launch draft link. No draft was loaded.",
+  );
+  expect(new URL(page.url()).pathname).toBe("/runs/new");
 });

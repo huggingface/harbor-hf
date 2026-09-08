@@ -51,6 +51,8 @@ The service reads these Space variables:
 | `HARBOR_HF_STORE_MODE` | no | `bucket` | use `filesystem` in tests |
 | `HARBOR_HF_BUCKET_ROOT` | no | `/data` | local filesystem store root |
 | `HARBOR_HF_PRESETS_ROOT` | no | `./presets` | reviewed presets |
+| `HARBOR_HF_LAUNCH_PYTHON` | no | worker package `.venv/bin/python`; `/opt/harbor-launch/bin/python` in the control image | pinned native launch inspector |
+| `HARBOR_HF_APPROVED_AGENT_SOURCES` | no | `[]` | reviewed native ACP source objects as JSON; never credentials |
 | `HARBOR_HF_WRITE_MODE` | no | `disabled` | permit Job lifecycle changes |
 | `HARBOR_HF_PARENT_IMAGE` | in write mode | none | immutable parent image digest |
 | `HARBOR_HF_PARENT_HARDWARE` | no | `cpu-basic` | parent Job hardware |
@@ -113,6 +115,13 @@ handle those privately under the deployment's log-retention policy.
 The overview form submits Harbor's native `n_concurrent_trials` value. The
 all-task presets default to 64, and the form accepts values from 1 through 128.
 
+The separate [New Job page](CONFIGURABLE_LAUNCH.md) edits native configuration
+through the existing direct submission route. It uses native Harbor concurrency
+validation and an aggregate inspection budget, not a separate concurrency cap.
+Its hardware choices come from the HF Jobs catalog. Native JSON draft links can
+restore editable input but never authorize a launch. Preset and Workbench
+submission remain available.
+
 ## HTTP API
 
 Health routes are public:
@@ -135,6 +144,9 @@ Authenticated read routes are:
 
 - `GET /api/v1/system`
 - `GET /api/v1/presets`
+- `GET /api/v1/agents`
+- `GET /api/v1/hardware`
+- `GET /api/v1/model-providers?model=...`
 - `GET /api/v1/workbench/setup-tests`
 - `GET /api/v1/workbench/setup-tests/{setup_test_id}`
 - `GET /api/v1/workbench/setup-tests/{setup_test_id}/logs`
@@ -152,13 +164,16 @@ Operator write routes are:
 - `POST /api/v1/workbench/setup-tests/{setup_test_id}/cancel`
 - `POST /api/v1/runs`
 - `POST /api/v1/runs/config`
+- `POST /api/v1/runs/validate` (inspection only; creates no run)
 - `POST /api/v1/runs/{run_id}/pause`
 - `POST /api/v1/runs/{run_id}/resume`
 - `POST /api/v1/runs/{run_id}/cancel`
 
 Preset, Workbench, setup-test, and direct submissions require
 `Idempotency-Key`. Direct submissions also require
-`X-Harbor-HF-Cost-Ceiling-USD-Per-Trial`. Workbench preview remains available
+`X-Harbor-HF-Cost-Ceiling-USD-Per-Trial`. The configurable page also sends the
+Validate fingerprint in `X-Harbor-HF-Validation`; a changed request or admission
+policy returns 409. Native validation and Workbench preview remain available
 when writes are disabled. Local Docker setup tests also remain available in
 explicit development mode, and setup cancellation remains available for safe
 cleanup.

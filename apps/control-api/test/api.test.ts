@@ -232,6 +232,80 @@ describe("control API", () => {
     expect(detail.json().record.run_id).toBe(runId);
   });
 
+  it("serves the HF hardware catalog and reports provider outages as 503", async () => {
+    const { runtime, app } = await setup("disabled");
+    await runtime.initialize();
+    const hardware = [
+      {
+        name: "cpu-basic",
+        prettyName: "CPU Basic",
+        cpu: "2 vCPU",
+        ram: "16 GB",
+        ephemeralStorage: "50 GB",
+        accelerator: null,
+        unitCostUSD: 0.000167,
+        unitLabel: "minute",
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json(hardware)),
+    );
+    const response = await app.inject({ url: "/api/v1/hardware" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(hardware);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("unavailable", { status: 503 })),
+    );
+    const unavailable = await app.inject({ url: "/api/v1/hardware" });
+    expect(unavailable.statusCode).toBe(503);
+    expect(unavailable.json().error.code).toBe("hardware_unavailable");
+  });
+
+  it("returns native agent identity in trial lists and details", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "trial-identity" },
+      payload: submission,
+    });
+    const runId = response.json().run.run_id;
+    const trial = {
+      run_id: runId,
+      trial_name: "task__attempt",
+      reward: 1,
+      cost_usd: 0.1,
+      status: "completed" as const,
+      result: {
+        config: {
+          agent: {
+            name: "openclaw",
+            model_name: "openai/example/model:provider",
+            kwargs: { version: "2026.7.1-2" },
+          },
+        },
+        agent_info: { name: "openclaw", version: "2026.7.1-2" },
+      },
+    };
+    const identity = { ...trial, result: { agent_info: trial.result.agent_info } };
+    const readTrials = vi
+      .spyOn(runtime.projection, "trials")
+      .mockImplementation((_runId, result) =>
+        result === "identity" ? [identity] : [trial],
+      );
+    const list = await app.inject({ url: `/api/v1/runs/${runId}/trials` });
+    const detail = await app.inject({
+      url: `/api/v1/runs/${runId}/trials/${trial.trial_name}`,
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().trials).toEqual([identity]);
+    expect(readTrials).toHaveBeenCalledWith(runId, "identity");
+    expect(detail.json()).toEqual(trial);
+  });
+
   it("accepts a native Harbor trial concurrency override", async () => {
     const { runtime, app } = await setup();
     await runtime.initialize();
@@ -674,5 +748,101 @@ describe("authentication response and log safety", () => {
     expect(response.json()).toMatchObject({ error: { code: "oauth_failed" } });
     expect(callback).not.toHaveBeenCalled();
     await app.close();
+  });
+});
+
+describe("configurable launch", () => {
+  const input = {
+    datasets: [{ name: "example/dataset", ref: `sha256:${"a".repeat(64)}` }],
+    agents: [
+      {
+        name: "openclaw",
+        model_name: "openai/example/model:provider",
+        kwargs: { version: "2026.7.1-2" },
+      },
+      {
+        name: "openclaw",
+        model_name: "openai/example/model:provider",
+        kwargs: { version: "2026.7.2" },
+      },
+    ],
+  };
+  const validation = {
+    harbor_revision: "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e",
+    tasks: 3,
+    agents: 2,
+    trials: 6,
+    warnings: [],
+    not_performed: ["Model inference"],
+    effective_config: input,
+    fingerprint: "checked",
+    credentials_available: true,
+  };
+  it("validates while writes are disabled without creating a run", async () => {
+    const { runtime, app } = await setup("disabled");
+    await runtime.initialize();
+    const inspect = vi.spyOn(runtime.launch, "validate").mockResolvedValue(validation);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs/validate",
+      payload: input,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().trials).toBe(6);
+    expect(inspect).toHaveBeenCalledWith(input);
+    expect(runtime.projection.listRuns()).toEqual([]);
+    const launch = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs/config",
+      payload: input,
+      headers: {
+        "idempotency-key": "disabled",
+        "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+      },
+    });
+    expect(launch.statusCode).toBe(503);
+    expect(inspect).toHaveBeenCalledTimes(1);
+  });
+  it("revalidates launch, preserves multiple agents, and remains idempotent", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const inspect = vi.spyOn(runtime.launch, "validate").mockResolvedValue(validation);
+    const request = {
+      method: "POST" as const,
+      url: "/api/v1/runs/config",
+      payload: input,
+      headers: {
+        "idempotency-key": "multi-agent",
+        "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+        "x-harbor-hf-validation": "checked",
+      },
+    };
+    const first = await app.inject(request);
+    expect(first.statusCode).toBe(201);
+    expect(first.json().run.harbor_job_config.agents).toHaveLength(2);
+    expect(first.json().run.submission).not.toHaveProperty("model");
+    const second = await app.inject(request);
+    expect(second.statusCode).toBe(200);
+    expect(second.json().run.run_id).toBe(first.json().run.run_id);
+    expect(inspect).toHaveBeenCalledTimes(2);
+  });
+  it("rejects changed admission and unavailable credentials without creating a run", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const inspect = vi.spyOn(runtime.launch, "validate").mockResolvedValue(validation);
+    const request = {
+      method: "POST" as const,
+      url: "/api/v1/runs/config",
+      payload: input,
+      headers: {
+        "idempotency-key": "changed",
+        "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+        "x-harbor-hf-validation": "stale",
+      },
+    };
+    expect((await app.inject(request)).statusCode).toBe(409);
+    inspect.mockResolvedValue({ ...validation, credentials_available: false });
+    expect((await app.inject(request)).statusCode).toBe(503);
+    expect(runtime.projection.listRuns()).toEqual([]);
   });
 });

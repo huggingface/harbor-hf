@@ -24,7 +24,7 @@
     "submission": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["benchmark", "model", "harness", "cost_ceiling_usd_per_trial"],
+      "required": ["benchmark", "cost_ceiling_usd_per_trial"],
       "properties": {
         "benchmark": {
           "type": "object",
@@ -63,6 +63,12 @@
     },
     "harbor_job_config": { "type": "object" }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "role": { "const": "final" } } },
+      "then": { "properties": { "submission": { "required": ["model", "harness"] } } }
+    }
+  ],
   "$defs": {
     "slug": {
       "title": "RunRecordSlug",

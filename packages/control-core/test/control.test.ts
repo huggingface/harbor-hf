@@ -1,21 +1,21 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type { RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
 import { runRecordPath, runStatePath } from "@harbor-hf/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  compileAgentWorkbenchRecipe,
   ControlService,
-  fastAgentWorkbenchStarter,
-  FilesystemObjectStore,
-  type JobObservation,
-  type JobsPort,
-  PresetCatalog,
-  Projection,
+  compileAgentWorkbenchRecipe,
   costLimitReached,
   createJson,
+  FilesystemObjectStore,
+  fastAgentWorkbenchStarter,
+  type JobObservation,
+  type JobsPort,
   leaderboard,
+  PresetCatalog,
+  Projection,
   putJson,
   statusFor,
   summarizeTrial,
@@ -307,7 +307,7 @@ describe("run submission", () => {
       agents: [
         {
           name: "pi",
-          model_name: "openai/openai/gpt-oss-20b:together",
+          model_name: "huggingface/openai/gpt-oss-20b:together",
           kwargs: { version: "0.84.2", max_tokens: 1_000 },
         },
       ],
@@ -360,7 +360,7 @@ describe("run submission", () => {
         "opaque-agent-env",
         "test-subject",
       ),
-    ).rejects.toThrow("cannot set agent env");
+    ).rejects.toThrow("Environment variable CUSTOM_AUTH is not admitted");
     for (const [key, repo] of [
       ["credential-url", "https://user:password@example.test/repository"],
       ["credential-query", "https://example.test/repository?token=opaque"],
@@ -595,6 +595,41 @@ describe("status and projection", () => {
     expect(leaderboard(projection, presets)).toEqual([
       expect.objectContaining({ n_attempts: 5, n_trials: 1, pass_rate: 1 }),
     ]);
+  });
+
+  it("projects native trial identity without full agent inputs or result bodies", async () => {
+    const { run } = await submit("trial-list-identity");
+    const native = {
+      ...trial(0.1, 1),
+      config: {
+        agent: {
+          name: "openclaw",
+          import_path: null,
+          model_name: "openai/example/model:provider",
+          kwargs: { instructions: "large input".repeat(10_000) },
+        },
+      },
+      agent_info: { name: "openclaw", version: "2026.7.1-2" },
+      agent_result: {
+        cost_usd: 0.1,
+        metadata: { output: "large output".repeat(10_000) },
+      },
+    };
+    await putJson(store, `runs/${run.run_id}/job/task/result.json`, native);
+    await service.refresh();
+    const summary = projection.trials(run.run_id, "identity");
+    expect(summary[0]?.result).toEqual({
+      config: {
+        agent: {
+          name: "openclaw",
+          import_path: null,
+          model_name: "openai/example/model:provider",
+        },
+      },
+      agent_info: { version: "2026.7.1-2" },
+    });
+    expect(JSON.stringify(summary).length).toBeLessThan(1000);
+    expect(projection.trials(run.run_id)[0]?.result).toEqual(native);
   });
 
   it("retains failed retry cost in the rebuilt projection", async () => {

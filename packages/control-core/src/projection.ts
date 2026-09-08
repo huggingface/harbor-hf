@@ -359,10 +359,22 @@ export class Projection {
     return this.listRuns().find((item) => item.record.run_id === runId) ?? null;
   }
 
-  trials(runId: string): TrialSummary[] {
+  trials(runId: string, result: "full" | "identity" = "full"): TrialSummary[] {
+    // Extract only native identity fields for polling. Do not load trajectories,
+    // instructions, or agent kwargs into the API process for a list response.
+    const body =
+      result === "full"
+        ? "result_body"
+        : `json_object(
+      'config', json_object('agent', json_object(
+        'name', json_extract(result_body, '$.config.agent.name'),
+        'import_path', json_extract(result_body, '$.config.agent.import_path'),
+        'model_name', json_extract(result_body, '$.config.agent.model_name'))),
+      'agent_info', json_object('version', json_extract(result_body, '$.agent_info.version'))
+    )`;
     const rows = this.database
       .prepare(
-        "SELECT trial_name, reward, cost_usd, status, result_body FROM trials WHERE run_id = ? ORDER BY trial_name",
+        `SELECT trial_name, reward, cost_usd, status, ${body} AS result_body FROM trials WHERE run_id = ? ORDER BY trial_name`,
       )
       .all(runId) as Array<{
       trial_name: string;

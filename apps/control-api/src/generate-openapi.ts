@@ -2,6 +2,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import openapiTS, { astToString, type OpenAPI3 } from "openapi-typescript";
+import { z } from "zod";
+import { hardwareCatalogSchema } from "./huggingface-hardware.js";
+import { catalogSchema, validationSchema } from "./launch.js";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const json = { "application/json": { schema: { type: "object" } } } as const;
@@ -251,6 +254,56 @@ const document = {
         responses: { "200": ok, "401": error },
       },
     },
+    "/api/v1/hardware": {
+      get: {
+        summary: "Read HF Jobs hardware specifications and prices",
+        security: authenticated,
+        responses: {
+          "200": {
+            description: "Current HF catalog; not a capacity or quota guarantee",
+            content: {
+              "application/json": { schema: z.toJSONSchema(hardwareCatalogSchema) },
+            },
+          },
+          "401": error,
+          "503": error,
+        },
+      },
+    },
+    "/api/v1/agents": {
+      get: {
+        summary: "List reviewed installed agents and native option schemas",
+        security: authenticated,
+        responses: {
+          "200": {
+            description: "Pinned Harbor catalog",
+            content: { "application/json": { schema: z.toJSONSchema(catalogSchema) } },
+          },
+          "401": error,
+          "503": error,
+        },
+      },
+    },
+    "/api/v1/runs/validate": {
+      post: {
+        summary:
+          "Inspect native configuration without creating a run or executing agent code",
+        security: authenticated,
+        requestBody: { required: true, content: json },
+        responses: {
+          "200": {
+            description:
+              "Native plan counts and effective configuration; not an installation or inference test",
+            content: {
+              "application/json": { schema: z.toJSONSchema(validationSchema) },
+            },
+          },
+          "400": error,
+          "403": error,
+          "503": error,
+        },
+      },
+    },
     "/api/v1/model-providers": {
       get: {
         summary: "List live Hub inference providers for a model",
@@ -382,10 +435,18 @@ const document = {
     },
     "/api/v1/runs/config": {
       post: {
-        summary: "Submit a direct Harbor JobConfig",
+        summary: "Validate and submit a diagnostic native Harbor JobConfig",
         security: authenticated,
         parameters: [
           idempotencyHeader,
+          {
+            name: "X-Harbor-HF-Validation",
+            in: "header",
+            required: false,
+            description:
+              "Fingerprint from Validate. A changed configuration or policy returns 409.",
+            schema: { type: "string" },
+          },
           {
             name: "X-Harbor-HF-Cost-Ceiling-USD-Per-Trial",
             in: "header",
@@ -394,7 +455,13 @@ const document = {
           },
         ],
         requestBody: { required: true, content: json },
-        responses: { "200": ok, "201": ok, "400": error, "409": error },
+        responses: {
+          "200": ok,
+          "201": ok,
+          "400": error,
+          "409": error,
+          "503": error,
+        },
       },
     },
     "/api/v1/runs/{run_id}": {

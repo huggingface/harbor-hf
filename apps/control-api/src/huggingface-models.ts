@@ -33,6 +33,7 @@ function modelUrl(model: string): string {
 
 export async function lookupHuggingFaceModelProviders(
   model: string,
+  signal?: AbortSignal,
 ): Promise<string[]> {
   let response: Response;
   try {
@@ -41,7 +42,9 @@ export async function lookupHuggingFaceModelProviders(
         Accept: "application/json",
         "User-Agent": "harbor-hf-control/0.1",
       },
-      signal: AbortSignal.timeout(10_000),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+        : AbortSignal.timeout(10_000),
     });
   } catch {
     throw new HuggingFaceModelLookupError("the Hugging Face Hub could not be reached");

@@ -44,7 +44,8 @@ export interface RunRecord {
   submitted_by: string;
   role: "final" | "diagnostic";
   harbor_revision: string;
-  submission: RunSubmission;
+  submission: Omit<RunSubmission, "model" | "harness"> &
+    Partial<Pick<RunSubmission, "model" | "harness">>;
   harbor_job_config: Record<string, unknown>;
 }
 
@@ -79,11 +80,10 @@ export interface TrialSummary {
   reward: number | null;
   cost_usd: number | null;
   status: "completed" | "error" | "cancelled";
-}
-
-export interface TrialDetail extends TrialSummary {
   result: Record<string, unknown>;
 }
+
+export type TrialDetail = TrialSummary;
 
 export interface ParentJob {
   id: string;

@@ -3,7 +3,10 @@ import { type ReactNode, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ApiError, signOut } from "./api";
 import { ControlStateProvider, type DisplayActor } from "./control-state";
+import { LaunchPage } from "./launch-page";
+import { draftUrl, loadDraftUrl } from "./launch-url";
 import { Layout, loginHref } from "./layout";
+import { LeaderboardPage } from "./leaderboard-page";
 import {
   JobsPage,
   NotFoundPage,
@@ -15,7 +18,6 @@ import {
 import { useSession, useSystem } from "./queries";
 import { ErrorNotice, Loading, QueryContent } from "./ui";
 import { WorkbenchPage } from "./workbench";
-import { LeaderboardPage } from "./leaderboard-page";
 
 function isPublicBoard(path: string): boolean {
   return path === "/" || path === "/leaderboard";
@@ -77,6 +79,7 @@ function AuthenticatedApp({
               <Route path="/overview" element={<OverviewPage />} />
               <Route path="/workbench" element={<WorkbenchPage />} />
               <Route path="/runs" element={<RunsPage />} />
+              <Route path="/runs/new" element={<LaunchPage />} />
               <Route path="/runs/:runId" element={<RunPage />} />
               <Route path="/runs/:runId/trials/:trialName" element={<TrialPage />} />
               <Route path="/jobs" element={<JobsPage />} />
@@ -123,7 +126,28 @@ export default function App() {
   const unauthorized =
     (session.error instanceof ApiError && session.error.status === 401) ||
     session.data?.authenticated === false;
-  if (unauthorized) return <LoginRedirect returnTo={location.pathname} />;
+  if (unauthorized) {
+    let returnTo = location.pathname;
+    if (location.pathname === "/runs/new") {
+      try {
+        const input = loadDraftUrl(location.search);
+        if (input) {
+          const url = new URL(
+            draftUrl(window.location.href, input.draft, input.ceiling),
+          );
+          returnTo += url.search;
+        }
+      } catch {
+        return (
+          <GuestShell>
+            <p role="alert">Invalid launch draft link. No draft was loaded.</p>
+            <a href="/runs/new">Start a new draft</a>
+          </GuestShell>
+        );
+      }
+    }
+    return <LoginRedirect returnTo={returnTo} />;
+  }
 
   const error =
     session.error ?? new Error("The control service could not verify your session.");
