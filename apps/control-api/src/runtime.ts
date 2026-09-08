@@ -16,9 +16,9 @@ import {
 } from "@harbor-hf/hf-adapters";
 import { AuthenticationService, AuthStore } from "./auth.js";
 import type { AppConfig } from "./config.js";
+import { HARBOR_REVISION } from "./harbor-revision.js";
+import { type LaunchPort, NativeLaunch } from "./launch.js";
 import { WorkbenchRuntime } from "./workbench.js";
-
-const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
 
 export interface Runtime {
   config: AppConfig;
@@ -29,6 +29,7 @@ export interface Runtime {
   reconciler: Reconciler;
   presets: PresetCatalog;
   workbench: WorkbenchRuntime;
+  launch: LaunchPort;
   readonly ready: boolean;
   initialize(): Promise<void>;
   start(onReconcilerError?: (error: unknown) => void): void;
@@ -113,6 +114,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     reconciler,
     presets,
     workbench,
+    launch: new NativeLaunch(config),
     get ready() {
       return ready;
     },

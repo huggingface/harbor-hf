@@ -57,7 +57,17 @@ const record = {
     harness: { agent: "pi", version: "0.84.4" },
     cost_ceiling_usd_per_trial: 0.25,
   },
-  harbor_job_config: { job_name: "job", n_attempts: 1 },
+  harbor_job_config: {
+    job_name: "job",
+    n_attempts: 1,
+    agents: [
+      {
+        name: "pi",
+        model_name: "huggingface/publisher/model:provider",
+        kwargs: { version: "0.84.4" },
+      },
+    ],
+  },
 };
 
 const state = {
@@ -517,4 +527,102 @@ test("keeps direct authenticated route refreshes in the restored shell", async (
   await page.goto(`/runs/${runId}/trials/${trialName}`);
   await expect(page.getByRole("heading", { name: "Trial detail" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Workbench" }).first()).toBeVisible();
+});
+
+test("edits and validates native launch configuration on desktop and mobile", async ({
+  page,
+}, testInfo) => {
+  await mockControl(page);
+  page.on("dialog", (dialog) => dialog.accept());
+  const implementation = "harbor_hf_agents.pi.agent:PiAgent";
+  await page.route("**/api/v1/agents", (route) =>
+    json(route, {
+      harbor_revision: "a".repeat(40),
+      agents: [
+        {
+          label: "pi",
+          config: {
+            import_path: implementation,
+            model_name: "huggingface/",
+            kwargs: { version: "0.84.4" },
+          },
+          options_schema: {
+            properties: {
+              version: { type: "string", title: "Version" },
+              thinking: { type: "string", enum: ["off", "high"] },
+            },
+          },
+        },
+      ],
+      job_schema: { properties: { n_attempts: { type: "integer", default: 1 } } },
+    }),
+  );
+  await page.route("**/api/v1/runs/validate", (route) =>
+    json(route, {
+      harbor_revision: "a".repeat(40),
+      tasks: 1,
+      agents: 1,
+      trials: 1,
+      warnings: [],
+      not_performed: ["Model inference"],
+      effective_config: route.request().postDataJSON(),
+      fingerprint: "checked",
+      credentials_available: true,
+    }),
+  );
+  let submitted: Record<string, unknown> | undefined;
+  await page.route("**/api/v1/runs/config", (route) => {
+    submitted = route.request().postDataJSON();
+    return json(route, { run: record }, 201);
+  });
+  await page.goto("/runs/new");
+  await expect(
+    page.getByRole("heading", { name: "New Job", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Benchmark preset").selectOption("0");
+  await page.getByRole("button", { name: "Add agent", exact: true }).click();
+  await page.getByLabel("Agent implementation").selectOption(implementation);
+  await page.getByLabel("HF model", { exact: true }).fill("publisher/model");
+  await page
+    .getByRole("combobox", { name: "HF provider", exact: true })
+    .selectOption("provider");
+  await page.getByText("Agent configuration", { exact: true }).click();
+  await page.getByRole("textbox", { name: "Version", exact: true }).fill("0.84.3");
+  await page.getByRole("button", { name: "Validate", exact: true }).click();
+  await expect(page.getByText("1 resolved tasks · 1 agents · 1 trials")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("launch-desktop.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("button", { name: "Launch", exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("launch-mobile.png"),
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Launch", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Validate", exact: true }).click();
+  await expect(page.getByText("1 resolved tasks · 1 agents · 1 trials")).toBeVisible();
+  await page.getByRole("button", { name: "Launch", exact: true }).click();
+  await expect(page).toHaveURL(`/runs/${runId}`);
+  expect(submitted).toMatchObject({
+    agents: [
+      {
+        import_path: implementation,
+        model_name: "huggingface/publisher/model:provider",
+        kwargs: { version: "0.84.3" },
+      },
+    ],
+    environment: { kwargs: { flavor: "cpu-upgrade" } },
+  });
 });

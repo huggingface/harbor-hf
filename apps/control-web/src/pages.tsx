@@ -1,5 +1,5 @@
-import type { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
 import {
   CircleDollarSign,
   Clock3,
@@ -52,6 +52,7 @@ import {
   useTrial,
   useTrials,
 } from "./queries";
+import { runIdentity } from "./run-identity";
 import { Badge, Button, Card, Empty, ErrorNotice, Progress, QueryContent } from "./ui";
 
 function stats(run: RunView): Record<string, unknown> | null {
@@ -451,11 +452,11 @@ export function OverviewPage() {
                   >
                     <span className="min-w-0">
                       <strong className="block truncate text-sm text-slate-100">
-                        {run.record.submission.model.id}
+                        {runIdentity(run.record).model}
                       </strong>
                       <span className="block truncate text-xs text-slate-500">
                         {run.record.submission.benchmark.name} ·{" "}
-                        {run.record.submission.harness.agent}
+                        {runIdentity(run.record).agent}
                       </span>
                     </span>
                     <span className="flex items-center gap-3">
@@ -506,15 +507,15 @@ export function RunsPage() {
       {
         id: "model",
         header: "Model",
-        accessorFn: (run) => run.record.submission.model.id,
+        accessorFn: (run) => runIdentity(run.record).model,
         cell: ({ row }) => (
           <Link
             className="font-medium text-cyan-300"
             to={`/runs/${row.original.record.run_id}`}
           >
-            {row.original.record.submission.model.id}
+            {runIdentity(row.original.record).model}
             <span className="block text-xs font-normal text-slate-500">
-              {row.original.record.submission.model.provider}
+              {runIdentity(row.original.record).provider}
             </span>
           </Link>
         ),
@@ -535,12 +536,12 @@ export function RunsPage() {
       {
         id: "agent",
         header: "Agent",
-        accessorFn: (run) => run.record.submission.harness.agent,
+        accessorFn: (run) => runIdentity(run.record).agent,
         cell: ({ row }) => (
           <span>
-            {row.original.record.submission.harness.agent}
+            {runIdentity(row.original.record).agent}
             <span className="block text-xs text-slate-500">
-              {row.original.record.submission.harness.version}
+              {runIdentity(row.original.record).version}
             </span>
           </span>
         ),
@@ -585,6 +586,9 @@ export function RunsPage() {
           </Button>
         }
       />
+      <Link className="mb-4 inline-block text-sky-400" to="/runs/new">
+        New Job
+      </Link>
       <QueryContent query={query}>
         {query.data ? (
           <DataTable
@@ -723,14 +727,11 @@ export function RunPage() {
               {item.record.submission.benchmark.name} ·{" "}
               {item.record.submission.benchmark.preset}
             </Field>
-            <Field label="Model">{item.record.submission.model.id}</Field>
-            <Field label="Provider">{item.record.submission.model.provider}</Field>
-            <Field label="Reasoning">
-              {humanize(item.record.submission.model.reasoning_effort)}
-            </Field>
+            <Field label="Model">{runIdentity(item.record).model}</Field>
+            <Field label="Provider">{runIdentity(item.record).provider}</Field>
+            <Field label="Reasoning">{runIdentity(item.record).reasoning}</Field>
             <Field label="Agent">
-              {item.record.submission.harness.agent} ·{" "}
-              {item.record.submission.harness.version}
+              {runIdentity(item.record).agent} · {runIdentity(item.record).version}
             </Field>
             <Field label="Cost limit per trial">
               {formatMoneyUsd(item.record.submission.cost_ceiling_usd_per_trial)}
@@ -805,36 +806,51 @@ function TrialsTable({ trials }: { trials: TrialSummary[] }) {
         <thead className="bg-slate-950/70 text-xs uppercase tracking-wider text-slate-500">
           <tr>
             <th className="px-4 py-3">Trial</th>
+            <th className="px-4 py-3">Agent</th>
+            <th className="px-4 py-3">Model</th>
+            <th className="px-4 py-3">Reported agent version</th>
             <th className="px-4 py-3">Status</th>
             <th className="px-4 py-3 text-right">Reward</th>
             <th className="px-4 py-3 text-right">Cost</th>
           </tr>
         </thead>
         <tbody>
-          {trials.map((trial) => (
-            <tr
-              className="border-t border-slate-800 hover:bg-slate-900/60"
-              key={trial.trial_name}
-            >
-              <td className="px-4 py-3">
-                <Link
-                  className="font-mono text-xs text-cyan-300"
-                  to={`/runs/${encodeURIComponent(trial.run_id)}/trials/${encodeURIComponent(trial.trial_name)}`}
-                >
-                  {trial.trial_name}
-                </Link>
-              </td>
-              <td className="px-4 py-3">
-                <Badge status={trial.status}>{humanize(trial.status)}</Badge>
-              </td>
-              <td className="px-4 py-3 text-right text-slate-300">
-                {trial.reward ?? "Unavailable"}
-              </td>
-              <td className="px-4 py-3 text-right text-slate-300">
-                {formatMoneyUsd(trial.cost_usd)}
-              </td>
-            </tr>
-          ))}
+          {trials.map((trial) => {
+            const config = asRecord(trial.result?.config);
+            const agent = asRecord(config?.agent);
+            const info = asRecord(trial.result?.agent_info);
+            return (
+              <tr
+                className="border-t border-slate-800 hover:bg-slate-900/60"
+                key={trial.trial_name}
+              >
+                <td className="px-4 py-3">
+                  <Link
+                    className="font-mono text-xs text-cyan-300"
+                    to={`/runs/${encodeURIComponent(trial.run_id)}/trials/${encodeURIComponent(trial.trial_name)}`}
+                  >
+                    {trial.trial_name}
+                  </Link>
+                </td>
+                <td className="px-4 py-3">
+                  {String(agent?.import_path ?? agent?.name ?? "Unavailable")}
+                </td>
+                <td className="px-4 py-3">
+                  {String(agent?.model_name ?? "Unavailable")}
+                </td>
+                <td className="px-4 py-3">{String(info?.version ?? "Unavailable")}</td>
+                <td className="px-4 py-3">
+                  <Badge status={trial.status}>{humanize(trial.status)}</Badge>
+                </td>
+                <td className="px-4 py-3 text-right text-slate-300">
+                  {trial.reward ?? "Unavailable"}
+                </td>
+                <td className="px-4 py-3 text-right text-slate-300">
+                  {formatMoneyUsd(trial.cost_usd)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

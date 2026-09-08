@@ -17,14 +17,16 @@ import {
   OAuthCallbackError,
   type SessionRow,
 } from "./auth.js";
+import { HARBOR_REVISION } from "./harbor-revision.js";
 import {
   HuggingFaceModelLookupError,
   HuggingFaceModelNotFoundError,
   lookupHuggingFaceModelProviders,
 } from "./huggingface-models.js";
+import { LaunchError } from "./launch.js";
 import type { Runtime } from "./runtime.js";
 
-export const HARBOR_REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
+export { HARBOR_REVISION } from "./harbor-revision.js";
 
 const providerSchema = z
   .string()
@@ -226,7 +228,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     const mutation = request.method !== "GET" && request.method !== "HEAD";
     if (mutation && requireActor(request).role !== "operator")
       return error(reply, 403, "operator_required", "operator access is required");
-    const workbenchPreview = path === "/api/v1/workbench/preview";
+    const workbenchPreview =
+      path === "/api/v1/workbench/preview" || path === "/api/v1/runs/validate";
     const localWorkbench =
       path.startsWith("/api/v1/workbench/setup-tests") &&
       runtime.config.workbench_runner === "docker";
@@ -254,6 +257,13 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           : 500;
       return error(reply, status, code, failure.message);
     }
+    if (failure instanceof LaunchError)
+      return error(
+        reply,
+        failure.status,
+        failure.status === 400 ? "invalid_request" : "inspection_unavailable",
+        failure.message,
+      );
     if (failure instanceof z.ZodError)
       return error(
         reply,
@@ -366,6 +376,12 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     agents: runtime.presets.agents,
   }));
 
+  app.get("/api/v1/agents", async () => runtime.launch.catalog());
+
+  app.post("/api/v1/runs/validate", async (request) =>
+    runtime.launch.validate(request.body),
+  );
+
   app.get("/api/v1/model-providers", async (request) => {
     const { model } = modelProvidersQuery.parse(request.query);
     return {
@@ -477,11 +493,30 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.post("/api/v1/runs/config", async (request, reply) => {
     const actor = requireActor(request);
+    const key = idempotencyKey(request);
     const ceiling = Number(request.headers["x-harbor-hf-cost-ceiling-usd-per-trial"]);
+    if (!Number.isFinite(ceiling) || ceiling <= 0 || ceiling > 10_000)
+      throw new Error("cost ceiling must be a finite positive USD value");
+    const validation = await runtime.launch.validate(request.body);
+    if (!validation.credentials_available)
+      return error(
+        reply,
+        503,
+        "credentials_unavailable",
+        "Separate control and inference credentials are required to launch",
+      );
+    const reviewed = request.headers["x-harbor-hf-validation"];
+    if (reviewed !== undefined && reviewed !== validation.fingerprint)
+      return error(
+        reply,
+        409,
+        "validation_changed",
+        "Launch configuration or admission policy changed; validate again",
+      );
     const result = await runtime.service.submitConfig(
       request.body,
       ceiling,
-      idempotencyKey(request),
+      key,
       actor.subject,
     );
     return reply.code(result.created ? 201 : 200).send(result);

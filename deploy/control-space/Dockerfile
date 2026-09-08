@@ -41,14 +41,32 @@ RUN npm run typecheck:space \
     && npm run build -w @harbor-hf/control-web \
     && npm prune --omit=dev --workspaces
 
+FROM ghcr.io/astral-sh/uv:0.12.5@sha256:db2d5999728c5837e1bf9ba278ee6b05cef1e95e82a20e27b0c915cb4478b9d7 AS uv
+
+FROM node:22.22.0-bookworm-slim@sha256:7cc56ef285a8568121537d17b05e72128f01b89c54607b51acf084a50ef483f3 AS native
+ENV UV_PYTHON_INSTALL_DIR=/opt/python \
+    UV_PROJECT_ENVIRONMENT=/opt/harbor-launch
+COPY --from=uv /uv /usr/local/bin/uv
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY packages/harbor-hf-agents /tmp/harbor-hf-agents
+RUN uv python install 3.12.14 \
+    && uv sync --project /tmp/harbor-hf-agents --python 3.12.14 --frozen --no-dev --no-editable \
+    && /opt/harbor-launch/bin/python -c "from harbor_hf_agents.launch import check_revision; check_revision()"
+
 FROM node:22.22.0-bookworm-slim@sha256:7cc56ef285a8568121537d17b05e72128f01b89c54607b51acf084a50ef483f3 AS runtime
 
 ARG HARBOR_HF_SOURCE_REVISION=development
 ENV NODE_ENV=production \
     HARBOR_HF_STORE_MODE=bucket \
-    HARBOR_HF_SOURCE_REVISION=${HARBOR_HF_SOURCE_REVISION}
+    HARBOR_HF_SOURCE_REVISION=${HARBOR_HF_SOURCE_REVISION} \
+    HARBOR_HF_LAUNCH_PYTHON=/opt/harbor-launch/bin/python
 LABEL org.opencontainers.image.revision=${HARBOR_HF_SOURCE_REVISION}
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=native /opt/python /opt/python
+COPY --from=native /opt/harbor-launch /opt/harbor-launch
 
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 # The clean workspace lock hoists production packages into this root tree.

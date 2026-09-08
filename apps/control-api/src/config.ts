@@ -12,6 +12,8 @@ const schema = z.object({
   HARBOR_HF_PROJECTION_PATH: z.string().min(1).default("/tmp/harbor-hf/control.sqlite"),
   HARBOR_HF_AUTH_PATH: z.string().min(1).default("/tmp/harbor-hf/auth.sqlite"),
   HARBOR_HF_PRESETS_ROOT: z.string().min(1).default("./presets"),
+  HARBOR_HF_LAUNCH_PYTHON: z.string().min(1).optional(),
+  HARBOR_HF_APPROVED_AGENT_SOURCES: z.string().default("[]"),
   HARBOR_HF_MAX_ACTIVE_JOBS: z.coerce.number().int().min(1).max(1024).default(16),
   HARBOR_HF_PARENT_IMAGE: z.string().optional(),
   HARBOR_HF_PARENT_HARDWARE: z.string().default("cpu-basic"),
@@ -69,6 +71,8 @@ export interface AppConfig {
   projection_path: string;
   auth_path: string;
   presets_root: string;
+  launch_python?: string;
+  approved_agent_sources?: Record<string, unknown>[];
   max_active_jobs: number;
   parent_image: string | null;
   parent_hardware: ParentHardware;
@@ -169,6 +173,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     projection_path: resolve(parsed.HARBOR_HF_PROJECTION_PATH),
     auth_path: resolve(parsed.HARBOR_HF_AUTH_PATH),
     presets_root: resolve(parsed.HARBOR_HF_PRESETS_ROOT),
+    ...(parsed.HARBOR_HF_LAUNCH_PYTHON
+      ? { launch_python: parsed.HARBOR_HF_LAUNCH_PYTHON }
+      : {}),
+    approved_agent_sources: z
+      .array(z.record(z.string(), z.unknown()))
+      .max(64)
+      .parse(JSON.parse(parsed.HARBOR_HF_APPROVED_AGENT_SOURCES)),
     max_active_jobs: parsed.HARBOR_HF_MAX_ACTIVE_JOBS,
     parent_image: parsed.HARBOR_HF_PARENT_IMAGE ?? null,
     parent_hardware: parsed.HARBOR_HF_PARENT_HARDWARE as ParentHardware,

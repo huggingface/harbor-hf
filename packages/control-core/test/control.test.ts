@@ -1,21 +1,21 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type { RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
 import { runRecordPath, runStatePath } from "@harbor-hf/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  compileAgentWorkbenchRecipe,
   ControlService,
-  fastAgentWorkbenchStarter,
-  FilesystemObjectStore,
-  type JobObservation,
-  type JobsPort,
-  PresetCatalog,
-  Projection,
+  compileAgentWorkbenchRecipe,
   costLimitReached,
   createJson,
+  FilesystemObjectStore,
+  fastAgentWorkbenchStarter,
+  type JobObservation,
+  type JobsPort,
   leaderboard,
+  PresetCatalog,
+  Projection,
   putJson,
   statusFor,
   summarizeTrial,
@@ -307,7 +307,7 @@ describe("run submission", () => {
       agents: [
         {
           name: "pi",
-          model_name: "openai/openai/gpt-oss-20b:together",
+          model_name: "huggingface/openai/gpt-oss-20b:together",
           kwargs: { version: "0.84.2", max_tokens: 1_000 },
         },
       ],
@@ -360,7 +360,7 @@ describe("run submission", () => {
         "opaque-agent-env",
         "test-subject",
       ),
-    ).rejects.toThrow("cannot set agent env");
+    ).rejects.toThrow("Environment variable CUSTOM_AUTH is not admitted");
     for (const [key, repo] of [
       ["credential-url", "https://user:password@example.test/repository"],
       ["credential-query", "https://example.test/repository?token=opaque"],

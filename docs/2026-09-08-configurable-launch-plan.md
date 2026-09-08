@@ -15,11 +15,17 @@ validate the complete request, and launch a normal Harbor run. Support built-in
 agents and custom Git repository agents. Use the existing console visual style,
 with repeated source and agent cards and collapsible advanced settings.
 
-Status: planned, not implemented. This document records the target and the work
-needed to reach it. It does not authorize implementation, publication, deployment,
-credential transfers, paid tests, or new resources. The current runtime contract
-remains in [Architecture](architecture.md) and [Control service](CONTROL_SERVICE.md).
-This is the canonical implementation plan for configurable launch.
+Status: implementation and local verification in progress. The implemented
+interface and initial restrictions are described in
+[Configurable launch](CONFIGURABLE_LAUNCH.md). This plan does not authorize
+deployment, credential transfers, paid tests, or new resources. The runtime
+contract remains in [Architecture](architecture.md) and
+[Control service](CONTROL_SERVICE.md).
+
+This is UI work over the existing native `JobConfig` submission path, not a new
+run engine. Preserve preset submission and Agent Workbench. Change backend
+contracts only where a required control needs it; do not replace working routes,
+compilers, or durable records as a prerequisite for this page.
 
 Follow [Design principles](DESIGN_PRINCIPLES.md). Harbor owns configuration, task
 resolution, agent execution, trials, retries, locks, results, and trajectories.
@@ -93,8 +99,8 @@ capability limits, not missing UI fields.
 ## Launch page
 
 Use an authenticated `/runs/new` page, reachable through the console's New Job
-button. Keep `/overview` focused on status and recent activity. Replace its
-embedded submission form when the unified page is ready.
+button. Keep the existing overview and its reviewed preset form available,
+including its final-submission use.
 
 ### Sources
 
@@ -105,7 +111,7 @@ Render one card per source with Add source and Remove controls. Offer:
 - Registry task: `tasks[].name` and optional `ref`.
 - Git repository dataset: `datasets[].repo` and its native repository-relative
   qualifiers, filters, and task limit.
-- Git task: `tasks[].git_url`, `git_ref`, and repository-relative `path`.
+- Git task: `tasks[].git_url`, `git_commit_id`, and repository-relative `path`.
 
 Use Harbor's public source and registry APIs for resolution. Search suggestions
 are bounded, cancellable reads; they do not become a local registry. Do not allow
@@ -345,17 +351,15 @@ labels and preserve standard browser text-editing behavior.
 
 ## API and validation
 
-Converge on `POST /api/v1/runs` with one native Harbor configuration and only
-Harbor-HF-owned admission metadata. Reuse `harbor_job_config`, `role`, and the
-existing cost-limit vocabulary where applicable. The implementation must finalize
-the minimal request schema before generating clients; this plan does not introduce
-a second configuration format.
+Use the existing `POST /api/v1/runs/config` native request for the configurable
+page and direct CLI. Keep cost policy outside Harbor's configuration. Preserve
+`POST /api/v1/runs` for reviewed preset and Workbench submission. These paths
+already use native Harbor execution and the same run authority.
 
-Remove the separate preset submission shape, `/api/v1/runs/config` path, and
-Workbench-specific launch payload at the replacement boundary. Presets populate
-native configuration; they do not invoke a separate execution compiler. Keep
-schema version `v1` and regenerate TypeScript, OpenAPI, browser, and CLI contracts
-together. Do not retain aliases or fallback readers.
+Presets populate native form state without a new preset format. Add
+`POST /api/v1/runs/validate` and the reviewed native agent catalog. Keep schema
+version `v1` and regenerate affected contracts. Do not add a second configuration
+vocabulary or replace working routes without evidence that the change is needed.
 
 Add a read-only validation operation using the same admission functions as launch.
 Keep browser session and CSRF protection, CLI bearer authentication, write-mode
@@ -389,9 +393,11 @@ has no safe public Harbor API, report the gap rather than copying a private help
 
 ## Records, costs, and results
 
-The current run record's singular `submission.benchmark`, `submission.model`, and
-`submission.harness` fields cannot represent a multi-source, multi-agent job.
-Replace those mirrors rather than filling them with the first array entry.
+The current singular submission metadata must not attribute a mixed run to its
+first agent. Keep existing preset metadata for its supported uses. Omit singular
+model and harness metadata where it cannot represent the job, and use native
+configuration and trial results for mixed-run identity. No wholesale record
+migration or projection replacement is required.
 
 Store native configuration once alongside Harbor-HF-owned identity, actor,
 revision, role, and cost policy. Derive agent, model, version, and task identity
@@ -451,15 +457,14 @@ unsupported settings and unsafe inputs receive explicit errors.
 - Test the integration with harmless local fixtures and mocked HF boundaries.
 - Inventory the required behavior in `apps/control-web/src/workbench.tsx`,
   `packages/control-core/src/workbench.ts`, and the command-agent plugin.
-- Decide each unsupported existing use case explicitly: replace it with an
-  equivalent native path, obtain approval to remove it, or obtain approval for an
-  exact upstream extension. Do not quietly retain a second permanent launch path.
+- Preserve existing Workbench setup and run behavior. It is not replaced by an
+  ACP source selector. Remove only proven duplicate behavior with a complete
+  supported replacement.
 - Do not design a replacement runtime for unsupported source languages locally.
 
-Exit: the required custom-agent behavior has an approved native path, and obsolete
-Workbench recipe schemas, compilation, launch routes, and runtime code are removed
-at the coordinated replacement. A setup pass is never treated as source approval
-or proof of model compatibility.
+Exit: admitted custom agents use native source execution, and existing Workbench
+uses remain supported. A setup pass is never treated as source approval or proof
+of model compatibility.
 
 ### 4. Verification and release readiness
 
@@ -467,8 +472,8 @@ or proof of model compatibility.
 - Inventory active and retained runs before changing the durable record shape.
   Do not strand active work, delete evidence, silently hide required results, or
   add legacy readers. Agree on the treatment of existing records before release.
-- Replace the API, UI, CLI, and schemas together. Use a hard cutover with no v2
-  contract or parallel execution path.
+- Update affected API, UI, CLI documentation, and schemas together. Keep `v1`
+  and the existing execution authority. Do not add compatibility readers.
 - After separate deployment approval, deploy first with writes disabled. Verify
   schema and worker revision agreement, readiness, privacy, and projection rebuild.
 - Run remote setup, inference, or lifecycle canaries only with explicit scope and

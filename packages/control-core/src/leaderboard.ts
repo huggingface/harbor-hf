@@ -28,7 +28,13 @@ export function leaderboard(
   const groups = new Map<string, Aggregate>();
   for (const view of projection.listRuns()) {
     const { record } = view;
-    if (view.status !== "finished" || record.role !== "final") continue;
+    if (
+      view.status !== "finished" ||
+      record.role !== "final" ||
+      !record.submission.model ||
+      !record.submission.harness
+    )
+      continue;
     let eligible = false;
     try {
       eligible = presets.leaderboardEligible(

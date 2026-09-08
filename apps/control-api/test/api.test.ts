@@ -676,3 +676,99 @@ describe("authentication response and log safety", () => {
     await app.close();
   });
 });
+
+describe("configurable launch", () => {
+  const input = {
+    datasets: [{ name: "example/dataset", ref: `sha256:${"a".repeat(64)}` }],
+    agents: [
+      {
+        name: "openclaw",
+        model_name: "openai/example/model:provider",
+        kwargs: { version: "2026.7.1-2" },
+      },
+      {
+        name: "openclaw",
+        model_name: "openai/example/model:provider",
+        kwargs: { version: "2026.7.2" },
+      },
+    ],
+  };
+  const validation = {
+    harbor_revision: "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e",
+    tasks: 3,
+    agents: 2,
+    trials: 6,
+    warnings: [],
+    not_performed: ["Model inference"],
+    effective_config: input,
+    fingerprint: "checked",
+    credentials_available: true,
+  };
+  it("validates while writes are disabled without creating a run", async () => {
+    const { runtime, app } = await setup("disabled");
+    await runtime.initialize();
+    const inspect = vi.spyOn(runtime.launch, "validate").mockResolvedValue(validation);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs/validate",
+      payload: input,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().trials).toBe(6);
+    expect(inspect).toHaveBeenCalledWith(input);
+    expect(runtime.projection.listRuns()).toEqual([]);
+    const launch = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs/config",
+      payload: input,
+      headers: {
+        "idempotency-key": "disabled",
+        "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+      },
+    });
+    expect(launch.statusCode).toBe(503);
+    expect(inspect).toHaveBeenCalledTimes(1);
+  });
+  it("revalidates launch, preserves multiple agents, and remains idempotent", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const inspect = vi.spyOn(runtime.launch, "validate").mockResolvedValue(validation);
+    const request = {
+      method: "POST" as const,
+      url: "/api/v1/runs/config",
+      payload: input,
+      headers: {
+        "idempotency-key": "multi-agent",
+        "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+        "x-harbor-hf-validation": "checked",
+      },
+    };
+    const first = await app.inject(request);
+    expect(first.statusCode).toBe(201);
+    expect(first.json().run.harbor_job_config.agents).toHaveLength(2);
+    expect(first.json().run.submission).not.toHaveProperty("model");
+    const second = await app.inject(request);
+    expect(second.statusCode).toBe(200);
+    expect(second.json().run.run_id).toBe(first.json().run.run_id);
+    expect(inspect).toHaveBeenCalledTimes(2);
+  });
+  it("rejects changed admission and unavailable credentials without creating a run", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const inspect = vi.spyOn(runtime.launch, "validate").mockResolvedValue(validation);
+    const request = {
+      method: "POST" as const,
+      url: "/api/v1/runs/config",
+      payload: input,
+      headers: {
+        "idempotency-key": "changed",
+        "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+        "x-harbor-hf-validation": "stale",
+      },
+    };
+    expect((await app.inject(request)).statusCode).toBe(409);
+    inspect.mockResolvedValue({ ...validation, credentials_available: false });
+    expect((await app.inject(request)).statusCode).toBe(503);
+    expect(runtime.projection.listRuns()).toEqual([]);
+  });
+});
