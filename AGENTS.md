@@ -58,6 +58,19 @@
   persisted field with Harbor. You MUST make the same comparison for API and UI
   values. You MUST remove any duplicate or renamed Harbor concept.
 
+## General benchmark contracts
+
+- Do not add model-, provider-, agent-, or harness-specific admission rules, compatibility lists,
+  settings, defaults, request rewrites, or protocol workarounds to Harbor-HF.
+- Apply generic schema, authorization, budget, provenance, and lifecycle rules uniformly. A
+  configuration that satisfies those rules can run and report its normal failure when its selected
+  components are incompatible.
+- Treat a failed combination as benchmark evidence. Do not convert past failures into a hard-coded
+  allowlist, denylist, compatibility matrix, or special case.
+- Put component-specific fixes and settings in the responsible provider, harness, agent, or upstream
+  adapter. Keep reviewed presets declarative and do not use them to claim pair-specific
+  compatibility.
+
 ## Storage and resources
 
 - The steady-state inventory is one private control Space and one private
