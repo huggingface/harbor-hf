@@ -1555,6 +1555,10 @@ export interface components {
                 };
                 cost_ceiling_usd_per_trial: number;
             };
+            /** @description Immutable Workbench display provenance. Recipe revision is submission.harness.version; execution remains in harbor_job_config. */
+            workbench_recipe?: {
+                name: string;
+            };
             harbor_job_config: Record<string, unknown>;
         } & unknown;
         /** RunRecordSlug */

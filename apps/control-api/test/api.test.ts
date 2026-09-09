@@ -748,6 +748,8 @@ describe("control API", () => {
       expect(first.statusCode).toBe(201);
       expect(repeated.statusCode).toBe(200);
       const record = first.json().run;
+      expect(record.workbench_recipe).toEqual({ name: workbenchRecipe.name });
+      expect(repeated.json().run.workbench_recipe).toEqual(record.workbench_recipe);
       expect(record.submission.harness).toEqual({
         agent: "command-agent",
         version: workbenchPreview.revision_id,
@@ -761,8 +763,52 @@ describe("control API", () => {
       expect(JSON.stringify(record)).not.toContain("harness_profile");
       expect(JSON.stringify(record)).not.toContain("promotion");
       expect(attestation).toHaveBeenCalledTimes(2);
+      const changed = await app.inject({
+        method: "POST",
+        url: "/api/v1/runs",
+        headers: { "idempotency-key": "workbench-run" },
+        payload: {
+          ...payload,
+          workbench: {
+            ...payload.workbench,
+            recipe: { ...workbenchRecipe, name: "renamed-recipe" },
+          },
+        },
+      });
+      expect(changed.statusCode).toBe(409);
+      expect(runtime.projection.listRuns()).toHaveLength(1);
+      expect(runtime.projection.listRuns()[0]?.record.workbench_recipe).toEqual({
+        name: workbenchRecipe.name,
+      });
     },
   );
+
+  it.each([
+    { workbench_recipe: { name: "spoofed" } },
+    { workbench_recipe_name: "spoofed" },
+  ])("rejects independently supplied display provenance: %j", async (extra) => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const attestation = vi.spyOn(runtime.workbench, "attestPassedSetup");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "spoofed-provenance" },
+      payload: {
+        benchmark: submission.benchmark,
+        model: submission.model,
+        cost_ceiling_usd_per_trial: 0.25,
+        workbench: {
+          recipe: workbenchRecipe,
+          setup_test_id: workbenchSetup.setup_test_id,
+        },
+        ...extra,
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(attestation).not.toHaveBeenCalled();
+    expect(runtime.projection.listRuns()).toEqual([]);
+  });
 
   it.each([
     { model_name: "model", env: { OPENAI_API_KEY: "fixture" } },

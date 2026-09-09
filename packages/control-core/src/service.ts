@@ -80,6 +80,7 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
       role: left.role,
       harbor_revision: left.harbor_revision,
       submission: left.submission,
+      workbench_recipe: left.workbench_recipe,
       harbor_job_config: left.harbor_job_config,
     }) ===
     canonicalJson({
@@ -87,6 +88,7 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
       role: right.role,
       harbor_revision: right.harbor_revision,
       submission: right.submission,
+      workbench_recipe: right.workbench_recipe,
       harbor_job_config: right.harbor_job_config,
     })
   );
@@ -186,6 +188,7 @@ export class ControlService {
     harborAgent: HarborAgentFragment,
     idempotencyKey: string,
     actor: string,
+    workbenchRecipe?: RunRecordV1["workbench_recipe"],
   ): Promise<SubmissionResult> {
     positiveCeiling(input.cost_ceiling_usd_per_trial);
     if (containsCredentialMaterial(input))
@@ -210,6 +213,7 @@ export class ControlService {
         harness: input.harness,
         cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
       },
+      ...(workbenchRecipe ? { workbench_recipe: workbenchRecipe } : {}),
       harbor_job_config: jobConfig,
     });
     return this.persistSubmission(record);

@@ -405,6 +405,38 @@ describe("run submission", () => {
     expect(projection.listRuns()).toEqual([]);
   });
 
+  it("snapshots Workbench display provenance as immutable without changing native config", async () => {
+    const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+    const launch = (name?: string) =>
+      service.submitWorkbench(
+        input,
+        preview.harbor_agent,
+        "recipe-provenance",
+        "test-subject",
+        name === undefined ? undefined : { name },
+      );
+    const first = await launch("recipe-one");
+    expect(first.run.workbench_recipe).toEqual({ name: "recipe-one" });
+    expect(await launch("recipe-one")).toEqual({ created: false, run: first.run });
+    await expect(launch("recipe-two")).rejects.toThrow("different run");
+    await expect(launch()).rejects.toThrow("different run");
+    const historical = await service.submitWorkbench(
+      input,
+      preview.harbor_agent,
+      "historical",
+      "test-subject",
+    );
+    expect(historical.run).not.toHaveProperty("workbench_recipe");
+    expect(first.run.harbor_job_config.agents).toEqual(
+      historical.run.harbor_job_config.agents,
+    );
+    await service.refresh();
+    expect(projection.run(first.run.run_id)?.record.workbench_recipe).toEqual({
+      name: "recipe-one",
+    });
+    expect(jobs.starts).toBe(0);
+  });
+
   it("adopts a repeated request and rejects different input", async () => {
     const first = await submit();
     const second = await submit();

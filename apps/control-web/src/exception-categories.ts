@@ -2,12 +2,14 @@
 // environments/gke.py, agents/installed/base.py, verifier/verifier.py.
 // Not inferred causes, scoring validity, or retry eligibility.
 export type ExceptionCategory =
+  | "Agent execution timeout"
   | "Environment / transport"
   | "Provider failure"
   | "Rate limit"
   | "Verifier exception"
   | "Unclassified";
 const categories: Record<string, ExceptionCategory> = {
+  AgentTimeoutError: "Agent execution timeout",
   EnvironmentStartTimeoutError: "Environment / transport",
   GKEExecStreamClosedError: "Environment / transport",
   NetworkConnectionError: "Environment / transport",

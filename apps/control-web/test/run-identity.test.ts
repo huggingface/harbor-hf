@@ -84,3 +84,25 @@ describe("configuration provenance", () => {
     ).toBe("thinking=0");
   });
 });
+
+describe("Workbench display provenance", () => {
+  it("prefers the immutable recipe name while retaining native agent and existing revision", () => {
+    const record = {
+      workbench_recipe: { name: "my-recipe" },
+      submission: { harness: { agent: "command-agent", version: "recipe-revision" } },
+      harbor_job_config: {
+        agents: [{ import_path: "plugin:CommandAgent", model_name: "route/model" }],
+      },
+    } as RunRecord;
+    expect(runIdentity(record)).toMatchObject({
+      agent: "my-recipe",
+      nativeAgent: "plugin:CommandAgent",
+      version: "recipe-revision",
+      model: "route/model",
+    });
+    expect(runAgentIdentities(record)[0]?.agent).toBe("plugin:CommandAgent");
+    const { workbench_recipe: _recipe, ...historical } = record;
+    expect(runIdentity(historical).agent).toBe("plugin:CommandAgent");
+    expect(runIdentity(historical).version).toBe("Not explicitly configured");
+  });
+});

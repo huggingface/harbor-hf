@@ -14,7 +14,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   actOnRun,
   type BenchmarkPreset,
@@ -62,6 +62,7 @@ import {
 import { usePricingPreferences } from "./pricing-store";
 import { RunConfiguration } from "./run-configuration";
 import { RunDiagnostics, RunDiagnosticsSummary } from "./run-diagnostics";
+import { matchesRunFilters, readRunFilters, updateRunFilters } from "./run-filters";
 import { runIdentity } from "./run-identity";
 import { nativeScore } from "./run-summary";
 import {
@@ -496,10 +497,16 @@ export function OverviewPage() {
 
 export function RunsPage() {
   const query = useRuns();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { role, q } = readRunFilters(searchParams);
   const { preferences } = usePricingPreferences();
   const rows = useMemo(
-    () => scenarioRows(query.data ?? [], preferences),
-    [query.data, preferences],
+    () =>
+      scenarioRows(
+        (query.data ?? []).filter((run) => matchesRunFilters(run.record, { role, q })),
+        preferences,
+      ),
+    [query.data, preferences, role, q],
   );
   const columns = useMemo<ColumnDef<ScenarioRun>[]>(
     () => [
@@ -507,6 +514,13 @@ export function RunsPage() {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => <RunStatusTiming run={row.original} />,
+      },
+      {
+        id: "role",
+        header: "Role",
+        accessorFn: (run) => run.record.role,
+        enableColumnFilter: false,
+        cell: ({ row }) => <Badge>{humanize(row.original.record.role)}</Badge>,
       },
       {
         id: "model",
@@ -542,7 +556,7 @@ export function RunsPage() {
         header: "Agent",
         accessorFn: (run) => runIdentity(run.record).agent,
         cell: ({ row }) => (
-          <span>
+          <span title={`Native agent: ${runIdentity(row.original.record).nativeAgent}`}>
             {runIdentity(row.original.record).agent}
             <span className="block text-xs text-slate-500">
               {runIdentity(row.original.record).version}
@@ -621,14 +635,57 @@ export function RunsPage() {
           </Button>
         }
       />
-      <Link className="mb-4 inline-block text-sky-400" to="/runs/new">
-        New Job
-      </Link>
+      <nav aria-label="Create a run" className="mb-4 flex gap-4 text-sky-400">
+        <Link to="/runs/new">New Job</Link>
+        <Link to="/workbench">New Workbench run</Link>
+      </nav>
+      <div className="mb-4 flex flex-wrap items-end gap-4">
+        <label className="grid gap-1 text-sm" htmlFor="runs-role">
+          Run role
+          <select
+            id="runs-role"
+            className="rounded border border-slate-700 bg-slate-950 p-2"
+            value={role}
+            onChange={(event) =>
+              setSearchParams(
+                updateRunFilters(searchParams, "role", event.target.value),
+              )
+            }
+          >
+            <option value="all">All</option>
+            <option value="diagnostic">Diagnostic</option>
+            <option value="final">Final</option>
+          </select>
+        </label>
+        <label className="grid flex-1 gap-1 text-sm" htmlFor="runs-search">
+          Search runs
+          <input
+            id="runs-search"
+            type="search"
+            className="rounded border border-slate-700 bg-slate-950 p-2"
+            placeholder="Run ID, recipe, model, or benchmark"
+            value={q}
+            onChange={(event) =>
+              setSearchParams(updateRunFilters(searchParams, "q", event.target.value), {
+                replace: true,
+              })
+            }
+          />
+        </label>
+      </div>
       <PricingSelection />
       <QueryContent query={query}>
         {query.data ? (
           <div className="min-w-0 [&_table]:table-auto">
-            <DataTable columns={columns} data={rows} empty="No runs are available" />
+            <DataTable
+              columns={columns}
+              data={rows}
+              empty={
+                query.data.length
+                  ? "No runs match these filters"
+                  : "No runs are available"
+              }
+            />
           </div>
         ) : null}
       </QueryContent>

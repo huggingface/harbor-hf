@@ -493,6 +493,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         { ...preview.harbor_agent, ...input.workbench.harbor_agent },
         idempotencyKey(request),
         actor.subject,
+        { name: preview.recipe.name },
       );
       return reply.code(result.created ? 201 : 200).send(result);
     }
