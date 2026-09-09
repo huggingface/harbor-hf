@@ -544,6 +544,8 @@ Completed on 2026-09-09: integrated native diagnostics with the current-main waf
 
 ### Setup admission diagnostics approval
 
+Status: completed
+
 - Recorded direct approval and the bounded implementation/publication handoff above.
 
 
@@ -557,3 +559,5 @@ the Slophammer baseline and mutation script are absent. The root browser startup
 probe stalled; the full suite passed with an isolated, untracked IPv6 harness.
 No push, pull request, deployment, image build, remote execution, credential
 transfer, or configuration change was performed.
+
+Publication completed on 2026-09-09 after review: opened draft PR #195 (https://github.com/huggingface/harbor-hf/pull/195) with the validation blockers disclosed. No merge, deployment, limit/accounting change, or remote execution was performed.
