@@ -851,3 +851,47 @@ Approved at: 2026-09-09T21:06:42.168215+00:00
 - Harbor retains timeout resolution and execution authority. Display configured
   settings accurately; do not invent resolved budgets or provider-effective
   reasoning. Preserve existing recipes and immutable run records.
+
+Local implementation checkpoint (2026-09-09):
+
+- Aligned run-panel polling at ten seconds; shared clock preserves waffle
+  freshness and running-Job elapsed age during pending requests. Completed
+  durations remain fixed. Removed help cursors while retaining tooltips.
+- Inference-cost KPI now includes the existing immutable launch estimate when
+  pricing was recorded, without replacing native reported cost or treating
+  absent token usage as zero. Hover exposes only explicitly configured native
+  timeout fields, never a locally resolved effective budget.
+- Passed 905 unit tests and 60 synthetic browser tests, formatting, lint,
+  types, build, generated checks, dependency audit and normal DRY checks.
+  Existing supplemental global coverage remains below 85%; the baseline file
+  and mutation script are absent. No gate was weakened.
+- Checked Harbor models/job/config.py, models/trial/config.py,
+  trial/trial.py and models/job/result.py at pinned revision
+  dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e and cached subsequent history.
+  No Harbor execution behavior is reimplemented. History freshness was not
+  independently established through a new upstream fetch.
+- Independent review found elapsed clocks froze during hanging queries; fixed
+  with shared clock and negative-control browser tests on both affected pages.
+- Reasoning remains blocked: native model-query parsing does not establish
+  support when capability metadata is absent. No fake selector or changed
+  starter recipe was introduced; upstream capability discovery is proposed.
+- Exact recent 50-task union was identified privately, but its pinned registry
+  source cannot be represented by the current Git-only benchmark preset.
+  No substitute revision, public task artifact or live profile was created.
+- No publication, deployment, live run, inference or credential movement.
+  Authorization remains active for the unfinished local scope only.
+
+### Native registry benchmark presets (2026-09-09)
+
+Approved at: 2026-09-09T21:49:14.221952+00:00
+
+- Direct user approval: extend benchmark preset schema and generic compilation
+  to preserve native Harbor registry dataset references, allowing the exact
+  previously identified 50-task subset with three trials per task. Generate
+  contracts and add regression tests; prepare the exact profile privately.
+- Preserve existing Git datasets and let Harbor resolve registry sources and
+  task selection. No benchmark-specific parser or execution behavior.
+- Investigate launch-rate correction options and the requested task read-only;
+  no existing run metadata edits, task execution, repair or retry authorized.
+- Local implementation, tests and commits only. No profile publication, push,
+  PR, merge, deployment, upstream changes, live runs or credential transfer.
