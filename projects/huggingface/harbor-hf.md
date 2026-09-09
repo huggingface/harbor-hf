@@ -562,3 +562,21 @@ Approved at: 2026-09-09T11:15:09.705718+00:00
 - Local commits, privacy-reviewed topic-branch push, and one new PR are approved.
   No deployment, merge, benchmark or setup launch, inference, credential movement,
   resource change, upstream publication, or lowering validation thresholds.
+
+### Synthetic results demo and fast-agent starter refresh (2026-09-09)
+
+Approved at: 2026-09-09T12:05:26.714588+00:00
+
+- Direct approval: the user requested an interactive demo of the new results
+  feature, the default fast-agent install version 0.10.21, their supplied exact
+  execution script, and committing and pushing those changes.
+- Serve the current feature frontend on loopback only with synthetic run, usage,
+  exception, and repeat data. Keep preview helpers outside tracked source, reject
+  mutations, and do not contact the hosted control service or load credentials.
+- Update the reviewed fast-agent starter setup and execution templates consistently
+  across browser/server copies; preserve existing saved recipes and immutable
+  records. Test the requested script with local command stubs, not inference.
+- Commit and push on the existing scannable-results PR branch after privacy
+  review. Keep validation thresholds and known limitations explicit.
+- No merge, deployment, live setup/benchmark launch, inference, credential transfer,
+  public listener, resource creation, or unrelated configuration change.
