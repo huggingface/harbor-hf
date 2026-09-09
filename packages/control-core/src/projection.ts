@@ -180,6 +180,16 @@ function authoritativeAttemptCosts(
 }
 
 export class Projection {
+  private observations: readonly JobObservation[] = [];
+  private observationsAt: string | null = null;
+
+  jobObservations(): { jobs: readonly JobObservation[]; observed_at: string | null } {
+    return {
+      jobs: structuredClone(this.observations),
+      observed_at: this.observationsAt,
+    };
+  }
+
   private constructor(private readonly database: Database.Database) {}
 
   static async open(path: string): Promise<Projection> {
@@ -218,6 +228,7 @@ export class Projection {
   }
 
   async rebuild(store: ObjectStore, jobs: readonly JobObservation[]): Promise<void> {
+    const observedAt = new Date().toISOString();
     const entries = await store.list("runs");
     const keys = new Set(entries.map((entry) => entry.key));
     const runIds = [...keys]
@@ -332,6 +343,8 @@ export class Projection {
           JSON.stringify(job),
         );
     })();
+    this.observations = structuredClone(jobs);
+    this.observationsAt = observedAt;
   }
 
   listRuns(): RunView[] {

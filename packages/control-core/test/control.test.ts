@@ -140,6 +140,59 @@ describe("run submission", () => {
     expect(projection.run(result.run.run_id)?.status).toBe("queued");
   });
 
+  it("loads the nine-trial diagnostic preset unchanged through both launch paths", async () => {
+    const benchmark = { name: "terminal-bench-2-1", preset: "three-tasks-3-trials" };
+    const canary = presets.benchmark(benchmark.name, benchmark.preset);
+    const original = presets.benchmark(benchmark.name, "one-task-1-trial");
+    const taskNames = [
+      "code-from-image",
+      "log-summary-date-ranges",
+      "openssl-selfsigned-cert",
+    ];
+    expect(canary).toEqual({
+      ...original,
+      preset: benchmark.preset,
+      leaderboard_eligible: false,
+      job: {
+        ...original.job,
+        datasets: [{ ...original.job.datasets[0], task_names: taskNames }],
+        n_attempts: 3,
+        n_concurrent_trials: 3,
+      },
+    });
+    expect(presets.leaderboardEligible(benchmark.name, benchmark.preset)).toBe(false);
+    const submission = { ...input, benchmark, role: "diagnostic" as const };
+    const fragment = compileAgentWorkbenchRecipe(
+      fastAgentWorkbenchStarter,
+    ).harbor_agent;
+    const normal = await service.submitPreset(
+      submission,
+      "canary-normal",
+      "test-subject",
+    );
+    const workbench = await service.submitWorkbench(
+      submission,
+      fragment,
+      "canary-workbench",
+      "test-subject",
+    );
+    for (const { run } of [normal, workbench]) {
+      expect(run.role).toBe("diagnostic");
+      expect(run.submission.benchmark).toEqual(benchmark);
+      expect(run.harbor_job_config).toMatchObject({
+        datasets: canary.job.datasets,
+        n_attempts: 3,
+        n_concurrent_trials: 3,
+        agent_timeout_multiplier: original.job.agent_timeout_multiplier,
+        agent_setup_timeout_multiplier: original.job.agent_setup_timeout_multiplier,
+        environment: { kwargs: original.job.environment.kwargs },
+      });
+      expect(run.harbor_job_config.agents).toHaveLength(1);
+      expect(projection.run(run.run_id)?.status).toBe("queued");
+    }
+    expect(leaderboard(projection, presets)).toEqual([]);
+  });
+
   it("uses Harbor's fixed OpenHands reasoning default", async () => {
     expect(presets.agent("openhands", "1.6.0").reasoning_values[0]).toBe("high");
     const result = await service.submitPreset(
@@ -1101,4 +1154,24 @@ describe("reconciliation", () => {
     expect(jobs.starts).toBe(0);
     expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
   });
+});
+
+it("retains parent and child observations separately from completion and the parent Jobs view", async () => {
+  const observed: JobObservation = {
+    id: "child-test",
+    run_id: `run-${"a".repeat(24)}`,
+    role: "trial",
+    stage: "queued",
+    created_at: "2026-09-08T12:00:00Z",
+    started_at: null,
+    finished_at: null,
+  };
+  expect(projection.jobObservations().jobs).toEqual([]);
+  await projection.rebuild(store, [observed]);
+  expect(projection.jobObservations().jobs).toEqual([observed]);
+  expect(projection.jobObservations().observed_at).not.toBeNull();
+  expect(projection.jobs()).toEqual([]);
+  expect(projection.system().trials).toBe(0);
+  await projection.rebuild(store, []);
+  expect(projection.jobObservations().jobs).toEqual([]);
 });

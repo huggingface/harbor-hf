@@ -483,3 +483,40 @@ Approved at: 2026-09-09T09:35:47.579013+00:00
 - Approved scope: update against current main, implement read-only historical and future trial exception presentation in the existing viewer, add tests and documentation, review privacy, commit, push the topic branch, and open one pull request. Preserve native results and existing viewer behavior.
 - Continue to distinguish recorded exception types from unknown root-cause and verifier-bootstrap classifications. Do not add a log classifier or rewrite historical evidence.
 - No merge, deployment, worker image publication, new run, retry, credential transfer, upstream source mutation, or infrastructure change is authorized.
+
+### Nine-trial canary preset and native waffle (2026-09-09)
+
+Approved at: 2026-09-09T08:12:42.901890+00:00
+
+- Direct approval: after verification of the deployed main revision and a proposal
+  to add the nine-trial preset and port/test the native waffle, the user asked
+  to perform that work.
+- Add a non-leaderboard benchmark preset selecting code-from-image,
+  log-summary-date-ranges, and openssl-selfsigned-cert with three Harbor
+  repetitions per task. Expose it through the existing shared preset selector.
+- Review and adapt a copy of the existing artifact-observed native waffle work
+  on current main, preserving nine distinct trial identities and honest observed
+  versus authoritative states. Preserve all original dirty worktrees.
+- Implement and test locally, with local authorization and implementation commits.
+  Prepare deployment to the existing user-selected control Space only; preserve
+  resources, secrets, hardware, execution settings, and existing run records.
+- Do not launch setup or benchmark Jobs, call inference, increase spending limits,
+  move credentials, create resources, publish results, merge, or push main.
+  Public branch/PR publication and any deployment mechanism requiring image
+  publication require their own scope confirmation before proceeding.
+
+### Nine-trial canary branch publication (2026-09-09)
+
+Approved at: 2026-09-09T09:07:40.659178+00:00
+
+- Direct approval: the user requested pushing the completed feature branch and
+  stated that they will perform the merge, acknowledging the reported coverage
+  shortfall.
+- Publish the reviewed nine-trial preset and observational waffle commits on
+  `feat/nine-trial-canary` to the canonical repository after privacy review.
+- Preserve coverage thresholds and report validation honestly: 502 unit tests
+  and 23 browser tests passed; global line coverage is 78.83%, below 85%.
+  The mutation-check script and Slophammer baseline are missing. Publication
+  does not claim these checks pass.
+- No merge, default-branch push, deployment, benchmark launch, resource change,
+  credential movement, or result publication is authorized by this amendment.

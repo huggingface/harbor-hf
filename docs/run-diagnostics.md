@@ -2,7 +2,7 @@
 
 ## Automatic native-evidence display
 
-The Runs table and run detail project Harbor's existing
+The Runs table, waffle row summaries, and run detail project Harbor's existing
 `result.json.stats.evals[*].exception_stats`. The normal control projection and
 browser polling refresh these diagnostics; there is no new completion hook,
 background analyzer, durable diagnosis record, or second reconciler. Existing
@@ -13,6 +13,13 @@ exception groups. Run detail groups names by the exact Harbor-reported exception
 type and links to each trial's evidence. Missing, malformed, or contradictory
 exception evidence is labelled unknown/partial, not zero. A fully populated
 empty exception map means only **no recorded exceptions**.
+
+Waffle tooltips and per-run disclosure badges use the existing progress API's
+native trial `result.exception_info.exception_type`. Links open native trial
+evidence, including `exception_traceback`. Explicitly null exception information
+means no recorded exception, not valid scoring; missing information remains
+unknown. This works for historical records and refreshed future observations,
+without a migration. Waffle colors and reward meanings remain unchanged.
 
 Harbor completion counts include errored trials. A finished run is not proof that
 all trials passed, or even that every trial was validly scored. Rewards and

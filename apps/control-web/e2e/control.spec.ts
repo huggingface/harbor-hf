@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import type { BenchmarkPresetV1 } from "@harbor-hf/contracts";
 import { expect, type Page, type Route, test } from "@playwright/test";
 
 const runId = "run-0123456789abcdef01234567";
@@ -14,6 +16,16 @@ const system = {
   workbench: { runner: "hf-jobs", setup_enabled: true },
   resources: { spaces: 1, buckets: 1, operator_secrets: 2 },
 };
+
+const canaryPreset: BenchmarkPresetV1 = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../../presets/benchmarks/terminal-bench-2-1-three-tasks-3-trials.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
 
 const presets = {
   benchmarks: [
@@ -32,6 +44,7 @@ const presets = {
         },
       },
     },
+    canaryPreset,
   ],
   agents: [
     {
@@ -249,6 +262,14 @@ async function mockControl(page: Page, options: MockOptions = {}) {
       return json(route, { created: true, run: record }, 201);
     }
     if (path === `/api/v1/runs/${runId}`) return json(route, currentRun);
+    if (path === `/api/v1/runs/${runId}/progress`)
+      return json(route, {
+        observed_at: new Date().toISOString(),
+        jobs_observed_at: null,
+        lock: null,
+        trials: [],
+        jobs: [],
+      });
     if (path === `/api/v1/runs/${runId}/trials`)
       return json(route, { trials: [trialSummary] });
     if (path === `/api/v1/runs/${runId}/trials/${trialName}`) return json(route, trial);
@@ -773,6 +794,387 @@ test("binding name typing retains focus and reload preserves pending edits", asy
   );
 });
 
+for (const width of [1440, 390]) {
+  test(`native waffle preserves repeated trials and hover at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockControl(page);
+    const timestamp = new Date().toISOString();
+    const task = { name: "task-one", digest: `sha256:${"d".repeat(64)}` };
+    const secondId = `run-${"b".repeat(24)}`;
+    await page.route("**/api/v1/runs", (route) =>
+      json(route, {
+        runs: [runId, secondId].map((id) => ({
+          ...run,
+          record: { ...record, run_id: id },
+          result: { ...run.result, updated_at: timestamp },
+        })),
+      }),
+    );
+    await page.route("**/api/v1/runs/*/progress", (route) =>
+      json(route, {
+        observed_at: timestamp,
+        jobs_observed_at: timestamp,
+        lock: { trials: Array.from({ length: 60 }, () => ({ task })) },
+        trials: [
+          {
+            trial_name: "trial-a",
+            config: { trial_name: "trial-a" },
+            lock: { task },
+            result: { finished_at: timestamp },
+            reward: 0,
+            cost_usd: 0.1,
+          },
+          {
+            trial_name: "trial-b",
+            config: { trial_name: "trial-b" },
+            lock: { task },
+            result: null,
+            reward: null,
+            cost_usd: null,
+          },
+        ],
+        jobs: [
+          { ...job, created_at: timestamp, started_at: timestamp },
+          { ...job, id: "child-waiting", role: "trial", stage: "queued" },
+        ],
+      }),
+    );
+    await page.goto("/runs?keep=value");
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+    await expect(page.getByRole("columnheader")).toHaveCount(51);
+    const zero = page.getByRole("link", { name: `trial-a in ${runId}: Zero reward` });
+    const bounds = await zero.boundingBox();
+    expect(bounds?.width).toBe(14);
+    expect(bounds?.height).toBe(14);
+    await zero.focus();
+    const tooltip = page.getByRole("tooltip");
+    await expect(tooltip).toContainText("not an attempt ordinal");
+    await expect(tooltip).toContainText("Reward: 0");
+    const tip = await tooltip.boundingBox();
+    expect(tip?.y).toBeGreaterThanOrEqual(0);
+    expect((tip?.y ?? 0) + (tip?.height ?? 0)).toBeLessThanOrEqual(900);
+    await expect(
+      page.getByRole("button", {
+        name: `trial-b in ${runId}: Unfinished artifact observed (live state unknown)`,
+      }),
+    ).toBeVisible();
+    await zero.blur();
+    await page.screenshot({ path: testInfo.outputPath("native-waffle.png") });
+    await page.getByRole("button", { name: "Next trials" }).click();
+    await expect(page.getByRole("columnheader")).toHaveCount(11);
+    await page.getByRole("button", { name: "Previous trials" }).click();
+    await page.getByText("HF Jobs and Harbor totals (separate observations)").click();
+    await expect(
+      page.getByText("trial · child-waiting · queued (waiting at HF)").first(),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "List", exact: true }).click();
+    await expect(page).toHaveURL(/keep=value/);
+    await expect(page).toHaveURL(/view=list/);
+    await page.getByRole("button", { name: "Waffle", exact: true }).click();
+    await expect(
+      page.getByRole("region", { name: "Trial progress waffle" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    ).toBe(true);
+  });
+}
+
+for (const launchPath of ["overview", "workbench"] as const) {
+  test(`nine-trial actual preset launches from ${launchPath} and keeps native waffle identities`, async ({
+    page,
+  }) => {
+    let submitted: unknown = null;
+    await mockControl(page, { onRunPost: (payload) => (submitted = payload) });
+    await page.goto(`/${launchPath}`);
+    if (launchPath === "workbench") {
+      await page
+        .getByLabel("Start one disposable CPU setup test for this exact recipe.")
+        .check();
+      await page.getByRole("button", { name: "Run setup test" }).click();
+      await expect(page.getByText("Setup passed")).toBeVisible();
+    }
+    const selector = page.getByRole("combobox", { name: "Benchmark preset" });
+    await selector.selectOption({ label: "terminal-bench-2-1 · three-tasks-3-trials" });
+    await expect(
+      page.getByRole("spinbutton", { name: "Concurrent trials", exact: true }),
+    ).toHaveValue("3");
+    if (launchPath === "workbench") {
+      await page
+        .getByLabel("Recorded model", { exact: true })
+        .fill("publisher/canary-model");
+      await page
+        .getByLabel("Harness model string", { exact: true })
+        .fill("hf.publisher/canary-model:provider");
+      await page.getByLabel("Recorded provider (optional)").fill("provider");
+    } else {
+      await page
+        .getByRole("textbox", { name: "Model", exact: true })
+        .fill("publisher/canary-model");
+      await page.getByRole("textbox", { name: "Model", exact: true }).blur();
+      await page
+        .getByRole("combobox", { name: "Provider", exact: true })
+        .selectOption("provider");
+    }
+    if (launchPath === "workbench") {
+      await page
+        .getByLabel(
+          "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+        )
+        .check();
+      await page.getByRole("button", { name: "Launch Harbor run" }).click();
+    } else {
+      await page.getByRole("button", { name: "Submit run" }).click();
+    }
+    await expect.poll(() => submitted).not.toBeNull();
+    expect(submitted).toMatchObject({
+      benchmark: { name: canaryPreset.benchmark, preset: canaryPreset.preset },
+      n_concurrent_trials: 3,
+      ...(launchPath === "workbench" ? { workbench: { setup_test_id: setupId } } : {}),
+    });
+    expect(canaryPreset.leaderboard_eligible).toBe(false);
+    const timestamp = new Date().toISOString();
+    const tasks = canaryPreset.job.datasets[0]?.task_names ?? [];
+    expect(tasks).toEqual([
+      "code-from-image",
+      "log-summary-date-ranges",
+      "openssl-selfsigned-cert",
+    ]);
+    expect(canaryPreset.job.n_attempts).toBe(3);
+    const observations = tasks.flatMap((name, index) =>
+      Array.from({ length: canaryPreset.job.n_attempts }, (_, repetition) => {
+        const task = { name, digest: `sha256:${String(index + 1).repeat(64)}` };
+        const trial_name = `${name}__native-${repetition}`;
+        return {
+          trial_name,
+          config: { trial_name },
+          lock: { task },
+          result: repetition === 0 ? { finished_at: timestamp } : null,
+          reward: repetition === 0 ? 1 : null,
+          cost_usd: repetition === 0 ? 0.01 : null,
+        };
+      }),
+    );
+    await page.route("**/api/v1/runs", (route) =>
+      json(route, {
+        runs: [
+          {
+            ...run,
+            record: {
+              ...record,
+              role: "diagnostic",
+              submission: {
+                ...record.submission,
+                benchmark: {
+                  name: canaryPreset.benchmark,
+                  preset: canaryPreset.preset,
+                },
+              },
+              harbor_job_config: { ...record.harbor_job_config, ...canaryPreset.job },
+            },
+            result: {
+              ...run.result,
+              updated_at: timestamp,
+              n_total_trials: 9,
+              stats: {
+                ...run.result.stats,
+                n_completed_trials: 3,
+                n_running_trials: 2,
+                n_pending_trials: 4,
+              },
+            },
+          },
+        ],
+      }),
+    );
+    await page.route("**/api/v1/runs/*/progress", (route) =>
+      json(route, {
+        observed_at: timestamp,
+        jobs_observed_at: timestamp,
+        lock: { trials: observations.map((trial) => trial.lock) },
+        trials: observations,
+        jobs: [{ ...job, created_at: timestamp, started_at: timestamp }],
+      }),
+    );
+    await page.goto("/runs");
+    await expect(page.getByRole("columnheader")).toHaveCount(10);
+    for (const trial of observations) {
+      const cell = trial.result
+        ? page.getByRole("link", {
+            name: `${trial.trial_name} in ${runId}: Completed`,
+            exact: true,
+          })
+        : page.getByRole("button", {
+            name: `${trial.trial_name} in ${runId}: Unfinished artifact observed (live state unknown)`,
+            exact: true,
+          });
+      await expect(cell).toHaveCount(1);
+      if (trial.result)
+        await expect(cell).toHaveAttribute(
+          "href",
+          `/runs/${runId}/trials/${trial.trial_name}`,
+        );
+    }
+    await page
+      .getByRole("button", {
+        name: `${observations[1]?.trial_name} in ${runId}: Unfinished artifact observed (live state unknown)`,
+        exact: true,
+      })
+      .focus();
+    await expect(page.getByRole("tooltip")).toContainText("not an attempt ordinal");
+    await page.getByText("HF Jobs and Harbor totals (separate observations)").click();
+    await expect(
+      page.getByRole("button", { name: /Unfinished artifact observed/ }),
+    ).toHaveCount(6);
+    await expect(page.getByRole("button", { name: /In progress/ })).toHaveCount(0);
+    // Six unfinished observations are not substituted for Harbor's native running count.
+    await expect(
+      page.getByText(
+        "Harbor: n_pending_trials: 4 · n_running_trials: 2 · n_completed_trials: 3",
+      ),
+    ).toBeVisible();
+  });
+}
+
+test("native waffle polls preserve positions and distinguish unknown from lock exclusion", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.clock.install();
+  const timestamp = new Date().toISOString();
+  const task = { name: "task-one", digest: `sha256:${"d".repeat(64)}` };
+  const secondId = `run-${"b".repeat(24)}`;
+  let names = ["trial-z"];
+  let excluded = false;
+  await page.route("**/api/v1/runs", (route) =>
+    json(route, {
+      runs: [runId, secondId].map((id) => ({
+        ...run,
+        record: { ...record, run_id: id },
+      })),
+    }),
+  );
+  await page.route("**/api/v1/runs/*/progress", (route) => {
+    const other = route.request().url().includes(secondId);
+    return json(route, {
+      observed_at: timestamp,
+      jobs_observed_at: null,
+      jobs: [],
+      lock: other
+        ? excluded
+          ? { trials: [] }
+          : null
+        : {
+            trials: Array.from({ length: 3 }, () => ({ task })),
+          },
+      trials: other
+        ? []
+        : names.map((trial_name) => ({
+            trial_name,
+            config: { trial_name },
+            lock: { task },
+            result: { finished_at: timestamp },
+            reward: 1,
+            cost_usd: null,
+          })),
+    });
+  });
+  await page.goto("/runs");
+  const row = page.locator("tbody tr").first();
+  const original = page.getByRole("link", { name: `trial-z in ${runId}: Completed` });
+  await expect(original).toBeVisible();
+  await expect(page.getByRole("img", { name: "Unknown / not observed" })).toHaveCount(
+    3,
+  );
+  await original.focus();
+  names = ["trial-a", "trial-z"];
+  await page.clock.runFor(15_001);
+  await expect(row.locator("td").nth(1)).toContainText("✓");
+  await expect(original).toBeFocused();
+  await expect(row.locator("td").nth(0).getByRole("link")).toHaveAccessibleName(
+    `trial-z in ${runId}: Completed`,
+  );
+  await expect(row.locator("td").nth(1).getByRole("link")).toHaveAccessibleName(
+    `trial-a in ${runId}: Completed`,
+  );
+  names = ["trial-a"];
+  excluded = true;
+  await page.clock.runFor(15_001);
+  await expect(original).toHaveCount(0);
+  await expect(row.locator("td").nth(0).getByRole("button")).toHaveAccessibleName(
+    /No mapped observation/,
+  );
+  await expect(row.locator("td").nth(1).getByRole("link")).toHaveAccessibleName(
+    `trial-a in ${runId}: Completed`,
+  );
+  await expect(page.getByRole("img", { name: "Not in run" })).toHaveCount(3);
+});
+
+test("nine lock entries stay nine squares through partial and replacement observations", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.clock.install();
+  const timestamp = new Date().toISOString();
+  const task = { name: "task-one", digest: `sha256:${"d".repeat(64)}` };
+  let locked = false;
+  let nativeLock = false;
+  let names = ["trial-partial"];
+  await page.route("**/api/v1/runs/*/progress", (route) =>
+    json(route, {
+      observed_at: timestamp,
+      jobs_observed_at: null,
+      jobs: [],
+      lock: locked ? { trials: Array.from({ length: 9 }, () => ({ task })) } : null,
+      trials: names.map((trial_name) => ({
+        trial_name,
+        config: { trial_name },
+        lock: nativeLock ? { task } : null,
+        result: null,
+        reward: null,
+        cost_usd: null,
+      })),
+    }),
+  );
+  await page.goto("/runs");
+  const row = page.locator("tbody tr").first();
+  await expect(page.getByText(/Planned total unknown \(no job lock\)/)).toBeVisible();
+  await expect(row.locator("td")).toHaveCount(1);
+  locked = true;
+  await page.clock.runFor(15_001);
+  await expect(row.locator("td")).toHaveCount(9);
+  await expect(
+    page.getByText(/9 planned squares · 1 separate observations/),
+  ).toBeVisible();
+  nativeLock = true;
+  await page.clock.runFor(15_001);
+  await expect(
+    page.getByText(/9 planned squares · 0 separate observations/),
+  ).toBeVisible();
+  names = Array.from({ length: 9 }, (_, i) => `old-${i}`);
+  await page.clock.runFor(15_001);
+  await expect(row.getByRole("button", { name: /Unfinished artifact/ })).toHaveCount(9);
+  const original = row.getByRole("button", { name: /^old-0 / });
+  await original.focus();
+  names = [];
+  await page.clock.runFor(15_001);
+  await expect(row.getByRole("button", { name: /No mapped observation/ })).toHaveCount(
+    9,
+  );
+  names = Array.from({ length: 9 }, (_, i) => `replacement-${i}`);
+  await page.clock.runFor(15_001);
+  await expect(row.locator("td")).toHaveCount(9);
+  await expect(row.getByRole("button", { name: /^replacement-/ })).toHaveCount(9);
+  await expect(row.getByRole("button", { name: /^replacement-0 / })).not.toBeFocused();
+  await page.reload();
+  await expect(row.locator("td")).toHaveCount(9);
+  await expect(
+    page.getByText(/9 planned squares · 0 separate observations/),
+  ).toBeVisible();
+});
+
 test("completed run diagnostics refresh automatically and drill into native evidence", async ({
   page,
 }) => {
@@ -835,6 +1237,92 @@ test("completed run diagnostics refresh automatically and drill into native evid
   await panel.getByRole("link", { name: trialName, exact: true }).click();
   await expect(
     page.getByText("synthetic native traceback", { exact: true }),
+  ).toBeVisible();
+  expect(writes).toEqual([]);
+});
+
+test("historical waffle native exception tooltip and badge link to traceback", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.route("**/api/v1/runs", (route) =>
+    json(route, { runs: [{ ...run, status: "finished" }] }),
+  );
+  await page.route("**/api/v1/runs/*/progress", (route) =>
+    json(route, {
+      observed_at: new Date().toISOString(),
+      jobs_observed_at: null,
+      jobs: [],
+      lock: null,
+      trials: [
+        {
+          trial_name: trialName,
+          config: null,
+          lock: null,
+          reward: 0,
+          cost_usd: null,
+          result: {
+            task_name: "task-one",
+            finished_at: "2026-01-01T00:01:00Z",
+            exception_info: { exception_type: "RuntimeError" },
+          },
+        },
+        {
+          trial_name: "trial-unknown",
+          config: null,
+          lock: null,
+          reward: 0,
+          cost_usd: null,
+          result: { task_name: "task-two", finished_at: "2026-01-01T00:01:00Z" },
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/v1/runs/*/trials/*", (route) =>
+    json(route, {
+      ...trial,
+      reward: 0,
+      result: {
+        ...trial.result,
+        exception_info: {
+          exception_type: "RuntimeError",
+          exception_message: "synthetic exception",
+          exception_traceback: "synthetic waffle native traceback",
+        },
+      },
+    }),
+  );
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/") && request.method() !== "GET")
+      writes.push(request.method());
+  });
+  await page.goto("/runs");
+  const square = page.getByRole("link", { name: `${trialName} in ${runId}: Errored` });
+  const unknown = page.getByRole("link", {
+    name: `trial-unknown in ${runId}: Zero reward`,
+  });
+  await unknown.focus();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Native exception evidence: unknown / unavailable",
+  );
+  await square.focus();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Native exception: RuntimeError",
+  );
+  await expect(page.getByRole("tooltip")).toContainText("Reward: 0");
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Infrastructure classification: unknown",
+  );
+  await page.getByText(/Planned total unknown \(no job lock\)/).click();
+  const evidence = page.getByRole("list", { name: "Native trial exception evidence" });
+  await expect(evidence).toContainText("Native exception: RuntimeError");
+  await expect(evidence).toContainText(
+    "Native exception evidence: unknown / unavailable",
+  );
+  await evidence.getByRole("link", { name: trialName, exact: true }).click();
+  await expect(
+    page.getByText("synthetic waffle native traceback", { exact: true }),
   ).toBeVisible();
   expect(writes).toEqual([]);
 });
