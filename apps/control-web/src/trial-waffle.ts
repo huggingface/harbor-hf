@@ -7,38 +7,45 @@ import { roundedScore } from "./run-summary";
 export const waffleStates = {
   pending: {
     label: "No mapped observation",
-    symbol: "·",
-    color: "border-slate-600 bg-slate-800 text-slate-300",
+    symbol: "",
+    marker: "h-1 w-1",
+    color: "border-slate-500 bg-slate-500 text-slate-300",
   },
   unfinished: {
     label: "Unfinished",
-    symbol: "?",
-    color: "border-cyan-400 bg-cyan-600 text-cyan-100",
+    symbol: "",
+    marker: "h-[11px] w-[11px]",
+    color: "border-cyan-400 bg-cyan-400 text-cyan-100",
   },
   completed: {
     label: "Completed",
     symbol: "✓",
+    marker: "h-[11px] w-[11px]",
     color: "border-emerald-400 bg-emerald-700 text-emerald-100",
   },
   zero: {
     label: "Zero reward",
     symbol: "0",
+    marker: "h-[11px] w-[11px]",
     color: "border-amber-400 bg-amber-700 text-amber-100",
   },
   error: {
     label: "Errored",
     symbol: "!",
+    marker: "h-[11px] w-[11px]",
     color: "border-rose-400 bg-rose-700 text-rose-100",
   },
   cancelled: {
     label: "Cancelled",
     symbol: "−",
+    marker: "h-[11px] w-[11px]",
     color: "border-orange-400 bg-orange-800 text-orange-100",
   },
   uncertain: {
     label: "Unknown / interrupted",
-    symbol: "?",
-    color: "border-violet-400 border-dashed bg-violet-950 text-violet-200",
+    symbol: "",
+    marker: "h-[11px] w-[11px]",
+    color: "border-violet-400 bg-transparent text-violet-200",
   },
 } as const;
 export type WaffleState = keyof typeof waffleStates;

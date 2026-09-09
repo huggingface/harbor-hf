@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getTrialProgress, type RunView } from "./api";
 import { asRecord, cn } from "./lib";
-import { RunDiagnosticsSummary } from "./run-diagnostics";
+import { projectRunExceptions } from "./run-diagnostics";
 import {
   cellDescription,
   recent,
@@ -76,7 +76,13 @@ function RunWaffleContents({ run }: { run: RunView }) {
   );
   const page = Math.min(taskPage, Math.max(0, Math.ceil(columns.length / TASKS) - 1));
   const shown = columns.slice(page * TASKS, (page + 1) * TASKS);
+  const evidence = projectRunExceptions(run.result);
+  const stale = query.isError || !!(query.data && !recent(query.data.observed_at, now));
   const repeats = Math.max(0, ...[...groups.values()].map((group) => group.length));
+  const rowLabelWidth = Math.max(2, String(repeats).length) * 8 + 8;
+  const matrixStyle: CSSProperties & { "--cell-size": string } = {
+    "--cell-size": `clamp(12px, calc((100cqw - ${rowLabelWidth + 2}px) / ${Math.max(1, shown.length)}), 18px)`,
+  };
   return (
     <section
       aria-label="Trial progress waffle"
@@ -84,13 +90,38 @@ function RunWaffleContents({ run }: { run: RunView }) {
     >
       <div className="mb-3 flex flex-wrap justify-between gap-3">
         <div>
-          <h2 className="font-semibold">Trial progress</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="font-semibold">Trial progress</h2>
+            <fieldset
+              aria-label="Observation freshness"
+              className="flex h-6 w-36 shrink-0 items-center gap-2 text-xs text-amber-400/80"
+            >
+              <span
+                role="status"
+                title={
+                  query.isError
+                    ? "Trial observations could not be refreshed"
+                    : stale
+                      ? "Last observation is older than one minute"
+                      : undefined
+                }
+              >
+                {stale ? `● ${query.data ? "Stale" : "Unavailable"}` : ""}
+              </span>
+              {query.isError && (
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => void query.refetch()}
+                >
+                  Retry
+                </button>
+              )}
+            </fieldset>
+          </div>
           <p className="text-xs text-slate-400">
             {groups.size} tasks × {repeats} repeat slots · {cells.length}{" "}
             {query.data?.lock ? "planned" : "observed"}
-          </p>
-          <p className="text-xs text-slate-400">
-            ✓ completed · 0 zero reward · ! exception · · no observation · - not planned
           </p>
         </div>
         <label className="text-xs">
@@ -107,24 +138,19 @@ function RunWaffleContents({ run }: { run: RunView }) {
           />
         </label>
       </div>
-      <RunDiagnosticsSummary run={run} />
-      <div className="min-h-6">
-        {query.data && !query.isError && !recent(query.data.observed_at, now) ? (
-          <span role="status">Stale data</span>
-        ) : null}
-        {query.isError ? (
-          <span role="status">
-            {query.data ? "Stale data" : "Unavailable"}{" "}
-            <button
-              type="button"
-              className="underline"
-              onClick={() => void query.refetch()}
-            >
-              Retry
-            </button>
-          </span>
-        ) : null}
-      </div>
+      <Link
+        to={`/runs/${encodeURIComponent(id)}#diagnostics`}
+        className={cn(
+          "text-xs",
+          evidence.affectedTrials > 0 ? "text-red-400" : "text-slate-400",
+        )}
+      >
+        {evidence.affectedTrials > 0
+          ? `${evidence.complete ? "" : "≥"}${evidence.affectedTrials} affected trials`
+          : evidence.complete
+            ? "Exception evidence"
+            : "Exception evidence partial / unavailable"}
+      </Link>
       <details className="my-3 text-xs text-slate-400">
         <summary className="cursor-pointer">Legend and display-slot help</summary>
         <p>
@@ -147,7 +173,8 @@ function RunWaffleContents({ run }: { run: RunView }) {
               <span
                 aria-hidden="true"
                 className={cn(
-                  "inline-flex h-4 w-4 items-center justify-center rounded-[2px] border text-[9px]",
+                  "inline-flex items-center justify-center rounded-[2px] border text-[9px] leading-none",
+                  state.marker,
                   state.color,
                 )}
               >
@@ -158,13 +185,16 @@ function RunWaffleContents({ run }: { run: RunView }) {
           ))}
         </ul>
       </details>
-      <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-800 p-2">
-        <table className="w-max border-separate border-spacing-0 text-xs">
+      <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-800 p-2 [container-type:inline-size]">
+        <table
+          style={matrixStyle}
+          className="w-max border-separate border-spacing-0 text-xs leading-none"
+        >
           <caption className="sr-only">
             Task columns by input digest and repetition-slot rows; display slots are not
             attempt ordinals
           </caption>
-          <thead>
+          <thead className="sr-only">
             <tr>
               <th scope="col" className="sticky left-0 z-10 bg-slate-950 pr-2">
                 Slot
@@ -175,17 +205,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
                   scope="col"
                   aria-label={`${group[0]?.task} ${group[0]?.digest}`}
                 >
-                  <button
-                    type="button"
-                    className="h-6 min-w-6 font-mono font-normal"
-                    aria-label={`Task ${[...groups.keys()].indexOf(key) + 1}: ${group[0]?.task} ${group[0]?.digest}`}
-                  >
-                    <Hint text={group[0]?.task ?? ""}>
-                      <span className="inline-flex h-6 min-w-6 items-center justify-center">
-                        {[...groups.keys()].indexOf(key) + 1}
-                      </span>
-                    </Hint>
-                  </button>
+                  {group[0]?.task} {group[0]?.digest}
                 </th>
               ))}
             </tr>
@@ -197,6 +217,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
               <tr key={repeat}>
                 <th
                   scope="row"
+                  style={{ width: rowLabelWidth, minWidth: rowLabelWidth }}
                   className="sticky left-0 z-10 bg-slate-950 pr-2 text-right font-mono font-normal"
                   aria-label={`Repeat slot ${repeat + 1}`}
                 >
@@ -217,8 +238,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
                   const state = waffleStates[cell.state];
                   const label = `${cell.trial?.trial_name ?? `${cell.task} slot ${cell.slot}`} in ${id}: ${state.label}`;
                   const className = cn(
-                    "flex h-6 w-6 items-center justify-center rounded-[2px] border font-mono text-[9px] leading-none hover:brightness-150 focus-visible:outline-2 focus-visible:outline-cyan-300 [&_span]:border-0",
-                    state.color,
+                    "flex h-[var(--cell-size)] w-[var(--cell-size)] min-h-3 min-w-3 items-center justify-center rounded-[2px] font-mono text-[9px] leading-none hover:brightness-150 focus-visible:outline-2 focus-visible:outline-cyan-300 [@media(pointer:coarse)]:h-6 [@media(pointer:coarse)]:w-6 [&>span]:h-full [&>span]:w-full [&>span]:justify-center [&>span>span]:flex [&>span>span]:border-0",
                   );
                   const content = (
                     <Hint
@@ -226,14 +246,18 @@ function RunWaffleContents({ run }: { run: RunView }) {
                     >
                       <span
                         aria-hidden="true"
-                        className="inline-flex h-6 w-6 items-center justify-center"
+                        className={cn(
+                          "inline-flex items-center justify-center rounded-[2px] border",
+                          state.marker,
+                          state.color,
+                        )}
                       >
                         {state.symbol}
                       </span>
                     </Hint>
                   );
                   return (
-                    <td key={cell.key} className="px-px py-px">
+                    <td key={cell.key} className="p-0">
                       {cell.trial?.result?.finished_at ||
                       cell.trial?.result?.exception_info?.exception_type ? (
                         <Link
@@ -374,7 +398,9 @@ function RunWaffleContents({ run }: { run: RunView }) {
           </p>
           <p>
             HF observations: {query.data?.jobs_observed_at ?? "unavailable"}
-            {!recent(query.data?.jobs_observed_at, now) ? " · stale / unavailable" : ""}
+            <span className="block h-4">
+              {!recent(query.data?.jobs_observed_at, now) ? "stale / unavailable" : ""}
+            </span>
           </p>
           <ul className="max-h-40 overflow-auto">
             {query.data?.jobs.map((job) => (

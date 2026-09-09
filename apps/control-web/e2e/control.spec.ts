@@ -840,8 +840,8 @@ for (const width of [1440, 390]) {
     await expect(waffle.getByRole("cell")).toHaveCount(60);
     const zero = page.getByRole("link", { name: `trial-a in ${runId}: Zero reward` });
     const bounds = await zero.boundingBox();
-    expect(bounds?.width).toBe(24);
-    expect(bounds?.height).toBe(24);
+    expect(bounds?.width).toBe(18);
+    expect(bounds?.height).toBe(18);
     await zero.focus();
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).not.toContainText("not an attempt ordinal");
@@ -878,11 +878,13 @@ for (const width of [1440, 390]) {
     await page.route("**/api/v1/runs/*/progress", (route) =>
       route.fulfill({ status: 503, body: "{}" }),
     );
+    const beforeFailure = await waffle.boundingBox();
     await page.clock.fastForward(125_000);
+    expect(await waffle.boundingBox()).toEqual(beforeFailure);
     await expect(
       waffle.getByRole("button", { name: "Retry", exact: true }),
     ).toBeVisible();
-    await expect(waffle.getByText(/Stale data/)).toBeVisible();
+    await expect(waffle.getByText(/● Stale/)).toBeVisible();
     const unknown = page.getByRole("button", {
       name: `trial-b in ${runId}: Unknown / interrupted`,
       exact: true,
@@ -1363,7 +1365,7 @@ test("Runs stays a list with original counts and only opening detail requests pr
   await expect(page.getByRole("link", { name: trialName, exact: true })).toBeVisible();
 });
 
-for (const width of [1440, 390]) {
+for (const width of [1600, 1440, 390]) {
   test(`matrix 89 columns by five slots at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await mockControl(page);
@@ -1435,6 +1437,16 @@ for (const width of [1440, 390]) {
     await expect(page.getByLabel("Input tokens: 20484123", { exact: true })).toHaveText(
       "20.484M",
     );
+    if (width === 1600) {
+      const cards = page.getByRole("region", { name: "Run summary" });
+      expect(
+        await cards.evaluate((el) =>
+          Math.max(
+            ...[...el.children].map((card) => card.getBoundingClientRect().height),
+          ),
+        ),
+      ).toBeLessThanOrEqual(130);
+    }
     await page.screenshot({
       path: testInfo.outputPath(`synthetic-summary-${width}.png`),
     });
@@ -1445,13 +1457,52 @@ for (const width of [1440, 390]) {
     for (const row of await matrix.locator("tbody tr").all())
       await expect(row.locator("td")).toHaveCount(89);
     await matrix.scrollIntoViewIfNeeded();
-    const first = matrix.getByRole("button", { name: /Task 1: synthetic-task-00/ });
+    const first = matrix
+      .locator("tbody tr")
+      .first()
+      .locator("td")
+      .first()
+      .locator("a, button");
+    const box = await first.boundingBox();
+    expect(box?.width).toBeGreaterThanOrEqual(12);
+    expect(box?.width).toBeLessThanOrEqual(18);
+    expect(box?.height).toBe(box?.width);
+    // Resize the same 89-column matrix: fit when the 12px minimum is feasible.
+    for (const desktopWidth of [1600, 1920, 2400, 1440, 390]) {
+      await page.setViewportSize({ width: desktopWidth, height: 1000 });
+      const size = await first.boundingBox();
+      expect(size?.width).toBeGreaterThanOrEqual(12);
+      expect(size?.width).toBeLessThanOrEqual(18);
+      expect(size?.height).toBe(size?.width);
+      expect((await matrix.locator("tbody tr").first().boundingBox())?.height).toBe(
+        size?.height,
+      );
+      if (desktopWidth === 1600) expect(size?.width).toBeLessThan(14);
+      const dimensions = await matrix.locator("table").evaluate((table) => {
+        const scroller = table.parentElement;
+        if (!scroller) throw new Error("Missing matrix scroller");
+        return { client: scroller.clientWidth, scroll: scroller.scrollWidth };
+      });
+      if (desktopWidth >= 1600) {
+        expect(dimensions.scroll).toBe(dimensions.client);
+        expect(size?.width).toBeGreaterThan(12);
+      } else if (desktopWidth === 390) {
+        expect(size?.width).toBe(12);
+        expect(dimensions.scroll).toBeGreaterThan(dimensions.client);
+      }
+    }
+    await page.setViewportSize({ width, height: 1000 });
+    expect(await matrix.locator("thead button").count()).toBe(0);
+    expect(
+      await matrix.locator("thead").evaluate((el) => el.getBoundingClientRect().height),
+    ).toBe(1);
+    expect(
+      await matrix.locator("table").evaluate((el) => el.getBoundingClientRect().width),
+    ).toBeLessThan(1300);
     await first.hover();
     await expect(page.getByRole("tooltip")).toContainText("synthetic-task-00");
     await page.mouse.move(0, 0);
-    await expect(
-      matrix.getByText("Infra-related trials: 15 · unclassified: 0", { exact: true }),
-    ).toBeVisible();
+    await expect(matrix.getByText("15 affected trials", { exact: true })).toBeVisible();
     await expect(matrix.getByRole("link", { name: /: Errored$/ })).toHaveCount(15);
     await expect(matrix.getByRole("link", { name: /: Zero reward$/ })).not.toHaveCount(
       0,
@@ -1472,7 +1523,13 @@ for (const width of [1440, 390]) {
       .screenshot({
         path: testInfo.outputPath(`synthetic-pricing-${width}.png`),
       });
-    const last = matrix.getByRole("button", { name: /Task 89:/ });
+    const last = matrix
+      .locator("tbody tr")
+      .first()
+      .locator("td")
+      .last()
+      .locator("a, button");
+    await page.mouse.move(0, 0);
     await last.focus();
     await expect(page.getByRole("tooltip")).toContainText("synthetic-task-88");
     expect(
@@ -1840,5 +1897,114 @@ for (const width of [1440, 390]) {
     await expect(
       page.getByText("4 complete · 1 partial · 2 unavailable"),
     ).toBeVisible();
+  });
+}
+
+for (const coarse of [false, true]) {
+  test(`compact 3x3 markers, freshness and cards with coarse pointer ${coarse}`, async ({
+    browser,
+    baseURL,
+  }, testInfo) => {
+    const context = await browser.newContext({
+      baseURL,
+      viewport: { width: coarse ? 390 : 1600, height: 1000 },
+      hasTouch: coarse,
+    });
+    const page = await context.newPage();
+    await page.clock.install();
+    await summaryFixture(page);
+    const tasks = ["synthetic-a", "synthetic-b", "synthetic-c"].map((name) => ({
+      name,
+      digest: "sha256:synthetic",
+    }));
+    const observed = new Date().toISOString();
+    await page.route("**/api/v1/runs/*/progress", (route) =>
+      json(route, {
+        observed_at: observed,
+        jobs_observed_at: observed,
+        jobs: [],
+        lock: {
+          trials: tasks.flatMap((task) => Array.from({ length: 3 }, () => ({ task }))),
+        },
+        trials: [
+          {
+            trial_name: "synthetic-unfinished",
+            config: {},
+            lock: { task: tasks[0] },
+            result: null,
+            reward: null,
+            cost_usd: null,
+          },
+        ],
+      }),
+    );
+    await page.goto(`/runs/${runId}`);
+    const matrix = page.getByRole("region", { name: "Trial progress waffle" });
+    await expect(matrix.getByRole("cell")).toHaveCount(9);
+    const unfinished = matrix.getByRole("button", {
+      name: /synthetic-unfinished.*Unfinished/,
+    });
+    const pending = matrix
+      .getByRole("button", { name: /No mapped observation/ })
+      .first();
+    expect((await unfinished.boundingBox())?.width).toBe(coarse ? 24 : 18);
+    expect((await unfinished.locator("[aria-hidden]").boundingBox())?.width).toBe(11);
+    expect((await pending.locator("[aria-hidden]").boundingBox())?.width).toBe(4);
+    await expect(unfinished).not.toContainText("?");
+    await expect(pending).not.toContainText("?");
+    await unfinished.focus();
+    await expect(unfinished).toBeFocused();
+    expect(await unfinished.evaluate((el) => getComputedStyle(el).outlineWidth)).toBe(
+      "2px",
+    );
+    await expect(page.getByRole("tooltip")).toContainText("State: Unfinished");
+    await unfinished.blur();
+    const cards = page.getByRole("region", { name: "Run summary" });
+    expect(
+      await cards.evaluate((el) =>
+        [...el.children].every((card) => card.scrollWidth <= card.clientWidth),
+      ),
+    ).toBe(true);
+    if (!coarse) {
+      expect((await matrix.locator("table").boundingBox())?.width).toBeLessThan(100);
+    }
+    if (!coarse)
+      expect(
+        await cards.evaluate(
+          (el) =>
+            new Set([...el.children].map((card) => card.getBoundingClientRect().y))
+              .size,
+        ),
+      ).toBe(1);
+    await expect(cards.getByText("cache hit", { exact: true })).toBeVisible();
+    await expect(cards).toContainText("4.9%");
+    await matrix.scrollIntoViewIfNeeded();
+    const before = await matrix.boundingBox();
+    const slot = page.getByRole("group", { name: "Observation freshness" });
+    const slotBefore = await slot.boundingBox();
+    await page.clock.runFor(65001);
+    await expect(matrix.getByText("● Stale")).toBeVisible();
+    expect(await matrix.boundingBox()).toEqual(before);
+    expect(await slot.boundingBox()).toEqual(slotBefore);
+    const uncertain = matrix.getByRole("button", {
+      name: /synthetic-unfinished.*Unknown/,
+    });
+    await expect(uncertain).not.toContainText("?");
+    await page.route("**/api/v1/runs/*/progress", (route) =>
+      route.fulfill({ status: 503, body: "{}" }),
+    );
+    await page.clock.runFor(60001);
+    await expect(
+      matrix.getByRole("button", { name: "Retry", exact: true }),
+    ).toBeVisible();
+    expect(await matrix.boundingBox()).toEqual(before);
+    expect(await slot.boundingBox()).toEqual(slotBefore);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`synthetic-compact-stale-${coarse}.png`),
+    });
+    await context.close();
   });
 }

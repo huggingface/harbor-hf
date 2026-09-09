@@ -53,6 +53,13 @@ import {
   useTrials,
 } from "./queries";
 import { PricingPanel } from "./pricing-panel";
+import {
+  PricingSelection,
+  scenarioCostColumn,
+  scenarioRows,
+  type ScenarioRun,
+} from "./pricing-selection";
+import { usePricingPreferences } from "./pricing-store";
 import { RunConfiguration } from "./run-configuration";
 import { RunDiagnostics, RunDiagnosticsSummary } from "./run-diagnostics";
 import { runIdentity } from "./run-identity";
@@ -489,7 +496,12 @@ export function OverviewPage() {
 
 export function RunsPage() {
   const query = useRuns();
-  const columns = useMemo<ColumnDef<RunView>[]>(
+  const { preferences } = usePricingPreferences();
+  const rows = useMemo(
+    () => scenarioRows(query.data ?? [], preferences),
+    [query.data, preferences],
+  );
+  const columns = useMemo<ColumnDef<ScenarioRun>[]>(
     () => [
       {
         accessorKey: "status",
@@ -562,7 +574,7 @@ export function RunsPage() {
           ["n_cache_tokens", "Cache (M)", "Cache"],
         ] as const
       ).map(
-        ([key, label, tooltipLabel]): ColumnDef<RunView> => ({
+        ([key, label, tooltipLabel]): ColumnDef<ScenarioRun> => ({
           id: key,
           header: label,
           accessorFn: (run) => stat(run, key) ?? undefined,
@@ -587,6 +599,7 @@ export function RunsPage() {
         enableColumnFilter: false,
         cell: ({ row }) => <CostValue value={stat(row.original, "cost_usd")} />,
       },
+      scenarioCostColumn(),
       {
         id: "created",
         header: "Created",
@@ -611,14 +624,11 @@ export function RunsPage() {
       <Link className="mb-4 inline-block text-sky-400" to="/runs/new">
         New Job
       </Link>
+      <PricingSelection />
       <QueryContent query={query}>
         {query.data ? (
           <div className="min-w-0 [&_table]:table-auto">
-            <DataTable
-              columns={columns}
-              data={query.data}
-              empty="No runs are available"
-            />
+            <DataTable columns={columns} data={rows} empty="No runs are available" />
           </div>
         ) : null}
       </QueryContent>

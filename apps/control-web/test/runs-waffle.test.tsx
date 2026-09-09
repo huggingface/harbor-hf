@@ -98,18 +98,19 @@ it.each([1, 5])(
       expect(within(row).getAllByRole("cell")).toHaveLength(89);
     }
     const user = userEvent.setup();
-    const header = screen.getByRole("button", { name: /Task 89: task-88/ });
-    await user.hover(within(header).getByText("89"));
-    expect(screen.getByRole("tooltip")).toHaveTextContent("task-88");
-    await user.unhover(within(header).getByText("89"));
-    act(() => header.focus());
-    expect(screen.getByRole("tooltip")).toHaveTextContent(/^task-88$/);
+    const cell = screen.getAllByRole("button", { name: /task-88 slot/ })[0];
+    await user.hover(cell.querySelector("span") as HTMLElement);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Task: task-88");
+    await user.unhover(cell.querySelector("span") as HTMLElement);
+    act(() => cell.focus());
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Task: task-88");
+    for (const header of screen.getAllByRole("columnheader")) {
+      expect(header.querySelector("button")).toBeNull();
+      expect(header.closest("thead")).toHaveClass("sr-only");
+    }
     await user.type(screen.getByRole("searchbox"), "task-88");
     expect(screen.getAllByRole("rowheader")).toHaveLength(repeats);
     expect(screen.getAllByRole("cell")).toHaveLength(repeats);
-    expect(screen.getByRole("button", { name: /Task 89: task-88/ })).toHaveTextContent(
-      "89",
-    );
     await user.clear(screen.getByRole("searchbox"));
     await user.type(screen.getByRole("searchbox"), "no-match");
     expect(screen.queryAllByRole("rowheader")).toHaveLength(0);
@@ -142,11 +143,11 @@ it("shows unavailable and cached-stale observations and retries", async () => {
     vi.fn(async () => new Response("{}", { status: 403 })),
   );
   show(run());
-  expect(await screen.findByText("Unavailable")).toBeVisible();
+  expect(await screen.findByText("● Unavailable")).toBeVisible();
   cleanup();
   const client = show(run(), { "run-a": progress() });
   await act(() => client.invalidateQueries({ queryKey: ["trial-progress", "run-a"] }));
-  expect(await screen.findByText("Stale data")).toBeVisible();
+  expect(await screen.findByText("● Stale")).toBeVisible();
   act(() =>
     screen.getByRole("link", { name: "trial-a in run-a: Zero reward" }).focus(),
   );
@@ -279,7 +280,7 @@ it("expires cached active observations while a refresh remains fetching", async 
       await vi.advanceTimersByTimeAsync(65_000);
     });
     expect(screen.queryByText("Refreshing…")).not.toBeInTheDocument();
-    expect(screen.getByText("Stale data")).toBeVisible();
+    expect(screen.getByText("● Stale")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "trial-a in run-a: Unknown / interrupted" }),
     ).toBeVisible();
@@ -510,4 +511,27 @@ it("keeps digest columns separate and ragged slots unplanned with partial observ
   expect(
     screen.getByRole("columnheader", { name: "task-a sha256:input" }),
   ).toBeVisible();
+});
+
+it("reserves three-digit repeat labels and derives CSS only from display counts", () => {
+  const value = progress();
+  value.lock = {
+    trials: Array.from({ length: 100 }, () => ({
+      task: { name: "calc(999px)", digest: "sha256:input" },
+    })),
+  };
+  show(run(), { "run-a": value });
+  const row = screen.getByRole("rowheader", { name: "Repeat slot 100" });
+  expect(row).toHaveStyle({ width: "32px", minWidth: "32px" });
+  const table = screen.getByRole("table");
+  expect(table.style.getPropertyValue("--cell-size")).toBe(
+    "clamp(12px, calc((100cqw - 34px) / 1), 18px)",
+  );
+  expect(table.parentElement).toHaveClass(
+    "[container-type:inline-size]",
+    "overflow-auto",
+  );
+  expect(
+    screen.getByRole("group", { name: "Observation freshness" }),
+  ).toBeInTheDocument();
 });

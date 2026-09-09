@@ -1,3 +1,4 @@
+import { cacheHitRate } from "../src/run-summary";
 import { describe, expect, it } from "vitest";
 import { categoryCounts, exceptionCategory } from "../src/exception-categories";
 import { projectRunExceptions } from "../src/run-diagnostics";
@@ -155,5 +156,28 @@ describe("conservative exact exception categories", () => {
     });
     expect(evidence.affectedTrials).toBe(0);
     expect(categoryCounts(evidence.groups).infra).toBe(0);
+  });
+});
+
+describe("cache hit percentage", () => {
+  it.each([
+    [0, 100, "0.0%"],
+    [1, 3, "33.3%"],
+    [2, 3, "66.7%"],
+    [100, 100, "100.0%"],
+    [0, 0, "-"],
+    [null, 100, "-"],
+    [undefined, 100, "-"],
+    [0, null, "-"],
+    [0, undefined, "-"],
+    [-1, 100, "-"],
+    [0, -1, "-"],
+    [101, 100, "-"],
+    [NaN, 100, "-"],
+    [1, Infinity, "-"],
+    [Infinity, 100, "-"],
+    [1, NaN, "-"],
+  ])("formats cache %s / input %s", (cached, input, expected) => {
+    expect(cacheHitRate(cached, input)).toBe(expected);
   });
 });
