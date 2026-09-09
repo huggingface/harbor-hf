@@ -11,6 +11,16 @@ default_branch: main
 
 Status: approved
 
+### Current main redeployment (2026-09-09)
+
+Approved at: 2026-09-09T07:49:21Z
+
+- The user approved redeploying the current clean `main` revision to the
+  existing control Space and rebuilding the parent worker image when worker
+  source has advanced.
+- Do not launch or retry a run, change write mode, move credentials, create
+  resources, or change benchmark, model, or campaign limits.
+
 ### Combined Workbench execution and UX pull request
 
 Approved at: 2026-09-08T23:35:00.428453+00:00
