@@ -595,3 +595,13 @@ Approved at: 2026-09-09T12:22:20.211230+00:00
   and privacy-review the push and PR update. Preserve known validation limits.
 - No merge, deployment, live runs, inference, credential movement, resource
   creation, public demo listener, or changes to stored evidence.
+
+### Sandbox SDK terminal-result integration
+
+Status: approved
+
+Approved at: 2026-09-09T17:44:31.882149+00:00
+
+- The user explicitly approved preparing a Harbor-HF pull request consuming the reviewed Sandbox SDK terminal-result fix, alongside its upstream issue and PR.
+- Implement a reproducible temporary dependency pin/build for the parent-worker SDK, with source/hash provenance, offline tests, documentation and explicit removal criteria. A local patched wheel build is approved. Preserve Harbor-owned execution, results, retry policy, task configuration and all unrelated work.
+- Local commits, topic branch push and one Harbor-HF pull request are approved after checks and privacy review. No merge, deployment, image publication, package-index release, new Jobs/inference, credential movement, or remote resource/configuration changes in this step.
