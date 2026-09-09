@@ -65,11 +65,17 @@ docker build --platform linux/amd64 -f deploy/parent-worker/Dockerfile .
 uv run slophammer-py dry .
 uv run pip-audit
 uv run slophammer-py check .
+python3 packages/harbor-hf-agents/sdk-backport/build.py
 uv run --directory packages/harbor-hf-agents ruff check .
 uv run --directory packages/harbor-hf-agents ruff format --check .
 uv run --directory packages/harbor-hf-agents ty check
 uv run --directory packages/harbor-hf-agents pytest
 ```
+
+The temporary SDK wheel builder requires Git and must run before agents-package
+commands on a clean checkout. See
+[the backport instructions](packages/harbor-hf-agents/sdk-backport/README.md) for
+offline builds and removal criteria.
 
 Run TypeScript formatting and linting from the repository root. Run type and
 unit checks there too. Run the browser tests and build before checking

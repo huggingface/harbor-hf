@@ -164,12 +164,14 @@ Requirements:
 - Node.js from `.nvmrc`
 - npm
 - Docker for image checks
+- Git for the temporary SDK wheel backport
 
 Install dependencies:
 
 ```bash
 uv sync --all-groups --locked
 npm ci
+python3 packages/harbor-hf-agents/sdk-backport/build.py
 uv sync --all-groups --locked --directory packages/harbor-hf-agents
 ```
 
