@@ -598,7 +598,7 @@ Approved at: 2026-09-09T12:22:20.211230+00:00
 
 ### Sandbox SDK terminal-result integration
 
-Status: approved
+Status: completed
 
 Approved at: 2026-09-09T17:44:31.882149+00:00
 
@@ -628,3 +628,5 @@ Implementation completed on 2026-09-09; branch/PR publication remains parent-own
   change; the control image's normal typecheck and web build passed.
 - No push, PR creation, deployment, image publication, remote Jobs, inference,
   credential movement or resource mutation was performed by this integration.
+
+Completed on 2026-09-09: opened draft PR #198 (https://github.com/huggingface/harbor-hf/pull/198) after source, image and privacy review. It consumes the reviewed upstream SDK fix as a hash-locked release-wheel backport. Both local image environments passed 40 offline terminal regressions; existing coverage/tooling blockers are disclosed. No merge, deployment, image/package publication or remote workload was performed.
