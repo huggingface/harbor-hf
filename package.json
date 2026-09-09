@@ -52,5 +52,10 @@
     "openapi-typescript": "7.13.0",
     "tsx": "4.23.12",
     "vitest": "4.1.11"
+  },
+  "overrides": {
+    "@redocly/openapi-core": {
+      "js-yaml": "4.3.2"
+    }
   }
 }
