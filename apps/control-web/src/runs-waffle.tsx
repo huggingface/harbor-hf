@@ -108,24 +108,23 @@ function RunWaffleContents({ run }: { run: RunView }) {
         </label>
       </div>
       <RunDiagnosticsSummary run={run} />
-      {query.isFetching && !query.isPending ? (
-        <span role="status">Refreshing…</span>
-      ) : null}
-      {query.data && !query.isError && !recent(query.data.observed_at, now) ? (
-        <span role="status">Stale data</span>
-      ) : null}
-      {query.isError ? (
-        <span role="status">
-          {query.data ? "Stale data" : "Unavailable"}{" "}
-          <button
-            type="button"
-            className="underline"
-            onClick={() => void query.refetch()}
-          >
-            Retry
-          </button>
-        </span>
-      ) : null}
+      <div className="min-h-6">
+        {query.data && !query.isError && !recent(query.data.observed_at, now) ? (
+          <span role="status">Stale data</span>
+        ) : null}
+        {query.isError ? (
+          <span role="status">
+            {query.data ? "Stale data" : "Unavailable"}{" "}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => void query.refetch()}
+            >
+              Retry
+            </button>
+          </span>
+        ) : null}
+      </div>
       <details className="my-3 text-xs text-slate-400">
         <summary className="cursor-pointer">Legend and display-slot help</summary>
         <p>

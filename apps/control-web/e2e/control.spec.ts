@@ -846,7 +846,7 @@ for (const width of [1440, 390]) {
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).not.toContainText("not an attempt ordinal");
     await expect(tooltip).toHaveText(
-      "Task: task-one\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nReported cost (USD): $0.10",
+      "Task: task-one\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −\nReported cost (USD): $0.10",
     );
     await expect(tooltip).not.toContainText("Artifact observation");
     await page.screenshot({
@@ -867,7 +867,7 @@ for (const width of [1440, 390]) {
     });
     await unfinished.focus();
     await expect(tooltip).toHaveText(
-      "Task: task-one\nRepeat slot: 2\nState: Unfinished\nReward: -",
+      "Task: task-one\nRepeat slot: 2\nState: Unfinished\nReward: -\nAgent time: −",
     );
     await unfinished.blur();
     await page.screenshot({ path: testInfo.outputPath("native-waffle.png") });
@@ -889,7 +889,7 @@ for (const width of [1440, 390]) {
     });
     await unknown.focus();
     await expect(tooltip).toHaveText(
-      "Stale — refresh failed\nTask: task-one\nRepeat slot: 2\nState: Unknown / interrupted\nReward: -",
+      "Stale — refresh failed\nTask: task-one\nRepeat slot: 2\nState: Unknown / interrupted\nReward: -\nAgent time: −",
     );
     await expect(tooltip).not.toContainText("Artifact observation");
 
@@ -1743,5 +1743,102 @@ for (const cache of [0, null]) {
     await expect(page.getByLabel("Reported cost (USD): 0", { exact: true })).toHaveText(
       "$0.0000",
     );
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`stable measured timing during delayed background polling at ${width}px`, async ({
+    page,
+  }) => {
+    await mockControl(page);
+    await page.setViewportSize({ width, height: 900 });
+    await page.clock.install();
+    const phase = {
+      started_at: "2026-09-09T00:00:00Z",
+      finished_at: "2026-09-09T00:01:26Z",
+    };
+    const value = {
+      ...run,
+      status: "running",
+      agent_timing: {
+        duration_ms: 750000,
+        complete_trials: 4,
+        partial_trials: 1,
+        unavailable_trials: 2,
+      },
+      result: {
+        ...summaryResult,
+        stats: {
+          ...summaryResult.stats,
+          n_errored_trials: 1,
+          evals: {
+            synthetic: { n_errors: 1, exception_stats: { RuntimeError: [trialName] } },
+          },
+        },
+      },
+    };
+    let progressReads = 0;
+    let release: (() => void) | undefined;
+    await page.route("**/api/v1/runs", (route) => json(route, { runs: [value] }));
+    await page.route(`**/api/v1/runs/${runId}`, (route) => json(route, value));
+    await page.route("**/api/v1/runs/*/progress", async (route) => {
+      progressReads++;
+      if (progressReads > 1)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      const task = { name: "task-one", digest: "sha256:synthetic" };
+      await json(route, {
+        observed_at: new Date().toISOString(),
+        jobs_observed_at: null,
+        jobs: [],
+        lock: { trials: [{ task }] },
+        trials: [
+          {
+            trial_name: trialName,
+            lock: { task },
+            config: null,
+            reward: 1,
+            cost_usd: null,
+            result: {
+              finished_at: phase.finished_at,
+              agent_execution: phase,
+              exception_info: null,
+            },
+          },
+        ],
+      });
+    });
+    await page.goto("/runs");
+    await expect(page.getByText("Running · Agent Σ 12m30s (partial)")).toBeVisible();
+    await page.clock.runFor(15001);
+    expect(progressReads).toBe(0);
+    const affected = page.getByText("1 affected trial", { exact: true }).first();
+    await expect(affected).toHaveClass(/text-red-400/);
+    await page.goto(`/runs/${runId}`);
+    const matrix = page.getByRole("region", { name: "Trial progress waffle" });
+    const square = matrix.getByRole("link", {
+      name: `${trialName} in ${runId}: Completed`,
+    });
+    await expect(square).toBeVisible();
+    await square.focus();
+    await expect(page.getByRole("tooltip")).toContainText("Agent time: 1m26s");
+    const text = await page.getByRole("tooltip").innerText();
+    expect(text.split("\n").filter((line) => line.startsWith("Agent time:"))).toEqual([
+      "Agent time: 1m26s",
+    ]);
+    const before = await matrix.boundingBox();
+    const squareBefore = await square.boundingBox();
+    await page.clock.runFor(15001);
+    await expect.poll(() => progressReads).toBe(2);
+    expect(release).toBeDefined();
+    await expect(page.getByText("Refreshing…", { exact: true })).toHaveCount(0);
+    expect(await matrix.boundingBox()).toEqual(before);
+    expect(await square.boundingBox()).toEqual(squareBefore);
+    await expect(square).toBeFocused();
+    release?.();
+    await expect(
+      page.getByText("4 complete · 1 partial · 2 unavailable"),
+    ).toBeVisible();
   });
 }

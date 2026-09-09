@@ -368,6 +368,7 @@ it.each([
         "Repeat slot: 1",
         `State: ${state}`,
         `Reward: ${formatted}`,
+        "Agent time: −",
         ...extra,
       ].join("\n"),
     );
@@ -379,9 +380,9 @@ it.each([
 
 it("keeps unfinished and unknown short without claiming live running", () => {
   expect(cellDescription(first(waffleCells(run, data(), now)))).toBe(
-    "Task: task-a\nRepeat slot: 1\nState: Unfinished\nReward: -",
+    "Task: task-a\nRepeat slot: 1\nState: Unfinished\nReward: -\nAgent time: −",
   );
   expect(cellDescription(first(waffleCells(run, data(), now, true)))).toBe(
-    "Task: task-a\nRepeat slot: 1\nState: Unknown / interrupted\nReward: -",
+    "Task: task-a\nRepeat slot: 1\nState: Unknown / interrupted\nReward: -\nAgent time: −",
   );
 });

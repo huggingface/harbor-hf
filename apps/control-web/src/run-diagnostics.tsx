@@ -100,7 +100,9 @@ export function RunDiagnosticsSummary({ run }: { run: RunView }) {
   const label = (
     <>
       <span className="block text-xs text-slate-400">Harbor-reported exceptions</span>
-      <span>{summary(evidence)}</span>
+      <span className={evidence.affectedTrials > 0 ? "text-red-400" : "text-slate-400"}>
+        {summary(evidence)}
+      </span>
       <span
         className="block text-xs text-slate-400"
         title="Exact environment/transport and provider exception types only; not an inferred infrastructure cause"
@@ -160,7 +162,9 @@ export function RunDiagnostics({ run }: { run: RunView }) {
   return (
     <Card id="diagnostics" role="region" aria-label="Harbor-reported exceptions">
       <h2 className="text-lg font-semibold">Harbor-reported exceptions</h2>
-      <p>{summary(evidence)}</p>
+      <p className={evidence.affectedTrials > 0 ? "text-red-400" : "text-slate-400"}>
+        {summary(evidence)}
+      </p>
       <p className="text-sm text-slate-400">
         {categoryCounts(evidence.groups)
           .categories.map(
@@ -182,7 +186,11 @@ export function RunDiagnostics({ run }: { run: RunView }) {
           <li key={group.type} className="break-words">
             <h3>
               <Badge>{group.type}</Badge> {evidence.complete ? "" : "At least "}
-              {group.trials.length} {group.trials.length === 1 ? "trial" : "trials"}
+              <span
+                className={group.trials.length > 0 ? "text-red-400" : "text-slate-400"}
+              >
+                {group.trials.length} {group.trials.length === 1 ? "trial" : "trials"}
+              </span>
             </h3>
             <p className="text-xs text-slate-400">{exceptionCategory(group.type)}</p>
             <BoundedItems

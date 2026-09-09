@@ -227,3 +227,45 @@ it("bounds shared snapshots and pending requests without evicting in-flight work
   await reader.snapshot(runId, [], null);
   expect(list).toHaveBeenCalledTimes(3);
 });
+
+it("allowlists native agent and step timestamps and isolates malformed timing", async () => {
+  const phase = {
+    started_at: "2026-09-09T00:00:00Z",
+    finished_at: "2026-09-09T00:01:26Z",
+  };
+  await putJson(store, `${base}trial-timing/result.json`, {
+    trial_name: "trial-timing",
+    agent_execution: { ...phase, secret: "do-not-echo" },
+    step_results: [
+      {
+        agent_execution: phase,
+        config: "do-not-echo",
+        agent_result: { metadata: "do-not-echo" },
+      },
+      null,
+      { agent_execution: { started_at: 42, finished_at: "bad" } },
+    ],
+    verifier_result: { rewards: { reward: 1 } },
+  });
+  await putJson(store, `${base}trial-bad/result.json`, {
+    trial_name: "trial-bad",
+    agent_execution: false,
+    step_results: "invalid",
+    verifier_result: { rewards: { reward: 0 } },
+  });
+  const snapshot = await new TrialProgressReader(store).snapshot(runId, [], null);
+  expect(snapshot.trials).toHaveLength(2);
+  expect(snapshot.trials[0]).toMatchObject({
+    reward: 0,
+    result: { agent_execution: null, step_results: null },
+  });
+  expect(snapshot.trials[1]?.result).toMatchObject({
+    agent_execution: phase,
+    step_results: [
+      { agent_execution: phase },
+      { agent_execution: null },
+      { agent_execution: { started_at: null, finished_at: null } },
+    ],
+  });
+  expect(JSON.stringify(snapshot)).not.toContain("do-not-echo");
+});

@@ -1,9 +1,10 @@
+import Database from "better-sqlite3";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
 import { runRecordPath, runStatePath } from "@harbor-hf/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ControlService,
   compileAgentWorkbenchRecipe,
@@ -637,6 +638,95 @@ describe("run submission", () => {
 });
 
 describe("status and projection", () => {
+  it("reads cached timing in one query and scopes detail to its indexed run", async () => {
+    const first = await submit("bounded-first");
+    const second = await submit("bounded-second");
+    await putJson(
+      store,
+      `runs/${second.run.run_id}/job/task/result.json`,
+      trial(0.01, 1),
+    );
+    await service.refresh();
+    const db = new Database(join(root, "projection.sqlite"));
+    // If reads ever parse native trial JSON again, even listRuns will fail.
+    db.prepare("UPDATE trials SET result_body = 'not-json'").run();
+    const prepare = vi.spyOn(Database.prototype, "prepare");
+    try {
+      expect(projection.listRuns()).toHaveLength(2);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare.mock.calls[0]?.[0]).not.toContain("FROM trials");
+      prepare.mockClear();
+      db.prepare("UPDATE runs SET record_body = 'not-json' WHERE run_id = ?").run(
+        second.run.run_id,
+      );
+      prepare.mockClear();
+      expect(projection.run(first.run.run_id)?.record.run_id).toBe(first.run.run_id);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare.mock.calls[0]?.[0]).toContain("WHERE run_id = ?");
+      expect(projection.run("missing")).toBeNull();
+    } finally {
+      prepare.mockRestore();
+      db.close();
+    }
+  });
+
+  it("rolls up only current rows across rebuild/resume and excludes archived retries", async () => {
+    const { run } = await submit("measured-agent-time");
+    const second = await submit("measured-agent-time-second");
+    const path = `runs/${run.run_id}/job/task/result.json`;
+    const phase = {
+      started_at: "2026-09-09T00:00:00Z",
+      finished_at: "2026-09-09T00:01:26Z",
+    };
+    const native = { ...trial(0.01, 1), agent_execution: phase };
+    const job = { finished_at: "2026-09-09T00:02:00Z", n_total_trials: 1 };
+    await putJson(store, `runs/${run.run_id}/job/result.json`, job);
+    await putJson(store, path, native);
+    await putJson(store, `runs/${run.run_id}/job/retries/old/result.json`, native);
+    await service.refresh();
+    for (let i = 0; i < 2; i++) {
+      await service.refresh();
+      expect(projection.run(run.run_id)?.agent_timing).toEqual({
+        duration_ms: 86000,
+        complete_trials: 1,
+        partial_trials: 0,
+        unavailable_trials: 0,
+      });
+    }
+    const reopened = await Projection.open(join(root, "projection.sqlite"));
+    expect(reopened.run(run.run_id)?.agent_timing?.duration_ms).toBe(86000);
+    reopened.close();
+    // A duplicate native name fails inside the transaction, after DELETEs.
+    // Both rows and cached measurements must roll back together.
+    const duplicate = `runs/${run.run_id}/job/duplicate/result.json`;
+    await putJson(store, duplicate, native);
+    await expect(projection.rebuild(store, [])).rejects.toThrow("UNIQUE constraint");
+    expect(projection.run(run.run_id)?.agent_timing?.duration_ms).toBe(86000);
+    expect(projection.trials(run.run_id)).toHaveLength(1);
+    await rm(join(store.root, duplicate));
+    expect(projection.run(run.run_id)?.result).toEqual(job);
+    expect(projection.run(second.run.run_id)?.agent_timing?.duration_ms).toBeNull();
+    await putJson(store, path, {
+      ...native,
+      agent_execution: { started_at: phase.started_at, finished_at: phase.started_at },
+    });
+    await service.refresh();
+    expect(projection.run(run.run_id)?.agent_timing?.duration_ms).toBe(0);
+    await rm(join(store.root, path));
+    await service.refresh();
+    expect(projection.run(run.run_id)?.agent_timing).toEqual({
+      duration_ms: null,
+      complete_trials: 0,
+      partial_trials: 0,
+      unavailable_trials: 0,
+    });
+    await rm(join(store.root, `runs/${run.run_id}/run.json`));
+    await service.refresh();
+    expect(projection.run(run.run_id)).toBeNull();
+    expect(projection.listRuns().map((view) => view.record.run_id)).toEqual([
+      second.run.run_id,
+    ]);
+  });
   it("applies the status precedence", () => {
     const record = {
       schema_version: "v1",

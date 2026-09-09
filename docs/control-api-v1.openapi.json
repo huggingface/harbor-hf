@@ -18,6 +18,287 @@
       }
     },
     "schemas": {
+      "RunRecord": {
+        "title": "RunRecordV1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "run_id",
+          "created_at",
+          "submitted_by",
+          "role",
+          "harbor_revision",
+          "submission",
+          "harbor_job_config"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "v1"
+          },
+          "run_id": {
+            "type": "string",
+            "pattern": "^run-[0-9a-f]{24}$"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "submitted_by": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          },
+          "role": {
+            "enum": [
+              "final",
+              "diagnostic"
+            ]
+          },
+          "harbor_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "submission": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "benchmark",
+              "cost_ceiling_usd_per_trial"
+            ],
+            "properties": {
+              "benchmark": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "preset"
+                ],
+                "properties": {
+                  "name": {
+                    "$ref": "#/components/schemas/RunRecord_slug"
+                  },
+                  "preset": {
+                    "$ref": "#/components/schemas/RunRecord_slug"
+                  }
+                }
+              },
+              "model": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "provider",
+                  "reasoning_effort"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 320
+                  },
+                  "provider": {
+                    "$ref": "#/components/schemas/RunRecord_slug"
+                  },
+                  "reasoning_effort": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  }
+                }
+              },
+              "harness": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "agent",
+                  "version"
+                ],
+                "properties": {
+                  "agent": {
+                    "$ref": "#/components/schemas/RunRecord_slug"
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  }
+                }
+              },
+              "cost_ceiling_usd_per_trial": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 10000
+              }
+            }
+          },
+          "harbor_job_config": {
+            "type": "object"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "role": {
+                  "const": "final"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "submission": {
+                  "required": [
+                    "model",
+                    "harness"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RunRecord_slug": {
+        "title": "RunRecordSlug",
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+      },
+      "RunState": {
+        "title": "RunStateV1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "run_id",
+          "revision",
+          "updated_at",
+          "desired_state",
+          "actor",
+          "parent_jobs"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "v1"
+          },
+          "run_id": {
+            "type": "string",
+            "pattern": "^run-[0-9a-f]{24}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "desired_state": {
+            "enum": [
+              "run",
+              "paused",
+              "cancelled"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          },
+          "parent_jobs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "started_at"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "started_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          }
+        }
+      },
+      "AgentTiming": {
+        "title": "AgentTimingV1",
+        "description": "Display-only sum of measured native agent intervals in current projected trial results; not elapsed job time or lifetime retry usage.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "duration_ms",
+          "complete_trials",
+          "partial_trials",
+          "unavailable_trials"
+        ],
+        "properties": {
+          "duration_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "complete_trials": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "partial_trials": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unavailable_trials": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "RunView": {
+        "type": "object",
+        "required": [
+          "record",
+          "state",
+          "status",
+          "result"
+        ],
+        "properties": {
+          "record": {
+            "$ref": "#/components/schemas/RunRecord"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RunState"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "paused",
+              "cancelled",
+              "finished",
+              "cost_stopped"
+            ]
+          },
+          "result": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "agent_timing": {
+            "$ref": "#/components/schemas/AgentTiming"
+          }
+        }
+      },
       "TrialProgress": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -191,6 +472,64 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "agent_execution": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "started_at": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            },
+                            "finished_at": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          }
+                        },
+                        "step_results": {
+                          "type": [
+                            "array",
+                            "null"
+                          ],
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "agent_execution": {
+                                "type": [
+                                  "object",
+                                  "null"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "started_at": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "format": "date-time"
+                                  },
+                                  "finished_at": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "format": "date-time"
+                                  }
+                                }
+                              }
+                            }
+                          }
                         }
                       },
                       "additionalProperties": false
@@ -1909,7 +2248,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "required": [
+                    "runs"
+                  ],
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RunView"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -2262,7 +2612,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/RunView"
                 }
               }
             }

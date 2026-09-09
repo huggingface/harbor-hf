@@ -1,3 +1,5 @@
+import { trialAgentTiming } from "@harbor-hf/contracts/agent-timing";
+import { agentTimeLabel } from "./agent-timing";
 import type { RunView, TrialProgress } from "./api";
 import { formatMoneyUsd } from "./lib";
 import { roundedScore } from "./run-summary";
@@ -160,6 +162,7 @@ export function cellDescription(cell: WaffleCell): string {
     `Repeat slot: ${cell.slot}`,
     `State: ${waffleStates[cell.state].label}`,
     `Reward: ${roundedScore(cell.trial?.reward ?? null)}`,
+    `Agent time: ${agentTimeLabel(trialAgentTiming(cell.trial?.result))}`,
     ...(exception ? [`Exception: ${exception}`] : []),
     ...(cost != null ? [`Reported cost (USD): ${formatMoneyUsd(cost)}`] : []),
   ].join("\n");

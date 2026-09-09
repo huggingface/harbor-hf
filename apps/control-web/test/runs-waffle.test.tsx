@@ -67,7 +67,7 @@ it("renders one task column with five distinct repetition rows and focus details
   act(() => zero.focus());
   expect(screen.getByRole("tooltip")).not.toHaveTextContent("not an attempt ordinal");
   expect(screen.getByRole("tooltip").textContent).toBe(
-    "Task: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000",
+    "Task: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −",
   );
   expect(screen.getByRole("tooltip")).not.toHaveTextContent("Artifact observation");
   const row = zero.closest("tr");
@@ -151,7 +151,7 @@ it("shows unavailable and cached-stale observations and retries", async () => {
     screen.getByRole("link", { name: "trial-a in run-a: Zero reward" }).focus(),
   );
   expect(screen.getByRole("tooltip").textContent).toBe(
-    "Stale — refresh failed\nTask: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000",
+    "Stale — refresh failed\nTask: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −",
   );
   vi.stubGlobal(
     "fetch",
@@ -278,7 +278,7 @@ it("expires cached active observations while a refresh remains fetching", async 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(65_000);
     });
-    expect(screen.getByText("Refreshing…")).toBeVisible();
+    expect(screen.queryByText("Refreshing…")).not.toBeInTheDocument();
     expect(screen.getByText("Stale data")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "trial-a in run-a: Unknown / interrupted" }),

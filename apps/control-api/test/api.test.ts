@@ -1,4 +1,6 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import type { components } from "../../control-web/src/generated/api.js";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -107,6 +109,144 @@ const submission = {
 };
 
 describe("control API", () => {
+  it("validates actual single/list responses through generated OpenAPI component refs", async () => {
+    const document = JSON.parse(
+      await readFile(resolve("docs/control-api-v1.openapi.json"), "utf8"),
+    );
+    const ajv = new Ajv2020({ strict: false, allErrors: true });
+    ajv.addFormat("date-time", (value: string) => Number.isFinite(Date.parse(value)));
+    const single = ajv.compile({
+      ...document.paths["/api/v1/runs/{run_id}"].get.responses["200"].content[
+        "application/json"
+      ].schema,
+      components: document.components,
+    });
+    const list = ajv.compile({
+      ...document.paths["/api/v1/runs"].get.responses["200"].content["application/json"]
+        .schema,
+      components: document.components,
+    });
+    const config = {
+      agents: [{ name: "example", kwargs: { nested: { values: [true, 1, null] } } }],
+      n_concurrent_trials: 2,
+      environment: { type: "docker" },
+    } satisfies components["schemas"]["RunRecord"]["harbor_job_config"];
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const submitted = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "response-schema" },
+      payload: submission,
+    });
+    const record = { ...submitted.json().run, harbor_job_config: config };
+    await putJson(runtime.store, `runs/${record.run_id}/run.json`, record);
+    for (const status of [
+      "queued",
+      "running",
+      "paused",
+      "cancelled",
+      "finished",
+      "cost_stopped",
+    ] as const) {
+      const desired_state =
+        status === "paused" || status === "cancelled" ? status : "run";
+      const state = runtime.projection.run(record.run_id)?.state;
+      await putJson(runtime.store, `runs/${record.run_id}/state.json`, {
+        ...state,
+        desired_state,
+      });
+      await putJson(runtime.store, `runs/${record.run_id}/job/result.json`, {
+        finished_at: status === "finished" ? "2026-09-09T00:02:00Z" : null,
+      });
+      await putJson(runtime.store, `runs/${record.run_id}/job/task/result.json`, {
+        agent_result: { cost_usd: status === "cost_stopped" ? 1 : 0 },
+      });
+      await runtime.projection.rebuild(
+        runtime.store,
+        status === "running"
+          ? [
+              {
+                id: "parent-test",
+                run_id: record.run_id,
+                role: "parent",
+                stage: "running",
+                created_at: "2026-09-09T00:00:00Z",
+                started_at: "2026-09-09T00:00:01Z",
+                finished_at: null,
+              },
+            ]
+          : [],
+      );
+      const response = await app.inject({ url: `/api/v1/runs/${record.run_id}` });
+      expect(response.statusCode).toBe(200);
+      const view = response.json();
+      expect(view.status).toBe(status);
+      expect(single(view), JSON.stringify(single.errors)).toBe(true);
+      expect(view.record.harbor_job_config).toEqual(config);
+      expect(view.record).not.toHaveProperty("$defs");
+      const overview = await app.inject({ url: "/api/v1/runs" });
+      expect(overview.statusCode).toBe(200);
+      expect(list(overview.json()), JSON.stringify(list.errors)).toBe(true);
+      expect(single({ ...view, status: "invalid" })).toBe(false);
+      expect(
+        single({
+          ...view,
+          record: {
+            ...view.record,
+            submission: {
+              ...view.record.submission,
+              benchmark: { name: "INVALID", preset: "valid" },
+            },
+          },
+        }),
+      ).toBe(false);
+      expect(
+        single({ ...view, record: { ...view.record, harbor_job_config: [] } }),
+      ).toBe(false);
+    }
+  });
+
+  it("returns measured timing on authenticated run reads without remote reads or per-trial APIs", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const submitted = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "agent-time-summary" },
+      payload: submission,
+    });
+    const id: string = submitted.json().run.run_id;
+    await putJson(runtime.store, `runs/${id}/job/trial-one/result.json`, {
+      trial_name: "trial-one",
+      agent_execution: {
+        started_at: "2026-09-09T00:00:00Z",
+        finished_at: "2026-09-09T00:01:26Z",
+        private: "do-not-echo",
+      },
+      config: { private: "do-not-echo" },
+    });
+    await runtime.projection.rebuild(runtime.store, []);
+    const read = vi.spyOn(runtime.store, "read");
+    const list = vi.spyOn(runtime.store, "list");
+    for (const url of ["/api/v1/runs", `/api/v1/runs/${id}`]) {
+      const response = await app.inject({ url });
+      expect(response.statusCode).toBe(200);
+      const view = url.endsWith(id) ? response.json() : response.json().runs[0];
+      expect(view.agent_timing).toEqual({
+        duration_ms: 86000,
+        complete_trials: 1,
+        partial_trials: 0,
+        unavailable_trials: 0,
+      });
+      expect(response.body).not.toContain("do-not-echo");
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    runtime.config.auth_mode = "oauth";
+    for (const url of ["/api/v1/runs", `/api/v1/runs/${id}`])
+      expect((await app.inject({ url })).statusCode).toBe(401);
+  });
   it("exposes authenticated native artifact observations without writing or changing completion", async () => {
     const { runtime, app } = await setup();
     await runtime.initialize();

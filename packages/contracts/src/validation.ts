@@ -26,6 +26,7 @@ export const schemas = {
   benchmarkPreset: load("benchmark-preset-v1.schema.json"),
   harborJobConfig: load("harbor-job-config-v1.schema.json"),
   runRecord: load("run-record-v1.schema.json"),
+  agentTiming: load("agent-timing-v1.schema.json"),
   trialProgress: load("trial-progress-v1.schema.json"),
   runState: load("run-state-v1.schema.json"),
 } as const;

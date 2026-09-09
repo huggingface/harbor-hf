@@ -7,7 +7,8 @@
   "exports": {
     ".": "./dist/index.js",
     "./schemas/*": "./schemas/*",
-    "./credentials": "./dist/credentials.js"
+    "./credentials": "./dist/credentials.js",
+    "./agent-timing": "./dist/agent-timing.js"
   },
   "scripts": {
     "build": "tsc -b",

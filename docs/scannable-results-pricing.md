@@ -124,3 +124,41 @@ Normal Slophammer and DRY checks pass. Global TypeScript coverage is 79.53% line
 77.12% statements, 77.62% functions, and 70.69% branches (below the 85% gates);
 no thresholds are lowered. Python source is unchanged. Local verification
 performed no deployment, credential access, or remote mutation.
+
+## Measured agent time and stable polling
+
+Trial tooltips show one `Agent time` line. `Agent Σ` on run status sums recorded
+`TrialResult.agent_execution.started_at/finished_at` intervals, or the populated
+`step_results[*].agent_execution` list instead (never both). These are native
+agent-phase wall times, not token throughput, trial environment/teardown time, or
+elapsed job time; concurrent trials can make the sum exceed job elapsed time.
+
+Missing, malformed, reversed, and unfinished intervals are unavailable (`−`),
+not zero. Valid zero-length intervals remain `0s`. Available step intervals can
+form an explicitly partial sum; unfinished multi-step results remain partial.
+Coverage shows complete, partial, and unavailable current result counts, not
+planned trials or unstarted steps. No live clock estimates are included.
+
+The run response has a generated `AgentTimingV1` display summary, calculated from
+current native results during projection rebuild and cached transactionally with
+the run row. List and detail reads do not scan trial history. Rebuild/replacement
+removes old contributions; archived retries and removed rows are not lifetime usage.
+Neither native JobResult nor Bucket records acquire new fields. Overview queries
+remain run-only; no additional progress requests, remote scans, or run actions.
+Progress responses allowlist only the new agent timestamps and step timestamps;
+malformed timing is unavailable without rejecting unrelated trial evidence.
+
+Background polling inserts no refreshing node or periodic live announcement.
+A reserved feedback line retains genuine stale/error messages and retry controls.
+Positive affected-trial counts are red; zero/missing evidence remains neutral.
+Exact typed infrastructure classification is unchanged.
+
+Boundary review: Harbor `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`,
+`src/harbor/models/trial/result.py`, `src/harbor/models/job/result.py`,
+`src/harbor/trial/single_step.py`, `src/harbor/trial/multi_step.py`,
+`src/harbor/trial/trial.py` (`_run_agent_phase`), and `src/harbor/job.py`.
+Harbor records the phase intervals and excludes `trial_results` when writing the
+job result; JobStats has no agent-duration aggregate. Reviewed the 18 upstream
+commits through `1f84b4c0`: no timing aggregate requires a pin update. This is a
+read-only presentation of native result files, with no Harbor internal imports,
+execution patch, scheduler, or competing lifecycle authority.

@@ -1,3 +1,4 @@
+import { RunStatusTiming } from "./agent-timing";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -493,9 +494,7 @@ export function RunsPage() {
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => (
-          <Badge status={row.original.status}>{humanize(row.original.status)}</Badge>
-        ),
+        cell: ({ row }) => <RunStatusTiming run={row.original} />,
       },
       {
         id: "model",
@@ -602,7 +601,7 @@ export function RunsPage() {
     <>
       <PageHeader
         title="Runs"
-        description="Progress, totals and exception diagnostics refresh from Harbor results. Finished means execution ended, not that every trial passed or was validly scored."
+        description="Finished means execution ended, not that every trial passed. Agent Σ sums measured agent intervals in current trial results, not elapsed job time or lifetime retries. Coverage counts current results only."
         action={
           <Button variant="outline" onClick={() => void query.refetch()}>
             <RotateCw size={14} aria-hidden="true" /> Refresh

@@ -1,6 +1,12 @@
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AttemptCostV1, RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
+import type {
+  AgentTimingV1,
+  AttemptCostV1,
+  RunRecordV1,
+  RunStateV1,
+} from "@harbor-hf/contracts";
+import { sumAgentTiming } from "@harbor-hf/contracts/agent-timing";
 import {
   validateAttemptCost,
   validateRunRecord,
@@ -28,6 +34,7 @@ export interface TrialSummary {
 }
 
 export interface RunView {
+  agent_timing?: AgentTimingV1;
   record: RunRecordV1;
   state: RunStateV1;
   status: RunStatus;
@@ -224,6 +231,10 @@ export class Projection {
         body TEXT NOT NULL
       );
     `);
+    // This is a disposable projection cache, never a durable run-record field.
+    const columns = database.pragma("table_info(runs)") as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "agent_timing_body"))
+      database.exec("ALTER TABLE runs ADD COLUMN agent_timing_body TEXT");
     return new Projection(database);
   }
 
@@ -285,6 +296,7 @@ export class Projection {
       const runJobs = jobs.filter((job) => job.run_id === runId);
       rows.push({
         view: {
+          agent_timing: sumAgentTiming(trials.map((trial) => trial.result)),
           record,
           state,
           status: statusFor(
@@ -306,7 +318,7 @@ export class Projection {
         "DELETE FROM trials; DELETE FROM parent_jobs; DELETE FROM runs;",
       );
       const insertRun = this.database.prepare(
-        "INSERT INTO runs (run_id, created_at, record_body, state_body, status, result_body) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO runs (run_id, created_at, record_body, state_body, status, result_body, agent_timing_body) VALUES (?, ?, ?, ?, ?, ?, ?)",
       );
       const insertTrial = this.database.prepare(
         "INSERT INTO trials (run_id, trial_name, reward, cost_usd, status, result_body) VALUES (?, ?, ?, ?, ?, ?)",
@@ -322,6 +334,7 @@ export class Projection {
           JSON.stringify(view.state),
           view.status,
           view.result ? JSON.stringify(view.result) : null,
+          JSON.stringify(view.agent_timing),
         );
         for (const trial of trials)
           insertTrial.run(
@@ -347,18 +360,27 @@ export class Projection {
     this.observationsAt = observedAt;
   }
 
-  listRuns(): RunView[] {
+  private readRuns(runId?: string): RunView[] {
     const rows = this.database
       .prepare(
-        "SELECT record_body, state_body, status, result_body FROM runs ORDER BY created_at DESC, run_id DESC",
+        `SELECT record_body, state_body, status, result_body, agent_timing_body FROM runs ${
+          runId === undefined
+            ? "ORDER BY created_at DESC, run_id DESC"
+            : "WHERE run_id = ?"
+        }`,
       )
-      .all() as Array<{
+      .all(...(runId === undefined ? [] : [runId])) as Array<{
       record_body: string;
       state_body: string;
       status: RunStatus;
       result_body: string | null;
+      agent_timing_body: string | null;
     }>;
     return rows.map((row) => ({
+      // Older disposable projections acquire measurements at the next rebuild.
+      ...(row.agent_timing_body
+        ? { agent_timing: JSON.parse(row.agent_timing_body) as AgentTimingV1 }
+        : {}),
       record: validateRunRecord(JSON.parse(row.record_body)),
       state: validateRunState(JSON.parse(row.state_body)),
       status: row.status,
@@ -368,8 +390,12 @@ export class Projection {
     }));
   }
 
+  listRuns(): RunView[] {
+    return this.readRuns();
+  }
+
   run(runId: string): RunView | null {
-    return this.listRuns().find((item) => item.record.run_id === runId) ?? null;
+    return this.readRuns(runId)[0] ?? null;
   }
 
   trials(runId: string, result: "full" | "identity" = "full"): TrialSummary[] {

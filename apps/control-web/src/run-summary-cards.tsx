@@ -1,5 +1,6 @@
+import { RunStatusTiming } from "./agent-timing";
 import type { RunView } from "./api";
-import { formatMoneyUsd, humanize } from "./lib";
+import { formatMoneyUsd } from "./lib";
 import { RunDiagnosticsSummary } from "./run-diagnostics";
 import {
   millionTokens,
@@ -8,7 +9,7 @@ import {
   resultStat,
   roundedScore,
 } from "./run-summary";
-import { Badge, Card, Hint, Progress } from "./ui";
+import { Card, Hint, Progress } from "./ui";
 
 export function ExactValue({
   value,
@@ -72,7 +73,11 @@ export function RunSummaryCards({ run }: { run: RunView }) {
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <Card>
         <h2>Status</h2>
-        <Badge status={run.status}>{humanize(run.status)}</Badge>
+        <RunStatusTiming run={run} />
+        <p className="text-xs text-slate-400">
+          Agent Σ sums measured agent intervals in current trial results, not elapsed
+          job time or lifetime retries.
+        </p>
       </Card>
       <Card>
         <h2>Progress</h2>
