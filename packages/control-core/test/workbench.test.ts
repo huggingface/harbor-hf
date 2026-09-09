@@ -16,8 +16,10 @@ describe("Agent Workbench recipe compiler", () => {
     expect(preview.setup_command).toContain("python_version=3.12.14");
     expect(preview.setup_command).toContain("fast-agent-mcp==0.10.20");
     expect(preview.setup_command).not.toContain('python -m venv "$AGENT_HOME/venv"');
-    expect(preview.run_command).toContain("--base-url");
-    expect(preview.run_command).toContain("<injected-model-base-url>");
+    expect(preview.run_command).not.toContain("--base-url");
+    expect(preview.run_command).not.toContain("<injected-model-base-url>");
+    expect(preview.run_command).toContain('SSL_CERT_FILE="$ca_bundle"');
+    expect(preview.run_command).toContain("import certifi; print(certifi.where())");
     expect(preview.environment.find((item) => item.name === "OPENAI_API_KEY")).toEqual(
       expect.objectContaining({
         value: "<injected-model-api-key>",

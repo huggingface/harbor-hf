@@ -23,7 +23,10 @@ The page has three stages:
 3. **Run:** Select a reviewed benchmark, model route, cost limit, and result
    role. Submit the exact tested recipe through `POST /api/v1/runs`.
 
-The browser saves incomplete recipe and run-form edits in local storage. It does
+The browser saves incomplete recipe and run-form edits in local storage after
+400 ms without edits, and flushes pending changes when leaving or hiding the page.
+Binding rows retain their identity while names are edited; row identities are
+browser-only and never enter saved recipes or submissions. The browser does
 not save setup approval, setup state, or launch confirmation. Reloading the page
 therefore keeps the draft but requires a fresh confirmation. Recipe commands and
 literal values must not contain secrets.
@@ -32,6 +35,24 @@ A setup pass is temporary evidence. It does not create or approve a profile. It
 does not start a benchmark. The pass is valid for one hour, for the same actor,
 recipe digest, and compiler revision. A service restart makes a recovered setup
 record non-attestable, so the operator must run the test again.
+
+## Fast-Agent starter connection defaults
+
+The Fast-Agent 0.10.20 starter uses its native HF provider routing and does not
+pass `--base-url`. The existing `MODEL_BASE_URL` binding remains only because
+hosted launch admission currently requires a `model_base_url` binding.
+
+At execution time it checks that the injected `OPENAI_API_KEY` is nonempty and
+maps that inference credential to `HF_TOKEN` for the Fast-Agent process only.
+It never reads the control credential. The same process receives `SSL_CERT_FILE`
+pointing to the installed `certifi` CA bundle, obtained using the agent virtual
+environment's Python. Missing or unreadable bundles fail before Fast-Agent starts;
+TLS certificate verification remains enabled even when the task image has no
+system CA store. The recipe contains no credential values.
+
+These defaults apply to newly selected starters. Browser-saved edits and existing
+run records are not rewritten. To adopt them, select the Fast-Agent starter again
+(after preserving custom edits), repeat the setup test, and submit a new run.
 
 ## Recipe
 
@@ -166,6 +187,29 @@ the fast-agent starter again (preserve any custom recipe edits separately), chec
 the new run command, and rerun setup. Recipe changes invalidate the old setup
 attestation. First run a small diagnostic with a bounded per-trial cost limit;
 a successful setup alone does not test model access or inference behavior.
+
+## Task execution permissions
+
+The command-agent runs setup and task commands through Harbor's public
+`BaseInstalledAgent.exec_as_agent()` method, like ACP. It uses the environment's
+default task user instead of forcing a separate unprivileged account. In task
+images whose default user is root, commands can install system dependencies
+inside the disposable task container. An explicitly configured non-root user
+is not promoted to root. This is not host-root access.
+
+Recipe commands still receive a clean environment containing only fixed runtime
+settings and declared bindings. HOME remains the managed agent home; USER and
+LOGNAME reflect the actual task user. Staging assigns agent files to the task
+user without recursively changing ownership or permissions of benchmark data.
+Harbor continues to own the trial lifecycle and process cleanup.
+
+The container is the isolation boundary, not `env -i`: task root can inspect
+other processes and files inside that same container. The reviewed HF Sandbox
+creation path does not forward the parent control credential or parent Bucket
+mounts. Only the approved inference binding reaches recipe execution. Do not add
+control credentials, writable canonical storage, or privileged host mounts to
+task containers. This change does not repair the separate existing parent-worker
+control-credential and writable-Bucket boundary defect.
 
 ## Setup runners
 

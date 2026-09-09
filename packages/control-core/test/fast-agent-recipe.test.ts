@@ -18,10 +18,30 @@ afterEach(async () => {
   );
 });
 
-async function runRecipe(model: string, withInferenceKey = true) {
+async function runRecipe(
+  model: string,
+  options: {
+    inferenceKey?: string | null;
+    certificate?: "missing" | "lookup-failed";
+  } = {},
+) {
   const root = await mkdtemp(join(tmpdir(), "fast-agent-recipe-"));
   roots.push(root);
   await mkdir(join(root, "venv", "bin"), { recursive: true });
+  if (!options.certificate)
+    await writeFile(join(root, "ca bundle.pem"), "fixture CA bundle");
+  await writeFile(
+    join(root, "venv", "bin", "python"),
+    [
+      "#!/bin/sh",
+      '[ "$1" = "-c" ] || exit 7',
+      '[ "$2" = "import certifi; print(certifi.where())" ] || exit 8',
+      options.certificate === "lookup-failed"
+        ? "exit 6"
+        : 'printf "%s\\n" "$AGENT_HOME/ca bundle.pem"',
+    ].join("\n"),
+    { mode: 0o700 },
+  );
   // No agent or inference runs: this executable only checks credential isolation
   // and echoes argv. All credential markers are synthetic test values.
   await writeFile(
@@ -30,6 +50,8 @@ async function runRecipe(model: string, withInferenceKey = true) {
       "#!/bin/sh",
       '[ "$HF_TOKEN" = "$OPENAI_API_KEY" ] || exit 9',
       '[ "$HF_TOKEN" != "fixture-control" ] || exit 10',
+      '[ "$SSL_CERT_FILE" = "$AGENT_HOME/ca bundle.pem" ] || exit 11',
+      '[ -r "$SSL_CERT_FILE" ] || exit 12',
       'printf "%s\\n" "$@"',
     ].join("\n"),
     { mode: 0o700 },
@@ -47,15 +69,19 @@ async function runRecipe(model: string, withInferenceKey = true) {
         fastAgentWorkbenchStarter.run_command,
         // The inference credential assignment must not replace the parent shell's key.
         '[ "$HF_TOKEN" = "fixture-control" ]',
+        '[ "$SSL_CERT_FILE" = "/fixture/parent-ca.pem" ]',
       ].join("\n"),
     ],
     {
       env: {
         AGENT_HOME: root,
         AGENT_MODEL: model,
-        ...(withInferenceKey ? { OPENAI_API_KEY: "fixture-inference" } : {}),
+        ...(options.inferenceKey === null
+          ? {}
+          : { OPENAI_API_KEY: options.inferenceKey ?? "fixture-inference" }),
         HF_TOKEN: "fixture-control",
-        MODEL_BASE_URL: "https://router.huggingface.co/v1",
+        SSL_CERT_FILE: "/fixture/parent-ca.pem",
+        // No MODEL_BASE_URL: the native provider must choose its own URL.
         TASK_INSTRUCTION_PATH: "/fixture/instruction.txt",
         TASK_WORKSPACE: "/fixture/workspace",
         AGENT_RESULTS_PATH: "/fixture/results.json",
@@ -74,9 +100,7 @@ describe("fast-agent native HF recipe", () => {
     const result = await runRecipe(`openai/${model}:${provider}`);
     const args = result.stdout.trim().split("\n");
     expect(args[args.indexOf("--model") + 1]).toBe(`hf.${model}:${provider}`);
-    expect(args[args.indexOf("--base-url") + 1]).toBe(
-      "https://router.huggingface.co/v1",
-    );
+    expect(args).not.toContain("--base-url");
     expect(args).toContain("--results");
     expect(args).toContain("--trajectory-output");
     expect(result.stdout).not.toContain("fixture-inference");
@@ -104,15 +128,30 @@ describe("fast-agent native HF recipe", () => {
     },
   );
 
-  it("fails closed without the injected inference key instead of using a parent token", async () => {
-    await expect(
-      runRecipe("openai/example-org/model:together", false),
-    ).rejects.toMatchObject({
-      code: 1,
-      stdout: "",
-      stderr: expect.stringContaining("OPENAI_API_KEY: unbound variable"),
-    });
-  });
+  it.each([null, ""])(
+    "fails closed with a missing or empty inference key (%s)",
+    async (inferenceKey) => {
+      await expect(
+        runRecipe("openai/example-org/model:together", { inferenceKey }),
+      ).rejects.toMatchObject({
+        code: 1,
+        stdout: "",
+        stderr: expect.stringContaining("Injected inference key is missing or empty"),
+      });
+    },
+  );
+
+  it.each(["missing", "lookup-failed"] as const)(
+    "fails closed when the certifi bundle is %s",
+    async (certificate) => {
+      await expect(
+        runRecipe("hf.example-org/model:together", { certificate }),
+      ).rejects.toMatchObject({
+        code: certificate === "lookup-failed" ? 6 : 1,
+        stdout: "",
+      });
+    },
+  );
 
   it("does not add an inference credential to setup or durable recipe values", () => {
     const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);

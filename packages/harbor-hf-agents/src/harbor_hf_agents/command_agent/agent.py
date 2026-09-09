@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Literal, override
 
 from harbor.agents.capabilities import AgentCapabilities
-from harbor.agents.installed.base import with_prompt_template
+from harbor.agents.installed.base import BaseInstalledAgent, with_prompt_template
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 from harbor.models.trajectories import Trajectory
@@ -24,11 +24,7 @@ from pydantic import (
     model_validator,
 )
 
-from harbor_hf_agents.support.isolated_user import (
-    AGENT_HOME,
-    AGENT_USER,
-    IsolatedProviderAgent,
-)
+from harbor_hf_agents.support.isolated_user import AGENT_HOME
 
 type CommandBinding = Literal[
     "instruction_path",
@@ -95,7 +91,7 @@ class _StrictModel(BaseModel):
 
 
 class CommandSpec(_StrictModel):
-    """One unprivileged command and its explicitly typed environment bindings."""
+    """One task-user command and its explicitly typed environment bindings."""
 
     argv: list[StrictStr] | None = Field(default=None, min_length=1)
     script: StrictStr | None = Field(default=None, min_length=1)
@@ -197,7 +193,7 @@ def _read_config(
     return CommandAgentConfig.model_validate(source)
 
 
-class CommandAgent(IsolatedProviderAgent):
+class CommandAgent(BaseInstalledAgent):
     """Execute a strict customer recipe without harness or model special cases."""
 
     capabilities = AgentCapabilities(atif=True, native_config=True)
@@ -229,6 +225,7 @@ class CommandAgent(IsolatedProviderAgent):
             **kwargs,
         )
         self.command_config = _read_config(self.config_source)
+        self._command_home_ready = False
 
     @staticmethod
     @override
@@ -239,6 +236,38 @@ class CommandAgent(IsolatedProviderAgent):
     def get_version_command(self) -> str | None:
         return None
 
+    async def _prepare_command_home(self, environment: BaseEnvironment) -> None:
+        if self._command_home_ready:
+            return
+        # Match Harbor's ACP staging ownership; execution still selects its user
+        # through exec_as_agent, never an unconditional root/runuser override.
+        owner = shlex.quote(str(environment.default_user or "root"))
+        await self.exec_as_root(
+            environment,
+            command=(
+                f"install -d -m 0750 -o {owner} {shlex.quote(AGENT_HOME)} {_LOGS_PATH}"
+            ),
+        )
+        self._command_home_ready = True
+
+    async def _exec_clean(
+        self,
+        environment: BaseEnvironment,
+        command: str,
+        env: dict[str, str],
+    ) -> None:
+        forwarded = " ".join(f'{name}="${{{name}}}"' for name in sorted(env))
+        wrapped = (
+            f"env -i HOME={shlex.quote(AGENT_HOME)} "
+            f"NVM_DIR={shlex.quote(AGENT_HOME + '/.nvm')} "
+            'USER="$(id -un)" LOGNAME="$(id -un)" '
+            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
+            f"{forwarded} /bin/bash -lc {shlex.quote(command)}"
+        )
+        await self.exec_as_agent(
+            environment, command=wrapped, env=env, cwd=_WORKSPACE_PATH
+        )
+
     async def _stage_text(
         self,
         environment: BaseEnvironment,
@@ -248,14 +277,12 @@ class CommandAgent(IsolatedProviderAgent):
         content: str,
         executable: bool = False,
     ) -> None:
-        await self._ensure_isolated_agent_user(environment)
+        await self._prepare_command_home(environment)
         remote_parent = PurePosixPath(remote_path).parent.as_posix()
+        owner = shlex.quote(str(environment.default_user or "root"))
         await self.exec_as_root(
             environment,
-            command=(
-                f"install -d -m 0750 -o {AGENT_USER} -g {AGENT_USER} "
-                f"{shlex.quote(remote_parent)}"
-            ),
+            command=(f"install -d -m 0750 -o {owner} {shlex.quote(remote_parent)}"),
         )
         with tempfile.TemporaryDirectory(prefix="harbor-command-agent-") as temp_dir:
             source = Path(temp_dir) / local_path.name
@@ -265,7 +292,7 @@ class CommandAgent(IsolatedProviderAgent):
         await self.exec_as_root(
             environment,
             command=(
-                f"chown {AGENT_USER}:{AGENT_USER} {shlex.quote(remote_path)} && "
+                f"chown {owner} {shlex.quote(remote_path)} && "
                 f"chmod {'0700' if executable else '0600'} "
                 f"{shlex.quote(remote_path)}"
             ),
@@ -328,18 +355,17 @@ class CommandAgent(IsolatedProviderAgent):
         phase: Literal["setup", "run"],
         model_connection: dict[CommandBinding, str] | None = None,
     ) -> None:
-        await self._ensure_isolated_agent_user(environment)
+        await self._prepare_command_home(environment)
         body = await self._command_body(environment, spec, phase=phase)
         log_path = f"{_LOGS_PATH}/{phase}.log"
         command = (
             "set -o pipefail; "
             f"{{ {body}; }} 2>&1 | stdbuf -oL tee {shlex.quote(log_path)}"
         )
-        await self.exec_as_agent_clean(
+        await self._exec_clean(
             environment,
             command=command,
             env=self._binding_values(spec, model_connection=model_connection),
-            cwd=_WORKSPACE_PATH,
         )
 
     @override

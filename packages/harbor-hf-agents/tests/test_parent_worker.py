@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import huggingface_hub._sandbox as sandbox_module
@@ -14,11 +15,13 @@ from harbor.job import Job
 from harbor.models.agent.context import AgentContext
 from harbor.models.job.config import JobConfig
 from harbor.models.job.result import JobResult
+from harbor.models.task.config import EnvironmentConfig as TaskEnvironmentConfig
 from harbor.models.trial.config import AgentConfig, TaskConfig, TrialConfig
+from harbor.models.trial.paths import TrialPaths
 from harbor.models.trial.result import AgentInfo, TrialResult
 from harbor.trial.hooks import HookCallback, TrialEvent, TrialHookEvent
 from harbor.trial.trial import Trial
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, Sandbox
 
 from harbor_hf_agents.hf_sandbox import (
     LabeledHFSandboxEnvironment,
@@ -474,3 +477,39 @@ def test_resolves_only_the_fixed_inference_template(
     monkeypatch.setenv("HF_INFERENCE_TOKEN", "inference-test-value")
     with pytest.raises(RuntimeError, match="unsupported inference credential"):
         _resolve_inference_env({"OTHER_KEY": template})
+
+
+@pytest.mark.asyncio
+async def test_task_sandbox_creation_does_not_forward_parent_credentials_or_mounts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def create(**kwargs: object) -> SimpleNamespace:
+        calls.append(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(Sandbox, "create", create)
+    monkeypatch.setenv("HARBOR_HF_NAMESPACE", "test-namespace")
+    monkeypatch.setenv("HF_TOKEN", "fixture-control")
+    monkeypatch.setenv("HF_INFERENCE_TOKEN", "fixture-inference")
+    environment = LabeledHFSandboxEnvironment(
+        environment_dir=tmp_path,
+        environment_name="test-task",
+        session_id="test-session",
+        trial_paths=TrialPaths(trial_dir=tmp_path / "trial"),
+        task_env_config=TaskEnvironmentConfig(docker_image="python:3.12"),
+        run_label=RUN_ID,
+    )
+    monkeypatch.setattr(environment, "ensure_dirs", AsyncMock())
+    monkeypatch.setattr(environment, "_upload_environment_dir_after_start", AsyncMock())
+    await environment.start(False)
+    assert calls == [
+        {
+            "image": "python:3.12",
+            "flavor": "cpu-basic",
+            "idle_timeout": 600,
+            "forward_hf_token": False,
+        }
+    ]

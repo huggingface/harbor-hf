@@ -127,7 +127,8 @@ export const fastAgentWorkbenchStarter: AgentWorkbenchRecipeV1 = {
     '"$AGENT_HOME/venv/bin/fast-agent" --version',
   ].join("\n"),
   // This reviewed recipe selects fast-agent's native HF adapter. The process-local
-  // HF_TOKEN below is the injected inference key, never the control credential.
+  // HF_TOKEN is the inference key; certifi supplies verified TLS roots when the
+  // task image lacks a system trust store. Both mappings are process-local.
   run_command: [
     "set -eu",
     'case "$AGENT_MODEL" in',
@@ -135,11 +136,14 @@ export const fastAgentWorkbenchStarter: AgentWorkbenchRecipeV1 = {
     `  openai/*/*:*) harness_model="hf.\${AGENT_MODEL#openai/}" ;;`,
     '  *) printf "%s\\n" "Expected a full Hub model ID and HF provider from Workbench" >&2; exit 2 ;;',
     "esac",
+    ': "${OPENAI_API_KEY:?Injected inference key is missing or empty}"',
+    `ca_bundle="$("$AGENT_HOME/venv/bin/python" -c 'import certifi; print(certifi.where())')"`,
+    'test -r "$ca_bundle" || { printf "%s\\n" "certifi CA bundle is not readable" >&2; exit 1; }',
     [
       'HF_TOKEN="$OPENAI_API_KEY"',
+      'SSL_CERT_FILE="$ca_bundle"',
       '"$AGENT_HOME/venv/bin/fast-agent" go',
       '  --model "$harness_model"',
-      '  --base-url "$MODEL_BASE_URL"',
       '  --prompt-file "$TASK_INSTRUCTION_PATH"',
       '  --workspace "$TASK_WORKSPACE"',
       '  --home "$AGENT_HOME/runtime"',

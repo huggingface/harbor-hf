@@ -66,3 +66,25 @@ export function saveWorkbenchDraft(draft: WorkbenchDraft): boolean {
     return false;
   }
 }
+
+// Defer serialization as well as storage: neither belongs on the typing path.
+export function createWorkbenchDraftSaver(onSaved: (saved: boolean) => void) {
+  let pending: WorkbenchDraft | null = null;
+  let timer: number | undefined;
+  function flush() {
+    window.clearTimeout(timer);
+    timer = undefined;
+    if (!pending) return;
+    const draft = pending;
+    pending = null;
+    onSaved(saveWorkbenchDraft(draft));
+  }
+  return {
+    schedule(draft: WorkbenchDraft) {
+      pending = draft;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(flush, 400);
+    },
+    flush,
+  };
+}
