@@ -111,6 +111,7 @@ const document = {
     schemas: {
       ...embeddedRunRecord,
       ...embedSchema("RunState", schemas.runState),
+      ...embedSchema("RunPresentation", schemas.runPresentation),
       ...embedSchema("AgentTiming", schemas.agentTiming),
       RunView: {
         type: "object",
@@ -130,6 +131,14 @@ const document = {
             ],
           },
           result: { type: ["object", "null"], additionalProperties: true },
+          presentation_available: {
+            type: "boolean",
+            description:
+              "False when archive metadata cannot be validated or synchronized. Presentation is last-known only; null then means unknown, not unarchived. Ephemeral projection status, not durable metadata.",
+          },
+          presentation: {
+            anyOf: [{ $ref: "#/components/schemas/RunPresentation" }, { type: "null" }],
+          },
           agent_timing: { $ref: "#/components/schemas/AgentTiming" },
         },
       },
@@ -559,6 +568,57 @@ const document = {
             },
           },
           "404": error,
+        },
+      },
+    },
+    "/api/v1/runs/{run_id}/presentation": {
+      patch: {
+        summary: "Archive or restore shared Runs visibility (operator only)",
+        parameters: [runParameter],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["archived", "expected_revision"],
+                properties: {
+                  archived: { type: "boolean" },
+                  expected_revision: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: Number.MAX_SAFE_INTEGER,
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Current presentation; null means never archived",
+            content: {
+              "application/json": {
+                schema: {
+                  anyOf: [
+                    { $ref: "#/components/schemas/RunPresentation" },
+                    { type: "null" },
+                  ],
+                },
+              },
+            },
+          },
+          "400": { description: "Invalid request" },
+          "403": { description: "Operator or CSRF required" },
+          "409": {
+            description:
+              "Stale revision; validated current metadata synchronized for the next GET",
+          },
+          "503": {
+            description:
+              "Writes disabled or presentation unavailable; require validated synchronization before retrying",
+          },
         },
       },
     },

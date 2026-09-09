@@ -4,12 +4,15 @@ import type {
   AgentTimingV1,
   AttemptCostV1,
   RunRecordV1,
+  RunPresentationV1,
   RunStateV1,
 } from "@harbor-hf/contracts";
 import { sumAgentTiming } from "@harbor-hf/contracts/agent-timing";
 import {
   validateAttemptCost,
   validateRunRecord,
+  validateRunPresentation,
+  runPresentationPath,
   validateRunState,
 } from "@harbor-hf/contracts";
 import Database from "better-sqlite3";
@@ -34,6 +37,8 @@ export interface TrialSummary {
 }
 
 export interface RunView {
+  presentation_available?: boolean;
+  presentation?: RunPresentationV1 | null;
   agent_timing?: AgentTimingV1;
   record: RunRecordV1;
   state: RunStateV1;
@@ -189,6 +194,12 @@ function authoritativeAttemptCosts(
 export class Projection {
   private observations: readonly JobObservation[] = [];
   private observationsAt: string | null = null;
+  private presentationGeneration = 0;
+  private readonly presentationMutations = new Map<string, number>();
+
+  private notePresentationMutation(runId: string): void {
+    this.presentationMutations.set(runId, ++this.presentationGeneration);
+  }
 
   jobObservations(): { jobs: readonly JobObservation[]; observed_at: string | null } {
     return {
@@ -235,10 +246,19 @@ export class Projection {
     const columns = database.pragma("table_info(runs)") as Array<{ name: string }>;
     if (!columns.some((column) => column.name === "agent_timing_body"))
       database.exec("ALTER TABLE runs ADD COLUMN agent_timing_body TEXT");
+    if (!columns.some((column) => column.name === "presentation_body"))
+      database.exec("ALTER TABLE runs ADD COLUMN presentation_body TEXT");
+    if (!columns.some((column) => column.name === "presentation_available"))
+      database.exec(
+        "ALTER TABLE runs ADD COLUMN presentation_available INTEGER NOT NULL DEFAULT 0",
+      );
     return new Projection(database);
   }
 
   async rebuild(store: ObjectStore, jobs: readonly JobObservation[]): Promise<void> {
+    // Capture before any reads, including the asynchronous listing. This orders
+    // disposable cache writes, independently of durable presentation revisions.
+    const rebuildStart = this.presentationGeneration;
     const observedAt = new Date().toISOString();
     const entries = await store.list("runs");
     const keys = new Set(entries.map((entry) => entry.key));
@@ -256,6 +276,21 @@ export class Projection {
       if (!keys.has(stateKey)) continue;
       const record = validateRunRecord(await readJson(store, `runs/${runId}/run.json`));
       const state = validateRunState(await readJson(store, stateKey));
+      const presentationKey = runPresentationPath(runId);
+      // Display metadata must never gate execution/cancellation or orphan cleanup.
+      const lastKnownPresentation = this.run(runId)?.presentation ?? null;
+      let presentation = lastKnownPresentation;
+      let presentationAvailable = true;
+      try {
+        presentation = keys.has(presentationKey)
+          ? validateRunPresentation(await readJson(store, presentationKey))
+          : null;
+        if (presentation && presentation.run_id !== runId)
+          throw new Error("run presentation path does not match its id");
+      } catch {
+        presentation = lastKnownPresentation;
+        presentationAvailable = false;
+      }
       const resultKey = `runs/${runId}/job/result.json`;
       const result = keys.has(resultKey)
         ? asRecord(await readJson(store, resultKey))
@@ -296,6 +331,8 @@ export class Projection {
       const runJobs = jobs.filter((job) => job.run_id === runId);
       rows.push({
         view: {
+          presentation,
+          presentation_available: presentationAvailable,
           agent_timing: sumAgentTiming(trials.map((trial) => trial.result)),
           record,
           state,
@@ -314,11 +351,42 @@ export class Projection {
     }
 
     this.database.transaction(() => {
+      // Rebuilds can overlap. Retain cache writes committed since this read epoch,
+      // including equal-revision availability changes and null presentations.
+      const cached = this.database
+        .prepare("SELECT run_id, presentation_body, presentation_available FROM runs")
+        .all() as Array<{
+        run_id: string;
+        presentation_body: string | null;
+        presentation_available: number;
+      }>;
+      const existing = new Map(
+        cached.map((row) => [
+          row.run_id,
+          {
+            presentation: row.presentation_body
+              ? validateRunPresentation(JSON.parse(row.presentation_body))
+              : null,
+            available: Boolean(row.presentation_available),
+          },
+        ]),
+      );
+      for (const { view } of rows) {
+        const current = existing.get(view.record.run_id);
+        if (
+          current &&
+          ((this.presentationMutations.get(view.record.run_id) ?? 0) > rebuildStart ||
+            (current.presentation?.revision ?? 0) > (view.presentation?.revision ?? 0))
+        ) {
+          view.presentation = current?.presentation ?? null;
+          view.presentation_available = current?.available ?? false;
+        }
+      }
       this.database.exec(
         "DELETE FROM trials; DELETE FROM parent_jobs; DELETE FROM runs;",
       );
       const insertRun = this.database.prepare(
-        "INSERT INTO runs (run_id, created_at, record_body, state_body, status, result_body, agent_timing_body) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO runs (run_id, created_at, record_body, state_body, status, result_body, agent_timing_body, presentation_body, presentation_available) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       );
       const insertTrial = this.database.prepare(
         "INSERT INTO trials (run_id, trial_name, reward, cost_usd, status, result_body) VALUES (?, ?, ?, ?, ?, ?)",
@@ -335,6 +403,8 @@ export class Projection {
           view.status,
           view.result ? JSON.stringify(view.result) : null,
           JSON.stringify(view.agent_timing),
+          view.presentation ? JSON.stringify(view.presentation) : null,
+          view.presentation_available ? 1 : 0,
         );
         for (const trial of trials)
           insertTrial.run(
@@ -356,14 +426,42 @@ export class Projection {
           JSON.stringify(job),
         );
     })();
+    // Advance only after a successful synchronous transaction. Even an unchanged
+    // validated snapshot fences older overlapping reads (valid or failed).
+    for (const { view } of rows) this.notePresentationMutation(view.record.run_id);
     this.observations = structuredClone(jobs);
     this.observationsAt = observedAt;
+  }
+
+  markPresentationUnavailable(runId: string): void {
+    this.database
+      .prepare("UPDATE runs SET presentation_available = 0 WHERE run_id = ?")
+      .run(runId);
+    this.notePresentationMutation(runId);
+  }
+
+  updatePresentation(runId: string, presentation: RunPresentationV1 | null): void {
+    const current = this.run(runId);
+    if ((current?.presentation?.revision ?? 0) > (presentation?.revision ?? 0)) return;
+    const result = this.database
+      .prepare(
+        "UPDATE runs SET presentation_body = ?, presentation_available = 1 WHERE run_id = ?",
+      )
+      .run(
+        presentation ? JSON.stringify(validateRunPresentation(presentation)) : null,
+        runId,
+      );
+    if (result.changes !== 1)
+      throw new Error(
+        "run presentation projection update failed; refetch before retry",
+      );
+    this.notePresentationMutation(runId);
   }
 
   private readRuns(runId?: string): RunView[] {
     const rows = this.database
       .prepare(
-        `SELECT record_body, state_body, status, result_body, agent_timing_body FROM runs ${
+        `SELECT record_body, state_body, status, result_body, agent_timing_body, presentation_body, presentation_available FROM runs ${
           runId === undefined
             ? "ORDER BY created_at DESC, run_id DESC"
             : "WHERE run_id = ?"
@@ -375,8 +473,14 @@ export class Projection {
       status: RunStatus;
       result_body: string | null;
       agent_timing_body: string | null;
+      presentation_body: string | null;
+      presentation_available: number;
     }>;
     return rows.map((row) => ({
+      presentation_available: Boolean(row.presentation_available),
+      presentation: row.presentation_body
+        ? validateRunPresentation(JSON.parse(row.presentation_body))
+        : null,
       // Older disposable projections acquire measurements at the next rebuild.
       ...(row.agent_timing_body
         ? { agent_timing: JSON.parse(row.agent_timing_body) as AgentTimingV1 }

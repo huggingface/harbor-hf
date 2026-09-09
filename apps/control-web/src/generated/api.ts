@@ -1111,6 +1111,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/presentation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Archive or restore shared Runs visibility (operator only) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        expected_revision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Current presentation; null means never archived */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunPresentation"] | null;
+                    };
+                };
+                /** @description Invalid request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Operator or CSRF required */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Stale revision; validated current metadata synchronized for the next GET */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Writes disabled or presentation unavailable; require validated synchronization before retrying */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/pause": {
         parameters: {
             query?: never;
@@ -1580,6 +1653,17 @@ export interface components {
                 started_at: string;
             }[];
         };
+        /** RunPresentationV1 */
+        RunPresentation: {
+            /** @constant */
+            schema_version: "v1";
+            run_id: string;
+            revision: number;
+            /** Format: date-time */
+            updated_at: string;
+            actor: string;
+            archived: boolean;
+        };
         /**
          * AgentTimingV1
          * @description Display-only sum of measured native agent intervals in current projected trial results; not elapsed job time or lifetime retry usage.
@@ -1598,6 +1682,9 @@ export interface components {
             result: {
                 [key: string]: unknown;
             } | null;
+            /** @description False when archive metadata cannot be validated or synchronized. Presentation is last-known only; null then means unknown, not unarchived. Ephemeral projection status, not durable metadata. */
+            presentation_available?: boolean;
+            presentation?: components["schemas"]["RunPresentation"] | null;
             agent_timing?: components["schemas"]["AgentTiming"];
         };
         /** TrialProgressV1 */

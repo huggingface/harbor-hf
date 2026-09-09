@@ -1,3 +1,7 @@
+import {
+  PresentationConflictError,
+  PresentationUpdateError,
+} from "@harbor-hf/control-core";
 import { readFile } from "node:fs/promises";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
@@ -257,6 +261,15 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.setErrorHandler((failure, request, reply) => {
     if (reply.sent) return;
+    if (failure instanceof PresentationConflictError)
+      return error(reply, 409, "presentation_conflict", failure.message);
+    if (failure instanceof PresentationUpdateError) {
+      request.log.error(
+        { code: "presentation_update_failed" },
+        "Archive update failed",
+      );
+      return error(reply, 503, "presentation_update_failed", failure.message);
+    }
     if (failure instanceof OAuthCallbackError) {
       const code = failure.denied ? "access_denied" : "oauth_failed";
       request.log.error({ oauth_stage: failure.stage, code }, "OAuth callback failed");
@@ -542,6 +555,23 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     const run = runtime.projection.run(run_id);
     if (!run) throw new Error("run was not found");
     return run;
+  });
+
+  app.patch("/api/v1/runs/:run_id/presentation", async (request) => {
+    const actor = requireActor(request);
+    const { run_id } = runParameters.parse(request.params);
+    const input = z
+      .strictObject({
+        archived: z.boolean(),
+        expected_revision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+      })
+      .parse(request.body);
+    return runtime.service.setPresentation(
+      run_id,
+      input.archived,
+      input.expected_revision,
+      actor.subject,
+    );
   });
 
   for (const [action, desired] of [

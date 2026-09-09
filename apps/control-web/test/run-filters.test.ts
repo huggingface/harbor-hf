@@ -31,6 +31,7 @@ describe("Runs navigation filters", () => {
     "defaults invalid roles to All: %s",
     (search) => {
       expect(readRunFilters(new URLSearchParams(search))).toEqual({
+        archive: "not-archived",
         role: "all",
         q: "",
       });
@@ -39,7 +40,11 @@ describe("Runs navigation filters", () => {
   it.each(["diagnostic", "final"])("round-trips exact role and search: %s", (role) => {
     const params = updateRunFilters(new URLSearchParams("other=kept"), "role", role);
     const next = updateRunFilters(params, "q", "recipe + ü");
-    expect(readRunFilters(next)).toEqual({ role, q: "recipe + ü" });
+    expect(readRunFilters(next)).toEqual({
+      archive: "not-archived",
+      role,
+      q: "recipe + ü",
+    });
     expect(next.get("other")).toBe("kept");
     expect(params.has("q")).toBe(false);
     expect(updateRunFilters(next, "q", "").has("q")).toBe(false);
@@ -79,4 +84,57 @@ describe("Runs navigation filters", () => {
     );
     expect(matchesRunFilters(record, { role: "all", q: "not-found" })).toBe(false);
   });
+});
+
+it.each(["", "?archive=invalid", "?archive=ACTIVE", "?archive=false"])(
+  "defaults archive visibility safely: %s",
+  (search) => {
+    const filters = readRunFilters(new URLSearchParams(search));
+    expect(filters.archive).toBe("not-archived");
+    expect(
+      matchesRunFilters(record, filters, { archived: true } as NonNullable<
+        import("../src/api").RunView["presentation"]
+      >),
+    ).toBe(false);
+    expect(matchesRunFilters(record, filters)).toBe(true);
+  },
+);
+it("combines archive, role and query without discarding URL parameters", () => {
+  const params = updateRunFilters(
+    new URLSearchParams("role=diagnostic&q=recipe-one&other=kept"),
+    "archive",
+    "archived",
+  );
+  const presentation = { archived: true } as NonNullable<
+    import("../src/api").RunView["presentation"]
+  >;
+  expect(matchesRunFilters(record, readRunFilters(params), presentation)).toBe(true);
+  expect(matchesRunFilters(record, readRunFilters(params))).toBe(false);
+  params.set("role", "final");
+  expect(matchesRunFilters(record, readRunFilters(params), presentation)).toBe(false);
+  expect(updateRunFilters(params, "archive", "not-archived").has("archive")).toBe(
+    false,
+  );
+  expect(updateRunFilters(params, "archive", "all").get("other")).toBe("kept");
+});
+
+it("keeps unknown archives discoverable without discarding last-known archived state", () => {
+  const filters = { role: "all", q: "", archive: "not-archived" } as const;
+  expect(matchesRunFilters(record, filters, null, false)).toBe(true);
+  expect(matchesRunFilters(record, { ...filters, archive: "all" }, null, false)).toBe(
+    true,
+  );
+  expect(
+    matchesRunFilters(record, { ...filters, archive: "archived" }, null, false),
+  ).toBe(false);
+  const archived = { archived: true } as NonNullable<
+    import("../src/api").RunView["presentation"]
+  >;
+  expect(matchesRunFilters(record, filters, archived, false)).toBe(false);
+  expect(
+    matchesRunFilters(record, { ...filters, archive: "archived" }, archived, false),
+  ).toBe(true);
+  expect(matchesRunFilters(record, { ...filters, role: "final" }, null, false)).toBe(
+    false,
+  );
 });

@@ -178,10 +178,23 @@ describe("control API", () => {
             ]
           : [],
       );
+      const archived = status !== "queued";
+      const currentRevision =
+        runtime.projection.run(record.run_id)?.presentation?.revision ?? 0;
+      await runtime.service.setPresentation(
+        record.run_id,
+        archived,
+        currentRevision,
+        "fixture-subject",
+      );
       const response = await app.inject({ url: `/api/v1/runs/${record.run_id}` });
       expect(response.statusCode).toBe(200);
       const view = response.json();
       expect(view.status).toBe(status);
+      expect(view.presentation?.archived ?? false).toBe(archived);
+      expect(view.presentation_available).toBe(true);
+      expect(single({ ...view, presentation_available: "false" })).toBe(false);
+      expect(single({ ...view, presentation: { archived: true } })).toBe(false);
       expect(single(view), JSON.stringify(single.errors)).toBe(true);
       expect(view.record.harbor_job_config).toEqual(config);
       expect(view.record).not.toHaveProperty("$defs");
@@ -1147,5 +1160,171 @@ describe("configurable launch", () => {
     inspect.mockResolvedValue({ ...validation, credentials_available: false });
     expect((await app.inject(request)).statusCode).toBe(503);
     expect(runtime.projection.listRuns()).toEqual([]);
+  });
+});
+
+describe("archive API", () => {
+  it("uses projected GET/list responses, revision validation and shared operator writes", async () => {
+    const { runtime, app } = await setup();
+    const { run } = await runtime.service.submitPreset(
+      submission,
+      "archive-api",
+      "fixture-subject",
+    );
+    const url = `/api/v1/runs/${run.run_id}/presentation`;
+    const patch = (payload: object) => app.inject({ method: "PATCH", url, payload });
+    const initialNoOp = await patch({ archived: false, expected_revision: 0 });
+    expect(initialNoOp.statusCode).toBe(200);
+    expect(initialNoOp.json()).toBeNull();
+    expect(
+      (await patch({ archived: true, expected_revision: 0 })).json(),
+    ).toMatchObject({ archived: true, revision: 1 });
+    expect((await patch({ archived: true, expected_revision: 0 })).statusCode).toBe(
+      409,
+    );
+    for (const payload of [
+      { archived: "true", expected_revision: 1 },
+      { archived: false, expected_revision: -1 },
+      { archived: false, expected_revision: 1.5 },
+      { archived: false },
+      { archived: true, expected_revision: 1, actor: "forged" },
+    ])
+      expect((await patch(payload)).statusCode).toBe(400);
+    const read = vi.spyOn(runtime.store, "read");
+    const list = vi.spyOn(runtime.store, "list");
+    expect(
+      (await app.inject(`/api/v1/runs/${run.run_id}`)).json().presentation.archived,
+    ).toBe(true);
+    expect(
+      (await app.inject("/api/v1/runs")).json().runs[0].presentation.archived,
+    ).toBe(true);
+    expect(read).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    runtime.config.write_mode = "disabled";
+    expect(
+      (await patch({ archived: false, expected_revision: 1 })).json().error.code,
+    ).toBe("write_disabled");
+    vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+      subject: "fixture-reader",
+      username: "fixture-reader",
+      role: "reader",
+      transport: "development",
+    });
+    expect((await patch({ archived: false, expected_revision: 1 })).statusCode).toBe(
+      403,
+    );
+    expect((await app.inject(`/api/v1/runs/${run.run_id}`)).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("requires session CSRF and returns safe uncertain-write errors", async () => {
+    const { runtime, app } = await setup();
+    const { run } = await runtime.service.submitPreset(
+      submission,
+      "archive-csrf",
+      "fixture-subject",
+    );
+    runtime.config.auth_mode = "oauth";
+    const session = runtime.auth.store.createSession(
+      "fixture-subject",
+      "fixture-user",
+      3600,
+    );
+    vi.spyOn(runtime.auth, "role").mockResolvedValue("operator");
+    const url = `/api/v1/runs/${run.run_id}/presentation`;
+    const payload = { archived: true, expected_revision: 0 };
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url,
+          payload,
+          cookies: { hhf_session: session.id },
+        })
+      ).json().error.code,
+    ).toBe("csrf_rejected");
+    const request = {
+      method: "PATCH" as const,
+      url,
+      payload,
+      cookies: { hhf_session: session.id },
+      headers: { "x-csrf-token": session.csrf },
+    };
+    vi.spyOn(runtime.projection, "updatePresentation").mockImplementationOnce(() => {
+      throw new Error("private-fixture-marker");
+    });
+    const failure = await app.inject(request);
+    expect(failure.statusCode).toBe(503);
+    expect(failure.json().error.code).toBe("presentation_update_failed");
+    expect(failure.body).not.toContain("private-fixture-marker");
+    const getView = () =>
+      app.inject({
+        ...request,
+        method: "GET",
+        url: `/api/v1/runs/${run.run_id}`,
+        payload: undefined,
+      });
+    expect((await getView()).json()).toMatchObject({
+      presentation: null,
+      presentation_available: false,
+    });
+    expect((await app.inject(request)).statusCode).toBe(409);
+    expect((await getView()).json()).toMatchObject({
+      presentation: { revision: 1 },
+      presentation_available: true,
+    });
+    expect(
+      (
+        await app.inject({
+          ...request,
+          payload: { archived: false, expected_revision: 1 },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          ...request,
+          method: "GET",
+          url: `/api/v1/runs/${run.run_id}`,
+          payload: undefined,
+        })
+      ).json().presentation.revision,
+    ).toBe(2);
+
+    await app.close();
+  });
+  it("returns fresh unavailable flags in SQL-only list/detail and rejects malformed writes without loss", async () => {
+    const { runtime, app } = await setup();
+    const { run } = await runtime.service.submitPreset(
+      submission,
+      "archive-invalid",
+      "fixture-subject",
+    );
+    const path = `runs/${run.run_id}/presentation.json`;
+    await putJson(runtime.store, path, {});
+    await runtime.service.refresh();
+    const read = vi.spyOn(runtime.store, "read");
+    const list = vi.spyOn(runtime.store, "list");
+    expect((await app.inject(`/api/v1/runs/${run.run_id}`)).json()).toMatchObject({
+      presentation: null,
+      presentation_available: false,
+    });
+    expect((await app.inject("/api/v1/runs")).json().runs[0]).toMatchObject({
+      presentation: null,
+      presentation_available: false,
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    const put = vi.spyOn(runtime.store, "put");
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/runs/${run.run_id}/presentation`,
+      payload: { archived: true, expected_revision: 0 },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("presentation_update_failed");
+    expect(put).not.toHaveBeenCalled();
+    await app.close();
   });
 });

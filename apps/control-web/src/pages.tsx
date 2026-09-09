@@ -62,6 +62,7 @@ import {
 import { usePricingPreferences } from "./pricing-store";
 import { RunConfiguration } from "./run-configuration";
 import { RunDiagnostics, RunDiagnosticsSummary } from "./run-diagnostics";
+import { RunArchive } from "./run-archive";
 import { matchesRunFilters, readRunFilters, updateRunFilters } from "./run-filters";
 import { runIdentity } from "./run-identity";
 import { nativeScore } from "./run-summary";
@@ -498,22 +499,40 @@ export function OverviewPage() {
 export function RunsPage() {
   const query = useRuns();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { role, q } = readRunFilters(searchParams);
+  const { role, q, archive } = readRunFilters(searchParams);
   const { preferences } = usePricingPreferences();
   const rows = useMemo(
     () =>
       scenarioRows(
-        (query.data ?? []).filter((run) => matchesRunFilters(run.record, { role, q })),
+        (query.data ?? []).filter((run) =>
+          matchesRunFilters(
+            run.record,
+            { role, q, archive },
+            run.presentation,
+            run.presentation_available,
+          ),
+        ),
         preferences,
       ),
-    [query.data, preferences, role, q],
+    [query.data, preferences, role, q, archive],
   );
   const columns = useMemo<ColumnDef<ScenarioRun>[]>(
     () => [
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ row }) => <RunStatusTiming run={row.original} />,
+        cell: ({ row }) => (
+          <>
+            <RunStatusTiming run={row.original} />
+            {row.original.presentation?.archived ? <Badge>Archived</Badge> : null}
+            {row.original.presentation_available === false ? (
+              <Badge>
+                Archive state unavailable
+                {row.original.presentation ? " (last known)" : " (unknown)"}
+              </Badge>
+            ) : null}
+          </>
+        ),
       },
       {
         id: "role",
@@ -640,6 +659,23 @@ export function RunsPage() {
         <Link to="/workbench">New Workbench run</Link>
       </nav>
       <div className="mb-4 flex flex-wrap items-end gap-4">
+        <label className="grid gap-1 text-sm" htmlFor="runs-archive">
+          Archive visibility
+          <select
+            id="runs-archive"
+            className="rounded border border-slate-700 bg-slate-950 p-2"
+            value={archive}
+            onChange={(event) =>
+              setSearchParams(
+                updateRunFilters(searchParams, "archive", event.target.value),
+              )
+            }
+          >
+            <option value="not-archived">Not archived</option>
+            <option value="archived">Archived</option>
+            <option value="all">All</option>
+          </select>
+        </label>
         <label className="grid gap-1 text-sm" htmlFor="runs-role">
           Run role
           <select
@@ -763,6 +799,14 @@ export function RunPage() {
         description={item.record.run_id}
         action={<RunActions run={item} />}
       />
+      {item.presentation?.archived ? <Badge>Archived</Badge> : null}
+      {item.presentation_available === false ? (
+        <p role="status">
+          Archive state unavailable{item.presentation ? " (last known)" : " (unknown)"}.
+          Archive changes are disabled until synchronized.
+        </p>
+      ) : null}
+      <RunArchive key={item.record.run_id} run={item} />
       <RunSummaryCards run={item} />
       <PricingPanel result={item.result} />
       <RunWaffle run={item} />

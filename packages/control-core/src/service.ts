@@ -1,9 +1,11 @@
-import type { RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
+import type { RunRecordV1, RunStateV1, RunPresentationV1 } from "@harbor-hf/contracts";
 import {
   canonicalJson,
   runId,
   runRecordPath,
   runStatePath,
+  runPresentationPath,
+  validateRunPresentation,
   validateRunRecord,
   validateRunState,
 } from "@harbor-hf/contracts";
@@ -113,6 +115,18 @@ function initialState(record: RunRecordV1): RunStateV1 {
     actor: record.submitted_by,
     parent_jobs: [],
   };
+}
+
+export class PresentationConflictError extends Error {
+  constructor() {
+    super("Archive revision changed; reload before retrying");
+  }
+}
+
+export class PresentationUpdateError extends Error {
+  constructor() {
+    super("Archive update could not be confirmed; refetch before retrying");
+  }
 }
 
 export class ControlService {
@@ -269,6 +283,60 @@ export class ControlService {
     });
     await this.refresh();
     return result;
+  }
+
+  async setPresentation(
+    runIdValue: string,
+    archived: boolean,
+    expectedRevision: number,
+    actor: string,
+  ): Promise<RunPresentationV1 | null> {
+    if (
+      typeof archived !== "boolean" ||
+      !Number.isSafeInteger(expectedRevision) ||
+      expectedRevision < 0
+    )
+      throw new Error("invalid presentation request");
+    return this.withRunLock(runIdValue, async () => {
+      if (!this.projection.run(runIdValue)) throw new Error("run was not found");
+      try {
+        let current: RunPresentationV1 | null = null;
+        try {
+          current = validateRunPresentation(
+            await readJson(this.store, runPresentationPath(runIdValue)),
+          );
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        if (current && current.run_id !== runIdValue)
+          throw new Error("presentation identity mismatch");
+        if ((current?.revision ?? 0) !== expectedRevision) {
+          // Even an uncertain previous write must converge on the next SQL GET.
+          this.projection.updatePresentation(runIdValue, current);
+          throw new PresentationConflictError();
+        }
+        if ((current?.archived ?? false) === archived) {
+          this.projection.updatePresentation(runIdValue, current);
+          return current;
+        }
+        const next = validateRunPresentation({
+          schema_version: "v1",
+          run_id: runIdValue,
+          archived,
+          revision: expectedRevision + 1,
+          updated_at: new Date().toISOString(),
+          actor,
+        });
+        await putJson(this.store, runPresentationPath(runIdValue), next);
+        this.projection.updatePresentation(runIdValue, next);
+        return next;
+      } catch (error) {
+        if (error instanceof PresentationConflictError) throw error;
+        this.projection.markPresentationUnavailable(runIdValue);
+        // Never expose provider errors or private authentication subjects.
+        throw new PresentationUpdateError();
+      }
+    });
   }
 
   async setDesiredState(

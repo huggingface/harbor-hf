@@ -5,6 +5,7 @@ export type * from "./attempt-cost-v1.js";
 export type * from "./benchmark-preset-v1.js";
 export type * from "./browser-pricing-v1.js";
 export type * from "./harbor-job-config-v1.js";
+export type * from "./run-presentation-v1.js";
 export type * from "./run-record-v1.js";
 export type * from "./run-state-v1.js";
 export type * from "./trial-progress-v1.js";
