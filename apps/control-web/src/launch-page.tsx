@@ -750,11 +750,14 @@ function LaunchForm({ search }: { search: string }) {
                 })
               }
             />
-            <label className="text-sm">
-              Sandbox idle timeout
+            <div>
+              <label className="text-sm" htmlFor="sandbox-idle-timeout">
+                Sandbox idle timeout
+              </label>
               <input
                 className={inputClass}
-                value={String(envKwargs.job_timeout ?? "30m")}
+                id="sandbox-idle-timeout"
+                value={String(envKwargs.job_timeout ?? "none")}
                 onChange={(event) =>
                   change({
                     ...draft,
@@ -766,7 +769,20 @@ function LaunchForm({ search }: { search: string }) {
                   })
                 }
               />
-            </label>
+              <span className="mt-1 block text-xs text-slate-400">
+                Keep this set to <code>none</code> until the fixed Sandbox server is
+                deployed. See{" "}
+                <a
+                  className="underline"
+                  href="https://github.com/huggingface/sandbox-server/pull/21"
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  sandbox-server PR 21
+                </a>
+                .
+              </span>
+            </div>
             <label className="text-sm">
               Post-trial cost limit (USD)
               <input

@@ -12,7 +12,7 @@ const config = {
   agents: [agent],
   environment: {
     type: "hf-sandbox",
-    kwargs: { flavor: "cpu-upgrade", job_timeout: "15m" },
+    kwargs: { flavor: "cpu-upgrade", job_timeout: "none" },
     env: { LANG: "C.UTF-8" },
   },
   n_attempts: 2,
@@ -30,7 +30,28 @@ describe("direct native configuration", () => {
         ...config,
         environment: { ...config.environment, kwargs: { flavor: "a100-large" } },
       }).environment,
-    ).toMatchObject({ kwargs: { flavor: "a100-large" } });
+    ).toMatchObject({
+      kwargs: { flavor: "a100-large", job_timeout: "none" },
+    });
+  });
+  it("disables the Sandbox idle timeout until the upstream fix is deployed", () => {
+    expect(
+      prepare({
+        ...config,
+        environment: { type: "hf-sandbox", kwargs: { flavor: "cpu-basic" } },
+      }).environment,
+    ).toMatchObject({
+      kwargs: { flavor: "cpu-basic", job_timeout: "none" },
+    });
+    expect(() =>
+      prepare({
+        ...config,
+        environment: {
+          type: "hf-sandbox",
+          kwargs: { flavor: "cpu-basic", job_timeout: "30m" },
+        },
+      }),
+    ).toThrow("https://github.com/huggingface/sandbox-server/pull/21");
   });
   it("preserves hardware, native options, sources, agents, retries, and false values", () => {
     const input = {
@@ -49,7 +70,7 @@ describe("direct native configuration", () => {
       agents: input.agents,
       tasks: input.tasks,
       environment: {
-        kwargs: { flavor: "cpu-upgrade", job_timeout: "15m", run_label: id },
+        kwargs: { flavor: "cpu-upgrade", job_timeout: "none", run_label: id },
         env: { LANG: "C.UTF-8" },
       },
     });

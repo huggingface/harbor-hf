@@ -180,8 +180,17 @@ environment:
   type: hf-sandbox
   kwargs:
     flavor: cpu-upgrade
-    job_timeout: 30m
+    job_timeout: none
 ```
+
+The `none` value is a temporary stopgap for
+[huggingface/sandbox-server#21](https://github.com/huggingface/sandbox-server/pull/21).
+The current Sandbox server can stop a running foreground command when its idle
+timer expires. Remove the stopgap only after the correction is merged, the fixed
+server is deployed, and a foreground command runs for more than 30 minutes in a
+canary. Follow the
+[stopgap removal checklist](2026-09-09-sandbox-idle-timeout-stopgap-removal.md).
+Harbor phase timeouts and cleanup still bound the work during this period.
 
 Harbor-HF MAY replace `type: hf-sandbox` with its labeled environment adapter
 when it compiles the final job. The compiler MUST preserve the native

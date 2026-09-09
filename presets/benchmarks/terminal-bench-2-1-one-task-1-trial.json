@@ -17,7 +17,7 @@
       "type": "hf-sandbox",
       "kwargs": {
         "flavor": "cpu-upgrade",
-        "job_timeout": "30m"
+        "job_timeout": "none"
       }
     },
     "agent_timeout_multiplier": 4,

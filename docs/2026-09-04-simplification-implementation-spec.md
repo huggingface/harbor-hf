@@ -102,7 +102,7 @@ A preset submission creates this immutable record:
       "import_path": "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
       "kwargs": {
         "flavor": "cpu-basic",
-        "job_timeout": "30m",
+        "job_timeout": "none",
         "run_label": "run-19ecb4608a42c1e9f4610f25"
       }
     }
@@ -210,9 +210,16 @@ A benchmark preset contains `schema_version`, `benchmark`, `preset`,
 `n_concurrent_trials` and the native `environment` object. The environment type
 is `hf-sandbox`. Its native `kwargs.flavor` value is limited to `cpu-basic` or
 `cpu-upgrade`, so a preset cannot select paid accelerator hardware. The
-environment also keeps the reviewed native `kwargs.job_timeout` value. The job
-can contain timeout multipliers, `retry` and `artifacts`. It cannot set paths,
-agents, credentials, user agents, custom environments or source jobs.
+environment also keeps the reviewed native `kwargs.job_timeout` value. This
+value is temporarily `none` because
+[huggingface/sandbox-server#21](https://github.com/huggingface/sandbox-server/pull/21)
+is not yet deployed. Remove this stopgap only after the correction is merged,
+the fixed server is deployed, and a foreground command runs for more than 30
+minutes in a canary. Follow the
+[stopgap removal checklist](2026-09-09-sandbox-idle-timeout-stopgap-removal.md).
+The job can contain timeout multipliers, `retry` and
+`artifacts`. It cannot set paths, agents, credentials, user agents, custom
+environments or source jobs.
 
 An agent preset contains `schema_version`, `agent`, `version`, `harbor_agent`,
 `reasoning_option` and `reasoning_values`. `harbor_agent` selects `name` or

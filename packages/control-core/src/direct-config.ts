@@ -10,6 +10,10 @@ import {
   ROUTER_URL,
 } from "./hf-config.js";
 
+const SANDBOX_IDLE_TIMEOUT_STOPGAP = "none";
+const SANDBOX_IDLE_TIMEOUT_FIX =
+  "https://github.com/huggingface/sandbox-server/pull/21";
+
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error(`${label} must be an object`);
@@ -121,11 +125,10 @@ export function prepareDirectJobConfig(
     throw new Error("HF Sandbox flavor must be a string");
   if (
     kwargs.job_timeout !== undefined &&
-    (typeof kwargs.job_timeout !== "string" ||
-      !/^[1-9][0-9]*(s|m|h)$/.test(kwargs.job_timeout))
+    kwargs.job_timeout !== SANDBOX_IDLE_TIMEOUT_STOPGAP
   )
     throw new Error(
-      "Sandbox idle timeout must be a positive duration, for example 30m",
+      `Sandbox idle timeout must stay disabled with job_timeout="none" until ${SANDBOX_IDLE_TIMEOUT_FIX} is merged and deployed`,
     );
   const verifier = record(input.verifier ?? {}, "verifier");
   admittedEnvironment(verifier.env);
@@ -139,7 +142,14 @@ export function prepareDirectJobConfig(
     environment: {
       import_path: LABELED_ENVIRONMENT,
       env: admittedEnvironment(environment.env),
-      kwargs: { flavor: "cpu-basic", job_timeout: "30m", ...kwargs, run_label: runId },
+      // Remove this stopgap after the fixed Sandbox server is deployed and a
+      // foreground command has passed a canary longer than 30 minutes.
+      kwargs: {
+        flavor: "cpu-basic",
+        job_timeout: SANDBOX_IDLE_TIMEOUT_STOPGAP,
+        ...kwargs,
+        run_label: runId,
+      },
     },
   });
 }
