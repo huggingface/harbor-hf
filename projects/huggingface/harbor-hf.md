@@ -636,3 +636,18 @@ Approved at: 2026-09-09T13:54:52.918279+00:00
   and unfinished observations distinct from proven running execution.
 - No remote publication, PR creation, deployment, merge, live runs, inference,
   credential movement, public demo listener, or resource mutation.
+
+### Publish stable timing and compact results follow-up (2026-09-09)
+
+Approved at: 2026-09-09T15:18:35.910880+00:00
+
+- Direct approval: the user asked to see the changes, push the branch and open
+  the follow-up PR, noting that additional small tweaks would follow.
+- Publish the reviewed stable-timing and compact-results branch and open a PR
+  against the canonical repository. Include validation limitations and the
+  inspected Harbor source files. Privacy-review all commits, diff and metadata.
+- Prepare a loopback-only synthetic preview of this branch using the existing
+  read-only fixture server; no real control API, credentials or inference.
+- Additional unspecified tweaks await the user's concrete request.
+- No merge, deployment, live run, paid resource, public demo listener, credential
+  transfer, upstream Harbor publication or execution-policy change is authorized.
