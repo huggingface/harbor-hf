@@ -42,6 +42,7 @@ jobs:
       - run: uv run slophammer-py dry .
       - run: uv run pip-audit
       - run: uv run slophammer-py check .
+      - run: python3 packages/harbor-hf-agents/sdk-backport/build.py
       - run: uv sync --all-groups --locked
         working-directory: packages/harbor-hf-agents
       - run: uv run ruff check .

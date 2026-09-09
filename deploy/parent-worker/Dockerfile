@@ -17,7 +17,8 @@ RUN apt-get update \
 COPY --from=uv /uv /usr/local/bin/uv
 COPY packages/harbor-hf-agents /opt/harbor-hf-agents
 
-RUN uv sync \
+RUN python /opt/harbor-hf-agents/sdk-backport/build.py \
+    && uv sync \
         --project /opt/harbor-hf-agents \
         --frozen \
         --no-dev \

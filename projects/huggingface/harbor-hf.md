@@ -605,3 +605,26 @@ Approved at: 2026-09-09T17:44:31.882149+00:00
 - The user explicitly approved preparing a Harbor-HF pull request consuming the reviewed Sandbox SDK terminal-result fix, alongside its upstream issue and PR.
 - Implement a reproducible temporary dependency pin/build for the parent-worker SDK, with source/hash provenance, offline tests, documentation and explicit removal criteria. A local patched wheel build is approved. Preserve Harbor-owned execution, results, retry policy, task configuration and all unrelated work.
 - Local commits, topic branch push and one Harbor-HF pull request are approved after checks and privacy review. No merge, deployment, image publication, package-index release, new Jobs/inference, credential movement, or remote resource/configuration changes in this step.
+
+
+Implementation completed on 2026-09-09; branch/PR publication remains parent-owned:
+
+- Backported exactly the production diff of SDK PR #4851, commit
+  `f1c01f06919a5e57e57b6d78bc3d7e4de81534e0`, onto hash-verified 1.28.0.
+  Chose a locally versioned reproducible wheel rather than the unrelated 1.31
+  development upgrade. Source, patch, output hashes and removal criteria are in
+  `packages/harbor-hf-agents/sdk-backport/README.md`; no binary is tracked.
+- Both existing images build the wheel before frozen agents-lock installation.
+  Local amd64 builds and 40 offline terminal regressions in each actual final
+  image interpreter passed. Installed SDK source bytes and versions matched the
+  wheel. Harbor's native Sandbox boundary, retries and results are unchanged;
+  no task recipe or credential delivery changes were made.
+- Root tests: 46 passed, 87.98% coverage. Agents tests: 155 passed. New builder:
+  97.47% coverage. Ruff, formatting, ty, lock/source/dependency integrity, root
+  dependency audit, and normal Slophammer check/DRY passed.
+- Draft validation blockers: existing supplementary agent-runtime coverage is
+  61.72%; the Slophammer baseline and mutation script are absent. No thresholds
+  were relaxed. Separate npm/browser checks were not run for this Python/build
+  change; the control image's normal typecheck and web build passed.
+- No push, PR creation, deployment, image publication, remote Jobs, inference,
+  credential movement or resource mutation was performed by this integration.
