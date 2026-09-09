@@ -19,6 +19,7 @@ const apiMocks = vi.hoisted(() => ({
   getSystem: vi.fn(),
   getTrial: vi.fn(),
   getTrials: vi.fn(),
+  getTrialProgress: vi.fn(),
   getWorkbenchFile: vi.fn(),
   getWorkbenchLogs: vi.fn(),
   getWorkbenchSetup: vi.fn(),
@@ -242,6 +243,13 @@ beforeEach(() => {
   ]);
   apiMocks.getRuns.mockResolvedValue([run]);
   apiMocks.getRun.mockResolvedValue(run);
+  apiMocks.getTrialProgress.mockResolvedValue({
+    observed_at: new Date().toISOString(),
+    jobs_observed_at: null,
+    lock: null,
+    trials: [],
+    jobs: [],
+  });
   apiMocks.getTrials.mockResolvedValue([
     {
       run_id: runId,
@@ -333,6 +341,31 @@ describe("restored control console", () => {
       `/runs/${runId}`,
     );
   });
+
+  it.each(["/runs", "/runs?view=waffle", "/runs?view=list"])(
+    "keeps %s a list with counts and no progress requests",
+    async (path) => {
+      renderAt(path);
+      expect(
+        await screen.findByRole("columnheader", { name: "Progress" }),
+      ).toBeVisible();
+      expect(screen.getByText("1 / 1")).toBeVisible();
+      expect(
+        screen.queryByRole("region", { name: "Trial progress waffle" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Waffle" })).not.toBeInTheDocument();
+      expect(apiMocks.getTrialProgress).not.toHaveBeenCalled();
+      await userEvent.setup().click(screen.getByRole("link", { name: /^Unavailable/ }));
+      const waffle = await screen.findByRole("region", {
+        name: "Trial progress waffle",
+      });
+      expect(apiMocks.getTrialProgress).toHaveBeenCalledWith(runId);
+      expect(
+        waffle.compareDocumentPosition(screen.getByText("Run identity")) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    },
+  );
 
   it("shows complete run detail and targets run actions", async () => {
     const user = userEvent.setup();

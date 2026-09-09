@@ -251,13 +251,18 @@ another completion value.
 
 ## Observational trial waffle
 
-The Runs waffle shows one run per row and one compact square per job-lock entry
-(or per observed trial when no job lock is available). Its
+The Runs overview remains a list with compact progress counts and native diagnostics;
+it makes no trial-progress requests. The individual run detail page shows a waffle
+beneath the summary cards, before identity and submission. Each task/input digest
+has one labelled row and one compact square per job-lock entry (or per observed
+trial when no job lock is available). The existing trials table remains available
+for reported agent/model metadata, status, reward, cost, and full trial navigation.
+The waffle’s
 read-only progress endpoint lists native `job/lock.json` trials without deduplicating
 repetitions, and observes each trial's `config.json`, `lock.json`, and `result.json`.
 Trial locks supply the durable input digest, including for finalized trials;
 Harbor's legacy result checksum is a different hash and is never equated with a
-lock digest. Task names and lock input digests group display columns. Native
+lock digest. Task names and lock input digests group display rows. Native
 `trial_name` keys remain distinct. When a job lock is available, only its entries
 create planned squares: nine entries always produce nine squares. Current native
 trial locks map by exact task name and input digest, up to that group's capacity.
@@ -315,8 +320,12 @@ cross-run repeated-trial ordinal. The intervening changes do not add one. This U
 therefore preserves unknown states rather than patching Harbor or changing the pin.
 
 
-The UI requests at most eight runs at a time, polls every 15 seconds, and renders
-50 searchable trial columns per page. The reader bounds concurrent artifact reads
+The UI requests only the open run, polls active runs every 15 seconds and terminal
+runs every two minutes, and renders 25 task rows per page without splitting repeats.
+Search matches task, input, trial, state, or native exception and retains whole
+matching rows; totals and separate observations remain unfiltered. Navigation to
+another run resets filters, focus/tooltips, and mount-local observation history.
+The reader bounds concurrent artifact reads
 and caches unchanged content identities in memory. It exposes only allowlisted
 identity, timing, outcome and cost fields, never raw agent config, credentials,
 logs or trajectories. Observations can span writes; they are not atomic execution
@@ -428,12 +437,13 @@ Also build both Dockerfiles for `linux/amd64` and run the agent package checks i
 
 ### Waffle native exception evidence
 
-The Runs waffle reads historical and future native trial `result.exception_info`
+The run-detail waffle reads historical and future native trial `result.exception_info`
 from the existing progress API; it needs no migration or remote execution. Each
 square's keyboard/hover tooltip reports the exact recorded `exception_type`.
 Per-run disclosures show trial exception badges and links to the existing native
 trial detail and traceback. The existing run exception projection also links to
-`JobResult.stats.evals[*].exception_stats` groups from the row header.
+`JobResult.stats.evals[*].exception_stats` groups from the overview diagnostics
+column and the summary above the detail waffle.
 
 An explicitly null `exception_info` means no recorded exception, not proof of
 valid scoring. Absent evidence remains unknown / unavailable. Types are not

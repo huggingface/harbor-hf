@@ -455,9 +455,11 @@ test("navigates from runs to complete run and trial evidence", async ({ page }) 
   await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
   await page.locator(`a[href="/runs/${runId}"]`).click();
   await expect(page.getByRole("heading", { name: "Run detail" })).toBeVisible();
-  await expect(page.getByText("Harbor totals")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Harbor totals", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("job-parent-one")).toBeVisible();
-  await page.getByRole("link", { name: trialName }).click();
+  await page.getByRole("link", { name: trialName, exact: true }).click();
   await expect(page.getByRole("heading", { name: "Trial detail" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Verifier result" })).toBeVisible();
   await expect(
@@ -802,16 +804,6 @@ for (const width of [1440, 390]) {
     await mockControl(page);
     const timestamp = new Date().toISOString();
     const task = { name: "task-one", digest: `sha256:${"d".repeat(64)}` };
-    const secondId = `run-${"b".repeat(24)}`;
-    await page.route("**/api/v1/runs", (route) =>
-      json(route, {
-        runs: [runId, secondId].map((id) => ({
-          ...run,
-          record: { ...record, run_id: id },
-          result: { ...run.result, updated_at: timestamp },
-        })),
-      }),
-    );
     await page.route("**/api/v1/runs/*/progress", (route) =>
       json(route, {
         observed_at: timestamp,
@@ -841,9 +833,10 @@ for (const width of [1440, 390]) {
         ],
       }),
     );
-    await page.goto("/runs?keep=value");
-    await expect(page.locator("tbody tr")).toHaveCount(2);
-    await expect(page.getByRole("columnheader")).toHaveCount(51);
+    await page.goto(`/runs/${runId}`);
+    const waffle = page.getByRole("region", { name: "Trial progress waffle" });
+    await expect(waffle.getByRole("rowheader")).toHaveCount(1);
+    await expect(waffle.getByRole("cell")).toHaveCount(60);
     const zero = page.getByRole("link", { name: `trial-a in ${runId}: Zero reward` });
     const bounds = await zero.boundingBox();
     expect(bounds?.width).toBe(14);
@@ -862,19 +855,9 @@ for (const width of [1440, 390]) {
     ).toBeVisible();
     await zero.blur();
     await page.screenshot({ path: testInfo.outputPath("native-waffle.png") });
-    await page.getByRole("button", { name: "Next trials" }).click();
-    await expect(page.getByRole("columnheader")).toHaveCount(11);
-    await page.getByRole("button", { name: "Previous trials" }).click();
     await page.getByText("HF Jobs and Harbor totals (separate observations)").click();
     await expect(
       page.getByText("trial · child-waiting · queued (waiting at HF)").first(),
-    ).toBeVisible();
-    await page.getByRole("button", { name: "List", exact: true }).click();
-    await expect(page).toHaveURL(/keep=value/);
-    await expect(page).toHaveURL(/view=list/);
-    await page.getByRole("button", { name: "Waffle", exact: true }).click();
-    await expect(
-      page.getByRole("region", { name: "Trial progress waffle" }),
     ).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -957,36 +940,32 @@ for (const launchPath of ["overview", "workbench"] as const) {
         };
       }),
     );
-    await page.route("**/api/v1/runs", (route) =>
+    await page.route(`**/api/v1/runs/${runId}`, (route) =>
       json(route, {
-        runs: [
-          {
-            ...run,
-            record: {
-              ...record,
-              role: "diagnostic",
-              submission: {
-                ...record.submission,
-                benchmark: {
-                  name: canaryPreset.benchmark,
-                  preset: canaryPreset.preset,
-                },
-              },
-              harbor_job_config: { ...record.harbor_job_config, ...canaryPreset.job },
-            },
-            result: {
-              ...run.result,
-              updated_at: timestamp,
-              n_total_trials: 9,
-              stats: {
-                ...run.result.stats,
-                n_completed_trials: 3,
-                n_running_trials: 2,
-                n_pending_trials: 4,
-              },
+        ...run,
+        record: {
+          ...record,
+          role: "diagnostic",
+          submission: {
+            ...record.submission,
+            benchmark: {
+              name: canaryPreset.benchmark,
+              preset: canaryPreset.preset,
             },
           },
-        ],
+          harbor_job_config: { ...record.harbor_job_config, ...canaryPreset.job },
+        },
+        result: {
+          ...run.result,
+          updated_at: timestamp,
+          n_total_trials: 9,
+          stats: {
+            ...run.result.stats,
+            n_completed_trials: 3,
+            n_running_trials: 2,
+            n_pending_trials: 4,
+          },
+        },
       }),
     );
     await page.route("**/api/v1/runs/*/progress", (route) =>
@@ -998,8 +977,16 @@ for (const launchPath of ["overview", "workbench"] as const) {
         jobs: [{ ...job, created_at: timestamp, started_at: timestamp }],
       }),
     );
-    await page.goto("/runs");
-    await expect(page.getByRole("columnheader")).toHaveCount(10);
+    await page.goto(`/runs/${runId}`);
+    const waffle = page.getByRole("region", { name: "Trial progress waffle" });
+    await expect(waffle.getByRole("rowheader")).toHaveCount(3);
+    for (const task of tasks) {
+      const row = waffle
+        .getByRole("row")
+        .filter({ has: page.getByText(task, { exact: true }) });
+      await expect(row).toHaveCount(1);
+      await expect(row.getByRole("cell")).toHaveCount(3);
+    }
     for (const trial of observations) {
       const cell = trial.result
         ? page.getByRole("link", {
@@ -1038,55 +1025,39 @@ for (const launchPath of ["overview", "workbench"] as const) {
   });
 }
 
-test("native waffle polls preserve positions and distinguish unknown from lock exclusion", async ({
+test("native waffle polls preserve positions and pending slots within one run", async ({
   page,
 }) => {
   await mockControl(page);
   await page.clock.install();
   const timestamp = new Date().toISOString();
   const task = { name: "task-one", digest: `sha256:${"d".repeat(64)}` };
-  const secondId = `run-${"b".repeat(24)}`;
   let names = ["trial-z"];
-  let excluded = false;
-  await page.route("**/api/v1/runs", (route) =>
+  await page.route("**/api/v1/runs/*/progress", (route) =>
     json(route, {
-      runs: [runId, secondId].map((id) => ({
-        ...run,
-        record: { ...record, run_id: id },
-      })),
-    }),
-  );
-  await page.route("**/api/v1/runs/*/progress", (route) => {
-    const other = route.request().url().includes(secondId);
-    return json(route, {
       observed_at: timestamp,
       jobs_observed_at: null,
       jobs: [],
-      lock: other
-        ? excluded
-          ? { trials: [] }
-          : null
-        : {
-            trials: Array.from({ length: 3 }, () => ({ task })),
-          },
-      trials: other
-        ? []
-        : names.map((trial_name) => ({
-            trial_name,
-            config: { trial_name },
-            lock: { task },
-            result: { finished_at: timestamp },
-            reward: 1,
-            cost_usd: null,
-          })),
-    });
-  });
-  await page.goto("/runs");
-  const row = page.locator("tbody tr").first();
+      lock: { trials: Array.from({ length: 3 }, () => ({ task })) },
+      trials: names.map((trial_name) => ({
+        trial_name,
+        config: { trial_name },
+        lock: { task },
+        result: { finished_at: timestamp },
+        reward: 1,
+        cost_usd: null,
+      })),
+    }),
+  );
+  await page.goto(`/runs/${runId}`);
+  const row = page
+    .getByRole("region", { name: "Trial progress waffle" })
+    .locator("tbody tr")
+    .first();
   const original = page.getByRole("link", { name: `trial-z in ${runId}: Completed` });
   await expect(original).toBeVisible();
-  await expect(page.getByRole("img", { name: "Unknown / not observed" })).toHaveCount(
-    3,
+  await expect(row.getByRole("button", { name: /No mapped observation/ })).toHaveCount(
+    2,
   );
   await original.focus();
   names = ["trial-a", "trial-z"];
@@ -1100,7 +1071,6 @@ test("native waffle polls preserve positions and distinguish unknown from lock e
     `trial-a in ${runId}: Completed`,
   );
   names = ["trial-a"];
-  excluded = true;
   await page.clock.runFor(15_001);
   await expect(original).toHaveCount(0);
   await expect(row.locator("td").nth(0).getByRole("button")).toHaveAccessibleName(
@@ -1109,7 +1079,9 @@ test("native waffle polls preserve positions and distinguish unknown from lock e
   await expect(row.locator("td").nth(1).getByRole("link")).toHaveAccessibleName(
     `trial-a in ${runId}: Completed`,
   );
-  await expect(page.getByRole("img", { name: "Not in run" })).toHaveCount(3);
+  await expect(row.getByRole("button", { name: /No mapped observation/ })).toHaveCount(
+    2,
+  );
 });
 
 test("nine lock entries stay nine squares through partial and replacement observations", async ({
@@ -1138,8 +1110,11 @@ test("nine lock entries stay nine squares through partial and replacement observ
       })),
     }),
   );
-  await page.goto("/runs");
-  const row = page.locator("tbody tr").first();
+  await page.goto(`/runs/${runId}`);
+  const row = page
+    .getByRole("region", { name: "Trial progress waffle" })
+    .locator("tbody tr")
+    .first();
   await expect(page.getByText(/Planned total unknown \(no job lock\)/)).toBeVisible();
   await expect(row.locator("td")).toHaveCount(1);
   locked = true;
@@ -1297,7 +1272,7 @@ test("historical waffle native exception tooltip and badge link to traceback", a
     if (request.url().includes("/api/v1/") && request.method() !== "GET")
       writes.push(request.method());
   });
-  await page.goto("/runs");
+  await page.goto(`/runs/${runId}`);
   const square = page.getByRole("link", { name: `${trialName} in ${runId}: Errored` });
   const unknown = page.getByRole("link", {
     name: `trial-unknown in ${runId}: Zero reward`,
@@ -1325,4 +1300,33 @@ test("historical waffle native exception tooltip and badge link to traceback", a
     page.getByText("synthetic waffle native traceback", { exact: true }),
   ).toBeVisible();
   expect(writes).toEqual([]);
+});
+
+test("Runs stays a list with original counts and only opening detail requests progress", async ({
+  page,
+}) => {
+  await mockControl(page);
+  const requests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/progress")) requests.push(request.url());
+  });
+  await page.goto("/runs?view=waffle");
+  await expect(page.getByText("1 / 1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Diagnostics" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Trial progress waffle" })).toHaveCount(
+    0,
+  );
+  expect(requests).toEqual([]);
+  await page.getByRole("link", { name: /publisher\/model/ }).click();
+  const waffle = page.getByRole("region", { name: "Trial progress waffle" });
+  await expect(waffle).toBeVisible();
+  await expect.poll(() => requests.length).toBe(1);
+  const summary = await page.getByText("Inference cost", { exact: true }).boundingBox();
+  const contents = await waffle.boundingBox();
+  const identity = await page
+    .getByRole("heading", { name: "Run identity" })
+    .boundingBox();
+  expect(contents?.y).toBeGreaterThan((summary?.y ?? 0) + (summary?.height ?? 0));
+  expect(identity?.y).toBeGreaterThan((contents?.y ?? 0) + (contents?.height ?? 0));
+  await expect(page.getByRole("link", { name: trialName, exact: true })).toBeVisible();
 });
