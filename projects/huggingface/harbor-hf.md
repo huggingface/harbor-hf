@@ -692,3 +692,20 @@ Approved at: 2026-09-09T17:02:44.957655+00:00
   metadata mutation, deployment, merge, credentials or additional infrastructure.
 - Browser-local pricing preferences and Workbench drafts are not migrated by
   this approval. Reasoning support still awaits route/capability clarification.
+
+### Complete results follow-up CI, merge and deployment (2026-09-09)
+
+Approved at: 2026-09-09T18:04:01.857234+00:00
+
+- Direct approval: the user authorized pushing the remaining follow-up changes,
+  getting CI green, merging and completing deployment to the user-selected
+  existing control Space. The exact destination is retained privately.
+- Resolve relevant CI failures without weakening tests, coverage, security or
+  line-budget gates; review and publish changes to the existing PR. Merge only
+  the reviewed passing revision, then deploy that exact merged source revision.
+- Verify deployment provenance, readiness and unchanged canonical configuration.
+  Preserve existing resources, credentials, visibility, hardware and artifacts.
+- No benchmark/setup execution, inference, credential transfer, new resource,
+  archive mutation on live data, or unrelated feature migration is authorized.
+- Pricing sharing and the reasoning selector remain deferred. No operator
+  identifiers may be included in public repository content or metadata.
