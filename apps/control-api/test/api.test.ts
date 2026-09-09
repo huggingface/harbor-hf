@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
   compileAgentWorkbenchRecipe,
   fastAgentWorkbenchStarter,
+  putJson,
 } from "@harbor-hf/control-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
@@ -106,6 +107,32 @@ const submission = {
 };
 
 describe("control API", () => {
+  it("exposes authenticated native artifact observations without writing or changing completion", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const submitted = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "observed-progress" },
+      payload: submission,
+    });
+    const id: string = submitted.json().run.run_id;
+    await putJson(runtime.store, `runs/${id}/job/trial-one/config.json`, {
+      trial_name: "trial-one",
+      agent: { env: { PRIVATE_TEST_VALUE: "do-not-echo" } },
+    });
+    const response = await app.inject({ url: `/api/v1/runs/${id}/progress` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().trials[0].config).toEqual({ trial_name: "trial-one" });
+    expect(response.json().trials[0].result).toBeNull();
+    expect(response.body).not.toContain("do-not-echo");
+    expect(runtime.projection.trials(id)).toEqual([]);
+    runtime.config.auth_mode = "oauth";
+    expect((await app.inject({ url: `/api/v1/runs/${id}/progress` })).statusCode).toBe(
+      401,
+    );
+  });
+
   it("allows the Hugging Face page to embed the console", async () => {
     const { app } = await setup();
     const response = await app.inject({ method: "GET", url: "/" });

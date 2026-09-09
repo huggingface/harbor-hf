@@ -1279,6 +1279,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Observe native trial artifacts and run-owned HF Jobs (not a scheduler) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Allowlisted artifact observations */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TrialProgress"];
+                    };
+                };
+                /** @description Request error */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/trials": {
         parameters: {
             query?: never;
@@ -1474,6 +1526,56 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** TrialProgressV1 */
+        TrialProgress: {
+            /** Format: date-time */
+            observed_at: string;
+            jobs_observed_at: string | null;
+            lock: {
+                trials: {
+                    task: {
+                        name: string;
+                        digest: string;
+                    };
+                }[];
+            } | null;
+            trials: {
+                trial_name: string;
+                config: {
+                    trial_name?: string;
+                } | null;
+                lock: {
+                    task: {
+                        name: string;
+                        digest: string;
+                    };
+                } | null;
+                result: {
+                    trial_name?: string;
+                    task_name?: string;
+                    task_checksum?: string;
+                    started_at?: string | null;
+                    finished_at?: string | null;
+                    exception_info?: {
+                        exception_type: string;
+                    } | null;
+                } | null;
+                reward: number | null;
+                cost_usd: number | null;
+            }[];
+            jobs: {
+                id: string;
+                run_id: string;
+                /** @enum {string} */
+                role: "parent" | "trial";
+                /** @enum {string} */
+                stage: "queued" | "running" | "stopped" | "error";
+                /** Format: date-time */
+                created_at: string;
+                started_at: string | null;
+                finished_at: string | null;
+            }[];
+        };
         PresetSubmission: {
             benchmark: {
                 name: string;

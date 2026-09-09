@@ -29,6 +29,7 @@ import {
 } from "./huggingface-models.js";
 import { LaunchError } from "./launch.js";
 import type { Runtime } from "./runtime.js";
+import { TrialProgressReader } from "./trial-progress-reader.js";
 
 export { HARBOR_REVISION } from "./harbor-revision.js";
 
@@ -194,6 +195,7 @@ function publicApi(path: string): boolean {
 }
 
 export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
+  const progressReader = new TrialProgressReader(runtime.store);
   const app = Fastify({
     logger: runtime.config.node_env !== "test" && {
       // Allowlist request metadata: no query strings, headers, or cookies.
@@ -554,6 +556,13 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   }
 
   app.get("/api/v1/hardware", async () => lookupHuggingFaceHardware());
+
+  app.get("/api/v1/runs/:run_id/progress", async (request) => {
+    const { run_id } = runParameters.parse(request.params);
+    if (!runtime.projection.run(run_id)) throw new Error("run was not found");
+    const observation = runtime.projection.jobObservations();
+    return progressReader.snapshot(run_id, observation.jobs, observation.observed_at);
+  });
 
   app.get("/api/v1/runs/:run_id/trials", async (request) => {
     const { run_id } = runParameters.parse(request.params);
