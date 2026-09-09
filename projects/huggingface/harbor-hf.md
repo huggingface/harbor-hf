@@ -785,3 +785,50 @@ Completed local repair and validation on 2026-09-09; publishing to existing PR #
 - Supplementary global Node coverage remains below 85%: lines 80.92%, statements 78.87%, functions 80.41%, branches 73.15%. Normal Slophammer check and DRY passed; baseline and mutation commands remain blocked by their absent files. No gate was weakened.
 - Reviewed Harbor JobConfig/viewer models at the existing pin and history through `7d5285b4`; console URL navigation belongs to Harbor-HF. Documentation records the BrowserRouter-specific boundary. SDK patch/build/locks, Harbor configuration and image definitions are unchanged; their full CI checks must still finish after publication.
 - Main remains at `c3558b6`; no additional integration merge was needed. Self-review confirmed only filter navigation, tests and additive documentation/authorization changes. No merge, deployment, remote workload, credential movement or new publication destination. Remote CI monitoring is bounded to twenty minutes after push; no CI rerun is authorized to mask failure.
+
+### Compact status display and pricing investigation (2026-09-09)
+
+Approved at: 2026-09-09T18:28:46.784884+00:00
+
+- Direct request: start a new branch, repair the oversized wrapping status
+  bubble, and investigate recording a proper price for Workbench launches.
+- Implement and test a compact status badge separate from measured agent time
+  and coverage. Preserve visible partial/unavailable indicators and accessible
+  exact coverage counts; no timing arithmetic or execution changes.
+- Pricing is read-only investigation pending clarification of launch-time
+  estimated rates versus actual provider-reported or billed costs.
+- Local implementation, tests and commits only. No publication, merge,
+  deployment, live run, inference, credentials, rate-card schema, billing
+  integration or upstream issue/patch is authorized by this amendment.
+
+### Immutable launch pricing and leaderboard estimates (2026-09-09)
+
+Approved at: 2026-09-09T18:58:54.280302+00:00
+
+- Direct approval: the user confirmed supplying input/output/cache USD-per-million
+  rates at Workbench launch so estimated run cost can appear on the leaderboard.
+- Implement optional immutable launch pricing in the existing run record,
+  separate from native JobConfig, recipe/setup identity and provider-reported
+  cost. Preserve old records and existing browser-local scenario preferences.
+- Derive shared estimates from each run's own rates and reported native usage.
+  Preserve missing data and explicitly label estimates and partial group subtotals.
+  Do not claim billed cost or complete usage coverage, infer request tiers from
+  aggregate tokens, or alter leaderboard grouping or reported-cost charts.
+- Include rates in immutable submission conflict checks, not recipe compilation
+  or setup attestation. Keep pricing disabled unless explicitly supplied.
+- Local implementation, tests, documentation and commits are approved. No push,
+  PR, merge, deployment, inference, live runs, new resources, billing integration,
+  credential transfer, execution cost-policy change or upstream publication.
+
+### Synchronize launch-pricing branch and validate CI (2026-09-09)
+
+Approved at: 2026-09-09T19:31:11.563099+00:00
+
+- Direct request: merge main and make sure CI passes, interpreted as merging
+  current main into the compact-status/launch-pricing feature branch.
+- Merge the latest main locally, preserve upstream fixes, resolve conflicts,
+  and repair relevant CI failures without weakening validation gates.
+- Privacy-review and push the feature branch. Open a PR to run the configured
+  pull-request CI workflow; feature-branch pushes alone do not trigger it.
+- No feature merge into main, deployment, live execution, inference, credential
+  transfer, resource changes or unrelated feature work is included.

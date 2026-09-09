@@ -87,10 +87,13 @@ function embedSchema(name: string, source: object): Record<string, unknown> {
   for (const [key, value] of Object.entries(definitions ?? {}))
     components[`${name}_${key}`] = value;
   return JSON.parse(
-    JSON.stringify(components).replaceAll(
-      '"#/$defs/',
-      `"#/components/schemas/${name}_`,
-    ),
+    JSON.stringify(components)
+      .replaceAll("launch-pricing-v1.schema.json", "#/components/schemas/LaunchPricing")
+      .replaceAll(
+        "shared-estimate-v1.schema.json#/$defs/group",
+        "#/components/schemas/SharedEstimate_group",
+      )
+      .replaceAll('"#/$defs/', `"#/components/schemas/${name}_`),
   ) as Record<string, unknown>;
 }
 
@@ -110,6 +113,9 @@ const document = {
     },
     schemas: {
       ...embeddedRunRecord,
+      ...embedSchema("LaunchPricing", schemas.launchPricing),
+      ...embedSchema("SharedEstimate", schemas.sharedEstimate),
+      ...embedSchema("LeaderboardRow", schemas.leaderboardRow),
       ...embedSchema("RunState", schemas.runState),
       ...embedSchema("RunPresentation", schemas.runPresentation),
       ...embedSchema("AgentTiming", schemas.agentTiming),
@@ -140,6 +146,7 @@ const document = {
             anyOf: [{ $ref: "#/components/schemas/RunPresentation" }, { type: "null" }],
           },
           agent_timing: { $ref: "#/components/schemas/AgentTiming" },
+          shared_estimate: { $ref: "#/components/schemas/SharedEstimate" },
         },
       },
       TrialProgress: schemas.trialProgress,
@@ -252,6 +259,7 @@ const document = {
           "workbench",
         ],
         properties: {
+          pricing: { $ref: "#/components/schemas/LaunchPricing" },
           n_concurrent_trials: concurrentTrialsSchema,
           benchmark: {
             type: "object",
@@ -689,7 +697,29 @@ const document = {
       },
     },
     "/api/v1/leaderboard": {
-      get: { summary: "Read the public leaderboard", responses: { "200": ok } },
+      get: {
+        summary: "Read the public leaderboard",
+        responses: {
+          "200": {
+            description: "Success",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["rows"],
+                  properties: {
+                    rows: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/LeaderboardRow" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   },
 } as const;

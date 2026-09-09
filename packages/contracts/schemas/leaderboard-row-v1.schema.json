@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harbor-hf.example/schemas/leaderboard-row-v1.schema.json",
+  "title": "LeaderboardRowV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "benchmark",
+    "preset",
+    "agent",
+    "agent_version",
+    "model",
+    "provider",
+    "reasoning_effort",
+    "n_attempts",
+    "n_trials",
+    "pass_rate",
+    "cost_usd"
+  ],
+  "properties": {
+    "benchmark": {
+      "type": "string"
+    },
+    "preset": {
+      "type": "string"
+    },
+    "agent": {
+      "type": "string"
+    },
+    "agent_version": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "reasoning_effort": {
+      "type": "string"
+    },
+    "n_attempts": {
+      "type": "number"
+    },
+    "n_trials": {
+      "type": "number"
+    },
+    "pass_rate": {
+      "type": "number"
+    },
+    "cost_usd": {
+      "type": ["number", "null"]
+    },
+    "shared_estimate": {
+      "$ref": "shared-estimate-v1.schema.json#/$defs/group"
+    }
+  }
+}

@@ -1,4 +1,10 @@
 import {
+  emptyLaunchPricing,
+  finalizedPricing,
+  pricingDescription,
+  estimateMeaning,
+} from "./launch-pricing";
+import {
   CheckCircle2,
   FlaskConical,
   LoaderCircle,
@@ -335,6 +341,11 @@ export function WorkbenchPage() {
   );
   const [ceiling, setCeiling] = useState(draft?.ceiling ?? "1");
   const [role, setRole] = useState<"final" | "diagnostic">(draft?.role ?? "diagnostic");
+  const [launchPricing, setLaunchPricing] = useState(
+    draft?.pricing ?? emptyLaunchPricing,
+  );
+  const pricing = finalizedPricing(launchPricing);
+  const pricingValid = !launchPricing.enabled || pricing !== null;
   const [launchConfirmed, setLaunchConfirmed] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState<unknown>(null);
@@ -346,6 +357,7 @@ export function WorkbenchPage() {
     setDraftSaved(null);
     draftSaver.schedule({
       recipe,
+      pricing: launchPricing,
       benchmarkKey,
       n_concurrent_trials: selectedBenchmark
         ? concurrencyValue
@@ -359,6 +371,7 @@ export function WorkbenchPage() {
     setLaunchConfirmed(false);
   }, [
     draftSaver,
+    launchPricing,
     recipe,
     benchmarkKey,
     model,
@@ -536,6 +549,7 @@ export function WorkbenchPage() {
       !setup ||
       !setupMatches ||
       !launchConfirmed ||
+      !pricingValid ||
       !writesAllowed ||
       !hasDirectRoute
     )
@@ -546,6 +560,7 @@ export function WorkbenchPage() {
     setLaunchError(null);
     try {
       const response = await submitRun({
+        ...(launchPricing.enabled && pricing ? { pricing } : {}),
         benchmark: { name: benchmark, preset },
         model: {
           id: model.trim(),
@@ -1134,6 +1149,64 @@ export function WorkbenchPage() {
                 </p>
                 <p className="mt-1">Reasoning setting: Off</p>
               </div>
+              <fieldset className="space-y-2 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={launchPricing.enabled}
+                    onChange={(event) => {
+                      setLaunchPricing({
+                        ...launchPricing,
+                        enabled: event.target.checked,
+                      });
+                      setLaunchConfirmed(false);
+                    }}
+                  />
+                  Record launch pricing
+                </label>
+                {launchPricing.enabled ? (
+                  <>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {(["input", "cached", "output"] as const).map((kind) => (
+                        <label key={kind}>
+                          {kind === "input"
+                            ? "Input incl. cache"
+                            : kind === "cached"
+                              ? "Cached input"
+                              : "Output"}{" "}
+                          USD/M
+                          <input
+                            className={fieldClass()}
+                            type="text"
+                            inputMode="decimal"
+                            required
+                            value={launchPricing[kind]}
+                            onChange={(event) => {
+                              setLaunchPricing({
+                                ...launchPricing,
+                                [kind]: event.target.value,
+                              });
+                              setLaunchConfirmed(false);
+                            }}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    {!pricingValid ? (
+                      <p role="status">
+                        Enter all three rates from 0 through 1,000,000 USD/M. Blank
+                        rates are not zero.
+                      </p>
+                    ) : (
+                      <p>{pricingDescription(pricing ?? undefined)}</p>
+                    )}
+                    <p className="text-xs text-slate-400">
+                      {estimateMeaning} Rates are saved immutably with this run; editing
+                      them does not invalidate setup.
+                    </p>
+                  </>
+                ) : null}
+              </fieldset>
               <label className="flex items-start gap-2 text-sm text-slate-300">
                 <input
                   className="mt-1"
@@ -1151,6 +1224,7 @@ export function WorkbenchPage() {
                   !setupMatches ||
                   !hasDirectRoute ||
                   !launchConfirmed ||
+                  !pricingValid ||
                   !writesAllowed ||
                   launching ||
                   actor.role !== "operator"

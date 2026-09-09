@@ -1328,3 +1328,140 @@ describe("archive API", () => {
     await app.close();
   });
 });
+
+describe("launch pricing API boundary", () => {
+  const pricing = {
+    currency: "USD",
+    input_usd_per_million: 2,
+    cached_usd_per_million: 0.5,
+    output_usd_per_million: 8,
+  };
+  const payload = {
+    benchmark: { ...submission.benchmark, preset: "all-tasks-5-trials" },
+    model: submission.model,
+    cost_ceiling_usd_per_trial: 100,
+    role: "final",
+    pricing,
+    workbench: { recipe: workbenchRecipe, setup_test_id: workbenchSetup.setup_test_id },
+  };
+  it("validates actual priced single/list/leaderboard responses and immutable conflicts", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const attest = vi.spyOn(runtime.workbench, "attestPassedSetup").mockResolvedValue({
+      setup_test_id: workbenchSetup.setup_test_id,
+      recipe_digest: workbenchSetup.recipe_digest,
+      revision_id: workbenchSetup.revision_id,
+      completed_at: "2026-01-01T00:00:00Z",
+      expires_at: "2026-01-01T01:00:00Z",
+    });
+    const post = (body: unknown) =>
+      app.inject({
+        method: "POST",
+        url: "/api/v1/runs",
+        headers: { "idempotency-key": "launch-rates" },
+        payload: body as Record<string, unknown>,
+      });
+    const first = await post(payload);
+    expect(first.statusCode).toBe(201);
+    expect((await post(payload)).statusCode).toBe(200);
+    expect(
+      (await post({ ...payload, pricing: { ...pricing, input_usd_per_million: 3 } }))
+        .statusCode,
+    ).toBe(409);
+    expect(
+      attest.mock.calls.every(
+        (call) => JSON.stringify(call[2]) === JSON.stringify(workbenchRecipe),
+      ),
+    ).toBe(true);
+    const record = first.json().run;
+    expect(record.pricing).toEqual(pricing);
+    expect(record.submission.model).not.toHaveProperty("pricing");
+    expect(record.harbor_job_config).not.toHaveProperty("pricing");
+    await putJson(runtime.store, `runs/${record.run_id}/job/result.json`, {
+      finished_at: "2026-01-01T00:01:00Z",
+      n_total_trials: 1,
+      stats: {
+        n_input_tokens: 1_000_000,
+        n_output_tokens: 100_000,
+        n_cache_tokens: 250_000,
+        cost_usd: 77,
+      },
+    });
+    await putJson(runtime.store, `runs/${record.run_id}/job/task/result.json`, {
+      agent_result: { cost_usd: 77 },
+      verifier_result: { rewards: { reward: 1 } },
+      exception_info: null,
+    });
+    await runtime.service.refresh();
+    const document = JSON.parse(
+      await readFile(resolve("docs/control-api-v1.openapi.json"), "utf8"),
+    );
+    const ajv = new Ajv2020({ strict: false, allErrors: true });
+    ajv.addFormat("date-time", (value: string) => Number.isFinite(Date.parse(value)));
+    for (const [path, url] of [
+      ["/api/v1/runs/{run_id}", `/api/v1/runs/${record.run_id}`],
+      ["/api/v1/runs", "/api/v1/runs"],
+      ["/api/v1/leaderboard", "/api/v1/leaderboard"],
+    ]) {
+      const validate = ajv.compile({
+        ...document.paths[path!].get.responses["200"].content["application/json"]
+          .schema,
+        components: document.components,
+      });
+      const response = await app.inject({ url: url! });
+      expect(response.statusCode).toBe(200);
+      expect(validate(response.json()), JSON.stringify(validate.errors)).toBe(true);
+    }
+    expect(runtime.projection.run(record.run_id)?.shared_estimate?.cost_usd).toBe(
+      2.425,
+    );
+    expect(
+      (await app.inject({ url: "/api/v1/leaderboard" })).json().rows[0],
+    ).toMatchObject({
+      cost_usd: 77,
+      shared_estimate: { cost_usd: 2.425, estimated_runs: 1, total_runs: 1 },
+    });
+  });
+  it.each([
+    null,
+    {},
+    { ...pricing, currency: "EUR" },
+    { ...pricing, cached_usd_per_million: -1 },
+    { ...pricing, unexpected: 1 },
+  ])("rejects tampered launch pricing before setup: %j", async (value) => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const attest = vi.spyOn(runtime.workbench, "attestPassedSetup");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "bad-rates" },
+      payload: { ...payload, pricing: value },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(attest).not.toHaveBeenCalled();
+    expect(runtime.projection.listRuns()).toEqual([]);
+  });
+  it("does not bypass authentication or disabled writes", async () => {
+    const { runtime, app } = await setup("disabled");
+    await runtime.initialize();
+    const request = {
+      method: "POST" as const,
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "protected-rates" },
+      payload,
+    };
+    expect((await app.inject(request)).statusCode).toBe(503);
+    const actor = vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+      subject: "synthetic-reader",
+      username: "synthetic-reader",
+      role: "reader",
+      transport: "development",
+    });
+    expect((await app.inject(request)).statusCode).toBe(403);
+    actor.mockRestore();
+    runtime.config.auth_mode = "oauth";
+    expect((await app.inject(request)).statusCode).toBe(401);
+    expect(runtime.projection.listRuns()).toEqual([]);
+  });
+});

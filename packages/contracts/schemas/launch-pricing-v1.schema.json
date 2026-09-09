@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harbor-hf.example/schemas/launch-pricing-v1.schema.json",
+  "title": "LaunchPricingV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "currency",
+    "input_usd_per_million",
+    "output_usd_per_million",
+    "cached_usd_per_million"
+  ],
+  "properties": {
+    "currency": {
+      "const": "USD"
+    },
+    "input_usd_per_million": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "output_usd_per_million": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "cached_usd_per_million": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1000000
+    }
+  }
+}

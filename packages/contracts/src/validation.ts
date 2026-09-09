@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import type {
+  LaunchPricingV1,
   AgentPresetV1,
   AgentWorkbenchRecipeV1,
   AttemptCostV1,
@@ -21,6 +22,9 @@ function load(name: string): object {
 }
 
 export const schemas = {
+  launchPricing: load("launch-pricing-v1.schema.json"),
+  sharedEstimate: load("shared-estimate-v1.schema.json"),
+  leaderboardRow: load("leaderboard-row-v1.schema.json"),
   agentPreset: load("agent-preset-v1.schema.json"),
   agentWorkbenchRecipe: load("agent-workbench-v1.schema.json"),
   attemptCost: load("attempt-cost-v1.schema.json"),
@@ -71,7 +75,11 @@ function configuredAjv(): Ajv2020 {
 
 const ajv = configuredAjv();
 const strictAjv = configuredAjv();
+ajv.addSchema(schemas.launchPricing);
 const validators = {
+  launchPricing: ajv.getSchema(
+    "https://harbor-hf.example/schemas/launch-pricing-v1.schema.json",
+  )!,
   agentPreset: ajv.compile(schemas.agentPreset),
   agentWorkbenchRecipe: ajv.compile(schemas.agentWorkbenchRecipe),
   attemptCost: ajv.compile(schemas.attemptCost),
@@ -101,6 +109,8 @@ function validate<T>(validator: ValidateFunction, value: unknown, label: string)
   return value as T;
 }
 
+export const validateLaunchPricing = (value: unknown): LaunchPricingV1 =>
+  validate(validators.launchPricing, value, "launch pricing");
 export const validateAgentPreset = (value: unknown): AgentPresetV1 =>
   validate(validators.agentPreset, value, "agent preset");
 export const validateAgentWorkbenchRecipe = <T extends AgentWorkbenchRecipeV1>(

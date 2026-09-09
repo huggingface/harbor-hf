@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
+  SharedEstimateV1,
   AgentTimingV1,
   AttemptCostV1,
   RunRecordV1,
@@ -15,6 +16,7 @@ import {
   runPresentationPath,
   validateRunState,
 } from "@harbor-hf/contracts";
+import { launchEstimate } from "@harbor-hf/contracts/pricing";
 import Database from "better-sqlite3";
 import { isLiveJob, type JobObservation } from "./jobs.js";
 import { type ObjectStore, readJson } from "./store.js";
@@ -37,6 +39,7 @@ export interface TrialSummary {
 }
 
 export interface RunView {
+  shared_estimate?: SharedEstimateV1;
   presentation_available?: boolean;
   presentation?: RunPresentationV1 | null;
   agent_timing?: AgentTimingV1;
@@ -476,22 +479,27 @@ export class Projection {
       presentation_body: string | null;
       presentation_available: number;
     }>;
-    return rows.map((row) => ({
-      presentation_available: Boolean(row.presentation_available),
-      presentation: row.presentation_body
-        ? validateRunPresentation(JSON.parse(row.presentation_body))
-        : null,
-      // Older disposable projections acquire measurements at the next rebuild.
-      ...(row.agent_timing_body
-        ? { agent_timing: JSON.parse(row.agent_timing_body) as AgentTimingV1 }
-        : {}),
-      record: validateRunRecord(JSON.parse(row.record_body)),
-      state: validateRunState(JSON.parse(row.state_body)),
-      status: row.status,
-      result: row.result_body
+    return rows.map((row) => {
+      const record = validateRunRecord(JSON.parse(row.record_body));
+      const result = row.result_body
         ? (JSON.parse(row.result_body) as Record<string, unknown>)
-        : null,
-    }));
+        : null;
+      return {
+        shared_estimate: launchEstimate(record.pricing, result),
+        presentation_available: Boolean(row.presentation_available),
+        presentation: row.presentation_body
+          ? validateRunPresentation(JSON.parse(row.presentation_body))
+          : null,
+        // Older disposable projections acquire measurements at the next rebuild.
+        ...(row.agent_timing_body
+          ? { agent_timing: JSON.parse(row.agent_timing_body) as AgentTimingV1 }
+          : {}),
+        record,
+        state: validateRunState(JSON.parse(row.state_body)),
+        status: row.status,
+        result,
+      };
+    });
   }
 
   listRuns(): RunView[] {

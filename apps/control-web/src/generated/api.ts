@@ -1584,7 +1584,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, unknown>;
+                        "application/json": {
+                            rows: components["schemas"]["LeaderboardRow"][];
+                        };
                     };
                 };
             };
@@ -1632,10 +1634,51 @@ export interface components {
             workbench_recipe?: {
                 name: string;
             };
+            pricing?: components["schemas"]["LaunchPricing"];
             harbor_job_config: Record<string, unknown>;
         } & unknown;
         /** RunRecordSlug */
         RunRecord_slug: string;
+        /** LaunchPricingV1 */
+        LaunchPricing: {
+            /** @constant */
+            currency: "USD";
+            input_usd_per_million: number;
+            output_usd_per_million: number;
+            cached_usd_per_million: number;
+        };
+        /** SharedEstimateV1 */
+        SharedEstimate: {
+            basis: components["schemas"]["SharedEstimate_basis"];
+            cost_usd: components["schemas"]["SharedEstimate_cost"];
+            /** @enum {unknown} */
+            unavailable_reason: "pricing_unset" | "usage_unavailable" | null;
+        };
+        /** @constant */
+        SharedEstimate_basis: "launch_rates_reported_usage";
+        SharedEstimate_cost: number | null;
+        /** LaunchEstimateGroupV1 */
+        SharedEstimate_group: {
+            basis: components["schemas"]["SharedEstimate_basis"];
+            cost_usd: components["schemas"]["SharedEstimate_cost"];
+            estimated_runs: number;
+            total_runs: number;
+        };
+        /** LeaderboardRowV1 */
+        LeaderboardRow: {
+            benchmark: string;
+            preset: string;
+            agent: string;
+            agent_version: string;
+            model: string;
+            provider: string;
+            reasoning_effort: string;
+            n_attempts: number;
+            n_trials: number;
+            pass_rate: number;
+            cost_usd: number | null;
+            shared_estimate?: components["schemas"]["SharedEstimate_group"];
+        };
         /** RunStateV1 */
         RunState: {
             /** @constant */
@@ -1686,6 +1729,7 @@ export interface components {
             presentation_available?: boolean;
             presentation?: components["schemas"]["RunPresentation"] | null;
             agent_timing?: components["schemas"]["AgentTiming"];
+            shared_estimate?: components["schemas"]["SharedEstimate"];
         };
         /** TrialProgressV1 */
         TrialProgress: {
@@ -1795,6 +1839,7 @@ export interface components {
             };
         };
         WorkbenchSubmission: {
+            pricing?: components["schemas"]["LaunchPricing"];
             /** @description Harbor trial concurrency override. */
             n_concurrent_trials?: number;
             benchmark: {

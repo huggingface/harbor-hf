@@ -64,19 +64,7 @@ export interface ParentJob {
   finished_at: string | null;
 }
 
-export interface LeaderboardRow {
-  benchmark: string;
-  preset: string;
-  agent: string;
-  agent_version: string;
-  model: string;
-  provider: string;
-  reasoning_effort: string;
-  n_attempts: number;
-  n_trials: number;
-  pass_rate: number;
-  cost_usd: number | null;
-}
+export type LeaderboardRow = components["schemas"]["LeaderboardRow"];
 
 export interface SystemResponse {
   source_revision: string;

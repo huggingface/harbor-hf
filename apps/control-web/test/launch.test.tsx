@@ -449,7 +449,7 @@ describe("launch page", () => {
     vi.mocked(api).mockRejectedValueOnce(new Error("Source could not be checked"));
     fireEvent.click(screen.getByRole("button", { name: "Validate" }));
     const error = await screen.findByText("Source could not be checked");
-    expect(document.activeElement).toBe(error);
+    await waitFor(() => expect(document.activeElement).toBe(error));
     fireEvent.click(screen.getByRole("button", { name: "Validate" }));
     await screen.findByText("Validated configuration");
     vi.mocked(api).mockRejectedValueOnce(new Error("Launch rejected"));

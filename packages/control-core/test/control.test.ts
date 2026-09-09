@@ -413,7 +413,7 @@ describe("run submission", () => {
         preview.harbor_agent,
         "recipe-provenance",
         "test-subject",
-        name === undefined ? undefined : { name },
+        name === undefined ? undefined : { workbench_recipe: { name } },
       );
     const first = await launch("recipe-one");
     expect(first.run.workbench_recipe).toEqual({ name: "recipe-one" });
@@ -1693,4 +1693,128 @@ it("archiving retains eligible leaderboard rewards, costs and native artifacts",
   ).toEqual(artifacts);
   expect(jobs.starts).toBe(0);
   expect(jobs.cancelled).toEqual([]);
+});
+
+describe("immutable launch pricing and shared SQL estimates", () => {
+  const pricing = {
+    currency: "USD",
+    input_usd_per_million: 2,
+    cached_usd_per_million: 0.5,
+    output_usd_per_million: 8,
+  } as const;
+  const stats = {
+    n_input_tokens: 1_000_000,
+    n_cache_tokens: 250_000,
+    n_output_tokens: 100_000,
+    cost_usd: 77,
+  };
+  it("validates core metadata, conflicts on changed rates and never changes native agent configuration", async () => {
+    const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+    const launch = (metadata: Parameters<typeof service.submitWorkbench>[4]) =>
+      service.submitWorkbench(
+        input,
+        preview.harbor_agent,
+        "rates",
+        "test-subject",
+        metadata,
+      );
+    const first = await launch({ pricing });
+    expect(await launch({ pricing: { ...pricing } })).toEqual({
+      created: false,
+      run: first.run,
+    });
+    await expect(
+      launch({ pricing: { ...pricing, cached_usd_per_million: 0 } }),
+    ).rejects.toThrow("different run");
+    await expect(launch({})).rejects.toThrow("different run");
+    await expect(
+      launch({ pricing: { ...pricing, output_usd_per_million: Infinity } }),
+    ).rejects.toThrow();
+    // Deliberately bypass the static boundary to exercise runtime validation.
+    await expect(
+      launch({ unknown: true } as Parameters<typeof launch>[0]),
+    ).rejects.toThrow("metadata");
+    const legacy = await service.submitWorkbench(
+      input,
+      preview.harbor_agent,
+      "legacy-pricing",
+      "test-subject",
+    );
+    expect(legacy.run).not.toHaveProperty("pricing");
+    expect(first.run.harbor_job_config.agents).toEqual(
+      legacy.run.harbor_job_config.agents,
+    );
+    expect(first.run.submission).toEqual(legacy.run.submission);
+    expect(preview).toEqual(compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter));
+    await putJson(store, `runs/${first.run.run_id}/job/result.json`, { stats });
+    await service.refresh();
+    const reads = vi.spyOn(store, "read");
+    expect(projection.run(first.run.run_id)?.shared_estimate).toMatchObject({
+      cost_usd: 2.425,
+    });
+    expect(
+      projection.listRuns().find((view) => view.record.run_id === first.run.run_id)
+        ?.result,
+    ).toEqual({ stats });
+    expect(reads).not.toHaveBeenCalled();
+    expect(jobs.starts).toBe(0);
+  });
+  it("sums each eligible run's own estimate, preserving partial, missing, zero and overflow independently of native costs", async () => {
+    const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+    const eligible = {
+      ...input,
+      role: "final" as const,
+      benchmark: { ...input.benchmark, preset: "all-tasks-5-trials" },
+    };
+    for (const [index, rates] of [
+      pricing,
+      { ...pricing, input_usd_per_million: 4 },
+      undefined,
+    ].entries()) {
+      const { run } = await service.submitWorkbench(
+        eligible,
+        preview.harbor_agent,
+        `group-${index}`,
+        "test-subject",
+        rates ? { pricing: rates } : {},
+      );
+      await putJson(store, `runs/${run.run_id}/job/result.json`, {
+        finished_at: "2026-01-01T00:10:00Z",
+        n_total_trials: 1,
+        stats: { ...stats, cost_usd: 0.02 },
+      });
+      await putJson(store, `runs/${run.run_id}/job/task/result.json`, trial(0.02, 1));
+    }
+    await service.refresh();
+    const [row] = leaderboard(projection, presets);
+    expect(row).toMatchObject({
+      n_trials: 3,
+      pass_rate: 1,
+      cost_usd: 0.06,
+      shared_estimate: { cost_usd: 6.35, estimated_runs: 2, total_runs: 3 },
+    });
+    const views = projection.listRuns();
+    for (const [cost, expected, count] of [
+      [null, null, 0],
+      [0, 0, 3],
+      [Number.MAX_VALUE, null, 3],
+    ] as const) {
+      const spy = vi.spyOn(projection, "listRuns").mockReturnValue(
+        views.map((view) => ({
+          ...view,
+          shared_estimate: {
+            basis: "launch_rates_reported_usage",
+            cost_usd: cost,
+            unavailable_reason: cost === null ? "usage_unavailable" : null,
+          },
+        })),
+      );
+      expect(leaderboard(projection, presets)[0]).toMatchObject({
+        cost_usd: row?.cost_usd,
+        n_trials: 3,
+        shared_estimate: { cost_usd: expected, estimated_runs: count, total_runs: 3 },
+      });
+      spy.mockRestore();
+    }
+  });
 });

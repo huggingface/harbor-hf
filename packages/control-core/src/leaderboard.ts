@@ -1,24 +1,17 @@
 import type { PresetCatalog } from "./presets.js";
 import type { Projection } from "./projection.js";
 
-export interface LeaderboardRow {
-  benchmark: string;
-  preset: string;
-  agent: string;
-  agent_version: string;
-  model: string;
-  provider: string;
-  reasoning_effort: string;
-  n_attempts: number;
-  n_trials: number;
-  pass_rate: number;
-  cost_usd: number | null;
-}
+export type LeaderboardRow = import("@harbor-hf/contracts").LeaderboardRowV1;
 
 interface Aggregate
-  extends Omit<LeaderboardRow, "n_trials" | "pass_rate" | "cost_usd"> {
+  extends Omit<
+    LeaderboardRow,
+    "n_trials" | "pass_rate" | "cost_usd" | "shared_estimate"
+  > {
   rewards: number[];
   costs: number[];
+  estimates: number[];
+  totalRuns: number;
 }
 
 export function leaderboard(
@@ -67,18 +60,41 @@ export function leaderboard(
     };
     const key = JSON.stringify(values);
     const group = groups.get(key);
+    const estimate = view.shared_estimate?.cost_usd;
+    const estimates =
+      typeof estimate === "number" && Number.isFinite(estimate) && estimate >= 0
+        ? [estimate]
+        : [];
     if (group) {
       group.rewards.push(...rewards);
       group.costs.push(...costs);
-    } else groups.set(key, { ...values, rewards: [...rewards], costs: [...costs] });
+      group.estimates.push(...estimates);
+      group.totalRuns += 1;
+    } else
+      groups.set(key, {
+        ...values,
+        rewards: [...rewards],
+        costs: [...costs],
+        estimates,
+        totalRuns: 1,
+      });
   }
   return [...groups.values()]
-    .map(({ rewards, costs, ...row }) => ({
-      ...row,
-      n_trials: rewards.length,
-      pass_rate: rewards.reduce((sum, reward) => sum + reward, 0) / rewards.length,
-      cost_usd: costs.length > 0 ? costs.reduce((sum, cost) => sum + cost, 0) : null,
-    }))
+    .map(({ rewards, costs, estimates, totalRuns, ...row }) => {
+      const subtotal = estimates.reduce((sum, cost) => sum + cost, 0);
+      return {
+        shared_estimate: {
+          basis: "launch_rates_reported_usage" as const,
+          cost_usd: estimates.length > 0 && Number.isFinite(subtotal) ? subtotal : null,
+          estimated_runs: estimates.length,
+          total_runs: totalRuns,
+        },
+        ...row,
+        n_trials: rewards.length,
+        pass_rate: rewards.reduce((sum, reward) => sum + reward, 0) / rewards.length,
+        cost_usd: costs.length > 0 ? costs.reduce((sum, cost) => sum + cost, 0) : null,
+      };
+    })
     .sort(
       (left, right) =>
         right.pass_rate - left.pass_rate ||

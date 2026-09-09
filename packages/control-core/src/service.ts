@@ -83,6 +83,7 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
       harbor_revision: left.harbor_revision,
       submission: left.submission,
       workbench_recipe: left.workbench_recipe,
+      pricing: left.pricing,
       harbor_job_config: left.harbor_job_config,
     }) ===
     canonicalJson({
@@ -91,6 +92,7 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
       harbor_revision: right.harbor_revision,
       submission: right.submission,
       workbench_recipe: right.workbench_recipe,
+      pricing: right.pricing,
       harbor_job_config: right.harbor_job_config,
     })
   );
@@ -202,9 +204,18 @@ export class ControlService {
     harborAgent: HarborAgentFragment,
     idempotencyKey: string,
     actor: string,
-    workbenchRecipe?: RunRecordV1["workbench_recipe"],
+    metadata: Pick<RunRecordV1, "workbench_recipe" | "pricing"> = {},
   ): Promise<SubmissionResult> {
     positiveCeiling(input.cost_ceiling_usd_per_trial);
+    if (
+      !metadata ||
+      typeof metadata !== "object" ||
+      Array.isArray(metadata) ||
+      Object.keys(metadata).some(
+        (key) => key !== "workbench_recipe" && key !== "pricing",
+      )
+    )
+      throw new Error("Unknown Workbench launch metadata");
     if (containsCredentialMaterial(input))
       throw new Error("Workbench submission contains credential material");
     const id = runId(idempotencyKey);
@@ -227,7 +238,10 @@ export class ControlService {
         harness: input.harness,
         cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
       },
-      ...(workbenchRecipe ? { workbench_recipe: workbenchRecipe } : {}),
+      ...(metadata.workbench_recipe !== undefined
+        ? { workbench_recipe: metadata.workbench_recipe }
+        : {}),
+      ...(metadata.pricing !== undefined ? { pricing: metadata.pricing } : {}),
       harbor_job_config: jobConfig,
     });
     return this.persistSubmission(record);

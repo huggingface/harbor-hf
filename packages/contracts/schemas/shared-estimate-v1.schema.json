@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harbor-hf.example/schemas/shared-estimate-v1.schema.json",
+  "title": "SharedEstimateV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["basis", "cost_usd", "unavailable_reason"],
+  "properties": {
+    "basis": {
+      "$ref": "#/$defs/basis"
+    },
+    "cost_usd": {
+      "$ref": "#/$defs/cost"
+    },
+    "unavailable_reason": {
+      "enum": ["pricing_unset", "usage_unavailable", null]
+    }
+  },
+  "$defs": {
+    "basis": {
+      "const": "launch_rates_reported_usage"
+    },
+    "cost": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "group": {
+      "title": "LaunchEstimateGroupV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basis", "cost_usd", "estimated_runs", "total_runs"],
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/basis"
+        },
+        "cost_usd": {
+          "$ref": "#/$defs/cost"
+        },
+        "estimated_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_runs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

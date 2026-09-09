@@ -75,6 +75,7 @@
         }
       }
     },
+    "pricing": { "$ref": "launch-pricing-v1.schema.json" },
     "harbor_job_config": { "type": "object" }
   },
   "allOf": [
