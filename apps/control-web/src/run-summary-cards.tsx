@@ -1,6 +1,8 @@
-import { RunStatusTiming } from "./agent-timing";
+import { configuredTimeouts, RunStatusTiming } from "./agent-timing";
 import type { RunView } from "./api";
-import { formatMoneyUsd } from "./lib";
+import { LaunchEstimate } from "./launch-pricing";
+import { CostValue, ExactValue } from "./summary-values";
+export { CostValue, ExactValue } from "./summary-values";
 import { RunDiagnosticsSummary } from "./run-diagnostics";
 import {
   cacheHitRate,
@@ -12,50 +14,10 @@ import {
 } from "./run-summary";
 import { Card, Hint, Progress } from "./ui";
 
-export function ExactValue({
-  value,
-  text,
-  label,
-}: {
-  value: number | null;
-  text: string;
-  label: string;
-}) {
-  const exact = value === null ? `${label}: unavailable` : `${label}: ${value}`;
-  return (
-    <Hint text={exact}>
-      <output
-        aria-live="off"
-        className="whitespace-nowrap tabular-nums"
-        title={exact}
-        aria-label={exact}
-      >
-        {text}
-      </output>
-    </Hint>
-  );
-}
-
 export function ScoreValue({ result }: { result: unknown }) {
   const score = nativeScore(result);
   return (
     <ExactValue value={score.value} text={roundedScore(score.value)} label="Score" />
-  );
-}
-
-export function CostValue({
-  value,
-  label = "Reported cost (USD)",
-}: {
-  value: number | null;
-  label?: string;
-}) {
-  return (
-    <ExactValue
-      value={value}
-      text={value === null ? "-" : formatMoneyUsd(value)}
-      label={label}
-    />
   );
 }
 
@@ -85,6 +47,11 @@ export function RunSummaryCards({ run }: { run: RunView }) {
           </Hint>
         </h2>
         <RunStatusTiming run={run} />
+        <span className="text-xs text-slate-400">
+          <Hint text={configuredTimeouts(run.record.harbor_job_config)}>
+            Configured timeouts
+          </Hint>
+        </span>
       </Card>
       <Card>
         <h2>Progress</h2>
@@ -132,6 +99,29 @@ export function RunSummaryCards({ run }: { run: RunView }) {
           <CostValue value={resultStat(run.result, "cost_usd")} />
         </p>
         <p className="text-xs text-slate-400">Reported; may be partial; not billing</p>
+        {run.record.pricing ||
+        run.pricing_corrections ||
+        run.pricing_corrections_available === false ? (
+          <div className="mt-1 text-xs">
+            {run.shared_estimate?.basis === "corrected_rates_reported_usage" ||
+            run.shared_estimate?.basis === "effective_rates_reported_usage"
+              ? "Shared estimate:"
+              : "Launch estimate:"}{" "}
+            <LaunchEstimate run={run} />
+            <p className="text-slate-400">
+              {run.shared_estimate?.unavailable_reason ===
+              "correction_history_unavailable"
+                ? "Correction history unavailable — no launch fallback"
+                : run.shared_estimate?.unavailable_reason === "usage_unavailable"
+                  ? "Reported usage unavailable or invalid"
+                  : run.shared_estimate?.cost_usd == null
+                    ? "Estimate unavailable"
+                    : run.shared_estimate?.basis === "corrected_rates_reported_usage"
+                      ? "Audited corrected rates · reported usage may be partial"
+                      : "Immutable launch rates · reported usage may be partial"}
+            </p>
+          </div>
+        ) : null}
       </Card>
     </section>
   );

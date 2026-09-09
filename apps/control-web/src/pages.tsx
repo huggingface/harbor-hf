@@ -1,5 +1,6 @@
+import { useRunClock } from "./queries";
 import { LaunchEstimate } from "./launch-pricing";
-import { RunStatusTiming } from "./agent-timing";
+import { parentJobTime, RunStatusTiming } from "./agent-timing";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -63,6 +64,7 @@ import {
 import { usePricingPreferences } from "./pricing-store";
 import { RunConfiguration } from "./run-configuration";
 import { RunDiagnostics, RunDiagnosticsSummary } from "./run-diagnostics";
+import { RunPricingCorrections } from "./run-pricing-corrections";
 import { RunArchive } from "./run-archive";
 import { matchesRunFilters, readRunFilters, updateRunFilters } from "./run-filters";
 import { runIdentity } from "./run-identity";
@@ -644,7 +646,7 @@ export function RunsPage() {
       },
       {
         id: "launch_estimate",
-        header: "Launch estimate",
+        header: "Shared estimate",
         enableColumnFilter: false,
         cell: ({ row }) => <LaunchEstimate run={row.original} />,
       },
@@ -811,10 +813,8 @@ export function RunPage() {
         </p>
       ) : null}
       <RunArchive key={item.record.run_id} run={item} />
+      <RunPricingCorrections key={`pricing-${item.record.run_id}`} run={item} />
       <RunSummaryCards run={item} />
-      <p className="text-sm text-slate-400">
-        Launch estimate: <LaunchEstimate run={item} />
-      </p>
       <PricingPanel result={item.result} />
       <RunWaffle run={item} />
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
@@ -1135,6 +1135,7 @@ export function TrialPage() {
 }
 
 function JobsTable({ jobs, showRun = true }: { jobs: ParentJob[]; showRun?: boolean }) {
+  const now = useRunClock();
   if (jobs.length === 0) return <Empty>No parent Jobs are available.</Empty>;
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-800">
@@ -1145,7 +1146,7 @@ function JobsTable({ jobs, showRun = true }: { jobs: ParentJob[]; showRun?: bool
             {showRun ? <th className="px-4 py-3">Run</th> : null}
             <th className="px-4 py-3">Stage</th>
             <th className="px-4 py-3">Started</th>
-            <th className="px-4 py-3">Duration</th>
+            <th className="px-4 py-3">Elapsed / duration</th>
           </tr>
         </thead>
         <tbody>
@@ -1170,12 +1171,8 @@ function JobsTable({ jobs, showRun = true }: { jobs: ParentJob[]; showRun?: bool
               <td className="px-4 py-3">
                 <Badge status={job.stage}>{humanize(job.stage)}</Badge>
               </td>
-              <td className="px-4 py-3 text-slate-400">
-                {formatDate(job.started_at ?? job.created_at)}
-              </td>
-              <td className="px-4 py-3 text-slate-400">
-                {formatDuration(job.started_at, job.finished_at)}
-              </td>
+              <td className="px-4 py-3 text-slate-400">{formatDate(job.started_at)}</td>
+              <td className="px-4 py-3 text-slate-400">{parentJobTime(job, now)}</td>
             </tr>
           ))}
         </tbody>

@@ -19,24 +19,55 @@
           "type": "array",
           "minItems": 1,
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["repo", "path"],
-            "properties": {
-              "repo": { "type": "string", "pattern": "^https://" },
-              "path": { "type": "string", "minLength": 1 },
-              "task_names": {
-                "type": "array",
-                "minItems": 1,
-                "items": { "type": "string", "minLength": 1 }
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["repo", "path"],
+                "properties": {
+                  "repo": { "type": "string", "pattern": "^https://" },
+                  "path": { "type": "string", "minLength": 1 },
+                  "task_names": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "minLength": 1 }
+                  },
+                  "exclude_task_names": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "minLength": 1 }
+                  },
+                  "n_tasks": { "type": "integer", "minimum": 1 }
+                }
               },
-              "exclude_task_names": {
-                "type": "array",
-                "minItems": 1,
-                "items": { "type": "string", "minLength": 1 }
-              },
-              "n_tasks": { "type": "integer", "minimum": 1 }
-            }
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "ref"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^(?!.*\\.\\.)[a-zA-Z0-9][a-zA-Z0-9._-]*/[a-zA-Z0-9][a-zA-Z0-9._-]*(?![\\s\\S])"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}$",
+                    "maxLength": 71
+                  },
+                  "task_names": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "minLength": 1 }
+                  },
+                  "exclude_task_names": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "minLength": 1 }
+                  },
+                  "n_tasks": { "type": "integer", "minimum": 1 }
+                }
+              }
+            ]
           }
         },
         "n_attempts": { "type": "integer", "minimum": 1, "maximum": 100 },

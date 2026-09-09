@@ -11,7 +11,7 @@ job: {
 /**
  * @minItems 1
  */
-datasets: [{
+datasets: [({
 repo: string
 path: string
 /**
@@ -23,7 +23,19 @@ task_names?: [string, ...(string)[]]
  */
 exclude_task_names?: [string, ...(string)[]]
 n_tasks?: number
-}, ...({
+} | {
+name: string
+ref: string
+/**
+ * @minItems 1
+ */
+task_names?: [string, ...(string)[]]
+/**
+ * @minItems 1
+ */
+exclude_task_names?: [string, ...(string)[]]
+n_tasks?: number
+}), ...(({
 repo: string
 path: string
 /**
@@ -35,7 +47,19 @@ task_names?: [string, ...(string)[]]
  */
 exclude_task_names?: [string, ...(string)[]]
 n_tasks?: number
-})[]]
+} | {
+name: string
+ref: string
+/**
+ * @minItems 1
+ */
+task_names?: [string, ...(string)[]]
+/**
+ * @minItems 1
+ */
+exclude_task_names?: [string, ...(string)[]]
+n_tasks?: number
+}))[]]
 n_attempts: number
 n_concurrent_trials: number
 environment: {

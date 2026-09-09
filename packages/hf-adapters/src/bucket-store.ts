@@ -154,8 +154,8 @@ export class HuggingFaceBucketStore implements ObjectStore {
     }
   }
 
-  async read(key: string): Promise<Uint8Array> {
-    const cached = this.cache.get(key);
+  async read(key: string, options?: { fresh?: boolean }): Promise<Uint8Array> {
+    const cached = options?.fresh ? undefined : this.cache.get(key);
     if (cached) {
       this.cache.delete(key);
       this.cache.set(key, cached);
@@ -173,7 +173,7 @@ export class HuggingFaceBucketStore implements ObjectStore {
       }
     }
     if (!bytes) throw new Error(`object download produced no bytes: ${key}`);
-    this.setCached(key, bytes);
+    if (!options?.fresh) this.setCached(key, bytes);
     return Uint8Array.from(bytes);
   }
 

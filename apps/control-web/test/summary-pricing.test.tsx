@@ -126,6 +126,48 @@ it("renders native 89/89 completion as 100 percent in summary cards", () => {
   expect(screen.getByText("100%")).toBeInTheDocument();
   expect(screen.getByText("89 / 89")).toBeInTheDocument();
   expect(screen.getByText("1.235M")).toBeInTheDocument();
+  expect(screen.queryByText("Launch estimate:")).not.toBeInTheDocument();
+  const priced: RunView = {
+    ...run,
+    record: {
+      ...run.record,
+      pricing: {
+        currency: "USD",
+        input_usd_per_million: 2,
+        cached_usd_per_million: 1,
+        output_usd_per_million: 3,
+      },
+    },
+    shared_estimate: { cost_usd: 2.5, unavailable_reason: null },
+  };
+  view.rerender(<RunSummaryCards run={priced} />);
+  expect(screen.getByText("Launch estimate:")).toBeInTheDocument();
+  expect(screen.getByLabelText("Launch estimate (USD): 2.5")).toBeInTheDocument();
+  expect(screen.getByLabelText("Reported cost (USD): unavailable")).toBeInTheDocument();
+  expect(screen.getByText(/Immutable launch rates/)).toBeInTheDocument();
+  view.rerender(
+    <RunSummaryCards
+      run={{
+        ...priced,
+        shared_estimate: { cost_usd: null, unavailable_reason: "usage_unavailable" },
+      }}
+    />,
+  );
+  expect(screen.getByText("Reported usage unavailable or invalid")).toBeInTheDocument();
+  expect(
+    screen.getByLabelText("Launch estimate (USD): unavailable"),
+  ).toBeInTheDocument();
+  view.rerender(
+    <RunSummaryCards
+      run={{ ...priced, shared_estimate: { cost_usd: 0, unavailable_reason: null } }}
+    />,
+  );
+  expect(screen.getByLabelText("Launch estimate (USD): 0")).toBeInTheDocument();
+  expect(document.querySelector(".cursor-help")).toBeNull();
+  fireEvent.focus(
+    screen.getByText("Configured timeouts").closest("[tabindex]") as HTMLElement,
+  );
+  expect(screen.getByRole("tooltip")).toHaveTextContent("not effective budgets");
   view.rerender(<RunSummaryCards run={{ ...run, result: null }} />);
   expect(screen.queryByText("100%")).not.toBeInTheDocument();
   expect(screen.getByText("- / -")).toBeInTheDocument();
@@ -156,7 +198,7 @@ it.each([
         <RunSummaryCards
           run={
             {
-              record: { run_id: "synthetic" },
+              record: { run_id: "synthetic", harbor_job_config: {} },
               status: "finished",
               result: { stats: { n_input_tokens: input, n_cache_tokens: cached } },
             } as RunView
@@ -180,7 +222,11 @@ it("keeps timing caveats in Status help inside the named summary region", () => 
     <MemoryRouter>
       <RunSummaryCards
         run={
-          { record: { run_id: "synthetic" }, status: "finished", result: {} } as RunView
+          {
+            record: { run_id: "synthetic", harbor_job_config: {} },
+            status: "finished",
+            result: {},
+          } as RunView
         }
       />
     </MemoryRouter>,

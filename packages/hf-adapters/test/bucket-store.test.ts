@@ -99,3 +99,22 @@ describe("HuggingFaceBucketStore", () => {
     ).toThrow("nonnegative integer");
   });
 });
+
+it("fresh mutable metadata reads bypass stale cached content without a Bucket scan", async () => {
+  memory.objects.clear();
+  const bucket = store();
+  const key = "runs/example/pricing-corrections.json";
+  memory.objects.set(key, new TextEncoder().encode("before"));
+  expect(new TextDecoder().decode(await bucket.read(key))).toBe("before");
+  memory.objects.set(key, new TextEncoder().encode("after"));
+  const listing = vi.spyOn(bucket, "list");
+  expect(new TextDecoder().decode(await bucket.read(key))).toBe("before");
+  expect(new TextDecoder().decode(await bucket.read(key, { fresh: true }))).toBe(
+    "after",
+  );
+  expect(listing).not.toHaveBeenCalled();
+  memory.objects.delete(key);
+  await expect(bucket.read(key, { fresh: true })).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});

@@ -913,3 +913,28 @@ Approved at: 2026-09-09T22:32:56.258274+00:00
   inference, credential transfer, new infrastructure or upstream publication.
 - Keep exact private task subset and provenance outside the public contribution.
   Reasoning selection remains blocked and is excluded from implemented scope.
+
+Combined implementation ready for pull request (2026-09-09):
+
+- Added separate bounded pricing audit history, operator-only revision-checked
+  correction UI/API, fail-closed cached effective estimates and leaderboard
+  integration. Original rates, native costs and execution remain unchanged.
+- Independent review corrected failed-rebuild uncertainty and corrupt pricing
+  cache isolation; regression negative controls fail against the original code.
+- Completed registry-preset support preserves native pinned name/ref values;
+  the exact requested private profile remains outside the public contribution.
+- Passed 983 unit tests and 63 browser tests, formatting, lint, type checks,
+  build, dependency audit, normal Slophammer and privacy review. Both Docker
+  builds passed before the final projection-only review fixes. Prior Python
+  verification passed 46 CLI tests with 87.98% coverage and 155 agent tests;
+  no Python or worker source changes followed.
+- Supplemental global TypeScript coverage remains below 85% (81.96% lines,
+  74.50% branches). Baseline and mutation files remain absent. No gates or
+  package line budgets were weakened. Generated outputs are deterministic;
+  the normal generated-diff check is rerun after staging the candidate outputs.
+- Full combined diff, all untracked contribution files and public metadata were
+  independently privacy-reviewed. No private profile or operator data included.
+- Harbor source evidence is documented in the pricing-correction and native
+  registry preset documents. No upstream behavior or execution patch added.
+- Publishing this combined branch and opening its PR only; no merge, deployment,
+  profile publication, live pricing edit, run or credential transfer.

@@ -13,12 +13,21 @@
       "$ref": "#/$defs/cost"
     },
     "unavailable_reason": {
-      "enum": ["pricing_unset", "usage_unavailable", null]
+      "enum": [
+        "correction_history_unavailable",
+        "pricing_unset",
+        "usage_unavailable",
+        null
+      ]
     }
   },
   "$defs": {
     "basis": {
-      "const": "launch_rates_reported_usage"
+      "enum": [
+        "launch_rates_reported_usage",
+        "corrected_rates_reported_usage",
+        "effective_rates_reported_usage"
+      ]
     },
     "cost": {
       "type": ["number", "null"],

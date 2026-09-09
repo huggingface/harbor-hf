@@ -149,9 +149,7 @@ export function Hint({
       onMouseEnter={show}
       onMouseLeave={() => setOpen(false)}
     >
-      <span className="cursor-help border-b border-dotted border-slate-500">
-        {children}
-      </span>
+      <span className="border-b border-dotted border-slate-500">{children}</span>
       {icon ? (
         <button
           type="button"

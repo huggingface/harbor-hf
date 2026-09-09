@@ -1,6 +1,6 @@
 import type { AgentTimingV1 } from "@harbor-hf/contracts";
-import type { RunView } from "./api";
-import { humanize } from "./lib";
+import type { ParentJob, RunView } from "./api";
+import { asRecord, formatDuration, humanize } from "./lib";
 import { Badge, Hint } from "./ui";
 
 export function agentDuration(ms: number | null | undefined): string {
@@ -32,4 +32,53 @@ export function RunStatusTiming({ run }: { run: RunView }) {
       </div>
     </div>
   );
+}
+
+export function parentJobTime(job: ParentJob, now = Date.now()): string {
+  if (job.finished_at) {
+    return `Duration: ${formatDuration(job.started_at, job.finished_at)}`;
+  }
+  if (job.stage === "running") {
+    return `Elapsed since start: ${formatDuration(job.started_at, new Date(now).toISOString())}`;
+  }
+  return "Duration: Unavailable";
+}
+
+export function configuredTimeouts(
+  config: RunView["record"]["harbor_job_config"],
+): string {
+  const values: string[] = [];
+  const add = (
+    record: Record<string, unknown> | null,
+    prefix: string,
+    keys: string[],
+  ) => {
+    for (const key of keys) {
+      const value = record?.[key];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        values.push(`${prefix}${key}: ${value}`);
+      }
+    }
+  };
+  add(config, "", [
+    "timeout_multiplier",
+    "agent_timeout_multiplier",
+    "verifier_timeout_multiplier",
+    "agent_setup_timeout_multiplier",
+    "environment_build_timeout_multiplier",
+  ]);
+  if (Array.isArray(config.agents)) {
+    config.agents.forEach((agent, index) => {
+      add(asRecord(agent), `agents[${index}].`, [
+        "override_timeout_sec",
+        "override_setup_timeout_sec",
+        "max_timeout_sec",
+      ]);
+    });
+  }
+  add(asRecord(config.verifier), "verifier.", [
+    "override_timeout_sec",
+    "max_timeout_sec",
+  ]);
+  return `Configured Harbor timeouts (raw JobConfig; not effective budgets). Harbor resolves task defaults, overrides, caps and multipliers.\n${values.join("\n") || "No explicit phase timeout settings recorded."}`;
 }

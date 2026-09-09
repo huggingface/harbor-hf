@@ -1,3 +1,5 @@
+import { PricingProjection } from "./pricing-projection.js";
+import type { PricingProjectionView } from "./pricing-corrections.js";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
@@ -38,7 +40,7 @@ export interface TrialSummary {
   result: Record<string, unknown>;
 }
 
-export interface RunView {
+export interface RunView extends Partial<PricingProjectionView> {
   shared_estimate?: SharedEstimateV1;
   presentation_available?: boolean;
   presentation?: RunPresentationV1 | null;
@@ -211,7 +213,10 @@ export class Projection {
     };
   }
 
-  private constructor(private readonly database: Database.Database) {}
+  readonly pricing: PricingProjection;
+  private constructor(private readonly database: Database.Database) {
+    this.pricing = new PricingProjection(database);
+  }
 
   static async open(path: string): Promise<Projection> {
     await mkdir(dirname(path), { recursive: true });
@@ -262,6 +267,7 @@ export class Projection {
     // Capture before any reads, including the asynchronous listing. This orders
     // disposable cache writes, independently of durable presentation revisions.
     const rebuildStart = this.presentationGeneration;
+    const pricingEpoch = this.pricing.generation;
     const observedAt = new Date().toISOString();
     const entries = await store.list("runs");
     const keys = new Set(entries.map((entry) => entry.key));
@@ -334,6 +340,7 @@ export class Projection {
       const runJobs = jobs.filter((job) => job.run_id === runId);
       rows.push({
         view: {
+          ...(await this.pricing.load(store, runId)),
           presentation,
           presentation_available: presentationAvailable,
           agent_timing: sumAgentTiming(trials.map((trial) => trial.result)),
@@ -385,6 +392,15 @@ export class Projection {
           view.presentation_available = current?.available ?? false;
         }
       }
+      const pricingRows = new Map(
+        rows.map(({ view }) => [
+          view.record.run_id,
+          this.pricing.retain(view.record.run_id, pricingEpoch, {
+            pricing_corrections: view.pricing_corrections ?? null,
+            pricing_corrections_available: view.pricing_corrections_available ?? false,
+          }),
+        ]),
+      );
       this.database.exec(
         "DELETE FROM trials; DELETE FROM parent_jobs; DELETE FROM runs;",
       );
@@ -409,6 +425,9 @@ export class Projection {
           view.presentation ? JSON.stringify(view.presentation) : null,
           view.presentation_available ? 1 : 0,
         );
+        const pricingRow = pricingRows.get(view.record.run_id);
+        if (!pricingRow) throw new Error("missing pricing rebuild row");
+        this.pricing.write(view.record.run_id, pricingRow);
         for (const trial of trials)
           insertTrial.run(
             trial.run_id,
@@ -432,6 +451,7 @@ export class Projection {
     // Advance only after a successful synchronous transaction. Even an unchanged
     // validated snapshot fences older overlapping reads (valid or failed).
     for (const { view } of rows) this.notePresentationMutation(view.record.run_id);
+    for (const { view } of rows) this.pricing.committed(view.record.run_id);
     this.observations = structuredClone(jobs);
     this.observationsAt = observedAt;
   }
@@ -464,13 +484,15 @@ export class Projection {
   private readRuns(runId?: string): RunView[] {
     const rows = this.database
       .prepare(
-        `SELECT record_body, state_body, status, result_body, agent_timing_body, presentation_body, presentation_available FROM runs ${
+        `SELECT record_body, state_body, status, result_body, agent_timing_body, presentation_body, presentation_available, pricing_corrections_body, pricing_corrections_available FROM runs ${
           runId === undefined
             ? "ORDER BY created_at DESC, run_id DESC"
             : "WHERE run_id = ?"
         }`,
       )
       .all(...(runId === undefined ? [] : [runId])) as Array<{
+      pricing_corrections_body: string | null;
+      pricing_corrections_available: number;
       record_body: string;
       state_body: string;
       status: RunStatus;
@@ -484,8 +506,25 @@ export class Projection {
       const result = row.result_body
         ? (JSON.parse(row.result_body) as Record<string, unknown>)
         : null;
+      const pricing = this.pricing.decode(
+        row.pricing_corrections_body,
+        Boolean(row.pricing_corrections_available),
+        record.run_id,
+      );
+      const corrected = pricing.pricing_corrections?.revisions.at(-1)?.pricing;
+      const estimate = launchEstimate(corrected ?? record.pricing, result);
       return {
-        shared_estimate: launchEstimate(record.pricing, result),
+        ...pricing,
+        shared_estimate: !pricing.pricing_corrections_available
+          ? {
+              basis: "effective_rates_reported_usage",
+              cost_usd: null,
+              unavailable_reason: "correction_history_unavailable",
+            }
+          : {
+              ...estimate,
+              basis: corrected ? "corrected_rates_reported_usage" : estimate.basis,
+            },
         presentation_available: Boolean(row.presentation_available),
         presentation: row.presentation_body
           ? validateRunPresentation(JSON.parse(row.presentation_body))

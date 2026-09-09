@@ -118,6 +118,8 @@ const document = {
       ...embedSchema("LeaderboardRow", schemas.leaderboardRow),
       ...embedSchema("RunState", schemas.runState),
       ...embedSchema("RunPresentation", schemas.runPresentation),
+      ...embedSchema("RunPricingCorrections", schemas.runPricingCorrections),
+      ...embedSchema("PricingCorrectionRequest", schemas.pricingCorrectionRequest),
       ...embedSchema("AgentTiming", schemas.agentTiming),
       RunView: {
         type: "object",
@@ -137,6 +139,13 @@ const document = {
             ],
           },
           result: { type: ["object", "null"], additionalProperties: true },
+          pricing_corrections_available: { type: "boolean" },
+          pricing_corrections: {
+            anyOf: [
+              { $ref: "#/components/schemas/RunPricingCorrections" },
+              { type: "null" },
+            ],
+          },
           presentation_available: {
             type: "boolean",
             description:
@@ -576,6 +585,36 @@ const document = {
             },
           },
           "404": error,
+        },
+      },
+    },
+    "/api/v1/runs/{run_id}/pricing-corrections": {
+      patch: {
+        summary:
+          "Append audited shared estimate rates (operator only; no execution effects)",
+        security: authenticated,
+        parameters: [runParameter],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PricingCorrectionRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Validated full correction history",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RunPricingCorrections" },
+              },
+            },
+          },
+          "400": error,
+          "403": error,
+          "409": error,
+          "503": error,
         },
       },
     },

@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { getTrialProgress, type RunView } from "./api";
+import type { RunView } from "./api";
+import { useRunClock, useTrialProgress } from "./queries";
 import { asRecord, cn } from "./lib";
 import { projectRunExceptions } from "./run-diagnostics";
 import {
@@ -26,20 +26,8 @@ function RunWaffleContents({ run }: { run: RunView }) {
   const stats = asRecord(run.result?.stats);
   const [taskPage, setTaskPage] = useState(0);
   const [search, setSearch] = useState("");
-  const query = useQuery({
-    queryKey: ["trial-progress", id],
-    queryFn: () => getTrialProgress(id),
-    staleTime: 5_000,
-    refetchInterval: ["finished", "cancelled", "cost_stopped"].includes(run.status)
-      ? 120_000
-      : 15_000,
-    retry: false,
-  });
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 5_000);
-    return () => clearInterval(timer);
-  }, []);
+  const query = useTrialProgress(id);
+  const now = useRunClock();
   const assignments = useRef<WaffleCell[]>([]);
   const history = useRef<SeparateObservation[]>([]);
   const cells = query.data

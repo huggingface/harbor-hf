@@ -48,6 +48,13 @@ Archive writes require validated metadata; conflicts synchronize the SQL cache
 before returning 409. See [Shared run archive](run-archive.md) for the
 single-authority revision protocol, rebuild race protection, and review table.
 
+## Shared pricing corrections
+
+Operators can append audited shared estimate rates without altering immutable launch
+pricing, native reported cost or execution. See [Audited pricing corrections](run-pricing-corrections.md)
+for the bounded history document, fresh revision checks, SQL rebuild fencing and
+fail-closed estimate availability. Runs/detail and leaderboard remain SQL-backed.
+
 ## Persistent resources
 
 A hosted installation uses:

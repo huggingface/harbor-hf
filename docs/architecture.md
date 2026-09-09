@@ -80,6 +80,7 @@ shared presentation metadata, and one Harbor job folder.
 runs/<run-id>/
 ├── run.json
 ├── presentation.json  # optional shared Runs visibility
+├── pricing-corrections.json  # optional audited shared estimate rates
 ├── state.json
 ├── attempt-costs/
 │   └── <attempt-id>.json
@@ -110,6 +111,11 @@ Shared archive visibility is separate from execution state. The optional
 the existing `runs` table, and never consulted for execution or leaderboard
 eligibility. See [Shared run archive](run-archive.md) for revision checks,
 rebuild race protection, and the provider-CAS limitation.
+
+Shared estimate corrections are a separate bounded audit history, never changes to
+launch pricing or reported native costs. Their cached SQL projection fails closed
+on unavailable history without blocking execution. See
+[Audited pricing corrections](run-pricing-corrections.md).
 
 ## Presets and direct configuration
 

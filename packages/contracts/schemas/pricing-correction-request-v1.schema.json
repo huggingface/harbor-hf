@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harbor-hf.example/schemas/pricing-correction-request-v1.schema.json",
+  "title": "PricingCorrectionRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["expected_revision", "reason", "pricing"],
+  "properties": {
+    "expected_revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 999
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "pattern": "\\S"
+    },
+    "pricing": {
+      "$ref": "launch-pricing-v1.schema.json"
+    }
+  }
+}
