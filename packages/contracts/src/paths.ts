@@ -13,6 +13,10 @@ export function runRecordPath(runId: string): string {
   return `${runRoot(runId)}/run.json`;
 }
 
+export function runPresentationPath(runId: string): string {
+  return `${runRoot(runId)}/presentation.json`;
+}
+
 export function runStatePath(runId: string): string {
   return `${runRoot(runId)}/state.json`;
 }

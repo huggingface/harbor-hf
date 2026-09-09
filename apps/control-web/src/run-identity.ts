@@ -42,8 +42,11 @@ export function runIdentity(record: RunRecord) {
   return {
     model: join("model"),
     provider: join("provider"),
-    agent: join("agent"),
-    version: join("version"),
+    agent: record.workbench_recipe?.name ?? join("agent"),
+    nativeAgent: join("agent"),
+    version: record.workbench_recipe
+      ? (record.submission?.harness?.version ?? join("version"))
+      : join("version"),
     reasoning: join("reasoning"),
   };
 }

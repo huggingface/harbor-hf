@@ -1,9 +1,10 @@
+import Database from "better-sqlite3";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
 import { runRecordPath, runStatePath } from "@harbor-hf/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ControlService,
   compileAgentWorkbenchRecipe,
@@ -404,6 +405,38 @@ describe("run submission", () => {
     expect(projection.listRuns()).toEqual([]);
   });
 
+  it("snapshots Workbench display provenance as immutable without changing native config", async () => {
+    const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+    const launch = (name?: string) =>
+      service.submitWorkbench(
+        input,
+        preview.harbor_agent,
+        "recipe-provenance",
+        "test-subject",
+        name === undefined ? undefined : { name },
+      );
+    const first = await launch("recipe-one");
+    expect(first.run.workbench_recipe).toEqual({ name: "recipe-one" });
+    expect(await launch("recipe-one")).toEqual({ created: false, run: first.run });
+    await expect(launch("recipe-two")).rejects.toThrow("different run");
+    await expect(launch()).rejects.toThrow("different run");
+    const historical = await service.submitWorkbench(
+      input,
+      preview.harbor_agent,
+      "historical",
+      "test-subject",
+    );
+    expect(historical.run).not.toHaveProperty("workbench_recipe");
+    expect(first.run.harbor_job_config.agents).toEqual(
+      historical.run.harbor_job_config.agents,
+    );
+    await service.refresh();
+    expect(projection.run(first.run.run_id)?.record.workbench_recipe).toEqual({
+      name: "recipe-one",
+    });
+    expect(jobs.starts).toBe(0);
+  });
+
   it("adopts a repeated request and rejects different input", async () => {
     const first = await submit();
     const second = await submit();
@@ -637,6 +670,95 @@ describe("run submission", () => {
 });
 
 describe("status and projection", () => {
+  it("reads cached timing in one query and scopes detail to its indexed run", async () => {
+    const first = await submit("bounded-first");
+    const second = await submit("bounded-second");
+    await putJson(
+      store,
+      `runs/${second.run.run_id}/job/task/result.json`,
+      trial(0.01, 1),
+    );
+    await service.refresh();
+    const db = new Database(join(root, "projection.sqlite"));
+    // If reads ever parse native trial JSON again, even listRuns will fail.
+    db.prepare("UPDATE trials SET result_body = 'not-json'").run();
+    const prepare = vi.spyOn(Database.prototype, "prepare");
+    try {
+      expect(projection.listRuns()).toHaveLength(2);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare.mock.calls[0]?.[0]).not.toContain("FROM trials");
+      prepare.mockClear();
+      db.prepare("UPDATE runs SET record_body = 'not-json' WHERE run_id = ?").run(
+        second.run.run_id,
+      );
+      prepare.mockClear();
+      expect(projection.run(first.run.run_id)?.record.run_id).toBe(first.run.run_id);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare.mock.calls[0]?.[0]).toContain("WHERE run_id = ?");
+      expect(projection.run("missing")).toBeNull();
+    } finally {
+      prepare.mockRestore();
+      db.close();
+    }
+  });
+
+  it("rolls up only current rows across rebuild/resume and excludes archived retries", async () => {
+    const { run } = await submit("measured-agent-time");
+    const second = await submit("measured-agent-time-second");
+    const path = `runs/${run.run_id}/job/task/result.json`;
+    const phase = {
+      started_at: "2026-09-09T00:00:00Z",
+      finished_at: "2026-09-09T00:01:26Z",
+    };
+    const native = { ...trial(0.01, 1), agent_execution: phase };
+    const job = { finished_at: "2026-09-09T00:02:00Z", n_total_trials: 1 };
+    await putJson(store, `runs/${run.run_id}/job/result.json`, job);
+    await putJson(store, path, native);
+    await putJson(store, `runs/${run.run_id}/job/retries/old/result.json`, native);
+    await service.refresh();
+    for (let i = 0; i < 2; i++) {
+      await service.refresh();
+      expect(projection.run(run.run_id)?.agent_timing).toEqual({
+        duration_ms: 86000,
+        complete_trials: 1,
+        partial_trials: 0,
+        unavailable_trials: 0,
+      });
+    }
+    const reopened = await Projection.open(join(root, "projection.sqlite"));
+    expect(reopened.run(run.run_id)?.agent_timing?.duration_ms).toBe(86000);
+    reopened.close();
+    // A duplicate native name fails inside the transaction, after DELETEs.
+    // Both rows and cached measurements must roll back together.
+    const duplicate = `runs/${run.run_id}/job/duplicate/result.json`;
+    await putJson(store, duplicate, native);
+    await expect(projection.rebuild(store, [])).rejects.toThrow("UNIQUE constraint");
+    expect(projection.run(run.run_id)?.agent_timing?.duration_ms).toBe(86000);
+    expect(projection.trials(run.run_id)).toHaveLength(1);
+    await rm(join(store.root, duplicate));
+    expect(projection.run(run.run_id)?.result).toEqual(job);
+    expect(projection.run(second.run.run_id)?.agent_timing?.duration_ms).toBeNull();
+    await putJson(store, path, {
+      ...native,
+      agent_execution: { started_at: phase.started_at, finished_at: phase.started_at },
+    });
+    await service.refresh();
+    expect(projection.run(run.run_id)?.agent_timing?.duration_ms).toBe(0);
+    await rm(join(store.root, path));
+    await service.refresh();
+    expect(projection.run(run.run_id)?.agent_timing).toEqual({
+      duration_ms: null,
+      complete_trials: 0,
+      partial_trials: 0,
+      unavailable_trials: 0,
+    });
+    await rm(join(store.root, `runs/${run.run_id}/run.json`));
+    await service.refresh();
+    expect(projection.run(run.run_id)).toBeNull();
+    expect(projection.listRuns().map((view) => view.record.run_id)).toEqual([
+      second.run.run_id,
+    ]);
+  });
   it("applies the status precedence", () => {
     const record = {
       schema_version: "v1",
@@ -1174,4 +1296,401 @@ it("retains parent and child observations separately from completion and the par
   expect(projection.system().trials).toBe(0);
   await projection.rebuild(store, []);
   expect(projection.jobObservations().jobs).toEqual([]);
+});
+
+describe("shared run presentation", () => {
+  it("defaults without fabricated audit fields, persists and restores across independent projections", async () => {
+    const { run } = await submit();
+    const id = run.run_id;
+    expect(projection.run(id)?.presentation).toBeNull();
+    const before = await store.list("runs");
+    const state = projection.run(id)?.state;
+    const board = leaderboard(projection, presets);
+    const puts = vi.spyOn(store, "put");
+    expect(await service.setPresentation(id, false, 0, "fixture-subject")).toBeNull();
+    expect(puts).not.toHaveBeenCalled();
+    const first = await service.setPresentation(id, true, 0, "fixture-subject");
+    expect(first).toMatchObject({
+      archived: true,
+      revision: 1,
+      actor: "fixture-subject",
+    });
+    expect(await service.setPresentation(id, true, 1, "another-fixture")).toEqual(
+      first,
+    );
+    expect(puts).toHaveBeenCalledTimes(1);
+    await expect(
+      service.setPresentation(id, true, 0, "fixture-subject"),
+    ).rejects.toThrow("revision changed");
+    const other = await Projection.open(join(root, "other.sqlite"));
+    try {
+      const second = new ControlService(store, other, presets, jobs, service.options);
+      await second.initialize();
+      expect(other.run(id)?.presentation).toEqual(first);
+      await second.setPresentation(id, false, 1, "another-fixture");
+      await service.refresh();
+      expect(projection.run(id)?.presentation).toMatchObject({
+        archived: false,
+        revision: 2,
+      });
+      expect(projection.run(id)?.state).toEqual(state);
+      expect(leaderboard(projection, presets)).toEqual(board);
+      expect(jobs.starts).toBe(0);
+      expect(jobs.cancelled).toEqual([]);
+      const after = await store.list("runs");
+      expect(after.filter((item) => !item.key.endsWith("presentation.json"))).toEqual(
+        before,
+      );
+      const reads = vi.spyOn(store, "read");
+      const lists = vi.spyOn(store, "list");
+      reads.mockClear();
+      lists.mockClear();
+      expect(projection.listRuns()).toHaveLength(1);
+      expect(projection.run(id)?.presentation?.revision).toBe(2);
+      expect(reads).not.toHaveBeenCalled();
+      expect(lists).not.toHaveBeenCalled();
+    } finally {
+      other.close();
+    }
+  });
+
+  it("serializes concurrent expected revisions; stale intent cannot resurrect a restore", async () => {
+    const { run } = await submit();
+    const results = await Promise.allSettled([
+      service.setPresentation(run.run_id, true, 0, "fixture-subject"),
+      service.setPresentation(run.run_id, true, 0, "fixture-subject"),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    await service.setPresentation(run.run_id, false, 1, "fixture-subject");
+    await expect(
+      service.setPresentation(run.run_id, true, 0, "fixture-subject"),
+    ).rejects.toThrow("revision changed");
+    expect(projection.run(run.run_id)?.presentation?.archived).toBe(false);
+  });
+
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])(
+    "an older in-flight rebuild cannot clobber a newer revision (existing=%s, invalid=%s)",
+    async (existing, invalid) => {
+      const { run } = await submit();
+      if (existing)
+        await service.setPresentation(run.run_id, true, 0, "fixture-subject");
+      let release = () => {};
+      let ready = () => {};
+      const reached = new Promise<void>((resolve) => {
+        ready = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // Pause after the archive snapshot was taken, before the transaction commits.
+      await putJson(store, `runs/${run.run_id}/job/result.json`, { n_total_trials: 1 });
+      const read = store.read.bind(store);
+      let blocked = false;
+      vi.spyOn(store, "read").mockImplementation(async (key) => {
+        const bytes = await read(key);
+        if (!blocked && key.endsWith("job/result.json")) {
+          blocked = true;
+          ready();
+          await gate;
+        }
+        return bytes;
+      });
+      if (invalid) await putJson(store, `runs/${run.run_id}/presentation.json`, {});
+      const rebuild = service.refresh();
+      await reached;
+      if (invalid) {
+        const last = projection.run(run.run_id)?.presentation;
+        if (last) await putJson(store, `runs/${run.run_id}/presentation.json`, last);
+        else await rm(join(store.root, `runs/${run.run_id}/presentation.json`));
+      }
+      const next = await service.setPresentation(
+        run.run_id,
+        !existing,
+        existing ? 1 : 0,
+        "fixture-subject",
+      );
+      release();
+      await rebuild;
+      expect(projection.run(run.run_id)?.presentation).toEqual(next);
+      expect(projection.run(run.run_id)?.presentation_available).toBe(true);
+    },
+  );
+
+  it.each(
+    [false, true].flatMap((existing) =>
+      [false, true].flatMap((available) =>
+        ["direct", "rebuild"].map((writer) => ({ existing, available, writer })),
+      ),
+    ),
+  )(
+    "orders equal-revision/null availability: existing=$existing available=$available writer=$writer",
+    async ({ existing, available, writer }) => {
+      const { run } = await submit();
+      const id = run.run_id;
+      if (existing) await service.setPresentation(id, true, 0, "fixture-subject");
+      const presentation = projection.run(id)?.presentation ?? null;
+      const key = `runs/${id}/presentation.json`;
+      const restore = async () => {
+        if (presentation) await putJson(store, key, presentation);
+        else await rm(join(store.root, key), { force: true });
+      };
+      if (available) {
+        await putJson(store, key, {});
+        projection.markPresentationUnavailable(id);
+      }
+      await putJson(store, `runs/${id}/job/result.json`, { n_total_trials: 1 });
+      let release = () => {};
+      let ready = () => {};
+      const reached = new Promise<void>((resolve) => {
+        ready = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const read = store.read.bind(store);
+      let blocked = false;
+      vi.spyOn(store, "read").mockImplementation(async (path) => {
+        const bytes = await read(path);
+        if (!blocked && path.endsWith("job/result.json")) {
+          blocked = true;
+          ready();
+          await gate;
+        }
+        return bytes;
+      });
+      const older = projection.rebuild(store, []);
+      await reached;
+      if (available) await restore();
+      else await putJson(store, key, {});
+      const put = vi.spyOn(store, "put");
+      if (writer === "rebuild") await projection.rebuild(store, []);
+      else if (available)
+        await service.setPresentation(
+          id,
+          existing,
+          existing ? 1 : 0,
+          "fixture-subject",
+        );
+      else
+        await expect(
+          service.setPresentation(id, !existing, existing ? 1 : 0, "fixture-subject"),
+        ).rejects.toThrow("refetch");
+      expect(put).not.toHaveBeenCalled();
+      expect(projection.run(id)).toMatchObject({
+        presentation,
+        presentation_available: available,
+      });
+      release();
+      await older;
+      expect(projection.run(id)).toMatchObject({
+        presentation,
+        presentation_available: available,
+      });
+      // A subsequent validated rebuild must recover without a revision increase.
+      await restore();
+      await projection.rebuild(store, []);
+      expect(projection.run(id)).toMatchObject({
+        presentation,
+        presentation_available: true,
+      });
+    },
+  );
+
+  it.each([null, {}, { schema_version: "v1", archived: false }])(
+    "rejects malformed authoritative metadata without unarchiving: %j",
+    async (invalid) => {
+      const { run } = await submit();
+      await service.setPresentation(run.run_id, true, 0, "fixture-subject");
+      await putJson(store, `runs/${run.run_id}/presentation.json`, invalid);
+      await expect(service.refresh()).resolves.toBeUndefined();
+      expect(projection.run(run.run_id)?.presentation_available).toBe(false);
+      expect(projection.run(run.run_id)?.presentation?.archived).toBe(true);
+      await expect(
+        service.setPresentation(run.run_id, false, 1, "fixture-subject"),
+      ).rejects.toThrow("refetch");
+    },
+  );
+
+  it("reports a persisted write with a failed projection honestly and requires a fresh revision", async () => {
+    const { run } = await submit();
+    vi.spyOn(projection, "updatePresentation").mockImplementationOnce(() => {
+      throw new Error("fixture failure");
+    });
+    await expect(
+      service.setPresentation(run.run_id, true, 0, "fixture-subject"),
+    ).rejects.toThrow("refetch");
+    expect(projection.run(run.run_id)?.presentation).toBeNull();
+    expect(projection.run(run.run_id)?.presentation_available).toBe(false);
+    await expect(
+      service.setPresentation(run.run_id, true, 0, "fixture-subject"),
+    ).rejects.toThrow("revision changed");
+    expect(projection.run(run.run_id)?.presentation?.revision).toBe(1);
+    expect(projection.run(run.run_id)?.presentation_available).toBe(true);
+    await service.setPresentation(run.run_id, false, 1, "fixture-subject");
+    expect(projection.run(run.run_id)?.presentation?.revision).toBe(2);
+  });
+
+  it.each(["parse", "schema", "identity", "read"])(
+    "isolates %s presentation failures from all cancellation and orphan safety",
+    async (failure) => {
+      const bad = (await submit("bad-display")).run;
+      const cancelled = (await submit("cancel-valid")).run;
+      const orphan = (await submit("orphan-valid")).run;
+      const state = projection.run(cancelled.run_id)?.state;
+      await putJson(store, runStatePath(cancelled.run_id), {
+        ...state,
+        desired_state: "cancelled",
+      });
+      await putJson(store, `runs/${bad.run_id}/job/task__trial/result.json`, trial());
+      await service.refresh();
+      const costs = projection.trials(bad.run_id);
+      const path = `runs/${bad.run_id}/presentation.json`;
+      if (failure === "parse") await store.put(path, new TextEncoder().encode("{"));
+      else if (failure === "identity")
+        await putJson(store, path, {
+          schema_version: "v1",
+          run_id: orphan.run_id,
+          archived: true,
+          revision: 1,
+          updated_at: "2026-01-01T00:00:00Z",
+          actor: "fixture-subject",
+        });
+      else await putJson(store, path, {});
+      if (failure === "read") {
+        const read = store.read.bind(store);
+        vi.spyOn(store, "read").mockImplementation(async (key) => {
+          if (key === path) throw new Error("fixture read unavailable");
+          return read(key);
+        });
+      }
+      const job = {
+        stage: "running",
+        created_at: "2026-01-01T00:00:00Z",
+        started_at: "2026-01-01T00:00:00Z",
+        finished_at: null,
+      } as const;
+      jobs.values.push(
+        { ...job, id: "cancel-parent", run_id: cancelled.run_id, role: "parent" },
+        { ...job, id: "orphan-trial", run_id: orphan.run_id, role: "trial" },
+      );
+      await expect(service.reconcile()).resolves.toBeUndefined();
+      expect(jobs.cancelled).toEqual(
+        expect.arrayContaining(["cancel-parent", "orphan-trial"]),
+      );
+      expect(projection.listRuns()).toHaveLength(3);
+      expect(projection.run(bad.run_id)).toMatchObject({
+        presentation: null,
+        presentation_available: false,
+      });
+      expect(projection.run(cancelled.run_id)?.presentation_available).toBe(true);
+      expect(projection.trials(bad.run_id)).toEqual(costs);
+      const put = vi.spyOn(store, "put");
+      await expect(
+        service.setPresentation(bad.run_id, true, 0, "fixture-subject"),
+      ).rejects.toThrow("refetch");
+      expect(put).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a failed conflict synchronization unavailable until a validated resync", async () => {
+    const { run } = await submit();
+    const update = vi.spyOn(projection, "updatePresentation").mockImplementation(() => {
+      throw new Error("fixture projection failure");
+    });
+    await expect(
+      service.setPresentation(run.run_id, true, 0, "fixture-subject"),
+    ).rejects.toThrow("refetch");
+    await expect(
+      service.setPresentation(run.run_id, true, 0, "fixture-subject"),
+    ).rejects.toThrow("refetch");
+    expect(projection.run(run.run_id)).toMatchObject({
+      presentation: null,
+      presentation_available: false,
+    });
+    update.mockRestore();
+    await expect(
+      service.setPresentation(run.run_id, true, 0, "fixture-subject"),
+    ).rejects.toThrow("revision changed");
+    expect(projection.run(run.run_id)).toMatchObject({
+      presentation: { revision: 1 },
+      presentation_available: true,
+    });
+    // A delayed updater must not clear a later restore or its availability.
+    const archived = projection.run(run.run_id)?.presentation ?? null;
+    await service.setPresentation(run.run_id, false, 1, "fixture-subject");
+    projection.updatePresentation(run.run_id, archived);
+    expect(projection.run(run.run_id)).toMatchObject({
+      presentation: { revision: 2, archived: false },
+      presentation_available: true,
+    });
+  });
+
+  it("adds nullable metadata to old SQLite without inventing audit history", async () => {
+    const path = join(root, "old-archive.sqlite");
+    const db = new Database(path);
+    db.exec(
+      "CREATE TABLE runs (run_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, record_body TEXT NOT NULL, state_body TEXT NOT NULL, status TEXT NOT NULL, result_body TEXT)",
+    );
+    const { run } = await submit();
+    const view = projection.run(run.run_id);
+    db.prepare("INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?)").run(
+      run.run_id,
+      run.created_at,
+      JSON.stringify(run),
+      JSON.stringify(view?.state),
+      "queued",
+      null,
+    );
+    db.close();
+    const old = await Projection.open(path);
+    try {
+      expect(old.run(run.run_id)?.presentation).toBeNull();
+      await old.rebuild(store, []);
+      expect(old.run(run.run_id)?.presentation).toBeNull();
+    } finally {
+      old.close();
+    }
+  });
+});
+
+it("archiving retains eligible leaderboard rewards, costs and native artifacts", async () => {
+  const { run } = await service.submitPreset(
+    {
+      ...input,
+      role: "final",
+      benchmark: { ...input.benchmark, preset: "all-tasks-5-trials" },
+    },
+    "archive-final",
+    "fixture-subject",
+  );
+  await putJson(store, `runs/${run.run_id}/job/result.json`, {
+    finished_at: "2026-01-01T01:00:00Z",
+    n_total_trials: 1,
+  });
+  await putJson(store, `runs/${run.run_id}/job/task__trial/result.json`, trial());
+  await service.refresh();
+  const before = projection.run(run.run_id);
+  const board = leaderboard(projection, presets);
+  expect(board).toHaveLength(1);
+  const artifacts = await store.list("runs");
+  await service.setPresentation(run.run_id, true, 0, "fixture-subject");
+  expect(projection.listRuns()).toHaveLength(1);
+  expect(leaderboard(projection, presets)).toEqual(board);
+  expect(projection.run(run.run_id)).toEqual({
+    ...before,
+    presentation: expect.objectContaining({ archived: true }),
+  });
+  expect(
+    (await store.list("runs")).filter(
+      (item) => !item.key.endsWith("presentation.json"),
+    ),
+  ).toEqual(artifacts);
+  expect(jobs.starts).toBe(0);
+  expect(jobs.cancelled).toEqual([]);
 });

@@ -407,3 +407,26 @@ it.each([
     expect(screen.getByText(text)).toBeInTheDocument();
   },
 );
+
+it("colors positive affected and group counts red, retaining neutral zero/missing", () => {
+  const { unmount } = render(
+    <RunDiagnosticsSummary run={run(resultWith({ RuntimeError: ["trial-a"] }))} />,
+    { wrapper: MemoryRouter },
+  );
+  expect(screen.getByText("1 affected trial")).toHaveClass("text-red-400");
+  expect(screen.getByText(/Infra-related trials: 0/)).not.toHaveClass("text-red-400");
+  unmount();
+  const panel = render(
+    <RunDiagnostics run={run(resultWith({ RuntimeError: ["trial-a"] }))} />,
+    { wrapper: MemoryRouter },
+  );
+  expect(screen.getByText("1 trial", { exact: true })).toHaveClass("text-red-400");
+  panel.unmount();
+  const zero = render(<RunDiagnosticsSummary run={run(resultWith({}))} />, {
+    wrapper: MemoryRouter,
+  });
+  expect(screen.getByText("No recorded exceptions")).toHaveClass("text-slate-400");
+  zero.unmount();
+  render(<RunDiagnosticsSummary run={run(null)} />, { wrapper: MemoryRouter });
+  expect(screen.getByText("Unknown / unavailable")).toHaveClass("text-slate-400");
+});

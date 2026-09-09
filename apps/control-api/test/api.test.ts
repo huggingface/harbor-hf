@@ -1,4 +1,6 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import type { components } from "../../control-web/src/generated/api.js";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -107,6 +109,157 @@ const submission = {
 };
 
 describe("control API", () => {
+  it("validates actual single/list responses through generated OpenAPI component refs", async () => {
+    const document = JSON.parse(
+      await readFile(resolve("docs/control-api-v1.openapi.json"), "utf8"),
+    );
+    const ajv = new Ajv2020({ strict: false, allErrors: true });
+    ajv.addFormat("date-time", (value: string) => Number.isFinite(Date.parse(value)));
+    const single = ajv.compile({
+      ...document.paths["/api/v1/runs/{run_id}"].get.responses["200"].content[
+        "application/json"
+      ].schema,
+      components: document.components,
+    });
+    const list = ajv.compile({
+      ...document.paths["/api/v1/runs"].get.responses["200"].content["application/json"]
+        .schema,
+      components: document.components,
+    });
+    const config = {
+      agents: [{ name: "example", kwargs: { nested: { values: [true, 1, null] } } }],
+      n_concurrent_trials: 2,
+      environment: { type: "docker" },
+    } satisfies components["schemas"]["RunRecord"]["harbor_job_config"];
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const submitted = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "response-schema" },
+      payload: submission,
+    });
+    const record = { ...submitted.json().run, harbor_job_config: config };
+    await putJson(runtime.store, `runs/${record.run_id}/run.json`, record);
+    for (const status of [
+      "queued",
+      "running",
+      "paused",
+      "cancelled",
+      "finished",
+      "cost_stopped",
+    ] as const) {
+      const desired_state =
+        status === "paused" || status === "cancelled" ? status : "run";
+      const state = runtime.projection.run(record.run_id)?.state;
+      await putJson(runtime.store, `runs/${record.run_id}/state.json`, {
+        ...state,
+        desired_state,
+      });
+      await putJson(runtime.store, `runs/${record.run_id}/job/result.json`, {
+        finished_at: status === "finished" ? "2026-09-09T00:02:00Z" : null,
+      });
+      await putJson(runtime.store, `runs/${record.run_id}/job/task/result.json`, {
+        agent_result: { cost_usd: status === "cost_stopped" ? 1 : 0 },
+      });
+      await runtime.projection.rebuild(
+        runtime.store,
+        status === "running"
+          ? [
+              {
+                id: "parent-test",
+                run_id: record.run_id,
+                role: "parent",
+                stage: "running",
+                created_at: "2026-09-09T00:00:00Z",
+                started_at: "2026-09-09T00:00:01Z",
+                finished_at: null,
+              },
+            ]
+          : [],
+      );
+      const archived = status !== "queued";
+      const currentRevision =
+        runtime.projection.run(record.run_id)?.presentation?.revision ?? 0;
+      await runtime.service.setPresentation(
+        record.run_id,
+        archived,
+        currentRevision,
+        "fixture-subject",
+      );
+      const response = await app.inject({ url: `/api/v1/runs/${record.run_id}` });
+      expect(response.statusCode).toBe(200);
+      const view = response.json();
+      expect(view.status).toBe(status);
+      expect(view.presentation?.archived ?? false).toBe(archived);
+      expect(view.presentation_available).toBe(true);
+      expect(single({ ...view, presentation_available: "false" })).toBe(false);
+      expect(single({ ...view, presentation: { archived: true } })).toBe(false);
+      expect(single(view), JSON.stringify(single.errors)).toBe(true);
+      expect(view.record.harbor_job_config).toEqual(config);
+      expect(view.record).not.toHaveProperty("$defs");
+      const overview = await app.inject({ url: "/api/v1/runs" });
+      expect(overview.statusCode).toBe(200);
+      expect(list(overview.json()), JSON.stringify(list.errors)).toBe(true);
+      expect(single({ ...view, status: "invalid" })).toBe(false);
+      expect(
+        single({
+          ...view,
+          record: {
+            ...view.record,
+            submission: {
+              ...view.record.submission,
+              benchmark: { name: "INVALID", preset: "valid" },
+            },
+          },
+        }),
+      ).toBe(false);
+      expect(
+        single({ ...view, record: { ...view.record, harbor_job_config: [] } }),
+      ).toBe(false);
+    }
+  });
+
+  it("returns measured timing on authenticated run reads without remote reads or per-trial APIs", async () => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const submitted = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "agent-time-summary" },
+      payload: submission,
+    });
+    const id: string = submitted.json().run.run_id;
+    await putJson(runtime.store, `runs/${id}/job/trial-one/result.json`, {
+      trial_name: "trial-one",
+      agent_execution: {
+        started_at: "2026-09-09T00:00:00Z",
+        finished_at: "2026-09-09T00:01:26Z",
+        private: "do-not-echo",
+      },
+      config: { private: "do-not-echo" },
+    });
+    await runtime.projection.rebuild(runtime.store, []);
+    const read = vi.spyOn(runtime.store, "read");
+    const list = vi.spyOn(runtime.store, "list");
+    for (const url of ["/api/v1/runs", `/api/v1/runs/${id}`]) {
+      const response = await app.inject({ url });
+      expect(response.statusCode).toBe(200);
+      const view = url.endsWith(id) ? response.json() : response.json().runs[0];
+      expect(view.agent_timing).toEqual({
+        duration_ms: 86000,
+        complete_trials: 1,
+        partial_trials: 0,
+        unavailable_trials: 0,
+      });
+      expect(response.body).not.toContain("do-not-echo");
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    runtime.config.auth_mode = "oauth";
+    for (const url of ["/api/v1/runs", `/api/v1/runs/${id}`])
+      expect((await app.inject({ url })).statusCode).toBe(401);
+  });
   it("exposes authenticated native artifact observations without writing or changing completion", async () => {
     const { runtime, app } = await setup();
     await runtime.initialize();
@@ -608,6 +761,8 @@ describe("control API", () => {
       expect(first.statusCode).toBe(201);
       expect(repeated.statusCode).toBe(200);
       const record = first.json().run;
+      expect(record.workbench_recipe).toEqual({ name: workbenchRecipe.name });
+      expect(repeated.json().run.workbench_recipe).toEqual(record.workbench_recipe);
       expect(record.submission.harness).toEqual({
         agent: "command-agent",
         version: workbenchPreview.revision_id,
@@ -621,8 +776,52 @@ describe("control API", () => {
       expect(JSON.stringify(record)).not.toContain("harness_profile");
       expect(JSON.stringify(record)).not.toContain("promotion");
       expect(attestation).toHaveBeenCalledTimes(2);
+      const changed = await app.inject({
+        method: "POST",
+        url: "/api/v1/runs",
+        headers: { "idempotency-key": "workbench-run" },
+        payload: {
+          ...payload,
+          workbench: {
+            ...payload.workbench,
+            recipe: { ...workbenchRecipe, name: "renamed-recipe" },
+          },
+        },
+      });
+      expect(changed.statusCode).toBe(409);
+      expect(runtime.projection.listRuns()).toHaveLength(1);
+      expect(runtime.projection.listRuns()[0]?.record.workbench_recipe).toEqual({
+        name: workbenchRecipe.name,
+      });
     },
   );
+
+  it.each([
+    { workbench_recipe: { name: "spoofed" } },
+    { workbench_recipe_name: "spoofed" },
+  ])("rejects independently supplied display provenance: %j", async (extra) => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const attestation = vi.spyOn(runtime.workbench, "attestPassedSetup");
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "spoofed-provenance" },
+      payload: {
+        benchmark: submission.benchmark,
+        model: submission.model,
+        cost_ceiling_usd_per_trial: 0.25,
+        workbench: {
+          recipe: workbenchRecipe,
+          setup_test_id: workbenchSetup.setup_test_id,
+        },
+        ...extra,
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(attestation).not.toHaveBeenCalled();
+    expect(runtime.projection.listRuns()).toEqual([]);
+  });
 
   it.each([
     { model_name: "model", env: { OPENAI_API_KEY: "fixture" } },
@@ -961,5 +1160,171 @@ describe("configurable launch", () => {
     inspect.mockResolvedValue({ ...validation, credentials_available: false });
     expect((await app.inject(request)).statusCode).toBe(503);
     expect(runtime.projection.listRuns()).toEqual([]);
+  });
+});
+
+describe("archive API", () => {
+  it("uses projected GET/list responses, revision validation and shared operator writes", async () => {
+    const { runtime, app } = await setup();
+    const { run } = await runtime.service.submitPreset(
+      submission,
+      "archive-api",
+      "fixture-subject",
+    );
+    const url = `/api/v1/runs/${run.run_id}/presentation`;
+    const patch = (payload: object) => app.inject({ method: "PATCH", url, payload });
+    const initialNoOp = await patch({ archived: false, expected_revision: 0 });
+    expect(initialNoOp.statusCode).toBe(200);
+    expect(initialNoOp.json()).toBeNull();
+    expect(
+      (await patch({ archived: true, expected_revision: 0 })).json(),
+    ).toMatchObject({ archived: true, revision: 1 });
+    expect((await patch({ archived: true, expected_revision: 0 })).statusCode).toBe(
+      409,
+    );
+    for (const payload of [
+      { archived: "true", expected_revision: 1 },
+      { archived: false, expected_revision: -1 },
+      { archived: false, expected_revision: 1.5 },
+      { archived: false },
+      { archived: true, expected_revision: 1, actor: "forged" },
+    ])
+      expect((await patch(payload)).statusCode).toBe(400);
+    const read = vi.spyOn(runtime.store, "read");
+    const list = vi.spyOn(runtime.store, "list");
+    expect(
+      (await app.inject(`/api/v1/runs/${run.run_id}`)).json().presentation.archived,
+    ).toBe(true);
+    expect(
+      (await app.inject("/api/v1/runs")).json().runs[0].presentation.archived,
+    ).toBe(true);
+    expect(read).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    runtime.config.write_mode = "disabled";
+    expect(
+      (await patch({ archived: false, expected_revision: 1 })).json().error.code,
+    ).toBe("write_disabled");
+    vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+      subject: "fixture-reader",
+      username: "fixture-reader",
+      role: "reader",
+      transport: "development",
+    });
+    expect((await patch({ archived: false, expected_revision: 1 })).statusCode).toBe(
+      403,
+    );
+    expect((await app.inject(`/api/v1/runs/${run.run_id}`)).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("requires session CSRF and returns safe uncertain-write errors", async () => {
+    const { runtime, app } = await setup();
+    const { run } = await runtime.service.submitPreset(
+      submission,
+      "archive-csrf",
+      "fixture-subject",
+    );
+    runtime.config.auth_mode = "oauth";
+    const session = runtime.auth.store.createSession(
+      "fixture-subject",
+      "fixture-user",
+      3600,
+    );
+    vi.spyOn(runtime.auth, "role").mockResolvedValue("operator");
+    const url = `/api/v1/runs/${run.run_id}/presentation`;
+    const payload = { archived: true, expected_revision: 0 };
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url,
+          payload,
+          cookies: { hhf_session: session.id },
+        })
+      ).json().error.code,
+    ).toBe("csrf_rejected");
+    const request = {
+      method: "PATCH" as const,
+      url,
+      payload,
+      cookies: { hhf_session: session.id },
+      headers: { "x-csrf-token": session.csrf },
+    };
+    vi.spyOn(runtime.projection, "updatePresentation").mockImplementationOnce(() => {
+      throw new Error("private-fixture-marker");
+    });
+    const failure = await app.inject(request);
+    expect(failure.statusCode).toBe(503);
+    expect(failure.json().error.code).toBe("presentation_update_failed");
+    expect(failure.body).not.toContain("private-fixture-marker");
+    const getView = () =>
+      app.inject({
+        ...request,
+        method: "GET",
+        url: `/api/v1/runs/${run.run_id}`,
+        payload: undefined,
+      });
+    expect((await getView()).json()).toMatchObject({
+      presentation: null,
+      presentation_available: false,
+    });
+    expect((await app.inject(request)).statusCode).toBe(409);
+    expect((await getView()).json()).toMatchObject({
+      presentation: { revision: 1 },
+      presentation_available: true,
+    });
+    expect(
+      (
+        await app.inject({
+          ...request,
+          payload: { archived: false, expected_revision: 1 },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          ...request,
+          method: "GET",
+          url: `/api/v1/runs/${run.run_id}`,
+          payload: undefined,
+        })
+      ).json().presentation.revision,
+    ).toBe(2);
+
+    await app.close();
+  });
+  it("returns fresh unavailable flags in SQL-only list/detail and rejects malformed writes without loss", async () => {
+    const { runtime, app } = await setup();
+    const { run } = await runtime.service.submitPreset(
+      submission,
+      "archive-invalid",
+      "fixture-subject",
+    );
+    const path = `runs/${run.run_id}/presentation.json`;
+    await putJson(runtime.store, path, {});
+    await runtime.service.refresh();
+    const read = vi.spyOn(runtime.store, "read");
+    const list = vi.spyOn(runtime.store, "list");
+    expect((await app.inject(`/api/v1/runs/${run.run_id}`)).json()).toMatchObject({
+      presentation: null,
+      presentation_available: false,
+    });
+    expect((await app.inject("/api/v1/runs")).json().runs[0]).toMatchObject({
+      presentation: null,
+      presentation_available: false,
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    const put = vi.spyOn(runtime.store, "put");
+    const response = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/runs/${run.run_id}/presentation`,
+      payload: { archived: true, expected_revision: 0 },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("presentation_update_failed");
+    expect(put).not.toHaveBeenCalled();
+    await app.close();
   });
 });

@@ -80,6 +80,9 @@ export function projectRunExceptions(result: unknown): ExceptionProjection {
   return { complete, groups: sorted, affectedTrials };
 }
 
+const AGENT_TIMEOUT_HELP =
+  "Agent execution timeouts are separate from infrastructure-related errors; native type alone does not prove timeout origin.";
+
 const SCORING_CAVEAT = "Absence of recorded exceptions is not proof of valid scoring.";
 
 function summary(evidence: ExceptionProjection): string {
@@ -97,10 +100,15 @@ export function RunDiagnosticsSummary({ run }: { run: RunView }) {
   const evidence = projectRunExceptions(run.result);
   const runId = segment(run.record.run_id);
   const counts = categoryCounts(evidence.groups);
+  const agentTimeouts =
+    counts.categories.find((entry) => entry.category === "Agent execution timeout")
+      ?.count ?? 0;
   const label = (
     <>
       <span className="block text-xs text-slate-400">Harbor-reported exceptions</span>
-      <span>{summary(evidence)}</span>
+      <span className={evidence.affectedTrials > 0 ? "text-red-400" : "text-slate-400"}>
+        {summary(evidence)}
+      </span>
       <span
         className="block text-xs text-slate-400"
         title="Exact environment/transport and provider exception types only; not an inferred infrastructure cause"
@@ -113,6 +121,11 @@ export function RunDiagnosticsSummary({ run }: { run: RunView }) {
           evidence.complete,
         )}
       </span>
+      {agentTimeouts > 0 && (
+        <span className="block text-xs text-slate-400" title={AGENT_TIMEOUT_HELP}>
+          Agent timeouts: {evidenceCount(agentTimeouts, evidence.complete)}
+        </span>
+      )}
       {evidence.complete && evidence.affectedTrials === 0 && (
         <span className="block text-xs text-slate-400">{SCORING_CAVEAT}</span>
       )}
@@ -160,7 +173,9 @@ export function RunDiagnostics({ run }: { run: RunView }) {
   return (
     <Card id="diagnostics" role="region" aria-label="Harbor-reported exceptions">
       <h2 className="text-lg font-semibold">Harbor-reported exceptions</h2>
-      <p>{summary(evidence)}</p>
+      <p className={evidence.affectedTrials > 0 ? "text-red-400" : "text-slate-400"}>
+        {summary(evidence)}
+      </p>
       <p className="text-sm text-slate-400">
         {categoryCounts(evidence.groups)
           .categories.map(
@@ -182,7 +197,11 @@ export function RunDiagnostics({ run }: { run: RunView }) {
           <li key={group.type} className="break-words">
             <h3>
               <Badge>{group.type}</Badge> {evidence.complete ? "" : "At least "}
-              {group.trials.length} {group.trials.length === 1 ? "trial" : "trials"}
+              <span
+                className={group.trials.length > 0 ? "text-red-400" : "text-slate-400"}
+              >
+                {group.trials.length} {group.trials.length === 1 ? "trial" : "trials"}
+              </span>
             </h3>
             <p className="text-xs text-slate-400">{exceptionCategory(group.type)}</p>
             <BoundedItems
@@ -206,6 +225,11 @@ export function RunDiagnostics({ run }: { run: RunView }) {
           </li>
         )}
       />
+      <p className="mt-3 text-sm text-slate-400">
+        {AGENT_TIMEOUT_HELP} Setup and verifier timeouts remain separate from agent
+        execution timeouts. Measured wall time does not establish a numeric budget or
+        budget exhaustion.
+      </p>
       <p className="mt-3 text-sm text-slate-400">
         Completed includes errored trials. Infrastructure classification is not recorded
         by pinned Harbor and remains unknown. Root cause is not inferred. Display

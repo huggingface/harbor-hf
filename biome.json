@@ -13,7 +13,7 @@
       "!!**/dist",
       "!!**/coverage",
       "!!**/test-results",
-      "!!apps/control-web/src/generated/api.ts",
+      "!!apps/control-web/src/generated",
       "!!docs/control-api-v1.openapi.json",
       "!!docs/schema-review",
       "!!examples",

@@ -22,7 +22,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
             };
@@ -58,7 +58,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -108,7 +108,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -310,7 +310,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": Record<string, unknown>;
                 };
             };
             responses: {
@@ -508,7 +508,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -556,7 +556,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -600,7 +600,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -664,7 +664,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -718,7 +718,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -768,7 +768,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -821,7 +821,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -871,7 +871,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": {
+                            runs: components["schemas"]["RunView"][];
+                        };
                     };
                 };
                 /** @description Request error */
@@ -913,7 +915,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Success */
@@ -922,7 +924,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -985,7 +987,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": Record<string, unknown>;
                 };
             };
             responses: {
@@ -995,7 +997,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Success */
@@ -1004,7 +1006,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -1082,7 +1084,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": components["schemas"]["RunView"];
                     };
                 };
                 /** @description Request error */
@@ -1107,6 +1109,79 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/presentation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Archive or restore shared Runs visibility (operator only) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        archived: boolean;
+                        expected_revision: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Current presentation; null means never archived */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunPresentation"] | null;
+                    };
+                };
+                /** @description Invalid request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Operator or CSRF required */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Stale revision; validated current metadata synchronized for the next GET */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Writes disabled or presentation unavailable; require validated synchronization before retrying */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         trace?: never;
     };
     "/api/v1/runs/{run_id}/pause": {
@@ -1136,7 +1211,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -1188,7 +1263,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -1254,7 +1329,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -1356,7 +1431,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -1409,7 +1484,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -1459,7 +1534,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
                 /** @description Request error */
@@ -1509,7 +1584,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, never>;
+                        "application/json": Record<string, unknown>;
                     };
                 };
             };
@@ -1526,6 +1601,92 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** RunRecordV1 */
+        RunRecord: {
+            /** @constant */
+            schema_version: "v1";
+            run_id: string;
+            /** Format: date-time */
+            created_at: string;
+            submitted_by: string;
+            /** @enum {unknown} */
+            role: "final" | "diagnostic";
+            harbor_revision: string;
+            submission: {
+                benchmark: {
+                    name: components["schemas"]["RunRecord_slug"];
+                    preset: components["schemas"]["RunRecord_slug"];
+                };
+                model?: {
+                    id: string;
+                    provider: components["schemas"]["RunRecord_slug"];
+                    reasoning_effort: string;
+                };
+                harness?: {
+                    agent: components["schemas"]["RunRecord_slug"];
+                    version: string;
+                };
+                cost_ceiling_usd_per_trial: number;
+            };
+            /** @description Immutable Workbench display provenance. Recipe revision is submission.harness.version; execution remains in harbor_job_config. */
+            workbench_recipe?: {
+                name: string;
+            };
+            harbor_job_config: Record<string, unknown>;
+        } & unknown;
+        /** RunRecordSlug */
+        RunRecord_slug: string;
+        /** RunStateV1 */
+        RunState: {
+            /** @constant */
+            schema_version: "v1";
+            run_id: string;
+            revision: number;
+            /** Format: date-time */
+            updated_at: string;
+            /** @enum {unknown} */
+            desired_state: "run" | "paused" | "cancelled";
+            actor: string;
+            parent_jobs: {
+                id: string;
+                /** Format: date-time */
+                started_at: string;
+            }[];
+        };
+        /** RunPresentationV1 */
+        RunPresentation: {
+            /** @constant */
+            schema_version: "v1";
+            run_id: string;
+            revision: number;
+            /** Format: date-time */
+            updated_at: string;
+            actor: string;
+            archived: boolean;
+        };
+        /**
+         * AgentTimingV1
+         * @description Display-only sum of measured native agent intervals in current projected trial results; not elapsed job time or lifetime retry usage.
+         */
+        AgentTiming: {
+            duration_ms: number | null;
+            complete_trials: number;
+            partial_trials: number;
+            unavailable_trials: number;
+        };
+        RunView: {
+            record: components["schemas"]["RunRecord"];
+            state: components["schemas"]["RunState"];
+            /** @enum {string} */
+            status: "queued" | "running" | "paused" | "cancelled" | "finished" | "cost_stopped";
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** @description False when archive metadata cannot be validated or synchronized. Presentation is last-known only; null then means unknown, not unarchived. Ephemeral projection status, not durable metadata. */
+            presentation_available?: boolean;
+            presentation?: components["schemas"]["RunPresentation"] | null;
+            agent_timing?: components["schemas"]["AgentTiming"];
+        };
         /** TrialProgressV1 */
         TrialProgress: {
             /** Format: date-time */
@@ -1559,6 +1720,20 @@ export interface components {
                     exception_info?: {
                         exception_type: string;
                     } | null;
+                    agent_execution?: {
+                        /** Format: date-time */
+                        started_at?: string | null;
+                        /** Format: date-time */
+                        finished_at?: string | null;
+                    } | null;
+                    step_results?: {
+                        agent_execution?: {
+                            /** Format: date-time */
+                            started_at?: string | null;
+                            /** Format: date-time */
+                            finished_at?: string | null;
+                        } | null;
+                    }[] | null;
                 } | null;
                 reward: number | null;
                 cost_usd: number | null;

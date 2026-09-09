@@ -31,6 +31,16 @@ finished_at?: (string | null)
 exception_info?: ({
 exception_type: string
 } | null)
+agent_execution?: ({
+started_at?: (string | null)
+finished_at?: (string | null)
+} | null)
+step_results?: ({
+agent_execution?: ({
+started_at?: (string | null)
+finished_at?: (string | null)
+} | null)
+}[] | null)
 } | null)
 reward: (number | null)
 cost_usd: (number | null)

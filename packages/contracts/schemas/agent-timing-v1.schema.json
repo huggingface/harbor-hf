@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentTimingV1",
+  "description": "Display-only sum of measured native agent intervals in current projected trial results; not elapsed job time or lifetime retry usage.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "duration_ms",
+    "complete_trials",
+    "partial_trials",
+    "unavailable_trials"
+  ],
+  "properties": {
+    "duration_ms": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "complete_trials": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "partial_trials": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unavailable_trials": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

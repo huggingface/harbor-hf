@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "browser-pricing-v1",
+  "title": "BrowserPricingV1",
+  "description": "Origin-local display preferences only. Never a server or Bucket record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scenarios", "selected_id", "tier"],
+  "properties": {
+    "schema_version": {
+      "const": "v1"
+    },
+    "selected_id": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "tier": {
+      "enum": ["standard", "longContext"]
+    },
+    "scenarios": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "standard", "longContext", "threshold"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9-]{1,64}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "\\S"
+          },
+          "standard": {
+            "$ref": "#/$defs/rates"
+          },
+          "longContext": {
+            "$ref": "#/$defs/rates"
+          },
+          "threshold": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "rates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "output", "cached"],
+      "properties": {
+        "input": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "output": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "cached": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    }
+  }
+}

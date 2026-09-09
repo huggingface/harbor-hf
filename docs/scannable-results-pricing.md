@@ -42,9 +42,10 @@ introduced; scoring validity and retry eligibility remain unknown.
 The expandable detail panel accepts explicit uniform USD-per-million rates for
 input, output, and cached input, plus a separate long-context rate set. These
 rates apply uniformly across all configured model routes in each hypothetical
-scenario; provider prices are never inferred. Edits survive query polling and
-route navigation in the loaded browser tab, but reset on reload. They are not
-saved in JobConfig, API records, browser persistent storage, or native costs.
+scenario; provider prices are never inferred. Unsaved new-scenario drafts survive
+polling and tab navigation but are previews only. Explicitly saved preferences
+survive reload in browser-local storage. Neither drafts nor saved preferences
+enter JobConfig, API records, native costs, or execution policy.
 
 For each scenario:
 
@@ -124,3 +125,134 @@ Normal Slophammer and DRY checks pass. Global TypeScript coverage is 79.53% line
 77.12% statements, 77.62% functions, and 70.69% branches (below the 85% gates);
 no thresholds are lowered. Python source is unchanged. Local verification
 performed no deployment, credential access, or remote mutation.
+
+## Measured agent time and stable polling
+
+Trial tooltips show one `Agent time` line. `Agent Σ` on run status sums recorded
+`TrialResult.agent_execution.started_at/finished_at` intervals, or the populated
+`step_results[*].agent_execution` list instead (never both). These are native
+agent-phase wall times, not token throughput, trial environment/teardown time, or
+elapsed job time; concurrent trials can make the sum exceed job elapsed time.
+
+Missing, malformed, reversed, and unfinished intervals are unavailable (`−`),
+not zero. Valid zero-length intervals remain `0s`. Available step intervals can
+form an explicitly partial sum; unfinished multi-step results remain partial.
+Coverage shows complete, partial, and unavailable current result counts, not
+planned trials or unstarted steps. No live clock estimates are included.
+
+The run response has a generated `AgentTimingV1` display summary, calculated from
+current native results during projection rebuild and cached transactionally with
+the run row. List and detail reads do not scan trial history. Rebuild/replacement
+removes old contributions; archived retries and removed rows are not lifetime usage.
+Neither native JobResult nor Bucket records acquire new fields. Overview queries
+remain run-only; no additional progress requests, remote scans, or run actions.
+Progress responses allowlist only the new agent timestamps and step timestamps;
+malformed timing is unavailable without rejecting unrelated trial evidence.
+
+Background polling inserts no refreshing node or periodic live announcement.
+A reserved feedback line retains genuine stale/error messages and retry controls.
+Positive affected-trial counts are red; zero/missing evidence remains neutral.
+Exact typed infrastructure classification is unchanged.
+
+Boundary review: Harbor `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`,
+`src/harbor/models/trial/result.py`, `src/harbor/models/job/result.py`,
+`src/harbor/trial/single_step.py`, `src/harbor/trial/multi_step.py`,
+`src/harbor/trial/trial.py` (`_run_agent_phase`), and `src/harbor/job.py`.
+Harbor records the phase intervals and excludes `trial_results` when writing the
+job result; JobStats has no agent-duration aggregate. Reviewed the 18 upstream
+commits through `1f84b4c0`: no timing aggregate requires a pin update. This is a
+read-only presentation of native result files, with no Harbor internal imports,
+execution patch, scheduler, or competing lifecycle authority.
+
+
+## Saved pricing preferences architecture
+
+`browser-pricing-v1.schema.json` is authoritative for the portable browser record;
+contract generation supplies its TypeScript type. It is **not** a server durable
+record or Bucket object and is not registered in server validation or OpenAPI.
+`pricing-store.ts` validates the closed schema with Ajv, additionally rejecting
+duplicate IDs and dangling selections. Records contain only schema version,
+local scenario IDs/names, six nullable rates, a request threshold, selected ID,
+and explicit all-standard/all-long-context tier. No run IDs, routes, models,
+account information, or credentials are stored. Limits: 50 scenarios, 80-character
+nonblank names, 64-character IDs, 65,536-character serialized reads, rates from
+0 through 1,000,000 USD/M, and a nonnegative safe-integer threshold (default 272,000).
+Blank rates remain null; zero is valid. Unknown versions/properties, malformed
+JSON, invalid numbers, and oversized records are ignored with a visible status.
+No migration or automatic repair write occurs; explicit reset permits recovery.
+
+Save & Use atomically applies the draft name and all rates; there is no separate
+rename action. New scenario, delete,
+selection, explicit tier selection, and clear are browser-only actions, also
+available when server writes are disabled. Draft previews never silently update
+the selected estimate. Saved selection and tier are shared by Runs and detail
+through a lazy, SSR-safe `useSyncExternalStore` adapter with stable snapshots.
+Every write is asynchronous and uses the origin-scoped Web Locks API. The operation
+re-reads and validates current localStorage inside the exclusive lock; unrelated
+scenario edits are preserved even before delayed storage events arrive. Updates
+and deletes compare the expected scenario content, and selection rejects changed
+or deleted IDs. Stale operations fail visibly rather than resurrecting cleared
+preferences. Editors and selectors are disabled while a write is pending.
+Storage events notify other tabs and clearing; remount rechecks storage. Browsers
+without Web Locks (including unavailable secure-context support) fail explicitly:
+there is no unlocked fallback. Serialization applies to cooperating current-version
+tabs, not developer tools, browser data clearing, or older clients that ignore the lock.
+Content equality detects stale values, not an identical delete/recreate (ABA) cycle;
+no revision or durable schema field was added.
+Quota/disabled storage errors retain the last successful active preference and
+show that the operation was not saved. There are no API calls from this path.
+
+Preferences are scoped to the browser origin, **not an account**. User switches do
+not clear them. The UI labels “Saved in this browser”, explains uniform rates
+across all displayed runs/routes, and offers Clear saved pricing for shared
+browsers. Names must not contain secrets. Clearing removes saved scenario data;
+complete unsaved drafts (name, threshold and all rates) otherwise last only for the
+loaded tab, keyed separately from saved scenario IDs. They survive route navigation,
+not a full reload, and are never written to localStorage. Editor identity no longer
+uses serialized saved content. Dirty drafts survive external updates, selection
+changes and deletion with explicit conflict feedback and a Reload saved values
+(discard/reload) action. Explicit local scenario switching retains per-ID drafts;
+New scenario deliberately starts a blank draft.
+
+The always-visible browser-storage note is one line. “About scenario estimates”
+contains the uniform-rates, partial-usage, billing/budget, automatic-tier and
+shared-browser caveats; run detail no longer tells users to manage pricing in run
+detail. Native reported cost and selected scenario estimates remain separate.
+
+The separate **Scenario estimate** column preserves **Reported cost**, agent
+timing, and existing run-only polling. `pricing-selection.tsx` builds typed
+browser-only rows containing estimates; changing preferences rebuilds these rows
+to invalidate table accessor caches without resetting numeric sort state. Missing
+values sort last in either direction. No estimate becomes native cost, spend,
+a budget, a provider price, or a ceiling. Both views use exactly the same explicit
+tier: cumulative usage never activates the long tier. Missing/invalid usage or
+rates stays unavailable, and available native aggregates can be partial.
+
+Boundary recheck used pinned Harbor `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`,
+`src/harbor/models/agent/context.py` and `src/harbor/models/job/result.py`, plus
+locally available history through `1f84b4c0`. Inclusive cache and the absence of
+request-tier aggregates remain unchanged. This browser presentation needs no
+Harbor patch, execution behavior, or pin update.
+
+Pricing schema validation is now compiled by Ajv standalone during contract
+generation and bundled with its Unicode-length helper into static browser ESM;
+the store imports that generated validator and its schema-derived type guard,
+not the Ajv compiler. Application and preview CSP are unchanged. Regression tests
+cover browser startup, pricing save/reload under a response CSP forbidding eval,
+Unicode bounds, deterministic regeneration and execution with dynamic code
+generation disabled. This is browser-local schema validation, not Harbor behavior;
+the pinned `src/harbor/models/job/result.py` boundary remains unchanged.
+
+Validation: 750 root unit/component tests and 42 synthetic browser tests pass.
+Browser tests cover save/update/delete, reload, navigation, dirty drafts,
+cross-tab conflicts, selected list estimates alongside native cost, and absence
+of mutation requests. Store/component tests cover delayed storage events,
+concurrent writes, unsupported locking/secure ID generation, and storage failures.
+
+Formatting, lint (six existing shell-template warnings), root/Space types, build,
+dependency checks, privacy, normal Slophammer and DRY checks pass. Generated output
+is deterministic. Global coverage is 80.30% lines, 78.18% statements, 79.64%
+functions and 72.35% branches, below the
+unchanged 85% gate. The Slophammer baseline and mutation checks are blocked by
+missing baseline and mutation-script files. No gates were lowered. No live API,
+credential movement, remote resource mutation or publication is part of this work.

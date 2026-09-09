@@ -157,6 +157,43 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "agent_execution": {
+                    "type": ["object", "null"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "started_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                      },
+                      "finished_at": {
+                        "type": ["string", "null"],
+                        "format": "date-time"
+                      }
+                    }
+                  },
+                  "step_results": {
+                    "type": ["array", "null"],
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "agent_execution": {
+                          "type": ["object", "null"],
+                          "additionalProperties": false,
+                          "properties": {
+                            "started_at": {
+                              "type": ["string", "null"],
+                              "format": "date-time"
+                            },
+                            "finished_at": {
+                              "type": ["string", "null"],
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 },
                 "additionalProperties": false

@@ -1,3 +1,4 @@
+import { projectNativeAgentTiming } from "@harbor-hf/contracts/agent-timing";
 import {
   assertRunId,
   validateTrialProgress,
@@ -127,7 +128,7 @@ export class TrialProgressReader {
               trial_name,
               config,
               lock,
-              result,
+              result: summary ? projectNativeAgentTiming(summary.result) : null,
               reward: summary?.reward ?? null,
               cost_usd: summary?.cost_usd ?? null,
             };

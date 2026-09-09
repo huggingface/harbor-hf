@@ -6,6 +6,7 @@ import {
   separateObservations,
   trialExceptionLabel,
   waffleCells,
+  waffleStates,
 } from "../src/trial-waffle";
 
 const now = Date.parse("2026-09-08T12:00:00Z");
@@ -368,6 +369,7 @@ it.each([
         "Repeat slot: 1",
         `State: ${state}`,
         `Reward: ${formatted}`,
+        "Agent time: −",
         ...extra,
       ].join("\n"),
     );
@@ -379,9 +381,27 @@ it.each([
 
 it("keeps unfinished and unknown short without claiming live running", () => {
   expect(cellDescription(first(waffleCells(run, data(), now)))).toBe(
-    "Task: task-a\nRepeat slot: 1\nState: Unfinished\nReward: -",
+    "Task: task-a\nRepeat slot: 1\nState: Unfinished\nReward: -\nAgent time: −",
   );
   expect(cellDescription(first(waffleCells(run, data(), now, true)))).toBe(
-    "Task: task-a\nRepeat slot: 1\nState: Unknown / interrupted\nReward: -",
+    "Task: task-a\nRepeat slot: 1\nState: Unknown / interrupted\nReward: -\nAgent time: −",
   );
+});
+
+it("uses unequal marker magnitudes without question marks or invented activity", () => {
+  expect(waffleStates.pending.marker).toBe("h-1 w-1");
+  expect(waffleStates.unfinished.marker).toBe("h-[11px] w-[11px]");
+  expect(waffleStates.unfinished.color).toContain("bg-cyan-400");
+  expect(waffleStates.uncertain.color).toContain("bg-transparent");
+  expect(waffleStates.uncertain.color).toContain("border-violet-400");
+  for (const state of Object.values(waffleStates)) {
+    expect(state.symbol).not.toBe("?");
+    expect(state.label).not.toMatch(/running/i);
+  }
+  expect([
+    waffleStates.completed.symbol,
+    waffleStates.zero.symbol,
+    waffleStates.error.symbol,
+    waffleStates.cancelled.symbol,
+  ]).toEqual(["✓", "0", "!", "−"]);
 });

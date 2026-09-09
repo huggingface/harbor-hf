@@ -1,9 +1,11 @@
-import type { RunRecordV1, RunStateV1 } from "@harbor-hf/contracts";
+import type { RunRecordV1, RunStateV1, RunPresentationV1 } from "@harbor-hf/contracts";
 import {
   canonicalJson,
   runId,
   runRecordPath,
   runStatePath,
+  runPresentationPath,
+  validateRunPresentation,
   validateRunRecord,
   validateRunState,
 } from "@harbor-hf/contracts";
@@ -80,6 +82,7 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
       role: left.role,
       harbor_revision: left.harbor_revision,
       submission: left.submission,
+      workbench_recipe: left.workbench_recipe,
       harbor_job_config: left.harbor_job_config,
     }) ===
     canonicalJson({
@@ -87,6 +90,7 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
       role: right.role,
       harbor_revision: right.harbor_revision,
       submission: right.submission,
+      workbench_recipe: right.workbench_recipe,
       harbor_job_config: right.harbor_job_config,
     })
   );
@@ -111,6 +115,18 @@ function initialState(record: RunRecordV1): RunStateV1 {
     actor: record.submitted_by,
     parent_jobs: [],
   };
+}
+
+export class PresentationConflictError extends Error {
+  constructor() {
+    super("Archive revision changed; reload before retrying");
+  }
+}
+
+export class PresentationUpdateError extends Error {
+  constructor() {
+    super("Archive update could not be confirmed; refetch before retrying");
+  }
 }
 
 export class ControlService {
@@ -186,6 +202,7 @@ export class ControlService {
     harborAgent: HarborAgentFragment,
     idempotencyKey: string,
     actor: string,
+    workbenchRecipe?: RunRecordV1["workbench_recipe"],
   ): Promise<SubmissionResult> {
     positiveCeiling(input.cost_ceiling_usd_per_trial);
     if (containsCredentialMaterial(input))
@@ -210,6 +227,7 @@ export class ControlService {
         harness: input.harness,
         cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
       },
+      ...(workbenchRecipe ? { workbench_recipe: workbenchRecipe } : {}),
       harbor_job_config: jobConfig,
     });
     return this.persistSubmission(record);
@@ -265,6 +283,60 @@ export class ControlService {
     });
     await this.refresh();
     return result;
+  }
+
+  async setPresentation(
+    runIdValue: string,
+    archived: boolean,
+    expectedRevision: number,
+    actor: string,
+  ): Promise<RunPresentationV1 | null> {
+    if (
+      typeof archived !== "boolean" ||
+      !Number.isSafeInteger(expectedRevision) ||
+      expectedRevision < 0
+    )
+      throw new Error("invalid presentation request");
+    return this.withRunLock(runIdValue, async () => {
+      if (!this.projection.run(runIdValue)) throw new Error("run was not found");
+      try {
+        let current: RunPresentationV1 | null = null;
+        try {
+          current = validateRunPresentation(
+            await readJson(this.store, runPresentationPath(runIdValue)),
+          );
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        if (current && current.run_id !== runIdValue)
+          throw new Error("presentation identity mismatch");
+        if ((current?.revision ?? 0) !== expectedRevision) {
+          // Even an uncertain previous write must converge on the next SQL GET.
+          this.projection.updatePresentation(runIdValue, current);
+          throw new PresentationConflictError();
+        }
+        if ((current?.archived ?? false) === archived) {
+          this.projection.updatePresentation(runIdValue, current);
+          return current;
+        }
+        const next = validateRunPresentation({
+          schema_version: "v1",
+          run_id: runIdValue,
+          archived,
+          revision: expectedRevision + 1,
+          updated_at: new Date().toISOString(),
+          actor,
+        });
+        await putJson(this.store, runPresentationPath(runIdValue), next);
+        this.projection.updatePresentation(runIdValue, next);
+        return next;
+      } catch (error) {
+        if (error instanceof PresentationConflictError) throw error;
+        this.projection.markPresentationUnavailable(runIdValue);
+        // Never expose provider errors or private authentication subjects.
+        throw new PresentationUpdateError();
+      }
+    });
   }
 
   async setDesiredState(

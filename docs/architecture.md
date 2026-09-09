@@ -73,12 +73,13 @@ task loop, or another result writer. See [Agent Workbench](agent-workbench.md).
 
 ## Run storage
 
-Each run has one immutable record, one mutable desired-state record, and one
-Harbor job folder.
+Each run has one immutable record, one mutable desired-state record, optional
+shared presentation metadata, and one Harbor job folder.
 
 ```text
 runs/<run-id>/
 ├── run.json
+├── presentation.json  # optional shared Runs visibility
 ├── state.json
 ├── attempt-costs/
 │   └── <attempt-id>.json
@@ -103,6 +104,12 @@ below `attempt-costs/`. Harbor alone writes below `job/`.
 
 Historical object layouts remain in the Bucket as an archive. The current
 projection reads only `runs/<run-id>/`.
+
+Shared archive visibility is separate from execution state. The optional
+`presentation.json` record is owned by the single control service, projected into
+the existing `runs` table, and never consulted for execution or leaderboard
+eligibility. See [Shared run archive](run-archive.md) for revision checks,
+rebuild race protection, and the provider-CAS limitation.
 
 ## Presets and direct configuration
 
