@@ -895,3 +895,21 @@ Approved at: 2026-09-09T21:49:14.221952+00:00
   no existing run metadata edits, task execution, repair or retry authorized.
 - Local implementation, tests and commits only. No profile publication, push,
   PR, merge, deployment, upstream changes, live runs or credential transfer.
+
+### Audited pricing corrections and combined pull request (2026-09-09)
+
+Approved at: 2026-09-09T22:32:56.258274+00:00
+
+- Direct user approval: implement an audited shared pricing correction that
+  preserves immutable launch rates, without rerunning or changing execution.
+- Include operator UI, validated durable correction history, concurrent-edit
+  protection, shared estimate and leaderboard integration, and regression tests.
+  Keep native reported cost, spend policy and browser scenarios independent.
+- Commit, privacy-review, push the combined completed run-inspection and
+  registry-preset changes with this feature, and open one pull request to main.
+  Read-only CI monitoring is approved; disclose existing validation gaps.
+- Supersedes local-only publication restrictions solely for this combined diff.
+  No merge, deployment, live pricing correction, profile publication, run,
+  inference, credential transfer, new infrastructure or upstream publication.
+- Keep exact private task subset and provenance outside the public contribution.
+  Reasoning selection remains blocked and is excluded from implemented scope.
