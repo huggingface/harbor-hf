@@ -142,3 +142,55 @@ it.each([
   fireEvent.focus(output.closest("[tabindex]") as HTMLElement);
   expect(screen.getByRole("tooltip").textContent).toBe(exact);
 });
+
+it.each([
+  [0, 100, "0.0%"],
+  [null, 100, "-"],
+  [1, 3, "33.3%"],
+  [0, 0, "-"],
+])(
+  "shows cache hit %s / %s without replacing exact token counts",
+  (cached, input, expected) => {
+    render(
+      <MemoryRouter>
+        <RunSummaryCards
+          run={
+            {
+              record: { run_id: "synthetic" },
+              status: "finished",
+              result: { stats: { n_input_tokens: input, n_cache_tokens: cached } },
+            } as RunView
+          }
+        />
+      </MemoryRouter>,
+    );
+    const label = screen.getByText("cache hit").parentElement;
+    expect(label).toHaveTextContent(`${expected} cache hit`);
+    expect(screen.getByLabelText(`Input tokens: ${input}`)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(
+        `Cache tokens: ${cached === null ? "unavailable" : cached}`,
+      ),
+    ).toBeInTheDocument();
+  },
+);
+
+it("keeps timing caveats in Status help inside the named summary region", () => {
+  render(
+    <MemoryRouter>
+      <RunSummaryCards
+        run={
+          { record: { run_id: "synthetic" }, status: "finished", result: {} } as RunView
+        }
+      />
+    </MemoryRouter>,
+  );
+  const summary = screen.getByRole("region", { name: "Run summary" });
+  expect(summary).not.toHaveTextContent("Agent Σ sums measured");
+  expect(screen.getByRole("heading", { name: "Reported tokens · M" })).toBeVisible();
+  expect(screen.getByText("Cache (in input)")).toBeVisible();
+  fireEvent.focus(screen.getByRole("button", { name: "Explain Status" }));
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "Agent Σ sums measured agent intervals in current trial results, not elapsed job time or lifetime retries.",
+  );
+});

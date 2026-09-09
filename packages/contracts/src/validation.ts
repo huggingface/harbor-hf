@@ -10,6 +10,7 @@ import type {
   HarborJobConfigV1,
   RunRecordV1,
   RunStateV1,
+  RunPresentationV1,
   TrialProgressV1,
 } from "./generated/index.js";
 
@@ -26,7 +27,9 @@ export const schemas = {
   benchmarkPreset: load("benchmark-preset-v1.schema.json"),
   harborJobConfig: load("harbor-job-config-v1.schema.json"),
   runRecord: load("run-record-v1.schema.json"),
+  agentTiming: load("agent-timing-v1.schema.json"),
   trialProgress: load("trial-progress-v1.schema.json"),
+  runPresentation: load("run-presentation-v1.schema.json"),
   runState: load("run-state-v1.schema.json"),
 } as const;
 
@@ -78,6 +81,7 @@ const validators = {
     closeSchemaObjects(schemas.harborJobConfig) as typeof schemas.harborJobConfig,
   ),
   runRecord: ajv.compile(schemas.runRecord),
+  runPresentation: ajv.compile(schemas.runPresentation),
   runState: ajv.compile(schemas.runState),
 } as const;
 
@@ -112,6 +116,8 @@ export const validateStrictHarborJobConfig = (value: unknown): HarborJobConfigV1
   validate(validators.strictHarborJobConfig, value, "strict Harbor JobConfig");
 export const validateRunRecord = (value: unknown): RunRecordV1 =>
   validate(validators.runRecord, value, "run record");
+export const validateRunPresentation = (value: unknown): RunPresentationV1 =>
+  validate(validators.runPresentation, value, "run presentation");
 export const validateRunState = (value: unknown): RunStateV1 =>
   validate(validators.runState, value, "run state");
 

@@ -50,3 +50,21 @@ export function millionTokens(value: number | null): string {
   if (value > 0 && value < 1000) return "<0.001M";
   return `${(value / 1_000_000).toFixed(3)}M`;
 }
+
+// Native input includes cache: cache is a subset, never additional input.
+export function cacheHitRate(
+  cached: number | null | undefined,
+  input: number | null | undefined,
+): string {
+  if (
+    typeof cached !== "number" ||
+    typeof input !== "number" ||
+    !Number.isFinite(cached) ||
+    !Number.isFinite(input) ||
+    cached < 0 ||
+    input <= 0 ||
+    cached > input
+  )
+    return "-";
+  return `${((cached / input) * 100).toFixed(1)}%`;
+}

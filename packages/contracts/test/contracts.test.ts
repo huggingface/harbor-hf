@@ -42,6 +42,24 @@ const state = {
 } as const;
 
 describe("contracts", () => {
+  it("accepts absent or minimal recipe provenance, rejecting malformed and duplicate fields", () => {
+    expect(validateRunRecord(record)).not.toHaveProperty("workbench_recipe");
+    expect(
+      validateRunRecord({ ...record, workbench_recipe: { name: "recipe-one" } })
+        .workbench_recipe,
+    ).toEqual({ name: "recipe-one" });
+    for (const workbench_recipe of [
+      null,
+      {},
+      { name: "" },
+      { name: "<script>" },
+      { name: "x".repeat(81) },
+      { name: "recipe-one", revision_id: "duplicate" },
+    ]) {
+      expect(() => validateRunRecord({ ...record, workbench_recipe })).toThrow();
+    }
+  });
+
   it("encodes objects and run ids deterministically", () => {
     expect(canonicalJson({ z: 1, a: { y: true, b: null } })).toBe(
       '{"a":{"b":null,"y":true},"z":1}\n',

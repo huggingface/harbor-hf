@@ -38,42 +38,10 @@ export interface RunSubmission {
   cost_ceiling_usd_per_trial: number;
 }
 
-export interface RunRecord {
-  schema_version: "v1";
-  run_id: string;
-  created_at: string;
-  submitted_by: string;
-  role: "final" | "diagnostic";
-  harbor_revision: string;
-  submission: Omit<RunSubmission, "model" | "harness"> &
-    Partial<Pick<RunSubmission, "model" | "harness">>;
-  harbor_job_config: Record<string, unknown>;
-}
-
-export interface RunState {
-  schema_version: "v1";
-  run_id: string;
-  revision: number;
-  updated_at: string;
-  desired_state: "run" | "paused" | "cancelled";
-  actor: string;
-  parent_jobs: Array<{ id: string; started_at: string }>;
-}
-
-export type RunStatus =
-  | "queued"
-  | "running"
-  | "paused"
-  | "cancelled"
-  | "finished"
-  | "cost_stopped";
-
-export interface RunView {
-  record: RunRecord;
-  state: RunState;
-  status: RunStatus;
-  result: Record<string, unknown> | null;
-}
+export type RunRecord = components["schemas"]["RunRecord"];
+export type RunState = components["schemas"]["RunView"]["state"];
+export type RunStatus = components["schemas"]["RunView"]["status"];
+export type RunView = components["schemas"]["RunView"];
 
 export interface TrialSummary {
   run_id: string;

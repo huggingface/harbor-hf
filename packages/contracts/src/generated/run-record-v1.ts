@@ -25,6 +25,12 @@ version: string
 }
 cost_ceiling_usd_per_trial: number
 }
+/**
+ * Immutable Workbench display provenance. Recipe revision is submission.harness.version; execution remains in harbor_job_config.
+ */
+workbench_recipe?: {
+name: string
+}
 harbor_job_config: {
 [k: string]: unknown
 }

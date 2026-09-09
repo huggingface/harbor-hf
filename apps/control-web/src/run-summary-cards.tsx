@@ -1,14 +1,16 @@
+import { RunStatusTiming } from "./agent-timing";
 import type { RunView } from "./api";
-import { formatMoneyUsd, humanize } from "./lib";
+import { formatMoneyUsd } from "./lib";
 import { RunDiagnosticsSummary } from "./run-diagnostics";
 import {
+  cacheHitRate,
   millionTokens,
   nativeScore,
   progressPercent,
   resultStat,
   roundedScore,
 } from "./run-summary";
-import { Badge, Card, Hint, Progress } from "./ui";
+import { Card, Hint, Progress } from "./ui";
 
 export function ExactValue({
   value,
@@ -69,10 +71,20 @@ export function RunSummaryCards({ run }: { run: RunView }) {
     typeof run.result?.n_total_trials === "number" ? run.result.n_total_trials : null;
   const percent = progressPercent(completed, total);
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <section
+      aria-label="Run summary"
+      className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 [&>div]:min-w-0 [&>div]:p-3 [&_h2]:text-sm"
+    >
       <Card>
-        <h2>Status</h2>
-        <Badge status={run.status}>{humanize(run.status)}</Badge>
+        <h2>
+          <Hint
+            text="Agent Σ sums measured agent intervals in current trial results, not elapsed job time or lifetime retries."
+            icon
+          >
+            Status
+          </Hint>
+        </h2>
+        <RunStatusTiming run={run} />
       </Card>
       <Card>
         <h2>Progress</h2>
@@ -80,7 +92,7 @@ export function RunSummaryCards({ run }: { run: RunView }) {
           {completed ?? "-"} / {total ?? "-"}
         </p>
         {percent !== null && <Progress value={percent} label="Trial progress" />}
-        <p className="text-xs text-slate-400">Completed includes errored trials</p>
+        <p className="text-xs text-slate-400">Includes errored trials</p>
       </Card>
       <Card>
         <h2>{nativeScore(run.result).label}</h2>
@@ -93,13 +105,16 @@ export function RunSummaryCards({ run }: { run: RunView }) {
         <RunDiagnosticsSummary run={run} />
       </Card>
       <Card>
-        <h2>Reported tokens · millions</h2>
-        <dl className="text-sm">
+        <h2>Reported tokens · M</h2>
+        <p className="text-xl tabular-nums">
+          <CacheHitValue result={run.result} />
+        </p>
+        <dl className="text-xs">
           {(
             [
               ["Input incl. cache", "n_input_tokens", "Input"],
               ["Output", "n_output_tokens", "Output"],
-              ["Cache (part of input)", "n_cache_tokens", "Cache"],
+              ["Cache (in input)", "n_cache_tokens", "Cache"],
             ] as const
           ).map(([label, key, tooltipLabel]) => (
             <div className="flex justify-between gap-3" key={key}>
@@ -118,6 +133,18 @@ export function RunSummaryCards({ run }: { run: RunView }) {
         </p>
         <p className="text-xs text-slate-400">Reported; may be partial; not billing</p>
       </Card>
-    </div>
+    </section>
+  );
+}
+
+export function CacheHitValue({ result }: { result: unknown }) {
+  return (
+    <span title="Reported cached tokens / input tokens (including cache); usage may be partial">
+      {cacheHitRate(
+        resultStat(result, "n_cache_tokens"),
+        resultStat(result, "n_input_tokens"),
+      )}{" "}
+      <span className="text-xs text-slate-400">cache hit</span>
+    </span>
   );
 }

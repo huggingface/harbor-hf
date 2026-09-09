@@ -595,3 +595,117 @@ Approved at: 2026-09-09T12:22:20.211230+00:00
   and privacy-review the push and PR update. Preserve known validation limits.
 - No merge, deployment, live runs, inference, credential movement, resource
   creation, public demo listener, or changes to stored evidence.
+
+### Stable polling and measured agent timing (2026-09-09)
+
+Approved at: 2026-09-09T13:13:00.258660+00:00
+
+- Direct approval: the user requested removing disruptive refreshing text, agent
+  wall-time in trial tooltips and run-list summaries/status, and red affected-trial
+  counts after reviewing the deployed scannable-results interface.
+- Implement and test locally on current main; preserve the existing presentation
+  and native outcome semantics. Sum only recorded native agent execution intervals
+  for a display rollup, with partial/missing measurement coverage. Do not infer
+  active elapsed time or inflate sums using both top-level and step timings.
+- Reuse existing artifact/projection reads and generated response contracts; no
+  new durable native field, lifecycle authority, extra overview progress polling,
+  infrastructure diagnosis from generic errors, or change to retry behavior.
+- Local implementation, tests, documentation, and local commits are approved.
+  No deployment, merge, new remote PR/branch publication, live setup/benchmark
+  launch, inference, credential movement, or resource change is included.
+
+### Compact matrix and saved pricing preferences (2026-09-09)
+
+Approved at: 2026-09-09T13:54:52.918279+00:00
+
+- Direct approval: the user approved the preceding local work and requested
+  subtler stale feedback, better use of summary/grid space, cache-hit percentage,
+  saved pricing scenarios usable in the Runs list, compact non-question-mark
+  trial markers, and known task budgets in tooltips when available.
+- Continue local implementation and tests on the stable-timing branch. Keep
+  tasks as columns and repetition slots as rows, shrink visual markers and
+  column headers while preserving keyboard/focus/hover access and hit targets.
+- Persist explicitly saved named pricing preferences in browser-local storage,
+  validate untrusted records, and distinguish selected scenario estimates from
+  native reported cost. No server-side preference store, shared storage resource,
+  billing change, inference parameter, or execution-cost policy is authorized.
+- Display reported cached/input percentage only when meaningful. Preserve
+  missing/partial data, error states, and current-result timing semantics.
+- Native resolved time budgets are absent; do not reconstruct Harbor timeout
+  rules or read benchmark formats. Keep unavailable budgets unknown/omitted,
+  and unfinished observations distinct from proven running execution.
+- No remote publication, PR creation, deployment, merge, live runs, inference,
+  credential movement, public demo listener, or resource mutation.
+
+### Publish stable timing and compact results follow-up (2026-09-09)
+
+Approved at: 2026-09-09T15:18:35.910880+00:00
+
+- Direct approval: the user asked to see the changes, push the branch and open
+  the follow-up PR, noting that additional small tweaks would follow.
+- Publish the reviewed stable-timing and compact-results branch and open a PR
+  against the canonical repository. Include validation limitations and the
+  inspected Harbor source files. Privacy-review all commits, diff and metadata.
+- Prepare a loopback-only synthetic preview of this branch using the existing
+  read-only fixture server; no real control API, credentials or inference.
+- Additional unspecified tweaks await the user's concrete request.
+- No merge, deployment, live run, paid resource, public demo listener, credential
+  transfer, upstream Harbor publication or execution-policy change is authorized.
+
+### Run navigation, recipe identity and reasoning refinements (2026-09-09)
+
+Approved at: 2026-09-09T15:43:39.532868+00:00
+
+- Direct request: distinguish native agent execution timeouts from replacement
+  candidates, show Workbench recipe names in Runs, expose a working reasoning
+  selector, and filter recorded diagnostic/final run roles.
+- Implement and test these refinements locally for the existing follow-up.
+  Preserve raw native exception types and distinguish execution timeout from
+  environment/provider failures without claiming an unproven timeout origin.
+- Capture minimal immutable Workbench recipe display provenance for new runs;
+  retain historical fallbacks and native execution configuration in JobConfig.
+- Investigate and expose reasoning only through an existing reviewed native
+  agent/provider configuration path and declared recipe capability. Reject
+  unsupported behavior rather than silently ignoring a dropdown selection.
+  Preserve existing saved recipes and their execution semantics.
+- Add role filters using the existing final/diagnostic field, with useful
+  presentation-only search/navigation. Final role is not finished status.
+- Replacement eligibility, rerun actions, upstream issues/patches, new storage
+  resources, live execution, deployment, merge and credentials remain excluded.
+- Additional publication of these refinements follows review of the concrete
+  implementation; the existing PR remains open without merge or deployment.
+
+### Shared run archive presentation metadata (2026-09-09)
+
+Approved at: 2026-09-09T17:02:44.957655+00:00
+
+- Direct approval: the user confirmed that archive status should be shared
+  across users and browsers, following the proposed operator-only controls.
+- Implement and test shared mutable run-presentation metadata in the existing
+  canonical Bucket, separate from immutable run records and execution state.
+- Provide authenticated operator Archive/Restore actions with write-mode and
+  concurrency guards; default the Runs view to not archived and expose
+  Not archived / Archived / All, combined with recorded role and search.
+- Archive changes only Runs visibility. Execution, artifacts, costs, leaderboard
+  eligibility and direct detail access remain unchanged. No deletion or rerun.
+- Local implementation, tests, documentation and commits are approved. No live
+  metadata mutation, deployment, merge, credentials or additional infrastructure.
+- Browser-local pricing preferences and Workbench drafts are not migrated by
+  this approval. Reasoning support still awaits route/capability clarification.
+
+### Complete results follow-up CI, merge and deployment (2026-09-09)
+
+Approved at: 2026-09-09T18:04:01.857234+00:00
+
+- Direct approval: the user authorized pushing the remaining follow-up changes,
+  getting CI green, merging and completing deployment to the user-selected
+  existing control Space. The exact destination is retained privately.
+- Resolve relevant CI failures without weakening tests, coverage, security or
+  line-budget gates; review and publish changes to the existing PR. Merge only
+  the reviewed passing revision, then deploy that exact merged source revision.
+- Verify deployment provenance, readiness and unchanged canonical configuration.
+  Preserve existing resources, credentials, visibility, hardware and artifacts.
+- No benchmark/setup execution, inference, credential transfer, new resource,
+  archive mutation on live data, or unrelated feature migration is authorized.
+- Pricing sharing and the reasoning selector remain deferred. No operator
+  identifiers may be included in public repository content or metadata.

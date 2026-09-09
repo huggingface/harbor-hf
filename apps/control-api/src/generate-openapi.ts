@@ -70,6 +70,32 @@ const concurrentTrialsSchema = {
   description: "Harbor trial concurrency override.",
 } as const;
 
+// Embedded schemas share the OpenAPI document base URI. Lift definitions to
+// real components: $defs is schema metadata, never a response property.
+function embedSchema(name: string, source: object): Record<string, unknown> {
+  const {
+    $id: _id,
+    $schema: _schema,
+    $defs: definitions,
+    ...body
+  } = source as {
+    $id?: string;
+    $schema?: string;
+    $defs?: Record<string, unknown>;
+  };
+  const components: Record<string, unknown> = { [name]: body };
+  for (const [key, value] of Object.entries(definitions ?? {}))
+    components[`${name}_${key}`] = value;
+  return JSON.parse(
+    JSON.stringify(components).replaceAll(
+      '"#/$defs/',
+      `"#/components/schemas/${name}_`,
+    ),
+  ) as Record<string, unknown>;
+}
+
+const embeddedRunRecord = embedSchema("RunRecord", schemas.runRecord);
+
 const document = {
   openapi: "3.1.0",
   info: {
@@ -83,6 +109,39 @@ const document = {
       bearerToken: { type: "http", scheme: "bearer" },
     },
     schemas: {
+      ...embeddedRunRecord,
+      ...embedSchema("RunState", schemas.runState),
+      ...embedSchema("RunPresentation", schemas.runPresentation),
+      ...embedSchema("AgentTiming", schemas.agentTiming),
+      RunView: {
+        type: "object",
+        required: ["record", "state", "status", "result"],
+        properties: {
+          record: { $ref: "#/components/schemas/RunRecord" },
+          state: { $ref: "#/components/schemas/RunState" },
+          status: {
+            type: "string",
+            enum: [
+              "queued",
+              "running",
+              "paused",
+              "cancelled",
+              "finished",
+              "cost_stopped",
+            ],
+          },
+          result: { type: ["object", "null"], additionalProperties: true },
+          presentation_available: {
+            type: "boolean",
+            description:
+              "False when archive metadata cannot be validated or synchronized. Presentation is last-known only; null then means unknown, not unarchived. Ephemeral projection status, not durable metadata.",
+          },
+          presentation: {
+            anyOf: [{ $ref: "#/components/schemas/RunPresentation" }, { type: "null" }],
+          },
+          agent_timing: { $ref: "#/components/schemas/AgentTiming" },
+        },
+      },
       TrialProgress: schemas.trialProgress,
       PresetSubmission: {
         type: "object",
@@ -424,7 +483,26 @@ const document = {
       get: {
         summary: "List runs",
         security: authenticated,
-        responses: { "200": ok, "401": error },
+        responses: {
+          "200": {
+            description: "Success",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["runs"],
+                  properties: {
+                    runs: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/RunView" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "401": error,
+        },
       },
       post: {
         summary: "Submit a reviewed preset or attested Workbench run",
@@ -482,7 +560,66 @@ const document = {
         summary: "Read one run",
         security: authenticated,
         parameters: [runParameter],
-        responses: { "200": ok, "404": error },
+        responses: {
+          "200": {
+            description: "Success",
+            content: {
+              "application/json": { schema: { $ref: "#/components/schemas/RunView" } },
+            },
+          },
+          "404": error,
+        },
+      },
+    },
+    "/api/v1/runs/{run_id}/presentation": {
+      patch: {
+        summary: "Archive or restore shared Runs visibility (operator only)",
+        parameters: [runParameter],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["archived", "expected_revision"],
+                properties: {
+                  archived: { type: "boolean" },
+                  expected_revision: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: Number.MAX_SAFE_INTEGER,
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Current presentation; null means never archived",
+            content: {
+              "application/json": {
+                schema: {
+                  anyOf: [
+                    { $ref: "#/components/schemas/RunPresentation" },
+                    { type: "null" },
+                  ],
+                },
+              },
+            },
+          },
+          "400": { description: "Invalid request" },
+          "403": { description: "Operator or CSRF required" },
+          "409": {
+            description:
+              "Stale revision; validated current metadata synchronized for the next GET",
+          },
+          "503": {
+            description:
+              "Writes disabled or presentation unavailable; require validated synchronization before retrying",
+          },
+        },
       },
     },
     "/api/v1/runs/{run_id}/pause": {
@@ -559,7 +696,9 @@ const document = {
 
 const documentPath = join(repository, "docs", "control-api-v1.openapi.json");
 await writeFile(documentPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
-const generated = astToString(await openapiTS(document as unknown as OpenAPI3));
+const generated = astToString(
+  await openapiTS(document as unknown as OpenAPI3, { emptyObjectsUnknown: true }),
+);
 const outputPath = join(
   repository,
   "apps",

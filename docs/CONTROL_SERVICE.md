@@ -34,6 +34,20 @@ kwargs together. These are configured values, not verified provider-effective
 settings. See [Run diagnostics and configuration provenance](run-diagnostics.md)
 for the source boundary, completion investigation, and proposed upstream evidence.
 
+## Shared archive visibility
+
+Operators can Archive/Restore a run for all users through the existing write-mode
+and CSRF protections. Default Runs visibility is **Not archived**, with Archived
+and All filters combined with role and search. Direct detail URLs remain readable
+in every state; running jobs continue. List/detail GETs return all runs from SQL.
+The optional versioned `presentation.json` record is separate from `run.json`,
+`state.json`, and Harbor output. Malformed presentation data cannot block
+execution reconciliation; responses expose ephemeral availability and preserve
+last-known archives, while unknown archives remain discoverable with warnings.
+Archive writes require validated metadata; conflicts synchronize the SQL cache
+before returning 409. See [Shared run archive](run-archive.md) for the
+single-authority revision protocol, rebuild race protection, and review table.
+
 ## Persistent resources
 
 A hosted installation uses:
@@ -202,6 +216,7 @@ Operator write routes are:
 - `POST /api/v1/runs/{run_id}/pause`
 - `POST /api/v1/runs/{run_id}/resume`
 - `POST /api/v1/runs/{run_id}/cancel`
+- `PATCH /api/v1/runs/{run_id}/presentation` (shared archive/restore; no execution change)
 
 Preset, Workbench, setup-test, and direct submissions require
 `Idempotency-Key`. Direct submissions also require

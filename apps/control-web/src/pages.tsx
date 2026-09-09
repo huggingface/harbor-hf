@@ -1,3 +1,4 @@
+import { RunStatusTiming } from "./agent-timing";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -13,7 +14,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   actOnRun,
   type BenchmarkPreset,
@@ -52,8 +53,17 @@ import {
   useTrials,
 } from "./queries";
 import { PricingPanel } from "./pricing-panel";
+import {
+  PricingSelection,
+  scenarioCostColumn,
+  scenarioRows,
+  type ScenarioRun,
+} from "./pricing-selection";
+import { usePricingPreferences } from "./pricing-store";
 import { RunConfiguration } from "./run-configuration";
 import { RunDiagnostics, RunDiagnosticsSummary } from "./run-diagnostics";
+import { RunArchive } from "./run-archive";
+import { matchesRunFilters, readRunFilters, updateRunFilters } from "./run-filters";
 import { runIdentity } from "./run-identity";
 import { nativeScore } from "./run-summary";
 import {
@@ -488,14 +498,48 @@ export function OverviewPage() {
 
 export function RunsPage() {
   const query = useRuns();
-  const columns = useMemo<ColumnDef<RunView>[]>(
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { role, q, archive } = readRunFilters(searchParams);
+  const { preferences } = usePricingPreferences();
+  const rows = useMemo(
+    () =>
+      scenarioRows(
+        (query.data ?? []).filter((run) =>
+          matchesRunFilters(
+            run.record,
+            { role, q, archive },
+            run.presentation,
+            run.presentation_available,
+          ),
+        ),
+        preferences,
+      ),
+    [query.data, preferences, role, q, archive],
+  );
+  const columns = useMemo<ColumnDef<ScenarioRun>[]>(
     () => [
       {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
-          <Badge status={row.original.status}>{humanize(row.original.status)}</Badge>
+          <>
+            <RunStatusTiming run={row.original} />
+            {row.original.presentation?.archived ? <Badge>Archived</Badge> : null}
+            {row.original.presentation_available === false ? (
+              <Badge>
+                Archive state unavailable
+                {row.original.presentation ? " (last known)" : " (unknown)"}
+              </Badge>
+            ) : null}
+          </>
         ),
+      },
+      {
+        id: "role",
+        header: "Role",
+        accessorFn: (run) => run.record.role,
+        enableColumnFilter: false,
+        cell: ({ row }) => <Badge>{humanize(row.original.record.role)}</Badge>,
       },
       {
         id: "model",
@@ -531,7 +575,7 @@ export function RunsPage() {
         header: "Agent",
         accessorFn: (run) => runIdentity(run.record).agent,
         cell: ({ row }) => (
-          <span>
+          <span title={`Native agent: ${runIdentity(row.original.record).nativeAgent}`}>
             {runIdentity(row.original.record).agent}
             <span className="block text-xs text-slate-500">
               {runIdentity(row.original.record).version}
@@ -563,7 +607,7 @@ export function RunsPage() {
           ["n_cache_tokens", "Cache (M)", "Cache"],
         ] as const
       ).map(
-        ([key, label, tooltipLabel]): ColumnDef<RunView> => ({
+        ([key, label, tooltipLabel]): ColumnDef<ScenarioRun> => ({
           id: key,
           header: label,
           accessorFn: (run) => stat(run, key) ?? undefined,
@@ -588,6 +632,7 @@ export function RunsPage() {
         enableColumnFilter: false,
         cell: ({ row }) => <CostValue value={stat(row.original, "cost_usd")} />,
       },
+      scenarioCostColumn(),
       {
         id: "created",
         header: "Created",
@@ -602,23 +647,80 @@ export function RunsPage() {
     <>
       <PageHeader
         title="Runs"
-        description="Progress, totals and exception diagnostics refresh from Harbor results. Finished means execution ended, not that every trial passed or was validly scored."
+        description="Finished means execution ended, not that every trial passed. Agent Σ sums measured agent intervals in current trial results, not elapsed job time or lifetime retries. Coverage counts current results only."
         action={
           <Button variant="outline" onClick={() => void query.refetch()}>
             <RotateCw size={14} aria-hidden="true" /> Refresh
           </Button>
         }
       />
-      <Link className="mb-4 inline-block text-sky-400" to="/runs/new">
-        New Job
-      </Link>
+      <nav aria-label="Create a run" className="mb-4 flex gap-4 text-sky-400">
+        <Link to="/runs/new">New Job</Link>
+        <Link to="/workbench">New Workbench run</Link>
+      </nav>
+      <div className="mb-4 flex flex-wrap items-end gap-4">
+        <label className="grid gap-1 text-sm" htmlFor="runs-archive">
+          Archive visibility
+          <select
+            id="runs-archive"
+            className="rounded border border-slate-700 bg-slate-950 p-2"
+            value={archive}
+            onChange={(event) =>
+              setSearchParams(
+                updateRunFilters(searchParams, "archive", event.target.value),
+              )
+            }
+          >
+            <option value="not-archived">Not archived</option>
+            <option value="archived">Archived</option>
+            <option value="all">All</option>
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm" htmlFor="runs-role">
+          Run role
+          <select
+            id="runs-role"
+            className="rounded border border-slate-700 bg-slate-950 p-2"
+            value={role}
+            onChange={(event) =>
+              setSearchParams(
+                updateRunFilters(searchParams, "role", event.target.value),
+              )
+            }
+          >
+            <option value="all">All</option>
+            <option value="diagnostic">Diagnostic</option>
+            <option value="final">Final</option>
+          </select>
+        </label>
+        <label className="grid flex-1 gap-1 text-sm" htmlFor="runs-search">
+          Search runs
+          <input
+            id="runs-search"
+            type="search"
+            className="rounded border border-slate-700 bg-slate-950 p-2"
+            placeholder="Run ID, recipe, model, or benchmark"
+            value={q}
+            onChange={(event) =>
+              setSearchParams(updateRunFilters(searchParams, "q", event.target.value), {
+                replace: true,
+              })
+            }
+          />
+        </label>
+      </div>
+      <PricingSelection />
       <QueryContent query={query}>
         {query.data ? (
           <div className="min-w-0 [&_table]:table-auto">
             <DataTable
               columns={columns}
-              data={query.data}
-              empty="No runs are available"
+              data={rows}
+              empty={
+                query.data.length
+                  ? "No runs match these filters"
+                  : "No runs are available"
+              }
             />
           </div>
         ) : null}
@@ -697,6 +799,14 @@ export function RunPage() {
         description={item.record.run_id}
         action={<RunActions run={item} />}
       />
+      {item.presentation?.archived ? <Badge>Archived</Badge> : null}
+      {item.presentation_available === false ? (
+        <p role="status">
+          Archive state unavailable{item.presentation ? " (last known)" : " (unknown)"}.
+          Archive changes are disabled until synchronized.
+        </p>
+      ) : null}
+      <RunArchive key={item.record.run_id} run={item} />
       <RunSummaryCards run={item} />
       <PricingPanel result={item.result} />
       <RunWaffle run={item} />
