@@ -522,7 +522,7 @@ export function RunsPage() {
         accessorKey: "status",
         header: "Status",
         cell: ({ row }) => (
-          <>
+          <div className="min-w-[12rem]">
             <RunStatusTiming run={row.original} />
             {row.original.presentation?.archived ? <Badge>Archived</Badge> : null}
             {row.original.presentation_available === false ? (
@@ -531,7 +531,7 @@ export function RunsPage() {
                 {row.original.presentation ? " (last known)" : " (unknown)"}
               </Badge>
             ) : null}
-          </>
+          </div>
         ),
       },
       {

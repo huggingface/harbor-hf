@@ -474,3 +474,17 @@ Harbor boundary rechecked at `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`:
 concerns schema-driven launcher agent options, not exception evidence. Harbor-HF
 only presents native output through its existing read APIs; no upstream gap or
 pin update is needed for this display.
+
+### Compact run status
+
+The list and detail card keep execution state in a status-only badge. A separate
+single-line agent-time label retains a visible partial or unavailable marker;
+exact complete, partial and unavailable counts are available on hover or keyboard
+focus through the native Hint. This avoids multi-line coverage captions without
+presenting missing measurements as complete or as zero. Timing arithmetic,
+Harbor result interpretation and pricing are unchanged.
+
+Boundary review: checked `src/harbor/models/trial/result.py` at Harbor pin
+`dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and the available upstream history
+through `7d5285b4`. This is console layout only; existing projected native result
+measurements remain authoritative. No schema, persisted field or API changed.

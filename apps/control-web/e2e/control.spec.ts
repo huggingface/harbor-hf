@@ -1867,7 +1867,7 @@ for (const width of [1440, 390]) {
       });
     });
     await page.goto("/runs");
-    await expect(page.getByText("Running · Agent Σ 12m30s (partial)")).toBeVisible();
+    await expect(page.getByText("Agent Σ 12m30s · partial")).toBeVisible();
     await page.clock.runFor(15001);
     expect(progressReads).toBe(0);
     const affected = page.getByText("1 affected trial", { exact: true }).first();
@@ -1894,9 +1894,10 @@ for (const width of [1440, 390]) {
     expect(await square.boundingBox()).toEqual(squareBefore);
     await expect(square).toBeFocused();
     release?.();
-    await expect(
-      page.getByText("4 complete · 1 partial · 2 unavailable"),
-    ).toBeVisible();
+    await page.getByText("Agent Σ 12m30s · partial").locator("..").focus();
+    await expect(page.getByRole("tooltip")).toHaveText(
+      "4 complete · 1 partial · 2 unavailable",
+    );
   });
 }
 
@@ -2006,5 +2007,106 @@ for (const coarse of [false, true]) {
       path: testInfo.outputPath(`synthetic-compact-stale-${coarse}.png`),
     });
     await context.close();
+  });
+}
+
+for (const width of [1440, 320]) {
+  test(`compact status timing and keyboard coverage at ${width}px`, async ({
+    page,
+  }) => {
+    await mockControl(page);
+    await page.setViewportSize({ width, height: 900 });
+    const timing = {
+      duration_ms: 100445000,
+      complete_trials: 88,
+      partial_trials: 0,
+      unavailable_trials: 1,
+    };
+    const value = {
+      ...run,
+      status: "finished",
+      agent_timing: timing,
+      result: { ...summaryResult, n_total_trials: 90 },
+    };
+    await page.route("**/api/v1/runs", (route) =>
+      json(route, {
+        runs: [
+          value,
+          {
+            ...value,
+            record: { ...record, run_id: "run-abcdef0123456789abcdef01" },
+            state: { ...state, run_id: "run-abcdef0123456789abcdef01" },
+            agent_timing: {
+              ...timing,
+              duration_ms: 540000,
+              complete_trials: 90,
+              unavailable_trials: 0,
+            },
+          },
+        ],
+      }),
+    );
+    await page.route(`**/api/v1/runs/${runId}`, (route) => json(route, value));
+    for (const path of ["/runs", `/runs/${runId}`]) {
+      await page.goto(path);
+      const label = page.getByText("Agent Σ 27h54m5s · partial", { exact: true });
+      await expect(label).toBeVisible();
+      const component = label.locator("../../..");
+      const badge = component.getByText("Finished", { exact: true });
+      await expect(badge).toBeVisible();
+      const labelBox = await label.boundingBox();
+      const badgeBox = await badge.boundingBox();
+      expect(labelBox!.height).toBeLessThanOrEqual(18);
+      expect(labelBox!.y).toBeGreaterThanOrEqual(badgeBox!.y + badgeBox!.height);
+      expect(
+        await label.evaluate((element) => getComputedStyle(element).whiteSpace),
+      ).toBe("nowrap");
+      expect((await component.boundingBox())!.width).toBeLessThan(260);
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      await label.locator("..").focus();
+      await expect(page.getByRole("tooltip")).toHaveText(
+        "88 complete · 0 partial · 1 unavailable",
+      );
+      await page.keyboard.press("Tab");
+      await expect(
+        page
+          .getByRole("tooltip")
+          .filter({ hasText: "88 complete · 0 partial · 1 unavailable" }),
+      ).toHaveCount(0);
+      if (path !== "/runs") {
+        const summary = page.getByRole("region", { name: "Run summary" });
+        const box = await summary.boundingBox();
+        expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+        expect(
+          await component.evaluate(
+            (element) => element.scrollWidth <= element.clientWidth,
+          ),
+        ).toBe(true);
+      }
+      if (process.env.COMPACT_STATUS_SCREENSHOTS) {
+        await page.screenshot({
+          path: `${process.env.COMPACT_STATUS_SCREENSHOTS}/status-${width}-${path === "/runs" ? "list" : "detail"}.png`,
+          fullPage: true,
+        });
+      }
+    }
+    for (const [duration, label] of [
+      [360000000, "Agent Σ 100h0m0s · partial"],
+      [1000000000, "Agent Σ 277h46m40s · partial"],
+      [null, "Agent time unavailable"],
+    ] as const) {
+      await page.route(`**/api/v1/runs/${runId}`, (route) =>
+        json(route, { ...value, agent_timing: { ...timing, duration_ms: duration } }),
+      );
+      await page.reload();
+      const text = page.getByText(label, { exact: true });
+      await expect(text).toBeVisible();
+      expect((await text.boundingBox())!.height).toBeLessThanOrEqual(18);
+      expect(
+        await text
+          .locator("../../..")
+          .evaluate((element) => element.scrollWidth <= element.clientWidth),
+      ).toBe(true);
+    }
   });
 }
