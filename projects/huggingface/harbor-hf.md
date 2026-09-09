@@ -613,3 +613,26 @@ Approved at: 2026-09-09T13:13:00.258660+00:00
 - Local implementation, tests, documentation, and local commits are approved.
   No deployment, merge, new remote PR/branch publication, live setup/benchmark
   launch, inference, credential movement, or resource change is included.
+
+### Compact matrix and saved pricing preferences (2026-09-09)
+
+Approved at: 2026-09-09T13:54:52.918279+00:00
+
+- Direct approval: the user approved the preceding local work and requested
+  subtler stale feedback, better use of summary/grid space, cache-hit percentage,
+  saved pricing scenarios usable in the Runs list, compact non-question-mark
+  trial markers, and known task budgets in tooltips when available.
+- Continue local implementation and tests on the stable-timing branch. Keep
+  tasks as columns and repetition slots as rows, shrink visual markers and
+  column headers while preserving keyboard/focus/hover access and hit targets.
+- Persist explicitly saved named pricing preferences in browser-local storage,
+  validate untrusted records, and distinguish selected scenario estimates from
+  native reported cost. No server-side preference store, shared storage resource,
+  billing change, inference parameter, or execution-cost policy is authorized.
+- Display reported cached/input percentage only when meaningful. Preserve
+  missing/partial data, error states, and current-result timing semantics.
+- Native resolved time budgets are absent; do not reconstruct Harbor timeout
+  rules or read benchmark formats. Keep unavailable budgets unknown/omitted,
+  and unfinished observations distinct from proven running execution.
+- No remote publication, PR creation, deployment, merge, live runs, inference,
+  credential movement, public demo listener, or resource mutation.
