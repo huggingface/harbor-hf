@@ -772,3 +772,69 @@ test("binding name typing retains focus and reload preserves pending edits", asy
     "C_USTOM_KEY",
   );
 });
+
+test("completed run diagnostics refresh automatically and drill into native evidence", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.clock.install();
+  let completed = false;
+  const snapshot = () => ({
+    ...run,
+    status: completed ? "finished" : "running",
+    result: {
+      ...run.result,
+      finished_at: completed ? "2026-01-01T00:01:00Z" : null,
+      stats: {
+        ...run.result.stats,
+        n_errored_trials: completed ? 1 : 0,
+        evals: {
+          reward: {
+            metrics: [{ mean: 1 }],
+            exception_stats: completed ? { RuntimeError: [trialName] } : {},
+          },
+        },
+      },
+    },
+  });
+  await page.route("**/api/v1/runs", (route) => json(route, { runs: [snapshot()] }));
+  await page.route(`**/api/v1/runs/${runId}`, (route) => json(route, snapshot()));
+  await page.route(`**/api/v1/runs/${runId}/trials/${trialName}`, (route) =>
+    json(route, {
+      ...trial,
+      result: {
+        ...trial.result,
+        exception_info: {
+          exception_type: "RuntimeError",
+          exception_message: "synthetic setup exception",
+          exception_traceback: "synthetic native traceback",
+        },
+      },
+    }),
+  );
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/") && request.method() !== "GET")
+      writes.push(request.method());
+  });
+  await page.goto("/runs");
+  await expect(page.getByText("No recorded exceptions", { exact: true })).toBeVisible();
+  completed = true;
+  await page.clock.runFor(10_100);
+  const diagnostic = page.getByRole("link", {
+    name: /Harbor-reported exceptions.*1 affected trial/,
+  });
+  await expect(diagnostic).toBeVisible();
+  await diagnostic.click();
+  const panel = page.getByRole("region", { name: "Harbor-reported exceptions" });
+  await expect(panel.getByText("RuntimeError", { exact: true })).toBeVisible();
+  await expect(panel.getByText(/Infrastructure classification.*unknown/)).toBeVisible();
+  const configuration = page.getByLabel("Configured agents");
+  await expect(configuration.getByText("Not recorded in native kwargs")).toBeVisible();
+  await expect(configuration.getByText(/not verified provider requests/)).toBeVisible();
+  await panel.getByRole("link", { name: trialName, exact: true }).click();
+  await expect(
+    page.getByText("synthetic native traceback", { exact: true }),
+  ).toBeVisible();
+  expect(writes).toEqual([]);
+});

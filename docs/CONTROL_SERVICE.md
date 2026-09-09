@@ -19,6 +19,21 @@ cost receipt for each Harbor attempt, so retry cost survives a parent restart.
 Reviewed benchmark presets select either CPU Basic or CPU Upgrade for temporary
 task Jobs; they cannot select accelerator hardware.
 
+## Run diagnostics
+
+Runs, run detail, and trial lists refresh through existing ten-second browser polling
+and the control projection. The Runs diagnostics column groups native Harbor
+exceptions with links to trial evidence; missing or inconsistent evidence remains
+unknown/partial. Finished execution does not imply passing or valid scoring.
+Infrastructure and verifier-bootstrap classifications require upstream typed
+Harbor evidence; this view does not infer them from logs or rewards and never
+changes scores or retries.
+
+Run detail also keeps each agent's stored model/route, version, and reasoning
+kwargs together. These are configured values, not verified provider-effective
+settings. See [Run diagnostics and configuration provenance](run-diagnostics.md)
+for the source boundary, completion investigation, and proposed upstream evidence.
+
 ## Persistent resources
 
 A hosted installation uses:
