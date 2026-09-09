@@ -15,7 +15,9 @@ const files = (await readdir(schemaRoot))
   .filter((name) => name.endsWith(".schema.json"))
   .sort();
 
-const exports: string[] = [];
+const exports: string[] = [
+  'export type { LaunchPricingV1 } from "./launch-pricing-v1.js";',
+];
 for (const file of files) {
   const stem = basename(file, ".schema.json");
   const output = await compileFromFile(join(schemaRoot, file), {
@@ -42,39 +44,43 @@ await writeFile(join(outputRoot, "index.ts"), `${exports.join("\n")}\n`, "utf8")
 // Browser validation is compiled here, never at application startup under CSP.
 const browserOutput = resolve(packageRoot, "../../apps/control-web/src/generated");
 await mkdir(browserOutput, { recursive: true });
-const pricingSchema = JSON.parse(
-  await readFile(join(schemaRoot, "browser-pricing-v1.schema.json"), "utf8"),
-);
-const ajv = new Ajv2020({ strict: false, code: { source: true, esm: true } });
-const validator = ajv.compile(pricingSchema);
-const banner =
-  "/* Generated from browser-pricing-v1.schema.json by Ajv standalone and esbuild. Do not edit. */";
-await build({
-  absWorkingDir: packageRoot,
-  stdin: {
-    contents: standaloneCode(ajv, validator),
-    resolveDir: packageRoot,
-    sourcefile: "browser-pricing-validator.js",
-  },
-  outfile: join(browserOutput, "browser-pricing-validator.js"),
-  bundle: true,
-  format: "esm",
-  platform: "browser",
-  legalComments: "inline",
-  banner: {
-    js: `${banner}
+for (const [stem, typeName] of [
+  ["browser-pricing", "BrowserPricingV1"],
+  ["launch-pricing", "LaunchPricingV1"],
+]) {
+  const pricingSchema = JSON.parse(
+    await readFile(join(schemaRoot, `${stem}-v1.schema.json`), "utf8"),
+  );
+  const ajv = new Ajv2020({ strict: false, code: { source: true, esm: true } });
+  const validator = ajv.compile(pricingSchema);
+  const banner = `/* Generated from ${stem}-v1.schema.json by Ajv standalone and esbuild. Do not edit. */`;
+  await build({
+    absWorkingDir: packageRoot,
+    stdin: {
+      contents: standaloneCode(ajv, validator),
+      resolveDir: packageRoot,
+      sourcefile: `${stem}-validator.js`,
+    },
+    outfile: join(browserOutput, `${stem}-validator.js`),
+    bundle: true,
+    format: "esm",
+    platform: "browser",
+    legalComments: "inline",
+    banner: {
+      js: `${banner}
 /*! Bundled Ajv runtime license:
 ${await readFile(
   new URL("./LICENSE", import.meta.resolve("ajv/package.json")),
   "utf8",
 )}*/`,
-  },
-});
-await writeFile(
-  join(browserOutput, "browser-pricing-validator.d.ts"),
-  `${banner}
-import type { BrowserPricingV1 } from "@harbor-hf/contracts";
-export default function validate(value: unknown): value is BrowserPricingV1;
+    },
+  });
+  await writeFile(
+    join(browserOutput, `${stem}-validator.d.ts`),
+    `${banner}
+import type { ${typeName} } from "@harbor-hf/contracts";
+export default function validate(value: unknown): value is ${typeName};
 `,
-  "utf8",
-);
+    "utf8",
+  );
+}

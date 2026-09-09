@@ -31,8 +31,16 @@ cost_ceiling_usd_per_trial: number
 workbench_recipe?: {
 name: string
 }
+pricing?: LaunchPricingV1
 harbor_job_config: {
 [k: string]: unknown
 }
 })
 export type RunRecordSlug = string
+
+export interface LaunchPricingV1 {
+currency: "USD"
+input_usd_per_million: number
+output_usd_per_million: number
+cached_usd_per_million: number
+}

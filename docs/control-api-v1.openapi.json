@@ -148,6 +148,9 @@
               }
             }
           },
+          "pricing": {
+            "$ref": "#/components/schemas/LaunchPricing"
+          },
           "harbor_job_config": {
             "type": "object"
           }
@@ -178,6 +181,158 @@
         "title": "RunRecordSlug",
         "type": "string",
         "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+      },
+      "LaunchPricing": {
+        "title": "LaunchPricingV1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "currency",
+          "input_usd_per_million",
+          "output_usd_per_million",
+          "cached_usd_per_million"
+        ],
+        "properties": {
+          "currency": {
+            "const": "USD"
+          },
+          "input_usd_per_million": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "output_usd_per_million": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "cached_usd_per_million": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        }
+      },
+      "SharedEstimate": {
+        "title": "SharedEstimateV1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "basis",
+          "cost_usd",
+          "unavailable_reason"
+        ],
+        "properties": {
+          "basis": {
+            "$ref": "#/components/schemas/SharedEstimate_basis"
+          },
+          "cost_usd": {
+            "$ref": "#/components/schemas/SharedEstimate_cost"
+          },
+          "unavailable_reason": {
+            "enum": [
+              "pricing_unset",
+              "usage_unavailable",
+              null
+            ]
+          }
+        }
+      },
+      "SharedEstimate_basis": {
+        "const": "launch_rates_reported_usage"
+      },
+      "SharedEstimate_cost": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "SharedEstimate_group": {
+        "title": "LaunchEstimateGroupV1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "basis",
+          "cost_usd",
+          "estimated_runs",
+          "total_runs"
+        ],
+        "properties": {
+          "basis": {
+            "$ref": "#/components/schemas/SharedEstimate_basis"
+          },
+          "cost_usd": {
+            "$ref": "#/components/schemas/SharedEstimate_cost"
+          },
+          "estimated_runs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_runs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "LeaderboardRow": {
+        "title": "LeaderboardRowV1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "benchmark",
+          "preset",
+          "agent",
+          "agent_version",
+          "model",
+          "provider",
+          "reasoning_effort",
+          "n_attempts",
+          "n_trials",
+          "pass_rate",
+          "cost_usd"
+        ],
+        "properties": {
+          "benchmark": {
+            "type": "string"
+          },
+          "preset": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "agent_version": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "type": "string"
+          },
+          "n_attempts": {
+            "type": "number"
+          },
+          "n_trials": {
+            "type": "number"
+          },
+          "pass_rate": {
+            "type": "number"
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "shared_estimate": {
+            "$ref": "#/components/schemas/SharedEstimate_group"
+          }
+        }
       },
       "RunState": {
         "title": "RunStateV1",
@@ -364,6 +519,9 @@
           },
           "agent_timing": {
             "$ref": "#/components/schemas/AgentTiming"
+          },
+          "shared_estimate": {
+            "$ref": "#/components/schemas/SharedEstimate"
           }
         }
       },
@@ -901,6 +1059,9 @@
           "workbench"
         ],
         "properties": {
+          "pricing": {
+            "$ref": "#/components/schemas/LaunchPricing"
+          },
           "n_concurrent_trials": {
             "type": "integer",
             "minimum": 1,
@@ -3288,7 +3449,19 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "rows"
+                  ],
+                  "properties": {
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LeaderboardRow"
+                      }
+                    }
+                  }
                 }
               }
             }

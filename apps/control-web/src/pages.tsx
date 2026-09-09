@@ -1,3 +1,4 @@
+import { LaunchEstimate } from "./launch-pricing";
 import { RunStatusTiming } from "./agent-timing";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -632,6 +633,12 @@ export function RunsPage() {
         enableColumnFilter: false,
         cell: ({ row }) => <CostValue value={stat(row.original, "cost_usd")} />,
       },
+      {
+        id: "launch_estimate",
+        header: "Launch estimate",
+        enableColumnFilter: false,
+        cell: ({ row }) => <LaunchEstimate run={row.original} />,
+      },
       scenarioCostColumn(),
       {
         id: "created",
@@ -808,6 +815,9 @@ export function RunPage() {
       ) : null}
       <RunArchive key={item.record.run_id} run={item} />
       <RunSummaryCards run={item} />
+      <p className="text-sm text-slate-400">
+        Launch estimate: <LaunchEstimate run={item} />
+      </p>
       <PricingPanel result={item.result} />
       <RunWaffle run={item} />
       <div className="mt-6 grid gap-6 xl:grid-cols-2">

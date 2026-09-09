@@ -36,6 +36,14 @@ const draftSchema = z.object({
       trajectory_path: z.string().nullable(),
     }),
   }),
+  pricing: z
+    .object({
+      enabled: z.boolean(),
+      input: z.string(),
+      output: z.string(),
+      cached: z.string(),
+    })
+    .optional(),
   benchmarkKey: z.string(),
   n_concurrent_trials: z.string().optional(),
   model: z.string(),

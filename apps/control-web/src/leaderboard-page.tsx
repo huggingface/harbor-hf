@@ -1,3 +1,4 @@
+import { GroupLaunchEstimate } from "./launch-pricing";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo } from "react";
 import type { LeaderboardRow } from "./api";
@@ -204,9 +205,15 @@ export function LeaderboardPage() {
     },
     {
       accessorKey: "cost_usd",
-      header: "Observed cost",
+      header: "Reported cost",
       enableColumnFilter: false,
       cell: ({ row }) => formatMoneyUsd(row.original.cost_usd),
+    },
+    {
+      id: "launch_estimate",
+      header: "Launch estimate",
+      enableColumnFilter: false,
+      cell: ({ row }) => <GroupLaunchEstimate row={row.original} />,
     },
     {
       id: "frontier",

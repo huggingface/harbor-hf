@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
-import { ContractValidationError } from "@harbor-hf/contracts";
+import { validateLaunchPricing, ContractValidationError } from "@harbor-hf/contracts";
 import { leaderboard } from "@harbor-hf/control-core";
 import Fastify, {
   type FastifyInstance,
@@ -68,6 +68,10 @@ const submissionSchema = z
 const workbenchSubmissionSchema = submissionSchema
   .omit({ harness: true })
   .extend({
+    pricing: z
+      .unknown()
+      .transform((value) => validateLaunchPricing(value))
+      .optional(),
     model: z
       .object({
         id: z.string().min(1).max(320),
@@ -506,7 +510,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
         { ...preview.harbor_agent, ...input.workbench.harbor_agent },
         idempotencyKey(request),
         actor.subject,
-        { name: preview.recipe.name },
+        {
+          workbench_recipe: { name: preview.recipe.name },
+          ...(input.pricing !== undefined ? { pricing: input.pricing } : {}),
+        },
       );
       return reply.code(result.created ? 201 : 200).send(result);
     }

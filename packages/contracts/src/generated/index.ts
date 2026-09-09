@@ -1,3 +1,4 @@
+export type { LaunchPricingV1 } from "./launch-pricing-v1.js";
 export type * from "./agent-preset-v1.js";
 export type * from "./agent-timing-v1.js";
 export type * from "./agent-workbench-v1.js";
@@ -5,7 +6,10 @@ export type * from "./attempt-cost-v1.js";
 export type * from "./benchmark-preset-v1.js";
 export type * from "./browser-pricing-v1.js";
 export type * from "./harbor-job-config-v1.js";
+export type * from "./launch-pricing-v1.js";
+export type * from "./leaderboard-row-v1.js";
 export type * from "./run-presentation-v1.js";
 export type * from "./run-record-v1.js";
 export type * from "./run-state-v1.js";
+export type * from "./shared-estimate-v1.js";
 export type * from "./trial-progress-v1.js";
