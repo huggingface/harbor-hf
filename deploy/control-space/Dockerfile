@@ -51,6 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     && rm -rf /var/lib/apt/lists/*
 COPY packages/harbor-hf-agents /tmp/harbor-hf-agents
 RUN uv python install 3.12.14 \
+    && uv run --no-project --python 3.12.14 /tmp/harbor-hf-agents/sdk-backport/build.py \
     && uv sync --project /tmp/harbor-hf-agents --python 3.12.14 --frozen --no-dev --no-editable \
     && /opt/harbor-launch/bin/python -c "from harbor_hf_agents.launch import check_revision; check_revision()"
 

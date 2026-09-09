@@ -144,6 +144,11 @@ test("Runs recipe identity, exact role and URL search survive refresh, reload an
   await expect(table.getByRole("link", { name: /historical-model/ })).toBeVisible();
   await search.fill("SYNTHETIC-BENCHMARK");
   await role.selectOption("all");
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("q") === "SYNTHETIC-BENCHMARK" &&
+      !url.searchParams.has("role"),
+  );
   await expect(table.getByRole("link", { name: /model-two/ })).toBeVisible();
   expect(writes).toEqual([]);
 });

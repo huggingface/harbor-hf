@@ -709,3 +709,79 @@ Approved at: 2026-09-09T18:04:01.857234+00:00
   archive mutation on live data, or unrelated feature migration is authorized.
 - Pricing sharing and the reasoning selector remain deferred. No operator
   identifiers may be included in public repository content or metadata.
+
+### Sandbox SDK terminal-result integration
+
+Status: completed
+
+Approved at: 2026-09-09T17:44:31.882149+00:00
+
+- The user explicitly approved preparing a Harbor-HF pull request consuming the reviewed Sandbox SDK terminal-result fix, alongside its upstream issue and PR.
+- Implement a reproducible temporary dependency pin/build for the parent-worker SDK, with source/hash provenance, offline tests, documentation and explicit removal criteria. A local patched wheel build is approved. Preserve Harbor-owned execution, results, retry policy, task configuration and all unrelated work.
+- Local commits, topic branch push and one Harbor-HF pull request are approved after checks and privacy review. No merge, deployment, image publication, package-index release, new Jobs/inference, credential movement, or remote resource/configuration changes in this step.
+
+
+Implementation completed on 2026-09-09; branch/PR publication remains parent-owned:
+
+- Backported exactly the production diff of SDK PR #4851, commit
+  `f1c01f06919a5e57e57b6d78bc3d7e4de81534e0`, onto hash-verified 1.28.0.
+  Chose a locally versioned reproducible wheel rather than the unrelated 1.31
+  development upgrade. Source, patch, output hashes and removal criteria are in
+  `packages/harbor-hf-agents/sdk-backport/README.md`; no binary is tracked.
+- Both existing images build the wheel before frozen agents-lock installation.
+  Local amd64 builds and 40 offline terminal regressions in each actual final
+  image interpreter passed. Installed SDK source bytes and versions matched the
+  wheel. Harbor's native Sandbox boundary, retries and results are unchanged;
+  no task recipe or credential delivery changes were made.
+- Root tests: 46 passed, 87.98% coverage. Agents tests: 155 passed. New builder:
+  97.47% coverage. Ruff, formatting, ty, lock/source/dependency integrity, root
+  dependency audit, and normal Slophammer check/DRY passed.
+- Draft validation blockers: existing supplementary agent-runtime coverage is
+  61.72%; the Slophammer baseline and mutation script are absent. No thresholds
+  were relaxed. Separate npm/browser checks were not run for this Python/build
+  change; the control image's normal typecheck and web build passed.
+- No push, PR creation, deployment, image publication, remote Jobs, inference,
+  credential movement or resource mutation was performed by this integration.
+
+Completed on 2026-09-09: opened draft PR #198 (https://github.com/huggingface/harbor-hf/pull/198) after source, image and privacy review. It consumes the reviewed upstream SDK fix as a hash-locked release-wheel backport. Both local image environments passed 40 offline terminal regressions; existing coverage/tooling blockers are disclosed. No merge, deployment, image/package publication or remote workload was performed.
+
+
+### PR #198 upstream-main conflict resolution (2026-09-09)
+
+Status: completed
+
+Approved at: 2026-09-09T18:23:27.991611+00:00
+
+- Direct approval: the user asked to resolve the reported conflicts; the clarified scope is merging upstream main into the existing affected topic branch, not merging the PR into main.
+- Merge latest upstream main into the existing PR #198 branch without rebase or force push, resolve conflicts preserving unrelated upstream changes and the reviewed SDK backport, run local checks, commit and push to the existing PR.
+- Inspect SDK PR #4851 read-only; it is mergeable and no SDK branch modification is included.
+- No PR merge, deployment, image/package publication, new issue or PR, remote Jobs, inference, credential movement, resource changes, or weakened validation gates. Stop if upstream dependency changes supersede or conflict with the backport.
+
+
+Completed local integration on 2026-09-09; publishing this reviewed merge to the existing PR branch:
+
+- Merged upstream main `c3558b6` (previous common base `b23acb9`) into the topic branch. Only `projects/huggingface/harbor-hf.md` conflicted; preserved both additive authorization histories. Upstream application files are byte-identical to main and the SDK backport, locks, Harbor pin and image build steps are unchanged from the topic branch.
+- Root Ruff/format/ty, 46 tests with 87.98% coverage, dependency audit, normal Slophammer check/DRY and privacy checks passed. Agents Ruff/format/ty and all 155 tests passed; supplementary branch coverage remains 61.72%, below 85%. The baseline file and mutation script remain absent. No gate was weakened.
+- Node checks passed: formatting, lint (existing shell-template warnings), types, build, generated files, 846 unit tests and dependency audit. Initial parallel browser run passed 52/53 with a navigation assertion failure; unchanged full serial rerun passed 53/53.
+- Both local amd64 images rebuilt successfully; each actual final SDK interpreter passed 40 terminal regressions with networking disabled. The rebuilt wheel retained its recorded hash.
+- SDK PR #4851 was mergeable and left untouched. PR #198 remains draft with existing validation limitations. No PR merge, deployment, image/package publication, remote workload, credential movement or resource change.
+
+### PR #198 URL-filter race repair (2026-09-09)
+
+Status: completed
+
+Approved at: 2026-09-09T20:00:00Z
+
+- Direct user approval: repair the real frontend URL-filter lost-update race on existing PR #198, with deterministic regression tests, local commits and push to that PR after privacy review and validation.
+- Preserve query/history semantics, unrelated URL parameters, upstream frontend features and the SDK backport. Verify the original regression fails and the repair passes; run normal parallel browser checks and bounded read-only CI monitoring.
+- No merge, deployment, new PR, image publication, remote Jobs, inference, credential movement, live API writes or gate weakening. Local synthetic browser servers are permitted. This scope does not activate any other authorization above.
+
+
+Completed local repair and validation on 2026-09-09; publishing to existing PR #198:
+
+- Filter events merge against the synchronous BrowserRouter URL, while React Router remains the sole navigation writer. No pending-state mirror or global routing changes; search replaces and selectors push. Preserve unknown parameters, history navigation, existing rows and archive behavior.
+- Deterministic real-BrowserRouter/Suspense negative control: three regressions fail on the original handlers; all four tests pass with the fix, including deferred external navigation and POP edits. The existing browser sequence is unchanged except for an added final URL assertion.
+- Formatting, lint (six existing warnings), both TypeScript checks, 850 unit tests, build, generated contracts and dependency audit passed. The complete synthetic browser suite passed 53/53 with two workers; six focused repetitions also passed with two workers and no retries. Local IPv4 startup stalled and was stopped; these browser passes used an isolated IPv6 harness without repository configuration changes. Normal CI remains authoritative for its standard IPv4 path.
+- Supplementary global Node coverage remains below 85%: lines 80.92%, statements 78.87%, functions 80.41%, branches 73.15%. Normal Slophammer check and DRY passed; baseline and mutation commands remain blocked by their absent files. No gate was weakened.
+- Reviewed Harbor JobConfig/viewer models at the existing pin and history through `7d5285b4`; console URL navigation belongs to Harbor-HF. Documentation records the BrowserRouter-specific boundary. SDK patch/build/locks, Harbor configuration and image definitions are unchanged; their full CI checks must still finish after publication.
+- Main remains at `c3558b6`; no additional integration merge was needed. Self-review confirmed only filter navigation, tests and additive documentation/authorization changes. No merge, deployment, remote workload, credential movement or new publication destination. Remote CI monitoring is bounded to twenty minutes after push; no CI rerun is authorized to mask failure.
