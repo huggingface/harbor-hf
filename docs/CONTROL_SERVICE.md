@@ -212,6 +212,22 @@ when writes are disabled. Local Docker setup tests also remain available in
 explicit development mode, and setup cancellation remains available for safe
 cleanup.
 
+### Setup admission diagnostics
+
+Setup admission returns `503 capacity_exhausted` when the existing active-Job
+limit is reached. Wait for active Jobs to finish and retry manually; no Job is
+started by this rejection. Other setup start failures remain sanitized
+`500 internal_error` responses. Both include a request ID for support and log
+only fixed stage/code values (`setup_capacity_admission` or `setup_start`) with
+that ID, never raw provider exceptions, live counts, or namespace details.
+
+The existing accounting is intentionally unchanged: parent scheduling counts
+active parent Jobs, while setup admission counts all active namespace Jobs
+against the same `HARBOR_HF_MAX_ACTIVE_JOBS` setting. This inconsistency is not
+resolved by error reporting; the default and configured limit are unchanged.
+
+### Request authorization and lifecycle
+
 Browser writes use the session cookie and CSRF token. CLI requests use an
 approved bearer token. Readers can use authenticated GET routes but cannot
 change runs.

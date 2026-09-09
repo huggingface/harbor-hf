@@ -1326,3 +1326,44 @@ test("historical waffle native exception tooltip and badge link to traceback", a
   ).toBeVisible();
   expect(writes).toEqual([]);
 });
+
+test("shows retryable setup capacity errors without starting a run", async ({
+  page,
+}) => {
+  let runPosts = 0;
+  let setupPosts = 0;
+  await mockControl(page, {
+    onRunPost: () => {
+      runPosts += 1;
+    },
+  });
+  await page.route("**/api/v1/workbench/setup-tests", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    setupPosts += 1;
+    return route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: {
+          code: "capacity_exhausted",
+          message:
+            "Setup capacity is full. Wait for active Jobs to finish, then retry the setup test.",
+          request_id: "request-setup-capacity",
+        },
+      }),
+    });
+  });
+  await page.goto("/workbench");
+  await page
+    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
+    .check();
+  await page.getByRole("button", { name: "Run setup test" }).click();
+  const notice = page.getByRole("alert");
+  await expect(notice).toContainText("Setup capacity is full.");
+  await expect(notice).toContainText("then retry the setup test.");
+  await expect(notice).toContainText("Code: capacity_exhausted · HTTP 503");
+  await expect(notice).toContainText("Request ID: request-setup-capacity");
+  await expect(page.getByText("Setup passed", { exact: true })).toHaveCount(0);
+  expect(setupPosts).toBe(1);
+  expect(runPosts).toBe(0);
+});

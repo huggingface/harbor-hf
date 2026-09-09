@@ -6,11 +6,13 @@ import {
   fastAgentWorkbenchStarter,
   putJson,
 } from "@harbor-hf/control-core";
+import { WorkbenchCapacityError } from "@harbor-hf/hf-adapters";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { InvalidBearerCredentialError, OAuthCallbackError } from "../src/auth.js";
 import type { AppConfig } from "../src/config.js";
 import { createRuntime, type Runtime } from "../src/runtime.js";
+import { WorkbenchSetupStartError } from "../src/workbench.js";
 
 const roots: string[] = [];
 const runtimes: Runtime[] = [];
@@ -107,6 +109,56 @@ const submission = {
 };
 
 describe("control API", () => {
+  it.each([true, false])(
+    "reports safe setup errors with correlated diagnostics (capacity: %s)",
+    async (capacity) => {
+      const { runtime, app } = await setup();
+      await runtime.initialize();
+      const failure = capacity
+        ? new WorkbenchCapacityError()
+        : new WorkbenchSetupStartError();
+      // Neither names nor nested provider exceptions belong in logs or responses.
+      failure.name = "private-provider-name";
+      failure.cause = new Error("private provider namespace and credential details");
+      vi.spyOn(runtime.workbench, "startSetup").mockRejectedValue(failure);
+      const log = vi.spyOn(app.log, "error");
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/workbench/setup-tests",
+        headers: {
+          "idempotency-key": "setup-error",
+          "x-request-id": "untrusted-private-id",
+        },
+        payload: { recipe: workbenchRecipe },
+      });
+      const code = capacity ? "capacity_exhausted" : "internal_error";
+      expect(response.statusCode).toBe(capacity ? 503 : 500);
+      expect(response.json()).toEqual({
+        error: {
+          code,
+          message: capacity
+            ? "Setup capacity is full. Wait for active Jobs to finish, then retry the setup test."
+            : "Hugging Face setup Job could not be started",
+          request_id: expect.any(String),
+        },
+      });
+      const requestId = response.json().error.request_id;
+      expect(requestId).toBeTruthy();
+      expect(log).toHaveBeenCalledExactlyOnceWith(
+        {
+          stage: capacity ? "setup_capacity_admission" : "setup_start",
+          code,
+          request_id: requestId,
+        },
+        "setup Job start failed",
+      );
+      expect(response.body + JSON.stringify(log.mock.calls)).not.toMatch(
+        /private|credential|namespace/,
+      );
+      await app.close();
+    },
+  );
+
   it("exposes authenticated native artifact observations without writing or changing completion", async () => {
     const { runtime, app } = await setup();
     await runtime.initialize();
