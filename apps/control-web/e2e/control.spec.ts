@@ -1174,3 +1174,155 @@ test("nine lock entries stay nine squares through partial and replacement observ
     page.getByText(/9 planned squares · 0 separate observations/),
   ).toBeVisible();
 });
+
+test("completed run diagnostics refresh automatically and drill into native evidence", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.clock.install();
+  let completed = false;
+  const snapshot = () => ({
+    ...run,
+    status: completed ? "finished" : "running",
+    result: {
+      ...run.result,
+      finished_at: completed ? "2026-01-01T00:01:00Z" : null,
+      stats: {
+        ...run.result.stats,
+        n_errored_trials: completed ? 1 : 0,
+        evals: {
+          reward: {
+            metrics: [{ mean: 1 }],
+            exception_stats: completed ? { RuntimeError: [trialName] } : {},
+          },
+        },
+      },
+    },
+  });
+  await page.route("**/api/v1/runs", (route) => json(route, { runs: [snapshot()] }));
+  await page.route(`**/api/v1/runs/${runId}`, (route) => json(route, snapshot()));
+  await page.route(`**/api/v1/runs/${runId}/trials/${trialName}`, (route) =>
+    json(route, {
+      ...trial,
+      result: {
+        ...trial.result,
+        exception_info: {
+          exception_type: "RuntimeError",
+          exception_message: "synthetic setup exception",
+          exception_traceback: "synthetic native traceback",
+        },
+      },
+    }),
+  );
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/") && request.method() !== "GET")
+      writes.push(request.method());
+  });
+  await page.goto("/runs");
+  await expect(page.getByText("No recorded exceptions", { exact: true })).toBeVisible();
+  completed = true;
+  await page.clock.runFor(10_100);
+  const diagnostic = page.getByRole("link", {
+    name: /Harbor-reported exceptions.*1 affected trial/,
+  });
+  await expect(diagnostic).toBeVisible();
+  await diagnostic.click();
+  const panel = page.getByRole("region", { name: "Harbor-reported exceptions" });
+  await expect(panel.getByText("RuntimeError", { exact: true })).toBeVisible();
+  await expect(panel.getByText(/Infrastructure classification.*unknown/)).toBeVisible();
+  const configuration = page.getByLabel("Configured agents");
+  await expect(configuration.getByText("Not recorded in native kwargs")).toBeVisible();
+  await expect(configuration.getByText(/not verified provider requests/)).toBeVisible();
+  await panel.getByRole("link", { name: trialName, exact: true }).click();
+  await expect(
+    page.getByText("synthetic native traceback", { exact: true }),
+  ).toBeVisible();
+  expect(writes).toEqual([]);
+});
+
+test("historical waffle native exception tooltip and badge link to traceback", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.route("**/api/v1/runs", (route) =>
+    json(route, { runs: [{ ...run, status: "finished" }] }),
+  );
+  await page.route("**/api/v1/runs/*/progress", (route) =>
+    json(route, {
+      observed_at: new Date().toISOString(),
+      jobs_observed_at: null,
+      jobs: [],
+      lock: null,
+      trials: [
+        {
+          trial_name: trialName,
+          config: null,
+          lock: null,
+          reward: 0,
+          cost_usd: null,
+          result: {
+            task_name: "task-one",
+            finished_at: "2026-01-01T00:01:00Z",
+            exception_info: { exception_type: "RuntimeError" },
+          },
+        },
+        {
+          trial_name: "trial-unknown",
+          config: null,
+          lock: null,
+          reward: 0,
+          cost_usd: null,
+          result: { task_name: "task-two", finished_at: "2026-01-01T00:01:00Z" },
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/v1/runs/*/trials/*", (route) =>
+    json(route, {
+      ...trial,
+      reward: 0,
+      result: {
+        ...trial.result,
+        exception_info: {
+          exception_type: "RuntimeError",
+          exception_message: "synthetic exception",
+          exception_traceback: "synthetic waffle native traceback",
+        },
+      },
+    }),
+  );
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/") && request.method() !== "GET")
+      writes.push(request.method());
+  });
+  await page.goto("/runs");
+  const square = page.getByRole("link", { name: `${trialName} in ${runId}: Errored` });
+  const unknown = page.getByRole("link", {
+    name: `trial-unknown in ${runId}: Zero reward`,
+  });
+  await unknown.focus();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Native exception evidence: unknown / unavailable",
+  );
+  await square.focus();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Native exception: RuntimeError",
+  );
+  await expect(page.getByRole("tooltip")).toContainText("Reward: 0");
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Infrastructure classification: unknown",
+  );
+  await page.getByText(/Planned total unknown \(no job lock\)/).click();
+  const evidence = page.getByRole("list", { name: "Native trial exception evidence" });
+  await expect(evidence).toContainText("Native exception: RuntimeError");
+  await expect(evidence).toContainText(
+    "Native exception evidence: unknown / unavailable",
+  );
+  await evidence.getByRole("link", { name: trialName, exact: true }).click();
+  await expect(
+    page.getByText("synthetic waffle native traceback", { exact: true }),
+  ).toBeVisible();
+  expect(writes).toEqual([]);
+});

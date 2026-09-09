@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunRecord } from "../src/api";
-import { runIdentity } from "../src/run-identity";
+import { runAgentIdentities, runIdentity } from "../src/run-identity";
 
 const identity = (agents: unknown) =>
   runIdentity({ harbor_job_config: { agents } } as RunRecord);
@@ -29,13 +29,58 @@ describe("native run identities", () => {
       "openai/example/first:provider, openai/example/second:other",
     );
     expect(result.provider).toBe("provider, other");
-    expect(result.reasoning).toBe("off, high, Native default");
+    expect(result.reasoning).toBe(
+      "thinking=off, reasoning_effort=high, Not recorded in native kwargs",
+    );
   });
   it("keeps missing identities unavailable rather than using preset metadata", () => {
     expect(identity(undefined).model).toBe("Unavailable");
     expect(identity([null]).model).toBe("Unspecified");
     expect(identity([{}]).agent).toBe("Unspecified");
     expect(identity([{}]).provider).toBe("Unspecified");
-    expect(identity([{}]).version).toBe("Harbor bundled");
+    expect(identity([{}]).version).toBe("Not explicitly configured");
+  });
+});
+
+describe("configuration provenance", () => {
+  it("retains distinct per-agent model, version and reasoning associations", () => {
+    const agents = [
+      {
+        name: "alpha",
+        model_name: "route/first",
+        kwargs: { version: "1", thinking: false },
+      },
+      {
+        import_path: "plugin:Agent",
+        model_name: "route/second?reasoning=max",
+        kwargs: {},
+      },
+    ];
+    const record = { harbor_job_config: { agents } } as RunRecord;
+    const before = structuredClone(record);
+    const rows = runAgentIdentities(record);
+    expect(rows[0]).toMatchObject({
+      model: "route/first",
+      version: "1",
+      reasoning: "thinking=false",
+    });
+    expect(rows[1]).toMatchObject({
+      model: "route/second?reasoning=max",
+      version: "Not explicitly configured",
+      reasoning: "Not recorded in native kwargs",
+    });
+    expect(record).toEqual(before);
+  });
+
+  it("does not convert malformed option objects to claimed defaults or versions", () => {
+    expect(identity([{ kwargs: { version: {}, reasoning_effort: [] } }])).toMatchObject(
+      {
+        version: "Not explicitly configured",
+        reasoning: "reasoning_effort=Unrecognized value",
+      },
+    );
+    expect(
+      identity([{ kwargs: { thinking: 0, reasoning_effort: null } }]).reasoning,
+    ).toBe("thinking=0");
   });
 });

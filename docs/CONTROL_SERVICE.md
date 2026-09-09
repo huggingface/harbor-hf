@@ -19,6 +19,21 @@ cost receipt for each Harbor attempt, so retry cost survives a parent restart.
 Reviewed benchmark presets select either CPU Basic or CPU Upgrade for temporary
 task Jobs; they cannot select accelerator hardware.
 
+## Run diagnostics
+
+Runs, run detail, and trial lists refresh through existing ten-second browser polling
+and the control projection. The Runs diagnostics column groups native Harbor
+exceptions with links to trial evidence; missing or inconsistent evidence remains
+unknown/partial. Finished execution does not imply passing or valid scoring.
+Infrastructure and verifier-bootstrap classifications require upstream typed
+Harbor evidence; this view does not infer them from logs or rewards and never
+changes scores or retries.
+
+Run detail also keeps each agent's stored model/route, version, and reasoning
+kwargs together. These are configured values, not verified provider-effective
+settings. See [Run diagnostics and configuration provenance](run-diagnostics.md)
+for the source boundary, completion investigation, and proposed upstream evidence.
+
 ## Persistent resources
 
 A hosted installation uses:
@@ -410,3 +425,27 @@ npm run test:e2e
 
 Also build both Dockerfiles for `linux/amd64` and run the agent package checks in
 `packages/harbor-hf-agents`.
+
+### Waffle native exception evidence
+
+The Runs waffle reads historical and future native trial `result.exception_info`
+from the existing progress API; it needs no migration or remote execution. Each
+square's keyboard/hover tooltip reports the exact recorded `exception_type`.
+Per-run disclosures show trial exception badges and links to the existing native
+trial detail and traceback. The existing run exception projection also links to
+`JobResult.stats.evals[*].exception_stats` groups from the row header.
+
+An explicitly null `exception_info` means no recorded exception, not proof of
+valid scoring. Absent evidence remains unknown / unavailable. Types are not
+infrastructure or verifier-bootstrap classifications. Exception presentation does
+not change waffle state colors, reward semantics, run status, or configuration
+provenance. Removed observations remain labeled as removed, not terminal outcomes.
+No additional schema, persisted field, API, or worker behavior is introduced.
+
+Harbor boundary rechecked at `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`:
+`src/harbor/models/trial/result.py` (`ExceptionInfo`, `TrialResult`) and
+`src/harbor/models/job/result.py` (`exception_stats` aggregation). History through
+`90e28af3` does not change these native fields; the viewer change `2da50a93`
+concerns schema-driven launcher agent options, not exception evidence. Harbor-HF
+only presents native output through its existing read APIs; no upstream gap or
+pin update is needed for this display.

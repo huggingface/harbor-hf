@@ -456,6 +456,16 @@ Approved at: 2026-09-08T21:29:10+00:00
   separately recorded reasoning remain distinct follow-up work; this amendment
   does not claim they are implemented.
 
+### Run diagnostics and completion/profile investigation
+
+Approved at: 2026-09-09T08:48:52Z
+
+- The user explicitly requested further completion-handling investigation, verification of the recorded Fast-Agent profile/default reasoning, and deterministic diagnostic reporting on the Runs page for completed trials.
+- Implement and test read-only presentation of native Harbor exception evidence and completion semantics, with links to trial details and clear unknown-classification coverage. Distinguish configured options from unverified provider-effective settings. Preserve native results, scores, status, retries, and immutable run configuration.
+- Read pinned Harbor source and subsequent upstream history first. Do not infer infrastructure categories from task names, traceback patterns, or verifier-log heuristics. Harbor currently lacks typed verifier-bootstrap/scoring-validity evidence; report that gap and propose upstream structured evidence before implementing any classifier.
+- Local authorization and implementation commits are approved. Preserve unrelated work and the existing Sandbox idle-timeout stopgap. No new benchmark/inference Jobs, historical-result edits, credential movement, resource changes, public push/pull request/merge, worker-image publication, deployment, or upstream source mutation is included in this bounded implementation.
+- Investigate Fast-Agent completion and reasoning behavior read-only. Any required change in a separate repository must receive its own explicit approval and authorization record.
+
 ### Dependency repair, merge, and deployment
 
 Approved at: 2026-09-08T23:50:36.203970+00:00
@@ -464,6 +474,17 @@ Approved at: 2026-09-08T23:50:36.203970+00:00
 - Update only the affected dependency resolution as needed; preserve audit and test gates. Publish the parent image through the existing workflow and registry; deploy merged source to the previously selected shared control Space and update its parent/setup image references to verified immutable digests.
 - Preserve execution mode, hardware, visibility, namespace, Bucket configuration, and persistent secrets. Do not create resources, copy credentials, or launch benchmark/inference Jobs. Existing control credential and writable-parent-storage defects are not repaired by this deployment.
 - Verify release provenance, image contents, runtime health, and configured image references. Stop for unexpected active-run compatibility issues or any required credential movement.
+
+### Waffle-view diagnostics integration and pull request
+
+Status: completed
+
+Approved at: 2026-09-09T09:35:47.579013+00:00
+
+- The user explicitly approved integrating the local native run diagnostics with the waffle viewer merged into main, resolving compatibility issues, and raising a pull request.
+- Approved scope: update against current main, implement read-only historical and future trial exception presentation in the existing viewer, add tests and documentation, review privacy, commit, push the topic branch, and open one pull request. Preserve native results and existing viewer behavior.
+- Continue to distinguish recorded exception types from unknown root-cause and verifier-bootstrap classifications. Do not add a log classifier or rewrite historical evidence.
+- No merge, deployment, worker image publication, new run, retry, credential transfer, upstream source mutation, or infrastructure change is authorized.
 
 ### Nine-trial canary preset and native waffle (2026-09-09)
 
@@ -501,3 +522,5 @@ Approved at: 2026-09-09T09:07:40.659178+00:00
   does not claim these checks pass.
 - No merge, default-branch push, deployment, benchmark launch, resource change,
   credential movement, or result publication is authorized by this amendment.
+
+Completed on 2026-09-09: integrated native diagnostics with the current-main waffle viewer and opened draft PR #193 (https://github.com/huggingface/harbor-hf/pull/193). Unit and browser tests passed; existing global coverage and missing baseline/mutation-tooling blockers are disclosed. No merge, deployment, or remote execution was performed.

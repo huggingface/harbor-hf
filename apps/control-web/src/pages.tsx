@@ -52,8 +52,10 @@ import {
   useTrial,
   useTrials,
 } from "./queries";
-import { RunsWaffle } from "./runs-waffle";
+import { RunConfiguration } from "./run-configuration";
+import { RunDiagnostics, RunDiagnosticsSummary } from "./run-diagnostics";
 import { runIdentity } from "./run-identity";
+import { RunsWaffle } from "./runs-waffle";
 import {
   Badge,
   Button,
@@ -563,6 +565,13 @@ export function RunsPage() {
         },
       },
       {
+        id: "diagnostics",
+        header: "Diagnostics",
+        enableColumnFilter: false,
+        enableSorting: false,
+        cell: ({ row }) => <RunDiagnosticsSummary run={row.original} />,
+      },
+      {
         id: "cost",
         header: "Cost",
         accessorFn: (run) => stat(run, "cost_usd") ?? -1,
@@ -583,7 +592,7 @@ export function RunsPage() {
     <>
       <PageHeader
         title="Runs"
-        description="One logical Run owns one Harbor job. Progress and totals come from Harbor result files."
+        description="Progress, totals and exception diagnostics refresh from Harbor results. Finished means execution ended, not that every trial passed or was validly scored."
         action={
           <Button variant="outline" onClick={() => void query.refetch()}>
             <RotateCw size={14} aria-hidden="true" /> Refresh
@@ -755,7 +764,9 @@ export function RunPage() {
             </Field>
             <Field label="Model">{runIdentity(item.record).model}</Field>
             <Field label="Provider">{runIdentity(item.record).provider}</Field>
-            <Field label="Reasoning">{runIdentity(item.record).reasoning}</Field>
+            <Field label="Configured reasoning kwargs">
+              {runIdentity(item.record).reasoning}
+            </Field>
             <Field label="Agent">
               {runIdentity(item.record).agent} · {runIdentity(item.record).version}
             </Field>
@@ -765,8 +776,16 @@ export function RunPage() {
           </dl>
         </Card>
       </div>
+      <RunConfiguration record={item.record} />
+      <div className="mt-6">
+        <RunDiagnostics run={item} />
+      </div>
       <Card className="mt-6">
         <h2 className="font-semibold text-white">Harbor totals</h2>
+        <p className="mt-2 text-xs text-slate-400">
+          Completed counts include errored trials. Rewards and exceptions are separate
+          evidence; diagnostics do not change either.
+        </p>
         <dl className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Completed">
             {stat(item, "n_completed_trials") ?? "Unavailable"}
@@ -991,9 +1010,11 @@ export function TrialPage() {
               stringValue(exception.message) ??
               "No message was recorded."}
           </p>
-          {stringValue(exception.traceback) ? (
+          {(stringValue(exception.exception_traceback) ??
+          stringValue(exception.traceback)) ? (
             <pre className="mt-4 max-h-80 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-4 text-xs leading-5 text-slate-300">
-              {stringValue(exception.traceback)}
+              {stringValue(exception.exception_traceback) ??
+                stringValue(exception.traceback)}
             </pre>
           ) : null}
         </Card>

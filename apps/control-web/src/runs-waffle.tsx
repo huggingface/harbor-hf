@@ -3,16 +3,18 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getTrialProgress, type RunView } from "./api";
 import { asRecord, cn } from "./lib";
+import { RunDiagnosticsSummary } from "./run-diagnostics";
 import {
   cellDescription,
   recent,
-  separateObservations,
   type SeparateObservation,
+  separateObservations,
+  trialExceptionLabel,
+  type WaffleCell,
   waffleCells,
   waffleStates,
-  type WaffleCell,
 } from "./trial-waffle";
-import { Button, Empty, Hint } from "./ui";
+import { Badge, Button, Empty, Hint } from "./ui";
 
 const RUNS = 8;
 const TRIALS = 50;
@@ -201,6 +203,7 @@ export function RunsWaffle({ runs }: { runs: RunView[] }) {
                     >
                       {id}
                     </Link>
+                    <RunDiagnosticsSummary run={run} />
                     {query?.isFetching && !query.isPending ? (
                       <span role="status" className="text-[10px]">
                         Refreshing…
@@ -283,9 +286,11 @@ export function RunsWaffle({ runs }: { runs: RunView[] }) {
                     );
                     return (
                       <td key={cell.key} className="px-px py-px">
-                        {cell.trial?.result?.finished_at ? (
+                        {cell.trial?.result?.finished_at ||
+                        cell.trial?.result?.exception_info?.exception_type ? (
                           <Link
                             aria-label={label}
+                            aria-description={trialExceptionLabel(cell.trial)}
                             className={className}
                             to={`/runs/${encodeURIComponent(id)}/trials/${encodeURIComponent(cell.trial.trial_name)}`}
                           >
@@ -295,6 +300,7 @@ export function RunsWaffle({ runs }: { runs: RunView[] }) {
                           <button
                             type="button"
                             aria-label={label}
+                            aria-description={trialExceptionLabel(cell.trial)}
                             className={className}
                           >
                             {content}
@@ -374,6 +380,32 @@ export function RunsWaffle({ runs }: { runs: RunView[] }) {
               : "Planned total unknown (no job lock)"}{" "}
             · {observations[index]?.length ?? 0} separate observations
           </summary>
+          <ul aria-label="Native trial exception evidence">
+            {rows[index]?.map((cell) => {
+              const trial = cell.trial;
+              if (!trial) return null;
+              return (
+                <li key={cell.key}>
+                  {trial.result ? (
+                    <Link
+                      className="text-cyan-300 hover:underline"
+                      to={`/runs/${encodeURIComponent(run.record.run_id)}/trials/${encodeURIComponent(trial.trial_name)}`}
+                    >
+                      {trial.trial_name}
+                    </Link>
+                  ) : (
+                    trial.trial_name
+                  )}{" "}
+                  <Badge>{trialExceptionLabel(trial)}</Badge>
+                </li>
+              );
+            })}
+          </ul>
+          <p>
+            Native exception types are evidence, not root-cause classifications. Missing
+            evidence is unknown; absence of exceptions does not prove valid scoring.
+            Colors and rewards retain their existing meaning.
+          </p>
           <p>
             Unmapped, excess, or removed observations do not add planned squares.
             Removed means absent from the current snapshot, not a terminal outcome.
@@ -382,8 +414,20 @@ export function RunsWaffle({ runs }: { runs: RunView[] }) {
           <ul>
             {observations[index]?.map(({ trial, removed }) => (
               <li key={trial.trial_name}>
-                {trial.trial_name}:{" "}
-                {removed ? "Removed observation" : "Unmapped observation"}
+                <span>
+                  {trial.trial_name}:{" "}
+                  {removed ? "Removed observation" : "Unmapped observation"}
+                </span>{" "}
+                {trial.result ? (
+                  <Link
+                    className="text-cyan-300 hover:underline"
+                    to={`/runs/${encodeURIComponent(run.record.run_id)}/trials/${encodeURIComponent(trial.trial_name)}`}
+                  >
+                    Native evidence
+                  </Link>
+                ) : null}
+                {" · "}
+                {trialExceptionLabel(trial)}
               </li>
             ))}
           </ul>

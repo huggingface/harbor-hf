@@ -336,3 +336,67 @@ it("reports separate observations without consuming planned capacity or retainin
   expect(await screen.findByText("replacement: Removed observation")).toBeVisible();
   expect(screen.queryByText("trial-a: Removed observation")).not.toBeInTheDocument();
 });
+
+it("shows native exception evidence without interpreting rewards or missing evidence", async () => {
+  const data = progress(3);
+  const first = data.trials[0];
+  if (!first) throw Error("fixture missing");
+  first.result = {
+    finished_at: "2026-09-08T12:00:00Z",
+    exception_info: { exception_type: "RuntimeError" },
+  };
+  data.trials.push(
+    {
+      ...first,
+      trial_name: "trial-null",
+      result: { finished_at: "2026-09-08T12:00:00Z", exception_info: null },
+    },
+    {
+      ...first,
+      trial_name: "trial-unknown",
+      result: { finished_at: "2026-09-08T12:00:00Z" },
+    },
+  );
+  show([run()], { "run-a": data });
+  const error = screen.getByRole("link", { name: "trial-a in run-a: Errored" });
+  expect(error).toHaveAttribute("href", "/runs/run-a/trials/trial-a");
+  act(() => error.focus());
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "Native exception: RuntimeError",
+  );
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Reward: 0");
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    "Infrastructure classification: unknown",
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByText(/3 planned squares/));
+  const evidence = screen.getByRole("list", {
+    name: "Native trial exception evidence",
+  });
+  expect(evidence).toHaveTextContent("Native exception: RuntimeError");
+  expect(evidence).toHaveTextContent(
+    "No recorded exception (not proof of valid scoring)",
+  );
+  expect(evidence).toHaveTextContent(
+    "Native exception evidence: unknown / unavailable",
+  );
+  expect(
+    screen.getByRole("link", { name: "trial-null in run-a: Zero reward" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("link", { name: "trial-unknown in run-a: Zero reward" }),
+  ).toBeVisible();
+});
+
+it("links recorded unfinished exception evidence without claiming completion", () => {
+  const data = progress(1);
+  const first = data.trials[0];
+  if (!first) throw Error("fixture missing");
+  first.result = { exception_info: { exception_type: "CustomException" } };
+  show([run()], { "run-a": data });
+  const link = screen.getByRole("link", {
+    name: "trial-a in run-a: Unfinished artifact observed (live state unknown)",
+  });
+  expect(link).toHaveAttribute("href", "/runs/run-a/trials/trial-a");
+  expect(link).toHaveAttribute("aria-description", "Native exception: CustomException");
+});

@@ -4,6 +4,7 @@ import {
   cellDescription,
   recent,
   separateObservations,
+  trialExceptionLabel,
   waffleCells,
 } from "../src/trial-waffle";
 
@@ -307,4 +308,25 @@ it("moves a config-only name globally when its native lock arrives", () => {
   expect(mapped[0]?.key).toBe(initial[0]?.key);
   expect(mapped).toEqual(waffleCells(run, value, now));
   expect(separateObservations(value, mapped, [], partial)).toEqual([]);
+});
+
+it("keeps absent native evidence unknown and distinguishes explicit null", () => {
+  const trial = first(data().trials);
+  for (const result of [null, {}, { exception_info: { exception_type: " " } }]) {
+    expect(trialExceptionLabel({ ...trial, result })).toBe(
+      "Native exception evidence: unknown / unavailable",
+    );
+  }
+  expect(trialExceptionLabel(null)).toBe(
+    "Native exception evidence: unknown / unavailable",
+  );
+  expect(trialExceptionLabel({ ...trial, result: { exception_info: null } })).toBe(
+    "No recorded exception (not proof of valid scoring)",
+  );
+  expect(
+    trialExceptionLabel({
+      ...trial,
+      result: { exception_info: { exception_type: "CustomException" } },
+    }),
+  ).toBe("Native exception: CustomException");
 });

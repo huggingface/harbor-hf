@@ -141,6 +141,15 @@ export function waffleCells(
     });
 }
 
+export function trialExceptionLabel(trial: ObservedTrial | null): string {
+  const info = trial?.result?.exception_info;
+  const type = info?.exception_type;
+  if (type?.trim()) return `Native exception: ${type}`;
+  return info === null
+    ? "No recorded exception (not proof of valid scoring)"
+    : "Native exception evidence: unknown / unavailable";
+}
+
 export function cellDescription(cell: WaffleCell): string {
   return [
     `Task: ${cell.task}`,
@@ -148,6 +157,8 @@ export function cellDescription(cell: WaffleCell): string {
     `Display slot: ${cell.slot} (not an attempt ordinal)`,
     `Trial: ${cell.trial?.trial_name ?? "not observed"}`,
     `State: ${waffleStates[cell.state].label}`,
+    trialExceptionLabel(cell.trial),
+    "Infrastructure classification: unknown (not recorded by Harbor).",
     `Reward: ${cell.trial?.reward ?? "not reported"}`,
     `Cost (USD): ${cell.trial?.cost_usd ?? "not reported"}`,
     `Started: ${cell.trial?.result?.started_at ?? "not reported"}`,
