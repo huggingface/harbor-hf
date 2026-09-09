@@ -595,3 +595,21 @@ Approved at: 2026-09-09T12:22:20.211230+00:00
   and privacy-review the push and PR update. Preserve known validation limits.
 - No merge, deployment, live runs, inference, credential movement, resource
   creation, public demo listener, or changes to stored evidence.
+
+### Stable polling and measured agent timing (2026-09-09)
+
+Approved at: 2026-09-09T13:13:00.258660+00:00
+
+- Direct approval: the user requested removing disruptive refreshing text, agent
+  wall-time in trial tooltips and run-list summaries/status, and red affected-trial
+  counts after reviewing the deployed scannable-results interface.
+- Implement and test locally on current main; preserve the existing presentation
+  and native outcome semantics. Sum only recorded native agent execution intervals
+  for a display rollup, with partial/missing measurement coverage. Do not infer
+  active elapsed time or inflate sums using both top-level and step timings.
+- Reuse existing artifact/projection reads and generated response contracts; no
+  new durable native field, lifecycle authority, extra overview progress polling,
+  infrastructure diagnosis from generic errors, or change to retry behavior.
+- Local implementation, tests, documentation, and local commits are approved.
+  No deployment, merge, new remote PR/branch publication, live setup/benchmark
+  launch, inference, credential movement, or resource change is included.
