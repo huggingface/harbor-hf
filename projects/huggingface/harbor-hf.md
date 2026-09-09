@@ -709,3 +709,18 @@ Approved at: 2026-09-09T18:04:01.857234+00:00
   archive mutation on live data, or unrelated feature migration is authorized.
 - Pricing sharing and the reasoning selector remain deferred. No operator
   identifiers may be included in public repository content or metadata.
+
+### Compact status display and pricing investigation (2026-09-09)
+
+Approved at: 2026-09-09T18:28:46.784884+00:00
+
+- Direct request: start a new branch, repair the oversized wrapping status
+  bubble, and investigate recording a proper price for Workbench launches.
+- Implement and test a compact status badge separate from measured agent time
+  and coverage. Preserve visible partial/unavailable indicators and accessible
+  exact coverage counts; no timing arithmetic or execution changes.
+- Pricing is read-only investigation pending clarification of launch-time
+  estimated rates versus actual provider-reported or billed costs.
+- Local implementation, tests and commits only. No publication, merge,
+  deployment, live run, inference, credentials, rate-card schema, billing
+  integration or upstream issue/patch is authorized by this amendment.
