@@ -11,6 +11,23 @@ default_branch: main
 
 Status: approved
 
+### Setup admission diagnostics (2026-09-09)
+
+Approved at: 2026-09-09T10:30:18.984042+00:00
+
+- Direct user approval after the narrow capacity-message and safe-context proposal:
+  “ok, the improved errors would be welcome”.
+- Implement clear setup capacity admission errors and sanitized diagnostic context;
+  add regression tests, review privacy, and create local authorization and code commits
+  on a fresh topic branch. The approved delivery includes branch push and one pull
+  request, reserved for the parent agent after final review; this implementation
+  session must not push or open the pull request.
+- Keep the Job limit and all accounting exactly unchanged. Do not cancel Jobs,
+  deploy, merge, build or publish images, launch setup/benchmark Jobs or inference,
+  move credentials, change configuration, or mutate remote resources.
+- Preserve unknown launch failures as sanitized internal errors; do not expose
+  provider messages, live counts, namespace details, or credential information.
+
 ### Current main redeployment (2026-09-09)
 
 Approved at: 2026-09-09T07:49:21Z
@@ -524,3 +541,7 @@ Approved at: 2026-09-09T09:07:40.659178+00:00
   credential movement, or result publication is authorized by this amendment.
 
 Completed on 2026-09-09: integrated native diagnostics with the current-main waffle viewer and opened draft PR #193 (https://github.com/huggingface/harbor-hf/pull/193). Unit and browser tests passed; existing global coverage and missing baseline/mutation-tooling blockers are disclosed. No merge, deployment, or remote execution was performed.
+
+### Setup admission diagnostics approval
+
+- Recorded direct approval and the bounded implementation/publication handoff above.
