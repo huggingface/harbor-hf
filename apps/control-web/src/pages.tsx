@@ -558,18 +558,18 @@ export function RunsPage() {
       },
       ...(
         [
-          ["n_input_tokens", "Input incl. cache (M)"],
-          ["n_output_tokens", "Output (M)"],
-          ["n_cache_tokens", "Cache (M)"],
+          ["n_input_tokens", "Input incl. cache (M)", "Input"],
+          ["n_output_tokens", "Output (M)", "Output"],
+          ["n_cache_tokens", "Cache (M)", "Cache"],
         ] as const
       ).map(
-        ([key, label]): ColumnDef<RunView> => ({
+        ([key, label, tooltipLabel]): ColumnDef<RunView> => ({
           id: key,
           header: label,
           accessorFn: (run) => stat(run, key) ?? undefined,
           enableColumnFilter: false,
           cell: ({ row }) => (
-            <TokenValue value={stat(row.original, key)} label={label} />
+            <TokenValue value={stat(row.original, key)} label={tooltipLabel} />
           ),
         }),
       ),

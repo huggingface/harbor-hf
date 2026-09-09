@@ -800,6 +800,7 @@ for (const width of [1440, 390]) {
   test(`native waffle preserves repeated trials and hover at ${width}px`, async ({
     page,
   }, testInfo) => {
+    await page.clock.install();
     await page.setViewportSize({ width, height: 900 });
     await mockControl(page);
     const timestamp = new Date().toISOString();
@@ -843,22 +844,55 @@ for (const width of [1440, 390]) {
     expect(bounds?.height).toBe(24);
     await zero.focus();
     const tooltip = page.getByRole("tooltip");
-    await expect(tooltip).toContainText("not an attempt ordinal");
-    await expect(tooltip).toContainText("Reward: 0");
+    await expect(tooltip).not.toContainText("not an attempt ordinal");
+    await expect(tooltip).toHaveText(
+      "Task: task-one\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nReported cost (USD): $0.10",
+    );
+    await expect(tooltip).not.toContainText("Artifact observation");
+    await page.screenshot({
+      path: testInfo.outputPath(`compact-tooltip-${width}.png`),
+    });
     const tip = await tooltip.boundingBox();
     expect(tip?.y).toBeGreaterThanOrEqual(0);
     expect((tip?.y ?? 0) + (tip?.height ?? 0)).toBeLessThanOrEqual(900);
     await expect(
       page.getByRole("button", {
-        name: `trial-b in ${runId}: Unfinished artifact observed (live state unknown)`,
+        name: `trial-b in ${runId}: Unfinished`,
       }),
     ).toBeVisible();
     await zero.blur();
+    const unfinished = page.getByRole("button", {
+      name: `trial-b in ${runId}: Unfinished`,
+      exact: true,
+    });
+    await unfinished.focus();
+    await expect(tooltip).toHaveText(
+      "Task: task-one\nRepeat slot: 2\nState: Unfinished\nReward: -",
+    );
+    await unfinished.blur();
     await page.screenshot({ path: testInfo.outputPath("native-waffle.png") });
     await page.getByText("HF Jobs and Harbor totals (separate observations)").click();
     await expect(
       page.getByText("trial · child-waiting · queued (waiting at HF)").first(),
     ).toBeVisible();
+    await page.route("**/api/v1/runs/*/progress", (route) =>
+      route.fulfill({ status: 503, body: "{}" }),
+    );
+    await page.clock.fastForward(125_000);
+    await expect(
+      waffle.getByRole("button", { name: "Retry", exact: true }),
+    ).toBeVisible();
+    await expect(waffle.getByText(/Stale data/)).toBeVisible();
+    const unknown = page.getByRole("button", {
+      name: `trial-b in ${runId}: Unknown / interrupted`,
+      exact: true,
+    });
+    await unknown.focus();
+    await expect(tooltip).toHaveText(
+      "Stale — refresh failed\nTask: task-one\nRepeat slot: 2\nState: Unknown / interrupted\nReward: -",
+    );
+    await expect(tooltip).not.toContainText("Artifact observation");
+
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
     ).toBe(true);
@@ -998,7 +1032,7 @@ for (const launchPath of ["overview", "workbench"] as const) {
             exact: true,
           })
         : page.getByRole("button", {
-            name: `${trial.trial_name} in ${runId}: Unfinished artifact observed (live state unknown)`,
+            name: `${trial.trial_name} in ${runId}: Unfinished`,
             exact: true,
           });
       await expect(cell).toHaveCount(1);
@@ -1010,15 +1044,13 @@ for (const launchPath of ["overview", "workbench"] as const) {
     }
     await page
       .getByRole("button", {
-        name: `${observations[1]?.trial_name} in ${runId}: Unfinished artifact observed (live state unknown)`,
+        name: `${observations[1]?.trial_name} in ${runId}: Unfinished`,
         exact: true,
       })
       .focus();
-    await expect(page.getByRole("tooltip")).toContainText("not an attempt ordinal");
+    await expect(page.getByRole("tooltip")).not.toContainText("not an attempt ordinal");
     await page.getByText("HF Jobs and Harbor totals (separate observations)").click();
-    await expect(
-      page.getByRole("button", { name: /Unfinished artifact observed/ }),
-    ).toHaveCount(6);
+    await expect(page.getByRole("button", { name: /Unfinished/ })).toHaveCount(6);
     await expect(page.getByRole("button", { name: /In progress/ })).toHaveCount(0);
     // Six unfinished observations are not substituted for Harbor's native running count.
     await expect(
@@ -1132,7 +1164,7 @@ test("nine lock entries stay nine squares through partial and replacement observ
   ).toBeVisible();
   names = Array.from({ length: 9 }, (_, i) => `old-${i}`);
   await page.clock.runFor(15_001);
-  await expect(row.getByRole("button", { name: /Unfinished artifact/ })).toHaveCount(9);
+  await expect(row.getByRole("button", { name: /Unfinished/ })).toHaveCount(9);
   const original = row.getByRole("button", { name: /^old-0 / });
   await original.focus();
   names = [];
@@ -1280,15 +1312,13 @@ test("historical waffle native exception tooltip and badge link to traceback", a
     name: `trial-unknown in ${runId}: Zero reward`,
   });
   await unknown.focus();
-  await expect(page.getByRole("tooltip")).toContainText(
+  await expect(page.getByRole("tooltip")).not.toContainText(
     "Native exception evidence: unknown / unavailable",
   );
   await square.focus();
-  await expect(page.getByRole("tooltip")).toContainText(
-    "Native exception: RuntimeError",
-  );
+  await expect(page.getByRole("tooltip")).toContainText("Exception: RuntimeError");
   await expect(page.getByRole("tooltip")).toContainText("Reward: 0");
-  await expect(page.getByRole("tooltip")).toContainText(
+  await expect(page.getByRole("tooltip")).not.toContainText(
     "Infrastructure classification: unknown",
   );
   await page.getByText(/Planned total unknown \(no job lock\)/).click();
@@ -1402,9 +1432,9 @@ for (const width of [1440, 390]) {
       }),
     );
     await page.goto(`/runs/${runId}`);
-    await expect(
-      page.getByLabel("Input incl. cache tokens: 20484123", { exact: true }),
-    ).toHaveText("20.484M");
+    await expect(page.getByLabel("Input tokens: 20484123", { exact: true })).toHaveText(
+      "20.484M",
+    );
     await page.screenshot({
       path: testInfo.outputPath(`synthetic-summary-${width}.png`),
     });
@@ -1496,20 +1526,28 @@ test("summary exact tooltip, million tokens and complete progress", async ({
 }) => {
   await summaryFixture(page);
   await page.goto(`/runs/${runId}`);
-  const score = page.getByLabel("Score · reward mean: 0.5168539325842697", {
+  const score = page.getByLabel("Score: 0.5168539325842697", {
     exact: true,
   });
   await expect(score).toHaveText("0.517");
   await score.locator("xpath=ancestor::span[@tabindex='0'][1]").focus();
-  await expect(page.getByRole("tooltip")).toHaveText(
-    "Score · reward mean: 0.5168539325842697",
+  await expect(page.getByRole("tooltip")).toHaveText("Score: 0.5168539325842697");
+  await expect(page.getByLabel("Input tokens: 20484123", { exact: true })).toHaveText(
+    "20.484M",
   );
-  await expect(
-    page.getByLabel("Input incl. cache tokens: 20484123", { exact: true }),
-  ).toHaveText("20.484M");
   await expect(page.getByLabel("Output tokens: 0", { exact: true })).toHaveText(
     "0.000M",
   );
+  await score.locator("xpath=ancestor::span[@tabindex='0'][1]").blur();
+  for (const exact of [
+    "Input tokens: 20484123",
+    "Output tokens: 0",
+    "Reported cost (USD): 12.34",
+  ]) {
+    const value = page.getByLabel(exact, { exact: true });
+    await value.hover();
+    await expect(page.getByRole("tooltip")).toHaveText(exact);
+  }
   await expect(page.getByText("89 / 89", { exact: true })).toBeVisible();
   await expect(page.getByText("100%", { exact: true })).toBeVisible();
   await expect(
@@ -1522,7 +1560,7 @@ test("summary exact tooltip, million tokens and complete progress", async ({
 test("missing summaries do not masquerade as zeros", async ({ page }) => {
   await summaryFixture(page, null);
   await page.goto(`/runs/${runId}`);
-  for (const label of ["Score", "Input incl. cache tokens", "Output tokens"])
+  for (const label of ["Score", "Input tokens", "Output tokens"])
     await expect(page.getByLabel(`${label}: unavailable`, { exact: true })).toHaveText(
       "-",
     );
@@ -1558,20 +1596,17 @@ test("pricing is cache-inclusive, hypothetical, retained and GET-only", async ({
     .click();
   const standard = page
     .locator("dd")
-    .filter({ has: page.locator('output[aria-label^="All-standard scenario"]') });
+    .filter({ has: page.locator('output[aria-label^="Standard scenario"]') });
   await expect(standard).toHaveText("-");
   await fillScenario(page);
   await expect(standard.locator("output")).toHaveAttribute(
     "title",
-    "All-standard scenario USD (reported usage; not billing): 41.468246",
+    "Standard scenario USD: 41.468246",
   );
-  const long = page.locator('output[aria-label^="All-long-context scenario"]');
-  await expect(long).toHaveAttribute(
-    "title",
-    "All-long-context scenario USD (reported usage; not billing): 82.936492",
-  );
+  const long = page.locator('output[aria-label^="Long-context scenario"]');
+  await expect(long).toHaveAttribute("title", "Long-context scenario USD: 82.936492");
   await expect(
-    page.getByLabel("Reported USD (may be partial; not billing): 12.34", {
+    page.getByLabel("Reported cost (USD): 12.34", {
       exact: true,
     }),
   ).toHaveText("$12.34");
@@ -1580,14 +1615,11 @@ test("pricing is cache-inclusive, hypothetical, retained and GET-only", async ({
     await threshold.fill(value);
     await expect(standard.locator("output")).toHaveAttribute(
       "title",
-      "All-standard scenario USD (reported usage; not billing): 41.468246",
+      "Standard scenario USD: 41.468246",
     );
-    await expect(long).toHaveAttribute(
-      "title",
-      "All-long-context scenario USD (reported usage; not billing): 82.936492",
-    );
+    await expect(long).toHaveAttribute("title", "Long-context scenario USD: 82.936492");
     await expect(
-      page.locator('output[aria-label^="Per-request tier usage"]'),
+      page.locator('output[aria-label^="Actual tier-adjusted USD"]'),
     ).toHaveText("-");
   }
   const before = reads;
@@ -1666,13 +1698,13 @@ test("list sorts raw scores and tokens rather than rounded labels", async ({
       second.indexOf("synthetic-low") < second.indexOf("synthetic-high"),
     );
   }
-  await expect(page.getByLabel("Score · mean: 0", { exact: true })).toHaveText("0.000");
+  await expect(page.getByLabel("Score: 0", { exact: true })).toHaveText("0.000");
   await expect(page.getByLabel("Score: unavailable", { exact: true })).toHaveText("-");
+  await expect(page.getByLabel("Input tokens: 0", { exact: true })).toHaveText(
+    "0.000M",
+  );
   await expect(
-    page.getByLabel("Input incl. cache (M) tokens: 0", { exact: true }),
-  ).toHaveText("0.000M");
-  await expect(
-    page.getByLabel("Input incl. cache (M) tokens: unavailable", { exact: true }),
+    page.getByLabel("Input tokens: unavailable", { exact: true }),
   ).toHaveText("-");
   await page.screenshot({
     path: testInfo.outputPath("synthetic-list-desktop.png"),
@@ -1702,14 +1734,14 @@ for (const cache of [0, null]) {
       .getByText("Pricing scenarios · editable USD / million tokens", { exact: true })
       .click();
     await fillScenario(page);
+    await expect(page.locator('output[aria-label^="Standard scenario"]')).toHaveText(
+      cache === null ? "-" : "$0.0000",
+    );
     await expect(
-      page.locator('output[aria-label^="All-standard scenario"]'),
+      page.locator('output[aria-label^="Long-context scenario"]'),
     ).toHaveText(cache === null ? "-" : "$0.0000");
-    await expect(
-      page.locator('output[aria-label^="All-long-context scenario"]'),
-    ).toHaveText(cache === null ? "-" : "$0.0000");
-    await expect(
-      page.getByLabel("Reported USD (may be partial; not billing): 0", { exact: true }),
-    ).toHaveText("$0.0000");
+    await expect(page.getByLabel("Reported cost (USD): 0", { exact: true })).toHaveText(
+      "$0.0000",
+    );
   });
 }

@@ -112,10 +112,7 @@ export function PricingPanel({ result }: { result: unknown }) {
           <div>
             <dt>All-standard scenario</dt>
             <dd>
-              <CostValue
-                value={estimates.standard}
-                label="All-standard scenario USD (reported usage; not billing)"
-              />
+              <CostValue value={estimates.standard} label="Standard scenario USD" />
             </dd>
           </div>
           <div>
@@ -123,14 +120,14 @@ export function PricingPanel({ result }: { result: unknown }) {
             <dd>
               <CostValue
                 value={estimates.longContext}
-                label="All-long-context scenario USD (reported usage; not billing)"
+                label="Long-context scenario USD"
               />
             </dd>
           </div>
           <div>
             <dt>Actual tier-adjusted estimate</dt>
             <dd>
-              <ExactValue value={null} text="-" label={TIER_LIMITATION} />
+              <ExactValue value={null} text="-" label="Actual tier-adjusted USD" />
             </dd>
           </div>
         </dl>

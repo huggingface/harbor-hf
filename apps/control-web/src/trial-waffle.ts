@@ -1,4 +1,6 @@
 import type { RunView, TrialProgress } from "./api";
+import { formatMoneyUsd } from "./lib";
+import { roundedScore } from "./run-summary";
 
 export const waffleStates = {
   pending: {
@@ -7,7 +9,7 @@ export const waffleStates = {
     color: "border-slate-600 bg-slate-800 text-slate-300",
   },
   unfinished: {
-    label: "Unfinished artifact observed (live state unknown)",
+    label: "Unfinished",
     symbol: "?",
     color: "border-cyan-400 bg-cyan-600 text-cyan-100",
   },
@@ -32,7 +34,7 @@ export const waffleStates = {
     color: "border-orange-400 bg-orange-800 text-orange-100",
   },
   uncertain: {
-    label: "Uncertain / interrupted",
+    label: "Unknown / interrupted",
     symbol: "?",
     color: "border-violet-400 border-dashed bg-violet-950 text-violet-200",
   },
@@ -151,20 +153,15 @@ export function trialExceptionLabel(trial: ObservedTrial | null): string {
 }
 
 export function cellDescription(cell: WaffleCell): string {
+  const exception = cell.trial?.result?.exception_info?.exception_type;
+  const cost = cell.trial?.cost_usd;
   return [
     `Task: ${cell.task}`,
-    `Input: ${cell.digest}`,
-    `Display slot: ${cell.slot} (not an attempt ordinal)`,
-    `Trial: ${cell.trial?.trial_name ?? "not observed"}`,
+    `Repeat slot: ${cell.slot}`,
     `State: ${waffleStates[cell.state].label}`,
-    trialExceptionLabel(cell.trial),
-    "Infrastructure classification: unknown (not recorded by Harbor).",
-    `Reward: ${cell.trial?.reward ?? "not reported"}`,
-    `Cost (USD): ${cell.trial?.cost_usd ?? "not reported"}`,
-    `Started: ${cell.trial?.result?.started_at ?? "not reported"}`,
-    `Finished: ${cell.trial?.result?.finished_at ?? "not reported"}`,
-    "Display slots do not establish equivalent repetitions across runs.",
-    "Artifact observation only; no individual HF Job association is implied.",
+    `Reward: ${roundedScore(cell.trial?.reward ?? null)}`,
+    ...(exception ? [`Exception: ${exception}`] : []),
+    ...(cost != null ? [`Reported cost (USD): ${formatMoneyUsd(cost)}`] : []),
   ].join("\n");
 }
 

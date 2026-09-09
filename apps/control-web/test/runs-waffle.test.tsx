@@ -65,8 +65,11 @@ it("renders one task column with five distinct repetition rows and focus details
   const zero = screen.getByRole("link", { name: "trial-a in run-a: Zero reward" });
   expect(zero).toHaveAttribute("href", "/runs/run-a/trials/trial-a");
   act(() => zero.focus());
-  expect(screen.getByRole("tooltip")).toHaveTextContent("not an attempt ordinal");
-  expect(screen.getByRole("tooltip")).toHaveTextContent("Reward: 0");
+  expect(screen.getByRole("tooltip")).not.toHaveTextContent("not an attempt ordinal");
+  expect(screen.getByRole("tooltip").textContent).toBe(
+    "Task: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000",
+  );
+  expect(screen.getByRole("tooltip")).not.toHaveTextContent("Artifact observation");
   const row = zero.closest("tr");
   if (!row) throw Error("row missing");
   expect(within(row).getAllByRole("cell")).toHaveLength(1);
@@ -100,7 +103,7 @@ it.each([1, 5])(
     expect(screen.getByRole("tooltip")).toHaveTextContent("task-88");
     await user.unhover(within(header).getByText("89"));
     act(() => header.focus());
-    expect(screen.getByRole("tooltip")).toHaveTextContent("sha256:input");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(/^task-88$/);
     await user.type(screen.getByRole("searchbox"), "task-88");
     expect(screen.getAllByRole("rowheader")).toHaveLength(repeats);
     expect(screen.getAllByRole("cell")).toHaveLength(repeats);
@@ -144,6 +147,12 @@ it("shows unavailable and cached-stale observations and retries", async () => {
   const client = show(run(), { "run-a": progress() });
   await act(() => client.invalidateQueries({ queryKey: ["trial-progress", "run-a"] }));
   expect(await screen.findByText("Stale data")).toBeVisible();
+  act(() =>
+    screen.getByRole("link", { name: "trial-a in run-a: Zero reward" }).focus(),
+  );
+  expect(screen.getByRole("tooltip").textContent).toBe(
+    "Stale — refresh failed\nTask: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000",
+  );
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => new Response(JSON.stringify(progress()))),
@@ -260,7 +269,7 @@ it("expires cached active observations while a refresh remains fetching", async 
     const client = show(run(), { "run-a": value });
     expect(
       screen.getByRole("button", {
-        name: "trial-a in run-a: Unfinished artifact observed (live state unknown)",
+        name: "trial-a in run-a: Unfinished",
       }),
     ).toBeVisible();
     act(() => {
@@ -272,7 +281,7 @@ it("expires cached active observations while a refresh remains fetching", async 
     expect(screen.getByText("Refreshing…")).toBeVisible();
     expect(screen.getByText("Stale data")).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "trial-a in run-a: Uncertain / interrupted" }),
+      screen.getByRole("button", { name: "trial-a in run-a: Unknown / interrupted" }),
     ).toBeVisible();
   } finally {
     cleanup();
@@ -401,11 +410,9 @@ it("shows native exception evidence without interpreting rewards or missing evid
   const error = screen.getByRole("link", { name: "trial-a in run-a: Errored" });
   expect(error).toHaveAttribute("href", "/runs/run-a/trials/trial-a");
   act(() => error.focus());
-  expect(screen.getByRole("tooltip")).toHaveTextContent(
-    "Native exception: RuntimeError",
-  );
+  expect(screen.getByRole("tooltip")).toHaveTextContent("Exception: RuntimeError");
   expect(screen.getByRole("tooltip")).toHaveTextContent("Reward: 0");
-  expect(screen.getByRole("tooltip")).toHaveTextContent(
+  expect(screen.getByRole("tooltip")).not.toHaveTextContent(
     "Infrastructure classification: unknown",
   );
   const user = userEvent.setup();
@@ -437,7 +444,7 @@ it("links recorded unfinished exception evidence without claiming completion", (
   first.result = { exception_info: { exception_type: "CustomException" } };
   show(run(), { "run-a": data });
   const link = screen.getByRole("link", {
-    name: "trial-a in run-a: Unfinished artifact observed (live state unknown)",
+    name: "trial-a in run-a: Unfinished",
   });
   expect(link).toHaveAttribute("href", "/runs/run-a/trials/trial-a");
   expect(link).toHaveAttribute("aria-description", "Native exception: CustomException");

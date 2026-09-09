@@ -37,17 +37,13 @@ export function ExactValue({
 export function ScoreValue({ result }: { result: unknown }) {
   const score = nativeScore(result);
   return (
-    <ExactValue
-      value={score.value}
-      text={roundedScore(score.value)}
-      label={score.label}
-    />
+    <ExactValue value={score.value} text={roundedScore(score.value)} label="Score" />
   );
 }
 
 export function CostValue({
   value,
-  label = "Reported USD (may be partial; not billing)",
+  label = "Reported cost (USD)",
 }: {
   value: number | null;
   label?: string;
@@ -101,15 +97,15 @@ export function RunSummaryCards({ run }: { run: RunView }) {
         <dl className="text-sm">
           {(
             [
-              ["Input incl. cache", "n_input_tokens"],
-              ["Output", "n_output_tokens"],
-              ["Cache (part of input)", "n_cache_tokens"],
+              ["Input incl. cache", "n_input_tokens", "Input"],
+              ["Output", "n_output_tokens", "Output"],
+              ["Cache (part of input)", "n_cache_tokens", "Cache"],
             ] as const
-          ).map(([label, key]) => (
+          ).map(([label, key, tooltipLabel]) => (
             <div className="flex justify-between gap-3" key={key}>
               <dt>{label}</dt>
               <dd>
-                <TokenValue value={resultStat(run.result, key)} label={label} />
+                <TokenValue value={resultStat(run.result, key)} label={tooltipLabel} />
               </dd>
             </div>
           ))}

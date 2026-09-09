@@ -132,7 +132,12 @@ function RunWaffleContents({ run }: { run: RunView }) {
           Tasks/input digests are columns; repetitions are display slots, not aligned
           real attempt numbers. One square per lock entry (observations only without a
           lock). Artifact observations are not scheduling authority: unfinished does not
-          mean running. Active runs refresh every 15s; terminal runs every 2m.
+          mean running. Active runs refresh every 15s; terminal runs every 2m. Slots do
+          not establish equivalent repetitions across runs or individual HF Job
+          associations. Missing exception evidence is unknown; no recorded exception is
+          not proof of valid scoring. Infrastructure classification is not recorded by
+          Harbor. Reported cost may be partial, not billing. Open a linked trial for
+          full native details.
         </p>
         <ul
           aria-label="Trial state legend"
@@ -176,7 +181,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
                     className="h-6 min-w-6 font-mono font-normal"
                     aria-label={`Task ${[...groups.keys()].indexOf(key) + 1}: ${group[0]?.task} ${group[0]?.digest}`}
                   >
-                    <Hint text={`${group[0]?.task}\nInput: ${group[0]?.digest}`}>
+                    <Hint text={group[0]?.task ?? ""}>
                       <span className="inline-flex h-6 min-w-6 items-center justify-center">
                         {[...groups.keys()].indexOf(key) + 1}
                       </span>
@@ -218,7 +223,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
                   );
                   const content = (
                     <Hint
-                      text={`${query?.isError ? "Stale data — refresh failed.\n" : ""}${cellDescription(cell)}`}
+                      text={`${query?.isError ? "Stale — refresh failed\n" : ""}${cellDescription(cell)}`}
                     >
                       <span
                         aria-hidden="true"

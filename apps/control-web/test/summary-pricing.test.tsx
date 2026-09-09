@@ -16,7 +16,7 @@ afterEach(cleanup);
 it("shows concise numbers with exact keyboard-accessible values", () => {
   render(
     <>
-      <TokenValue value={1_234_567} label="Input including cache" />
+      <TokenValue value={20_484_359} label="Input" />
       <CostValue value={null} />
       <ScoreValue
         result={{
@@ -25,19 +25,17 @@ it("shows concise numbers with exact keyboard-accessible values", () => {
       />
     </>,
   );
-  expect(screen.getByText("1.235M")).toHaveAttribute(
+  expect(screen.getByText("20.484M")).toHaveAttribute(
     "title",
-    "Input including cache tokens: 1234567",
+    "Input tokens: 20484359",
   );
-  expect(screen.getByText("1.235M").closest("[tabindex]")).toHaveAttribute(
+  expect(screen.getByText("20.484M").closest("[tabindex]")).toHaveAttribute(
     "tabindex",
     "0",
   );
-  fireEvent.focus(screen.getByText("1.235M").closest("[tabindex]") as HTMLElement);
-  expect(screen.getByRole("tooltip")).toHaveTextContent("1234567");
-  expect(screen.getByText("0.517")).toHaveAccessibleName(
-    "Score · mean: 0.5168539325842697",
-  );
+  fireEvent.focus(screen.getByText("20.484M").closest("[tabindex]") as HTMLElement);
+  expect(screen.getByRole("tooltip")).toHaveTextContent(/^Input tokens: 20484359$/);
+  expect(screen.getByText("0.517")).toHaveAccessibleName("Score: 0.5168539325842697");
   expect(screen.getByText("-")).toHaveAccessibleName(/unavailable/);
   expect(screen.queryByText("Unavailable")).not.toBeInTheDocument();
 });
@@ -61,21 +59,13 @@ it("edits uniform scenarios, retains rates on polling and remount, never tiers a
   ]) {
     fireEvent.change(screen.getByLabelText(`${label} (USD/M)`), { target: { value } });
   }
-  expect(
-    screen.getByLabelText(
-      "All-standard scenario USD (reported usage; not billing): 2.425",
-    ),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByLabelText(
-      "All-long-context scenario USD (reported usage; not billing): 4.85",
-    ),
-  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Standard scenario USD: 2.425")).toBeInTheDocument();
+  expect(screen.getByLabelText("Long-context scenario USD: 4.85")).toBeInTheDocument();
   const threshold = screen.getByLabelText(/Long context when request input exceeds/);
   expect(threshold).toHaveValue(272000);
   fireEvent.change(threshold, { target: { value: "10" } });
   expect(
-    screen.getByLabelText(/Per-request tier usage is unavailable/),
+    screen.getByLabelText("Actual tier-adjusted USD: unavailable"),
   ).toHaveTextContent("-");
   view.rerender(<PricingPanel result={{ ...result }} />);
   expect(screen.getByLabelText("Standard input (USD/M)")).toHaveValue(2);
@@ -92,11 +82,9 @@ it("edits uniform scenarios, retains rates on polling and remount, never tiers a
     "aria-invalid",
     "true",
   );
-  expect(
-    screen.getByLabelText(
-      "All-standard scenario USD (reported usage; not billing): unavailable",
-    ),
-  ).toHaveTextContent("-");
+  expect(screen.getByLabelText("Standard scenario USD: unavailable")).toHaveTextContent(
+    "-",
+  );
 });
 
 it("renders native 89/89 completion as 100 percent in summary cards", () => {
@@ -141,4 +129,16 @@ it("renders native 89/89 completion as 100 percent in summary cards", () => {
   view.rerender(<RunSummaryCards run={{ ...run, result: null }} />);
   expect(screen.queryByText("100%")).not.toBeInTheDocument();
   expect(screen.getByText("- / -")).toBeInTheDocument();
+});
+
+it.each([
+  [null, "-", "Reported cost (USD): unavailable"],
+  [0, "$0.0000", "Reported cost (USD): 0"],
+  [12.345, "$12.35", "Reported cost (USD): 12.345"],
+] as const)("keeps compact exact cost %s on focus", (value, text, exact) => {
+  render(<CostValue value={value} />);
+  const output = screen.getByLabelText(exact);
+  expect(output).toHaveTextContent(text);
+  fireEvent.focus(output.closest("[tabindex]") as HTMLElement);
+  expect(screen.getByRole("tooltip").textContent).toBe(exact);
 });
