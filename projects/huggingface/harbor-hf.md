@@ -580,3 +580,18 @@ Approved at: 2026-09-09T12:05:26.714588+00:00
   review. Keep validation thresholds and known limitations explicit.
 - No merge, deployment, live setup/benchmark launch, inference, credential transfer,
   public listener, resource creation, or unrelated configuration change.
+
+### Concise results tooltips (2026-09-09)
+
+Approved at: 2026-09-09T12:22:20.211230+00:00
+
+- Direct approval: after reviewing the synthetic demo, the user requested
+  radically simpler tooltip text with main details only, then commit/push
+  and PR publication. Continue the existing open scannable-results PR.
+- Shorten trial and summary tooltips without changing outcome semantics. Keep
+  essential stale/unknown indicators; move explanatory caveats to existing
+  legend/help rather than repeating them on each square.
+- Test the presentation, rebuild the loopback-only synthetic demo, commit,
+  and privacy-review the push and PR update. Preserve known validation limits.
+- No merge, deployment, live runs, inference, credential movement, resource
+  creation, public demo listener, or changes to stored evidence.
