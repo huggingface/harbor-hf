@@ -233,3 +233,38 @@ test("native cross-tab sync preserves dirty drafts and reports conflicts", async
   ).toBeVisible();
   expect(writes).toEqual([]);
 });
+
+test("pricing renders and saves with CSP forbidding dynamic compilation", async ({
+  page,
+}) => {
+  const writes: string[] = [];
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await mockPricing(page, writes);
+  await page.route("**/*", async (route) => {
+    if (route.request().resourceType() !== "document") return route.fallback();
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      headers: {
+        ...response.headers(),
+        // Vite React refresh needs inline script; eval remains forbidden.
+        "Content-Security-Policy":
+          "script-src 'self' 'unsafe-inline'; object-src 'none'",
+      },
+    });
+  });
+  await page.goto(`/runs/${runId}`);
+  await openEditor(page);
+  await save(page, "CSP pricing");
+  await expect(
+    page.getByLabel("Scenario estimate USD: 2.425", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await openEditor(page);
+  await expect(page.getByLabel("Scenario name", { exact: true })).toHaveValue(
+    "CSP pricing",
+  );
+  expect(errors).toEqual([]);
+  expect(writes).toEqual([]);
+});

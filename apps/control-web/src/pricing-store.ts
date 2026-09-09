@@ -1,11 +1,9 @@
 import type { BrowserPricingV1 } from "@harbor-hf/contracts";
-import schema from "@harbor-hf/contracts/schemas/browser-pricing-v1.schema.json";
-import { Ajv2020 } from "ajv/dist/2020.js";
 import { useSyncExternalStore } from "react";
+import validate from "./generated/browser-pricing-validator.js";
 
 export type SavedScenario = BrowserPricingV1["scenarios"][number];
 export const PRICING_KEY = "harbor-hf.browser-pricing.v1";
-const validate = new Ajv2020({ strict: false }).compile<BrowserPricingV1>(schema);
 export function validPreferences(value: unknown): value is BrowserPricingV1 {
   if (!validate(value)) return false;
   const ids = new Set(value.scenarios.map((scenario) => scenario.id));

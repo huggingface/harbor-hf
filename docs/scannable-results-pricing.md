@@ -234,16 +234,25 @@ locally available history through `1f84b4c0`. Inclusive cache and the absence of
 request-tier aggregates remain unchanged. This browser presentation needs no
 Harbor patch, execution behavior, or pin update.
 
-Validation: 748 root unit/component tests and 41 synthetic browser tests pass.
+Pricing schema validation is now compiled by Ajv standalone during contract
+generation and bundled with its Unicode-length helper into static browser ESM;
+the store imports that generated validator and its schema-derived type guard,
+not the Ajv compiler. Application and preview CSP are unchanged. Regression tests
+cover browser startup, pricing save/reload under a response CSP forbidding eval,
+Unicode bounds, deterministic regeneration and execution with dynamic code
+generation disabled. This is browser-local schema validation, not Harbor behavior;
+the pinned `src/harbor/models/job/result.py` boundary remains unchanged.
+
+Validation: 750 root unit/component tests and 42 synthetic browser tests pass.
 Browser tests cover save/update/delete, reload, navigation, dirty drafts,
 cross-tab conflicts, selected list estimates alongside native cost, and absence
 of mutation requests. Store/component tests cover delayed storage events,
 concurrent writes, unsupported locking/secure ID generation, and storage failures.
 
 Formatting, lint (six existing shell-template warnings), root/Space types, build,
-dependency checks, privacy, normal Slophammer and DRY checks pass. Build retains
-the large-chunk warning. Generated output is deterministic. Global coverage is
-80.68% lines, 78.43% statements, 79.58% functions and 72.46% branches, below the
+dependency checks, privacy, normal Slophammer and DRY checks pass. Generated output
+is deterministic. Global coverage is 80.30% lines, 78.18% statements, 79.64%
+functions and 72.35% branches, below the
 unchanged 85% gate. The Slophammer baseline and mutation checks are blocked by
 missing baseline and mutation-script files. No gates were lowered. No live API,
 credential movement, remote resource mutation or publication is part of this work.

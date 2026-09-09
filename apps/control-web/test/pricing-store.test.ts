@@ -277,3 +277,17 @@ it("selection-only operations preserve the latest tier before delayed storage ev
   expect(await second.select("two")).toBe(true);
   expect(second.getSnapshot().preferences.tier).toBe("longContext");
 });
+
+it("counts Unicode code points using the bundled standalone runtime", () => {
+  for (const [length, expected] of [
+    [80, true],
+    [81, false],
+  ] as const) {
+    expect(
+      validPreferences({
+        ...value(),
+        scenarios: [{ ...scenario, name: "😀".repeat(length) }],
+      }),
+    ).toBe(expected);
+  }
+});
