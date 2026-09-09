@@ -10,6 +10,7 @@ import type {
   HarborJobConfigV1,
   RunRecordV1,
   RunStateV1,
+  TrialProgressV1,
 } from "./generated/index.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "schemas");
@@ -25,6 +26,7 @@ export const schemas = {
   benchmarkPreset: load("benchmark-preset-v1.schema.json"),
   harborJobConfig: load("harbor-job-config-v1.schema.json"),
   runRecord: load("run-record-v1.schema.json"),
+  trialProgress: load("trial-progress-v1.schema.json"),
   runState: load("run-state-v1.schema.json"),
 } as const;
 
@@ -112,3 +114,14 @@ export const validateRunRecord = (value: unknown): RunRecordV1 =>
   validate(validators.runRecord, value, "run record");
 export const validateRunState = (value: unknown): RunStateV1 =>
   validate(validators.runState, value, "run state");
+
+// Artifact payloads are allowlisted projections, not native durable records.
+// Strip unknown native fields before returning observations to the browser.
+const observationAjv = new Ajv2020({ strict: false, removeAdditional: true });
+observationAjv.addFormat("date-time", {
+  type: "string",
+  validate: (value: string) => Number.isFinite(Date.parse(value)),
+});
+const progressValidator = observationAjv.compile(schemas.trialProgress);
+export const validateTrialProgress = (value: unknown): TrialProgressV1 =>
+  validate(progressValidator, structuredClone(value), "trial progress");

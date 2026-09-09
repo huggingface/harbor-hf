@@ -117,6 +117,22 @@ submission behavior. The all-task presets default to 8, the one-task preset to
 1, and both forms accept explicit values from 1 through 128. This change affects
 new submissions only, not stored runs or explicitly saved draft values.
 
+The shared selector also offers **terminal-bench-2-1 · three-tasks-3-trials**:
+`code-from-image`, `log-summary-date-ranges`, and `openssl-selfsigned-cert`,
+with native `n_attempts: 3` (nine trials for one agent). This diagnostic preset
+is not leaderboard eligible. It copies the one-task preset's pinned dataset,
+CPU environment, and timeout multipliers, but defaults concurrency to 3 to bound
+simultaneous canary work; both forms retain the normal explicit override.
+
+Preset review checked Harbor `src/harbor/job.py` and
+`src/harbor/models/job/config.py` at
+`dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`: Harbor expands repetitions and
+filters task names natively. Public upstream history through `1f84b4c0` requires
+no pin update for this configuration-only addition. All three task directories,
+including `task.toml` and `instruction.md`, were verified through the public
+source tree at dataset revision `d49e28f1e4ddd13d289e85a5f312a66750951932`.
+No local Harbor execution or inference is needed to load or test the preset.
+
 The separate [New Job page](CONFIGURABLE_LAUNCH.md) edits native configuration
 through the existing direct submission route. It uses native Harbor concurrency
 validation and an aggregate inspection budget, not a separate concurrency cap.
@@ -155,6 +171,7 @@ Authenticated read routes are:
 - `GET /api/v1/workbench/setup-tests/{setup_test_id}/files/{file_id}`
 - `GET /api/v1/runs`
 - `GET /api/v1/runs/{run_id}`
+- `GET /api/v1/runs/{run_id}/progress` (allowlisted native artifact observations)
 - `GET /api/v1/runs/{run_id}/trials`
 - `GET /api/v1/runs/{run_id}/trials/{trial_name}`
 - `GET /api/v1/jobs`
@@ -217,6 +234,97 @@ execution is complete and does not mean that the run complied with its cost
 limit. Harbor-HF does not count trial folders, copy retry logic, or store
 another completion value.
 
+## Observational trial waffle
+
+The Runs waffle shows one run per row and one compact square per job-lock entry
+(or per observed trial when no job lock is available). Its
+read-only progress endpoint lists native `job/lock.json` trials without deduplicating
+repetitions, and observes each trial's `config.json`, `lock.json`, and `result.json`.
+Trial locks supply the durable input digest, including for finalized trials;
+Harbor's legacy result checksum is a different hash and is never equated with a
+lock digest. Task names and lock input digests group display columns. Native
+`trial_name` keys remain distinct. When a job lock is available, only its entries
+create planned squares: nine entries always produce nine squares. Current native
+trial locks map by exact task name and input digest, up to that group's capacity.
+Mount-local assignments preserve current names' positions where possible; removed
+names release capacity immediately. Replacements are not asserted to be equivalent
+logical repetitions. Native identity keys prevent a different trial filling a slot
+from inheriting its focus. Config-only, unmatched and excess observations appear
+in a separate explicit list/count, never adding planned capacity. Removed observations
+remain in that mount-local list, labelled absent from the current snapshot, not
+terminal. Remounting discards removal history, not planned capacity. The same native
+name moves globally without leaving a reservation in an old group. Without a job
+lock, squares show observations only and the planned total is explicitly unknown.
+Nothing is persisted or sent to execution. Slots are neither Harbor attempt ordinals
+nor equivalent repetitions across runs.
+
+A planned square without a mapped observation is labelled **No mapped observation**,
+not proven queued. A fresh unfinished config/lock is **Unfinished
+artifact observed (live state unknown)**. Neither a live parent nor Harbor's
+aggregate heartbeat establishes per-trial execution. Stale or failed artifact
+refreshes make unfinished observations uncertain. The freshness window is 60
+seconds. Finalized native results supply outcome, reward, and reported cost;
+missing reward is never scored as zero. Missing cells are **Unknown / not observed**
+unless an available prepared lock excludes that task/input group. A repeated
+trial's absence cannot be inferred from its display slot or a repetition count.
+Native `n_pending_trials`, `n_running_trials`, and `n_completed_trials` remain the
+aggregate authority. No controller or completion behavior reads waffle state.
+
+Parent and child HF Jobs are displayed separately with their provider-observed
+queued/running/stopped/error states and snapshot time. Queued means waiting at HF,
+not a named trial waiting for a particular dependency. Failed reads retain a
+visible stale warning and retry action; cached incomplete cells become uncertain.
+A local freshness timer also expires observations during a hung refresh. Missing or malformed artifacts do not
+become invented successful or zero-reward results.
+
+The API shares artifact snapshots across callers for 10 seconds, coalesces in-flight
+reads per run, and retains at most 64 snapshots (including pending requests). At
+capacity it evicts a settled snapshot or rejects new work until capacity is
+available; it never evicts pending work to launch duplicate listings. The decoded
+artifact cache remains bounded at 8192 entries and follows provider content
+identities. Expired snapshots are re-listed so additions and removals are observed;
+a failed refresh invalidates the snapshot and decoded run entries and propagates
+the error, never falling back to stale success. The original artifact observation
+time is retained on cache hits; provider observations are attached independently
+on every response. Visible active rows poll every 15 seconds; terminal rows every
+two minutes. Explicit retry still surfaces fresh read failures.
+
+Boundary review: also inspected `src/harbor/job.py` (resume removes unfinished
+folders and regenerates remaining configs/names) and `src/harbor/trial/trial.py`
+(native lock precedes config, although partial API observations are supported).
+Inspected Harbor `src/harbor/models/trial/config.py`,
+`src/harbor/models/trial/result.py`, and `src/harbor/models/job/lock.py` at the pinned
+revision `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`, and upstream history through
+`1f84b4c0`. These artifacts do not supply a per-trial live-running assertion or a
+cross-run repeated-trial ordinal. The intervening changes do not add one. This UI
+therefore preserves unknown states rather than patching Harbor or changing the pin.
+
+
+The UI requests at most eight runs at a time, polls every 15 seconds, and renders
+50 searchable trial columns per page. The reader bounds concurrent artifact reads
+and caches unchanged content identities in memory. It exposes only allowlisted
+identity, timing, outcome and cost fields, never raw agent config, credentials,
+logs or trajectories. Observations can span writes; they are not atomic execution
+snapshots. No Bucket records, additional SQLite tables, Harbor patches, or second
+scheduler are introduced.
+
+The portable response contract is authoritative JSON Schema in
+`packages/contracts/schemas/trial-progress-v1.schema.json`, with generated server
+and browser types. Validation strips non-allowlisted native fields and rejects
+malformed timestamps or identities inconsistent with the trial folder. Receipts
+are not results: neither receipt presence nor cost proves trial success. Completed
+means a native finish without a reported exception, not a positive reward.
+
+Harbor boundary checked: pinned `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`
+and public upstream history through `1f84b4c0`, including
+`src/harbor/job.py`, `src/harbor/trial/trial.py`, `src/harbor/models/job/lock.py`,
+`src/harbor/models/job/result.py`, `src/harbor/models/trial/config.py`, and
+`src/harbor/models/trial/result.py`. None of the intervening changes adds stable
+pending identities or a per-trial live artifact API, so no pin update implements
+this hosted view. Those are upstream gaps, not authority to synthesize execution
+state here. The
+adapter only reads native config/lock/result artifacts; it does not import Harbor.
+
 ## Startup
 
 The Space opens port 7860 before the Bucket scan. This lets the platform observe
@@ -242,6 +350,15 @@ the full immutable reference. A tag alone is rejected.
 
 The package path retains the existing container repository name to avoid a
 second persistent registry resource. The image role is now the parent worker.
+
+Control/API/browser-only changes can reuse the existing verified immutable parent
+and Workbench image digests when `packages/harbor-hf-agents`, its dependency lock,
+and `deploy/parent-worker/Dockerfile` are unchanged. The parent Dockerfile copies
+only that Python package; Space bundling and deployment do not rebuild the parent
+or modify the image settings. The observational waffle changes require no Python
+change, parent-image publication, or credential movement. Keep the existing image
+references; rebuilding the control Space is a separate, explicitly approved step.
+
 
 ## Deployment
 

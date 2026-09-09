@@ -5,6 +5,7 @@ import openapiTS, { astToString, type OpenAPI3 } from "openapi-typescript";
 import { z } from "zod";
 import { hardwareCatalogSchema } from "./huggingface-hardware.js";
 import { catalogSchema, validationSchema } from "./launch.js";
+import { schemas } from "@harbor-hf/contracts";
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const json = { "application/json": { schema: { type: "object" } } } as const;
@@ -82,6 +83,7 @@ const document = {
       bearerToken: { type: "http", scheme: "bearer" },
     },
     schemas: {
+      TrialProgress: schemas.trialProgress,
       PresetSubmission: {
         type: "object",
         additionalProperties: false,
@@ -505,6 +507,25 @@ const document = {
         security: authenticated,
         parameters: [runParameter],
         responses: { "200": ok, "404": error },
+      },
+    },
+    "/api/v1/runs/{run_id}/progress": {
+      get: {
+        summary:
+          "Observe native trial artifacts and run-owned HF Jobs (not a scheduler)",
+        security: authenticated,
+        parameters: [runParameter],
+        responses: {
+          "200": {
+            description: "Allowlisted artifact observations",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TrialProgress" },
+              },
+            },
+          },
+          "404": error,
+        },
       },
     },
     "/api/v1/runs/{run_id}/trials": {

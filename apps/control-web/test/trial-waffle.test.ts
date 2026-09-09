@@ -1,0 +1,310 @@
+import { describe, expect, it } from "vitest";
+import type { RunView, TrialProgress } from "../src/api";
+import {
+  cellDescription,
+  recent,
+  separateObservations,
+  waffleCells,
+} from "../src/trial-waffle";
+
+const now = Date.parse("2026-09-08T12:00:00Z");
+const timestamp = new Date(now).toISOString();
+const task = { name: "task-a", digest: "sha256:abc" };
+const run = { status: "running", result: { updated_at: timestamp } } as RunView;
+function first<T>(items: readonly T[]): T {
+  const value = items[0];
+  if (value === undefined) throw new Error("Missing fixture element");
+  return value;
+}
+function data(): TrialProgress {
+  return {
+    observed_at: timestamp,
+    jobs_observed_at: timestamp,
+    lock: { trials: Array.from({ length: 5 }, () => ({ task })) },
+    jobs: [
+      {
+        id: "parent-test",
+        run_id: "run-test",
+        role: "parent",
+        stage: "running",
+        created_at: timestamp,
+        started_at: timestamp,
+        finished_at: null,
+      },
+    ],
+    trials: [
+      {
+        trial_name: "trial-a",
+        config: { trial_name: "trial-a" },
+        lock: { task },
+        result: null,
+        reward: null,
+        cost_usd: null,
+      },
+    ],
+  };
+}
+describe("native artifact waffle", () => {
+  it("retains five planned repetitions and native identity", () => {
+    const value = data();
+    const initial = value.trials[0];
+    if (!initial) throw Error("fixture missing");
+    value.trials.push({
+      ...initial,
+      trial_name: "trial-b",
+      result: {
+        finished_at: timestamp,
+        task_checksum: "legacy-dirhash-not-lock-digest",
+      },
+      reward: 0,
+    });
+    const cells = waffleCells(run, value, now);
+    expect(cells.map((cell) => cell.state)).toEqual([
+      "unfinished",
+      "zero",
+      "pending",
+      "pending",
+      "pending",
+    ]);
+    expect(new Set(cells.map((cell) => cell.key)).size).toBe(5);
+    expect(cells[1]?.trial?.trial_name).toBe("trial-b");
+    expect(cellDescription(first(cells))).toContain("not an attempt ordinal");
+  });
+  it.each(["paused", "cancelled", "finished", "cost_stopped", "queued"] as const)(
+    "labels unfinished artifacts without inferring live state for %s runs",
+    (status) => {
+      expect(waffleCells({ ...run, status }, data(), now)[0]?.state).toBe("unfinished");
+    },
+  );
+  it("does not use parent or heartbeat observations as per-trial state", () => {
+    const value = data();
+    value.jobs_observed_at = null;
+    value.jobs = [];
+    expect(waffleCells({ ...run, result: {} }, value, now)[0]?.state).toBe(
+      "unfinished",
+    );
+    expect(waffleCells(run, value, now + 61_000)[0]?.state).toBe("uncertain");
+  });
+  it.each([
+    [null, null, "completed"],
+    [0, null, "zero"],
+    [1, null, "completed"],
+    [0, "VerifierError", "error"],
+    [null, "CancelledError", "cancelled"],
+  ] as const)(
+    "preserves native outcome and reward %s / %s",
+    (reward, exception, expected) => {
+      const value = data();
+      const trial = value.trials[0];
+      if (!trial) throw Error("fixture missing");
+      trial.result = {
+        finished_at: timestamp,
+        exception_info: exception ? { exception_type: exception } : null,
+      };
+      trial.reward = reward;
+      expect(waffleCells(run, value, now)[0]?.state).toBe(expected);
+    },
+  );
+  it("does not equate a result without finished_at to completion", () => {
+    const value = data();
+    first(value.trials).result = { started_at: timestamp, finished_at: null };
+    expect(waffleCells(run, value, now)[0]?.state).toBe("unfinished");
+  });
+  it("keeps changed inputs and excess observed trials rather than collapsing them", () => {
+    const value = data();
+    value.lock = { trials: [{ task }] };
+    value.trials.push({ ...first(value.trials), trial_name: "trial-b" });
+    value.trials.push({
+      ...first(value.trials),
+      trial_name: "trial-c",
+      lock: { task: { ...task, digest: "sha256:other" } },
+    });
+    const cells = waffleCells(run, value, now);
+    expect(cells).toHaveLength(1);
+    expect(separateObservations(value, cells)).toHaveLength(2);
+  });
+  it("can display historical results without trial locks, and unknown identities honestly", () => {
+    const value = data();
+    value.lock = null;
+    first(value.trials).lock = null;
+    first(value.trials).result = {
+      task_name: "task-a",
+      task_checksum: "abc",
+      finished_at: timestamp,
+    };
+    expect(waffleCells(run, value, now)[0]?.digest).toBe("legacy checksum: abc");
+    first(value.trials).result = null;
+    first(value.trials).config = null;
+    const cell = first(waffleCells(run, value, now));
+    expect(cell.task).toBe("trial-a");
+    expect(cell.state).toBe("uncertain");
+    expect(cellDescription(cell)).toContain("not reported");
+  });
+  it("treats invalid and far-future timestamps as unknown", () => {
+    for (const value of [null, "bad", new Date(now + 60_000).toISOString()])
+      expect(recent(value, now)).toBe(false);
+  });
+});
+
+it("keeps three task names times three native identities independently stateful", () => {
+  const value = data();
+  const tasks = ["task-a", "task-b", "task-c"].map((name) => ({ ...task, name }));
+  value.lock = {
+    trials: tasks.flatMap((task) => Array.from({ length: 3 }, () => ({ task }))),
+  };
+  value.trials = tasks.flatMap((task, index) =>
+    Array.from({ length: 3 }, (_, repeat) => ({
+      trial_name: `${task.name}__native${repeat}`,
+      config: { trial_name: `${task.name}__native${repeat}` },
+      lock: { task },
+      result:
+        repeat === 0
+          ? null
+          : {
+              finished_at: timestamp,
+              exception_info:
+                index === 2
+                  ? {
+                      exception_type: repeat === 1 ? "CancelledError" : "VerifierError",
+                    }
+                  : null,
+            },
+      reward: repeat === 1 ? 0 : null,
+      cost_usd: 0.1,
+    })),
+  );
+  const cells = waffleCells(run, value, now);
+  expect(cells).toHaveLength(9);
+  expect(new Set(cells.map((cell) => cell.key)).size).toBe(9);
+  expect(new Set(cells.map((cell) => cell.trial?.trial_name)).size).toBe(9);
+  expect(cells.map((cell) => cell.state)).toEqual([
+    "unfinished",
+    "zero",
+    "completed",
+    "unfinished",
+    "zero",
+    "completed",
+    "unfinished",
+    "cancelled",
+    "error",
+  ]);
+  first(value.trials).result = { finished_at: timestamp };
+  const changed = waffleCells(run, value, now);
+  expect(changed[0]?.state).toBe("completed");
+  expect(changed.slice(1)).toEqual(cells.slice(1));
+});
+
+it("downgrades incomplete cells on stale artifacts or failed refresh, never completed evidence", () => {
+  const value = data();
+  value.trials.push({
+    ...first(value.trials),
+    trial_name: "trial-b",
+    result: { finished_at: timestamp },
+  });
+  expect(
+    waffleCells(run, value, now, true)
+      .slice(0, 2)
+      .map((cell) => cell.state),
+  ).toEqual(["uncertain", "completed"]);
+  value.observed_at = new Date(now - 61_000).toISOString();
+  expect(waffleCells(run, value, now)[0]?.state).toBe("uncertain");
+});
+
+it("preserves current positions but releases removed reservations", () => {
+  const value = data();
+  const template = first(value.trials);
+  value.trials = [{ ...template, trial_name: "trial-z" }];
+  const initial = waffleCells(run, value, now);
+  value.trials = [
+    { ...template, trial_name: "trial-a" },
+    { ...template, trial_name: "trial-z" },
+  ];
+  const next = waffleCells(run, value, now, false, initial);
+  expect(next[0]?.trial?.trial_name).toBe("trial-z");
+  expect(next[0]?.key).toBe(initial[0]?.key);
+  expect(next[1]?.trial?.trial_name).toBe("trial-a");
+  expect(next[1]?.key).not.toBe(initial[1]?.key);
+  value.trials = [{ ...template, trial_name: "trial-a" }];
+  const removed = waffleCells(run, value, now, false, next);
+  expect(removed[0]?.trial).toBeNull();
+  expect(removed[0]?.state).toBe("pending");
+  expect(removed[1]?.key).toBe(next[1]?.key);
+  value.trials.unshift({ ...template, trial_name: "trial-b" });
+  const added = waffleCells(run, value, now, false, removed);
+  expect(added[0]?.trial?.trial_name).toBe("trial-b");
+  value.trials.push({ ...template, trial_name: "trial-z" });
+  const restored = waffleCells(run, value, now, false, added);
+  expect(restored[2]?.key).toBe(initial[0]?.key);
+  expect(cellDescription(first(restored))).toContain(
+    "do not establish equivalent repetitions",
+  );
+});
+
+it("keeps nine planned squares through partial observations, removal, replacements and remount", () => {
+  const value = data();
+  value.lock = { trials: Array.from({ length: 9 }, () => ({ task })) };
+  const template = first(value.trials);
+  value.trials = [{ ...template, lock: null }];
+  let cells = waffleCells(run, value, now);
+  expect(cells).toHaveLength(9);
+  let separate = separateObservations(value, cells);
+  expect(separate).toHaveLength(1);
+  expect(cells.every((cell) => !cell.trial)).toBe(true);
+  value.trials = [template, template]; // same name is one native identity
+  let next = waffleCells(run, value, now, false, cells);
+  separate = separateObservations(value, next, separate, cells);
+  expect(separate).toEqual([]);
+  expect(next.filter((cell) => cell.trial)).toHaveLength(1);
+  for (let count = 1; count <= 9; count++) {
+    cells = next;
+    value.trials = Array.from({ length: count }, (_, i) => ({
+      ...template,
+      trial_name: `old-${i}`,
+    }));
+    next = waffleCells(run, value, now, false, cells);
+    expect(next).toHaveLength(9);
+    expect(next.filter((cell) => cell.trial)).toHaveLength(count);
+  }
+  cells = next;
+  value.trials = [];
+  next = waffleCells(run, value, now, false, cells);
+  separate = separateObservations(value, next, [], cells);
+  expect(separate).toHaveLength(9);
+  expect(separate.every((item) => item.removed)).toBe(true);
+  expect(next.every((cell) => cell.state === "pending" && !cell.reservedName)).toBe(
+    true,
+  );
+  value.trials = Array.from({ length: 9 }, (_, i) => ({
+    ...template,
+    trial_name: `new-${i}`,
+  }));
+  const replacement = waffleCells(run, value, now, false, next);
+  expect(replacement).toHaveLength(9);
+  expect(replacement).toEqual(waffleCells(run, value, now));
+  expect(replacement.every((cell) => !cells.some((old) => old.key === cell.key))).toBe(
+    true,
+  );
+  expect(separateObservations(value, replacement, separate, next)).toHaveLength(9);
+  expect(separateObservations(value, replacement)).toEqual([]); // remount has no removal history
+  expect(waffleCells(run, value, now, false, replacement)).toEqual(replacement);
+});
+
+it("moves a config-only name globally when its native lock arrives", () => {
+  const value = data();
+  const template = first(value.trials);
+  value.lock = null;
+  value.trials = [{ ...template, lock: null }];
+  const initial = waffleCells(run, value, now);
+  expect(initial).toHaveLength(1);
+  value.lock = { trials: Array.from({ length: 9 }, () => ({ task })) };
+  const partial = waffleCells(run, value, now, false, initial);
+  expect(partial).toHaveLength(9);
+  expect(separateObservations(value, partial, [], initial)).toHaveLength(1);
+  value.trials = [template, template];
+  const mapped = waffleCells(run, value, now, false, partial);
+  expect(mapped).toHaveLength(9);
+  expect(mapped.filter((cell) => cell.trial)).toHaveLength(1);
+  expect(mapped[0]?.key).toBe(initial[0]?.key);
+  expect(mapped).toEqual(waffleCells(run, value, now));
+  expect(separateObservations(value, mapped, [], partial)).toEqual([]);
+});

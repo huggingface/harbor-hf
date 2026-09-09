@@ -326,3 +326,7 @@ export const getWorkbenchFile = (setupId: string, fileId: string) =>
 export async function signOut(): Promise<void> {
   await api("/auth/logout", { method: "POST" });
 }
+
+export type TrialProgress = components["schemas"]["TrialProgress"];
+export const getTrialProgress = (runId: string): Promise<TrialProgress> =>
+  api(`/api/v1/runs/${encodeURIComponent(runId)}/progress`);

@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "jobs_observed_at": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lock": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "trials": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "task": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "digest": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["name", "digest"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["task"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["trials"],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "trials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "trial_name": {
+            "type": "string"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "trial_name": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lock": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "task": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "digest": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["name", "digest"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["task"],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "trial_name": {
+                    "type": "string"
+                  },
+                  "task_name": {
+                    "type": "string"
+                  },
+                  "task_checksum": {
+                    "type": "string"
+                  },
+                  "started_at": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "finished_at": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exception_info": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "exception_type": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["exception_type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reward": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["trial_name", "config", "lock", "result", "reward", "cost_usd"],
+        "additionalProperties": false
+      }
+    },
+    "jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["parent", "trial"]
+          },
+          "stage": {
+            "type": "string",
+            "enum": ["queued", "running", "stopped", "error"]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "role",
+          "stage",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["observed_at", "jobs_observed_at", "lock", "trials", "jobs"],
+  "additionalProperties": false,
+  "title": "TrialProgressV1"
+}
