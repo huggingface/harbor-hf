@@ -2,7 +2,7 @@
 
 ## Automatic native-evidence display
 
-The Runs table, waffle row summaries, and run detail project Harbor's existing
+The Runs table, waffle summaries, and run detail project Harbor's existing
 `result.json.stats.evals[*].exception_stats`. The normal control projection and
 browser polling refresh these diagnostics; there is no new completion hook,
 background analyzer, durable diagnosis record, or second reconciler. Existing
@@ -108,3 +108,33 @@ Checked Harbor revision `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`:
 Reviewed subsequent upstream history through `90e28af3`. It does not add the
 structured evidence needed to close the classification gap. No pin update,
 Harbor patch, retry logic, or result writer is introduced by this display change.
+
+Summary formatting and explicit display-only token-rate scenarios are documented
+in [Scannable summaries and pricing scenarios](scannable-results-pricing.md).
+These categories group exact native types, not inferred infrastructure causes.
+
+## Detail repetition matrix
+
+The detail-only matrix has task/input-digest columns and display repetition-slot
+rows, matching the compact CLI orientation. Numeric column headers expose the
+full task and digest on hover or keyboard focus. Each square has a 24px target,
+with native trial identity, reward, status and exception evidence in its tooltip;
+recorded finalized/exception evidence links to the native trial detail. Zero reward,
+exceptions, no observation, and unplanned `-` positions remain distinct. Extended
+legend and observation caveats are in a disclosure. Existing summary cards remain
+above the matrix; the overview neither renders it nor requests trial progress.
+
+For example, 89 tasks with one repetition form one horizontal row; five
+repetitions form five rows. Horizontal scrolling and 100-column pagination retain
+all repetition rows. Search filters whole columns without reordering tasks or
+renumbering their headers. Ragged `-` cells are not planned trials; planned totals
+come only from the exact lock entries, not the bounding rectangle. Slots are not
+aligned real attempt numbers: native Harbor has no cross-task repetition ordinal.
+Digest grouping and native assignment memory remain unchanged across polling,
+and navigation resets filter, page, focus and observation memory.
+
+For this orientation change, reviewed cached Harbor
+`src/harbor/models/job/lock.py` and `src/harbor/models/trial/result.py` at
+`dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`, plus the subsequent cached history.
+This is only a browser projection of existing evidence, not task resolution,
+execution, resume or lifecycle logic; no Harbor patch or pin change is required.

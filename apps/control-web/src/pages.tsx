@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
-  CircleDollarSign,
   Clock3,
   Cpu,
   ListChecks,
@@ -52,9 +51,17 @@ import {
   useTrial,
   useTrials,
 } from "./queries";
+import { PricingPanel } from "./pricing-panel";
 import { RunConfiguration } from "./run-configuration";
 import { RunDiagnostics, RunDiagnosticsSummary } from "./run-diagnostics";
 import { runIdentity } from "./run-identity";
+import { nativeScore } from "./run-summary";
+import {
+  CostValue,
+  RunSummaryCards,
+  ScoreValue,
+  TokenValue,
+} from "./run-summary-cards";
 import { RunWaffle } from "./runs-waffle";
 import {
   Badge,
@@ -63,7 +70,6 @@ import {
   ConcurrentTrialsField,
   Empty,
   ErrorNotice,
-  Progress,
   QueryContent,
 } from "./ui";
 
@@ -80,23 +86,6 @@ function progress(run: RunView): { completed: number; total: number | null } {
     completed: stat(run, "n_completed_trials") ?? 0,
     total: numberValue(run.result?.n_total_trials),
   };
-}
-
-function averageReward(run: RunView): number | null {
-  const evals = asRecord(stats(run)?.evals);
-  if (!evals) return null;
-  const values: number[] = [];
-  for (const evaluation of Object.values(evals)) {
-    const metrics = asRecord(evaluation)?.metrics;
-    if (!Array.isArray(metrics)) continue;
-    for (const metric of metrics) {
-      const mean = numberValue(asRecord(metric)?.mean);
-      if (mean !== null) values.push(mean);
-    }
-  }
-  return values.length > 0
-    ? values.reduce((sum, value) => sum + value, 0) / values.length
-    : null;
 }
 
 function Stat({
@@ -557,24 +546,47 @@ export function RunsPage() {
         enableColumnFilter: false,
         cell: ({ row }) => {
           const value = progress(row.original);
-          return value.total === null
-            ? "Unavailable"
-            : `${value.completed} / ${value.total}`;
+          return value.total === null ? "-" : `${value.completed} / ${value.total}`;
         },
       },
       {
+        id: "score",
+        header: "Score",
+        accessorFn: (run) => nativeScore(run.result).value ?? undefined,
+        enableColumnFilter: false,
+        cell: ({ row }) => <ScoreValue result={row.original.result} />,
+      },
+      ...(
+        [
+          ["n_input_tokens", "Input incl. cache (M)", "Input"],
+          ["n_output_tokens", "Output (M)", "Output"],
+          ["n_cache_tokens", "Cache (M)", "Cache"],
+        ] as const
+      ).map(
+        ([key, label, tooltipLabel]): ColumnDef<RunView> => ({
+          id: key,
+          header: label,
+          accessorFn: (run) => stat(run, key) ?? undefined,
+          enableColumnFilter: false,
+          cell: ({ row }) => (
+            <TokenValue value={stat(row.original, key)} label={tooltipLabel} />
+          ),
+        }),
+      ),
+      {
         id: "diagnostics",
         header: "Diagnostics",
+        meta: { className: "min-w-52" },
         enableColumnFilter: false,
         enableSorting: false,
         cell: ({ row }) => <RunDiagnosticsSummary run={row.original} />,
       },
       {
         id: "cost",
-        header: "Cost",
-        accessorFn: (run) => stat(run, "cost_usd") ?? -1,
+        header: "Reported cost",
+        accessorFn: (run) => stat(run, "cost_usd") ?? undefined,
         enableColumnFilter: false,
-        cell: ({ row }) => formatMoneyUsd(stat(row.original, "cost_usd")),
+        cell: ({ row }) => <CostValue value={stat(row.original, "cost_usd")} />,
       },
       {
         id: "created",
@@ -602,11 +614,13 @@ export function RunsPage() {
       </Link>
       <QueryContent query={query}>
         {query.data ? (
-          <DataTable
-            columns={columns}
-            data={query.data}
-            empty="No runs are available"
-          />
+          <div className="min-w-0 [&_table]:table-auto">
+            <DataTable
+              columns={columns}
+              data={query.data}
+              empty="No runs are available"
+            />
+          </div>
         ) : null}
       </QueryContent>
     </>
@@ -672,7 +686,6 @@ export function RunPage() {
       </QueryContent>
     );
   const item = run.data;
-  const current = progress(item);
   const jobIds = new Set(item.state.parent_jobs.map((job) => job.id));
   const runJobs = jobs.data?.filter(
     (job) => job.run_id === item.record.run_id || jobIds.has(job.id),
@@ -684,35 +697,8 @@ export function RunPage() {
         description={item.record.run_id}
         action={<RunActions run={item} />}
       />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <Stat
-          label="Status"
-          value={<Badge status={item.status}>{humanize(item.status)}</Badge>}
-        />
-        <Stat
-          label="Progress"
-          value={
-            current.total === null
-              ? "Unavailable"
-              : `${current.completed} / ${current.total}`
-          }
-          detail={
-            current.total && current.total > 0 ? (
-              <Progress
-                value={current.completed / current.total}
-                label="Trial progress"
-              />
-            ) : undefined
-          }
-        />
-        <Stat label="Reward" value={averageReward(item) ?? "Unavailable"} />
-        <Stat label="Input tokens" value={formatTokens(stat(item, "n_input_tokens"))} />
-        <Stat
-          label="Inference cost"
-          value={formatMoneyUsd(stat(item, "cost_usd"))}
-          icon={<CircleDollarSign size={18} />}
-        />
-      </div>
+      <RunSummaryCards run={item} />
+      <PricingPanel result={item.result} />
       <RunWaffle run={item} />
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <Card>

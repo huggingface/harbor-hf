@@ -69,7 +69,7 @@ describe("native artifact waffle", () => {
     ]);
     expect(new Set(cells.map((cell) => cell.key)).size).toBe(5);
     expect(cells[1]?.trial?.trial_name).toBe("trial-b");
-    expect(cellDescription(first(cells))).toContain("not an attempt ordinal");
+    expect(cellDescription(first(cells))).not.toContain("not an attempt ordinal");
   });
   it.each(["paused", "cancelled", "finished", "cost_stopped", "queued"] as const)(
     "labels unfinished artifacts without inferring live state for %s runs",
@@ -139,7 +139,7 @@ describe("native artifact waffle", () => {
     const cell = first(waffleCells(run, value, now));
     expect(cell.task).toBe("trial-a");
     expect(cell.state).toBe("uncertain");
-    expect(cellDescription(cell)).toContain("not reported");
+    expect(cellDescription(cell)).toContain("Reward: -");
   });
   it("treats invalid and far-future timestamps as unknown", () => {
     for (const value of [null, "bad", new Date(now + 60_000).toISOString()])
@@ -236,7 +236,7 @@ it("preserves current positions but releases removed reservations", () => {
   value.trials.push({ ...template, trial_name: "trial-z" });
   const restored = waffleCells(run, value, now, false, added);
   expect(restored[2]?.key).toBe(initial[0]?.key);
-  expect(cellDescription(first(restored))).toContain(
+  expect(cellDescription(first(restored))).not.toContain(
     "do not establish equivalent repetitions",
   );
 });
@@ -329,4 +329,59 @@ it("keeps absent native evidence unknown and distinguishes explicit null", () =>
       result: { exception_info: { exception_type: "CustomException" } },
     }),
   ).toBe("Native exception: CustomException");
+});
+
+it.each([
+  [null, null, null, "Completed", "-", []],
+  [0, 0, null, "Zero reward", "0.000", ["Reported cost (USD): $0.0000"]],
+  [
+    0.5168539,
+    12.345,
+    "RuntimeError",
+    "Errored",
+    "0.517",
+    ["Exception: RuntimeError", "Reported cost (USD): $12.35"],
+  ],
+  [
+    0,
+    0.000123,
+    "RuntimeError",
+    "Errored",
+    "0.000",
+    ["Exception: RuntimeError", "Reported cost (USD): $0.000123"],
+  ],
+] as const)(
+  "compact reward %s / cost %s / exception %s",
+  (reward, cost, exception, state, formatted, extra) => {
+    const value = data();
+    const trial = first(value.trials);
+    trial.reward = reward;
+    trial.cost_usd = cost;
+    trial.result = {
+      finished_at: timestamp,
+      exception_info: exception ? { exception_type: exception } : null,
+    };
+    const cell = first(waffleCells(run, value, now));
+    expect(cellDescription(cell)).toBe(
+      [
+        "Task: task-a",
+        "Repeat slot: 1",
+        `State: ${state}`,
+        `Reward: ${formatted}`,
+        ...extra,
+      ].join("\n"),
+    );
+    expect(cellDescription(cell)).not.toMatch(
+      /Input:|Trial:|Started:|Finished:|attempt ordinal|Artifact observation/,
+    );
+  },
+);
+
+it("keeps unfinished and unknown short without claiming live running", () => {
+  expect(cellDescription(first(waffleCells(run, data(), now)))).toBe(
+    "Task: task-a\nRepeat slot: 1\nState: Unfinished\nReward: -",
+  );
+  expect(cellDescription(first(waffleCells(run, data(), now, true)))).toBe(
+    "Task: task-a\nRepeat slot: 1\nState: Unknown / interrupted\nReward: -",
+  );
 });

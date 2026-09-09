@@ -380,3 +380,30 @@ describe("per-evaluation error counters", () => {
     expect(projectRunExceptions(result).complete).toBe(false);
   });
 });
+
+it.each([
+  [null, "Infra-related trials: - · unclassified: -"],
+  [resultWith({}), "Infra-related trials: 0 · unclassified: 0"],
+  [
+    {
+      stats: {
+        evals: { a: { exception_stats: { ApiOverloadedError: ["a"] } }, missing: {} },
+      },
+    },
+    "Infra-related trials: ≥1 · unclassified: -",
+  ],
+  [
+    {
+      stats: {
+        evals: { a: { exception_stats: { RuntimeError: ["a"] } }, missing: {} },
+      },
+    },
+    "Infra-related trials: - · unclassified: ≥1",
+  ],
+] as const)(
+  "distinguishes unknown category zeros from complete evidence",
+  (result, text) => {
+    render(<RunDiagnosticsSummary run={run(result)} />, { wrapper: MemoryRouter });
+    expect(screen.getByText(text)).toBeInTheDocument();
+  },
+);

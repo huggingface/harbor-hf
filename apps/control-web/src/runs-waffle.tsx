@@ -16,7 +16,7 @@ import {
 } from "./trial-waffle";
 import { Badge, Button, Hint } from "./ui";
 
-const TASKS = 25;
+const TASKS = 100;
 // Keying the inner view resets filters, focus, and observation memory on navigation.
 export function RunWaffle({ run }: { run: RunView }) {
   return <RunWaffleContents key={run.record.run_id} run={run} />;
@@ -61,9 +61,9 @@ function RunWaffleContents({ run }: { run: RunView }) {
     group.push(cell);
     groups.set(key, group);
   }
-  // Filter whole task rows, never hide individual repeats or change planned totals.
+  // Filter whole task columns, never hide individual repeats or change planned totals.
   const needle = search.toLowerCase();
-  const rows = [...groups.entries()].filter(([, row]) =>
+  const columns = [...groups.entries()].filter(([, row]) =>
     row.some((cell) =>
       [
         cell.task,
@@ -74,8 +74,9 @@ function RunWaffleContents({ run }: { run: RunView }) {
       ].some((text) => text.toLowerCase().includes(needle)),
     ),
   );
-  const page = Math.min(taskPage, Math.max(0, Math.ceil(rows.length / TASKS) - 1));
-  const shown = rows.slice(page * TASKS, (page + 1) * TASKS);
+  const page = Math.min(taskPage, Math.max(0, Math.ceil(columns.length / TASKS) - 1));
+  const shown = columns.slice(page * TASKS, (page + 1) * TASKS);
+  const repeats = Math.max(0, ...[...groups.values()].map((group) => group.length));
   return (
     <section
       aria-label="Trial progress waffle"
@@ -85,12 +86,11 @@ function RunWaffleContents({ run }: { run: RunView }) {
         <div>
           <h2 className="font-semibold">Trial progress</h2>
           <p className="text-xs text-slate-400">
-            One task/input per row · one square per lock entry (observations only
-            without a lock) · active runs refresh every 15s; terminal runs every 2m
+            {groups.size} tasks × {repeats} repeat slots · {cells.length}{" "}
+            {query.data?.lock ? "planned" : "observed"}
           </p>
-          <p className="text-xs text-slate-500">
-            Artifact observations, not scheduling authority. Repeats stay separate;
-            display slots are not attempt ordinals.
+          <p className="text-xs text-slate-400">
+            ✓ completed · 0 zero reward · ! exception · · no observation · - not planned
           </p>
         </div>
         <label className="text-xs">
@@ -126,60 +126,108 @@ function RunWaffleContents({ run }: { run: RunView }) {
           </button>
         </span>
       ) : null}
-      <ul
-        aria-label="Trial state legend"
-        className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-300"
-      >
-        {Object.values(waffleStates).map((state) => (
-          <li key={state.label} className="flex items-center gap-1">
-            <span
-              aria-hidden="true"
-              className={cn(
-                "inline-flex h-4 w-4 items-center justify-center rounded-[2px] border text-[9px]",
-                state.color,
-              )}
-            >
-              {state.symbol}
-            </span>
-            {state.label}
-          </li>
-        ))}
-      </ul>
+      <details className="my-3 text-xs text-slate-400">
+        <summary className="cursor-pointer">Legend and display-slot help</summary>
+        <p>
+          Tasks/input digests are columns; repetitions are display slots, not aligned
+          real attempt numbers. One square per lock entry (observations only without a
+          lock). Artifact observations are not scheduling authority: unfinished does not
+          mean running. Active runs refresh every 15s; terminal runs every 2m. Slots do
+          not establish equivalent repetitions across runs or individual HF Job
+          associations. Missing exception evidence is unknown; no recorded exception is
+          not proof of valid scoring. Infrastructure classification is not recorded by
+          Harbor. Reported cost may be partial, not billing. Open a linked trial for
+          full native details.
+        </p>
+        <ul
+          aria-label="Trial state legend"
+          className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-300"
+        >
+          {Object.values(waffleStates).map((state) => (
+            <li key={state.label} className="flex items-center gap-1">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "inline-flex h-4 w-4 items-center justify-center rounded-[2px] border text-[9px]",
+                  state.color,
+                )}
+              >
+                {state.symbol}
+              </span>
+              {state.label}
+            </li>
+          ))}
+        </ul>
+      </details>
       <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-800 p-2">
         <table className="w-max border-separate border-spacing-0 text-xs">
           <caption className="sr-only">
-            Tasks by input digest with separate repetition squares; display slots are
-            not attempt ordinals
+            Task columns by input digest and repetition-slot rows; display slots are not
+            attempt ordinals
           </caption>
+          <thead>
+            <tr>
+              <th scope="col" className="sticky left-0 z-10 bg-slate-950 pr-2">
+                Slot
+              </th>
+              {shown.map(([key, group]) => (
+                <th
+                  key={key}
+                  scope="col"
+                  aria-label={`${group[0]?.task} ${group[0]?.digest}`}
+                >
+                  <button
+                    type="button"
+                    className="h-6 min-w-6 font-mono font-normal"
+                    aria-label={`Task ${[...groups.keys()].indexOf(key) + 1}: ${group[0]?.task} ${group[0]?.digest}`}
+                  >
+                    <Hint text={group[0]?.task ?? ""}>
+                      <span className="inline-flex h-6 min-w-6 items-center justify-center">
+                        {[...groups.keys()].indexOf(key) + 1}
+                      </span>
+                    </Hint>
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
           <tbody>
-            {shown.map(([key, row]) => (
-              <tr key={key}>
+            {Array.from({ length: shown.length ? repeats : 0 }, (_, repeat) => (
+              // Display slots never reorder; native cell keys still reset replacement focus.
+              // biome-ignore lint/suspicious/noArrayIndexKey: the row identity is its display repetition slot
+              <tr key={repeat}>
                 <th
                   scope="row"
-                  className="sticky left-0 z-10 max-w-60 bg-slate-950 py-2 pr-3 text-left font-normal"
+                  className="sticky left-0 z-10 bg-slate-950 pr-2 text-right font-mono font-normal"
+                  aria-label={`Repeat slot ${repeat + 1}`}
                 >
-                  <span className="block break-words">{row[0]?.task}</span>{" "}
-                  <span
-                    className="block max-w-48 truncate text-[10px] text-slate-500"
-                    title={row[0]?.digest}
-                  >
-                    {row[0]?.digest}
-                  </span>
+                  {repeat + 1}
                 </th>
-                {row.map((cell) => {
+                {shown.map(([key, group]) => {
+                  const cell = group[repeat];
+                  if (!cell)
+                    return (
+                      <td
+                        key={key}
+                        className="text-center text-slate-500"
+                        aria-label={`${group[0]?.task}, repeat slot ${repeat + 1}: Not planned`}
+                      >
+                        -
+                      </td>
+                    );
                   const state = waffleStates[cell.state];
                   const label = `${cell.trial?.trial_name ?? `${cell.task} slot ${cell.slot}`} in ${id}: ${state.label}`;
                   const className = cn(
-                    "flex h-3.5 w-3.5 items-center justify-center rounded-[2px] border font-mono text-[9px] leading-none hover:brightness-150 focus-visible:outline-2 focus-visible:outline-cyan-300 [&_span]:border-0",
+                    "flex h-6 w-6 items-center justify-center rounded-[2px] border font-mono text-[9px] leading-none hover:brightness-150 focus-visible:outline-2 focus-visible:outline-cyan-300 [&_span]:border-0",
                     state.color,
                   );
                   const content = (
                     <Hint
-                      text={`${query?.isError ? "Stale data — refresh failed.\n" : ""}${cellDescription(cell)}`}
+                      text={`${query?.isError ? "Stale — refresh failed\n" : ""}${cellDescription(cell)}`}
                     >
                       <span
                         aria-hidden="true"
-                        className="inline-flex h-3 w-3 items-center justify-center"
+                        className="inline-flex h-6 w-6 items-center justify-center"
                       >
                         {state.symbol}
                       </span>
@@ -214,7 +262,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
             ))}
           </tbody>
         </table>
-        {!rows.length ? (
+        {!columns.length ? (
           <p role="status" className="p-4 text-sm text-slate-400">
             {query.isPending
               ? "Loading trial artifacts…"
@@ -230,11 +278,11 @@ function RunWaffleContents({ run }: { run: RunView }) {
         <Button variant="ghost" disabled={!page} onClick={() => setTaskPage(page - 1)}>
           Previous tasks
         </Button>{" "}
-        {rows.length ? page * TASKS + 1 : 0}–{Math.min((page + 1) * TASKS, rows.length)}{" "}
-        / {rows.length} task rows{" "}
+        {columns.length ? page * TASKS + 1 : 0}–
+        {Math.min((page + 1) * TASKS, columns.length)} / {columns.length} task columns{" "}
         <Button
           variant="ghost"
-          disabled={(page + 1) * TASKS >= rows.length}
+          disabled={(page + 1) * TASKS >= columns.length}
           onClick={() => setTaskPage(page + 1)}
         >
           Next tasks

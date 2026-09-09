@@ -540,3 +540,58 @@ Approved at: 2026-09-09T10:22:49.101525+00:00
 - No merge, default-branch push, deployment, setup or benchmark launch, inference,
   credential movement, resource mutation, or result publication. Preserve
   unrelated work and existing validation thresholds; disclose check failures.
+
+### Scannable results, repetition matrix, and pricing scenarios (2026-09-09)
+
+Approved at: 2026-09-09T11:15:09.705718+00:00
+
+- Direct approval: the user requested a new PR improving run overview/detail
+  summaries, rounded reward and unavailable placeholders, million-scale token
+  counts, affected-trial and infrastructure-failure summaries, editable token
+  rates including long context, and tasks across columns with repeats as rows.
+- Implement and test on current main in an isolated worktree. Keep the overview
+  a list and the matrix inside individual run details. Preserve native outcomes
+  and identities, and label display repetition slots honestly.
+- Pricing controls are presentation-only USD-per-million input, output, cached,
+  and long-context scenarios. Do not alter recorded spend, billing, JobConfig,
+  cost guards, or run behavior. Where native request-tier usage is unavailable,
+  report the limitation rather than derive it from cumulative usage.
+- Categorize only exact reviewed native exception types for display, retaining
+  unknown/partial evidence and distinguishing verifier outcomes from exceptions;
+  do not infer root cause or retry eligibility. No trajectory/log parsing.
+- Local commits, privacy-reviewed topic-branch push, and one new PR are approved.
+  No deployment, merge, benchmark or setup launch, inference, credential movement,
+  resource change, upstream publication, or lowering validation thresholds.
+
+### Synthetic results demo and fast-agent starter refresh (2026-09-09)
+
+Approved at: 2026-09-09T12:05:26.714588+00:00
+
+- Direct approval: the user requested an interactive demo of the new results
+  feature, the default fast-agent install version 0.10.21, their supplied exact
+  execution script, and committing and pushing those changes.
+- Serve the current feature frontend on loopback only with synthetic run, usage,
+  exception, and repeat data. Keep preview helpers outside tracked source, reject
+  mutations, and do not contact the hosted control service or load credentials.
+- Update the reviewed fast-agent starter setup and execution templates consistently
+  across browser/server copies; preserve existing saved recipes and immutable
+  records. Test the requested script with local command stubs, not inference.
+- Commit and push on the existing scannable-results PR branch after privacy
+  review. Keep validation thresholds and known limitations explicit.
+- No merge, deployment, live setup/benchmark launch, inference, credential transfer,
+  public listener, resource creation, or unrelated configuration change.
+
+### Concise results tooltips (2026-09-09)
+
+Approved at: 2026-09-09T12:22:20.211230+00:00
+
+- Direct approval: after reviewing the synthetic demo, the user requested
+  radically simpler tooltip text with main details only, then commit/push
+  and PR publication. Continue the existing open scannable-results PR.
+- Shorten trial and summary tooltips without changing outcome semantics. Keep
+  essential stale/unknown indicators; move explanatory caveats to existing
+  legend/help rather than repeating them on each square.
+- Test the presentation, rebuild the loopback-only synthetic demo, commit,
+  and privacy-review the push and PR update. Preserve known validation limits.
+- No merge, deployment, live runs, inference, credential movement, resource
+  creation, public demo listener, or changes to stored evidence.

@@ -2,13 +2,16 @@ import { fastAgentWorkbenchStarter } from "@harbor-hf/control-core";
 import { describe, expect, it } from "vitest";
 import { fastAgentStarter, fxStarter } from "../src/workbench";
 
-describe("historical Workbench starter recipes", () => {
+describe("Workbench starter recipes", () => {
   it("keeps the pinned Fast Agent installer and direct route bindings", () => {
     expect(fastAgentStarter.setup_command).toContain("uv_version=0.12.5");
     expect(fastAgentStarter.setup_command).toContain(
       "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
     );
-    expect(fastAgentStarter.setup_command).toContain("fast-agent-mcp==0.10.20");
+    expect(fastAgentStarter.setup_command).toContain("fast-agent-mcp==0.10.21");
+    expect(fastAgentStarter.setup_command).toBe(
+      fastAgentWorkbenchStarter.setup_command,
+    );
     expect(fastAgentStarter.run_command).toBe(fastAgentWorkbenchStarter.run_command);
     expect(fastAgentStarter.run_command).toContain('HF_TOKEN="$OPENAI_API_KEY"');
     expect(fastAgentStarter.run_command).toContain('SSL_CERT_FILE="$ca_bundle"');
