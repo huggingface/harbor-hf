@@ -630,3 +630,15 @@ Implementation completed on 2026-09-09; branch/PR publication remains parent-own
   credential movement or resource mutation was performed by this integration.
 
 Completed on 2026-09-09: opened draft PR #198 (https://github.com/huggingface/harbor-hf/pull/198) after source, image and privacy review. It consumes the reviewed upstream SDK fix as a hash-locked release-wheel backport. Both local image environments passed 40 offline terminal regressions; existing coverage/tooling blockers are disclosed. No merge, deployment, image/package publication or remote workload was performed.
+
+
+### PR #198 upstream-main conflict resolution (2026-09-09)
+
+Status: approved
+
+Approved at: 2026-09-09T18:23:27.991611+00:00
+
+- Direct approval: the user asked to resolve the reported conflicts; the clarified scope is merging upstream main into the existing affected topic branch, not merging the PR into main.
+- Merge latest upstream main into the existing PR #198 branch without rebase or force push, resolve conflicts preserving unrelated upstream changes and the reviewed SDK backport, run local checks, commit and push to the existing PR.
+- Inspect SDK PR #4851 read-only; it is mergeable and no SDK branch modification is included.
+- No PR merge, deployment, image/package publication, new issue or PR, remote Jobs, inference, credential movement, resource changes, or weakened validation gates. Stop if upstream dependency changes supersede or conflict with the backport.
