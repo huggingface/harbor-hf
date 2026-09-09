@@ -93,6 +93,39 @@ async function runRecipe(
 }
 
 describe("fast-agent native HF recipe", () => {
+  it("matches the exact requested starter script without template expansion", () => {
+    const expected = [
+      "set -eu",
+      "",
+      'case "$AGENT_MODEL" in',
+      '  hf.*/*:*) harness_model="$AGENT_MODEL" ;;',
+      '  openai/*/*:*) harness_model="hf.${AGENT_MODEL#openai/}" ;;',
+      '  *) printf "%s\\n" "Expected a full Hub model ID and HF provider from Workbench" >&2; exit 2 ;;',
+      "esac",
+      "",
+      ': "${OPENAI_API_KEY:?Injected inference key is missing or empty}"',
+      "",
+      'ca_bundle="$("$AGENT_HOME/venv/bin/python" -c \'import certifi; print(certifi.where())\')"',
+      'test -r "$ca_bundle" || {',
+      '  printf "%s\\n" "certifi CA bundle is not readable" >&2',
+      "  exit 1",
+      "}",
+      "",
+      'HF_TOKEN="$OPENAI_API_KEY" \\',
+      'SSL_CERT_FILE="$ca_bundle" \\',
+      '"$AGENT_HOME/venv/bin/fast-agent" go \\',
+      '  --model "$harness_model" \\',
+      '  --prompt-file "$TASK_INSTRUCTION_PATH" \\',
+      '  --workspace "$TASK_WORKSPACE" \\',
+      '  --home "$AGENT_HOME/runtime" \\',
+      '  --results "$AGENT_RESULTS_PATH" \\',
+      '  --trajectory-output "$AGENT_TRAJECTORY_PATH" \\',
+      "  --shell \\",
+      "  --quiet",
+    ].join("\n");
+    expect(fastAgentWorkbenchStarter.run_command).toBe(expected);
+  });
+
   it.each([
     ["example-org/model-one", "together"],
     ["example-org/model-two", "deepinfra"],
@@ -149,6 +182,8 @@ describe("fast-agent native HF recipe", () => {
       ).rejects.toMatchObject({
         code: certificate === "lookup-failed" ? 6 : 1,
         stdout: "",
+        stderr:
+          certificate === "lookup-failed" ? "" : "certifi CA bundle is not readable\n",
       });
     },
   );

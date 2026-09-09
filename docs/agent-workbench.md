@@ -38,7 +38,7 @@ record non-attestable, so the operator must run the test again.
 
 ## Fast-Agent starter connection defaults
 
-The Fast-Agent 0.10.20 starter uses its native HF provider routing and does not
+The Fast-Agent 0.10.21 starter uses its native HF provider routing and does not
 pass `--base-url`. The existing `MODEL_BASE_URL` binding remains only because
 hosted launch admission currently requires a `model_base_url` binding.
 
@@ -132,7 +132,7 @@ records, retry settings, hardware, budgets, and attempts are not rewritten.
 
 ## Fast-agent HF routing
 
-The reviewed fast-agent starter installs `fast-agent-mcp==0.10.20` and uses
+The reviewed fast-agent starter installs `fast-agent-mcp==0.10.21` and uses
 fast-agent's native Hugging Face adapter.
 The guided Run form separates evaluation labels from execution:
 
