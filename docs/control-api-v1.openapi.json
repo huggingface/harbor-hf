@@ -132,6 +132,22 @@
               }
             }
           },
+          "workbench_recipe": {
+            "description": "Immutable Workbench display provenance. Recipe revision is submission.harness.version; execution remains in harbor_job_config.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                "minLength": 2,
+                "maxLength": 80
+              }
+            }
+          },
           "harbor_job_config": {
             "type": "object"
           }
