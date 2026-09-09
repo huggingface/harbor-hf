@@ -501,6 +501,15 @@ export function RunsPage() {
   const query = useRuns();
   const [searchParams, setSearchParams] = useSearchParams();
   const { role, q, archive } = readRunFilters(searchParams);
+  function setFilter(key: "q" | "role" | "archive", value: string) {
+    // BrowserRouter writes history synchronously, before its transition commits.
+    // Read that URL at event time so rapid edits and Back/Forward never merge
+    // against an old render. Keep React Router as the only navigation writer.
+    setSearchParams(
+      updateRunFilters(new URLSearchParams(window.location.search), key, value),
+      { replace: key === "q" },
+    );
+  }
   const { preferences } = usePricingPreferences();
   const rows = useMemo(
     () =>
@@ -672,11 +681,7 @@ export function RunsPage() {
             id="runs-archive"
             className="rounded border border-slate-700 bg-slate-950 p-2"
             value={archive}
-            onChange={(event) =>
-              setSearchParams(
-                updateRunFilters(searchParams, "archive", event.target.value),
-              )
-            }
+            onChange={(event) => setFilter("archive", event.target.value)}
           >
             <option value="not-archived">Not archived</option>
             <option value="archived">Archived</option>
@@ -689,11 +694,7 @@ export function RunsPage() {
             id="runs-role"
             className="rounded border border-slate-700 bg-slate-950 p-2"
             value={role}
-            onChange={(event) =>
-              setSearchParams(
-                updateRunFilters(searchParams, "role", event.target.value),
-              )
-            }
+            onChange={(event) => setFilter("role", event.target.value)}
           >
             <option value="all">All</option>
             <option value="diagnostic">Diagnostic</option>
@@ -708,11 +709,7 @@ export function RunsPage() {
             className="rounded border border-slate-700 bg-slate-950 p-2"
             placeholder="Run ID, recipe, model, or benchmark"
             value={q}
-            onChange={(event) =>
-              setSearchParams(updateRunFilters(searchParams, "q", event.target.value), {
-                replace: true,
-              })
-            }
+            onChange={(event) => setFilter("q", event.target.value)}
           />
         </label>
       </div>

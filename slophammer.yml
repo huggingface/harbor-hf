@@ -14,6 +14,7 @@ python:
     paths:
       - src/harbor_hf
       - packages/harbor-hf-agents/src/harbor_hf_agents
+      - packages/harbor-hf-agents/sdk-backport
     copied_blocks:
       enabled: true
       min_tokens: 100
