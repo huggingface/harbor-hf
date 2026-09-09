@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { Link } from "react-router-dom";
 import type { RunView } from "./api";
+import { categoryCounts, exceptionCategory } from "./exception-categories";
 import { Badge, Card } from "./ui";
 
 interface ExceptionGroup {
@@ -88,13 +89,30 @@ function summary(evidence: ExceptionProjection): string {
   return evidence.complete ? "No recorded exceptions" : "Unknown / unavailable";
 }
 
+function evidenceCount(count: number, complete: boolean): string {
+  return complete ? String(count) : count > 0 ? `≥${count}` : "-";
+}
+
 export function RunDiagnosticsSummary({ run }: { run: RunView }) {
   const evidence = projectRunExceptions(run.result);
   const runId = segment(run.record.run_id);
+  const counts = categoryCounts(evidence.groups);
   const label = (
     <>
       <span className="block text-xs text-slate-400">Harbor-reported exceptions</span>
       <span>{summary(evidence)}</span>
+      <span
+        className="block text-xs text-slate-400"
+        title="Exact environment/transport and provider exception types only; not an inferred infrastructure cause"
+      >
+        Infra-related trials: {evidenceCount(counts.infra, evidence.complete)} ·
+        unclassified:{" "}
+        {evidenceCount(
+          counts.categories.find((entry) => entry.category === "Unclassified")?.count ??
+            0,
+          evidence.complete,
+        )}
+      </span>
       {evidence.complete && evidence.affectedTrials === 0 && (
         <span className="block text-xs text-slate-400">{SCORING_CAVEAT}</span>
       )}
@@ -143,6 +161,14 @@ export function RunDiagnostics({ run }: { run: RunView }) {
     <Card id="diagnostics" role="region" aria-label="Harbor-reported exceptions">
       <h2 className="text-lg font-semibold">Harbor-reported exceptions</h2>
       <p>{summary(evidence)}</p>
+      <p className="text-sm text-slate-400">
+        {categoryCounts(evidence.groups)
+          .categories.map(
+            ({ category, count }) =>
+              `${category}: ${evidence.complete ? "" : "at least "}${count}`,
+          )
+          .join(" · ")}
+      </p>
       {!evidence.complete && (
         <p className="text-sm text-slate-400">
           Exception evidence is missing or malformed. Counts shown cover only valid
@@ -158,6 +184,7 @@ export function RunDiagnostics({ run }: { run: RunView }) {
               <Badge>{group.type}</Badge> {evidence.complete ? "" : "At least "}
               {group.trials.length} {group.trials.length === 1 ? "trial" : "trials"}
             </h3>
+            <p className="text-xs text-slate-400">{exceptionCategory(group.type)}</p>
             <BoundedItems
               items={group.trials}
               label={`trial names for ${group.type}`}
@@ -181,9 +208,10 @@ export function RunDiagnostics({ run }: { run: RunView }) {
       />
       <p className="mt-3 text-sm text-slate-400">
         Completed includes errored trials. Infrastructure classification is not recorded
-        by pinned Harbor and remains unknown. These are native exception groups, not
-        root-cause classifications. This read-only view does not retry trials or modify
-        scores. {SCORING_CAVEAT}
+        by pinned Harbor and remains unknown. Root cause is not inferred. Display
+        categories use only reviewed exact exception types; counts may overlap across
+        categories. These are native exception groups, not root-cause classifications.
+        This read-only view does not retry trials or modify scores. {SCORING_CAVEAT}
       </p>
     </Card>
   );

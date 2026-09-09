@@ -835,12 +835,12 @@ for (const width of [1440, 390]) {
     );
     await page.goto(`/runs/${runId}`);
     const waffle = page.getByRole("region", { name: "Trial progress waffle" });
-    await expect(waffle.getByRole("rowheader")).toHaveCount(1);
+    await expect(waffle.getByRole("rowheader")).toHaveCount(60);
     await expect(waffle.getByRole("cell")).toHaveCount(60);
     const zero = page.getByRole("link", { name: `trial-a in ${runId}: Zero reward` });
     const bounds = await zero.boundingBox();
-    expect(bounds?.width).toBe(14);
-    expect(bounds?.height).toBe(14);
+    expect(bounds?.width).toBe(24);
+    expect(bounds?.height).toBe(24);
     await zero.focus();
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).toContainText("not an attempt ordinal");
@@ -980,11 +980,15 @@ for (const launchPath of ["overview", "workbench"] as const) {
     await page.goto(`/runs/${runId}`);
     const waffle = page.getByRole("region", { name: "Trial progress waffle" });
     await expect(waffle.getByRole("rowheader")).toHaveCount(3);
+    await expect(
+      waffle.getByText("3 tasks × 3 repeat slots · 9 planned"),
+    ).toBeVisible();
     for (const task of tasks) {
-      const row = waffle
-        .getByRole("row")
-        .filter({ has: page.getByText(task, { exact: true }) });
-      await expect(row).toHaveCount(1);
+      await expect(
+        waffle.getByRole("columnheader", { name: new RegExp(task) }),
+      ).toHaveCount(1);
+    }
+    for (const row of await waffle.locator("tbody tr").all()) {
       await expect(row.getByRole("cell")).toHaveCount(3);
     }
     for (const trial of observations) {
@@ -1052,8 +1056,7 @@ test("native waffle polls preserve positions and pending slots within one run", 
   await page.goto(`/runs/${runId}`);
   const row = page
     .getByRole("region", { name: "Trial progress waffle" })
-    .locator("tbody tr")
-    .first();
+    .locator("tbody");
   const original = page.getByRole("link", { name: `trial-z in ${runId}: Completed` });
   await expect(original).toBeVisible();
   await expect(row.getByRole("button", { name: /No mapped observation/ })).toHaveCount(
@@ -1113,8 +1116,7 @@ test("nine lock entries stay nine squares through partial and replacement observ
   await page.goto(`/runs/${runId}`);
   const row = page
     .getByRole("region", { name: "Trial progress waffle" })
-    .locator("tbody tr")
-    .first();
+    .locator("tbody");
   await expect(page.getByText(/Planned total unknown \(no job lock\)/)).toBeVisible();
   await expect(row.locator("td")).toHaveCount(1);
   locked = true;
@@ -1330,3 +1332,384 @@ test("Runs stays a list with original counts and only opening detail requests pr
   expect(identity?.y).toBeGreaterThan((contents?.y ?? 0) + (contents?.height ?? 0));
   await expect(page.getByRole("link", { name: trialName, exact: true })).toBeVisible();
 });
+
+for (const width of [1440, 390]) {
+  test(`matrix 89 columns by five slots at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await mockControl(page);
+    const timestamp = new Date().toISOString();
+    const tasks = Array.from({ length: 89 }, (_, index) => ({
+      name: `synthetic-task-${String(index).padStart(2, "0")}`,
+      digest: `sha256:${"d".repeat(64)}`,
+    }));
+    const nativeTrials = tasks.flatMap((task, taskIndex) =>
+      Array.from({ length: 5 }, (_, slot) => {
+        const index = taskIndex * 5 + slot;
+        const exception = index < 15 ? "ApiOverloadedError" : null;
+        return {
+          trial_name: `${task.name}__repeat-${slot + 1}`,
+          config: null,
+          lock: { task },
+          reward: exception ? null : index % 2 ? 1 : 0,
+          cost_usd: 0.12,
+          result: {
+            task_name: task.name,
+            finished_at: timestamp,
+            exception_info: exception ? { exception_type: exception } : null,
+            verifier_result: exception
+              ? null
+              : { rewards: { reward: index % 2 ? 1 : 0 } },
+          },
+        };
+      }),
+    );
+    const realistic = {
+      ...run,
+      status: "finished",
+      record: {
+        ...record,
+        harbor_job_config: { ...record.harbor_job_config, n_attempts: 5 },
+      },
+      result: {
+        ...summaryResult,
+        n_total_trials: 445,
+        stats: {
+          ...summaryResult.stats,
+          n_completed_trials: 445,
+          n_errored_trials: 15,
+          evals: {
+            synthetic: {
+              ...summaryResult.stats.evals.synthetic,
+              n_errors: 15,
+              exception_stats: {
+                ApiOverloadedError: nativeTrials.slice(0, 15).map((t) => t.trial_name),
+              },
+            },
+          },
+        },
+      },
+    };
+    await page.route(`**/api/v1/runs/${runId}`, (route) => json(route, realistic));
+    await page.route("**/api/v1/runs/*/progress", (route) =>
+      json(route, {
+        observed_at: timestamp,
+        jobs_observed_at: timestamp,
+        jobs: [],
+        trials: nativeTrials,
+        lock: {
+          trials: tasks.flatMap((task) => Array.from({ length: 5 }, () => ({ task }))),
+        },
+      }),
+    );
+    await page.goto(`/runs/${runId}`);
+    await expect(
+      page.getByLabel("Input incl. cache tokens: 20484123", { exact: true }),
+    ).toHaveText("20.484M");
+    await page.screenshot({
+      path: testInfo.outputPath(`synthetic-summary-${width}.png`),
+    });
+    const matrix = page.getByRole("region", { name: "Trial progress waffle" });
+    await expect(matrix.getByRole("columnheader")).toHaveCount(90);
+    await expect(matrix.getByRole("rowheader")).toHaveCount(5);
+    await expect(matrix.getByRole("cell")).toHaveCount(445);
+    for (const row of await matrix.locator("tbody tr").all())
+      await expect(row.locator("td")).toHaveCount(89);
+    await matrix.scrollIntoViewIfNeeded();
+    const first = matrix.getByRole("button", { name: /Task 1: synthetic-task-00/ });
+    await first.hover();
+    await expect(page.getByRole("tooltip")).toContainText("synthetic-task-00");
+    await page.mouse.move(0, 0);
+    await expect(
+      matrix.getByText("Infra-related trials: 15 · unclassified: 0", { exact: true }),
+    ).toBeVisible();
+    await expect(matrix.getByRole("link", { name: /: Errored$/ })).toHaveCount(15);
+    await expect(matrix.getByRole("link", { name: /: Zero reward$/ })).not.toHaveCount(
+      0,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(`synthetic-matrix-${width}.png`),
+    });
+    await page
+      .getByText("Pricing scenarios · editable USD / million tokens", { exact: true })
+      .click();
+    await fillScenario(page);
+    await page
+      .getByText("Pricing scenarios · editable USD / million tokens", { exact: true })
+      .scrollIntoViewIfNeeded();
+    await page
+      .getByText("Pricing scenarios · editable USD / million tokens", { exact: true })
+      .locator("..")
+      .screenshot({
+        path: testInfo.outputPath(`synthetic-pricing-${width}.png`),
+      });
+    const last = matrix.getByRole("button", { name: /Task 89:/ });
+    await last.focus();
+    await expect(page.getByRole("tooltip")).toContainText("synthetic-task-88");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  });
+}
+
+const summaryResult = {
+  n_total_trials: 89,
+  stats: {
+    n_completed_trials: 89,
+    n_errored_trials: 0,
+    n_input_tokens: 20_484_123,
+    n_output_tokens: 0,
+    n_cache_tokens: 1_000_000,
+    cost_usd: 12.34,
+    evals: {
+      synthetic: {
+        metrics: [{ mean: 0.5168539325842697 }],
+        reward_stats: { reward: {} },
+        exception_stats: {},
+      },
+    },
+  },
+};
+
+async function summaryFixture(page: Page, result: unknown = summaryResult) {
+  await mockControl(page);
+  const value = { ...run, status: "finished", result };
+  await page.route("**/api/v1/runs", (route) => json(route, { runs: [value] }));
+  await page.route(`**/api/v1/runs/${runId}`, (route) => json(route, value));
+}
+
+async function fillScenario(page: Page) {
+  for (const [label, value] of [
+    ["Standard input", "2"],
+    ["Standard output", "8"],
+    ["Standard cached", "0.5"],
+    ["Long-context input", "4"],
+    ["Long-context output", "16"],
+    ["Long-context cached", "1"],
+  ])
+    await page.getByLabel(`${label} (USD/M)`, { exact: true }).fill(value);
+}
+
+test("summary exact tooltip, million tokens and complete progress", async ({
+  page,
+}) => {
+  await summaryFixture(page);
+  await page.goto(`/runs/${runId}`);
+  const score = page.getByLabel("Score · reward mean: 0.5168539325842697", {
+    exact: true,
+  });
+  await expect(score).toHaveText("0.517");
+  await score.locator("xpath=ancestor::span[@tabindex='0'][1]").focus();
+  await expect(page.getByRole("tooltip")).toHaveText(
+    "Score · reward mean: 0.5168539325842697",
+  );
+  await expect(
+    page.getByLabel("Input incl. cache tokens: 20484123", { exact: true }),
+  ).toHaveText("20.484M");
+  await expect(page.getByLabel("Output tokens: 0", { exact: true })).toHaveText(
+    "0.000M",
+  );
+  await expect(page.getByText("89 / 89", { exact: true })).toBeVisible();
+  await expect(page.getByText("100%", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByText("Infra-related trials: 0 · unclassified: 0", { exact: true })
+      .first(),
+  ).toBeVisible();
+});
+
+test("missing summaries do not masquerade as zeros", async ({ page }) => {
+  await summaryFixture(page, null);
+  await page.goto(`/runs/${runId}`);
+  for (const label of ["Score", "Input incl. cache tokens", "Output tokens"])
+    await expect(page.getByLabel(`${label}: unavailable`, { exact: true })).toHaveText(
+      "-",
+    );
+  await expect(
+    page
+      .getByText("Infra-related trials: - · unclassified: -", { exact: true })
+      .first(),
+  ).toBeVisible();
+  await expect(page.getByText("100%", { exact: true })).toHaveCount(0);
+});
+
+test("pricing is cache-inclusive, hypothetical, retained and GET-only", async ({
+  page,
+}) => {
+  const pricingResult = {
+    ...summaryResult,
+    stats: { ...summaryResult.stats, n_output_tokens: 250_000 },
+  };
+  await summaryFixture(page, pricingResult);
+  let reads = 0;
+  await page.route(`**/api/v1/runs/${runId}`, (route) => {
+    reads++;
+    return json(route, { ...run, result: pricingResult });
+  });
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/") && request.method() !== "GET")
+      writes.push(request.method());
+  });
+  await page.goto(`/runs/${runId}`);
+  await page
+    .getByText("Pricing scenarios · editable USD / million tokens", { exact: true })
+    .click();
+  const standard = page
+    .locator("dd")
+    .filter({ has: page.locator('output[aria-label^="All-standard scenario"]') });
+  await expect(standard).toHaveText("-");
+  await fillScenario(page);
+  await expect(standard.locator("output")).toHaveAttribute(
+    "title",
+    "All-standard scenario USD (reported usage; not billing): 41.468246",
+  );
+  const long = page.locator('output[aria-label^="All-long-context scenario"]');
+  await expect(long).toHaveAttribute(
+    "title",
+    "All-long-context scenario USD (reported usage; not billing): 82.936492",
+  );
+  await expect(
+    page.getByLabel("Reported USD (may be partial; not billing): 12.34", {
+      exact: true,
+    }),
+  ).toHaveText("$12.34");
+  const threshold = page.getByLabel(/Long context when request input exceeds/);
+  for (const value of ["1", "999999999"]) {
+    await threshold.fill(value);
+    await expect(standard.locator("output")).toHaveAttribute(
+      "title",
+      "All-standard scenario USD (reported usage; not billing): 41.468246",
+    );
+    await expect(long).toHaveAttribute(
+      "title",
+      "All-long-context scenario USD (reported usage; not billing): 82.936492",
+    );
+    await expect(
+      page.locator('output[aria-label^="Per-request tier usage"]'),
+    ).toHaveText("-");
+  }
+  const before = reads;
+  await expect.poll(() => reads, { timeout: 15000 }).toBeGreaterThan(before);
+  await expect(page.getByLabel("Standard input (USD/M)", { exact: true })).toHaveValue(
+    "2",
+  );
+  await page.getByRole("link", { name: "Runs", exact: true }).click();
+  await page.locator(`a[href="/runs/${runId}"]`).first().click();
+  await page
+    .getByText("Pricing scenarios · editable USD / million tokens", { exact: true })
+    .click();
+  await expect(page.getByLabel("Standard input (USD/M)", { exact: true })).toHaveValue(
+    "2",
+  );
+  await expect(threshold).toHaveValue("999999999");
+  for (const value of ["-1", "1000001"]) {
+    await page.getByLabel("Standard input (USD/M)", { exact: true }).fill(value);
+    await expect(
+      page.getByLabel("Standard input (USD/M)", { exact: true }),
+    ).toHaveAttribute("aria-invalid", "true");
+    await expect(standard).toHaveText("-");
+  }
+  await page.getByLabel("Standard input (USD/M)", { exact: true }).fill("");
+  await expect(standard).toHaveText("-");
+  for (const label of ["Standard input", "Standard output", "Standard cached"])
+    await page.getByLabel(`${label} (USD/M)`, { exact: true }).fill("0");
+  await expect(standard).toHaveText("$0.0000");
+  expect(writes).toEqual([]);
+});
+
+test("list sorts raw scores and tokens rather than rounded labels", async ({
+  page,
+}, testInfo) => {
+  await mockControl(page);
+  const rows = [
+    ["synthetic-low", 0.51681, 20_484_101],
+    ["synthetic-high", 0.51689, 20_484_199],
+    ["synthetic-zero", 0, 0],
+    ["synthetic-missing", null, null],
+  ].map(([id, score, tokens]) => ({
+    ...run,
+    status: "finished",
+    record: {
+      ...record,
+      run_id: id,
+      harbor_job_config: {
+        ...record.harbor_job_config,
+        agents: [{ name: "pi", model_name: id }],
+      },
+      submission: { ...record.submission, model: { ...record.submission.model, id } },
+    },
+    result: {
+      stats: {
+        n_input_tokens: tokens,
+        evals: { synthetic: { metrics: [{ mean: score }] } },
+      },
+    },
+  }));
+  await page.route("**/api/v1/runs", (route) => json(route, { runs: rows }));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/runs");
+  const names = () =>
+    page
+      .locator('tbody a[href^="/runs/synthetic-"]:not([href*="#"])')
+      .evaluateAll((links) =>
+        links.map((link) => link.getAttribute("href")?.replace("/runs/", "")),
+      );
+  for (const column of ["Score", "Input incl. cache (M)"]) {
+    const header = page.getByRole("columnheader", { name: column, exact: true });
+    await header.getByRole("button").click();
+    const first = await names();
+    await header.getByRole("button").click();
+    const second = await names();
+    expect(first.indexOf("synthetic-low") < first.indexOf("synthetic-high")).not.toBe(
+      second.indexOf("synthetic-low") < second.indexOf("synthetic-high"),
+    );
+  }
+  await expect(page.getByLabel("Score · mean: 0", { exact: true })).toHaveText("0.000");
+  await expect(page.getByLabel("Score: unavailable", { exact: true })).toHaveText("-");
+  await expect(
+    page.getByLabel("Input incl. cache (M) tokens: 0", { exact: true }),
+  ).toHaveText("0.000M");
+  await expect(
+    page.getByLabel("Input incl. cache (M) tokens: unavailable", { exact: true }),
+  ).toHaveText("-");
+  await page.screenshot({
+    path: testInfo.outputPath("synthetic-list-desktop.png"),
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.screenshot({
+    path: testInfo.outputPath("synthetic-list-mobile.png"),
+    fullPage: true,
+  });
+});
+
+for (const cache of [0, null]) {
+  test(`pricing preserves zero versus missing native usage (${cache})`, async ({
+    page,
+  }) => {
+    await summaryFixture(page, {
+      stats: {
+        n_input_tokens: 0,
+        n_output_tokens: 0,
+        n_cache_tokens: cache,
+        cost_usd: 0,
+      },
+    });
+    await page.goto(`/runs/${runId}`);
+    await page
+      .getByText("Pricing scenarios · editable USD / million tokens", { exact: true })
+      .click();
+    await fillScenario(page);
+    await expect(
+      page.locator('output[aria-label^="All-standard scenario"]'),
+    ).toHaveText(cache === null ? "-" : "$0.0000");
+    await expect(
+      page.locator('output[aria-label^="All-long-context scenario"]'),
+    ).toHaveText(cache === null ? "-" : "$0.0000");
+    await expect(
+      page.getByLabel("Reported USD (may be partial; not billing): 0", { exact: true }),
+    ).toHaveText("$0.0000");
+  });
+}

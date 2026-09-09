@@ -58,9 +58,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("renders one task row with five distinct repeated trial squares and focus details", async () => {
+it("renders one task column with five distinct repetition rows and focus details", async () => {
   show(run(), { "run-a": progress() });
-  expect(screen.getAllByRole("rowheader")).toHaveLength(1);
+  expect(screen.getAllByRole("rowheader")).toHaveLength(5);
   expect(screen.getAllByRole("cell")).toHaveLength(5);
   const zero = screen.getByRole("link", { name: "trial-a in run-a: Zero reward" });
   expect(zero).toHaveAttribute("href", "/runs/run-a/trials/trial-a");
@@ -69,39 +69,69 @@ it("renders one task row with five distinct repeated trial squares and focus det
   expect(screen.getByRole("tooltip")).toHaveTextContent("Reward: 0");
   const row = zero.closest("tr");
   if (!row) throw Error("row missing");
-  expect(within(row).getAllByRole("button")).toHaveLength(4);
+  expect(within(row).getAllByRole("cell")).toHaveLength(1);
 });
-it("paginates 89 task rows without splitting five repeats and filters whole rows", async () => {
+it.each([1, 5])(
+  "shows 89 task columns and %i complete repeat rows",
+  async (repeats) => {
+    const value = progress();
+    value.lock = {
+      trials: Array.from({ length: 89 }, (_, index) =>
+        Array.from({ length: repeats }, () => ({
+          task: {
+            name: `task-${String(index).padStart(2, "0")}`,
+            digest: "sha256:input",
+          },
+        })),
+      ).flat(),
+    };
+    show(run(), { "run-a": value });
+    expect(screen.getAllByRole("columnheader")).toHaveLength(90);
+    expect(screen.getAllByRole("rowheader")).toHaveLength(repeats);
+    expect(screen.getAllByRole("cell")).toHaveLength(89 * repeats);
+    for (const header of screen.getAllByRole("rowheader")) {
+      const row = header.closest("tr");
+      if (!row) throw Error("row missing");
+      expect(within(row).getAllByRole("cell")).toHaveLength(89);
+    }
+    const user = userEvent.setup();
+    const header = screen.getByRole("button", { name: /Task 89: task-88/ });
+    await user.hover(within(header).getByText("89"));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("task-88");
+    await user.unhover(within(header).getByText("89"));
+    act(() => header.focus());
+    expect(screen.getByRole("tooltip")).toHaveTextContent("sha256:input");
+    await user.type(screen.getByRole("searchbox"), "task-88");
+    expect(screen.getAllByRole("rowheader")).toHaveLength(repeats);
+    expect(screen.getAllByRole("cell")).toHaveLength(repeats);
+    expect(screen.getByRole("button", { name: /Task 89: task-88/ })).toHaveTextContent(
+      "89",
+    );
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "no-match");
+    expect(screen.queryAllByRole("rowheader")).toHaveLength(0);
+    expect(screen.getByText("No trials match your search.")).toBeVisible();
+  },
+);
+it("paginates whole task columns at 100 without hiding repeat rows", async () => {
   const value = progress();
   value.lock = {
-    trials: Array.from({ length: 89 }, (_, index) =>
+    trials: Array.from({ length: 101 }, (_, index) =>
       Array.from({ length: 5 }, () => ({
-        task: {
-          name: `task-${String(index).padStart(2, "0")}`,
-          digest: "sha256:input",
-        },
+        task: { name: `task-${String(index).padStart(3, "0")}`, digest: "input" },
       })),
     ).flat(),
   };
-  const fetch = vi.fn();
-  vi.stubGlobal("fetch", fetch);
   show(run(), { "run-a": value });
-  expect(screen.getAllByRole("rowheader")).toHaveLength(25);
-  expect(screen.getAllByRole("cell")).toHaveLength(125);
-  expect(fetch).not.toHaveBeenCalled();
+  expect(screen.getAllByRole("cell")).toHaveLength(500);
   const user = userEvent.setup();
-  for (let i = 0; i < 3; i++)
-    await user.click(screen.getByRole("button", { name: "Next tasks" }));
-  expect(screen.getAllByRole("rowheader")).toHaveLength(14);
-  expect(screen.getAllByRole("cell")).toHaveLength(70);
-  await user.click(screen.getByRole("button", { name: "Previous tasks" }));
-  expect(screen.getAllByRole("rowheader")).toHaveLength(25);
-  await user.type(screen.getByRole("searchbox"), "task-88");
-  expect(screen.getAllByRole("rowheader")).toHaveLength(1);
+  await user.click(screen.getByRole("button", { name: "Next tasks" }));
   expect(screen.getAllByRole("cell")).toHaveLength(5);
-  await user.clear(screen.getByRole("searchbox"));
-  await user.type(screen.getByRole("searchbox"), "no-match");
-  expect(screen.getByText("No trials match your search.")).toBeVisible();
+  expect(screen.getAllByRole("rowheader")).toHaveLength(5);
+  await user.click(screen.getByRole("button", { name: "Previous tasks" }));
+  expect(screen.getAllByRole("cell")).toHaveLength(500);
+  await user.type(screen.getByRole("searchbox"), "task-100");
+  expect(screen.getAllByRole("cell")).toHaveLength(5);
 });
 it("shows unavailable and cached-stale observations and retries", async () => {
   vi.stubGlobal(
@@ -170,12 +200,23 @@ it("renders nine independently linked identities for three repeated source names
   show(run(), { "run-a": value });
   expect(screen.getAllByRole("cell")).toHaveLength(9);
   expect(screen.getAllByRole("rowheader")).toHaveLength(3);
-  for (const task of ["task-a", "task-b", "task-c"]) {
-    const row = screen
-      .getByRole("rowheader", { name: `${task} sha256:input` })
-      .closest("tr");
-    if (!row) throw Error("row missing");
-    expect(within(row).getAllByRole("cell")).toHaveLength(3);
+  expect(screen.getByText("3 tasks × 3 repeat slots · 9 planned")).toBeVisible();
+  for (const [index, task] of ["task-a", "task-b", "task-c"].entries()) {
+    expect(
+      screen.getByRole("columnheader", { name: `${task} sha256:input` }),
+    ).toBeVisible();
+    for (const header of screen.getAllByRole("rowheader")) {
+      const row = header.closest("tr");
+      if (!row) throw Error("row missing");
+      const cells = within(row).getAllByRole("cell");
+      expect(cells).toHaveLength(3);
+      const cell = cells[index];
+      if (!cell) throw Error("cell missing");
+      expect(within(cell).getByRole("link")).toHaveAttribute(
+        "href",
+        expect.stringContaining(task),
+      );
+    }
   }
   for (const trial of value.trials) {
     expect(
@@ -269,7 +310,8 @@ it("keeps the same native DOM identity and position across incremental polls and
   );
   expect(original.closest("td")?.cellIndex).toBe(1);
   const arrived = screen.getByRole("link", { name: "trial-a in run-a: Zero reward" });
-  expect(arrived.closest("td")?.cellIndex).toBe(2);
+  expect(arrived.closest("td")?.cellIndex).toBe(1);
+  expect(arrived.closest("tr")?.rowIndex).toBe(2);
   await update(["trial-a"]);
   expect(
     screen.queryByRole("link", { name: "trial-z in run-a: Zero reward" }),
@@ -277,7 +319,8 @@ it("keeps the same native DOM identity and position across incremental polls and
   expect(screen.getByRole("link", { name: "trial-a in run-a: Zero reward" })).toBe(
     arrived,
   );
-  expect(arrived.closest("td")?.cellIndex).toBe(2);
+  expect(arrived.closest("td")?.cellIndex).toBe(1);
+  expect(arrived.closest("tr")?.rowIndex).toBe(2);
 });
 
 it.each([
@@ -429,4 +472,35 @@ it("resets search, tooltips and removed-observation memory when navigating runs"
   ).not.toHaveFocus();
   rerender(view("run-a"));
   expect(screen.getByText(/0 separate observations/)).toBeVisible();
+});
+
+it("keeps digest columns separate and ragged slots unplanned with partial observations", () => {
+  const value = progress(1);
+  value.lock = {
+    trials: [
+      ...Array.from({ length: 4 }, () => ({
+        task: { name: "task-a", digest: "sha256:input" },
+      })),
+      ...Array.from({ length: 2 }, () => ({
+        task: { name: "task-a", digest: "other-input" },
+      })),
+      ...Array.from({ length: 3 }, () => ({
+        task: { name: "task-b", digest: "sha256:input" },
+      })),
+    ],
+  };
+  show(run(), { "run-a": value });
+  expect(screen.getByText("3 tasks × 4 repeat slots · 9 planned")).toBeVisible();
+  expect(screen.getAllByRole("rowheader")).toHaveLength(4);
+  expect(screen.getAllByRole("cell")).toHaveLength(12);
+  expect(screen.getAllByRole("cell", { name: /Not planned/ })).toHaveLength(3);
+  expect(screen.getAllByRole("button", { name: /No mapped observation/ })).toHaveLength(
+    8,
+  );
+  expect(
+    screen.getByRole("columnheader", { name: "task-a other-input" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("columnheader", { name: "task-a sha256:input" }),
+  ).toBeVisible();
 });
