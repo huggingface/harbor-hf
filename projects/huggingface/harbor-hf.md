@@ -674,3 +674,21 @@ Approved at: 2026-09-09T15:43:39.532868+00:00
   resources, live execution, deployment, merge and credentials remain excluded.
 - Additional publication of these refinements follows review of the concrete
   implementation; the existing PR remains open without merge or deployment.
+
+### Shared run archive presentation metadata (2026-09-09)
+
+Approved at: 2026-09-09T17:02:44.957655+00:00
+
+- Direct approval: the user confirmed that archive status should be shared
+  across users and browsers, following the proposed operator-only controls.
+- Implement and test shared mutable run-presentation metadata in the existing
+  canonical Bucket, separate from immutable run records and execution state.
+- Provide authenticated operator Archive/Restore actions with write-mode and
+  concurrency guards; default the Runs view to not archived and expose
+  Not archived / Archived / All, combined with recorded role and search.
+- Archive changes only Runs visibility. Execution, artifacts, costs, leaderboard
+  eligibility and direct detail access remain unchanged. No deletion or rerun.
+- Local implementation, tests, documentation and commits are approved. No live
+  metadata mutation, deployment, merge, credentials or additional infrastructure.
+- Browser-local pricing preferences and Workbench drafts are not migrated by
+  this approval. Reasoning support still awaits route/capability clarification.
