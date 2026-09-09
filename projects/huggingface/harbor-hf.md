@@ -477,6 +477,8 @@ Approved at: 2026-09-08T23:50:36.203970+00:00
 
 ### Waffle-view diagnostics integration and pull request
 
+Status: completed
+
 Approved at: 2026-09-09T09:35:47.579013+00:00
 
 - The user explicitly approved integrating the local native run diagnostics with the waffle viewer merged into main, resolving compatibility issues, and raising a pull request.
@@ -520,3 +522,5 @@ Approved at: 2026-09-09T09:07:40.659178+00:00
   does not claim these checks pass.
 - No merge, default-branch push, deployment, benchmark launch, resource change,
   credential movement, or result publication is authorized by this amendment.
+
+Completed on 2026-09-09: integrated native diagnostics with the current-main waffle viewer and opened draft PR #193 (https://github.com/huggingface/harbor-hf/pull/193). Unit and browser tests passed; existing global coverage and missing baseline/mutation-tooling blockers are disclosed. No merge, deployment, or remote execution was performed.
