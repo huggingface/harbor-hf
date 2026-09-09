@@ -14,7 +14,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   actOnRun,
   type BenchmarkPreset,
@@ -55,7 +55,7 @@ import {
 import { RunConfiguration } from "./run-configuration";
 import { RunDiagnostics, RunDiagnosticsSummary } from "./run-diagnostics";
 import { runIdentity } from "./run-identity";
-import { RunsWaffle } from "./runs-waffle";
+import { RunWaffle } from "./runs-waffle";
 import {
   Badge,
   Button,
@@ -499,8 +499,6 @@ export function OverviewPage() {
 
 export function RunsPage() {
   const query = useRuns();
-  const [params, setParams] = useSearchParams();
-  const list = params.get("view") === "list";
   const columns = useMemo<ColumnDef<RunView>[]>(
     () => [
       {
@@ -602,35 +600,13 @@ export function RunsPage() {
       <Link className="mb-4 inline-block text-sky-400" to="/runs/new">
         New Job
       </Link>
-      <div className="mb-4 flex gap-2">
-        {["waffle", "list"].map((view) => (
-          <Button
-            key={view}
-            variant={(list ? "list" : "waffle") === view ? "default" : "ghost"}
-            aria-pressed={(list ? "list" : "waffle") === view}
-            onClick={() =>
-              setParams((current) => {
-                const next = new URLSearchParams(current);
-                next.set("view", view);
-                return next;
-              })
-            }
-          >
-            {view === "waffle" ? "Waffle" : "List"}
-          </Button>
-        ))}
-      </div>
       <QueryContent query={query}>
         {query.data ? (
-          list ? (
-            <DataTable
-              columns={columns}
-              data={query.data}
-              empty="No runs are available"
-            />
-          ) : (
-            <RunsWaffle runs={query.data} />
-          )
+          <DataTable
+            columns={columns}
+            data={query.data}
+            empty="No runs are available"
+          />
         ) : null}
       </QueryContent>
     </>
@@ -737,6 +713,7 @@ export function RunPage() {
           icon={<CircleDollarSign size={18} />}
         />
       </div>
+      <RunWaffle run={item} />
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <Card>
           <h2 className="font-semibold text-white">Run identity</h2>

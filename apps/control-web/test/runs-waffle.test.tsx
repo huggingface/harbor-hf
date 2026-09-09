@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import type { RunView, TrialProgress } from "../src/api";
-import { RunsWaffle } from "../src/runs-waffle";
+import { RunWaffle } from "../src/runs-waffle";
 
 const clients: QueryClient[] = [];
 function run(id = "run-a"): RunView {
@@ -38,7 +38,7 @@ function progress(count = 5): TrialProgress {
     ],
   };
 }
-function show(runs: RunView[], values: Record<string, TrialProgress> = {}) {
+function show(item: RunView, values: Record<string, TrialProgress> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   clients.push(client);
   for (const [id, value] of Object.entries(values))
@@ -46,7 +46,7 @@ function show(runs: RunView[], values: Record<string, TrialProgress> = {}) {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <RunsWaffle runs={runs} />
+        <RunWaffle run={item} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -58,10 +58,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("renders one run per row with five distinct repeated trial squares and focus details", async () => {
-  show([run(), run("run-b")], { "run-a": progress(), "run-b": progress() });
-  expect(screen.getAllByRole("rowheader")).toHaveLength(2);
-  expect(screen.getAllByRole("columnheader")).toHaveLength(6);
+it("renders one task row with five distinct repeated trial squares and focus details", async () => {
+  show(run(), { "run-a": progress() });
+  expect(screen.getAllByRole("rowheader")).toHaveLength(1);
+  expect(screen.getAllByRole("cell")).toHaveLength(5);
   const zero = screen.getByRole("link", { name: "trial-a in run-a: Zero reward" });
   expect(zero).toHaveAttribute("href", "/runs/run-a/trials/trial-a");
   act(() => zero.focus());
@@ -71,26 +71,35 @@ it("renders one run per row with five distinct repeated trial squares and focus 
   if (!row) throw Error("row missing");
   expect(within(row).getAllByRole("button")).toHaveLength(4);
 });
-it("bounds queries and columns and supports both page axes and search", async () => {
-  const values = Object.fromEntries(
-    Array.from({ length: 9 }, (_, index) => [`run-${index}`, progress(51)]),
-  );
-  const fetch = vi.fn(async () => new Response(JSON.stringify(progress())));
+it("paginates 89 task rows without splitting five repeats and filters whole rows", async () => {
+  const value = progress();
+  value.lock = {
+    trials: Array.from({ length: 89 }, (_, index) =>
+      Array.from({ length: 5 }, () => ({
+        task: {
+          name: `task-${String(index).padStart(2, "0")}`,
+          digest: "sha256:input",
+        },
+      })),
+    ).flat(),
+  };
+  const fetch = vi.fn();
   vi.stubGlobal("fetch", fetch);
-  show(
-    Object.keys(values).map((id) => run(id)),
-    values,
-  );
-  expect(screen.getAllByRole("rowheader")).toHaveLength(8);
-  expect(screen.getAllByRole("columnheader")).toHaveLength(51);
+  show(run(), { "run-a": value });
+  expect(screen.getAllByRole("rowheader")).toHaveLength(25);
+  expect(screen.getAllByRole("cell")).toHaveLength(125);
   expect(fetch).not.toHaveBeenCalled();
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Next trials" }));
-  expect(screen.getAllByRole("columnheader")).toHaveLength(2);
-  await user.click(screen.getByRole("button", { name: "Previous trials" }));
-  await user.click(screen.getByRole("button", { name: "Next runs" }));
+  for (let i = 0; i < 3; i++)
+    await user.click(screen.getByRole("button", { name: "Next tasks" }));
+  expect(screen.getAllByRole("rowheader")).toHaveLength(14);
+  expect(screen.getAllByRole("cell")).toHaveLength(70);
+  await user.click(screen.getByRole("button", { name: "Previous tasks" }));
+  expect(screen.getAllByRole("rowheader")).toHaveLength(25);
+  await user.type(screen.getByRole("searchbox"), "task-88");
   expect(screen.getAllByRole("rowheader")).toHaveLength(1);
-  await user.click(screen.getByRole("button", { name: "Previous runs" }));
+  expect(screen.getAllByRole("cell")).toHaveLength(5);
+  await user.clear(screen.getByRole("searchbox"));
   await user.type(screen.getByRole("searchbox"), "no-match");
   expect(screen.getByText("No trials match your search.")).toBeVisible();
 });
@@ -99,8 +108,10 @@ it("shows unavailable and cached-stale observations and retries", async () => {
     "fetch",
     vi.fn(async () => new Response("{}", { status: 403 })),
   );
-  const client = show([run(), run("run-b")], { "run-a": progress() });
+  show(run());
   expect(await screen.findByText("Unavailable")).toBeVisible();
+  cleanup();
+  const client = show(run(), { "run-a": progress() });
   await act(() => client.invalidateQueries({ queryKey: ["trial-progress", "run-a"] }));
   expect(await screen.findByText("Stale data")).toBeVisible();
   vi.stubGlobal(
@@ -122,28 +133,21 @@ it("shows provider queue observations separately without attributing them to squ
     started_at: null,
     finished_at: null,
   });
-  show([run()], { "run-a": value });
+  show(run(), { "run-a": value });
   await userEvent
     .setup()
     .click(screen.getByText("HF Jobs and Harbor totals (separate observations)"));
   expect(screen.getByText("trial · child-test · queued (waiting at HF)")).toBeVisible();
 });
-it("shows absent cells, no prepared lock, and empty run lists honestly", () => {
+it("shows no prepared lock honestly without inventing squares", () => {
   const value = progress();
   value.lock = null;
   value.trials = [];
-  show([run(), run("run-b")], { "run-a": progress(), "run-b": value });
-  expect(screen.getAllByRole("img", { name: "Unknown / not observed" })).toHaveLength(
-    5,
-  );
-  cleanup();
-  show([run()], { "run-a": value });
+  show(run(), { "run-a": value });
   expect(
     screen.getByText("No trial artifacts or prepared lock observed yet."),
   ).toBeVisible();
-  cleanup();
-  show([]);
-  expect(screen.getByText("No runs are available")).toBeVisible();
+  expect(screen.queryAllByRole("cell")).toHaveLength(0);
 });
 
 it("renders nine independently linked identities for three repeated source names", () => {
@@ -163,8 +167,16 @@ it("renders nine independently linked identities for three repeated source names
       task: trial.lock?.task ?? { name: "unknown", digest: "unknown" },
     })),
   };
-  show([run()], { "run-a": value });
-  expect(screen.getAllByRole("columnheader")).toHaveLength(10);
+  show(run(), { "run-a": value });
+  expect(screen.getAllByRole("cell")).toHaveLength(9);
+  expect(screen.getAllByRole("rowheader")).toHaveLength(3);
+  for (const task of ["task-a", "task-b", "task-c"]) {
+    const row = screen
+      .getByRole("rowheader", { name: `${task} sha256:input` })
+      .closest("tr");
+    if (!row) throw Error("row missing");
+    expect(within(row).getAllByRole("cell")).toHaveLength(3);
+  }
   for (const trial of value.trials) {
     expect(
       screen.getByRole("link", {
@@ -179,9 +191,9 @@ it("shows loading without inventing pending trials before any artifact response"
     "fetch",
     vi.fn(() => new Promise<Response>(() => {})),
   );
-  show([run()]);
+  show(run());
   expect(screen.getByText("Loading trial artifacts…")).toBeVisible();
-  expect(screen.getAllByRole("columnheader")).toHaveLength(1);
+  expect(screen.queryAllByRole("cell")).toHaveLength(0);
 });
 
 it("expires cached active observations while a refresh remains fetching", async () => {
@@ -204,7 +216,7 @@ it("expires cached active observations while a refresh remains fetching", async 
       started_at: value.observed_at,
       finished_at: null,
     });
-    const client = show([run()], { "run-a": value });
+    const client = show(run(), { "run-a": value });
     expect(
       screen.getByRole("button", {
         name: "trial-a in run-a: Unfinished artifact observed (live state unknown)",
@@ -227,22 +239,12 @@ it("expires cached active observations while a refresh remains fetching", async 
   }
 });
 
-it("only establishes exclusion from a lock, not a repetition count or successful empty response", () => {
-  const excluded = progress();
-  excluded.trials = [];
-  excluded.lock = { trials: [] };
-  const sameTask = progress(0);
-  sameTask.trials = [];
-  sameTask.lock = { trials: [{ task: { name: "task-a", digest: "sha256:input" } }] };
-  show([run(), run("run-b"), run("run-c")], {
-    "run-a": progress(),
-    "run-b": excluded,
-    "run-c": sameTask,
-  });
-  expect(screen.getAllByRole("img", { name: "Not in run" })).toHaveLength(5);
-  expect(screen.getAllByRole("img", { name: "Unknown / not observed" })).toHaveLength(
-    4,
-  );
+it("uses only this run's lock capacity, including an empty lock", () => {
+  const value = progress();
+  value.lock = { trials: [] };
+  show(run(), { "run-a": value });
+  expect(screen.queryAllByRole("cell")).toHaveLength(0);
+  expect(screen.getByText(/0 planned squares · 1 separate observations/)).toBeVisible();
 });
 
 it("keeps the same native DOM identity and position across incremental polls and removals", async () => {
@@ -250,7 +252,7 @@ it("keeps the same native DOM identity and position across incremental polls and
   const template = value.trials[0];
   if (!template) throw new Error("missing fixture");
   value.trials = [{ ...template, trial_name: "trial-z" }];
-  const client = show([run()], { "run-a": value });
+  const client = show(run(), { "run-a": value });
   const original = screen.getByRole("link", { name: "trial-z in run-a: Zero reward" });
   const update = async (names: string[]) => {
     await act(async () => {
@@ -278,28 +280,23 @@ it("keeps the same native DOM identity and position across incremental polls and
   expect(arrived.closest("td")?.cellIndex).toBe(2);
 });
 
-it("polls terminal rows less often while keeping active rows responsive", async () => {
+it.each([
+  ["running", 15_000],
+  ["finished", 120_000],
+] as const)("polls %s runs at their own interval", async (status, interval) => {
   vi.useFakeTimers();
   try {
-    const fetch = vi.fn(
-      async (_url: string) => new Response(JSON.stringify(progress())),
-    );
+    const fetch = vi.fn(async () => new Response(JSON.stringify(progress())));
     vi.stubGlobal("fetch", fetch);
-    show([run(), { ...run("run-b"), status: "finished" }], {
-      "run-a": progress(),
-      "run-b": progress(),
-    });
+    show({ ...run(), status }, { "run-a": progress() });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(interval - 1);
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(String(fetch.mock.calls[0]?.[0])).toContain("run-a");
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(105_000);
-    });
-    expect(
-      fetch.mock.calls.filter((args) => String(args[0]).includes("run-b")),
-    ).toHaveLength(1);
   } finally {
     cleanup();
     vi.useRealTimers();
@@ -310,7 +307,7 @@ it("reports separate observations without consuming planned capacity or retainin
   const value = progress(9);
   const template = value.trials[0];
   if (!template) throw Error("fixture missing");
-  const client = show([run()], { "run-a": value });
+  const client = show(run(), { "run-a": value });
   const original = screen.getByRole("link", { name: "trial-a in run-a: Zero reward" });
   act(() => original.focus());
   act(() => client.setQueryData(["trial-progress", "run-a"], { ...value, trials: [] }));
@@ -327,7 +324,7 @@ it("reports separate observations without consuming planned capacity or retainin
       trials: [{ ...template, trial_name: "replacement" }],
     }),
   );
-  expect(screen.getAllByRole("columnheader")).toHaveLength(10);
+  expect(screen.getAllByRole("cell")).toHaveLength(9);
   expect(
     await screen.findByRole("link", { name: "replacement in run-a: Zero reward" }),
   ).not.toHaveFocus();
@@ -357,7 +354,7 @@ it("shows native exception evidence without interpreting rewards or missing evid
       result: { finished_at: "2026-09-08T12:00:00Z" },
     },
   );
-  show([run()], { "run-a": data });
+  show(run(), { "run-a": data });
   const error = screen.getByRole("link", { name: "trial-a in run-a: Errored" });
   expect(error).toHaveAttribute("href", "/runs/run-a/trials/trial-a");
   act(() => error.focus());
@@ -380,6 +377,8 @@ it("shows native exception evidence without interpreting rewards or missing evid
   expect(evidence).toHaveTextContent(
     "Native exception evidence: unknown / unavailable",
   );
+  await user.type(screen.getByRole("searchbox"), "RuntimeError");
+  expect(screen.getAllByRole("cell")).toHaveLength(3);
   expect(
     screen.getByRole("link", { name: "trial-null in run-a: Zero reward" }),
   ).toBeVisible();
@@ -393,10 +392,41 @@ it("links recorded unfinished exception evidence without claiming completion", (
   const first = data.trials[0];
   if (!first) throw Error("fixture missing");
   first.result = { exception_info: { exception_type: "CustomException" } };
-  show([run()], { "run-a": data });
+  show(run(), { "run-a": data });
   const link = screen.getByRole("link", {
     name: "trial-a in run-a: Unfinished artifact observed (live state unknown)",
   });
   expect(link).toHaveAttribute("href", "/runs/run-a/trials/trial-a");
   expect(link).toHaveAttribute("aria-description", "Native exception: CustomException");
+});
+
+it("resets search, tooltips and removed-observation memory when navigating runs", async () => {
+  const client = new QueryClient();
+  clients.push(client);
+  client.setQueryData(["trial-progress", "run-a"], progress());
+  client.setQueryData(["trial-progress", "run-b"], progress());
+  const view = (id: string) => (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <RunWaffle run={run(id)} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view("run-a"));
+  const original = screen.getByRole("link", { name: "trial-a in run-a: Zero reward" });
+  act(() => original.focus());
+  expect(screen.getByRole("tooltip")).toBeVisible();
+  await act(async () => {
+    client.setQueryData(["trial-progress", "run-a"], { ...progress(), trials: [] });
+  });
+  await screen.findByText(/1 separate observations/);
+  await userEvent.setup().type(screen.getByRole("searchbox"), "no-match");
+  rerender(view("run-b"));
+  expect(screen.getByRole("searchbox")).toHaveValue("");
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "trial-a in run-b: Zero reward" }),
+  ).not.toHaveFocus();
+  rerender(view("run-a"));
+  expect(screen.getByText(/0 separate observations/)).toBeVisible();
 });
