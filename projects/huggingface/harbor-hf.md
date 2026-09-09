@@ -485,3 +485,19 @@ Approved at: 2026-09-09T08:12:42.901890+00:00
   move credentials, create resources, publish results, merge, or push main.
   Public branch/PR publication and any deployment mechanism requiring image
   publication require their own scope confirmation before proceeding.
+
+### Nine-trial canary branch publication (2026-09-09)
+
+Approved at: 2026-09-09T09:07:40.659178+00:00
+
+- Direct approval: the user requested pushing the completed feature branch and
+  stated that they will perform the merge, acknowledging the reported coverage
+  shortfall.
+- Publish the reviewed nine-trial preset and observational waffle commits on
+  `feat/nine-trial-canary` to the canonical repository after privacy review.
+- Preserve coverage thresholds and report validation honestly: 502 unit tests
+  and 23 browser tests passed; global line coverage is 78.83%, below 85%.
+  The mutation-check script and Slophammer baseline are missing. Publication
+  does not claim these checks pass.
+- No merge, default-branch push, deployment, benchmark launch, resource change,
+  credential movement, or result publication is authorized by this amendment.
