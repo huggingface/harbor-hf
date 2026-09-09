@@ -651,3 +651,26 @@ Approved at: 2026-09-09T15:18:35.910880+00:00
 - Additional unspecified tweaks await the user's concrete request.
 - No merge, deployment, live run, paid resource, public demo listener, credential
   transfer, upstream Harbor publication or execution-policy change is authorized.
+
+### Run navigation, recipe identity and reasoning refinements (2026-09-09)
+
+Approved at: 2026-09-09T15:43:39.532868+00:00
+
+- Direct request: distinguish native agent execution timeouts from replacement
+  candidates, show Workbench recipe names in Runs, expose a working reasoning
+  selector, and filter recorded diagnostic/final run roles.
+- Implement and test these refinements locally for the existing follow-up.
+  Preserve raw native exception types and distinguish execution timeout from
+  environment/provider failures without claiming an unproven timeout origin.
+- Capture minimal immutable Workbench recipe display provenance for new runs;
+  retain historical fallbacks and native execution configuration in JobConfig.
+- Investigate and expose reasoning only through an existing reviewed native
+  agent/provider configuration path and declared recipe capability. Reject
+  unsupported behavior rather than silently ignoring a dropdown selection.
+  Preserve existing saved recipes and their execution semantics.
+- Add role filters using the existing final/diagnostic field, with useful
+  presentation-only search/navigation. Final role is not finished status.
+- Replacement eligibility, rerun actions, upstream issues/patches, new storage
+  resources, live execution, deployment, merge and credentials remain excluded.
+- Additional publication of these refinements follows review of the concrete
+  implementation; the existing PR remains open without merge or deployment.
