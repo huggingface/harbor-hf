@@ -540,3 +540,25 @@ Approved at: 2026-09-09T10:22:49.101525+00:00
 - No merge, default-branch push, deployment, setup or benchmark launch, inference,
   credential movement, resource mutation, or result publication. Preserve
   unrelated work and existing validation thresholds; disclose check failures.
+
+### Scannable results, repetition matrix, and pricing scenarios (2026-09-09)
+
+Approved at: 2026-09-09T11:15:09.705718+00:00
+
+- Direct approval: the user requested a new PR improving run overview/detail
+  summaries, rounded reward and unavailable placeholders, million-scale token
+  counts, affected-trial and infrastructure-failure summaries, editable token
+  rates including long context, and tasks across columns with repeats as rows.
+- Implement and test on current main in an isolated worktree. Keep the overview
+  a list and the matrix inside individual run details. Preserve native outcomes
+  and identities, and label display repetition slots honestly.
+- Pricing controls are presentation-only USD-per-million input, output, cached,
+  and long-context scenarios. Do not alter recorded spend, billing, JobConfig,
+  cost guards, or run behavior. Where native request-tier usage is unavailable,
+  report the limitation rather than derive it from cumulative usage.
+- Categorize only exact reviewed native exception types for display, retaining
+  unknown/partial evidence and distinguishing verifier outcomes from exceptions;
+  do not infer root cause or retry eligibility. No trajectory/log parsing.
+- Local commits, privacy-reviewed topic-branch push, and one new PR are approved.
+  No deployment, merge, benchmark or setup launch, inference, credential movement,
+  resource change, upstream publication, or lowering validation thresholds.
