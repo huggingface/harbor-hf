@@ -743,3 +743,16 @@ Approved at: 2026-09-09T18:58:54.280302+00:00
 - Local implementation, tests, documentation and commits are approved. No push,
   PR, merge, deployment, inference, live runs, new resources, billing integration,
   credential transfer, execution cost-policy change or upstream publication.
+
+### Synchronize launch-pricing branch and validate CI (2026-09-09)
+
+Approved at: 2026-09-09T19:31:11.563099+00:00
+
+- Direct request: merge main and make sure CI passes, interpreted as merging
+  current main into the compact-status/launch-pricing feature branch.
+- Merge the latest main locally, preserve upstream fixes, resolve conflicts,
+  and repair relevant CI failures without weakening validation gates.
+- Privacy-review and push the feature branch. Open a PR to run the configured
+  pull-request CI workflow; feature-branch pushes alone do not trigger it.
+- No feature merge into main, deployment, live execution, inference, credential
+  transfer, resource changes or unrelated feature work is included.
