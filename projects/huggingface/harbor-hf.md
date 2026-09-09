@@ -524,3 +524,19 @@ Approved at: 2026-09-09T09:07:40.659178+00:00
   credential movement, or result publication is authorized by this amendment.
 
 Completed on 2026-09-09: integrated native diagnostics with the current-main waffle viewer and opened draft PR #193 (https://github.com/huggingface/harbor-hf/pull/193). Unit and browser tests passed; existing global coverage and missing baseline/mutation-tooling blockers are disclosed. No merge, deployment, or remote execution was performed.
+
+### Per-run detail waffle placement (2026-09-09)
+
+Approved at: 2026-09-09T10:22:49.101525+00:00
+
+- Direct approval: the user requested correcting the waffle placement in a new
+  pull request after clarifying that it should show the contents of one run.
+- Keep the Runs overview as its existing list with compact summary counts.
+  Move the waffle to the individual run detail page beneath summary cards,
+  grouped by task with a separate square per repetition. Preserve native
+  identities, diagnostics, honest observed-state labels, and trial navigation.
+- Implement on current main in an isolated worktree, test, document, commit,
+  publish a feature branch, and open one pull request after privacy review.
+- No merge, default-branch push, deployment, setup or benchmark launch, inference,
+  credential movement, resource mutation, or result publication. Preserve
+  unrelated work and existing validation thresholds; disclose check failures.
