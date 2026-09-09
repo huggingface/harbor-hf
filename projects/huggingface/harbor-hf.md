@@ -832,3 +832,22 @@ Approved at: 2026-09-09T19:31:11.563099+00:00
   pull-request CI workflow; feature-branch pushes alone do not trigger it.
 - No feature merge into main, deployment, live execution, inference, credential
   transfer, resource changes or unrelated feature work is included.
+
+### Run inspection consistency and benchmark profile preparation (2026-09-09)
+
+Approved at: 2026-09-09T21:06:42.168215+00:00
+
+- Direct user confirmation approves local implementation and tests for aligned
+  run-panel polling, clearly labelled running-Job elapsed time, Workbench
+  reasoning selection and recorded intent, configured timeout hover details,
+  launch-pricing visibility in the inference-cost KPI, and removing help cursors.
+- Inspect the recent local benchmark configuration read-only and prepare a
+  profile for the requested 50-task subset with three trials per task. Preserve
+  exact task selection and provenance privately; do not copy operator-specific
+  identifiers, credentials, logs or unrelated source artifacts into this repo.
+- Local implementation, tests and commits only. No push, PR, merge, deployment,
+  profile publication, live API writes, runs, inference, credential transfer,
+  resource creation, upstream patch or upstream publication.
+- Harbor retains timeout resolution and execution authority. Display configured
+  settings accurately; do not invent resolved budgets or provider-effective
+  reasoning. Preserve existing recipes and immutable run records.
