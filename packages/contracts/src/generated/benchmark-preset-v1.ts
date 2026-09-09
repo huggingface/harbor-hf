@@ -42,7 +42,7 @@ environment: {
 type: "hf-sandbox"
 kwargs: {
 flavor: ("cpu-basic" | "cpu-upgrade")
-job_timeout: "30m"
+job_timeout: "none"
 }
 }
 timeout_multiplier?: number

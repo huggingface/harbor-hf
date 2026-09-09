@@ -53,7 +53,7 @@
               "required": ["flavor", "job_timeout"],
               "properties": {
                 "flavor": { "enum": ["cpu-basic", "cpu-upgrade"] },
-                "job_timeout": { "const": "30m" }
+                "job_timeout": { "const": "none" }
               }
             }
           }

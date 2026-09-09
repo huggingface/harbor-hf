@@ -32,7 +32,7 @@ const draft = {
   ],
   environment: {
     type: "hf-sandbox",
-    kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
+    kwargs: { flavor: "cpu-upgrade", job_timeout: "none" },
   },
 };
 const catalog = {
@@ -331,7 +331,7 @@ describe("launch page", () => {
             n_concurrent_trials: 1,
             environment: {
               type: "hf-sandbox",
-              kwargs: { flavor: "cpu-basic", job_timeout: "15m" },
+              kwargs: { flavor: "cpu-basic", job_timeout: "none" },
             },
           },
         },
@@ -358,7 +358,7 @@ describe("launch page", () => {
       target: { value: "0.5" },
     });
     expect(loadDraft().environment).toMatchObject({
-      kwargs: { flavor: "cpu-upgrade", job_timeout: "15m" },
+      kwargs: { flavor: "cpu-upgrade", job_timeout: "none" },
     });
     fireEvent.change(screen.getByLabelText("Native environment"), {
       target: { value: '{"type":"hf-sandbox","kwargs":{"flavor":"cpu-basic"}}' },

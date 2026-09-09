@@ -111,7 +111,7 @@ describe("run submission", () => {
       presets.benchmark("terminal-bench-2-1", "one-task-1-trial").job.environment,
     ).toEqual({
       type: "hf-sandbox",
-      kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
+      kwargs: { flavor: "cpu-upgrade", job_timeout: "none" },
     });
     const result = await submit();
     expect(result.created).toBe(true);
@@ -132,7 +132,7 @@ describe("run submission", () => {
         import_path: "harbor_hf_agents.hf_sandbox:LabeledHFSandboxEnvironment",
         kwargs: {
           flavor: "cpu-upgrade",
-          job_timeout: "30m",
+          job_timeout: "none",
           run_label: result.run.run_id,
         },
       },
@@ -246,7 +246,7 @@ describe("run submission", () => {
       n_attempts: 1,
       n_concurrent_trials: 8,
       environment: {
-        kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
+        kwargs: { flavor: "cpu-upgrade", job_timeout: "none" },
       },
     });
   });

@@ -124,7 +124,7 @@ const presets: PresetsResponse = {
         n_concurrent_trials: 1,
         environment: {
           type: "hf-sandbox",
-          kwargs: { flavor: "cpu-upgrade", job_timeout: "30m" },
+          kwargs: { flavor: "cpu-upgrade", job_timeout: "none" },
         },
       },
     },

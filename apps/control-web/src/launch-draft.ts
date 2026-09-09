@@ -13,7 +13,9 @@ export function initialDraft(): NativeObject {
     agents: [],
     environment: {
       type: "hf-sandbox",
-      kwargs: { flavor: "cpu-basic", job_timeout: "30m" },
+      // Temporary stopgap for https://github.com/huggingface/sandbox-server/pull/21.
+      // Remove after the fixed server passes a foreground canary longer than 30 minutes.
+      kwargs: { flavor: "cpu-basic", job_timeout: "none" },
     },
   };
 }

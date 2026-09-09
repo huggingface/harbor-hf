@@ -90,8 +90,13 @@ receive neither the control credential nor the canonical Bucket mount.
 ## HF restrictions
 
 - Sandbox flavors: `cpu-basic` and `cpu-upgrade`.
-- `environment.kwargs.job_timeout` is an **idle timeout**, for example `30m`.
-  It does not replace agent, trial, or parent wall-clock limits.
+- `environment.kwargs.job_timeout` must be `none` as a temporary stopgap for
+  [huggingface/sandbox-server#21](https://github.com/huggingface/sandbox-server/pull/21).
+  The current server can stop a running foreground command when its idle timer
+  expires. Remove this restriction only after the correction is merged, the fixed
+  server is deployed, and a foreground command runs for more than 30 minutes in a
+  canary. Harbor phase timeouts, cleanup, and the Hugging Face 24-hour Job limit
+  still bound the work.
 - Each task needs a prebuilt Docker image. Image builds, resource overrides, and
   enforced network allowlists are not offered by this page.
 - There are no separate hosted maximums for source count, agent count, attempts,
