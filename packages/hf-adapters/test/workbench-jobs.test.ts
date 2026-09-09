@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   HuggingFaceWorkbenchJobs,
+  WorkbenchCapacityError,
   type WorkbenchJobEvent,
   type WorkbenchJobRequest,
 } from "../src/workbench-jobs.js";
@@ -198,6 +199,7 @@ describe("HuggingFaceWorkbenchJobs", () => {
       namespace: "example",
       accessToken: testToken,
       image: "python@sha256:test",
+      maxActiveJobs: 1,
     });
     await expect(second.start(request)).resolves.toMatchObject({
       job_id: "job-workbench-1",
@@ -205,35 +207,73 @@ describe("HuggingFaceWorkbenchJobs", () => {
     expect(adoptionFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses to exceed the configured namespace active Job limit", async () => {
-    const activeBody: JobBody = {
-      dockerImage: "unrelated@sha256:test",
-      command: ["true"],
-      arguments: [],
-      flavor: "cpu-basic",
-      arch: "amd64",
-      timeoutSeconds: 60,
-      attempts: 1,
-      labels: { unrelated: "job" },
-      environment: {},
-    };
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify([apiJob(activeBody)]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const adapter = new HuggingFaceWorkbenchJobs({
-      namespace: "example",
-      accessToken: testToken,
-      image: "python@sha256:test",
-      maxActiveJobs: 1,
-    });
-    await expect(adapter.start(request)).rejects.toThrow("namespace active Job limit");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
+  it.each([
+    { count: 1, limit: 1, rejected: true },
+    { count: 2, limit: 1, rejected: true },
+    { count: 1, limit: 2, rejected: false },
+    { count: 15, limit: undefined, rejected: false },
+    { count: 16, limit: undefined, rejected: true },
+    { count: 1, limit: 1, rejected: false, stage: "COMPLETED" },
+    { count: 1, limit: 1, rejected: false, stage: "ERROR" },
+    { count: 1, limit: 1, rejected: false, stage: "CANCELED" },
+  ])(
+    "keeps namespace admission at $count active Jobs and limit $limit",
+    async ({ count, limit, rejected, stage }) => {
+      const activeBody: JobBody = {
+        dockerImage: "unrelated@sha256:test",
+        command: ["true"],
+        arguments: [],
+        flavor: "cpu-basic",
+        arch: "amd64",
+        timeoutSeconds: 60,
+        attempts: 1,
+        labels: { unrelated: "job" },
+        environment: {},
+      };
+      const fetchMock = vi.fn(
+        async (_url: string | URL | Request, init?: RequestInit) => {
+          const body =
+            init?.method === "POST"
+              ? apiJob(JSON.parse(String(init.body)) as JobBody)
+              : Array.from({ length: count }, (_, index) =>
+                  apiJob(activeBody, {
+                    id: `unrelated-job-${index}`,
+                    status: {
+                      stage:
+                        stage ??
+                        ["RUNNING", "SCHEDULING", "UPDATING", "PAUSED"][index % 4],
+                      failureCount: 0,
+                    },
+                  }),
+                );
+          return new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        },
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const adapter = new HuggingFaceWorkbenchJobs({
+        namespace: "example",
+        accessToken: testToken,
+        image: "python@sha256:test",
+        ...(limit === undefined ? {} : { maxActiveJobs: limit }),
+      });
+      if (rejected) {
+        await expect(adapter.start(request)).rejects.toBeInstanceOf(
+          WorkbenchCapacityError,
+        );
+      } else {
+        await expect(adapter.start(request)).resolves.toMatchObject({
+          stage: "RUNNING",
+        });
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(rejected ? 1 : 2);
+      expect(
+        fetchMock.mock.calls.filter(([, init]) => init?.method === "POST"),
+      ).toHaveLength(rejected ? 0 : 1);
+    },
+  );
 
   it("cancels a newly created Job whose returned specification is not attested", async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {

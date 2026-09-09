@@ -545,3 +545,15 @@ Completed on 2026-09-09: integrated native diagnostics with the current-main waf
 ### Setup admission diagnostics approval
 
 - Recorded direct approval and the bounded implementation/publication handoff above.
+
+
+Local implementation completed on 2026-09-09; publication remains reserved for
+parent review. Added typed setup capacity reporting and safe stage/code/request-ID
+diagnostics without changing limits, accounting, or execution. Verified 562 unit
+tests and 26 browser tests; all changed executable statements and branches are
+covered. Root formatting, lint, types, build, generated contracts, dependency
+audit, and normal Slophammer check/DRY pass. Global coverage remains below 85%;
+the Slophammer baseline and mutation script are absent. The root browser startup
+probe stalled; the full suite passed with an isolated, untracked IPv6 harness.
+No push, pull request, deployment, image build, remote execution, credential
+transfer, or configuration change was performed.

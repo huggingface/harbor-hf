@@ -19,10 +19,11 @@ import {
   compileAgentWorkbenchRecipe,
   workbenchRuntimeValues,
 } from "@harbor-hf/control-core";
-import type {
-  WorkbenchJobClient,
-  WorkbenchJobEvent,
-  WorkbenchJobSnapshot,
+import {
+  WorkbenchCapacityError,
+  type WorkbenchJobClient,
+  type WorkbenchJobEvent,
+  type WorkbenchJobSnapshot,
 } from "@harbor-hf/hf-adapters";
 
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
@@ -31,6 +32,13 @@ const MAX_PREVIEW_BYTES = 64 * 1024;
 const MAX_TOTAL_PREVIEW_BYTES = 1024 * 1024;
 const MAX_REMOTE_EVENTS = 4_096;
 const SETUP_ATTESTATION_TTL_MS = 60 * 60 * 1_000;
+
+export class WorkbenchSetupStartError extends Error {
+  constructor() {
+    super("Hugging Face setup Job could not be started");
+    this.name = "WorkbenchSetupStartError";
+  }
+}
 
 export interface WorkbenchFile {
   file_id: string;
@@ -400,9 +408,9 @@ export class WorkbenchRuntime {
       return this.view(state);
     } catch (error) {
       this.setupTests.delete(setupTestId);
-      throw new Error("Hugging Face setup Job could not be started", {
-        cause: error,
-      });
+      if (error instanceof WorkbenchCapacityError) throw error;
+      // Provider exceptions can contain credentials and private infrastructure details.
+      throw new WorkbenchSetupStartError();
     }
   }
 

@@ -204,6 +204,15 @@ export type WorkbenchJobEvent =
     }
   | { kind: "result"; sequence: number; exit_code: number; timed_out: boolean };
 
+export class WorkbenchCapacityError extends Error {
+  constructor() {
+    super(
+      "Setup capacity is full. Wait for active Jobs to finish, then retry the setup test.",
+    );
+    this.name = "WorkbenchCapacityError";
+  }
+}
+
 export interface WorkbenchJobClient {
   start(request: WorkbenchJobRequest): Promise<WorkbenchJobSnapshot>;
   list(ownerDigest: string): Promise<WorkbenchJobRecovery[]>;
@@ -501,7 +510,7 @@ export class HuggingFaceWorkbenchJobs implements WorkbenchJobClient {
       return snapshot(existing[0]);
     }
     if (jobs.filter(active).length >= (this.config.maxActiveJobs ?? 16))
-      throw new Error("the namespace active Job limit has been reached");
+      throw new WorkbenchCapacityError();
     let job: ApiJob;
     let created = false;
     try {

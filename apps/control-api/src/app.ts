@@ -4,6 +4,7 @@ import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
 import { ContractValidationError } from "@harbor-hf/contracts";
 import { leaderboard } from "@harbor-hf/control-core";
+import { WorkbenchCapacityError } from "@harbor-hf/hf-adapters";
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -30,6 +31,7 @@ import {
 import { LaunchError } from "./launch.js";
 import type { Runtime } from "./runtime.js";
 import { TrialProgressReader } from "./trial-progress-reader.js";
+import { WorkbenchSetupStartError } from "./workbench.js";
 
 export { HARBOR_REVISION } from "./harbor-revision.js";
 
@@ -257,6 +259,24 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.setErrorHandler((failure, request, reply) => {
     if (reply.sent) return;
+    if (
+      failure instanceof WorkbenchCapacityError ||
+      failure instanceof WorkbenchSetupStartError
+    ) {
+      const capacity = failure instanceof WorkbenchCapacityError;
+      const code = capacity ? "capacity_exhausted" : "internal_error";
+      app.log.error(
+        {
+          stage: capacity ? "setup_capacity_admission" : "setup_start",
+          code,
+          request_id: request.id,
+        },
+        "setup Job start failed",
+      );
+      return reply.code(capacity ? 503 : 500).send({
+        error: { code, message: failure.message, request_id: request.id },
+      });
+    }
     if (failure instanceof OAuthCallbackError) {
       const code = failure.denied ? "access_denied" : "oauth_failed";
       request.log.error({ oauth_stage: failure.stage, code }, "OAuth callback failed");

@@ -2,15 +2,16 @@ import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fastAgentWorkbenchStarter } from "@harbor-hf/control-core";
-import type {
-  WorkbenchJobClient,
-  WorkbenchJobEvent,
-  WorkbenchJobRecovery,
-  WorkbenchJobRequest,
-  WorkbenchJobSnapshot,
+import {
+  WorkbenchCapacityError,
+  type WorkbenchJobClient,
+  type WorkbenchJobEvent,
+  type WorkbenchJobRecovery,
+  type WorkbenchJobRequest,
+  type WorkbenchJobSnapshot,
 } from "@harbor-hf/hf-adapters";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WorkbenchRuntime } from "../src/workbench.js";
+import { WorkbenchRuntime, WorkbenchSetupStartError } from "../src/workbench.js";
 
 describe.sequential("local Workbench runner", () => {
   const originalPath = process.env.PATH;
@@ -430,4 +431,45 @@ describe("Hugging Face Workbench runner", () => {
       await recovered.close();
     }
   });
+});
+
+describe("remote setup admission errors", () => {
+  it.each([true, false])(
+    "preserves only typed capacity failures (capacity: %s)",
+    async (capacity) => {
+      const jobs = new FakeWorkbenchJobs();
+      const failure = capacity
+        ? new WorkbenchCapacityError()
+        : new Error("private provider detail: capacity limit not found");
+      const start = vi.spyOn(jobs, "start").mockRejectedValue(failure);
+      const runtime = new WorkbenchRuntime("hf-jobs", "unused:test-image", jobs);
+      try {
+        const error = await runtime
+          .startSetup(fastAgentWorkbenchStarter, "test-operator", "retry-admission")
+          .catch((value: unknown) => value);
+        if (capacity) expect(error).toBe(failure);
+        else {
+          expect(error).toBeInstanceOf(WorkbenchSetupStartError);
+          expect(error).toMatchObject({
+            message: "Hugging Face setup Job could not be started",
+          });
+          expect(error).not.toHaveProperty("cause");
+        }
+        // A rejected admission must not leave a queued setup that blocks a later retry.
+        await expect(runtime.listSetups("test-operator")).resolves.toEqual([]);
+        await expect(
+          runtime.startSetup(
+            fastAgentWorkbenchStarter,
+            "test-operator",
+            "retry-admission",
+          ),
+        ).rejects.toThrow();
+        expect(start).toHaveBeenCalledTimes(2);
+        expect(jobs.cancellations).toEqual([]);
+      } finally {
+        await runtime.close();
+        vi.restoreAllMocks();
+      }
+    },
+  );
 });
