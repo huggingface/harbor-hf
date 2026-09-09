@@ -768,10 +768,20 @@ Completed local integration on 2026-09-09; publishing this reviewed merge to the
 
 ### PR #198 URL-filter race repair (2026-09-09)
 
-Status: approved
+Status: completed
 
 Approved at: 2026-09-09T20:00:00Z
 
 - Direct user approval: repair the real frontend URL-filter lost-update race on existing PR #198, with deterministic regression tests, local commits and push to that PR after privacy review and validation.
 - Preserve query/history semantics, unrelated URL parameters, upstream frontend features and the SDK backport. Verify the original regression fails and the repair passes; run normal parallel browser checks and bounded read-only CI monitoring.
 - No merge, deployment, new PR, image publication, remote Jobs, inference, credential movement, live API writes or gate weakening. Local synthetic browser servers are permitted. This scope does not activate any other authorization above.
+
+
+Completed local repair and validation on 2026-09-09; publishing to existing PR #198:
+
+- Filter events merge against the synchronous BrowserRouter URL, while React Router remains the sole navigation writer. No pending-state mirror or global routing changes; search replaces and selectors push. Preserve unknown parameters, history navigation, existing rows and archive behavior.
+- Deterministic real-BrowserRouter/Suspense negative control: three regressions fail on the original handlers; all four tests pass with the fix, including deferred external navigation and POP edits. The existing browser sequence is unchanged except for an added final URL assertion.
+- Formatting, lint (six existing warnings), both TypeScript checks, 850 unit tests, build, generated contracts and dependency audit passed. The complete synthetic browser suite passed 53/53 with two workers; six focused repetitions also passed with two workers and no retries. Local IPv4 startup stalled and was stopped; these browser passes used an isolated IPv6 harness without repository configuration changes. Normal CI remains authoritative for its standard IPv4 path.
+- Supplementary global Node coverage remains below 85%: lines 80.92%, statements 78.87%, functions 80.41%, branches 73.15%. Normal Slophammer check and DRY passed; baseline and mutation commands remain blocked by their absent files. No gate was weakened.
+- Reviewed Harbor JobConfig/viewer models at the existing pin and history through `7d5285b4`; console URL navigation belongs to Harbor-HF. Documentation records the BrowserRouter-specific boundary. SDK patch/build/locks, Harbor configuration and image definitions are unchanged; their full CI checks must still finish after publication.
+- Main remains at `c3558b6`; no additional integration merge was needed. Self-review confirmed only filter navigation, tests and additive documentation/authorization changes. No merge, deployment, remote workload, credential movement or new publication destination. Remote CI monitoring is bounded to twenty minutes after push; no CI rerun is authorized to mask failure.

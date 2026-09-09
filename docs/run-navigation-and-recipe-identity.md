@@ -80,3 +80,31 @@ fixtures require no credentials, inference, remote resources, or API writes.
 
 All changes and checks are local. No commit, push, pull request, deployment,
 credential transfer, resource creation, or live run was performed.
+
+## Deferred filter navigation repair (PR #198)
+
+Runs is mounted under `BrowserRouter`. That router synchronously writes browser
+history before scheduling its React transition. Each filter event therefore
+merges its one-key edit against `window.location.search`, not the render-captured
+`useSearchParams` snapshot. React Router still performs every navigation; there
+is no custom router, pending-state queue, debounce or transition override. Search
+replaces history; role and archive selections push. Unknown parameters (including
+repeated values) survive. Back/Forward and external links become the next edit's
+base even before their React render commits. This relies on BrowserRouter, not
+MemoryRouter or a data router with asynchronous navigation blockers.
+
+The component regression uses the real BrowserRouter and a Suspense gate to
+hold location commits while dispatching filter events. It checks the URL, rows,
+replace/push behavior, clearing defaults and external/history navigation. Against
+the original handlers, three tests fail (including restoring the old search);
+all four pass after the repair. The existing browser search/role sequence remains
+intact and now also asserts its final URL.
+
+Boundary review for this repair checked public `JobConfig` in
+`src/harbor/models/job/config.py` and viewer `JobSummary` in
+`src/harbor/viewer/models.py` at the same pinned Harbor revision above, and history
+through `7d5285b4`. The schema-driven viewer change `2da50a93` concerns launch
+options, not this console's URL navigation. As specified in `DESIGN_PRINCIPLES.md`
+and `CONTROL_SERVICE.md`, console navigation belongs to Harbor-HF. No native
+configuration, output, API value, persisted field, Harbor pin or SDK build changes
+are needed for this repair.
