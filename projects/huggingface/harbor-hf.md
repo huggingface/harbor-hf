@@ -765,3 +765,13 @@ Completed local integration on 2026-09-09; publishing this reviewed merge to the
 - Node checks passed: formatting, lint (existing shell-template warnings), types, build, generated files, 846 unit tests and dependency audit. Initial parallel browser run passed 52/53 with a navigation assertion failure; unchanged full serial rerun passed 53/53.
 - Both local amd64 images rebuilt successfully; each actual final SDK interpreter passed 40 terminal regressions with networking disabled. The rebuilt wheel retained its recorded hash.
 - SDK PR #4851 was mergeable and left untouched. PR #198 remains draft with existing validation limitations. No PR merge, deployment, image/package publication, remote workload, credential movement or resource change.
+
+### PR #198 URL-filter race repair (2026-09-09)
+
+Status: approved
+
+Approved at: 2026-09-09T20:00:00Z
+
+- Direct user approval: repair the real frontend URL-filter lost-update race on existing PR #198, with deterministic regression tests, local commits and push to that PR after privacy review and validation.
+- Preserve query/history semantics, unrelated URL parameters, upstream frontend features and the SDK backport. Verify the original regression fails and the repair passes; run normal parallel browser checks and bounded read-only CI monitoring.
+- No merge, deployment, new PR, image publication, remote Jobs, inference, credential movement, live API writes or gate weakening. Local synthetic browser servers are permitted. This scope does not activate any other authorization above.
