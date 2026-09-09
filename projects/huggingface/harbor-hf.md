@@ -724,3 +724,22 @@ Approved at: 2026-09-09T18:28:46.784884+00:00
 - Local implementation, tests and commits only. No publication, merge,
   deployment, live run, inference, credentials, rate-card schema, billing
   integration or upstream issue/patch is authorized by this amendment.
+
+### Immutable launch pricing and leaderboard estimates (2026-09-09)
+
+Approved at: 2026-09-09T18:58:54.280302+00:00
+
+- Direct approval: the user confirmed supplying input/output/cache USD-per-million
+  rates at Workbench launch so estimated run cost can appear on the leaderboard.
+- Implement optional immutable launch pricing in the existing run record,
+  separate from native JobConfig, recipe/setup identity and provider-reported
+  cost. Preserve old records and existing browser-local scenario preferences.
+- Derive shared estimates from each run's own rates and reported native usage.
+  Preserve missing data and explicitly label estimates and partial group subtotals.
+  Do not claim billed cost or complete usage coverage, infer request tiers from
+  aggregate tokens, or alter leaderboard grouping or reported-cost charts.
+- Include rates in immutable submission conflict checks, not recipe compilation
+  or setup attestation. Keep pricing disabled unless explicitly supplied.
+- Local implementation, tests, documentation and commits are approved. No push,
+  PR, merge, deployment, inference, live runs, new resources, billing integration,
+  credential transfer, execution cost-policy change or upstream publication.
