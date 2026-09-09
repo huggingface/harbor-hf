@@ -215,7 +215,9 @@ value is temporarily `none` because
 [huggingface/sandbox-server#21](https://github.com/huggingface/sandbox-server/pull/21)
 is not yet deployed. Remove this stopgap only after the correction is merged,
 the fixed server is deployed, and a foreground command runs for more than 30
-minutes in a canary. The job can contain timeout multipliers, `retry` and
+minutes in a canary. Follow the
+[stopgap removal checklist](2026-09-09-sandbox-idle-timeout-stopgap-removal.md).
+The job can contain timeout multipliers, `retry` and
 `artifacts`. It cannot set paths, agents, credentials, user agents, custom
 environments or source jobs.
 

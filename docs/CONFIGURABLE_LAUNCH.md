@@ -95,8 +95,10 @@ receive neither the control credential nor the canonical Bucket mount.
   The current server can stop a running foreground command when its idle timer
   expires. Remove this restriction only after the correction is merged, the fixed
   server is deployed, and a foreground command runs for more than 30 minutes in a
-  canary. Harbor phase timeouts, cleanup, and the Hugging Face 24-hour Job limit
-  still bound the work.
+  canary. Follow the
+  [stopgap removal checklist](2026-09-09-sandbox-idle-timeout-stopgap-removal.md).
+  Harbor phase timeouts, cleanup, and the Hugging Face 24-hour Job limit still
+  bound the work.
 - Each task needs a prebuilt Docker image. Image builds, resource overrides, and
   enforced network allowlists are not offered by this page.
 - There are no separate hosted maximums for source count, agent count, attempts,
