@@ -1729,3 +1729,16 @@ Approved at: 2026-09-10T20:45:19.498024+00:00
 - This is an explicit temporary patch-branch deployment. The normal CI workflow
   runs only for PRs and main; local equivalent checks and independent review
   are recorded above rather than claiming branch CI has run.
+
+Pricing repair continuation checkpoint:
+
+- The user reports that priced launch remains blocked and the UX is confusing.
+  Continue the existing approved pricing investigation with local, tested
+  frontend diagnostics: explicit launch blockers, per-rate errors, and a
+  copyable allowlisted summary of validation flags and numeric rates only.
+- Do not claim the original pricing failure is reproduced or resolved. Keep
+  validation, setup, launch confirmation, and server credential approval gates
+  intact; do not log or copy raw field values, credentials, identities or refs.
+- Reuse the existing worker image for this frontend-only change. No image
+  publication, grant mutation, retry, inference or new run is needed. Prepare
+  the reviewed source before any separately checked rollout.
