@@ -58,6 +58,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("distinguishes browser polling, artifact caching, and reconciliation in help", () => {
+  show(run(), { "run-a": progress() });
+  const help = screen.getByText(/The browser polls every 10s while visible/);
+  expect(help).toHaveTextContent(
+    "Artifact reads are on demand with a 10s backend cache, regardless of run status.",
+  );
+  expect(help).toHaveTextContent(
+    "The separate reconciler defaults to 15s (configurable, non-overlapping).",
+  );
+  expect(help).toHaveTextContent("do not guarantee update latency");
+  expect(help).not.toHaveTextContent("terminal runs every 2m");
+});
+
 it("renders one task column with five distinct repetition rows and focus details", async () => {
   show(run(), { "run-a": progress() });
   expect(screen.getAllByRole("rowheader")).toHaveLength(5);
@@ -137,7 +150,7 @@ it("paginates whole task columns at 100 without hiding repeat rows", async () =>
   await user.type(screen.getByRole("searchbox"), "task-100");
   expect(screen.getAllByRole("cell")).toHaveLength(5);
 });
-it("shows unavailable and cached-stale observations and retries", async () => {
+it("shows unavailable without data but only Retry for recent cached observations", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => new Response("{}", { status: 403 })),
@@ -147,12 +160,13 @@ it("shows unavailable and cached-stale observations and retries", async () => {
   cleanup();
   const client = show(run(), { "run-a": progress() });
   await act(() => client.invalidateQueries({ queryKey: ["trial-progress", "run-a"] }));
-  expect(await screen.findByText("● Stale")).toBeVisible();
+  expect(await screen.findByRole("button", { name: "Retry" })).toBeVisible();
+  expect(screen.queryByText("● Stale")).not.toBeInTheDocument();
   act(() =>
     screen.getByRole("link", { name: "trial-a in run-a: Zero reward" }).focus(),
   );
   expect(screen.getByRole("tooltip").textContent).toBe(
-    "Stale — refresh failed\nTask: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −",
+    "Refresh failed; recent observation\nTask: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −",
   );
   vi.stubGlobal(
     "fetch",
@@ -539,4 +553,124 @@ it("reserves three-digit repeat labels and derives CSS only from display counts"
   expect(
     screen.getByRole("group", { name: "Observation freshness" }),
   ).toBeInTheDocument();
+});
+
+it.each([6, 7, 8, 9])(
+  "renders a response arriving at +%is using current time, including recovery",
+  async (seconds) => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => new Promise<Response>(() => {})),
+      );
+      let value = progress(9);
+      if (!value.trials[0]) throw Error("missing fixture");
+      value.trials[0].result = null;
+      const client = show(run(), { "run-a": value });
+      const cell = screen.getByRole("button", { name: /trial-a.*Unfinished/ });
+      act(() => cell.focus());
+      await act(() => vi.advanceTimersByTimeAsync(seconds * 1000));
+      const respond = async () => {
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async () => new Response(JSON.stringify(value))),
+        );
+        await act(async () => {
+          await client.cancelQueries();
+          await client.invalidateQueries({ queryKey: ["trial-progress", "run-a"] });
+          await vi.advanceTimersByTimeAsync(1);
+        });
+      };
+      value = { ...value, observed_at: new Date().toISOString() };
+      await respond();
+      expect(screen.queryByText("● Stale")).not.toBeInTheDocument();
+      expect(cell).toHaveAccessibleName(/Unfinished/);
+      expect(cell).toHaveFocus();
+      expect(screen.getAllByRole("cell")).toHaveLength(9);
+      // A successful request must not renew an unchanged backend observation.
+      await act(() => vi.advanceTimersByTimeAsync(70_000));
+      await respond();
+      expect(screen.getByText("● Stale")).toBeVisible();
+      expect(cell).toHaveAccessibleName(/Unknown/);
+      value = { ...value, observed_at: new Date().toISOString() };
+      await respond();
+      expect(screen.queryByText("● Stale")).not.toBeInTheDocument();
+      expect(cell).toHaveAccessibleName(/Unfinished/);
+      expect(cell).toHaveFocus();
+      expect(screen.getAllByRole("cell")).toHaveLength(9);
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("keeps recent evidence on transport failure, then exposes an outage after 60s", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 503 })),
+    );
+    const value = progress(9);
+    if (!value.trials[0]) throw Error("missing fixture");
+    value.trials[0].result = null;
+    const client = show(run(), { "run-a": value });
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["trial-progress", "run-a"] });
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+    expect(screen.queryByText("● Stale")).not.toBeInTheDocument();
+    const cell = screen.getByRole("button", { name: /trial-a.*Unfinished/ });
+    act(() => cell.focus());
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Refresh failed; recent observation",
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => {})),
+    );
+    act(() => screen.getByRole("button", { name: "Retry" }).click());
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(screen.getByRole("button", { name: "Retrying" })).toBeDisabled();
+    await act(() => vi.advanceTimersByTimeAsync(70_000));
+    expect(screen.getByText("● Stale")).toBeVisible();
+    expect(cell).toHaveAccessibleName(/Unknown/);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Stale — observation");
+  } finally {
+    cleanup();
+    vi.useRealTimers();
+  }
+});
+
+it.each([null, "bad-time", new Date(Date.now() + 3_600_000).toISOString()])(
+  "does not present an invalid observation timestamp %s as fresh",
+  (observed_at) => {
+    const value = progress();
+    value.observed_at = observed_at;
+    show(run(), { "run-a": value });
+    expect(screen.getByText("● Stale")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveAttribute(
+      "title",
+      expect.stringContaining("timestamp is unavailable"),
+    );
+  },
+);
+
+it("retains a recent empty observation on refresh failure", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("{}", { status: 503 })),
+  );
+  const value = progress(0);
+  value.trials = [];
+  const client = show(run(), { "run-a": value });
+  await act(() => client.invalidateQueries({ queryKey: ["trial-progress", "run-a"] }));
+  expect(await screen.findByRole("button", { name: "Retry" })).toBeVisible();
+  expect(
+    screen.getByText("No trial artifacts or prepared lock observed yet."),
+  ).toBeVisible();
+  expect(screen.queryByText(/Trial observations unavailable/)).not.toBeInTheDocument();
 });

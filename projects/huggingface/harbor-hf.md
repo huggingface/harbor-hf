@@ -1168,3 +1168,27 @@ Approved at: 2026-09-10T12:47:48.980153+00:00
   live support or performing secret transfers.
 - No merge into main, deployment, secret configuration, credentials, live
   profile publication, benchmark launch, retries, inference or new resources.
+
+Viewer freshness implementation checkpoint (2026-09-10):
+
+- Replaced sampled wall-clock state with render-time measurement; one cleaned-up
+  interval and focus/visibility listeners still expire evidence during hung
+  requests. No new polling loop, backend scan or execution authority added.
+- Recent cached observations survive a transient transport error with a quiet
+  Retry/Retrying action. The existing 60-second age threshold is unchanged;
+  invalid timestamps and genuinely old successful responses remain stale.
+- Corrected obsolete UI/documentation claims: visible browser polling is ten
+  seconds, artifact cache is ten seconds/on demand, reconciler defaults to
+  fifteen seconds with no overlap. None guarantees end-to-end delivery latency.
+- Passed 1076 unit tests and 65 browser tests, formatting, lint, types, build,
+  generated checks, dependency audit, normal Slophammer/DRY and privacy checks.
+  Original clock fails all four deterministic between-tick regressions. Missing
+  baseline/mutation files remain disclosed; no thresholds or budgets changed.
+- Reviewed pinned Harbor job/trial result models and viewer route plus history
+  through 191d1b98. No native execution behavior or pin change required.
+- Independent complete diff review found no implementation/privacy issue;
+  identified stale timing text was corrected and covered by regression tests.
+- Integrate the latest main's independent worker Job-name fix before publication
+  and let PR CI verify the exact combined head; preserve upstream worker behavior.
+- Provider-credential work remains private/local and unconnected to production
+  delivery; do not claim a ready direct-provider benchmark launch path.

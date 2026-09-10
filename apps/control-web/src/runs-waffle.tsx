@@ -31,7 +31,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
   const assignments = useRef<WaffleCell[]>([]);
   const history = useRef<SeparateObservation[]>([]);
   const cells = query.data
-    ? waffleCells(run, query.data, now, query.isError, assignments.current)
+    ? waffleCells(run, query.data, now, assignments.current)
     : [];
   const observations = query.data
     ? separateObservations(query.data, cells, history.current, assignments.current)
@@ -65,7 +65,14 @@ function RunWaffleContents({ run }: { run: RunView }) {
   const page = Math.min(taskPage, Math.max(0, Math.ceil(columns.length / TASKS) - 1));
   const shown = columns.slice(page * TASKS, (page + 1) * TASKS);
   const evidence = projectRunExceptions(run.result);
-  const stale = query.isError || !!(query.data && !recent(query.data.observed_at, now));
+  const stale = !!(query.data && !recent(query.data.observed_at, now));
+  const freshnessWarning = stale
+    ? "Stale — observation is older than one minute or its timestamp is unavailable"
+    : query.isError
+      ? query.data
+        ? "Refresh failed; recent observation"
+        : "Trial observations unavailable"
+      : undefined;
   const repeats = Math.max(0, ...[...groups.values()].map((group) => group.length));
   const rowLabelWidth = Math.max(2, String(repeats).length) * 8 + 8;
   const matrixStyle: CSSProperties & { "--cell-size": string } = {
@@ -84,25 +91,22 @@ function RunWaffleContents({ run }: { run: RunView }) {
               aria-label="Observation freshness"
               className="flex h-6 w-36 shrink-0 items-center gap-2 text-xs text-amber-400/80"
             >
-              <span
-                role="status"
-                title={
-                  query.isError
-                    ? "Trial observations could not be refreshed"
-                    : stale
-                      ? "Last observation is older than one minute"
-                      : undefined
-                }
-              >
-                {stale ? `● ${query.data ? "Stale" : "Unavailable"}` : ""}
+              <span role="status" title={freshnessWarning}>
+                {stale
+                  ? "● Stale"
+                  : query.isError && !query.data
+                    ? "● Unavailable"
+                    : ""}
               </span>
               {query.isError && (
                 <button
                   type="button"
                   className="underline"
+                  title={freshnessWarning}
+                  disabled={query.isFetching}
                   onClick={() => void query.refetch()}
                 >
-                  Retry
+                  {query.isFetching ? "Retrying" : "Retry"}
                 </button>
               )}
             </fieldset>
@@ -145,8 +149,11 @@ function RunWaffleContents({ run }: { run: RunView }) {
           Tasks/input digests are columns; repetitions are display slots, not aligned
           real attempt numbers. One square per lock entry (observations only without a
           lock). Artifact observations are not scheduling authority: unfinished does not
-          mean running. Active runs refresh every 15s; terminal runs every 2m. Slots do
-          not establish equivalent repetitions across runs or individual HF Job
+          mean running. The browser polls every 10s while visible. Artifact reads are on
+          demand with a 10s backend cache, regardless of run status. The separate
+          reconciler defaults to 15s (configurable, non-overlapping). These intervals do
+          not guarantee update latency; requests and background tabs can delay updates.
+          Slots do not establish equivalent repetitions across runs or individual HF Job
           associations. Missing exception evidence is unknown; no recorded exception is
           not proof of valid scoring. Infrastructure classification is not recorded by
           Harbor. Reported cost may be partial, not billing. Open a linked trial for
@@ -230,7 +237,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
                   );
                   const content = (
                     <Hint
-                      text={`${query?.isError ? "Stale — refresh failed\n" : ""}${cellDescription(cell)}`}
+                      text={`${freshnessWarning ? `${freshnessWarning}\n` : ""}${cellDescription(cell)}`}
                     >
                       <span
                         aria-hidden="true"
@@ -277,7 +284,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
           <p role="status" className="p-4 text-sm text-slate-400">
             {query.isPending
               ? "Loading trial artifacts…"
-              : query.isError
+              : query.isError && !query.data
                 ? "Trial observations unavailable. Retry the affected run."
                 : search
                   ? "No trials match your search."

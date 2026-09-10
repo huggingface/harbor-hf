@@ -196,7 +196,7 @@ it("keeps three task names times three native identities independently stateful"
   expect(changed.slice(1)).toEqual(cells.slice(1));
 });
 
-it("downgrades incomplete cells on stale artifacts or failed refresh, never completed evidence", () => {
+it("downgrades incomplete cells on stale artifacts, never completed evidence", () => {
   const value = data();
   value.trials.push({
     ...first(value.trials),
@@ -204,7 +204,7 @@ it("downgrades incomplete cells on stale artifacts or failed refresh, never comp
     result: { finished_at: timestamp },
   });
   expect(
-    waffleCells(run, value, now, true)
+    waffleCells(run, value, now + 61_000)
       .slice(0, 2)
       .map((cell) => cell.state),
   ).toEqual(["uncertain", "completed"]);
@@ -221,21 +221,21 @@ it("preserves current positions but releases removed reservations", () => {
     { ...template, trial_name: "trial-a" },
     { ...template, trial_name: "trial-z" },
   ];
-  const next = waffleCells(run, value, now, false, initial);
+  const next = waffleCells(run, value, now, initial);
   expect(next[0]?.trial?.trial_name).toBe("trial-z");
   expect(next[0]?.key).toBe(initial[0]?.key);
   expect(next[1]?.trial?.trial_name).toBe("trial-a");
   expect(next[1]?.key).not.toBe(initial[1]?.key);
   value.trials = [{ ...template, trial_name: "trial-a" }];
-  const removed = waffleCells(run, value, now, false, next);
+  const removed = waffleCells(run, value, now, next);
   expect(removed[0]?.trial).toBeNull();
   expect(removed[0]?.state).toBe("pending");
   expect(removed[1]?.key).toBe(next[1]?.key);
   value.trials.unshift({ ...template, trial_name: "trial-b" });
-  const added = waffleCells(run, value, now, false, removed);
+  const added = waffleCells(run, value, now, removed);
   expect(added[0]?.trial?.trial_name).toBe("trial-b");
   value.trials.push({ ...template, trial_name: "trial-z" });
-  const restored = waffleCells(run, value, now, false, added);
+  const restored = waffleCells(run, value, now, added);
   expect(restored[2]?.key).toBe(initial[0]?.key);
   expect(cellDescription(first(restored))).not.toContain(
     "do not establish equivalent repetitions",
@@ -253,7 +253,7 @@ it("keeps nine planned squares through partial observations, removal, replacemen
   expect(separate).toHaveLength(1);
   expect(cells.every((cell) => !cell.trial)).toBe(true);
   value.trials = [template, template]; // same name is one native identity
-  let next = waffleCells(run, value, now, false, cells);
+  let next = waffleCells(run, value, now, cells);
   separate = separateObservations(value, next, separate, cells);
   expect(separate).toEqual([]);
   expect(next.filter((cell) => cell.trial)).toHaveLength(1);
@@ -263,13 +263,13 @@ it("keeps nine planned squares through partial observations, removal, replacemen
       ...template,
       trial_name: `old-${i}`,
     }));
-    next = waffleCells(run, value, now, false, cells);
+    next = waffleCells(run, value, now, cells);
     expect(next).toHaveLength(9);
     expect(next.filter((cell) => cell.trial)).toHaveLength(count);
   }
   cells = next;
   value.trials = [];
-  next = waffleCells(run, value, now, false, cells);
+  next = waffleCells(run, value, now, cells);
   separate = separateObservations(value, next, [], cells);
   expect(separate).toHaveLength(9);
   expect(separate.every((item) => item.removed)).toBe(true);
@@ -280,7 +280,7 @@ it("keeps nine planned squares through partial observations, removal, replacemen
     ...template,
     trial_name: `new-${i}`,
   }));
-  const replacement = waffleCells(run, value, now, false, next);
+  const replacement = waffleCells(run, value, now, next);
   expect(replacement).toHaveLength(9);
   expect(replacement).toEqual(waffleCells(run, value, now));
   expect(replacement.every((cell) => !cells.some((old) => old.key === cell.key))).toBe(
@@ -288,7 +288,7 @@ it("keeps nine planned squares through partial observations, removal, replacemen
   );
   expect(separateObservations(value, replacement, separate, next)).toHaveLength(9);
   expect(separateObservations(value, replacement)).toEqual([]); // remount has no removal history
-  expect(waffleCells(run, value, now, false, replacement)).toEqual(replacement);
+  expect(waffleCells(run, value, now, replacement)).toEqual(replacement);
 });
 
 it("moves a config-only name globally when its native lock arrives", () => {
@@ -299,11 +299,11 @@ it("moves a config-only name globally when its native lock arrives", () => {
   const initial = waffleCells(run, value, now);
   expect(initial).toHaveLength(1);
   value.lock = { trials: Array.from({ length: 9 }, () => ({ task })) };
-  const partial = waffleCells(run, value, now, false, initial);
+  const partial = waffleCells(run, value, now, initial);
   expect(partial).toHaveLength(9);
   expect(separateObservations(value, partial, [], initial)).toHaveLength(1);
   value.trials = [template, template];
-  const mapped = waffleCells(run, value, now, false, partial);
+  const mapped = waffleCells(run, value, now, partial);
   expect(mapped).toHaveLength(9);
   expect(mapped.filter((cell) => cell.trial)).toHaveLength(1);
   expect(mapped[0]?.key).toBe(initial[0]?.key);
@@ -383,7 +383,7 @@ it("keeps unfinished and unknown short without claiming live running", () => {
   expect(cellDescription(first(waffleCells(run, data(), now)))).toBe(
     "Task: task-a\nRepeat slot: 1\nState: Unfinished\nReward: -\nAgent time: −",
   );
-  expect(cellDescription(first(waffleCells(run, data(), now, true)))).toBe(
+  expect(cellDescription(first(waffleCells(run, data(), now + 61_000)))).toBe(
     "Task: task-a\nRepeat slot: 1\nState: Unknown / interrupted\nReward: -\nAgent time: −",
   );
 });
@@ -404,4 +404,11 @@ it("uses unequal marker magnitudes without question marks or invented activity",
     waffleStates.error.symbol,
     waffleStates.cancelled.symbol,
   ]).toEqual(["✓", "0", "!", "−"]);
+});
+
+it("keeps the one-minute age and five-second future-skew boundaries", () => {
+  expect(recent(new Date(now - 60_000).toISOString(), now)).toBe(true);
+  expect(recent(new Date(now - 60_001).toISOString(), now)).toBe(false);
+  expect(recent(new Date(now + 5_000).toISOString(), now)).toBe(true);
+  expect(recent(new Date(now + 5_001).toISOString(), now)).toBe(false);
 });
