@@ -1006,3 +1006,17 @@ PR additions validation checkpoint (2026-09-10):
   the old Workbench reasoning-off restriction. Disclose both holds in PR #200.
 - Publishing approved source additions only. No merge, deployment, live profile
   publication, rate correction, run, inference or credential movement.
+
+### Integrate current main into PR #200 (2026-09-10)
+
+Approved at: 2026-09-10T08:33:41.114483+00:00
+
+- Direct request: merge main into the existing feature branch and walk through
+  conflicts. Integrate current main, resolve textual and semantic conflicts,
+  retain upstream campaign spend validation and organization authentication
+  fixes together with metadata-only reasoning and existing feature behavior.
+- Carry forward approval to commit and push this PR branch; update PR conflict
+  status and monitor CI after full relevant validation and privacy review.
+- This authorizes branch integration only, not merging PR #200 into main. No
+  deployment, live profile publication, pricing edits, jobs, inference, new
+  resources or credential transfers. Preserve all unrelated worktrees.
