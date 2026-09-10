@@ -1067,3 +1067,20 @@ Approved at: 2026-09-10T10:54:54.904945+00:00
   secret writes/transfers, remote jobs, inference, credential inspection, new
   resources or live configuration changes. Source/destination approval for
   any future credential transfer must be explicit and separate.
+
+### Complete provider credential production wiring (2026-09-10)
+
+Approved at: 2026-09-10T13:37:44.914817+00:00
+
+- Direct request: complete the approved provider-key feature and identify any
+  actual decision needed. Finish local production configuration and selected
+  ephemeral delivery wiring, fail-closed grant/source checks, and end-to-end
+  mocked adapter tests instead of leaving disconnected extension points.
+- Preserve reviewed recipe/model grants, explicit bindings, no secret entry in
+  the app, existing HF behavior, native Harbor env resolution and empty default
+  policy. No provider-name branches or expansion of control-token delivery.
+- Implementation and tests do not authorize live secret inventory changes.
+  The operating-instruction two-secret constraint still blocks live adoption;
+  do not add/read/copy a credential, launch work or deploy.
+- Local work only; preserve unrelated dirty worktrees and the separate refresh
+  PR. No publication, merge, jobs, inference or remote configuration mutations.
