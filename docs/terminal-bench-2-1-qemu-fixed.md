@@ -23,6 +23,69 @@ The smoke selects `qemu-startup` and `qemu-alpine-ssh` with native
 except the source; all four set `leaderboard_eligible: false`. No unrelated
 adaptive-rejection-sampler or three-task smoke variant was added.
 
+## Explicit six-hour agent presets
+
+These additional diagnostic presets leave all four presets above unchanged:
+
+| Preset | Tasks | Native attempts | Logical trials (one agent) |
+| --- | ---: | ---: | ---: |
+| all-tasks-1-trial-with-6h-qemu-fixed | 89 | 1 | 89 |
+| all-tasks-5-trials-with-6h-qemu-fixed | 89 | 5 | 445 |
+| held-50-3-trials-qemu-fixed | 50 | 3 | 150 |
+
+**All three additions give each trial six hours (21600 seconds) of agent
+execution**, including the held-50 three-attempt addition. This replaces each
+task's agent budget; it is not six hours for the whole Run and does not include
+agent setup, environment build or verification. A full Run can take much longer.
+This does not guarantee six hours of useful work or model/provider compatibility:
+earlier errors, cancellation, agent exits and existing cost policies still apply.
+No execution or increased spend is authorized by adding a preset.
+
+Each addition stores only native Harbor settings:
+
+```json
+{
+  "agents": [{ "override_timeout_sec": 21600, "max_timeout_sec": null }],
+  "agent_timeout_multiplier": 1,
+  "retry": { "max_retries": 0 }
+}
+```
+
+Concurrency remains eight, agent setup multiplier remains two, and environment
+and verifier settings remain unchanged. The existing Sandbox `job_timeout` stays
+`"none"`; no parent/whole-Run time limit is added. Attempts are logical benchmark
+repetitions, not retries. The source and image pins below are reused exactly, and
+the held-50 selection is copied exactly from the existing one-attempt preset.
+All additions remain `leaderboard_eligible: false`, including the 445-trial one;
+this repaired source must not be promoted as an official final result.
+
+The `with-6h` full-preset names sort after the existing one-attempt fixed preset,
+preserving the catalog-first default used by both fresh submission forms. Users
+must explicitly select a new preset. Existing saved selections remain unchanged.
+
+Native precedence was checked at Harbor
+`dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` in
+`src/harbor/models/trial/config.py`, `src/harbor/models/job/config.py`,
+`src/harbor/job_plan.py` and `src/harbor/trial/trial.py`:
+
+1. Agent `override_timeout_sec` replaces the task agent timeout.
+2. `max_timeout_sec`, when supplied, caps that base **before** multiplication.
+3. Explicit `agent_timeout_multiplier` takes precedence over the global multiplier.
+
+Thus these settings resolve to `min(21600, infinity) * 1 = 21600` seconds,
+not 86400 seconds. Setup and verifier use separate native fields. Reviewed all
+subsequent upstream history through `191d1b98`; timing and trial expansion are
+unchanged (JobConfig adds attempt validation and factors legacy migration).
+The existing public metadata inspector suffices; no pin update,
+Harbor patch, timeout resolver or control-service change is required.
+
+Regression tests compile each real preset through both native and Workbench
+paths with every checked-in harness and two different model values. They compare
+the complete compiled configuration against the old preset, preserving selected
+agent identity, model, kwargs, environment and other phase settings while proving
+the native timing fragment survives. Separate checks preserve the default and
+exact held-50 membership, including both QEMU tasks.
+
 ## Published source and image provenance
 
 - Fork: <https://github.com/evalstate/terminal-bench-2-1/tree/qemu-fixed>
@@ -169,3 +232,28 @@ The amendment passed 1,064 unit tests and 64 isolated browser tests, formatting,
 lint, types, build, generated-contract checks, dependency audit and normal
 Slophammer/DRY. Baseline and mutation commands were retried and remain unavailable
 for the missing files described above. No checks were weakened.
+
+## Six-hour suite validation
+
+Pinned native metadata inspection resolved 89/89, 89/445 and 50/150 task/trial
+counts. A separate credential-free public `JobPlan` inspection of all six actual
+compiler outputs (three presets, two paths) confirmed the override, null cap and
+multiplier on **every** expanded native trial, matching task membership and image
+pins. These are metadata plans, not executed locks or measured runtime evidence.
+The direct-config metadata CLI admits catalog agents, not Workbench command
+agents; Workbench outputs were checked with native public planning instead.
+No agent was instantiated or installed, and no task/container/model was run.
+
+- All eight pre-existing benchmark preset files remain byte-identical.
+- 1,140 TypeScript unit tests passed, including 76 new suite regressions;
+  64 isolated browser tests passed with the repository-pinned Node 22.22.0.
+  An initial browser invocation was stopped before test output and rerun cleanly.
+- Formatting, lint, both type checks, build, generated checks and npm audit passed.
+  Existing lint warnings remain; the new test file adds none.
+- Ruff, Python formatting, ty and 100 CLI tests passed with 89.10% coverage;
+  Python dependency audit and normal Slophammer/DRY checks passed.
+- Supplemental TypeScript coverage is 82.32% lines / 74.77% branches, below 85%.
+  Baseline and mutation commands remain blocked by the previously documented
+  missing files. No threshold, line budget or check was weakened.
+- No runtime source, generated contract, worker, image or deployment changed.
+  Image builds and remote execution were not repeated for this preset-only work.

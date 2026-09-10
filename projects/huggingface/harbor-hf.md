@@ -1241,3 +1241,50 @@ Wrapper-only publication completed (2026-09-09 session):
 - This completion record changes no runtime source. No SDK repository/PR change,
   deployment, image publication, merge, Job, retry or credential movement occurred.
   Local image and test processes finished. Parent review remains the next action.
+
+### Six-hour fixed preset suite (2026-09-09)
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user request: add explicit six-hour per-trial agent execution variants
+  for the fixed 89-task one-attempt and five-attempt presets (89/445 trials),
+  and a fixed held-50 three-attempt preset (150 trials). Use the same six-hour
+  agent budget for the held-50 addition and clearly document that choice for
+  pre-publication review. Preserve every existing preset and default selection.
+- Approves isolated local configuration, tests, documentation and commits on
+  `feat/six-hour-fixed-presets`, followed by one canonical Harbor-HF push and PR
+  only after parent review. Stop at local commits and a private PR draft until
+  that review; this record does not bypass the publication hold.
+- Inspect pinned native Harbor timeout precedence and subsequent history first.
+  Use existing native configuration and compilation, with no duplicated timeout
+  resolver. Verify effective 21600-second agent limits through both submission
+  paths; preserve setup/verifier limits, concurrency eight, zero retries, source
+  and image pins, held-50 membership and diagnostic/non-leaderboard status.
+- Reuse only the previously approved public source and image references at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e, within their existing exact public
+  destinations. No source-fork mutation or new privacy exception.
+- No whole-run cap, launch, retry, inference, Jobs, merge, deployment, credential
+  handling, resource creation, image publication or upstream mutation. Preserve
+  unrelated worktrees. Run required local validation and privacy review without
+  weakening gates. Timestamp denotes session date; exact approval time unknown.
+
+Six-hour suite local preparation checkpoint (2026-09-09 session):
+
+- Added 89/445-trial `with-6h-qemu-fixed` full variants and the 150-trial
+  `held-50-3-trials-qemu-fixed` preset. Held-50 uses the same explicit six-hour
+  agent budget; that choice is documented for parent review before publication.
+- Native override 21600, null max cap and multiplier one survive both compilers
+  and all expanded public JobPlan trials. Inspected pinned Harbor timeout source
+  and history through 191d1b98; existing native support needs no runtime change.
+- All eight old presets are byte-identical; catalog-first default, source/image
+  pins, held-50 membership, diagnostic status and other phase limits preserved.
+- Passed 1,140 unit tests, 64 isolated browser tests, 100 Python tests (89.10%
+  coverage), formatting, lint, types, build, generated checks, dependency audits,
+  normal Slophammer/DRY and privacy checks. Existing lint warnings and supplemental
+  TypeScript coverage below 85% remain; baseline/mutation files are still absent.
+- Local commits and private draft only. No push or PR yet; parent review remains
+  required. No launches, retries, inference, Jobs, merge, deployment, credential
+  transfer, source-fork mutation, new resource or image publication occurred.
+
+Completed after review: published the three-preset suite in draft PR #206 (https://github.com/huggingface/harbor-hf/pull/206), with the shared six-hour held-50 budget and existing validation limitations explicitly documented. No merge, deployment or execution occurred.
