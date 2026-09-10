@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from harbor.environments.base import ExecResult
 from harbor.models.agent.context import AgentContext
 from pydantic import ValidationError
 
@@ -47,7 +48,7 @@ def _environment(
     environment = AsyncMock()
     environment.default_user = None
     environment.capabilities.mounted = mounted
-    environment.exec.return_value = AsyncMock(return_code=0, stdout="", stderr="")
+    environment.exec.return_value = AsyncMock(return_code=0, stdout="/app\n", stderr="")
     if logs_root is not None:
 
         async def upload(source: Path, target: str) -> None:
@@ -599,3 +600,77 @@ async def test_clean_shell_preserves_task_identity_without_ambient_credentials(
         env={"OPENAI_API_KEY": "fixture-inference"},
     )
     assert environment.exec.call_args.kwargs["user"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("workdir", [None, "/custom/ tâche space "])
+async def test_effective_workspace_shared_by_install_and_run(temp_dir, workdir):
+    effective = workdir or "/workspace"
+    spec = {"argv": ["example-cli"], "bindings": {"TASK_WORKSPACE": "workspace_path"}}
+    agent = CommandAgent(logs_dir=temp_dir, config=_config(setup=spec, run=spec))
+    environment = _environment()
+    environment.task_env_config.workdir = workdir
+    environment.default_user = "task-user"
+    environment.exec.return_value = ExecResult(return_code=0, stdout=effective + "\n")
+
+    await agent.install(environment)
+    await agent.run("instruction", environment, AgentContext())
+
+    probe = environment.exec.call_args_list[0]
+    assert probe.kwargs == {"command": "pwd", "cwd": None}
+    assert (
+        sum(c.kwargs["command"] == "pwd" for c in environment.exec.call_args_list) == 1
+    )
+    for phase in ("setup", "run"):
+        call = _phase_call(environment, phase)
+        assert call.kwargs["cwd"] == effective
+        assert call.kwargs["env"] == {"TASK_WORKSPACE": effective}
+        assert call.kwargs["user"] is None
+    assert not any(
+        "/app" in c.kwargs["command"] for c in environment.exec.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_without_install_discovers_workspace_and_install_refreshes(temp_dir):
+    agent = CommandAgent(logs_dir=temp_dir, config=_config())
+    environment = _environment()
+    environment.exec.return_value = ExecResult(return_code=0, stdout="/workspace\n")
+    await agent.run("instruction", environment, AgentContext())
+    assert _phase_call(environment, "run").kwargs["cwd"] == "/workspace"
+    environment.exec.return_value = ExecResult(return_code=0, stdout="/other\n")
+    await agent.install(environment)
+    environment.exec.reset_mock()
+    await agent.run("instruction", environment, AgentContext())
+    assert _phase_call(environment, "run").kwargs["cwd"] == "/other"
+    assert not any(
+        c.kwargs["command"] == "pwd" for c in environment.exec.call_args_list
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "result",
+    [
+        ExecResult(return_code=0, stdout=""),
+        ExecResult(return_code=1, stdout="private-output", stderr="private-error"),
+        ExecResult(return_code=0, stdout="not-absolute"),
+        ExecResult(return_code=0, stdout="/path\nprivate-output\n"),
+        RuntimeError("private-provider-error"),
+    ],
+)
+async def test_workspace_probe_failure_is_sanitized(temp_dir, result, caplog):
+    caplog.set_level("DEBUG")
+    agent = CommandAgent(logs_dir=temp_dir, config=_config())
+    environment = _environment()
+    if isinstance(result, Exception):
+        environment.exec.side_effect = result
+    else:
+        environment.exec.return_value = result
+    with pytest.raises(
+        RuntimeError, match="^Cannot resolve command-agent working directory$"
+    ):
+        await agent.install(environment)
+    assert environment.exec.call_count == 1
+    assert "private-" not in caplog.text
+    environment.upload_file.assert_not_called()

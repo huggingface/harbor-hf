@@ -1303,3 +1303,24 @@ Approved at: 2026-09-09T00:00:00Z
 - No merge, deployment, image publication, Jobs, retries, reruns, inference,
   credential movement, upstream changes or unrelated modifications. Preserve
   existing worktrees, Harbor ownership and validation/privacy gates.
+
+Local preparation checkpoint (2026-09-09 session):
+
+- Replaced the adapter's fixed workspace with one native `pwd` probe before
+  install, cached for run and workspace bindings; direct run also discovers it.
+  Preserve task-user selection, whitespace/Unicode paths and clean bindings;
+  invalid or failed probes raise a fixed error without logging their output.
+- Reviewed Harbor `src/harbor/models/task/config.py`, `environments/base.py`,
+  `environments/hf_sandbox.py` and `agents/installed/base.py` at pin
+  `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`, plus history through `191d1b98`.
+  Existing public execution supports this adapter correction; no pin change,
+  upstream resolver, durable configuration, image or retry change is needed.
+- Eight new regressions failed against original production code and passed
+  after the fix. Root: 100 tests, 89.10% coverage. Agents: 186 tests; changed
+  agent file 94.02% branch-inclusive coverage. Ruff, format, ty, normal
+  Slophammer, DRY and privacy checks passed. Agent-wide coverage remains 62.46%;
+  baseline and mutation files are absent. No gate was weakened. No TypeScript
+  changed, so npm/browser checks were not rerun.
+- Local commits and private PR draft only; parent review and publication remain
+  pending. No push, PR creation, deployment, image publication, Jobs, retries,
+  inference, credentials or upstream mutation occurred.
