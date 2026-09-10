@@ -1137,3 +1137,47 @@ Approved at: 2026-09-10T16:06:54.460079+00:00
 - Local implementation and tests only. No push, PR, merge, deployment, live
   secret registration/transfer, inference or benchmark execution. Existing
   live credential operating-instruction conflicts still require alignment.
+
+App-managed reference workflow completed locally (2026-09-10):
+
+- Replaced the manual manifest file and offline grant hashing with operator-only
+  name registration, explicit Workbench selection, server-derived review and
+  confirmation. No key-value input, environment enumeration or new secret store.
+- One canonical private registry owns immutable source identities, revisions and
+  audited grants. Registration, review, approval and status routes enforce actor
+  ownership, write mode, CSRF and revision checks; grants rechecked at dispatch.
+- Ordinary environment names are accepted while authority names remain blocked.
+  Own-property and nonempty-string checks protect presence and selected delivery.
+  Native key-only is explicit; other protocols require reviewed URL and binding.
+- Passed 1195 unit tests, 68 browser tests on full rerun, 100 root Python tests
+  with 89.10% coverage, 164 agent tests, formatting, types, builds, audits and
+  normal Slophammer/DRY. An initial browser run had one pricing polling timeout;
+  the unchanged two-worker full rerun passed. Lint passes with warnings.
+- Final independent focused review passed 311 tests and cleared all tracked and
+  untracked text for privacy. No new reviewed local blockers remain. Global
+  TypeScript coverage still fails 85% (84.01% lines, 76.69% branches); baseline
+  and mutation tooling absent; generated outputs deterministic despite dirty
+  generated-vs-HEAD check. No gates weakened.
+- Exclusive single write authority remains required; cross-controller CAS and
+  overlapping rollout are not supported. Existing live control-token/two-secret
+  instruction conflicts are not repaired or broadened by this feature.
+- Source remains local/uncommitted. No publication, deployment, real secret
+  registration/inspection/transfer, hosted delivery, benchmark run or inference.
+
+### Publish app-managed provider references and prepare deployment (2026-09-10)
+
+Approved at: 2026-09-10T17:14:44.513776+00:00
+
+- Direct user request: explain Space setup, push the provider-reference feature
+  and prepare it for merge and deployment. Integrate current main into the
+  isolated feature branch, preserve upstream changes, resolve conflicts and
+  run full relevant validation and independent privacy/correctness review.
+- Commit, push and open one PR for the reviewed implementation; monitor CI and
+  update its description honestly with readiness limits and a clear runbook.
+  This supersedes prior local-only publication limits for the approved scope.
+- Preparation is not deployment authorization. Do not merge into main, publish
+  worker images, deploy, add/register/read/copy live secrets, change live policy,
+  launch benchmarks or infer. Provider activation also requires operating
+  instructions to align with the approved future credential design.
+- Preserve all unrelated worktrees and changes, including the separate refresh
+  and prominent-cost PR. No new infrastructure or upstream modifications.
