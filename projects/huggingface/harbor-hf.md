@@ -1042,3 +1042,28 @@ Main integration validation completed (2026-09-10):
   availability hold is unchanged; build success does not prove installation.
 - Publishing this branch integration to PR #200 only. No merge into main,
   deployment, live profile publication, cost correction, jobs or inference.
+
+### Explicit provider credential bindings: approved design (2026-09-10)
+
+Approved at: 2026-09-10T10:54:54.904945+00:00
+
+- Direct user approval: operator-managed provider inference credentials may be
+  supplied by Space secrets. The app selects reviewed credential references
+  and availability, never accepts or stores secret values. Recipes contain
+  explicit environment bindings; only selected reviewed execution receives the
+  provider credential. No automatic forwarding of Space environment variables.
+- Locally design, implement and test generic reference/binding support and an
+  opt-in native model route, preserving saved recipes and existing HF behavior.
+  No provider/model/harness-specific core branches or second credential store.
+- The user added the sentence permitting non-HF secrets from the Space
+  environment in the older checkout's control-service document. Carry only
+  that approved credential intent into current architecture; leave unrelated
+  older edits and all existing worktrees untouched.
+- Current session operating instructions still prescribe exactly two
+  persistent control-Space secrets. This approval records the future design,
+  not permission to violate that live boundary: do not add a third secret or
+  move any credential. Reconcile operating instructions before live adoption.
+- Local work and authorization commits only; no push, PR, merge, deployment,
+  secret writes/transfers, remote jobs, inference, credential inspection, new
+  resources or live configuration changes. Source/destination approval for
+  any future credential transfer must be explicit and separate.
