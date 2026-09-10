@@ -1150,3 +1150,21 @@ Held-50 publication completed (2026-09-09):
   original presets and unrelated worktrees remain unchanged. No PR was created.
 - All managed validation processes completed. This additive completion record
   is the final documentation-only commit on the same approved topic branch.
+
+### Simplify viewer freshness and publish focused fix (2026-09-10)
+
+Approved at: 2026-09-10T12:47:48.980153+00:00
+
+- Direct user request: simplify refresh behavior and stale warnings, improve
+  the viewer, push the fix and prepare the PR for merge. Keep ten-second
+  frontend polling and honest exceptional stale/error states. No false fresh
+  observations or execution-state inference. Add regression tests.
+- PR #200 is already merged and there is no open PR for this refresh scope;
+  create one focused PR from current main after implementation, validation,
+  independent privacy/correctness review, commit and push. Monitor CI read-only.
+- Preserve unrelated local provider-credential work; do not fold disabled,
+  incomplete delivery scaffolding into a merge-ready refresh fix. Investigate
+  and explain exact remaining provider setup prerequisites without claiming
+  live support or performing secret transfers.
+- No merge into main, deployment, secret configuration, credentials, live
+  profile publication, benchmark launch, retries, inference or new resources.
