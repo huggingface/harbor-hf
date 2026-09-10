@@ -1241,3 +1241,30 @@ Wrapper-only publication completed (2026-09-09 session):
 - This completion record changes no runtime source. No SDK repository/PR change,
   deployment, image publication, merge, Job, retry or credential movement occurred.
   Local image and test processes finished. Parent review remains the next action.
+
+### Six-hour fixed preset suite (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user request: add explicit six-hour per-trial agent execution variants
+  for the fixed 89-task one-attempt and five-attempt presets (89/445 trials),
+  and a fixed held-50 three-attempt preset (150 trials). Use the same six-hour
+  agent budget for the held-50 addition and clearly document that choice for
+  pre-publication review. Preserve every existing preset and default selection.
+- Approves isolated local configuration, tests, documentation and commits on
+  `feat/six-hour-fixed-presets`, followed by one canonical Harbor-HF push and PR
+  only after parent review. Stop at local commits and a private PR draft until
+  that review; this record does not bypass the publication hold.
+- Inspect pinned native Harbor timeout precedence and subsequent history first.
+  Use existing native configuration and compilation, with no duplicated timeout
+  resolver. Verify effective 21600-second agent limits through both submission
+  paths; preserve setup/verifier limits, concurrency eight, zero retries, source
+  and image pins, held-50 membership and diagnostic/non-leaderboard status.
+- Reuse only the previously approved public source and image references at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e, within their existing exact public
+  destinations. No source-fork mutation or new privacy exception.
+- No whole-run cap, launch, retry, inference, Jobs, merge, deployment, credential
+  handling, resource creation, image publication or upstream mutation. Preserve
+  unrelated worktrees. Run required local validation and privacy review without
+  weakening gates. Timestamp denotes session date; exact approval time unknown.
