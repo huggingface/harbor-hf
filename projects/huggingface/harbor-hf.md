@@ -1045,7 +1045,7 @@ Main integration validation completed (2026-09-10):
 
 ### QEMU-fixed source and preset publication (2026-09-09)
 
-Status: approved
+Status: completed
 Approved at: 2026-09-09T00:00:00Z
 
 - Direct user YES: reuse or create the PUBLIC fork
@@ -1088,3 +1088,16 @@ QEMU-fixed implementation and validation checkpoint (2026-09-09):
   generated checks, dependency audit, normal Slophammer and DRY. Default-port
   browser reuse was discarded; absent baseline/mutation tooling is disclosed in
   docs/terminal-bench-2-1-qemu-fixed.md. Topic publication remains the final step.
+
+QEMU-fixed publication completed (2026-09-09):
+
+- Verified public source branch at 75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e
+  and public Harbor-HF `feat/qemu-fixed-presets` at implementation commit
+  258cedf8a9b041ace3f3bc9087a3f990ed9bc12c. This completion record is the final
+  additive documentation-only commit on that same approved topic branch.
+- Three diagnostic presets are published, not deployed. Native metadata counts,
+  exact image pins, fingerprints and validation limitations are documented in
+  docs/terminal-bench-2-1-qemu-fixed.md. No smoke or other benchmark was launched.
+- No PR, merge, default-branch update, deployment, model inference, new compute,
+  credential transfer, image upload or unrelated worktree change occurred.
+  All managed validation processes ended; the discarded browser process stopped.

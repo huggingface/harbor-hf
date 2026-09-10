@@ -9,7 +9,7 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 
 Approved at: 2026-09-10T08:33:36.655293+00:00
 
@@ -61,3 +61,11 @@ Approved at: 2026-09-10T08:33:36.655293+00:00
   The canonical repository remains read-only: no push, issue, PR or contact.
 - Scope, inventory exception and exact public identifier approval are recorded
   in the Harbor-HF project amendment and the independently indexed fork project.
+
+### Completion of local repair and approved fork publication (2026-09-09)
+
+- The approved repair is available in the independently authorized public fork
+  at 75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e, with two immutable image pins.
+  Canonical source was not mutated; no issue, PR or maintainer contact occurred.
+- Native metadata and unchanged-peer comparison passed. Earlier reference
+  evidence is retained; publication did not repeat execution or test a model.

@@ -9,7 +9,7 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 Approved at: 2026-09-09T00:00:00Z
 
 ### Scope
@@ -45,3 +45,16 @@ Approved at: 2026-09-09T00:00:00Z
   Date denotes this session; exact approval time was not supplied.
 - Read-only inspection found an existing public fork with the expected parent;
   `qemu-fixed` was absent. Reuse it, without changing the default branch.
+
+### Completion (2026-09-09)
+
+- Published and anonymously resolved only `qemu-fixed` at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e. Default branch unchanged.
+  The two approved immutable images were verified anonymously as linux/amd64;
+  no rebuild, image upload, visibility change or task execution occurred.
+- Public Harbor-HF presets were committed at
+  258cedf8a9b041ace3f3bc9087a3f990ed9bc12c and pushed only to
+  `feat/qemu-fixed-presets`. Native counts are 89, 445 and four trials, with
+  exactly two effective image changes and all 87 peer tasks unchanged.
+- Publication scope is complete. Retention requirements remain; no upstream PR,
+  deployment, run, inference or further publication is authorized by completion.
