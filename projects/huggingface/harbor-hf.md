@@ -1364,3 +1364,32 @@ Completion checkpoint (2026-09-09 session):
 Completed on 2026-09-09: pushed the addition to existing draft PR #208 and
 updated its body with validation and deployment prerequisites. No launch or
 deployment occurred; existing validation limitations remain disclosed.
+
+### PR 208 merge, worker publication and control deployment (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user instruction: execute the merge of existing PR #208, rebuild and
+  publish the worker image, and deploy the control service; the user will run
+  the smoke test afterward. Timestamp denotes session date, not exact time.
+- Record this authorization on the existing PR branch, then wait for green CI
+  on its exact reviewed head. Mark the draft ready and squash-merge only that
+  PR, with a head-SHA guard and no administrator bypass or weakened gate.
+  The user accepts the already disclosed supplementary agent coverage and
+  missing baseline/mutation-tool limitations; existing CI must still pass.
+- Use the existing parent-worker GitHub Actions publication workflow and
+  canonical registry package. Build from the exact merged revision and verify
+  the published immutable digest and installed agent source with offline tests.
+- Deploy a clean bundle of that same merged revision to the existing
+  <control-space>. Update only its parent and hosted setup image references
+  to the verified digest, preserving any distinct setup configuration unless
+  confirmed to use the same reviewed worker. Verify release, runtime revision,
+  liveness, readiness and image references; retain private operational evidence.
+- Preserve write mode, hardware, visibility, secrets, other variables, existing
+  Runs, task inputs/images, concurrency, timeouts and cost limits. No new HF
+  Jobs, smoke/setup execution, inference, retries, credential movement, resource
+  creation, upstream changes, other PR merge or unrelated worktree changes.
+  Existing local API authentication stays local; never forward it to a runtime.
+- Public authorization records use placeholders for operational identifiers.
+  The exact user-selected deployment destination is retained privately.
