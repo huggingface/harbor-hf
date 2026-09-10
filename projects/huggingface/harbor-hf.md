@@ -1184,3 +1184,21 @@ Completed on 2026-09-10:
   mutation tooling remain disclosed; no gates were weakened.
 - Neither PR was merged. This local completion record is not part of the
   deployed source; the PR/deployment source remains the exact commit above.
+
+### Explicit Sandbox Job-name simplification
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user instruction: replace the SDK naming backport with a simple explicit
+  short name in the existing Harbor-HF Sandbox wrapper, updating existing PR #205.
+  The timestamp records the session date, not the time of the original decision.
+- Approved: local adapter implementation, offline regression tests and image
+  builds, commits, normal push to the existing topic branch, and PR description
+  updates after privacy review. Preserve the separate exact terminal-result SDK
+  backport, native Harbor trial identity, immutable image payload and ownership
+  labels. Do not change unrelated work or merge main into the branch unnecessarily.
+- No SDK repository changes or publication, reopening the closed SDK naming PR,
+  merge, deployment, remote image publication, Jobs, retries, inference, credential
+  movement or new resources in this implementation stage. Parent review precedes
+  any later deployment decision; earlier deployment approval is not exercised here.
