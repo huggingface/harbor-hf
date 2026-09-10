@@ -24,8 +24,12 @@ for (const view of ["refresh", "pending-run", "pending-jobs"] as const) {
       },
       state: { desired_state: "run", parent_jobs: [] },
       status: "running",
-      result: { stats: { cost_usd: 1 } },
-      shared_estimate: { cost_usd: null, unavailable_reason: "usage_unavailable" },
+      result: { stats: { cost_usd: view === "refresh" ? null : 1 } },
+      shared_estimate: {
+        cost_usd: view === "refresh" ? 1.69 : null,
+        unavailable_reason: view === "refresh" ? null : "usage_unavailable",
+        basis: "launch_rates_reported_usage",
+      },
     };
     const job = {
       id: "job-synthetic",
@@ -98,15 +102,25 @@ for (const view of ["refresh", "pending-run", "pending-jobs"] as const) {
     await expect(page.getByText("Duration: 1m 0s")).toBeVisible();
     if (view !== "pending-jobs") {
       const summary = page.getByRole("region", { name: "Run summary" });
-      await expect(
-        summary.getByLabel("Reported cost (USD): 1", { exact: true }),
-      ).toBeVisible();
-      await expect(
-        summary.getByText("Reported usage unavailable or invalid"),
-      ).toBeVisible();
-      await expect(
-        summary.getByLabel("Launch estimate (USD): unavailable", { exact: true }),
-      ).toBeVisible();
+      if (view === "refresh") {
+        const headline = summary.getByLabel("Launch estimate (USD): 1.69", {
+          exact: true,
+        });
+        await expect(headline).toBeVisible();
+        await expect(headline).toHaveText("$1.69");
+        await expect(headline.locator("xpath=ancestor::p[1]")).toHaveClass("text-xl");
+        await expect(summary.getByText("Estimated · Launch rates")).toBeVisible();
+        await expect(
+          summary.getByLabel("Reported cost (USD): unavailable", { exact: true }),
+        ).toHaveCount(0);
+      } else {
+        await expect(
+          summary.getByLabel("Reported cost (USD): 1", { exact: true }),
+        ).toBeVisible();
+        await expect(
+          summary.getByText("Reported usage unavailable or invalid"),
+        ).toBeVisible();
+      }
       const timeouts = summary.getByText("Configured timeouts");
       await timeouts.hover();
       await expect(page.getByRole("tooltip")).toContainText("timeout_multiplier: 2");

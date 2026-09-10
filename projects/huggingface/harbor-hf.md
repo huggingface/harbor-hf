@@ -1295,3 +1295,17 @@ Approved at: 2026-09-10T13:37:44.914817+00:00
 - Implement and test the focused display fix on the open refresh PR. Existing
   approval to commit, push, update PR and prepare it for merge covers this UI
   refinement. No merge into main, deployment, price mutation or live workload.
+
+Prominent estimate validation checkpoint (2026-09-10):
+
+- Valid shared estimates now headline the inference-cost card when native
+  reported cost is absent, explicitly labelled Estimated with launch/corrected
+  rate provenance. Reported zero remains authoritative; unknown, malformed or
+  unavailable correction histories never fall back to old prices or scenarios.
+- Passed 1093 unit tests, 65 browser tests, 178 agent tests, formatting, lint,
+  types, build, generated checks, dependency audit and both image builds.
+  Independent review passed 28 focused tests and privacy/diff checks.
+- Cost arithmetic, execution policy, rates and original native costs unchanged.
+  Existing global coverage and absent baseline/mutation tooling remain disclosed.
+- Publishing the reviewed display refinement to PR #207 only. No merge,
+  deployment, live pricing edit, provider secret, benchmark run or inference.
