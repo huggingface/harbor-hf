@@ -1244,7 +1244,7 @@ Wrapper-only publication completed (2026-09-09 session):
 
 ### Six-hour fixed preset suite (2026-09-09)
 
-Status: approved
+Status: completed
 Approved at: 2026-09-09T00:00:00Z
 
 - Direct user request: add explicit six-hour per-trial agent execution variants
@@ -1286,3 +1286,5 @@ Six-hour suite local preparation checkpoint (2026-09-09 session):
 - Local commits and private draft only. No push or PR yet; parent review remains
   required. No launches, retries, inference, Jobs, merge, deployment, credential
   transfer, source-fork mutation, new resource or image publication occurred.
+
+Completed after review: published the three-preset suite in draft PR #206 (https://github.com/huggingface/harbor-hf/pull/206), with the shared six-hour held-50 budget and existing validation limitations explicitly documented. No merge, deployment or execution occurred.
