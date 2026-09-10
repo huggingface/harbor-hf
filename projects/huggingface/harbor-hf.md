@@ -1759,3 +1759,18 @@ Local pricing diagnostic validation:
   remain unavailable because their files are absent; no gate was weakened.
 - No remote change was made. The reported user-specific pricing failure is
   still unconfirmed; these diagnostics are intended to identify its exact gate.
+
+### Pricing readiness UI deployment (2026-09-10)
+
+Approved at: 2026-09-10T21:18:40.868225+00:00
+
+- The user explicitly confirmed that it is safe to deploy the reviewed
+  frontend readiness update, including a brief control Space restart.
+- Publish the reviewed continuation on the existing deploy/pr209-local branch
+  and deploy that exact source. Reuse the current immutable parent/Workbench
+  image; do not dispatch another image build or change any Space variables.
+- Preserve all secrets and existing provider approval records. Fresh preflight
+  found no active Jobs or unfinished runnable intents. Keep the exclusive
+  control-authority rollout and verify readiness, source and unchanged settings.
+- No provider review/approval mutation, setup launch, benchmark run, retry,
+  PR, merge, default-branch update, new resource or increased budget is approved.
