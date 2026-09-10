@@ -1288,3 +1288,18 @@ Six-hour suite local preparation checkpoint (2026-09-09 session):
   transfer, source-fork mutation, new resource or image publication occurred.
 
 Completed after review: published the three-preset suite in draft PR #206 (https://github.com/huggingface/harbor-hf/pull/206), with the shared six-hour held-50 budget and existing validation limitations explicitly documented. No merge, deployment or execution occurred.
+
+### Command-agent effective workdir correction (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user approval: a small local CommandAgent adapter fix and offline
+  regressions using Harbor's public execution API to honor explicit task workdir
+  and image defaults consistently for setup, run and workspace bindings.
+- Local code, tests, documentation and commits on `fix/command-agent-workdir`
+  are approved. Branch push and one PR require parent review first; prepare a
+  private draft and stop before publication. Timestamp denotes the session date.
+- No merge, deployment, image publication, Jobs, retries, reruns, inference,
+  credential movement, upstream changes or unrelated modifications. Preserve
+  existing worktrees, Harbor ownership and validation/privacy gates.
