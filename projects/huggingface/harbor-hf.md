@@ -832,3 +832,213 @@ Approved at: 2026-09-09T19:31:11.563099+00:00
   pull-request CI workflow; feature-branch pushes alone do not trigger it.
 - No feature merge into main, deployment, live execution, inference, credential
   transfer, resource changes or unrelated feature work is included.
+
+### Run inspection consistency and benchmark profile preparation (2026-09-09)
+
+Approved at: 2026-09-09T21:06:42.168215+00:00
+
+- Direct user confirmation approves local implementation and tests for aligned
+  run-panel polling, clearly labelled running-Job elapsed time, Workbench
+  reasoning selection and recorded intent, configured timeout hover details,
+  launch-pricing visibility in the inference-cost KPI, and removing help cursors.
+- Inspect the recent local benchmark configuration read-only and prepare a
+  profile for the requested 50-task subset with three trials per task. Preserve
+  exact task selection and provenance privately; do not copy operator-specific
+  identifiers, credentials, logs or unrelated source artifacts into this repo.
+- Local implementation, tests and commits only. No push, PR, merge, deployment,
+  profile publication, live API writes, runs, inference, credential transfer,
+  resource creation, upstream patch or upstream publication.
+- Harbor retains timeout resolution and execution authority. Display configured
+  settings accurately; do not invent resolved budgets or provider-effective
+  reasoning. Preserve existing recipes and immutable run records.
+
+Local implementation checkpoint (2026-09-09):
+
+- Aligned run-panel polling at ten seconds; shared clock preserves waffle
+  freshness and running-Job elapsed age during pending requests. Completed
+  durations remain fixed. Removed help cursors while retaining tooltips.
+- Inference-cost KPI now includes the existing immutable launch estimate when
+  pricing was recorded, without replacing native reported cost or treating
+  absent token usage as zero. Hover exposes only explicitly configured native
+  timeout fields, never a locally resolved effective budget.
+- Passed 905 unit tests and 60 synthetic browser tests, formatting, lint,
+  types, build, generated checks, dependency audit and normal DRY checks.
+  Existing supplemental global coverage remains below 85%; the baseline file
+  and mutation script are absent. No gate was weakened.
+- Checked Harbor models/job/config.py, models/trial/config.py,
+  trial/trial.py and models/job/result.py at pinned revision
+  dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e and cached subsequent history.
+  No Harbor execution behavior is reimplemented. History freshness was not
+  independently established through a new upstream fetch.
+- Independent review found elapsed clocks froze during hanging queries; fixed
+  with shared clock and negative-control browser tests on both affected pages.
+- Reasoning remains blocked: native model-query parsing does not establish
+  support when capability metadata is absent. No fake selector or changed
+  starter recipe was introduced; upstream capability discovery is proposed.
+- Exact recent 50-task union was identified privately, but its pinned registry
+  source cannot be represented by the current Git-only benchmark preset.
+  No substitute revision, public task artifact or live profile was created.
+- No publication, deployment, live run, inference or credential movement.
+  Authorization remains active for the unfinished local scope only.
+
+### Native registry benchmark presets (2026-09-09)
+
+Approved at: 2026-09-09T21:49:14.221952+00:00
+
+- Direct user approval: extend benchmark preset schema and generic compilation
+  to preserve native Harbor registry dataset references, allowing the exact
+  previously identified 50-task subset with three trials per task. Generate
+  contracts and add regression tests; prepare the exact profile privately.
+- Preserve existing Git datasets and let Harbor resolve registry sources and
+  task selection. No benchmark-specific parser or execution behavior.
+- Investigate launch-rate correction options and the requested task read-only;
+  no existing run metadata edits, task execution, repair or retry authorized.
+- Local implementation, tests and commits only. No profile publication, push,
+  PR, merge, deployment, upstream changes, live runs or credential transfer.
+
+### Audited pricing corrections and combined pull request (2026-09-09)
+
+Approved at: 2026-09-09T22:32:56.258274+00:00
+
+- Direct user approval: implement an audited shared pricing correction that
+  preserves immutable launch rates, without rerunning or changing execution.
+- Include operator UI, validated durable correction history, concurrent-edit
+  protection, shared estimate and leaderboard integration, and regression tests.
+  Keep native reported cost, spend policy and browser scenarios independent.
+- Commit, privacy-review, push the combined completed run-inspection and
+  registry-preset changes with this feature, and open one pull request to main.
+  Read-only CI monitoring is approved; disclose existing validation gaps.
+- Supersedes local-only publication restrictions solely for this combined diff.
+  No merge, deployment, live pricing correction, profile publication, run,
+  inference, credential transfer, new infrastructure or upstream publication.
+- Keep exact private task subset and provenance outside the public contribution.
+  Reasoning selection remains blocked and is excluded from implemented scope.
+
+Combined implementation ready for pull request (2026-09-09):
+
+- Added separate bounded pricing audit history, operator-only revision-checked
+  correction UI/API, fail-closed cached effective estimates and leaderboard
+  integration. Original rates, native costs and execution remain unchanged.
+- Independent review corrected failed-rebuild uncertainty and corrupt pricing
+  cache isolation; regression negative controls fail against the original code.
+- Completed registry-preset support preserves native pinned name/ref values;
+  the exact requested private profile remains outside the public contribution.
+- Passed 983 unit tests and 63 browser tests, formatting, lint, type checks,
+  build, dependency audit, normal Slophammer and privacy review. Both Docker
+  builds passed before the final projection-only review fixes. Prior Python
+  verification passed 46 CLI tests with 87.98% coverage and 155 agent tests;
+  no Python or worker source changes followed.
+- Supplemental global TypeScript coverage remains below 85% (81.96% lines,
+  74.50% branches). Baseline and mutation files remain absent. No gates or
+  package line budgets were weakened. Generated outputs are deterministic;
+  the normal generated-diff check is rerun after staging the candidate outputs.
+- Full combined diff, all untracked contribution files and public metadata were
+  independently privacy-reviewed. No private profile or operator data included.
+- Harbor source evidence is documented in the pricing-correction and native
+  registry preset documents. No upstream behavior or execution patch added.
+- Publishing this combined branch and opening its PR only; no merge, deployment,
+  profile publication, live pricing edit, run or credential transfer.
+
+### Full benchmark preparation and metadata-only reasoning (2026-09-09)
+
+Approved at: 2026-09-10T07:21:57.441003+00:00
+
+- Direct user request approves local implementation and tests for full
+  Terminal-Bench 2.1 preparation: all 89 tasks, five attempts each (445 trials),
+  no task filter, with six hours of agent execution per trial replacing
+  task-specific agent budgets. This is not a whole-run, setup or verifier limit.
+- Use native JobConfig agent override_timeout_sec of 21600 and agent timeout
+  multiplier 1; inspect native cap precedence and ensure no cap shortens it.
+  Preserve minimal safe native agent settings through native and Workbench
+  compilation; reviewed agent identity, environment and kwargs retain authority.
+  No duplicate timeout fields or local timeout resolver. Stop for upstream gaps.
+- Workbench reasoning is free text recorded verbatim in existing submission
+  metadata, including numeric-looking and arbitrary model values. Define blank
+  semantics, bound length and reject controls and credentials. Preserve old off
+  submissions and recipes. No fixed dropdown, provider-effect claims, model
+  query additions, environment binding or execution side effects. Recipe remains
+  execution authority; show exact recorded intent in run detail.
+- Prepare the full profile privately only after read-only native source evidence
+  proves 89 tasks from the immutable registry source. Preserve resource defaults;
+  CPU and concurrency approval are separate and no launch is authorized.
+- Commit this authorization only before implementation. Leave implementation
+  changes local and uncommitted. Run required validation without weakening gates.
+  Preserve the original dirty checkout and private source artifacts.
+- No push, pull-request update, merge, deployment, live profile publication,
+  execution, inference, resource creation, credential movement, or upstream
+  publication is approved. Earlier publication approval does not cover this scope.
+
+### Publish reasoning metadata and six-hour budgets; update starter (2026-09-10)
+
+Approved at: 2026-09-10T08:03:19.569001+00:00
+
+- Direct user approval: add completed metadata-only reasoning and native six-hour
+  agent-budget support to existing PR #200, commit and push the changes.
+- Update the default Fast-Agent setup recipe to fast-agent-mcp==0.10.23.
+  Preserve saved/custom recipes and existing run records; update matching
+  default source, tests and documentation, and verify native compatibility.
+- Run relevant validation, inspect the complete diff and public metadata, update
+  PR description and monitor CI read-only. Exact private benchmark profiles
+  and provenance remain outside public source; include only generic support.
+- Supersedes prior local-only restriction for this reviewed combined scope. No
+  merge, deployment, live profile publication, runs, inference, credential
+  movement, new resources or upstream publication.
+
+PR additions validation checkpoint (2026-09-10):
+
+- Completed metadata-only reasoning and native per-trial six-hour agent-budget
+  support. Safe reasoning text persists verbatim; credential-bearing draft text
+  is removed at storage/load boundaries. Native override, multiplier and cap
+  semantics are tested through both compilers, with other phase budgets intact.
+- Updated matching default setup recipes to fast-agent-mcp==0.10.23; regression
+  tests preserve previously saved versions and exact browser/server parity.
+- Passed 1051 unit tests, 64 browser tests, 51 CLI tests with 88.35% coverage,
+  155 agent tests, formatting, lint, types, builds, dependency audits and both
+  Docker builds. Generated files are deterministic. Normal Slophammer DRY and
+  privacy checks pass; baseline/mutation files and global coverage gaps remain.
+- Independent review passed 254 targeted TypeScript and 22 CLI tests and cleared
+  the complete addition diff and metadata for privacy and static correctness.
+- Fast-Agent public v0.10.23 source tag exists and reviewed CLI/routing/output
+  paths remain compatible. PyPI version endpoint returned 404 during review;
+  default package installation is not verified and blocks deployment readiness.
+- Updated main has a CLI conflict; no integration merge performed under this
+  scope. Reconciliation must retain upstream cost validation without restoring
+  the old Workbench reasoning-off restriction. Disclose both holds in PR #200.
+- Publishing approved source additions only. No merge, deployment, live profile
+  publication, rate correction, run, inference or credential movement.
+
+### Integrate current main into PR #200 (2026-09-10)
+
+Approved at: 2026-09-10T08:33:41.114483+00:00
+
+- Direct request: merge main into the existing feature branch and walk through
+  conflicts. Integrate current main, resolve textual and semantic conflicts,
+  retain upstream campaign spend validation and organization authentication
+  fixes together with metadata-only reasoning and existing feature behavior.
+- Carry forward approval to commit and push this PR branch; update PR conflict
+  status and monitor CI after full relevant validation and privacy review.
+- This authorizes branch integration only, not merging PR #200 into main. No
+  deployment, live profile publication, pricing edits, jobs, inference, new
+  resources or credential transfers. Preserve all unrelated worktrees.
+
+Main integration validation completed (2026-09-10):
+
+- Integrated main at 43232ca. Only textual conflict was CLI reasoning admission
+  beside campaign-cost validation; preserved validation and removed the obsolete
+  off-only restriction. Migrated six active feature fixture locations to the
+  campaign field while retaining deliberate historical compatibility tests.
+- Organization authentication/configuration and parent worker behavior/tests
+  remain byte-identical to main. Native six-hour settings, metadata-only
+  reasoning, pricing corrections and saved-recipe preservation remain intact.
+- Combined CLI regressions exposed acceptance of NaN; reused the existing
+  ceiling validator to reject nonfinite/nonpositive/out-of-range explicit costs
+  before HTTP, independently of optional local policy bounds.
+- Passed 1059 unit tests, 64 browser tests, 100 CLI tests at 89.10% coverage,
+  155 agent tests, formatting, lint, types, build, generated checks, dependency
+  audits, normal Slophammer/DRY and both Docker builds. Independent complete
+  staged/feature diff review and privacy review found no integration blockers.
+- Supplemental global coverage remains below 85% (82.32% lines, 74.77% branches);
+  missing baseline/mutation files remain disclosed. Existing starter package
+  availability hold is unchanged; build success does not prove installation.
+- Publishing this branch integration to PR #200 only. No merge into main,
+  deployment, live profile publication, cost correction, jobs or inference.

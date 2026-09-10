@@ -8,6 +8,23 @@ import { RunConfiguration } from "../src/run-configuration";
 afterEach(cleanup);
 
 describe("stored agent configuration display", () => {
+  it.each(["100", "75", "high", "  custom value  ", "", "off"])(
+    "shows exact recorded intent separately from configuration: %j",
+    (reasoning_effort) => {
+      const record = {
+        submission: { model: { reasoning_effort } },
+        harbor_job_config: { agents: [] },
+      } as unknown as RunRecord;
+      const { container } = render(<RunConfiguration record={record} />);
+      expect(container.querySelector("dd")?.textContent).toBe(
+        reasoning_effort === "" ? "Unset (empty text)" : reasoning_effort,
+      );
+      expect(container.querySelector("dd")).toHaveClass("whitespace-pre-wrap");
+      expect(
+        screen.getByText("Recorded reasoning intent (submission metadata)"),
+      ).toBeInTheDocument();
+    },
+  );
   it("preserves mixed-run attribution without claiming runtime defaults", () => {
     const record = {
       harbor_job_config: {

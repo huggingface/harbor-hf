@@ -1,8 +1,10 @@
+import { PricingConflictError, PricingUpdateError } from "@harbor-hf/control-core";
 import {
   PresentationConflictError,
   PresentationUpdateError,
 } from "@harbor-hf/control-core";
 import { readFile } from "node:fs/promises";
+import { isReasoningIntent } from "@harbor-hf/contracts/credentials";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
@@ -76,7 +78,14 @@ const workbenchSubmissionSchema = submissionSchema
       .object({
         id: z.string().min(1).max(320),
         provider: providerSchema,
-        reasoning_effort: z.literal("off").default("off"),
+        reasoning_effort: z
+          .string()
+          .max(160)
+          .refine(
+            isReasoningIntent,
+            "Reasoning intent must be control-free and credential-free",
+          )
+          .default("off"),
       })
       .strict(),
     workbench: z
@@ -265,6 +274,10 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.setErrorHandler((failure, request, reply) => {
     if (reply.sent) return;
+    if (failure instanceof PricingConflictError)
+      return error(reply, 409, "pricing_conflict", failure.message);
+    if (failure instanceof PricingUpdateError)
+      return error(reply, 503, "pricing_update_failed", failure.message);
     if (failure instanceof PresentationConflictError)
       return error(reply, 409, "presentation_conflict", failure.message);
     if (failure instanceof PresentationUpdateError) {
@@ -562,6 +575,12 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     const run = runtime.projection.run(run_id);
     if (!run) throw new Error("run was not found");
     return run;
+  });
+
+  app.patch("/api/v1/runs/:run_id/pricing-corrections", async (request) => {
+    const actor = requireActor(request);
+    const { run_id } = runParameters.parse(request.params);
+    return runtime.service.correctPricing(run_id, request.body, actor.subject);
   });
 
   app.patch("/api/v1/runs/:run_id/presentation", async (request) => {

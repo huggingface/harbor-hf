@@ -17,7 +17,10 @@ import {
   ROUTER_URL,
 } from "./hf-config.js";
 
-import { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
+import {
+  containsCredentialMaterial,
+  isReasoningIntent,
+} from "@harbor-hf/contracts/credentials";
 export { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
 
 export interface PresetSubmission {
@@ -146,6 +149,7 @@ export class PresetCatalog {
 
     const usesNativeHuggingFace = agent.agent === "pi";
     const harborAgent: Record<string, unknown> = {
+      ...job.agents?.[0],
       ...(fragment.name ? { name: fragment.name } : {}),
       ...(fragment.import_path ? { import_path: fragment.import_path } : {}),
       ...(fragment.override_setup_timeout_sec
@@ -177,8 +181,10 @@ export class PresetCatalog {
     fragment: HarborAgentFragment,
   ): HarborJobConfigV1 {
     const job = this.benchmarkJob(submission);
-    if (submission.model.reasoning_effort !== "off")
-      throw new Error("Workbench command agents support reasoning effort off only");
+    if (!isReasoningIntent(submission.model.reasoning_effort))
+      throw new Error(
+        "Reasoning intent must be at most 160 characters, control-free and credential-free",
+      );
     if (fragment.import_path !== "harbor_hf_agents.command_agent.agent:CommandAgent")
       throw new Error("Workbench requires the reviewed command agent plugin");
     if (
@@ -193,6 +199,7 @@ export class PresetCatalog {
     )
       throw new Error("Harness model string must be non-empty and credential-free");
     const harborAgent = {
+      ...job.agents?.[0],
       import_path: fragment.import_path,
       ...(fragment.override_setup_timeout_sec
         ? { override_setup_timeout_sec: fragment.override_setup_timeout_sec }

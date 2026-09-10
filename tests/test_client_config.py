@@ -85,3 +85,14 @@ def test_rejects_invalid_global_config(tmp_path: Path, body: str, message: str) 
 
     with pytest.raises(ClientConfigError, match=message):
         load_client_config({"HARBOR_HF_CONFIG_PATH": str(path)})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -1.0, 0.0, 10001.0])
+def test_rejects_invalid_explicit_ceiling_without_local_limits(
+    tmp_path: Path, value: float
+) -> None:
+    config = load_client_config(
+        {"HARBOR_HF_CONFIG_PATH": str(tmp_path / "missing.yaml")}
+    )
+    with pytest.raises(ClientConfigError, match="must be greater than 0"):
+        validate_cost_ceiling(value, config)

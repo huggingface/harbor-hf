@@ -34,6 +34,11 @@ kwargs together. These are configured values, not verified provider-effective
 settings. See [Run diagnostics and configuration provenance](run-diagnostics.md)
 for the source boundary, completion investigation, and proposed upstream evidence.
 
+Workbench additionally records verbatim free-text reasoning intent as submission
+metadata only; the recipe remains execution authority. Benchmark agent execution
+budgets use restricted native AgentConfig fragments, not duplicate timeout fields.
+See [Agent Workbench](agent-workbench.md#recorded-reasoning-intent).
+
 ## Shared archive visibility
 
 Operators can Archive/Restore a run for all users through the existing write-mode
@@ -47,6 +52,13 @@ last-known archives, while unknown archives remain discoverable with warnings.
 Archive writes require validated metadata; conflicts synchronize the SQL cache
 before returning 409. See [Shared run archive](run-archive.md) for the
 single-authority revision protocol, rebuild race protection, and review table.
+
+## Shared pricing corrections
+
+Operators can append audited shared estimate rates without altering immutable launch
+pricing, native reported cost or execution. See [Audited pricing corrections](run-pricing-corrections.md)
+for the bounded history document, fresh revision checks, SQL rebuild fencing and
+fail-closed estimate availability. Runs/detail and leaderboard remain SQL-backed.
 
 ## Persistent resources
 

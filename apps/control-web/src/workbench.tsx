@@ -1,3 +1,4 @@
+import { isReasoningIntent } from "@harbor-hf/contracts/credentials";
 import {
   emptyLaunchPricing,
   finalizedPricing,
@@ -100,7 +101,7 @@ export const fastAgentStarter: WorkbenchRecipe = {
     "UV_NO_PROGRESS=1 \\",
     '  "$AGENT_HOME/bin/uv" pip install \\',
     '  --python "$AGENT_HOME/venv/bin/python" \\',
-    "  fast-agent-mcp==0.10.21",
+    "  fast-agent-mcp==0.10.23",
     '"$AGENT_HOME/venv/bin/python" --version',
     '"$AGENT_HOME/venv/bin/fast-agent" --version',
   ].join("\n"),
@@ -335,6 +336,8 @@ export function WorkbenchPage() {
   const concurrencyValue =
     concurrentTrials ?? String(selectedBenchmark?.job.n_concurrent_trials ?? 1);
   const [model, setModel] = useState(draft?.model ?? "");
+  const [reasoning, setReasoning] = useState(draft?.reasoning_effort ?? "off");
+  const reasoningValid = isReasoningIntent(reasoning);
   const [provider, setProvider] = useState(draft?.provider ?? "");
   const [harnessModel, setHarnessModel] = useState(
     draft?.harbor_agent?.model_name ?? "",
@@ -364,6 +367,7 @@ export function WorkbenchPage() {
         : (concurrentTrials ?? undefined),
       model,
       provider,
+      reasoning_effort: reasoning,
       ceiling,
       role,
       harbor_agent: { model_name: harnessModel },
@@ -376,6 +380,7 @@ export function WorkbenchPage() {
     benchmarkKey,
     model,
     provider,
+    reasoning,
     ceiling,
     role,
     harnessModel,
@@ -550,6 +555,7 @@ export function WorkbenchPage() {
       !setupMatches ||
       !launchConfirmed ||
       !pricingValid ||
+      !reasoningValid ||
       !writesAllowed ||
       !hasDirectRoute
     )
@@ -565,7 +571,7 @@ export function WorkbenchPage() {
         model: {
           id: model.trim(),
           provider: provider.trim() || "unspecified",
-          reasoning_effort: "off",
+          reasoning_effort: reasoning,
         },
         n_concurrent_trials: Number(concurrencyValue),
         cost_ceiling_usd: Number(ceiling),
@@ -1081,6 +1087,25 @@ export function WorkbenchPage() {
                 verify the model used by your harness.
               </p>
               <label className="block text-sm text-slate-300">
+                Recorded reasoning intent
+                <input
+                  className={fieldClass()}
+                  maxLength={160}
+                  value={reasoning}
+                  onChange={(event) => setReasoning(event.target.value)}
+                />
+              </label>
+              <p className="text-sm text-slate-400">
+                Metadata only, stored verbatim; blank means unset. Not applied to the
+                provider. Your recipe remains the execution authority.
+              </p>
+              {!reasoningValid ? (
+                <p role="status">
+                  Reasoning intent must be at most 160 characters, control-free and
+                  credential-free.
+                </p>
+              ) : null}
+              <label className="block text-sm text-slate-300">
                 Harness model string
                 <input
                   className={fieldClass()}
@@ -1148,7 +1173,10 @@ export function WorkbenchPage() {
                   The final request and concurrent work can take the reported total
                   above this amount.
                 </p>
-                <p className="mt-1">Reasoning setting: Off</p>
+                <p className="mt-1 whitespace-pre-wrap">
+                  Recorded reasoning intent (metadata only):{" "}
+                  {reasoning === "" ? "Unset" : reasoning}
+                </p>
               </div>
               <fieldset className="space-y-2 text-sm">
                 <label className="flex items-center gap-2">
@@ -1226,6 +1254,7 @@ export function WorkbenchPage() {
                   !hasDirectRoute ||
                   !launchConfirmed ||
                   !pricingValid ||
+                  !reasoningValid ||
                   !writesAllowed ||
                   launching ||
                   actor.role !== "operator"

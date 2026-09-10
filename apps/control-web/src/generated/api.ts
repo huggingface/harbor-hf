@@ -1112,6 +1112,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/pricing-corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Append audited shared estimate rates (operator only; no execution effects) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PricingCorrectionRequest"];
+                };
+            };
+            responses: {
+                /** @description Validated full correction history */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunPricingCorrections"];
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/presentation": {
         parameters: {
             query?: never;
@@ -1656,10 +1754,10 @@ export interface components {
             basis: components["schemas"]["SharedEstimate_basis"];
             cost_usd: components["schemas"]["SharedEstimate_cost"];
             /** @enum {unknown} */
-            unavailable_reason: "pricing_unset" | "usage_unavailable" | null;
+            unavailable_reason: "correction_history_unavailable" | "pricing_unset" | "usage_unavailable" | null;
         };
-        /** @constant */
-        SharedEstimate_basis: "launch_rates_reported_usage";
+        /** @enum {unknown} */
+        SharedEstimate_basis: "launch_rates_reported_usage" | "corrected_rates_reported_usage" | "effective_rates_reported_usage";
         SharedEstimate_cost: number | null;
         /** LaunchEstimateGroupV1 */
         SharedEstimate_group: {
@@ -1711,6 +1809,26 @@ export interface components {
             actor: string;
             archived: boolean;
         };
+        /** RunPricingCorrectionsV1 */
+        RunPricingCorrections: {
+            /** @constant */
+            schema_version: "v1";
+            run_id: string;
+            revisions: {
+                revision: number;
+                actor: string;
+                /** Format: date-time */
+                updated_at: string;
+                reason: string;
+                pricing: components["schemas"]["LaunchPricing"];
+            }[];
+        };
+        /** PricingCorrectionRequestV1 */
+        PricingCorrectionRequest: {
+            expected_revision: number;
+            reason: string;
+            pricing: components["schemas"]["LaunchPricing"];
+        };
         /**
          * AgentTimingV1
          * @description Display-only sum of measured native agent intervals in current projected trial results; not elapsed job time or lifetime retry usage.
@@ -1729,6 +1847,8 @@ export interface components {
             result: {
                 [key: string]: unknown;
             } | null;
+            pricing_corrections_available?: boolean;
+            pricing_corrections?: components["schemas"]["RunPricingCorrections"] | null;
             /** @description False when archive metadata cannot be validated or synchronized. Presentation is last-known only; null then means unknown, not unarchived. Ephemeral projection status, not durable metadata. */
             presentation_available?: boolean;
             presentation?: components["schemas"]["RunPresentation"] | null;
@@ -1854,8 +1974,11 @@ export interface components {
             model: {
                 id: string;
                 provider: string;
-                /** @constant */
-                reasoning_effort: "off";
+                /**
+                 * @description Verbatim metadata-only intent. Empty text means unset; omitted values retain legacy off. Recipe alone controls execution. Controls and credentials are rejected.
+                 * @default off
+                 */
+                reasoning_effort: string;
             };
             /** @description Maximum reported trial-attempt cost for the complete campaign. Enforcement occurs after terminal attempts and can overshoot through concurrent work. */
             cost_ceiling_usd: number;

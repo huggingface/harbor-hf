@@ -1,3 +1,4 @@
+import { correctPricing } from "./pricing-corrections.js";
 import type { RunRecordV1, RunStateV1, RunPresentationV1 } from "@harbor-hf/contracts";
 import {
   canonicalJson,
@@ -132,6 +133,11 @@ export class PresentationUpdateError extends Error {
 }
 
 export class ControlService {
+  async correctPricing(id: string, body: unknown, actor: string) {
+    return this.withRunLock(id, () =>
+      correctPricing(this.store, this.projection, id, body, actor),
+    );
+  }
   private readonly runOperations = new Map<string, Promise<void>>();
 
   constructor(

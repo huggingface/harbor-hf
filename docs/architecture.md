@@ -80,6 +80,7 @@ shared presentation metadata, and one Harbor job folder.
 runs/<run-id>/
 ├── run.json
 ├── presentation.json  # optional shared Runs visibility
+├── pricing-corrections.json  # optional audited shared estimate rates
 ├── state.json
 ├── attempt-costs/
 │   └── <attempt-id>.json
@@ -111,12 +112,19 @@ the existing `runs` table, and never consulted for execution or leaderboard
 eligibility. See [Shared run archive](run-archive.md) for revision checks,
 rebuild race protection, and the provider-CAS limitation.
 
+Shared estimate corrections are a separate bounded audit history, never changes to
+launch pricing or reported native costs. Their cached SQL projection fails closed
+on unavailable history without blocking execution. See
+[Audited pricing corrections](run-pricing-corrections.md).
+
 ## Presets and direct configuration
 
 Benchmark presets contain a safe Harbor job fragment. They can select datasets,
 attempts, trial concurrency, timeout multipliers, retry, and artifacts. They
-cannot set paths, agents, credentials, user agents, source jobs, or a custom
-environment.
+cannot set paths, agent identity, credentials, user agents, source jobs, or a custom
+environment. An optional single native `agents` timing fragment may set only
+`override_timeout_sec` and `max_timeout_sec`; both compilers merge it into the
+reviewed agent without changing setup, identity, environment or kwargs.
 
 Agent presets select one Harbor agent or import path, a fixed version, allowed
 reasoning values, and nonsecret options. A request cannot override the preset

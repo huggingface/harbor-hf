@@ -118,6 +118,8 @@ const document = {
       ...embedSchema("LeaderboardRow", schemas.leaderboardRow),
       ...embedSchema("RunState", schemas.runState),
       ...embedSchema("RunPresentation", schemas.runPresentation),
+      ...embedSchema("RunPricingCorrections", schemas.runPricingCorrections),
+      ...embedSchema("PricingCorrectionRequest", schemas.pricingCorrectionRequest),
       ...embedSchema("AgentTiming", schemas.agentTiming),
       RunView: {
         type: "object",
@@ -137,6 +139,13 @@ const document = {
             ],
           },
           result: { type: ["object", "null"], additionalProperties: true },
+          pricing_corrections_available: { type: "boolean" },
+          pricing_corrections: {
+            anyOf: [
+              { $ref: "#/components/schemas/RunPricingCorrections" },
+              { type: "null" },
+            ],
+          },
           presentation_available: {
             type: "boolean",
             description:
@@ -269,11 +278,17 @@ const document = {
           model: {
             type: "object",
             additionalProperties: false,
-            required: ["id", "provider", "reasoning_effort"],
+            required: ["id", "provider"],
             properties: {
               id: { type: "string" },
               provider: { type: "string" },
-              reasoning_effort: { const: "off" },
+              reasoning_effort: {
+                type: "string",
+                maxLength: 160,
+                default: "off",
+                description:
+                  "Verbatim metadata-only intent. Empty text means unset; omitted values retain legacy off. Recipe alone controls execution. Controls and credentials are rejected.",
+              },
             },
           },
           cost_ceiling_usd: {
@@ -576,6 +591,36 @@ const document = {
             },
           },
           "404": error,
+        },
+      },
+    },
+    "/api/v1/runs/{run_id}/pricing-corrections": {
+      patch: {
+        summary:
+          "Append audited shared estimate rates (operator only; no execution effects)",
+        security: authenticated,
+        parameters: [runParameter],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PricingCorrectionRequest" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Validated full correction history",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/RunPricingCorrections" },
+              },
+            },
+          },
+          "400": error,
+          "403": error,
+          "409": error,
+          "503": error,
         },
       },
     },

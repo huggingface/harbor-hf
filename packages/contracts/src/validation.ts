@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import type {
+  RunPricingCorrectionsV1,
+  PricingCorrectionRequestV1,
   LaunchPricingV1,
   AgentPresetV1,
   AgentWorkbenchRecipeV1,
@@ -22,6 +24,8 @@ function load(name: string): object {
 }
 
 export const schemas = {
+  runPricingCorrections: load("run-pricing-corrections-v1.schema.json"),
+  pricingCorrectionRequest: load("pricing-correction-request-v1.schema.json"),
   launchPricing: load("launch-pricing-v1.schema.json"),
   sharedEstimate: load("shared-estimate-v1.schema.json"),
   leaderboardRow: load("leaderboard-row-v1.schema.json"),
@@ -77,6 +81,8 @@ const ajv = configuredAjv();
 const strictAjv = configuredAjv();
 ajv.addSchema(schemas.launchPricing);
 const validators = {
+  runPricingCorrections: ajv.compile(schemas.runPricingCorrections),
+  pricingCorrectionRequest: ajv.compile(schemas.pricingCorrectionRequest),
   launchPricing: ajv.getSchema(
     "https://harbor-hf.example/schemas/launch-pricing-v1.schema.json",
   )!,
@@ -109,6 +115,20 @@ function validate<T>(validator: ValidateFunction, value: unknown, label: string)
   return value as T;
 }
 
+export function validateRunPricingCorrections(value: unknown): RunPricingCorrectionsV1 {
+  const history = validate<RunPricingCorrectionsV1>(
+    validators.runPricingCorrections,
+    value,
+    "pricing corrections",
+  );
+  if (history.revisions.some((entry, index) => entry.revision !== index + 1))
+    throw new Error("pricing correction revision chain is invalid");
+  return history;
+}
+export const validatePricingCorrectionRequest = (
+  value: unknown,
+): PricingCorrectionRequestV1 =>
+  validate(validators.pricingCorrectionRequest, value, "pricing correction request");
 export const validateLaunchPricing = (value: unknown): LaunchPricingV1 =>
   validate(validators.launchPricing, value, "launch pricing");
 export const validateAgentPreset = (value: unknown): AgentPresetV1 =>

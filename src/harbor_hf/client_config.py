@@ -118,6 +118,7 @@ def load_client_config(
 
 def validate_cost_ceiling(value: float, config: ClientConfig) -> None:
     """Reject an explicit campaign ceiling outside the local policy."""
+    _optional_ceiling(value, "campaign cost ceiling")
     minimum = config.spend.minimum_campaign_cost_ceiling_usd
     maximum = config.spend.maximum_campaign_cost_ceiling_usd
     if minimum is not None and value < minimum:

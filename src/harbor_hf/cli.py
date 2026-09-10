@@ -209,8 +209,6 @@ def run_submit(  # noqa: C901 -- Keep one Typer command as one validation bounda
         raise typer.BadParameter(
             "preset submission requires --agent and --agent-version"
         )
-    if workbench and reasoning_effort != "off":
-        raise typer.BadParameter("Workbench submission requires reasoning effort off")
     _validate_cost_ceiling(cost_ceiling_usd)
     if not yes:
         typer.confirm(

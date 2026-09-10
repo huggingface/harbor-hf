@@ -254,11 +254,11 @@ for (const enabled of [true, false])
     await expect(page).toHaveURL(new RegExp(`/runs/${runId}$`));
     if (enabled) expect(shared.submission()?.pricing).toEqual(pricing);
     else expect(shared.submission()).not.toHaveProperty("pricing");
-    await expect(
-      page.getByLabel(`Launch estimate (USD): ${enabled ? "2.425" : "unavailable"}`, {
-        exact: true,
-      }),
-    ).toBeVisible();
+    const estimate = page
+      .getByRole("region", { name: "Run summary" })
+      .getByLabel(/^Launch estimate \(USD\):/);
+    if (enabled) await expect(estimate).toBeVisible();
+    else await expect(estimate).toHaveCount(0);
     await expect(
       page.getByLabel("Reported cost (USD): 77", { exact: true }),
     ).toBeVisible();
@@ -277,7 +277,7 @@ for (const enabled of [true, false])
         });
         await reader.goto("/runs");
         await expect(
-          reader.getByRole("columnheader", { name: "Launch estimate" }),
+          reader.getByRole("columnheader", { name: "Shared estimate" }),
         ).toBeVisible();
         await expect(
           reader.getByLabel("Launch estimate (USD): 2.425", { exact: true }),

@@ -511,11 +511,21 @@ def test_run_submit_supports_reviewed_presets(
     assert "workbench" not in payload
 
 
+@pytest.mark.parametrize("cost", ["0.25", "0", "-1", "nan", "inf", "0.1", "0.6"])
+@pytest.mark.parametrize("reasoning", ["off", "100", "75", "high", "  future  ", ""])
 def test_run_submit_uses_an_exact_tested_workbench_recipe(
+    reasoning: str,
+    cost: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     configure(monkeypatch)
+    (tmp_path / "global-config.yaml").write_text(
+        "schema_version: v1\nspend:\n"
+        "  minimum_campaign_cost_ceiling_usd: 0.2\n"
+        "  maximum_campaign_cost_ceiling_usd: 0.5\n",
+        encoding="utf-8",
+    )
     source = tmp_path / "recipe.json"
     recipe = {
         "schema_version": "v1",
@@ -559,12 +569,20 @@ def test_run_submit_uses_an_exact_tested_workbench_recipe(
             "--setup-test",
             "setup-one",
             "--cost-ceiling-usd",
-            "0.25",
+            cost,
             "--idempotency-key",
             "workbench-run",
+            "--reasoning-effort",
+            reasoning,
             "--yes",
         ],
     )
+
+    if cost != "0.25":
+        assert result.exit_code != 0
+        assert "Invalid value" in result.output
+        assert not captured
+        return
 
     assert result.exit_code == 0
     payload = cast(dict[str, object], captured["json"])
@@ -572,6 +590,9 @@ def test_run_submit_uses_an_exact_tested_workbench_recipe(
         "recipe": recipe,
         "setup_test_id": "setup-one",
     }
+    assert cast(dict[str, object], payload["model"])["reasoning_effort"] == reasoning
+    assert payload["cost_ceiling_usd"] == 0.25
+    assert "cost_ceiling_usd_per_trial" not in payload
     assert "harness" not in payload
 
 

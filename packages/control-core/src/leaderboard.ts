@@ -12,6 +12,7 @@ interface Aggregate
   costs: number[];
   estimates: number[];
   totalRuns: number;
+  effective: boolean;
 }
 
 export function leaderboard(
@@ -70,6 +71,7 @@ export function leaderboard(
       group.costs.push(...costs);
       group.estimates.push(...estimates);
       group.totalRuns += 1;
+      group.effective ||= view.shared_estimate?.basis !== "launch_rates_reported_usage";
     } else
       groups.set(key, {
         ...values,
@@ -77,14 +79,17 @@ export function leaderboard(
         costs: [...costs],
         estimates,
         totalRuns: 1,
+        effective: view.shared_estimate?.basis !== "launch_rates_reported_usage",
       });
   }
   return [...groups.values()]
-    .map(({ rewards, costs, estimates, totalRuns, ...row }) => {
+    .map(({ rewards, costs, estimates, totalRuns, effective, ...row }) => {
       const subtotal = estimates.reduce((sum, cost) => sum + cost, 0);
       return {
         shared_estimate: {
-          basis: "launch_rates_reported_usage" as const,
+          basis: effective
+            ? ("effective_rates_reported_usage" as const)
+            : ("launch_rates_reported_usage" as const),
           cost_usd: estimates.length > 0 && Number.isFinite(subtotal) ? subtotal : null,
           estimated_runs: estimates.length,
           total_runs: totalRuns,

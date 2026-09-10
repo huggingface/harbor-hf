@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   getJobs,
@@ -9,8 +10,21 @@ import {
   getSession,
   getSystem,
   getTrial,
+  getTrialProgress,
   getTrials,
 } from "./api";
+
+export const RUN_POLL_INTERVAL_MS = 10_000;
+
+// Display age and freshness must advance even while a request hangs.
+export function useRunClock() {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), RUN_POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
 
 export const keys = {
   session: ["session"] as const,
@@ -59,7 +73,7 @@ export function useRuns() {
   return useQuery({
     queryKey: keys.runs,
     queryFn: getRuns,
-    refetchInterval: 10_000,
+    refetchInterval: RUN_POLL_INTERVAL_MS,
     placeholderData: keepPreviousData,
   });
 }
@@ -69,7 +83,7 @@ export function useRun(runId: string) {
     queryKey: keys.run(runId),
     queryFn: () => getRun(runId),
     enabled: Boolean(runId),
-    refetchInterval: 10_000,
+    refetchInterval: RUN_POLL_INTERVAL_MS,
   });
 }
 
@@ -78,7 +92,7 @@ export function useTrials(runId: string) {
     queryKey: keys.trials(runId),
     queryFn: () => getTrials(runId),
     enabled: Boolean(runId),
-    refetchInterval: 10_000,
+    refetchInterval: RUN_POLL_INTERVAL_MS,
   });
 }
 
@@ -94,6 +108,17 @@ export function useJobs() {
   return useQuery({
     queryKey: keys.jobs,
     queryFn: getJobs,
-    refetchInterval: 10_000,
+    refetchInterval: RUN_POLL_INTERVAL_MS,
+  });
+}
+
+export function useTrialProgress(runId: string) {
+  return useQuery({
+    queryKey: ["trial-progress", runId],
+    queryFn: () => getTrialProgress(runId),
+    staleTime: RUN_POLL_INTERVAL_MS,
+    enabled: Boolean(runId),
+    refetchInterval: RUN_POLL_INTERVAL_MS,
+    retry: false,
   });
 }

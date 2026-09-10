@@ -277,7 +277,7 @@ it("expires cached active observations while a refresh remains fetching", async 
       void client.invalidateQueries({ queryKey: ["trial-progress", "run-a"] });
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(65_000);
+      await vi.advanceTimersByTimeAsync(70_000);
     });
     expect(screen.queryByText("Refreshing…")).not.toBeInTheDocument();
     expect(screen.getByText("● Stale")).toBeVisible();
@@ -334,27 +334,32 @@ it("keeps the same native DOM identity and position across incremental polls and
 });
 
 it.each([
-  ["running", 15_000],
-  ["finished", 120_000],
-] as const)("polls %s runs at their own interval", async (status, interval) => {
-  vi.useFakeTimers();
-  try {
-    const fetch = vi.fn(async () => new Response(JSON.stringify(progress())));
-    vi.stubGlobal("fetch", fetch);
-    show({ ...run(), status }, { "run-a": progress() });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(interval - 1);
-    });
-    expect(fetch).not.toHaveBeenCalled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(fetch).toHaveBeenCalledTimes(1);
-  } finally {
-    cleanup();
-    vi.useRealTimers();
-  }
-});
+  ["running", 10_000],
+  ["finished", 10_000],
+  ["cancelled", 10_000],
+  ["cost_stopped", 10_000],
+] as const)(
+  "polls %s runs at the shared run-panel interval",
+  async (status, interval) => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn(async () => new Response(JSON.stringify(progress())));
+      vi.stubGlobal("fetch", fetch);
+      show({ ...run(), status }, { "run-a": progress() });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(interval - 1);
+      });
+      expect(fetch).not.toHaveBeenCalled();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("reports separate observations without consuming planned capacity or retaining another target's focus", async () => {
   const value = progress(9);

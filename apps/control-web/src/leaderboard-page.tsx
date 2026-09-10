@@ -211,7 +211,7 @@ export function LeaderboardPage() {
     },
     {
       id: "launch_estimate",
-      header: "Launch estimate",
+      header: "Shared estimate",
       enableColumnFilter: false,
       cell: ({ row }) => <GroupLaunchEstimate row={row.original} />,
     },

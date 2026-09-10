@@ -17,7 +17,7 @@ export interface CreateResult {
 
 export interface ObjectStore {
   list(prefix: string): Promise<readonly ObjectEntry[]>;
-  read(key: string): Promise<Uint8Array>;
+  read(key: string, options?: { fresh?: boolean }): Promise<Uint8Array>;
   create(key: string, bytes: Uint8Array): Promise<CreateResult>;
   put(key: string, bytes: Uint8Array): Promise<{ digest: string }>;
 }

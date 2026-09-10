@@ -2,8 +2,14 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import { agentDuration, agentTimeLabel, RunStatusTiming } from "../src/agent-timing";
-import type { RunView } from "../src/api";
+import {
+  agentDuration,
+  agentTimeLabel,
+  RunStatusTiming,
+  parentJobTime,
+  configuredTimeouts,
+} from "../src/agent-timing";
+import type { ParentJob, RunView } from "../src/api";
 
 afterEach(cleanup);
 it.each([
@@ -89,4 +95,68 @@ it("preserves shared trial timing labels", () => {
   };
   expect(agentTimeLabel(timing)).toBe("0s (partial)");
   expect(agentTimeLabel({ ...timing, duration_ms: null })).toBe("−");
+});
+
+it("keeps running parent age separate from finished duration and never uses creation as start", () => {
+  const job: ParentJob = {
+    id: "job-example",
+    run_id: "run-example",
+    role: "parent",
+    stage: "running",
+    created_at: "2026-01-01T00:00:00Z",
+    started_at: "2026-01-01T00:01:00Z",
+    finished_at: null,
+  };
+  const now = Date.parse("2026-01-01T00:03:00Z");
+  expect(parentJobTime(job, now)).toBe("Elapsed since start: 2m 0s");
+  expect(parentJobTime({ ...job, started_at: null }, now)).toBe(
+    "Elapsed since start: Unavailable",
+  );
+  expect(parentJobTime({ ...job, started_at: "bad" }, now)).toBe(
+    "Elapsed since start: Unavailable",
+  );
+  expect(parentJobTime(job, Date.parse(job.created_at))).toBe(
+    "Elapsed since start: Unavailable",
+  );
+  for (const stage of ["queued", "stopped", "error"] as const) {
+    expect(parentJobTime({ ...job, stage }, now)).toBe("Duration: Unavailable");
+  }
+  const ended = {
+    ...job,
+    stage: "stopped" as const,
+    finished_at: "2026-01-01T00:02:00Z",
+  };
+  expect(parentJobTime(ended, now)).toBe("Duration: 1m 0s");
+  expect(parentJobTime(ended, now + 60_000)).toBe("Duration: 1m 0s");
+});
+
+it("shows only explicitly configured native timeout numbers, without resolving or exposing kwargs", () => {
+  const text = configuredTimeouts({
+    timeout_multiplier: 2,
+    agent_timeout_multiplier: 0,
+    agents: [
+      {
+        override_timeout_sec: 600,
+        max_timeout_sec: 300,
+        kwargs: { secret: "not-for-display" },
+      },
+      { override_setup_timeout_sec: 120 },
+    ],
+    verifier: { override_timeout_sec: 90 },
+    environment: { kwargs: { job_timeout: "none" } },
+  });
+  expect(text).toContain("not effective budgets");
+  expect(text).toContain("timeout_multiplier: 2");
+  expect(text).toContain("agent_timeout_multiplier: 0");
+  expect(text).toContain("agents[0].override_timeout_sec: 600");
+  expect(text).toContain("agents[0].max_timeout_sec: 300");
+  expect(text).toContain("agents[1].override_setup_timeout_sec: 120");
+  expect(text).toContain("verifier.override_timeout_sec: 90");
+  expect(text).not.toMatch(/not-for-display|job_timeout/);
+  expect(configuredTimeouts({})).toContain(
+    "No explicit phase timeout settings recorded",
+  );
+  expect(
+    configuredTimeouts({ agents: [null], timeout_multiplier: Infinity }),
+  ).not.toContain("Infinity");
 });

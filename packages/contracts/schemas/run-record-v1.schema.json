@@ -42,7 +42,11 @@
           "properties": {
             "id": { "type": "string", "minLength": 1, "maxLength": 320 },
             "provider": { "$ref": "#/$defs/slug" },
-            "reasoning_effort": { "type": "string", "minLength": 1, "maxLength": 40 }
+            "reasoning_effort": {
+              "type": "string",
+              "maxLength": 160,
+              "pattern": "^[^\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]*$"
+            }
           }
         },
         "harness": {

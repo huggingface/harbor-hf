@@ -824,6 +824,57 @@ describe("control API", () => {
   });
 
   it.each([
+    undefined,
+    "100",
+    "75",
+    "high",
+    "  arbitrary future  ",
+    "",
+    "   ",
+    "off",
+    "bad\nvalue",
+    "bad\u0085value",
+    "bad\u202evalue",
+    "x".repeat(161),
+    "hf_" + "x".repeat(24),
+  ])("admits only safe verbatim reasoning metadata: %j", async (reasoning_effort) => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const attest = vi.spyOn(runtime.workbench, "attestPassedSetup").mockResolvedValue({
+      setup_test_id: workbenchSetup.setup_test_id,
+      recipe_digest: workbenchSetup.recipe_digest,
+      revision_id: workbenchSetup.revision_id,
+      completed_at: "2026-01-01T00:00:00Z",
+      expires_at: "2026-01-01T01:00:00Z",
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "reasoning-intent" },
+      payload: {
+        benchmark: submission.benchmark,
+        model: { ...submission.model, reasoning_effort },
+        cost_ceiling_usd: 1,
+        role: "diagnostic",
+        workbench: {
+          recipe: workbenchRecipe,
+          setup_test_id: workbenchSetup.setup_test_id,
+        },
+      },
+    });
+    const invalid =
+      reasoning_effort?.startsWith("bad") ||
+      (reasoning_effort?.length ?? 0) > 160 ||
+      reasoning_effort?.startsWith("hf_");
+    expect(response.statusCode).toBe(invalid ? 400 : 201);
+    if (invalid) expect(attest).not.toHaveBeenCalled();
+    else
+      expect(response.json().run.submission.model.reasoning_effort).toBe(
+        reasoning_effort ?? "off",
+      );
+  });
+
+  it.each([
     { model_name: "model", env: { OPENAI_API_KEY: "fixture" } },
     { model_name: "model", import_path: "other.module:Agent" },
     { model_name: "" },
@@ -1464,4 +1515,82 @@ describe("launch pricing API boundary", () => {
     expect((await app.inject(request)).statusCode).toBe(401);
     expect(runtime.projection.listRuns()).toEqual([]);
   });
+});
+
+it("audits pricing through operator/CSRF/write gates with generated contracts and safe conflicts", async () => {
+  const { runtime, app } = await setup();
+  const { run } = await runtime.service.submitPreset(
+    submission,
+    "correction-api",
+    "fixture-subject",
+  );
+  const url = `/api/v1/runs/${run.run_id}/pricing-corrections`;
+  const payload = {
+    expected_revision: 0,
+    reason: "Correct swapped rates",
+    pricing: {
+      currency: "USD",
+      input_usd_per_million: 2,
+      output_usd_per_million: 8,
+      cached_usd_per_million: 0.5,
+    },
+  };
+  const patch = (body: unknown = payload) =>
+    app.inject({ method: "PATCH", url, payload: body as object });
+  expect((await patch({ ...payload, actor: "forged" })).statusCode).toBe(400);
+  runtime.config.write_mode = "disabled";
+  expect((await patch()).json().error.code).toBe("write_disabled");
+  runtime.config.write_mode = "enabled";
+  const actor = vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+    subject: "fixture-reader",
+    username: "fixture-reader",
+    role: "reader",
+    transport: "development",
+  });
+  expect((await patch()).statusCode).toBe(403);
+  actor.mockRestore();
+  runtime.config.auth_mode = "oauth";
+  const session = runtime.auth.store.createSession(
+    "fixture-subject",
+    "fixture-user",
+    3600,
+  );
+  vi.spyOn(runtime.auth, "role").mockResolvedValue("operator");
+  const req = {
+    method: "PATCH" as const,
+    url,
+    payload,
+    cookies: { hhf_session: session.id },
+  };
+  expect((await app.inject(req)).json().error.code).toBe("csrf_rejected");
+  const authenticated = { ...req, headers: { "x-csrf-token": session.csrf } };
+  const saved = await app.inject(authenticated);
+  expect(saved.statusCode).toBe(200);
+  expect(saved.json().revisions[0]).toMatchObject({
+    actor: "fixture-subject",
+    revision: 1,
+    pricing: payload.pricing,
+  });
+  expect((await app.inject(authenticated)).json().error.code).toBe("pricing_conflict");
+  const get = await app.inject({
+    ...authenticated,
+    method: "GET",
+    payload: undefined,
+    url: `/api/v1/runs/${run.run_id}`,
+  });
+  expect(get.json()).toMatchObject({
+    pricing_corrections_available: true,
+    pricing_corrections: saved.json(),
+  });
+  expect(get.json().record).not.toHaveProperty("pricing");
+  vi.spyOn(runtime.projection.pricing, "update").mockImplementationOnce(() => {
+    throw new Error("private-provider-error");
+  });
+  const failure = await app.inject({
+    ...authenticated,
+    payload: { ...payload, expected_revision: 1 },
+  });
+  expect(failure.statusCode).toBe(503);
+  expect(failure.body).not.toContain("private-provider-error");
+  await app.close();
 });

@@ -16,7 +16,9 @@ The optional top-level `pricing` object is saved once in the existing Bucket
 `runs/<run-id>/run.json`. It is not part of Harbor `JobConfig`, `lock.json`, recipe
 provenance, scripts, or setup identity. The same idempotency key with unchanged
 rates returns the existing run; changing or removing rates conflicts. Historical
-unpriced records remain valid. There is no price-edit API or migration.
+unpriced records remain valid. Original launch prices cannot be edited. The
+[audited pricing correction flow](run-pricing-corrections.md) records separate
+shared rate revisions without changing the launch record or rerunning work.
 
 Workbench saves raw incomplete edits in its existing browser draft. Disabled rates
 remain in that draft but are omitted from the launch request. Saved browser-only

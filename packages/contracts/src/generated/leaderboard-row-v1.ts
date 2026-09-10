@@ -15,7 +15,7 @@ cost_usd: (number | null)
 shared_estimate?: LaunchEstimateGroupV1
 }
 export interface LaunchEstimateGroupV1 {
-basis: "launch_rates_reported_usage"
+basis: ("launch_rates_reported_usage" | "corrected_rates_reported_usage" | "effective_rates_reported_usage")
 cost_usd: (number | null)
 estimated_runs: number
 total_runs: number
