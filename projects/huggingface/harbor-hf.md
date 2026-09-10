@@ -1288,3 +1288,108 @@ Six-hour suite local preparation checkpoint (2026-09-09 session):
   transfer, source-fork mutation, new resource or image publication occurred.
 
 Completed after review: published the three-preset suite in draft PR #206 (https://github.com/huggingface/harbor-hf/pull/206), with the shared six-hour held-50 budget and existing validation limitations explicitly documented. No merge, deployment or execution occurred.
+
+### Command-agent effective workdir correction (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user approval: a small local CommandAgent adapter fix and offline
+  regressions using Harbor's public execution API to honor explicit task workdir
+  and image defaults consistently for setup, run and workspace bindings.
+- Local code, tests, documentation and commits on `fix/command-agent-workdir`
+  are approved. Branch push and one PR require parent review first; prepare a
+  private draft and stop before publication. Timestamp denotes the session date.
+- No merge, deployment, image publication, Jobs, retries, reruns, inference,
+  credential movement, upstream changes or unrelated modifications. Preserve
+  existing worktrees, Harbor ownership and validation/privacy gates.
+
+Local preparation checkpoint (2026-09-09 session):
+
+- Replaced the adapter's fixed workspace with one native `pwd` probe before
+  install, cached for run and workspace bindings; direct run also discovers it.
+  Preserve task-user selection, whitespace/Unicode paths and clean bindings;
+  invalid or failed probes raise a fixed error without logging their output.
+- Reviewed Harbor `src/harbor/models/task/config.py`, `environments/base.py`,
+  `environments/hf_sandbox.py` and `agents/installed/base.py` at pin
+  `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`, plus history through `191d1b98`.
+  Existing public execution supports this adapter correction; no pin change,
+  upstream resolver, durable configuration, image or retry change is needed.
+- Eight new regressions failed against original production code and passed
+  after the fix. Root: 100 tests, 89.10% coverage. Agents: 186 tests; changed
+  agent file 94.02% branch-inclusive coverage. Ruff, format, ty, normal
+  Slophammer, DRY and privacy checks passed. Agent-wide coverage remains 62.46%;
+  baseline and mutation files are absent. No gate was weakened. No TypeScript
+  changed, so npm/browser checks were not rerun.
+- Local commits and private PR draft only; parent review and publication remain
+  pending. No push, PR creation, deployment, image publication, Jobs, retries,
+  inference, credentials or upstream mutation occurred.
+
+### CommandAgent workdir PR completion
+
+Status: completed
+
+Published draft PR #208 (https://github.com/huggingface/harbor-hf/pull/208) after implementation review and privacy checks. The task-directory fix passed 100 root tests and 186 agent tests; changed-file coverage is 94.02%. Existing agent-wide coverage and missing-tooling limitations are disclosed. No merge, deployment, image publication, remote execution or retries were performed.
+
+### Two-task workdir diagnostic preset amendment (2026-09-09)
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user approval: add `prove-plus-comm` and `openssl-selfsigned-cert`
+  as a diagnostic preset in existing PR #208, one attempt per task, concurrency
+  two, with native task inputs and existing smoke timeout defaults unchanged.
+- Approved: additive JSON, focused tests and documentation, local commits,
+  privacy-reviewed push to the existing PR branch and PR body update.
+- No merge, deployment, image/source publication, Jobs, reruns, inference,
+  credential movement or changes to existing presets. Timestamp is session date.
+
+Completion checkpoint (2026-09-09 session):
+
+- Added the schema-loaded two-task preset, one contract regression and selector
+  documentation; existing presets, agent recipe selection and task inputs remain
+  unchanged. Pinned source Dockerfiles declare `/workspace` and `/app`, with no
+  task workdir override. Deployment of the agent fix remains a prerequisite.
+- Reviewed native filtering/repetitions in Harbor `src/harbor/models/job/config.py`
+  and `src/harbor/job.py` at the existing pin and history through `191d1b98`.
+  Pinned CLI `--print-config` accepts the configuration; metadata-only dry-run is
+  newer than the pin, so no native task resolution/execution is claimed.
+- Passed 1,141 unit tests and 64 isolated browser tests, formatting, lint (existing
+  warnings), root/Space types, build, generated contracts, dependency audit (zero
+  vulnerabilities), normal Slophammer and DRY. Baseline and mutation script remain
+  absent; no gate was weakened. No Python production or test files changed.
+- Local validation completed; existing PR branch publication follows privacy
+  review. No run, deployment, image publication, inference or credentials used.
+
+Completed on 2026-09-09: pushed the addition to existing draft PR #208 and
+updated its body with validation and deployment prerequisites. No launch or
+deployment occurred; existing validation limitations remain disclosed.
+
+### PR 208 merge, worker publication and control deployment (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user instruction: execute the merge of existing PR #208, rebuild and
+  publish the worker image, and deploy the control service; the user will run
+  the smoke test afterward. Timestamp denotes session date, not exact time.
+- Record this authorization on the existing PR branch, then wait for green CI
+  on its exact reviewed head. Mark the draft ready and squash-merge only that
+  PR, with a head-SHA guard and no administrator bypass or weakened gate.
+  The user accepts the already disclosed supplementary agent coverage and
+  missing baseline/mutation-tool limitations; existing CI must still pass.
+- Use the existing parent-worker GitHub Actions publication workflow and
+  canonical registry package. Build from the exact merged revision and verify
+  the published immutable digest and installed agent source with offline tests.
+- Deploy a clean bundle of that same merged revision to the existing
+  <control-space>. Update only its parent and hosted setup image references
+  to the verified digest, preserving any distinct setup configuration unless
+  confirmed to use the same reviewed worker. Verify release, runtime revision,
+  liveness, readiness and image references; retain private operational evidence.
+- Preserve write mode, hardware, visibility, secrets, other variables, existing
+  Runs, task inputs/images, concurrency, timeouts and cost limits. No new HF
+  Jobs, smoke/setup execution, inference, retries, credential movement, resource
+  creation, upstream changes, other PR merge or unrelated worktree changes.
+  Existing local API authentication stays local; never forward it to a runtime.
+- Public authorization records use placeholders for operational identifiers.
+  The exact user-selected deployment destination is retained privately.
