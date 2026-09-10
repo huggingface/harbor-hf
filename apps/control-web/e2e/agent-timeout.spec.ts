@@ -17,7 +17,7 @@ const runs = [
         benchmark: { name: "synthetic-benchmark", preset: "sample" },
         model: { id: item.model, provider: "provider", reasoning_effort: "off" },
         harness: { agent: "command-agent", version: "recipe-revision" },
-        cost_ceiling_usd_per_trial: 0.25,
+        cost_ceiling_usd: 0.25,
       },
       harbor_job_config: {
         agents: [{ import_path: "plugin:CommandAgent", model_name: item.model }],

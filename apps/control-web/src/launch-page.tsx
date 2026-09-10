@@ -521,7 +521,7 @@ function LaunchForm({ search }: { search: string }) {
         method: "POST",
         headers: {
           "Idempotency-Key": key.current,
-          "X-Harbor-Hf-Cost-Ceiling-Usd-Per-Trial": ceiling,
+          "X-Harbor-Hf-Cost-Ceiling-Usd": ceiling,
           "X-Harbor-Hf-Validation": validation.fingerprint,
         },
         body: JSON.stringify(draft),
@@ -784,7 +784,7 @@ function LaunchForm({ search }: { search: string }) {
               </span>
             </div>
             <label className="text-sm">
-              Post-trial cost limit (USD)
+              Campaign cost ceiling (USD)
               <input
                 className={inputClass}
                 type="number"

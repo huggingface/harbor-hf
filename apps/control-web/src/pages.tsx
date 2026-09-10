@@ -220,7 +220,7 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
       },
       harness: { agent, version },
       n_concurrent_trials: Number(concurrentTrials),
-      cost_ceiling_usd_per_trial: Number(ceiling),
+      cost_ceiling_usd: Number(ceiling),
       role,
     });
   }
@@ -350,7 +350,7 @@ function SubmissionForm({ presets }: { presets: PresetsResponse }) {
           className={fieldClass()}
         />
         <label className="block text-sm text-slate-300">
-          Cost limit per trial
+          Campaign cost ceiling
           <input
             className={fieldClass()}
             min="0.000001"
@@ -850,9 +850,17 @@ export function RunPage() {
             <Field label="Agent">
               {runIdentity(item.record).agent} · {runIdentity(item.record).version}
             </Field>
-            <Field label="Cost limit per trial">
-              {formatMoneyUsd(item.record.submission.cost_ceiling_usd_per_trial)}
-            </Field>
+            {item.record.submission.cost_ceiling_usd !== undefined ? (
+              <Field label="Campaign cost ceiling">
+                {formatMoneyUsd(item.record.submission.cost_ceiling_usd)}
+              </Field>
+            ) : (
+              <Field label="Legacy cost limit per trial">
+                {item.record.submission.cost_ceiling_usd_per_trial === undefined
+                  ? "Unavailable"
+                  : formatMoneyUsd(item.record.submission.cost_ceiling_usd_per_trial)}
+              </Field>
+            )}
           </dl>
         </Card>
       </div>

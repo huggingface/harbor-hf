@@ -8,6 +8,7 @@ import math
 import os
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
@@ -47,6 +48,14 @@ class AttemptCostReceipt(BaseModel):
     cost_usd: float | None = Field(ge=0)
 
 
+@dataclass(frozen=True)
+class CostCeiling:
+    """Validated campaign or legacy per-trial cost policy."""
+
+    usd: float
+    scope: Literal["campaign", "trial"]
+
+
 def _record(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be an object")
@@ -81,16 +90,23 @@ def job_config(record: dict[str, Any], mount_root: Path, run_id: str) -> JobConf
     return JobConfig.model_validate(value)
 
 
-def cost_ceiling(record: dict[str, Any]) -> float:
-    """Read the finite positive post-trial ceiling."""
+def cost_ceiling(record: dict[str, Any]) -> CostCeiling:
+    """Read one finite positive campaign or legacy per-trial ceiling."""
     submission = _record(record.get("submission"), "submission")
-    value = submission.get("cost_ceiling_usd_per_trial")
+    present = [
+        ("campaign", submission.get("cost_ceiling_usd")),
+        ("trial", submission.get("cost_ceiling_usd_per_trial")),
+    ]
+    selected = [(scope, value) for scope, value in present if value is not None]
+    if len(selected) != 1:
+        raise ValueError("run record must contain exactly one cost ceiling")
+    scope, value = selected[0]
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError("cost ceiling must be a number")
     ceiling = float(value)
     if not 0 < ceiling <= 10_000:
         raise ValueError("cost ceiling must be positive")
-    return ceiling
+    return CostCeiling(ceiling, cast(Literal["campaign", "trial"], scope))
 
 
 def _attempts_dir(run_dir: Path) -> Path:
@@ -212,23 +228,28 @@ def _interrupted_trial_names(error: BaseException) -> list[str]:
 
 
 def _cost_violation(
-    receipts: dict[UUID, AttemptCostReceipt], ceiling: float, planned_trials: int
+    receipts: dict[UUID, AttemptCostReceipt],
+    ceiling: CostCeiling,
+    planned_trials: int,
 ) -> str | None:
+    if ceiling.scope == "campaign":
+        total = sum(item.cost_usd or 0 for item in receipts.values())
+        if total > ceiling.usd:
+            return "completed trial cost exceeded the campaign ceiling"
+        return None
+
     expensive = next(
         (
             item
             for item in receipts.values()
-            if item.cost_usd is not None and item.cost_usd > ceiling
+            if item.cost_usd is not None and item.cost_usd > ceiling.usd
         ),
         None,
     )
     if expensive:
         return f"trial {expensive.trial_name} reported cost above its ceiling"
-    exposure = sum(
-        item.cost_usd if item.cost_usd is not None else ceiling
-        for item in receipts.values()
-    )
-    if exposure > ceiling * planned_trials:
+    exposure = sum(item.cost_usd or 0 for item in receipts.values())
+    if exposure > ceiling.usd * planned_trials:
         return "completed trial cost exposure exceeded the run ceiling"
     return None
 
@@ -263,7 +284,7 @@ def _harbor_job_is_terminal(
 
 def _enforce_cost_ceiling(
     receipts: dict[UUID, AttemptCostReceipt],
-    ceiling: float,
+    ceiling: CostCeiling,
     planned_trials: int,
     run_dir: Path,
     max_retries: int,
@@ -277,7 +298,7 @@ def _enforce_cost_ceiling(
 
 
 def make_cost_hook(
-    ceiling: float,
+    ceiling: CostCeiling,
     planned_trials: int,
     run_dir: Path,
     *,

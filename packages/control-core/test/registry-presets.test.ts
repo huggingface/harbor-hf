@@ -90,7 +90,7 @@ describe("native registry benchmark presets", () => {
             reasoning_effort: "default",
           },
           harness: { agent: "example-agent", version: "1.0.0" },
-          cost_ceiling_usd_per_trial: 1,
+          cost_ceiling_usd: 1,
           n_concurrent_trials: 2,
         };
         const normal = catalog.buildJobConfig("run-example", submission, "/data");

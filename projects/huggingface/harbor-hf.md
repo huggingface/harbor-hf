@@ -1020,3 +1020,25 @@ Approved at: 2026-09-10T08:33:41.114483+00:00
 - This authorizes branch integration only, not merging PR #200 into main. No
   deployment, live profile publication, pricing edits, jobs, inference, new
   resources or credential transfers. Preserve all unrelated worktrees.
+
+Main integration validation completed (2026-09-10):
+
+- Integrated main at 43232ca. Only textual conflict was CLI reasoning admission
+  beside campaign-cost validation; preserved validation and removed the obsolete
+  off-only restriction. Migrated six active feature fixture locations to the
+  campaign field while retaining deliberate historical compatibility tests.
+- Organization authentication/configuration and parent worker behavior/tests
+  remain byte-identical to main. Native six-hour settings, metadata-only
+  reasoning, pricing corrections and saved-recipe preservation remain intact.
+- Combined CLI regressions exposed acceptance of NaN; reused the existing
+  ceiling validator to reject nonfinite/nonpositive/out-of-range explicit costs
+  before HTTP, independently of optional local policy bounds.
+- Passed 1059 unit tests, 64 browser tests, 100 CLI tests at 89.10% coverage,
+  155 agent tests, formatting, lint, types, build, generated checks, dependency
+  audits, normal Slophammer/DRY and both Docker builds. Independent complete
+  staged/feature diff review and privacy review found no integration blockers.
+- Supplemental global coverage remains below 85% (82.32% lines, 74.77% branches);
+  missing baseline/mutation files remain disclosed. Existing starter package
+  availability hold is unchanged; build success does not prove installation.
+- Publishing this branch integration to PR #200 only. No merge into main,
+  deployment, live profile publication, cost correction, jobs or inference.

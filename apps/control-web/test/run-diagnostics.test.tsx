@@ -30,7 +30,7 @@ function run(result: RunView["result"], runId = "run-a"): RunView {
       harbor_revision: "dcd0a7ac",
       submission: {
         benchmark: { name: "example", preset: "example" },
-        cost_ceiling_usd_per_trial: 1,
+        cost_ceiling_usd: 1,
       },
       harbor_job_config: {},
     },

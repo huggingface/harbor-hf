@@ -24,7 +24,7 @@
     "submission": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["benchmark", "cost_ceiling_usd_per_trial"],
+      "required": ["benchmark"],
       "properties": {
         "benchmark": {
           "type": "object",
@@ -58,12 +58,26 @@
             "version": { "type": "string", "minLength": 1, "maxLength": 160 }
           }
         },
+        "cost_ceiling_usd": {
+          "description": "Maximum reported trial-attempt cost for the complete campaign. Enforcement occurs after each terminal trial attempt and can overshoot through concurrent work.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 10000
+        },
         "cost_ceiling_usd_per_trial": {
+          "description": "Legacy per-trial ceiling retained only so immutable existing runs remain readable.",
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 10000
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["cost_ceiling_usd_per_trial"] },
+          "then": { "not": { "required": ["cost_ceiling_usd"] } },
+          "else": { "required": ["cost_ceiling_usd"] }
+        }
+      ]
     },
     "workbench_recipe": {
       "description": "Immutable Workbench display provenance. Recipe revision is submission.harness.version; execution remains in harbor_job_config.",

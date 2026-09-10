@@ -16,6 +16,11 @@ from harbor_hf.cli import app
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def isolate_global_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HARBOR_HF_CONFIG_PATH", str(tmp_path / "global-config.yaml"))
+
+
 def response(status: int, body: object) -> httpx.Response:
     return httpx.Response(
         status,
@@ -48,7 +53,7 @@ def test_submit_sends_direct_config_without_printing_token(
             "submit",
             "--config",
             str(config),
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "0.25",
             "--idempotency-key",
             "test-key",
@@ -64,7 +69,7 @@ def test_submit_sends_direct_config_without_printing_token(
     headers = cast(dict[str, str], captured["headers"])
     assert agents[0]["name"] == "pi"
     assert headers["Idempotency-Key"] == "test-key"
-    assert headers["X-Harbor-HF-Cost-Ceiling-USD-Per-Trial"] == "0.25"
+    assert headers["X-Harbor-HF-Cost-Ceiling-USD"] == "0.25"
     assert "test-bearer" not in result.output
 
 
@@ -105,6 +110,76 @@ def test_cancel_requires_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
     assert called
 
 
+def test_global_config_blocks_out_of_range_cost_ceilings_before_network(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    configure(monkeypatch)
+    global_config = tmp_path / "global-config.yaml"
+    global_config.write_text(
+        """schema_version: v1
+spend:
+  minimum_campaign_cost_ceiling_usd: 100
+  maximum_campaign_cost_ceiling_usd: 1000
+""",
+        encoding="utf-8",
+    )
+    job_config = tmp_path / "job.yaml"
+    job_config.write_text("agents:\n  - name: pi\n", encoding="utf-8")
+    called = False
+
+    def request(*_args: object, **_kwargs: object) -> httpx.Response:
+        nonlocal called
+        called = True
+        return response(201, {})
+
+    monkeypatch.setattr(httpx, "request", request)
+    too_low = runner.invoke(
+        app,
+        [
+            "submit",
+            "--config",
+            str(job_config),
+            "--cost-ceiling-usd",
+            "99",
+        ],
+    )
+    assert too_low.exit_code != 0
+    assert "at least $100" in too_low.output
+
+    too_high = runner.invoke(
+        app,
+        [
+            "run",
+            "submit",
+            "--benchmark",
+            "benchmark",
+            "--preset",
+            "one-task",
+            "--model",
+            "publisher/model",
+            "--provider",
+            "provider",
+            "--agent",
+            "pi",
+            "--agent-version",
+            "1.0.0",
+            "--cost-ceiling-usd",
+            "1001",
+            "--yes",
+        ],
+    )
+    assert too_high.exit_code != 0
+    assert "at most $1000" in too_high.output
+    assert not called
+
+    shown = runner.invoke(app, ["config"])
+    assert shown.exit_code == 0
+    assert json.loads(shown.stdout)["spend"] == {
+        "maximum_campaign_cost_ceiling_usd": 1000.0,
+        "minimum_campaign_cost_ceiling_usd": 100.0,
+    }
+
+
 def test_invalid_config_stops_before_network(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -117,7 +192,7 @@ def test_invalid_config_stops_before_network(
             "submit",
             "--config",
             str(config),
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "1",
         ],
     )
@@ -190,7 +265,7 @@ def test_rejects_invalid_json_and_malformed_yaml(
             "submit",
             "--config",
             str(config),
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "1",
         ],
     )
@@ -215,7 +290,7 @@ def test_generated_key_is_reported(
             "submit",
             "--config",
             str(config),
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "1",
         ],
     )
@@ -421,7 +496,7 @@ def test_run_submit_supports_reviewed_presets(
             "pi",
             "--agent-version",
             "1.0.0",
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "0.25",
             "--idempotency-key",
             "preset-run",
@@ -436,13 +511,21 @@ def test_run_submit_supports_reviewed_presets(
     assert "workbench" not in payload
 
 
+@pytest.mark.parametrize("cost", ["0.25", "0", "-1", "nan", "inf", "0.1", "0.6"])
 @pytest.mark.parametrize("reasoning", ["off", "100", "75", "high", "  future  ", ""])
 def test_run_submit_uses_an_exact_tested_workbench_recipe(
     reasoning: str,
+    cost: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     configure(monkeypatch)
+    (tmp_path / "global-config.yaml").write_text(
+        "schema_version: v1\nspend:\n"
+        "  minimum_campaign_cost_ceiling_usd: 0.2\n"
+        "  maximum_campaign_cost_ceiling_usd: 0.5\n",
+        encoding="utf-8",
+    )
     source = tmp_path / "recipe.json"
     recipe = {
         "schema_version": "v1",
@@ -485,8 +568,8 @@ def test_run_submit_uses_an_exact_tested_workbench_recipe(
             str(source),
             "--setup-test",
             "setup-one",
-            "--cost-ceiling-usd-per-trial",
-            "0.25",
+            "--cost-ceiling-usd",
+            cost,
             "--idempotency-key",
             "workbench-run",
             "--reasoning-effort",
@@ -495,6 +578,12 @@ def test_run_submit_uses_an_exact_tested_workbench_recipe(
         ],
     )
 
+    if cost != "0.25":
+        assert result.exit_code != 0
+        assert "Invalid value" in result.output
+        assert not captured
+        return
+
     assert result.exit_code == 0
     payload = cast(dict[str, object], captured["json"])
     assert payload["workbench"] == {
@@ -502,6 +591,8 @@ def test_run_submit_uses_an_exact_tested_workbench_recipe(
         "setup_test_id": "setup-one",
     }
     assert cast(dict[str, object], payload["model"])["reasoning_effort"] == reasoning
+    assert payload["cost_ceiling_usd"] == 0.25
+    assert "cost_ceiling_usd_per_trial" not in payload
     assert "harness" not in payload
 
 
@@ -523,7 +614,7 @@ def test_run_submit_rejects_mixed_or_incomplete_harness_selection(
         "publisher/model",
         "--provider",
         "provider",
-        "--cost-ceiling-usd-per-trial",
+        "--cost-ceiling-usd",
         "0.25",
         "--yes",
     ]

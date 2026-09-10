@@ -23,7 +23,14 @@ harness?: {
 agent: RunRecordSlug
 version: string
 }
-cost_ceiling_usd_per_trial: number
+/**
+ * Maximum reported trial-attempt cost for the complete campaign. Enforcement occurs after each terminal trial attempt and can overshoot through concurrent work.
+ */
+cost_ceiling_usd?: number
+/**
+ * Legacy per-trial ceiling retained only so immutable existing runs remain readable.
+ */
+cost_ceiling_usd_per_trial?: number
 }
 /**
  * Immutable Workbench display provenance. Recipe revision is submission.harness.version; execution remains in harbor_job_config.

@@ -13,7 +13,7 @@ for (const view of ["refresh", "pending-run", "pending-jobs"] as const) {
         harbor_job_config: { agents: [], timeout_multiplier: 2 },
         submission: {
           benchmark: { name: "synthetic", preset: "sample" },
-          cost_ceiling_usd_per_trial: 1,
+          cost_ceiling_usd: 1,
         },
         pricing: {
           currency: "USD",

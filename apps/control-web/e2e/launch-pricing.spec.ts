@@ -12,7 +12,7 @@ const pricing: LaunchPricingV1 = {
   output_usd_per_million: 8,
 };
 const confirmation =
-  "Launch this exact tested recipe and accept the displayed per-trial cost limit.";
+  "Launch this exact tested recipe and accept the displayed campaign cost ceiling.";
 
 function fixture() {
   let recordedPricing: LaunchPricingV1 | undefined;
@@ -30,7 +30,7 @@ function fixture() {
       benchmark: { name: "example-benchmark", preset: "all-tasks" },
       model: { id: "publisher/model", provider: "provider", reasoning_effort: "off" },
       harness: { agent: "command-agent", version: revision },
-      cost_ceiling_usd_per_trial: 100,
+      cost_ceiling_usd: 100,
     },
     harbor_job_config: { n_attempts: 1 },
     ...(recordedPricing ? { pricing: recordedPricing } : {}),

@@ -68,7 +68,7 @@ const record = {
     benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
     model: { id: "publisher/model", provider: "provider", reasoning_effort: "off" },
     harness: { agent: "pi", version: "0.84.4" },
-    cost_ceiling_usd_per_trial: 0.25,
+    cost_ceiling_usd: 0.25,
   },
   harbor_job_config: {
     job_name: "job",
@@ -439,13 +439,13 @@ test("retains overview values after a failed submission", async ({ page }) => {
   await model.fill("publisher/retry-model");
   await model.blur();
   await provider.selectOption("retry-provider");
-  await page.getByLabel("Cost limit per trial").fill("0.75");
+  await page.getByLabel("Campaign cost ceiling").fill("0.75");
   await page.getByLabel("Result role").selectOption("final");
   await page.getByRole("button", { name: "Submit run" }).click();
   await expect(page.getByRole("alert")).toContainText("submission rejected");
   await expect(model).toHaveValue("publisher/retry-model");
   await expect(provider).toHaveValue("retry-provider");
-  await expect(page.getByLabel("Cost limit per trial")).toHaveValue("0.75");
+  await expect(page.getByLabel("Campaign cost ceiling")).toHaveValue("0.75");
   await expect(page.getByLabel("Result role")).toHaveValue("final");
 });
 
@@ -526,7 +526,7 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
   await page.getByLabel("Concurrent trials").fill("12");
   await page
     .getByLabel(
-      "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+      "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
     )
     .check();
   await page.getByRole("button", { name: "Launch Harbor run" }).click();
@@ -562,7 +562,7 @@ test("invalidates Workbench launch approval after a recipe edit", async ({ page 
   await page.getByLabel("Recorded provider (optional)").fill("provider");
   await page
     .getByLabel(
-      "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+      "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
     )
     .check();
   await expect(page.getByRole("button", { name: "Launch Harbor run" })).toBeEnabled();
@@ -584,7 +584,7 @@ test("model edits reset launch consent without rewriting the harness string", as
   const harness = page.getByLabel("Harness model string", { exact: true });
   await harness.fill("hf.publisher/runtime-model:together");
   const consent = page.getByLabel(
-    "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+    "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
   );
   for (const [label, value] of [
     ["Recorded model", "publisher/recorded-model"],
@@ -761,14 +761,14 @@ test("preserves safe draft links through sign-in and rejects credential-bearing 
   await mockControl(page, { authenticated: false });
   const draft = { agents: [], n_attempts: 2, extra_instructions: ["Unicode ü + text"] };
   await page.goto(
-    `/runs/new?draft=${encodeURIComponent(JSON.stringify(draft))}&cost_ceiling_usd_per_trial=2.5`,
+    `/runs/new?draft=${encodeURIComponent(JSON.stringify(draft))}&cost_ceiling_usd=2.5`,
   );
   await expect(page).toHaveURL(/\/auth\/login\?/);
   const returnTo = new URL(page.url()).searchParams.get("return_to");
   const restored = new URL(returnTo ?? "", "https://example.test");
   expect(restored.pathname).toBe("/runs/new");
   expect(JSON.parse(restored.searchParams.get("draft") ?? "")).toEqual(draft);
-  expect(restored.searchParams.get("cost_ceiling_usd_per_trial")).toBe("2.5");
+  expect(restored.searchParams.get("cost_ceiling_usd")).toBe("2.5");
   const unsafe = { agents: [{ env: { HF_TOKEN: "test-only" } }] };
   await page.goto(`/runs/new?draft=${encodeURIComponent(JSON.stringify(unsafe))}`);
   await expect(page.getByRole("alert")).toHaveText(
@@ -997,7 +997,7 @@ for (const launchPath of ["overview", "workbench"] as const) {
     if (launchPath === "workbench") {
       await page
         .getByLabel(
-          "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+          "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
         )
         .check();
       await page.getByRole("button", { name: "Launch Harbor run" }).click();

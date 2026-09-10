@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import Database from "better-sqlite3";
 import {
   authorizationCodeGrant,
   Configuration,
@@ -30,6 +34,7 @@ beforeEach(async () => {
       scopes: "openid profile",
       callback_url: "https://example.com/auth/callback",
       session_ttl_seconds: 3600,
+      operator_org_subject: null,
     },
     async () => null,
   );
@@ -74,6 +79,181 @@ describe("OAuth callback diagnostics", () => {
       stage: "flow",
       denied: false,
     });
+  });
+
+  it.each(["orgs", "organizations"] as const)(
+    "authorizes a configured organization from %s by stable subject",
+    async (membershipField) => {
+      const orgAuth = new AuthenticationService(
+        "oauth",
+        store,
+        {
+          issuer: "https://example.com",
+          client_id: "fixture-client",
+          client_secret: "fixture-only",
+          scopes: "openid profile read-memberships",
+          callback_url: "https://example.com/auth/callback",
+          session_ttl_seconds: 3600,
+          operator_org_subject: "fixture-org-subject",
+        },
+        async () => null,
+      );
+      vi.mocked(discovery).mockResolvedValueOnce(
+        new Configuration(
+          {
+            issuer: "https://example.com",
+            authorization_endpoint: "https://example.com/authorize",
+          },
+          "fixture-client",
+        ),
+      );
+      vi.mocked(fetchUserInfo).mockResolvedValueOnce({
+        sub: "organization-member",
+        preferred_username: "example-member",
+        [membershipField]: [{ sub: "fixture-org-subject", name: "renamable-name" }],
+      });
+      await orgAuth.initialize();
+
+      const login = await orgAuth.login("/runs");
+      expect(login.url.searchParams.get("orgIds")).toBe("fixture-org-subject");
+      expect(login.url.searchParams.get("scope")?.split(" ")).toContain(
+        "read-memberships",
+      );
+
+      const result = await orgAuth.callback(login.flow_id, callbackUrl);
+      expect(store.session(result.session_id)?.operator_org_subject).toBe(
+        "fixture-org-subject",
+      );
+      expect(await orgAuth.sessionActor(result.session_id)).toMatchObject({
+        actor: { subject: "organization-member", role: "operator" },
+      });
+    },
+  );
+
+  it("uses the OAuth organization subject, not whoami ids or names", async () => {
+    const orgAuth = new AuthenticationService(
+      "oauth",
+      store,
+      {
+        issuer: "https://example.com",
+        client_id: "fixture-client",
+        client_secret: "fixture-only",
+        scopes: "openid profile read-memberships",
+        callback_url: "https://example.com/auth/callback",
+        session_ttl_seconds: 3600,
+        operator_org_subject: "fixture-org-subject",
+      },
+      async () => null,
+    );
+    await orgAuth.initialize();
+    vi.mocked(fetchUserInfo).mockResolvedValueOnce({
+      sub: "unrelated-user",
+      orgs: [
+        {
+          sub: "unrelated-org-subject",
+          id: "fixture-org-subject",
+          name: "fixture-org-subject",
+        },
+        { id: "fixture-org-subject", name: "fixture-org-subject" },
+      ],
+    });
+
+    await expect(
+      orgAuth.callback(store.createFlow("/").id, callbackUrl),
+    ).rejects.toMatchObject({ stage: "authorization", denied: true });
+  });
+
+  it("keeps an explicit reader role ahead of organization access", async () => {
+    const orgAuth = new AuthenticationService(
+      "oauth",
+      store,
+      {
+        issuer: "https://example.com",
+        client_id: "fixture-client",
+        client_secret: "fixture-only",
+        scopes: "openid profile read-memberships",
+        callback_url: "https://example.com/auth/callback",
+        session_ttl_seconds: 3600,
+        operator_org_subject: "fixture-org-subject",
+      },
+      async () => ({
+        schema_version: "v1",
+        kind: "operator.acl",
+        record_id: "fixture-acl",
+        created_at: "2026-09-10T00:00:00Z",
+        actor: { subject: "fixture-service", role: "service" },
+        operators: [],
+        readers: ["fixture-subject"],
+      }),
+    );
+    await orgAuth.initialize();
+    vi.mocked(fetchUserInfo).mockResolvedValueOnce({
+      sub: "fixture-subject",
+      organizations: [{ sub: "fixture-org-subject" }],
+    });
+
+    const result = await orgAuth.callback(store.createFlow("/").id, callbackUrl);
+    expect(await orgAuth.sessionActor(result.session_id)).toMatchObject({
+      actor: { subject: "fixture-subject", role: "reader" },
+    });
+  });
+
+  it("revokes an organization session when that organization is no longer configured", async () => {
+    const session = store.createSession(
+      "organization-member",
+      "Example member",
+      3600,
+      "fixture-org-subject",
+    );
+    const withoutOrganization = new AuthenticationService(
+      "oauth",
+      store,
+      {
+        issuer: "https://example.com",
+        client_id: "fixture-client",
+        client_secret: "fixture-only",
+        scopes: "openid profile",
+        callback_url: "https://example.com/auth/callback",
+        session_ttl_seconds: 3600,
+        operator_org_subject: null,
+      },
+      async () => null,
+    );
+
+    expect(await withoutOrganization.sessionActor(session.id)).toBeNull();
+    expect(store.session(session.id)).toBeNull();
+  });
+
+  it("adds organization authorization to an existing session store", async () => {
+    const root = await mkdtemp(join(tmpdir(), "harbor-hf-auth-"));
+    const path = join(root, "auth.sqlite");
+    const database = new Database(path);
+    database.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        subject TEXT NOT NULL,
+        username TEXT,
+        csrf_digest TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      )
+    `);
+    database.close();
+
+    const migrated = await AuthStore.open(path);
+    try {
+      const created = migrated.createSession(
+        "organization-member",
+        "Example member",
+        3600,
+        "fixture-org-subject",
+      );
+      expect(migrated.session(created.id)?.operator_org_subject).toBe(
+        "fixture-org-subject",
+      );
+    } finally {
+      migrated.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("identifies missing configuration without retaining the callback", async () => {

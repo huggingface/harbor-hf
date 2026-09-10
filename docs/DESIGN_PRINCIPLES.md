@@ -92,12 +92,16 @@ A reviewed preset should stay close to a Harbor `JobConfig` fragment. It can
 restrict values for safety or policy. It should not invent another name for a
 field that Harbor already has.
 
-Harbor-HF MUST preserve a null cost when Harbor reports one after agent
-execution. It MUST NOT record that cost as observed zero or as an observed
-ceiling charge. A failure before agent execution MUST record zero cost. The cost
-guard MUST reserve the per-trial ceiling for an unknown post-execution cost and
-MUST let Harbor continue while total observed and reserved exposure remains
-within the run ceiling. A missing cost by itself MUST NOT stop unrelated trials.
+Harbor-HF MUST preserve a null cost when Harbor reports one. It MUST NOT record
+that cost as observed zero or as an observed ceiling charge. The ceiling
+calculation MUST treat the null value as zero, and the null value MUST NOT stop
+other campaign work. A failure before agent execution MUST record zero cost.
+
+A current run MUST have one campaign cost ceiling. The guard MUST compare that
+ceiling with the sum of immutable attempt costs and MUST NOT divide or convert
+it into per-trial limits. Existing immutable runs with the legacy per-trial
+field MUST remain readable and MUST keep their per-trial ceiling behavior. The
+same null-as-zero calculation rule applies to them.
 
 ## Cost stops and native finalization
 

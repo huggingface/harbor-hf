@@ -28,7 +28,7 @@ export interface PresetSubmission {
   model: { id: string; provider: string; reasoning_effort: string };
   harness: { agent: string; version: string };
   n_concurrent_trials?: number | undefined;
-  cost_ceiling_usd_per_trial: number;
+  cost_ceiling_usd: number;
   role?: "final" | "diagnostic";
 }
 
@@ -233,7 +233,7 @@ function record(value: unknown, label: string): Record<string, unknown> {
 
 export function directSubmission(
   config: HarborJobConfigV1,
-  costCeilingUsdPerTrial: number,
+  costCeilingUsd: number,
 ): Omit<PresetSubmission, "model" | "harness"> &
   Partial<Pick<PresetSubmission, "model" | "harness">> {
   const value = config as Record<string, unknown>;
@@ -241,7 +241,7 @@ export function directSubmission(
   if (agents.length !== 1)
     return {
       benchmark: { name: "custom", preset: "custom" },
-      cost_ceiling_usd_per_trial: costCeilingUsdPerTrial,
+      cost_ceiling_usd: costCeilingUsd,
       role: "diagnostic",
     };
   const agent = agents[0] ?? {};
@@ -267,7 +267,7 @@ export function directSubmission(
     benchmark: { name: "custom", preset: "custom" },
     model: { id: modelId, provider, reasoning_effort: "default" },
     harness: { agent: name.replaceAll("_", "-").replace(/[^a-z0-9-]/g, "-"), version },
-    cost_ceiling_usd_per_trial: costCeilingUsdPerTrial,
+    cost_ceiling_usd: costCeilingUsd,
     role: "diagnostic",
   };
 }

@@ -29,6 +29,7 @@ from harbor_hf_agents.hf_sandbox import (
 )
 from harbor_hf_agents.parent_worker import (
     ControlledRunStop,
+    CostCeiling,
     CostCeilingExceeded,
     _harbor_job_is_terminal,
     cleanup_interrupted_trial,
@@ -36,17 +37,37 @@ from harbor_hf_agents.parent_worker import (
     job_config,
     load_attempt_costs,
     load_run_record,
-    make_cost_hook,
+)
+from harbor_hf_agents.parent_worker import (
+    make_cost_hook as _make_cost_hook,
 )
 
 RUN_ID = "run-0123456789abcdef01234567"
+CAMPAIGN_CEILING = CostCeiling(usd=0.25, scope="campaign")
+LEGACY_TRIAL_CEILING = CostCeiling(usd=0.25, scope="trial")
+
+
+def make_cost_hook(
+    ceiling: float,
+    planned_trials: int,
+    run_dir: Path,
+    *,
+    max_retries: int,
+) -> HookCallback:
+    assert ceiling == CAMPAIGN_CEILING.usd
+    return _make_cost_hook(
+        CAMPAIGN_CEILING,
+        planned_trials,
+        run_dir,
+        max_retries=max_retries,
+    )
 
 
 def record(root: Path) -> dict[str, Any]:
     return {
         "schema_version": "v1",
         "run_id": RUN_ID,
-        "submission": {"cost_ceiling_usd_per_trial": 0.25},
+        "submission": {"cost_ceiling_usd": 0.25},
         "harbor_job_config": {
             "job_name": "job",
             "jobs_dir": str(root / "runs" / RUN_ID),
@@ -73,7 +94,16 @@ def test_loads_and_validates_the_assigned_record(tmp_path: Path) -> None:
     loaded = load_run_record(tmp_path, RUN_ID)
     assert loaded == value
     assert job_config(loaded, tmp_path, RUN_ID).job_name == "job"
-    assert cost_ceiling(loaded) == 0.25
+    assert cost_ceiling(loaded) == CAMPAIGN_CEILING
+
+    loaded["submission"] = {"cost_ceiling_usd_per_trial": 0.25}
+    assert cost_ceiling(loaded) == LEGACY_TRIAL_CEILING
+    loaded["submission"] = {
+        "cost_ceiling_usd": 0.25,
+        "cost_ceiling_usd_per_trial": 0.25,
+    }
+    with pytest.raises(ValueError, match="exactly one"):
+        cost_ceiling(loaded)
 
     loaded["run_id"] = "run-ffffffffffffffffffffffff"
     path.write_text(json.dumps(loaded), encoding="utf-8")
@@ -182,19 +212,19 @@ def test_native_completion_fails_closed_for_missing_or_malformed_result(
 
 
 @pytest.mark.asyncio
-async def test_cost_hook_stops_only_after_an_expensive_trial(
+async def test_cost_hook_stops_after_cumulative_cost_crosses_campaign_ceiling(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "run"
     hook = make_cost_hook(0.25, 2, run_dir, max_retries=0)
-    cheap = SimpleNamespace(result=Result("cheap", 0.25))
-    expensive = SimpleNamespace(result=Result("expensive", 0.26))
+    first = SimpleNamespace(result=Result("first", 0.1))
+    second = SimpleNamespace(result=Result("second", 0.16))
 
-    await hook(cast(Any, cheap))
+    await hook(cast(Any, first))
 
     assert len(load_attempt_costs(run_dir)) == 1
-    with pytest.raises(CostCeilingExceeded, match="above its ceiling"):
-        await hook(cast(Any, expensive))
+    with pytest.raises(CostCeilingExceeded, match="campaign ceiling"):
+        await hook(cast(Any, second))
     assert len(load_attempt_costs(run_dir)) == 2
     with pytest.raises(ValueError, match="planned trial count"):
         make_cost_hook(0.25, 0, run_dir, max_retries=0)
@@ -207,7 +237,7 @@ async def test_cost_hook_restores_retry_cost_after_restart(tmp_path: Path) -> No
     await first(cast(Any, SimpleNamespace(result=Result("task", 0.2))))
 
     resumed = make_cost_hook(0.25, 1, run_dir, max_retries=0)
-    with pytest.raises(CostCeilingExceeded, match="run ceiling"):
+    with pytest.raises(CostCeilingExceeded, match="campaign ceiling"):
         await resumed(cast(Any, SimpleNamespace(result=Result("task", 0.2))))
 
 
@@ -229,7 +259,7 @@ async def test_cost_hook_records_zero_when_agent_did_not_start(tmp_path: Path) -
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cost", [None, float("inf"), -1.0])
-async def test_cost_hook_reserves_ceiling_when_cost_is_unavailable(
+async def test_campaign_cost_hook_counts_unavailable_cost_as_zero(
     tmp_path: Path,
     cost: float | None,
 ) -> None:
@@ -237,29 +267,39 @@ async def test_cost_hook_reserves_ceiling_when_cost_is_unavailable(
     hook = make_cost_hook(0.25, 2, run_dir, max_retries=0)
 
     await hook(cast(Any, SimpleNamespace(result=Result("unknown", cost))))
-    await hook(cast(Any, SimpleNamespace(result=Result("known", 0.24))))
+    with pytest.raises(CostCeilingExceeded, match="campaign ceiling"):
+        await hook(cast(Any, SimpleNamespace(result=Result("known", 0.26))))
 
     receipts = {
         receipt.trial_name: receipt for receipt in load_attempt_costs(run_dir).values()
     }
-    assert len(receipts) == 2
     assert receipts["unknown"].cost_usd is None
-    assert receipts["known"].cost_usd == 0.24
+    assert receipts["known"].cost_usd == 0.26
 
 
 @pytest.mark.asyncio
-async def test_cost_hook_stops_when_reserved_and_observed_cost_cross_run_ceiling(
+async def test_legacy_trial_ceiling_counts_unavailable_cost_as_zero(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "run"
-    hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
+    hook = _make_cost_hook(
+        LEGACY_TRIAL_CEILING,
+        2,
+        run_dir,
+        max_retries=1,
+    )
 
-    await hook(cast(Any, SimpleNamespace(result=Result("task", None))))
+    await hook(cast(Any, SimpleNamespace(result=Result("unknown", None))))
+    await hook(cast(Any, SimpleNamespace(result=Result("known-one", 0.24))))
+    await hook(cast(Any, SimpleNamespace(result=Result("known-two", 0.02))))
 
-    with pytest.raises(CostCeilingExceeded, match="cost exposure"):
-        await hook(cast(Any, SimpleNamespace(result=Result("task", 0.01))))
-
-    assert len(load_attempt_costs(run_dir)) == 2
+    receipts = {
+        receipt.trial_name: receipt for receipt in load_attempt_costs(run_dir).values()
+    }
+    assert len(receipts) == 3
+    assert receipts["unknown"].cost_usd is None
+    assert receipts["known-one"].cost_usd == 0.24
+    assert receipts["known-two"].cost_usd == 0.02
 
 
 @pytest.mark.asyncio
@@ -275,15 +315,15 @@ async def test_cost_hook_allows_final_direct_overage(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cost_hook_allows_final_aggregate_overage(tmp_path: Path) -> None:
+async def test_cost_hook_allows_final_unknown_cost(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
-    hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
-    await hook(cast(Any, SimpleNamespace(result=Result("task", None))))
     write_job_result(run_dir, total=1, completed=1, running=0, pending=0)
+    hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
 
-    await hook(cast(Any, SimpleNamespace(result=Result("task", 0.01))))
+    await hook(cast(Any, SimpleNamespace(result=Result("task", None))))
 
-    assert len(load_attempt_costs(run_dir)) == 2
+    receipt = next(iter(load_attempt_costs(run_dir).values()))
+    assert receipt.cost_usd is None
 
 
 @pytest.mark.asyncio
@@ -292,12 +332,12 @@ async def test_existing_overage_allows_only_zero_retry_finalization(
 ) -> None:
     run_dir = tmp_path / "run"
     hook = make_cost_hook(0.25, 1, run_dir, max_retries=0)
-    with pytest.raises(CostCeilingExceeded, match="above its ceiling"):
+    with pytest.raises(CostCeilingExceeded, match="campaign ceiling"):
         await hook(cast(Any, SimpleNamespace(result=Result("task", 0.26))))
     write_job_result(run_dir, total=1, completed=1, running=0, pending=0)
 
     make_cost_hook(0.25, 1, run_dir, max_retries=0)
-    with pytest.raises(CostCeilingExceeded, match="above its ceiling"):
+    with pytest.raises(CostCeilingExceeded, match="campaign ceiling"):
         make_cost_hook(0.25, 1, run_dir, max_retries=1)
 
 

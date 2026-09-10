@@ -62,7 +62,7 @@ const submissionSchema = z
       .object({ agent: z.string().min(1), version: z.string().min(1) })
       .strict(),
     n_concurrent_trials: z.number().int().min(1).max(128).optional(),
-    cost_ceiling_usd_per_trial: z.number().positive().max(10_000),
+    cost_ceiling_usd: z.number().positive().max(10_000),
     role: z.enum(["final", "diagnostic"]).default("final"),
   })
   .strict();
@@ -517,7 +517,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           model: input.model,
           harness: { agent: "command-agent", version: preview.revision_id },
           n_concurrent_trials: input.n_concurrent_trials,
-          cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
+          cost_ceiling_usd: input.cost_ceiling_usd,
           role: input.role,
         },
         { ...preview.harbor_agent, ...input.workbench.harbor_agent },
@@ -541,9 +541,9 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.post("/api/v1/runs/config", async (request, reply) => {
     const actor = requireActor(request);
     const key = idempotencyKey(request);
-    const ceiling = Number(request.headers["x-harbor-hf-cost-ceiling-usd-per-trial"]);
+    const ceiling = Number(request.headers["x-harbor-hf-cost-ceiling-usd"]);
     if (!Number.isFinite(ceiling) || ceiling <= 0 || ceiling > 10_000)
-      throw new Error("cost ceiling must be a finite positive USD value");
+      throw new Error("campaign cost ceiling must be a finite positive USD value");
     const validation = await runtime.launch.validate(request.body);
     if (!validation.credentials_available)
       return error(

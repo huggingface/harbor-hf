@@ -35,7 +35,7 @@ const record: RunRecordV1 = {
     benchmark: { name: "fixture-benchmark", preset: "fixture-preset" },
     model: { id: "publisher/model", provider: "provider", reasoning_effort: "off" },
     harness: { agent: "fixture-agent", version: "1" },
-    cost_ceiling_usd_per_trial: 100,
+    cost_ceiling_usd: 100,
   },
   harbor_job_config: { n_attempts: 1 },
 };

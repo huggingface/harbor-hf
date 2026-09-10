@@ -51,7 +51,7 @@ submission selects:
 - one benchmark preset
 - one model ID and provider
 - one agent preset and reasoning value
-- one positive maximum cost in USD per trial
+- one positive maximum cost in USD for the complete campaign
 - a `final` or `diagnostic` role
 
 Use a unique `Idempotency-Key`. A repeated key with the same request adopts the
@@ -62,7 +62,7 @@ Use a direct Harbor `JobConfig` only when a preset cannot express the test:
 ```bash
 uv run harbor-hf submit \
   --config job.yaml \
-  --cost-ceiling-usd-per-trial 0.25
+  --cost-ceiling-usd 100
 ```
 
 The service replaces caller-controlled paths, environment, and router
@@ -101,20 +101,22 @@ projection. HF Job state is an observation, not the run record.
 
 ## Cost and completion rules
 
-The cost ceiling is checked after each trial because Harbor writes the result
-before it calls the end hook. The parent writes one immutable cost receipt for
-each Harbor attempt before Harbor can remove a failed retry folder. It reloads
-these receipts after restart. A missing cost stops the run.
+The campaign cost ceiling is checked after each trial because Harbor writes the
+result before it calls the end hook. The parent writes one immutable cost receipt
+for each Harbor attempt before Harbor can remove a failed retry folder. It
+reloads these receipts after restart. A missing cost stays null in the receipt
+and contributes zero to the ceiling calculation. It does not stop other work.
 
-One trial can cross its limit. With concurrent trials, work that is already
-active can also finish before cancellation.
+The ceiling applies to the sum of all trial-attempt costs in the campaign. It is
+not divided into per-trial limits. With concurrent trials, work that is already
+active can finish before cancellation, so reported cost can exceed the ceiling.
 
 Treat a run as complete only when:
 
 - Harbor wrote `job/result.json` with a finished status;
 - no labeled parent or child Job is active;
 - each expected trial has a durable Harbor result;
-- observed trial cost is within the approved limit; and
+- the known trial cost total is within the approved limit; and
 - the projection rebuild gives the same run state.
 
 Only completed `final` runs from a leaderboard-eligible preset, with at least

@@ -13,7 +13,7 @@ const record = {
     benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
     model: { id: "publisher/model", provider: "provider", reasoning_effort: "off" },
     harness: { agent: "pi", version: "0.84.4" },
-    cost_ceiling_usd_per_trial: 0.25,
+    cost_ceiling_usd: 0.25,
   },
   harbor_job_config: {
     job_name: "job",
