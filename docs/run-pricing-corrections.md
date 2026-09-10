@@ -133,3 +133,20 @@ preservation, fresh HF adapter reads, operator/CSRF/write-mode checks, and brows
 confirmation/conflict handling and cross-browser estimates. No private task subset,
 profile, credential or live runtime is used. Full command results and any existing
 repository-wide validation gaps are recorded in the private implementation notes.
+
+## Summary headline
+
+The inference-cost card prioritizes native reported cost, including zero. When it
+is absent, a finite, nonnegative shared estimate becomes the same-size headline,
+explicitly labeled **Estimated** with **Launch rates** or **Corrected rates**.
+The existing tooltip retains effective rate provenance and partial-usage/not-billing
+caveats. With reported cost present, an available estimate remains secondary.
+Unavailable or invalid estimates stay a dash when reported cost is also missing;
+unavailable correction history never permits a stale launch or browser-scenario
+fallback. No native cost, shared arithmetic, audit history or coverage count changes.
+
+This display-only refinement rechecked pinned Harbor `src/harbor/models/job/result.py`
+(`JobStats.cost_usd`) and `src/harbor/models/trial/result.py`
+(`compute_token_cost_totals()`), plus the 19 cached commits through `7d5285b4`.
+Those files have no intervening change requiring a pin update. No schema, persisted
+field, API value, execution behavior or browser-local scenario is added or changed.

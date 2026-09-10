@@ -18,12 +18,20 @@ export const RUN_POLL_INTERVAL_MS = 10_000;
 
 // Display age and freshness must advance even while a request hangs.
 export function useRunClock() {
-  const [now, setNow] = useState(Date.now);
+  const [, render] = useState(0);
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), RUN_POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
+    const refresh = () => render((tick) => tick + 1);
+    const timer = setInterval(refresh, RUN_POLL_INTERVAL_MS);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, []);
-  return now;
+  // Responses can arrive between ticks; never compare them with a sampled clock.
+  return Date.now();
 }
 
 export const keys = {
