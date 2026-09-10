@@ -1,5 +1,6 @@
-import { assertRunId } from "@harbor-hf/contracts";
+import { assertRunId, type RunRecordV1 } from "@harbor-hf/contracts";
 import type {
+  InferenceBindings,
   JobObservation,
   JobRole,
   JobStage,
@@ -11,6 +12,8 @@ import {
   runJob,
   type SpaceHardwareFlavor,
 } from "@huggingface/hub";
+
+import { withSelectedInferenceSecret } from "./inference-secrets.js";
 
 export type ParentHardware = SpaceHardwareFlavor;
 type ApiJob = Awaited<ReturnType<typeof runJob>>;
@@ -96,6 +99,7 @@ export class HuggingFaceJobs implements JobsPort {
   constructor(private readonly options: HuggingFaceJobsOptions) {
     if (!IMMUTABLE_IMAGE.test(options.parentImage))
       throw new Error("parent image must use an immutable sha256 digest");
+    this.options = Object.freeze({ ...options });
     this.hardware = options.hardware ?? "cpu-basic";
     this.mountRoot = options.mountRoot ?? "/data";
     this.timeoutSeconds = options.timeoutSeconds ?? 86_400;
@@ -123,6 +127,30 @@ export class HuggingFaceJobs implements JobsPort {
   }
 
   async startParent(runId: string): Promise<JobObservation> {
+    return this.#startParent(runId, {
+      HF_INFERENCE_TOKEN: this.options.inferenceToken,
+    });
+  }
+
+  async startReviewedParent(
+    run: RunRecordV1,
+    policy: () => InferenceBindings | Promise<InferenceBindings>,
+    readSelected: (source: string) => string | undefined,
+  ): Promise<JobObservation> {
+    return withSelectedInferenceSecret(
+      run,
+      this.options.parentImage,
+      policy,
+      readSelected,
+      (secrets) => this.#startParent(run.run_id, secrets),
+    );
+  }
+
+  // Only legacy HF delivery and the reviewed selector can reach this transport.
+  async #startParent(
+    runId: string,
+    inferenceSecrets: Readonly<Record<string, string>>,
+  ): Promise<JobObservation> {
     assertRunId(runId);
     const value = await runJob({
       ...this.credentials(),
@@ -135,7 +163,7 @@ export class HuggingFaceJobs implements JobsPort {
       },
       secrets: {
         HF_TOKEN: this.options.accessToken,
-        HF_INFERENCE_TOKEN: this.options.inferenceToken,
+        ...inferenceSecrets,
       },
       flavor: this.hardware,
       arch: "amd64",

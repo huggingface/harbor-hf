@@ -286,3 +286,41 @@ export async function signOut(): Promise<void> {
 export type TrialProgress = components["schemas"]["TrialProgress"];
 export const getTrialProgress = (runId: string): Promise<TrialProgress> =>
   api(`/api/v1/runs/${encodeURIComponent(runId)}/progress`);
+
+export const getInferenceBindings = () =>
+  api<import("@harbor-hf/contracts").InferenceBindingsV1>(
+    "/api/v1/inference-bindings",
+    { cache: "no-store" },
+  );
+
+export const registerInferenceBinding = (
+  input: import("@harbor-hf/contracts").InferenceRegistrationRequestV1,
+) =>
+  api<import("@harbor-hf/contracts").InferenceBindingsV1>(
+    "/api/v1/inference-bindings",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+export const setInferenceBindingStatus = (
+  ref: string,
+  input: import("@harbor-hf/contracts").InferenceStatusRequestV1,
+) =>
+  api<import("@harbor-hf/contracts").InferenceBindingsV1>(
+    `/api/v1/inference-bindings/${encodeURIComponent(ref)}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+export const reviewInferenceBinding = (
+  ref: string,
+  input: import("@harbor-hf/contracts").InferenceReviewRequestV1,
+) =>
+  api<import("@harbor-hf/contracts").InferenceReviewV1>(
+    `/api/v1/inference-bindings/${encodeURIComponent(ref)}/review`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+export const approveInferenceBinding = (
+  ref: string,
+  input: import("@harbor-hf/contracts").InferenceApprovalRequestV1,
+) =>
+  api<import("@harbor-hf/contracts").InferenceBindingsV1>(
+    `/api/v1/inference-bindings/${encodeURIComponent(ref)}/approve`,
+    { method: "POST", body: JSON.stringify(input) },
+  );

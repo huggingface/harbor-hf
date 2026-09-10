@@ -35,7 +35,7 @@
       "maxLength": 32768
     },
     "route_api": {
-      "enum": ["chat-completions", "responses"]
+      "enum": ["chat-completions", "responses", "native"]
     },
     "setup_timeout_seconds": {
       "type": "integer",
@@ -80,8 +80,29 @@
         "value": {
           "type": "string",
           "maxLength": 4096
+        },
+        "credential_ref": {
+          "type": "string",
+          "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["credential_ref"]
+          },
+          "then": {
+            "properties": {
+              "source": {
+                "const": "model_api_key"
+              }
+            },
+            "not": {
+              "required": ["value"]
+            }
+          }
+        }
+      ]
     },
     "OutputDeclaration": {
       "type": "object",

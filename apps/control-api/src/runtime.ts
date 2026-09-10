@@ -1,7 +1,11 @@
+import { randomUUID } from "node:crypto";
 import type { OperatorAcl } from "@harbor-hf/contracts";
 import {
   ControlService,
   FilesystemObjectStore,
+  InferenceRegistry,
+  prohibitedInferenceName,
+  InferenceBindingDenied,
   type ObjectStore,
   PresetCatalog,
   Projection,
@@ -25,6 +29,7 @@ export interface Runtime {
   projection: Projection;
   store: ObjectStore;
   service: ControlService;
+  inference: InferenceRegistry;
   auth: AuthenticationService;
   reconciler: Reconciler;
   presets: PresetCatalog;
@@ -36,7 +41,23 @@ export interface Runtime {
   close(): Promise<void>;
 }
 
-export async function createRuntime(config: AppConfig): Promise<Runtime> {
+/** Read exactly one validated own key; never enumerate or inherit environment values. */
+export function readOwnInferenceSource(
+  environment: Readonly<Record<string, unknown>>,
+  source: string,
+): string | undefined {
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(source) || prohibitedInferenceName(source))
+    throw new InferenceBindingDenied();
+  if (!Object.hasOwn(environment, source)) return undefined;
+  const value = environment[source];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+export async function createRuntime(
+  config: AppConfig,
+  readSelectedSource: (source: string) => string | undefined = (source) =>
+    readOwnInferenceSource(process.env, source),
+): Promise<Runtime> {
   if (config.store_mode === "bucket" && !config.hf_token)
     throw new Error("Bucket mode requires the control credential");
   const store: ObjectStore =
@@ -65,7 +86,50 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
             namespace: config.namespace,
             accessToken: config.hf_token ?? "",
           });
+  // Read only the selected name. Compare infrastructure authority values in memory
+  // so an ordinary alias cannot launder the control or OAuth credential.
+  const selectedSource = (source: string) => {
+    let value: unknown;
+    try {
+      if (
+        !/^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(source) ||
+        prohibitedInferenceName(source)
+      )
+        throw new InferenceBindingDenied();
+      value = readSelectedSource(source);
+    } catch {
+      throw new InferenceBindingDenied("Inference credential presence is unavailable");
+    }
+    if (typeof value !== "string" || value.length === 0) return undefined;
+    if (
+      value &&
+      [config.hf_token, config.hf_inference_token, config.oauth?.client_secret].some(
+        (authority) => authority && authority === value,
+      )
+    )
+      throw new InferenceBindingDenied();
+    return value;
+  };
+  const inference = new InferenceRegistry(
+    store,
+    config.parent_image ?? "",
+    (source) => Boolean(selectedSource(source)),
+    () => new Date(),
+    randomUUID,
+  );
+  const admittedPolicy = () => inference.policy();
   const service = new ControlService(store, projection, presets, jobs, {
+    inference: {
+      policy: admittedPolicy,
+      sequence: (operation) => inference.sequence(operation),
+      image: config.parent_image ?? "",
+      present: (source) => Boolean(selectedSource(source)),
+      start: (run) => {
+        if (!(jobs instanceof HuggingFaceJobs))
+          throw new Error("Job launch is disabled");
+        return jobs.startReviewedParent(run, admittedPolicy, selectedSource);
+      },
+    },
     harborRevision: HARBOR_REVISION,
     mountRoot: "/data",
     maxActiveJobs: config.max_active_jobs,
@@ -110,6 +174,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
     projection,
     store,
     service,
+    inference,
     auth,
     reconciler,
     presets,
@@ -125,6 +190,7 @@ export async function createRuntime(config: AppConfig): Promise<Runtime> {
       ready = true;
     },
     start(onReconcilerError?: (error: unknown) => void) {
+      if (!ready) throw new Error("Runtime is not initialized");
       if (config.write_mode === "enabled") reconciler.start(onReconcilerError);
     },
     async close() {

@@ -253,3 +253,23 @@ The [configurable launch plan](2026-09-08-configurable-launch-plan.md) describes
 one native configuration editor for multiple sources, built-in and custom agents,
 and HF launch restrictions. It is planned work; the current submission behavior
 above remains unchanged.
+
+
+## Local provider credential references
+
+Workbench supports operator-managed Space secret references for
+provider inference: the app selects reviewed references and shows presence only,
+never accepts or stores key values. Explicit environment bindings deliver only the
+selected credential to reviewed execution. See [Provider credential references](provider-credential-references.md)
+for the operator-only register/select/review/approve flow after separately approved
+deployment. Workbench Manage secrets edits name-only references in the canonical
+Bucket registry; the server derives exact recipe/model/image grants. No manifest
+path or offline hash workflow remains. Revision conflicts and uncertain saves
+require refresh and review, never automatic retries. Standalone setup success is
+not approval.
+
+Deployment caveat: align the live two-secret inventory and control-only token
+instructions under separate explicit deployment and credential-transfer approval.
+This local implementation does not authorize activation.
+Standalone setup tests remain secret-free; Harbor's authorized benchmark agent env
+covers setup and run. Host review constraints are not firewall enforcement.

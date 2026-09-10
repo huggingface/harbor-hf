@@ -185,6 +185,7 @@ async function mockControl(page: Page, options: MockOptions = {}) {
   const authenticated = options.authenticated ?? true;
   const currentRun = { ...run, status: options.runStatus ?? run.status };
   let setupStatus = options.setupStatus ?? "passed";
+  let setupRecipeDigest = "a".repeat(64);
   await page.route("**/auth/login**", (route) =>
     route.fulfill({ status: 200, contentType: "text/plain", body: "sign in" }),
   );
@@ -210,6 +211,8 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     if (path === "/api/v1/leaderboard") return json(route, leaderboard);
     if (path === "/api/v1/system") return json(route, system);
     if (path === "/api/v1/presets") return json(route, presets);
+    if (path === "/api/v1/inference-bindings")
+      return json(route, { schema_version: "v1", bindings: [] });
     if (path === "/api/v1/hardware")
       return json(route, [
         {
@@ -307,12 +310,16 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     }
     if (path === "/api/v1/workbench/setup-tests" && method === "GET")
       return json(route, { setups: [] });
-    if (path === "/api/v1/workbench/setup-tests" && method === "POST")
+    if (path === "/api/v1/workbench/setup-tests" && method === "POST") {
+      setupRecipeDigest =
+        request.postDataJSON().recipe.name === "fast-agent"
+          ? "a".repeat(64)
+          : "b".repeat(64);
       return json(
         route,
         {
           setup_test_id: setupId,
-          recipe_digest: "a".repeat(64),
+          recipe_digest: setupRecipeDigest,
           revision_id: "agent-recipe-0123456789abcdef01234567",
           status: setupStatus,
           created_at: "2026-01-01T00:00:00Z",
@@ -324,11 +331,12 @@ async function mockControl(page: Page, options: MockOptions = {}) {
         },
         202,
       );
+    }
     if (path === `/api/v1/workbench/setup-tests/${setupId}/cancel`) {
       setupStatus = "failed";
       return json(route, {
         setup_test_id: setupId,
-        recipe_digest: "a".repeat(64),
+        recipe_digest: setupRecipeDigest,
         revision_id: "agent-recipe-0123456789abcdef01234567",
         status: "cancelled",
         created_at: "2026-01-01T00:00:00Z",
@@ -344,7 +352,7 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     if (path === `/api/v1/workbench/setup-tests/${setupId}`)
       return json(route, {
         setup_test_id: setupId,
-        recipe_digest: "a".repeat(64),
+        recipe_digest: setupRecipeDigest,
         revision_id: "agent-recipe-0123456789abcdef01234567",
         status: setupStatus,
         created_at: "2026-01-01T00:00:00Z",
@@ -2167,6 +2175,295 @@ for (const width of [1440, 320]) {
     }
   });
 }
+
+test("native starter selects only a presence reference and preserves native model input", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.route("**/api/v1/inference-bindings", (route) =>
+    json(route, {
+      schema_version: "v1",
+      bindings: [
+        {
+          ref: "INFERENCE_API_KEY_EXAMPLE",
+          label: "Synthetic first",
+          status: "configured",
+        },
+        {
+          ref: "INFERENCE_API_KEY_SECOND",
+          label: "Synthetic second",
+          status: "missing",
+        },
+      ],
+    }),
+  );
+  await page.goto("/workbench");
+  await page
+    .getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "Inference API", exact: true }),
+  ).toHaveValue("native");
+  const selector = page.getByLabel("Inference credential reference");
+  await selector.selectOption("INFERENCE_API_KEY_EXAMPLE");
+  await expect(selector).toHaveValue("INFERENCE_API_KEY_EXAMPLE");
+  await expect(
+    selector.locator('option[value="INFERENCE_API_KEY_SECOND"]'),
+  ).toBeEnabled();
+  // Review a missing reference without supplying a real credential. Admission
+  // remains fail-closed; selecting a reference is not a grant or a launch.
+  await selector.selectOption("INFERENCE_API_KEY_SECOND");
+  await expect(selector).toHaveValue("INFERENCE_API_KEY_SECOND");
+  await selector.selectOption("INFERENCE_API_KEY_EXAMPLE");
+  await expect(
+    page.getByText("Presence only; not API validity, quota or compatibility."),
+  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Harness model string", exact: true })
+    .fill("second:native-model");
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("harbor-hf.workbench.draft.v1") ?? "{}")
+            .harbor_agent?.model_name,
+      ),
+    )
+    .toBe("second:native-model");
+  await page.reload();
+  await expect(page.getByLabel("Inference credential reference")).toHaveValue(
+    "INFERENCE_API_KEY_EXAMPLE",
+  );
+  await expect(
+    page.getByRole("textbox", { name: "Harness model string", exact: true }),
+  ).toHaveValue("second:native-model");
+  await page.route("**/api/v1/inference-bindings", (route) =>
+    route.fulfill({ status: 503, body: "unavailable" }),
+  );
+  await page.getByRole("button", { name: "Manage secrets" }).click();
+  await page.getByRole("button", { name: "Refresh secret registry" }).click();
+  await expect(
+    page.getByText("Availability unavailable, not missing. Refresh before continuing."),
+  ).toBeVisible();
+});
+
+test("submits the exact tested native recipe with only a safe credential reference", async ({
+  page,
+}) => {
+  let submitted: unknown = null;
+  await mockControl(page, { onRunPost: (payload) => (submitted = payload) });
+  await page.route("**/api/v1/inference-bindings", (route) =>
+    json(route, {
+      schema_version: "v1",
+      bindings: [
+        {
+          ref: "INFERENCE_API_KEY_EXAMPLE",
+          label: "Synthetic inference",
+          status: "configured",
+        },
+      ],
+    }),
+  );
+  await page.goto("/workbench");
+  await page
+    .getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true })
+    .click();
+  await page
+    .getByLabel("Inference credential reference")
+    .selectOption("INFERENCE_API_KEY_EXAMPLE");
+  await page
+    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
+    .check();
+  await page.getByRole("button", { name: "Run setup test" }).click();
+  await expect(page.getByText("Setup passed")).toBeVisible();
+  await page.getByLabel("Recorded model", { exact: true }).fill("synthetic-model");
+  await page
+    .getByLabel("Harness model string", { exact: true })
+    .fill("example:unchanged/model");
+  await page
+    .getByLabel(
+      "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
+    )
+    .check();
+  await page.getByRole("button", { name: "Launch Harbor run" }).click();
+  await expect.poll(() => submitted).not.toBeNull();
+  expect(submitted).toMatchObject({
+    workbench: {
+      harbor_agent: { model_name: "example:unchanged/model" },
+      recipe: {
+        route_api: "native",
+        environment: expect.arrayContaining([
+          {
+            name: "EXAMPLE_API_KEY",
+            source: "model_api_key",
+            credential_ref: "INFERENCE_API_KEY_EXAMPLE",
+          },
+        ]),
+      },
+    },
+  });
+  expect(JSON.stringify(submitted)).not.toContain("INFERENCE_SECRET_");
+});
+
+test("operator registers a name, selects Secret, reviews and approves before setup and launch", async ({
+  page,
+}) => {
+  let submitted: unknown = null;
+  await mockControl(page, {
+    onRunPost: (payload) => {
+      submitted = payload;
+    },
+  });
+  const ref = "INFERENCE_API_KEY_EXAMPLE";
+  let revision = 0;
+  let registered = false;
+  let approved = false;
+  let reviewedRecipe: unknown;
+  const discovery = () => ({
+    schema_version: "v1",
+    revision,
+    bindings: registered
+      ? [
+          {
+            ref,
+            source_env: "MY_SECRET_KEY",
+            label: "Example inference",
+            enabled: true,
+            status: "missing",
+            grants: [],
+          },
+        ]
+      : [],
+  });
+  await page.route("**/api/v1/inference-bindings**", async (route) => {
+    const request = route.request();
+    expect(request.url()).not.toContain("MY_SECRET_KEY");
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "GET") return json(route, discovery());
+    const body = request.postDataJSON();
+    if (path.endsWith("/review")) {
+      expect(body).toMatchObject({
+        expected_revision: 1,
+        model_name: "example:native-model",
+        base_url: null,
+        allowed_hosts: [],
+      });
+      reviewedRecipe = body.recipe;
+      return json(route, {
+        schema_version: "v1",
+        revision,
+        review_id: "ephemeral-review",
+        expires_at: "2099-01-01T00:00:00Z",
+        ref,
+        source_env: "MY_SECRET_KEY",
+        label: "Example inference",
+        presence: "missing",
+        recipe: body.recipe,
+        grant: {
+          operator_subjects: [],
+          worker_image: `example/image@sha256:${"b".repeat(64)}`,
+          agent_import_path: "example:Agent",
+          recipe_digest: "c".repeat(64),
+          destination_env: ["DEEPSEEK_API_KEY"],
+          route_api: "native",
+          base_url: null,
+          allowed_hosts: [],
+          allowed_models: ["example:native-model"],
+        },
+      });
+    }
+    if (path.endsWith("/approve")) {
+      expect(body).toEqual({
+        expected_revision: 1,
+        review_id: "ephemeral-review",
+        reviewed_confirmation: true,
+        reason: "Reviewed exact use",
+      });
+      approved = true;
+      ++revision;
+      return json(route, discovery());
+    }
+    expect(body).toEqual({
+      expected_revision: 0,
+      source_env: "MY_SECRET_KEY",
+      label: "Example inference",
+      reason: "Reviewed exact use",
+    });
+    registered = true;
+    ++revision;
+    return json(route, discovery());
+  });
+  await page.goto("/workbench");
+  await page
+    .getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Manage secrets", exact: true }).click();
+  await page.getByLabel("Space secret name", { exact: true }).fill("MY_SECRET_KEY");
+  await page.getByLabel("Friendly label", { exact: true }).fill("Example inference");
+  await page.getByLabel("Change reason", { exact: true }).fill("Reviewed exact use");
+  await expect(page.locator("input[type=password]")).toHaveCount(0);
+  await page.getByRole("button", { name: "Register reference" }).click();
+  await page
+    .locator('input[aria-label$=" name"][value="EXAMPLE_API_KEY"]')
+    .fill("DEEPSEEK_API_KEY");
+  await page.getByLabel("Inference credential reference").selectOption(ref);
+  await page
+    .getByLabel("Harness model string", { exact: true })
+    .fill("example:native-model");
+  await page.getByRole("button", { name: "Review credential use" }).click();
+  await expect(page.getByLabel("Credential review")).toContainText("DEEPSEEK_API_KEY");
+  await page
+    .getByLabel("I approve this exact recipe, model, image and destinations")
+    .check();
+  await page.getByRole("button", { name: "Approve credential use" }).click();
+  await expect.poll(() => approved).toBe(true);
+  await page
+    .getByLabel("Start one disposable CPU setup test for this exact recipe.")
+    .check();
+  await page.getByRole("button", { name: "Run setup test" }).click();
+  await expect(page.getByText("Setup passed")).toBeVisible();
+  await page.getByLabel("Recorded model", { exact: true }).fill("synthetic-model");
+  await page
+    .getByLabel(
+      "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
+    )
+    .check();
+  await page.getByRole("button", { name: "Launch Harbor run" }).click();
+  await expect.poll(() => submitted).not.toBeNull();
+  expect(submitted).toMatchObject({
+    workbench: {
+      recipe: reviewedRecipe,
+      harbor_agent: { model_name: "example:native-model" },
+    },
+  });
+  expect(JSON.stringify(submitted)).not.toContain("MY_SECRET_KEY");
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(
+    "MY_SECRET_KEY",
+  );
+});
+
+test("readers cannot see secret management or discover source names", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.route("**/api/v1/session", (route) =>
+    json(route, {
+      authenticated: true,
+      actor: { username: "test-reader", role: "reader", transport: "development" },
+    }),
+  );
+  let discoveryReads = 0;
+  await page.route("**/api/v1/inference-bindings**", (route) => {
+    ++discoveryReads;
+    return json(route, { schema_version: "v1", revision: 0, bindings: [] });
+  });
+  await page.goto("/workbench");
+  await expect(
+    page.getByRole("heading", { name: "Agent Workbench", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Manage secrets" })).toHaveCount(0);
+  expect(discoveryReads).toBe(0);
+});
 
 test("delayed observations render fresh between ticks and retry without moving slots", async ({
   page,

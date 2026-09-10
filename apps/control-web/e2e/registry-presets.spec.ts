@@ -46,6 +46,7 @@ test("Workbench selects registry and Git presets without source-specific UI", as
         capacity: { max_active_parent_jobs: 1 },
         resources: { spaces: 1, buckets: 1, operator_secrets: 2 },
       },
+      "/api/v1/inference-bindings": { schema_version: "v1", bindings: [] },
       "/api/v1/presets": { benchmarks, agents: [] },
       "/api/v1/workbench/setup-tests": { setups: [] },
     };

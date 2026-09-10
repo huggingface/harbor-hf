@@ -36,7 +36,7 @@ type CommandBinding = Literal[
     "model_api_key",
     "agent_version",
 ]
-type RouteApi = Literal["chat-completions", "responses"]
+type RouteApi = Literal["chat-completions", "responses", "native"]
 
 _LOGS_PATH = "/logs/agent"
 _INSTRUCTION_PATH = f"{_LOGS_PATH}/instruction.txt"
@@ -408,14 +408,29 @@ class CommandAgent(BaseInstalledAgent):
             return None
         if self.model_name is None:
             raise ValueError("Model bindings require model_name")
-        base_url = self._get_env("OPENAI_BASE_URL")
-        api_key = self._get_env("OPENAI_API_KEY")
-        if not base_url or not api_key:
-            raise RuntimeError("Command agent requires direct model settings")
-        return {
-            "model_base_url": base_url,
-            "model_api_key": api_key,
+        # Harbor resolves AgentConfig.env before construction. Native routing uses
+        # only its public explicit mapping, never ambient credential fallback.
+        lookup = (
+            self.extra_env.get
+            if self.command_config.route_api == "native"
+            else self._get_env
+        )
+        slots: dict[CommandBinding, str] = {
+            "model_base_url": "OPENAI_BASE_URL",
+            "model_api_key": "OPENAI_API_KEY",
         }
+        connection: dict[CommandBinding, str] = {}
+        for binding, slot in slots.items():
+            if (
+                self.command_config.route_api == "native"
+                and binding not in self.command_config.run.bindings.values()
+            ):
+                continue
+            value = lookup(slot)
+            if not value:
+                raise RuntimeError("Command agent requires direct model settings")
+            connection[binding] = value
+        return connection
 
     async def _download_atif(
         self,

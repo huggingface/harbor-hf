@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://harborframework.com/schemas/harbor-hf/inference-review-v1.schema.json",
+  "title": "Inference Review V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "revision",
+    "review_id",
+    "expires_at",
+    "ref",
+    "source_env",
+    "label",
+    "presence",
+    "recipe",
+    "grant"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "v1"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "review_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ref": {
+      "type": "string",
+      "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$"
+    },
+    "source_env": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,79}$",
+      "not": {
+        "anyOf": [
+          {
+            "enum": ["HF_TOKEN", "HF_INFERENCE_TOKEN"]
+          },
+          {
+            "pattern": "^(?:HF_|HUGGING_FACE_|HUGGINGFACE_|HARBOR_HF_|OAUTH_|OPENID_|INFERENCE_API_KEY_)",
+            "description": "Reserved authority name"
+          },
+          {
+            "pattern": "(?:^|_)(?:TOKEN|OAUTH|OPENID|CONTROL|AUTH|SESSION|COOKIE|PASSWORD|PRIVATE|SIGNING)(?:_|$)",
+            "description": "Reserved authority name"
+          },
+          {
+            "pattern": "^(?:AWS_|AZURE_|GOOGLE_|GCP_|DATABASE_|REDIS_|SSH_|CI_|GITHUB_|LD_|DYLD_|NODE_|PYTHON|PATH$|HOME$|SHELL$|USER$)",
+            "description": "Reserved authority name"
+          },
+          {
+            "pattern": "(?:^|_)(?:CREDENTIALS?|AUTHORITY|ACCESS|ENCRYPTION|SERVICE|CLIENT)(?:_|$)",
+            "description": "Reserved authority name"
+          }
+        ]
+      }
+    },
+    "label": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$"
+    },
+    "presence": {
+      "enum": ["configured", "missing"]
+    },
+    "recipe": {
+      "$ref": "agent-workbench-v1.schema.json"
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operator_subjects",
+        "worker_image",
+        "agent_import_path",
+        "recipe_digest",
+        "destination_env",
+        "route_api",
+        "base_url",
+        "allowed_hosts",
+        "allowed_models"
+      ],
+      "properties": {
+        "operator_subjects": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "uniqueItems": true
+        },
+        "worker_image": {
+          "type": "string",
+          "pattern": "^[^\\s]+@sha256:[0-9a-f]{64}$"
+        },
+        "agent_import_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "recipe_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "destination_env": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]{0,79}$"
+          },
+          "uniqueItems": true
+        },
+        "route_api": {
+          "enum": ["chat-completions", "responses", "native"]
+        },
+        "base_url": {
+          "type": ["string", "null"],
+          "maxLength": 2048
+        },
+        "allowed_hosts": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
+            "maxLength": 253
+          },
+          "uniqueItems": true
+        },
+        "allowed_models": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      }
+    }
+  }
+}

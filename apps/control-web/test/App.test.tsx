@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
   actOnRun: vi.fn(),
   cancelWorkbenchSetup: vi.fn(),
   getJobs: vi.fn(),
+  getInferenceBindings: vi.fn(),
   getLeaderboard: vi.fn(),
   getModelProviders: vi.fn(),
   getPresets: vi.fn(),
@@ -214,6 +215,10 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  apiMocks.getInferenceBindings.mockResolvedValue({
+    schema_version: "v1",
+    bindings: [],
+  });
   vi.clearAllMocks();
   window.localStorage.clear();
   apiMocks.getSession.mockResolvedValue({
@@ -660,5 +665,69 @@ describe("restored control console", () => {
     expect(screen.getAllByRole("link", { name: "Workbench" }).length).toBeGreaterThan(
       0,
     );
+  });
+});
+
+it("configures and submits the opt-in native starter with a reviewed reference", async () => {
+  apiMocks.getInferenceBindings.mockResolvedValue({
+    schema_version: "v1",
+    bindings: [
+      {
+        ref: "INFERENCE_API_KEY_EXAMPLE",
+        label: "Synthetic inference",
+        status: "configured",
+      },
+    ],
+  });
+  apiMocks.previewWorkbenchRecipe.mockImplementation(
+    async (recipe: WorkbenchRecipe) => ({ ...preview, recipe }),
+  );
+  const user = userEvent.setup();
+  renderAt("/workbench");
+  await screen.findByRole("heading", { name: "Agent Workbench" });
+  await user.click(
+    screen.getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true }),
+  );
+  const destination = screen.getByDisplayValue("EXAMPLE_API_KEY");
+  await user.clear(destination);
+  await user.type(destination, "SYNTHETIC_PROVIDER_API_KEY");
+  await user.selectOptions(
+    screen.getByLabelText("Inference credential reference"),
+    "INFERENCE_API_KEY_EXAMPLE",
+  );
+  await user.click(
+    screen.getByLabelText("Start one disposable CPU setup test for this exact recipe."),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Run setup test" })).toBeEnabled(),
+  );
+  await user.click(screen.getByRole("button", { name: "Run setup test" }));
+  await screen.findByText("Setup passed");
+  await user.type(screen.getByLabelText("Recorded model"), "synthetic-model");
+  await user.type(
+    screen.getByLabelText("Harness model string"),
+    "example:native/model",
+  );
+  await user.click(
+    screen.getByLabelText(
+      "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Launch Harbor run" }));
+  await waitFor(() => expect(apiMocks.submitRun).toHaveBeenCalledOnce());
+  expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
+    workbench: {
+      harbor_agent: { model_name: "example:native/model" },
+      recipe: {
+        route_api: "native",
+        environment: expect.arrayContaining([
+          {
+            name: "SYNTHETIC_PROVIDER_API_KEY",
+            source: "model_api_key",
+            credential_ref: "INFERENCE_API_KEY_EXAMPLE",
+          },
+        ]),
+      },
+    },
   });
 });

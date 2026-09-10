@@ -1,3 +1,10 @@
+import { withSelectedInferenceSecret } from "../../hf-adapters/src/inference-secrets.js";
+import {
+  actor as inferenceActor,
+  image as inferenceImage,
+  fixture as inferenceFixture,
+} from "./inference-fixture.js";
+import { InferenceBindings } from "../src/inference-bindings.js";
 import Database from "better-sqlite3";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1882,5 +1889,255 @@ describe("immutable launch pricing and shared SQL estimates", () => {
       });
       spy.mockRestore();
     }
+  });
+});
+
+it("revalidates selected credentials at submit and every parent start/restart", async () => {
+  const { recipe, manifest } = inferenceFixture();
+  let policy = new InferenceBindings(manifest);
+  let present = true;
+  const read = vi.fn(() => "synthetic-adapter-only");
+  const start = vi.fn(async (record: RunRecordV1) =>
+    withSelectedInferenceSecret(
+      record,
+      inferenceImage,
+      () => policy,
+      read,
+      async (secrets) => {
+        expect(secrets).toEqual({
+          INFERENCE_API_KEY_EXAMPLE: "synthetic-adapter-only",
+        });
+        expect(record.harbor_job_config.agents?.[0]?.env?.OPENAI_API_KEY).toBe(
+          "${INFERENCE_API_KEY_EXAMPLE}",
+        );
+        expect(JSON.stringify(record)).not.toContain("synthetic-adapter-only");
+        return jobs.startParent(record.run_id);
+      },
+    ),
+  );
+  service = new ControlService(store, projection, presets, jobs, {
+    harborRevision: "d".repeat(40),
+    mountRoot: "/data",
+    maxActiveJobs: 1,
+    restartDelayMs: 0,
+    inference: {
+      policy: () => policy,
+      image: inferenceImage,
+      present: () => present,
+      start,
+    },
+  });
+  const fragment = await service.compileWorkbench(
+    recipe,
+    inferenceActor,
+    "example:native",
+  );
+  present = false;
+  await expect(
+    service.submitWorkbench(input, fragment, "inference-selected", inferenceActor),
+  ).rejects.toThrow("unavailable");
+  present = true;
+  await expect(
+    service.submitWorkbench(
+      input,
+      { ...fragment, model_name: "example:unreviewed" },
+      "changed-model",
+      inferenceActor,
+    ),
+  ).rejects.toThrow("not reviewed");
+  const submitted = await service.submitWorkbench(
+    input,
+    fragment,
+    "inference-selected",
+    inferenceActor,
+  );
+  expect(JSON.stringify(submitted.run)).not.toContain("INFERENCE_SECRET_");
+  manifest.bindings[0]!.enabled = false;
+  policy = new InferenceBindings(manifest);
+  await service.reconcile();
+  expect(projection.run(submitted.run.run_id)?.state).toMatchObject({
+    desired_state: "paused",
+    actor: "harbor-hf-inference-blocked",
+  });
+  expect(start).not.toHaveBeenCalled();
+  manifest.bindings[0]!.enabled = true;
+  policy = new InferenceBindings(manifest);
+  await service.setDesiredState(submitted.run.run_id, "run", inferenceActor);
+  await service.reconcile();
+  expect(start).toHaveBeenCalledTimes(1);
+  expect(read).toHaveBeenCalledExactlyOnceWith("INFERENCE_SECRET_EXAMPLE");
+  await jobs.cancel(jobs.values[0]!.id);
+  present = false;
+  await service.reconcile();
+  expect(projection.run(submitted.run.run_id)?.status).toBe("paused");
+  expect(start).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  "revoked",
+  "missing",
+  "policy-error",
+  "model-changed",
+  "delivery-missing",
+  "delivery-revoked",
+  "delivery-policy-error",
+])(
+  "isolates older %s credentials from runnable, cost stop, orphan cleanup and live observation",
+  async (failure) => {
+    const { recipe, manifest } = inferenceFixture();
+    let policy = new InferenceBindings(manifest);
+    let fail = false;
+    service = new ControlService(store, projection, presets, jobs, {
+      harborRevision: "d".repeat(40),
+      mountRoot: "/data",
+      maxActiveJobs: 8,
+      restartDelayMs: 0,
+      inference: {
+        policy: () => {
+          if (fail && failure === "policy-error")
+            throw Error("synthetic-private-detail");
+          return policy;
+        },
+        image: inferenceImage,
+        present: () => !(fail && failure === "missing"),
+        start: async (record) =>
+          withSelectedInferenceSecret(
+            record,
+            inferenceImage,
+            () => {
+              if (fail && failure === "delivery-policy-error")
+                throw Error("synthetic-private-detail");
+              if (fail && failure === "delivery-revoked")
+                return new InferenceBindings();
+              return policy;
+            },
+            () =>
+              fail && failure === "delivery-missing"
+                ? undefined
+                : "synthetic-adapter-only",
+            async () => jobs.startParent(record.run_id),
+          ),
+      },
+    });
+    const fragment = await service.compileWorkbench(
+      recipe,
+      inferenceActor,
+      "example:native",
+    );
+    const blocked = (
+      await service.submitWorkbench(input, fragment, "old-selected", inferenceActor)
+    ).run;
+    const live = (
+      await service.submitWorkbench(input, fragment, "live-selected", inferenceActor)
+    ).run;
+    const runnable = (await submit("unrelated-runnable")).run;
+    const cost = (await submit("unrelated-cost")).run;
+    const orphan = (await submit("unrelated-orphan")).run;
+    // Fix ordering explicitly rather than depend on wall-clock resolution.
+    await putJson(store, runRecordPath(blocked.run_id), {
+      ...blocked,
+      created_at: "2026-01-01T00:00:00Z",
+    });
+    await putJson(store, `runs/${cost.run_id}/job/task/result.json`, trial(0.5));
+    const observation = {
+      stage: "running",
+      created_at: "2026-01-01T00:00:00Z",
+      started_at: "2026-01-01T00:00:00Z",
+      finished_at: null,
+    } as const;
+    jobs.values.push(
+      { ...observation, id: "cost-parent", role: "parent", run_id: cost.run_id },
+      { ...observation, id: "orphan-trial", role: "trial", run_id: orphan.run_id },
+      {
+        ...observation,
+        id: "live-selected-parent",
+        role: "parent",
+        run_id: live.run_id,
+      },
+    );
+    if (failure === "revoked") manifest.bindings[0]!.enabled = false;
+    if (failure === "model-changed")
+      manifest.bindings[0]!.uses[0]!.allowed_models = ["example:different"];
+    policy = new InferenceBindings(manifest);
+    fail = true;
+    await service.reconcile();
+    expect(projection.run(blocked.run_id)).toMatchObject({
+      status: "paused",
+      state: {
+        actor: "harbor-hf-inference-blocked",
+        parent_jobs: [],
+      },
+    });
+    expect(jobs.cancelled).toEqual(
+      expect.arrayContaining(["cost-parent", "orphan-trial"]),
+    );
+    expect(jobs.cancelled).not.toContain("live-selected-parent");
+    expect(projection.run(cost.run_id)?.status).toBe("cost_stopped");
+    expect(projection.run(live.run_id)?.status).toBe("running");
+    expect(jobs.values.find((job) => job.id === "live-selected-parent")).toMatchObject(
+      observation,
+    );
+    if (failure !== "policy-error") {
+      expect(projection.run(runnable.run_id)?.status).toBe("running");
+      expect(projection.run(orphan.run_id)?.status).toBe("running");
+    } else {
+      // An unreadable global policy cannot authorize any fresh start, but safety still runs.
+      expect(projection.run(runnable.run_id)?.status).toBe("paused");
+    }
+    expect(JSON.stringify(projection.listRuns())).not.toContain(
+      "synthetic-private-detail",
+    );
+    const starts = jobs.starts;
+    await service.reconcile();
+    expect(jobs.starts).toBe(starts);
+  },
+);
+
+it("does not turn an uncertain delivery into a credential pause or stop its live parent", async () => {
+  const { recipe, policy } = inferenceFixture();
+  const start = vi.fn(async (record: RunRecordV1) =>
+    withSelectedInferenceSecret(
+      record,
+      inferenceImage,
+      () => policy,
+      () => "synthetic-adapter-only",
+      async () => {
+        await jobs.startParent(record.run_id);
+        throw Error("synthetic-uncertain-transport");
+      },
+    ),
+  );
+  service = new ControlService(store, projection, presets, jobs, {
+    harborRevision: "d".repeat(40),
+    mountRoot: "/data",
+    maxActiveJobs: 8,
+    restartDelayMs: 0,
+    inference: {
+      policy: () => policy,
+      image: inferenceImage,
+      present: () => true,
+      start,
+    },
+  });
+  const fragment = await service.compileWorkbench(
+    recipe,
+    inferenceActor,
+    "example:native",
+  );
+  const { run } = await service.submitWorkbench(
+    input,
+    fragment,
+    "uncertain-selected",
+    inferenceActor,
+  );
+  await expect(service.reconcile()).rejects.toThrow(
+    "Reviewed inference delivery failed",
+  );
+  await service.reconcile();
+  expect(start).toHaveBeenCalledTimes(1);
+  expect(jobs.cancelled).toEqual([]);
+  expect(projection.run(run.run_id)).toMatchObject({
+    status: "running",
+    state: { desired_state: "run" },
   });
 });

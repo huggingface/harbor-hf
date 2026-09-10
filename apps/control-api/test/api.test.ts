@@ -29,6 +29,7 @@ afterEach(async () => {
 async function setup(
   writeMode: "disabled" | "enabled" = "enabled",
   logging = false,
+  parentImage: string | null = null,
 ): Promise<{
   runtime: Runtime;
   app: Awaited<ReturnType<typeof buildApp>>;
@@ -50,7 +51,7 @@ async function setup(
     auth_path: join(root, "auth.sqlite"),
     presets_root: resolve("presets"),
     max_active_jobs: 16,
-    parent_image: null,
+    parent_image: parentImage,
     parent_hardware: "cpu-basic",
     parent_timeout_seconds: 86_400,
     web_root: web,
@@ -67,7 +68,7 @@ async function setup(
     workbench_image: "python:3.12-slim",
     bootstrap_operator_subjects: [],
   };
-  const runtime = await createRuntime(config);
+  const runtime = await createRuntime(config, () => undefined);
   runtime.config.write_mode = writeMode;
   runtimes.push(runtime);
   const app = await buildApp(runtime);
@@ -1593,4 +1594,263 @@ it("audits pricing through operator/CSRF/write gates with generated contracts an
   expect(failure.statusCode).toBe(503);
   expect(failure.body).not.toContain("private-provider-error");
   await app.close();
+});
+
+it("exposes empty no-store discovery only to authenticated operators", async () => {
+  const { runtime, app } = await setup("disabled");
+  const response = await app.inject("/api/v1/inference-bindings");
+  expect(response.statusCode).toBe(200);
+  expect(response.headers["cache-control"]).toBe("no-store");
+  expect(response.json()).toEqual({ schema_version: "v1", revision: 0, bindings: [] });
+  expect(
+    (await app.inject("/api/v1/inference-bindings?source=untrusted")).statusCode,
+  ).toBe(400);
+  vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+    subject: "fixture-reader",
+    username: "fixture-reader",
+    role: "reader",
+    transport: "development",
+  });
+  expect((await app.inject("/api/v1/inference-bindings")).statusCode).toBe(403);
+  runtime.config.auth_mode = "oauth";
+  vi.spyOn(runtime.auth, "sessionActor").mockResolvedValue(null);
+  expect((await app.inject("/api/v1/inference-bindings")).statusCode).toBe(401);
+  await app.close();
+});
+
+it("a successful standalone setup grants no provider credential permission", async () => {
+  const { runtime, app } = await setup();
+  await runtime.initialize();
+  vi.spyOn(runtime.workbench, "attestPassedSetup").mockResolvedValue({
+    setup_test_id: workbenchSetup.setup_test_id,
+    recipe_digest: workbenchSetup.recipe_digest,
+    revision_id: workbenchSetup.revision_id,
+    completed_at: "2026-01-01T00:00:00Z",
+    expires_at: "2026-01-01T01:00:00Z",
+  });
+  const recipe = structuredClone(workbenchRecipe);
+  const key = recipe.environment.find((binding) => binding.source === "model_api_key");
+  if (!key) throw Error("missing fixture binding");
+  key.credential_ref = "INFERENCE_API_KEY_EXAMPLE";
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/runs",
+    headers: { "idempotency-key": "synthetic-reference" },
+    payload: {
+      benchmark: submission.benchmark,
+      model: submission.model,
+      cost_ceiling_usd: 1,
+      workbench: {
+        recipe,
+        setup_test_id: workbenchSetup.setup_test_id,
+        harbor_agent: { model_name: "example:native" },
+      },
+    },
+  });
+  expect(response.statusCode).toBe(403);
+  expect(response.json().error.message).toContain("not reviewed");
+  expect(await runtime.store.list("runs/")).toEqual([]);
+  await app.close();
+});
+
+it("registers and separately approves actor-bound reviewed recipes through closed generated APIs", async () => {
+  const image = `example.invalid/worker@sha256:${"a".repeat(64)}`;
+  const { runtime, app } = await setup("enabled", false, image);
+  const url = "/api/v1/inference-bindings";
+  const payload: components["schemas"]["InferenceRegistrationRequest"] = {
+    expected_revision: 0,
+    source_env: "MY_SECRET_KEY",
+    label: "Example inference",
+    reason: "Register inference source",
+  };
+  const post = (body: object = payload) =>
+    app.inject({ method: "POST", url, payload: body });
+  for (const extra of [
+    { value: "sk-synthetic-value" },
+    { actor: "forged" },
+    { ref: "INFERENCE_API_KEY_FORGED" },
+    { created_at: "2026-01-01T00:00:00Z" },
+  ])
+    expect((await post({ ...payload, ...extra })).statusCode).toBe(400);
+  runtime.config.write_mode = "disabled";
+  expect((await post()).json().error.code).toBe("write_disabled");
+  runtime.config.write_mode = "enabled";
+  const actor = vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+    subject: "fixture-reader",
+    username: "fixture-reader",
+    role: "reader",
+    transport: "development",
+  });
+  expect((await post()).statusCode).toBe(403);
+  actor.mockRestore();
+  runtime.config.auth_mode = "oauth";
+  expect((await post()).statusCode).toBe(401);
+  const session = runtime.auth.store.createSession(
+    "fixture-subject",
+    "fixture-user",
+    3600,
+  );
+  vi.spyOn(runtime.auth, "role").mockResolvedValue("operator");
+  const cookies = { hhf_session: session.id };
+  const headers = { "x-csrf-token": session.csrf };
+  expect(
+    (await app.inject({ method: "POST", url, payload, cookies })).json().error.code,
+  ).toBe("csrf_rejected");
+  const saved = await app.inject({ method: "POST", url, payload, cookies, headers });
+  expect(saved.statusCode).toBe(200);
+  const state = saved.json<components["schemas"]["InferenceBindings"]>();
+  expect(state.revision).toBe(1);
+  const ref = state.bindings[0]!.ref;
+  expect(state.bindings[0]).toMatchObject({
+    source_env: "MY_SECRET_KEY",
+    status: "missing",
+    grants: [],
+  });
+  expect(saved.headers["cache-control"]).toBe("no-store");
+  const recipe = structuredClone(workbenchRecipe);
+  recipe.route_api = "native";
+  recipe.environment = recipe.environment.filter(
+    (row) => row.source !== "model_base_url",
+  );
+  recipe.environment.find((row) => row.source === "model_api_key")!.credential_ref =
+    ref;
+  const reviewBody: components["schemas"]["InferenceReviewRequest"] = {
+    expected_revision: 1,
+    recipe,
+    model_name: "example:native",
+    base_url: null,
+    allowed_hosts: [],
+  };
+  const reviewUrl = `${url}/${ref}/review`;
+  for (const extra of [
+    { worker_image: image },
+    { recipe_digest: "a".repeat(64) },
+    { operator_subjects: ["forged"] },
+  ])
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: reviewUrl,
+          payload: { ...reviewBody, ...extra },
+          cookies,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(400);
+  const reviewed = await app.inject({
+    method: "POST",
+    url: reviewUrl,
+    payload: reviewBody,
+    cookies,
+    headers,
+  });
+  expect(reviewed.statusCode).toBe(200);
+  const review = reviewed.json<components["schemas"]["InferenceReview"]>();
+  expect(review.grant).toMatchObject({
+    worker_image: image,
+    operator_subjects: ["fixture-subject"],
+    allowed_models: ["example:native"],
+  });
+  expect(review.recipe).toEqual(recipe);
+  const approval: components["schemas"]["InferenceApprovalRequest"] = {
+    expected_revision: 1,
+    review_id: review.review_id,
+    reviewed_confirmation: true,
+    reason: "Reviewed complete configuration",
+  };
+  const approveUrl = `${url}/${ref}/approve`;
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: approveUrl,
+        payload: { ...approval, reviewed_confirmation: false },
+        cookies,
+        headers,
+      })
+    ).statusCode,
+  ).toBe(400);
+  const other = runtime.auth.store.createSession("other-operator", "other-user", 3600);
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: approveUrl,
+        payload: approval,
+        cookies: { hhf_session: other.id },
+        headers: { "x-csrf-token": other.csrf },
+      })
+    ).statusCode,
+  ).toBe(403);
+  const approved = await app.inject({
+    method: "POST",
+    url: approveUrl,
+    payload: approval,
+    cookies,
+    headers,
+  });
+  expect(approved.statusCode).toBe(200);
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: approveUrl,
+        payload: approval,
+        cookies,
+        headers,
+      })
+    ).statusCode,
+  ).toBe(409);
+  const revoked = await app.inject({
+    method: "PATCH",
+    url: `${url}/${ref}`,
+    payload: { expected_revision: 2, enabled: false, reason: "Revoke reviewed use" },
+    cookies,
+    headers,
+  });
+  expect(revoked.statusCode).toBe(200);
+  expect(revoked.json().bindings[0]).toMatchObject({ enabled: false, grants: [] });
+  const document = JSON.parse(
+    await readFile("docs/control-api-v1.openapi.json", "utf8"),
+  );
+  const ajv = new Ajv2020({ strict: false });
+  ajv.addFormat("date-time", () => true);
+  ajv.addSchema(document, "api");
+  for (const [name, value] of [
+    ["InferenceBindings", state],
+    ["InferenceReview", review],
+  ] as const)
+    expect(ajv.compile({ $ref: `api#/components/schemas/${name}` })(value)).toBe(true);
+  await app.close();
+});
+
+it("does not log submitted secret names, values or malformed reference paths", async () => {
+  const lines: string[] = [];
+  vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+    lines.push(String(chunk));
+    return true;
+  });
+  const { app } = await setup("enabled", true);
+  const value = "ghp_123456789012345678901234567890123456";
+  await app.inject({
+    method: "POST",
+    url: "/api/v1/inference-bindings",
+    payload: {
+      expected_revision: 0,
+      source_env: "MY_SECRET_KEY",
+      label: "Example",
+      reason: "Register",
+      value,
+    },
+  });
+  await app.inject({
+    method: "POST",
+    url: `/api/v1/inference-bindings/${value}/approve`,
+    payload: {},
+  });
+  await app.close();
+  expect(lines.join("\n")).not.toMatch(
+    /MY_SECRET_KEY|ghp_123456789012345678901234567890123456/,
+  );
 });

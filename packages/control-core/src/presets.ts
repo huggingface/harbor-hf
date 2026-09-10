@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   AgentPresetV1,
+  AgentConfig,
   BenchmarkPresetV1,
   HarborJobConfigV1,
 } from "@harbor-hf/contracts";
@@ -32,13 +33,16 @@ export interface PresetSubmission {
   role?: "final" | "diagnostic";
 }
 
-export interface HarborAgentFragment {
-  model_name?: string;
-  name?: string;
-  import_path?: string;
-  kwargs?: Record<string, unknown>;
-  override_setup_timeout_sec?: number;
-}
+export type HarborAgentFragment = Pick<
+  AgentConfig,
+  | "model_name"
+  | "name"
+  | "import_path"
+  | "kwargs"
+  | "override_setup_timeout_sec"
+  | "env"
+  | "extra_allowed_hosts"
+>;
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -188,7 +192,7 @@ export class PresetCatalog {
     if (fragment.import_path !== "harbor_hf_agents.command_agent.agent:CommandAgent")
       throw new Error("Workbench requires the reviewed command agent plugin");
     if (
-      fragment.model_name !== undefined &&
+      fragment.model_name != null &&
       (!fragment.model_name.trim() ||
         fragment.model_name.length > 320 ||
         [...fragment.model_name].some(
@@ -207,10 +211,15 @@ export class PresetCatalog {
       model_name:
         fragment.model_name ??
         `openai/${submission.model.id}:${submission.model.provider}`,
-      env: {
-        OPENAI_BASE_URL: ROUTER_URL,
-        OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
-      },
+      env: fragment.env
+        ? clone(fragment.env)
+        : {
+            OPENAI_BASE_URL: ROUTER_URL,
+            OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
+          },
+      ...(fragment.extra_allowed_hosts
+        ? { extra_allowed_hosts: clone(fragment.extra_allowed_hosts) }
+        : {}),
       kwargs: clone(fragment.kwargs ?? {}),
     };
     return validateHarborJobConfig({

@@ -6,3 +6,7 @@ export * from "./projection.js";
 export * from "./service.js";
 export * from "./store.js";
 export * from "./workbench.js";
+
+export * from "./inference-bindings.js";
+
+export * from "./inference-source-registry.js";

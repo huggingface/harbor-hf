@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ContractValidationError,
+  InferenceBindingDenied,
   canonicalJson,
   harborJobResultPath,
   runId,
@@ -188,4 +189,19 @@ describe("contracts", () => {
       ContractValidationError,
     );
   });
+});
+
+it("shares a fixed pre-transport inference denial contract without diagnostic payloads", () => {
+  const denied = new InferenceBindingDenied();
+  expect(denied).toBeInstanceOf(Error);
+  expect(denied.message).toBe(
+    "Inference binding is unavailable or not reviewed for this execution",
+  );
+  expect(JSON.stringify(denied)).toBe("{}");
+  for (const message of [
+    "Inference credential presence is unavailable",
+    "Selected inference credential is missing",
+  ] as const) {
+    expect(new InferenceBindingDenied(message).message).toBe(message);
+  }
 });

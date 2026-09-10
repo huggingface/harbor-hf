@@ -1043,6 +1043,145 @@ Main integration validation completed (2026-09-10):
 - Publishing this branch integration to PR #200 only. No merge into main,
   deployment, live profile publication, cost correction, jobs or inference.
 
+### Explicit provider credential bindings: approved design (2026-09-10)
+
+Approved at: 2026-09-10T10:54:54.904945+00:00
+
+- Direct user approval: operator-managed provider inference credentials may be
+  supplied by Space secrets. The app selects reviewed credential references
+  and availability, never accepts or stores secret values. Recipes contain
+  explicit environment bindings; only selected reviewed execution receives the
+  provider credential. No automatic forwarding of Space environment variables.
+- Locally design, implement and test generic reference/binding support and an
+  opt-in native model route, preserving saved recipes and existing HF behavior.
+  No provider/model/harness-specific core branches or second credential store.
+- The user added the sentence permitting non-HF secrets from the Space
+  environment in the older checkout's control-service document. Carry only
+  that approved credential intent into current architecture; leave unrelated
+  older edits and all existing worktrees untouched.
+- Current session operating instructions still prescribe exactly two
+  persistent control-Space secrets. This approval records the future design,
+  not permission to violate that live boundary: do not add a third secret or
+  move any credential. Reconcile operating instructions before live adoption.
+- Local work and authorization commits only; no push, PR, merge, deployment,
+  secret writes/transfers, remote jobs, inference, credential inspection, new
+  resources or live configuration changes. Source/destination approval for
+  any future credential transfer must be explicit and separate.
+
+### Complete provider credential production wiring (2026-09-10)
+
+Approved at: 2026-09-10T13:37:44.914817+00:00
+
+- Direct request: complete the approved provider-key feature and identify any
+  actual decision needed. Finish local production configuration and selected
+  ephemeral delivery wiring, fail-closed grant/source checks, and end-to-end
+  mocked adapter tests instead of leaving disconnected extension points.
+- Preserve reviewed recipe/model grants, explicit bindings, no secret entry in
+  the app, existing HF behavior, native Harbor env resolution and empty default
+  policy. No provider-name branches or expansion of control-token delivery.
+- Implementation and tests do not authorize live secret inventory changes.
+  The operating-instruction two-secret constraint still blocks live adoption;
+  do not add/read/copy a credential, launch work or deploy.
+- Local work only; preserve unrelated dirty worktrees and the separate refresh
+  PR. No publication, merge, jobs, inference or remote configuration mutations.
+
+Provider implementation completed locally (2026-09-10):
+
+- Connected approved manifest configuration, runtime policy and selected-only
+  ephemeral provider delivery in the Jobs adapter; default configuration remains
+  empty. Provider requests do not also deliver the unrelated HF inference key.
+  No expansion of the existing control-token delivery implementation.
+- Added a bounded private canonical-Bucket source-identity registry. Startup
+  validates it before readiness/provider access; removed references stay reserved
+  and cannot silently bind a new source. Value rotation does not alter identity.
+- Preserved exact recipe/model/route grants at submission and restart, per-run
+  fail-closed denials, standalone secret-free setup, native env templates and
+  legacy connection requirements. Native key-only connections are explicit.
+- Independent reviews corrected conventional source-alias disclosure paths and
+  an unintended legacy protocol relaxation. Source/destination name equality is
+  permitted only in the exact reviewed destination binding key, not public
+  labels, commands, model names, values or templates. No secret-value matching.
+- Passed 1147 unit tests, 66 browser tests, 164 agent tests, 100 CLI tests with
+  89.10% coverage, formatting, lint, types, build, deterministic generation,
+  dependency audits and normal Slophammer/DRY. Final independent review passed
+  166 targeted TypeScript and 37 Python tests and found no remaining reviewed
+  blockers. All tracked/untracked text and metadata privacy checks passed.
+- Global TypeScript coverage remains below 85% (83.65% lines, 76.23% branches);
+  missing mutation/baseline tooling and intentional generated working-tree diffs
+  remain disclosed. No threshold lowered. Tests use synthetic secret values and
+  mocked transport; no hosted delivery or provider inference was exercised.
+- Operator runbook documents exact configuration/review workflow and native
+  model syntax without claiming live activation. No further product-design
+  decision is outstanding. Publication, deployed worker review, deployment and
+  live secret adoption remain separate approvals/operating-instruction gates.
+- Implementation left local and uncommitted. No credentials read, added or
+  transferred; no PR, deployment, benchmark run or inference performed here.
+
+### App-managed provider secret references (2026-09-10)
+
+Approved at: 2026-09-10T16:06:54.460079+00:00
+
+- Direct user approval: replace manual manifest file configuration with an
+  operator-only app workflow. Register a Space secret name (never its value),
+  select it as an explicit Workbench Secret source, review/approve use of the
+  exact recipe/model/worker, then launch through existing reviewed delivery.
+- Accept ordinary valid environment names including MY_SECRET_KEY while
+  excluding control, session, OAuth and infrastructure authority sources and
+  destinations. Never enumerate/forward the whole environment or accept keys.
+- Store nonsecret references, immutable source identity and audited revisioned
+  approvals in the existing canonical Bucket. Derive hashes and worker/model
+  identity server-side. Remove manual manifest-path and hash-calculation steps;
+  do not retain a parallel legacy configuration authority for undeployed code.
+- Preserve previous HF recipes, grants checked at dispatch/restart, isolated
+  blocked runs, secret-free standalone setup and native Harbor env resolution.
+- Local implementation and tests only. No push, PR, merge, deployment, live
+  secret registration/transfer, inference or benchmark execution. Existing
+  live credential operating-instruction conflicts still require alignment.
+
+App-managed reference workflow completed locally (2026-09-10):
+
+- Replaced the manual manifest file and offline grant hashing with operator-only
+  name registration, explicit Workbench selection, server-derived review and
+  confirmation. No key-value input, environment enumeration or new secret store.
+- One canonical private registry owns immutable source identities, revisions and
+  audited grants. Registration, review, approval and status routes enforce actor
+  ownership, write mode, CSRF and revision checks; grants rechecked at dispatch.
+- Ordinary environment names are accepted while authority names remain blocked.
+  Own-property and nonempty-string checks protect presence and selected delivery.
+  Native key-only is explicit; other protocols require reviewed URL and binding.
+- Passed 1195 unit tests, 68 browser tests on full rerun, 100 root Python tests
+  with 89.10% coverage, 164 agent tests, formatting, types, builds, audits and
+  normal Slophammer/DRY. An initial browser run had one pricing polling timeout;
+  the unchanged two-worker full rerun passed. Lint passes with warnings.
+- Final independent focused review passed 311 tests and cleared all tracked and
+  untracked text for privacy. No new reviewed local blockers remain. Global
+  TypeScript coverage still fails 85% (84.01% lines, 76.69% branches); baseline
+  and mutation tooling absent; generated outputs deterministic despite dirty
+  generated-vs-HEAD check. No gates weakened.
+- Exclusive single write authority remains required; cross-controller CAS and
+  overlapping rollout are not supported. Existing live control-token/two-secret
+  instruction conflicts are not repaired or broadened by this feature.
+- Source remains local/uncommitted. No publication, deployment, real secret
+  registration/inspection/transfer, hosted delivery, benchmark run or inference.
+
+### Publish app-managed provider references and prepare deployment (2026-09-10)
+
+Approved at: 2026-09-10T17:14:44.513776+00:00
+
+- Direct user request: explain Space setup, push the provider-reference feature
+  and prepare it for merge and deployment. Integrate current main into the
+  isolated feature branch, preserve upstream changes, resolve conflicts and
+  run full relevant validation and independent privacy/correctness review.
+- Commit, push and open one PR for the reviewed implementation; monitor CI and
+  update its description honestly with readiness limits and a clear runbook.
+  This supersedes prior local-only publication limits for the approved scope.
+- Preparation is not deployment authorization. Do not merge into main, publish
+  worker images, deploy, add/register/read/copy live secrets, change live policy,
+  launch benchmarks or infer. Provider activation also requires operating
+  instructions to align with the approved future credential design.
+- Preserve all unrelated worktrees and changes, including the separate refresh
+  and prominent-cost PR. No new infrastructure or upstream modifications.
+
 ### QEMU-fixed source and preset publication (2026-09-09)
 
 Status: completed
@@ -1461,3 +1600,37 @@ Approved at: 2026-09-09T00:00:00Z
   Existing local API authentication stays local; never forward it to a runtime.
 - Public authorization records use placeholders for operational identifiers.
   The exact user-selected deployment destination is retained privately.
+
+Provider-reference integration ready for PR (2026-09-10):
+
+- Local implementation commit 2441eda reviewed; integrated main at 53331be.
+  Resolved the CommandAgent overlap preserving main's task working directory
+  and native key-only/legacy connection requirements. Retained additive
+  authorization histories and upstream preset/Sandbox-name changes.
+- Passed 1277 TypeScript tests, 68 browser tests, 100 CLI tests at 89.10%
+  coverage, 197 agent tests, formatting, lint, types, generated contracts,
+  build, dependency audits, privacy and both actual Docker builds.
+- Independent complete integration/feature review passed 294 targeted
+  TypeScript and 96 Python tests; no new source/privacy regression blockers.
+  Native working-directory semantics remain task-derived, not a literal
+  directory approved by a credential grant. No provider routing inference.
+- Supplemental coverage remains below 85% (TypeScript lines 84.01%, branches
+  76.69%; agents 66.26%). Baseline/mutation tooling remains absent. No gates
+  or package line budgets weakened. Configured CI must verify published head.
+- Publish the reviewed source and open its PR only. Provider activation remains
+  subject to separate operating-instruction alignment, reviewed worker image
+  publication and deployment approval. No real key or remote execution used.
+
+Provider PR freshness-main integration (2026-09-10):
+
+- Integrated main d77ad22 after PR #207 merged. The only textual conflict was
+  competing appended browser tests; retained both complete credential-workflow
+  and delayed-refresh tests. Documentation and authorization histories preserve
+  both branches. No changes to provider execution or saved starter recipes.
+- Passed 1306 unit tests, 69 browser tests, 100 CLI tests at 89.10% coverage,
+  197 agent tests, formatting, lint, types, generated checks, build, dependency
+  audits, privacy, normal Slophammer/DRY and both Docker builds. The browser
+  suite used an isolated server after automatic startup stalled. Existing lint,
+  supplemental coverage and absent baseline/mutation limitations remain.
+- Publish this reviewed integration to existing PR #209 only; no merge into
+  main, deployment, image publication, live key or benchmark execution.
