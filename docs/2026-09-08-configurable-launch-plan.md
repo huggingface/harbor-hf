@@ -417,8 +417,9 @@ name alone. Mixed-agent results must be grouped using their actual trial identit
 
 Show the distinction between observed inference cost, unknown cost exposure,
 HF infrastructure cost, configured limits, and estimates. Keep missing costs
-unknown. The existing post-trial cost stop is not a strict per-request spending
-cap. Concurrency and retries can create exposure before the next result arrives.
+unknown in evidence, even though the ceiling calculation treats them as zero.
+The existing post-trial cost stop is not a strict per-request spending cap.
+Concurrency and retries can create exposure before the next result arrives.
 Do not promise an exact cost or ETA without source evidence. New budget accounting
 or a hard inference spending gateway requires separate approved scope.
 

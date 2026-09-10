@@ -55,6 +55,7 @@ export interface SessionRow {
   id: string;
   subject: string;
   username: string | null;
+  operator_org_subject: string | null;
   csrf_digest: string;
   expires_at: number;
 }
@@ -77,6 +78,27 @@ function digestBytes(value: string): Buffer {
 
 function randomToken(bytes = 32): string {
   return randomBytes(bytes).toString("base64url");
+}
+
+function matchingOperatorOrganization(
+  user: Record<string, unknown>,
+  expectedSubject: string | null,
+): string | null {
+  if (!expectedSubject) return null;
+  for (const field of ["orgs", "organizations"] as const) {
+    const memberships = user[field];
+    if (!Array.isArray(memberships)) continue;
+    for (const membership of memberships) {
+      if (
+        membership &&
+        typeof membership === "object" &&
+        !Array.isArray(membership) &&
+        (membership as Record<string, unknown>).sub === expectedSubject
+      )
+        return expectedSubject;
+    }
+  }
+  return null;
 }
 
 class BearerLookupLimiter {
@@ -116,6 +138,7 @@ export class AuthStore {
         id TEXT PRIMARY KEY,
         subject TEXT NOT NULL,
         username TEXT,
+        operator_org_subject TEXT,
         csrf_digest TEXT NOT NULL,
         expires_at INTEGER NOT NULL
       );
@@ -132,6 +155,8 @@ export class AuthStore {
       .all() as Array<{ name: string }>;
     if (!sessionColumns.some((column) => column.name === "username"))
       database.exec("ALTER TABLE sessions ADD COLUMN username TEXT");
+    if (!sessionColumns.some((column) => column.name === "operator_org_subject"))
+      database.exec("ALTER TABLE sessions ADD COLUMN operator_org_subject TEXT");
     return new AuthStore(database);
   }
 
@@ -175,6 +200,7 @@ export class AuthStore {
     subject: string,
     username: string,
     ttlSeconds: number,
+    operatorOrgSubject: string | null = null,
   ): { id: string; csrf: string; expires_at: number } {
     const id = randomToken();
     const csrf = randomToken();
@@ -184,9 +210,9 @@ export class AuthStore {
       this.database.prepare("DELETE FROM sessions WHERE expires_at < ?").run(now);
       this.database
         .prepare(
-          "INSERT INTO sessions (id, subject, username, csrf_digest, expires_at) VALUES (?, ?, ?, ?, ?)",
+          "INSERT INTO sessions (id, subject, username, operator_org_subject, csrf_digest, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
-        .run(id, subject, username, digest(csrf), expiresAt);
+        .run(id, subject, username, operatorOrgSubject, digest(csrf), expiresAt);
       this.database
         .prepare(
           "DELETE FROM sessions WHERE id IN (SELECT id FROM sessions ORDER BY expires_at DESC, id DESC LIMIT -1 OFFSET 4096)",
@@ -199,7 +225,7 @@ export class AuthStore {
   session(id: string): SessionRow | null {
     const row = this.database
       .prepare(
-        "SELECT id, subject, username, csrf_digest, expires_at FROM sessions WHERE id = ?",
+        "SELECT id, subject, username, operator_org_subject, csrf_digest, expires_at FROM sessions WHERE id = ?",
       )
       .get(id) as SessionRow | undefined;
     if (!row || row.expires_at < Date.now()) {
@@ -232,6 +258,7 @@ interface OAuthConfig {
   scopes: string;
   callback_url: string;
   session_ttl_seconds: number;
+  operator_org_subject: string | null;
 }
 
 export function safeReturnPath(returnTo: string, callbackUrl: string): string {
@@ -291,6 +318,9 @@ export class AuthenticationService {
       state: flow.state,
       code_challenge: challenge,
       code_challenge_method: "S256",
+      ...(this.oauth.operator_org_subject
+        ? { orgIds: this.oauth.operator_org_subject }
+        : {}),
     });
     return { flow_id: flow.id, url };
   }
@@ -325,7 +355,12 @@ export class AuthenticationService {
       );
       if (!user.sub) throw new Error("OAuth user info has no stable subject");
       stage = "authorization";
-      if (!(await this.role(user.sub)))
+      const explicitRole = await this.role(user.sub);
+      const operatorOrgSubject = matchingOperatorOrganization(
+        user as Record<string, unknown>,
+        this.oauth.operator_org_subject,
+      );
+      if (!explicitRole && !operatorOrgSubject)
         throw new UnauthorizedSubjectError("OAuth identity is not authorized");
       const username =
         typeof user.preferred_username === "string"
@@ -338,6 +373,7 @@ export class AuthenticationService {
         user.sub,
         username,
         this.oauth.session_ttl_seconds,
+        operatorOrgSubject,
       );
       return {
         session_id: session.id,
@@ -355,7 +391,13 @@ export class AuthenticationService {
   ): Promise<{ actor: AuthenticatedActor; session: SessionRow } | null> {
     const session = this.store.session(sessionId);
     if (!session) return null;
-    const role = await this.role(session.subject);
+    const explicitRole = await this.role(session.subject);
+    const role =
+      explicitRole ??
+      (session.operator_org_subject !== null &&
+      session.operator_org_subject === this.oauth?.operator_org_subject
+        ? "operator"
+        : null);
     if (!role) {
       this.store.deleteSession(session.id);
       return null;

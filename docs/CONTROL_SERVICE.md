@@ -95,15 +95,20 @@ The service reads these Space variables:
 | `HARBOR_HF_SOURCE_REVISION` | no | `development` | deployed source revision |
 | `HARBOR_HF_WORKBENCH_RUNNER` | no | `disabled` | `disabled`, local `docker`, or hosted `hf-jobs` setup tests |
 | `HARBOR_HF_WORKBENCH_IMAGE` | for hosted setup | parent image | immutable setup Job image |
-| `HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS` | no | empty | comma-separated operator subjects |
+| `HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS` | no | empty | comma-separated explicit operator subjects |
+| `HARBOR_HF_OPERATOR_ORG_SUBJECT` | no | empty | stable HF organization subject whose members are operators |
 
 Write mode fails startup unless both secrets and an image reference ending in
 `@sha256:<64 lowercase hex characters>` are present.
 
 Hugging Face supplies the OAuth client values to the Space. OAuth mode requires
 `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, and `OPENID_PROVIDER_URL`. The service
-uses a 30-day browser session and `openid profile` scopes by default. Logging
-out, losing authorization, or clearing browser cookies ends the session sooner.
+uses a 30-day browser session and `openid profile` scopes by default. When
+`HARBOR_HF_OPERATOR_ORG_SUBJECT` is set, it also requests `read-memberships` and
+requires that stable organization subject during sign-in. It never authorizes an
+organization by name. Explicit user subjects remain available for administrators
+and exceptions. Logging out, losing explicit authorization, changing the
+configured organization, or clearing browser cookies ends the session sooner.
 
 ### Sign-in diagnostics
 
@@ -111,16 +116,19 @@ Open the app directly and start a fresh login at `/auth/login`; do not reload
 an old callback URL. A completed OAuth exchange does not itself grant operator
 access. At every service startup, `apps/control-api/src/runtime.ts` constructs
 an in-memory ACL from `HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS`; there is no
-separate ACL file in the Bucket. The configured subjects become operators,
-and the reader list is empty.
+separate ACL file in the Bucket. The configured user subjects become explicit
+operators, and the reader list is empty. An optional
+`HARBOR_HF_OPERATOR_ORG_SUBJECT` also grants operator access to members returned
+by OAuth user info.
 
-To grant operator access, append the account's stable Hugging Face user ID
-(not its username or organization name) to that Space variable's comma-separated
-list, preserving existing operators. Restart the Space to reload the list,
-then start a fresh login. Despite its bootstrap name, the variable is read on
-every startup, not only during initial installation. Keep account IDs in private
-Space configuration, not repository files. `HARBOR_HF_WRITE_MODE` controls
-operations, not sign-in authorization.
+To grant explicit operator access, append the account's stable Hugging Face user
+ID, not its username, to the comma-separated Space variable while preserving
+existing operators. To grant organization access, set the stable organization
+subject, not its name. Restart the Space to reload either value, then start a
+fresh login. Despite its bootstrap name, the explicit-user variable is read on
+every startup, not only during initial installation. Keep user and organization
+IDs in private Space configuration, not repository files.
+`HARBOR_HF_WRITE_MODE` controls operations, not sign-in authorization.
 
 Callback failures emit `OAuth callback failed` with the request ID, a fixed
 `oauth_stage`, and `code`. No callback query strings, request headers, cookies,
@@ -132,7 +140,7 @@ provider error messages, or token responses belong in these diagnostics.
 | `flow` | Start a fresh login; check cookies and whether the Space restarted |
 | `token_exchange` | Callback origin, provider configuration, and a fresh authorization flow |
 | `user_info` | Provider user-info availability and identity response |
-| `authorization` | `access_denied` (403) means the identity is not in the ACL; `oauth_failed` means the ACL lookup failed |
+| `authorization` | `access_denied` (403) means the identity is neither explicit nor in the configured organization; `oauth_failed` means the authorization check failed |
 | `session` | Local session-store availability |
 
 These stages identify where sign-in failed, not necessarily its root cause.
@@ -239,17 +247,19 @@ reported provider cost and removes the interrupted result before it exits. A
 paused Harbor folder therefore stays resumable without losing paid-use evidence.
 
 The parent keeps the cost that Harbor reports for each attempt. A failure before
-agent execution records zero cost. A null cost after agent execution remains
-null in its immutable receipt and stops the campaign because safe remaining
-spend cannot be proved. The parent checks existing receipts before `Job.run()`
-and writes each new receipt before it makes a stop decision.
+agent execution records zero cost. Any null cost remains null in its immutable
+receipt and contributes zero to the ceiling calculation. This control policy
+does not change the receipt or claim that the provider observed zero cost. The
+parent checks existing receipts before `Job.run()` and writes each new receipt
+before it makes a stop decision.
 
 The parent compares the sum of all attempt receipts with the campaign ceiling.
 It never divides that ceiling into per-trial limits. Existing immutable runs
-with the legacy per-trial field keep their original enforcement behavior. When
-the campaign total crosses its ceiling, or a post-agent cost is unknown, the
-parent reads Harbor's current `JobResult`. It raises the cost-stop exception
-while more work can spend money or while completion is uncertain. It
+with the legacy per-trial field keep per-trial enforcement and use the same
+null-as-zero calculation. When the known campaign total crosses its ceiling, the
+parent reads Harbor's current
+`JobResult`. It raises the cost-stop exception while more work can spend money or
+while completion is uncertain. It
 suppresses the exception only when the native total matches the configured job
 size, completed equals total, running and pending are zero, and retries are
 disabled. Missing, malformed, inconsistent, incomplete, running, pending,

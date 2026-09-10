@@ -31,9 +31,12 @@ outside `runs/` remain in the Bucket but are not loaded by the current service.
 
 ## Web console
 
-The public page shows leaderboard results. Approved Hugging Face users can sign
-in to use the run controls. The hosted OAuth session is remembered for 30 days
-unless the user logs out, loses authorization, or clears browser cookies.
+The public page shows leaderboard results. Explicitly approved Hugging Face
+users and members of one configured Hugging Face organization can sign in to use
+the run controls. Organization access uses the stable organization subject, not
+the organization name. The hosted OAuth session is remembered for 30 days unless
+the user logs out, loses explicit authorization, the configured organization
+changes, or the user clears browser cookies.
 
 The submission form has four groups:
 
@@ -102,9 +105,11 @@ spend:
 ```
 
 Both limits are optional. A missing file also means that both limits are
-unspecified. The client rejects an out-of-range submission before it sends a
-request. Run `harbor-hf config` to inspect the effective file and values. Do not
-put credentials in this file.
+unspecified. The minimum is the lowest campaign ceiling that the operator can
+select; it does not require the campaign to spend that amount. The client
+rejects an out-of-range submission before it sends a request. Run
+`harbor-hf config` to inspect the effective file and values. Do not put
+credentials in this file.
 
 These local limits do not authorize spending. They bound the total ceiling for
 one Harbor-HF campaign and are never divided into per-trial limits. They apply
@@ -165,10 +170,11 @@ The cost check runs after each trial because Harbor saves a result before it
 calls the end hook. It compares the sum of all immutable attempt receipts with
 the campaign ceiling. When trials run at the same time, active work can finish
 before cancellation completes, so reported cost can exceed the ceiling. A trial
-with no reported cost after agent execution keeps its `null` value and stops the
-campaign because safe remaining spend cannot be proved. A failure before agent
-execution records zero cost. Existing immutable runs that contain the old
-per-trial field keep their original enforcement behavior.
+with no reported cost keeps its `null` value in the receipt and contributes zero
+to the ceiling calculation. This policy does not claim that the provider
+observed zero cost. A failure before agent execution records zero cost. Existing
+immutable runs that contain the old per-trial field keep per-trial enforcement
+and use the same null-as-zero calculation.
 
 The parent stops when a cost limit is crossed and more work can spend money. If
 Harbor proves that every configured trial is terminal and retries are disabled,

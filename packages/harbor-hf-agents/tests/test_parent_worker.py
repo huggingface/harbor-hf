@@ -259,22 +259,26 @@ async def test_cost_hook_records_zero_when_agent_did_not_start(tmp_path: Path) -
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cost", [None, float("inf"), -1.0])
-async def test_campaign_cost_hook_stops_when_cost_is_unavailable(
+async def test_campaign_cost_hook_counts_unavailable_cost_as_zero(
     tmp_path: Path,
     cost: float | None,
 ) -> None:
     run_dir = tmp_path / "run"
     hook = make_cost_hook(0.25, 2, run_dir, max_retries=0)
 
-    with pytest.raises(CostCeilingExceeded, match="did not report cost"):
-        await hook(cast(Any, SimpleNamespace(result=Result("unknown", cost))))
+    await hook(cast(Any, SimpleNamespace(result=Result("unknown", cost))))
+    with pytest.raises(CostCeilingExceeded, match="campaign ceiling"):
+        await hook(cast(Any, SimpleNamespace(result=Result("known", 0.26))))
 
-    receipt = next(iter(load_attempt_costs(run_dir).values()))
-    assert receipt.cost_usd is None
+    receipts = {
+        receipt.trial_name: receipt for receipt in load_attempt_costs(run_dir).values()
+    }
+    assert receipts["unknown"].cost_usd is None
+    assert receipts["known"].cost_usd == 0.26
 
 
 @pytest.mark.asyncio
-async def test_legacy_trial_ceiling_keeps_unknown_cost_reservation_behavior(
+async def test_legacy_trial_ceiling_counts_unavailable_cost_as_zero(
     tmp_path: Path,
 ) -> None:
     run_dir = tmp_path / "run"
@@ -282,18 +286,20 @@ async def test_legacy_trial_ceiling_keeps_unknown_cost_reservation_behavior(
         LEGACY_TRIAL_CEILING,
         2,
         run_dir,
-        max_retries=0,
+        max_retries=1,
     )
 
     await hook(cast(Any, SimpleNamespace(result=Result("unknown", None))))
-    await hook(cast(Any, SimpleNamespace(result=Result("known", 0.24))))
+    await hook(cast(Any, SimpleNamespace(result=Result("known-one", 0.24))))
+    await hook(cast(Any, SimpleNamespace(result=Result("known-two", 0.02))))
 
     receipts = {
         receipt.trial_name: receipt for receipt in load_attempt_costs(run_dir).values()
     }
-    assert len(receipts) == 2
+    assert len(receipts) == 3
     assert receipts["unknown"].cost_usd is None
-    assert receipts["known"].cost_usd == 0.24
+    assert receipts["known-one"].cost_usd == 0.24
+    assert receipts["known-two"].cost_usd == 0.02
 
 
 @pytest.mark.asyncio

@@ -233,16 +233,7 @@ def _cost_violation(
     planned_trials: int,
 ) -> str | None:
     if ceiling.scope == "campaign":
-        unknown = next(
-            (item for item in receipts.values() if item.cost_usd is None),
-            None,
-        )
-        if unknown:
-            return f"trial {unknown.trial_name} did not report cost"
-        total = sum(
-            item.cost_usd if item.cost_usd is not None else 0
-            for item in receipts.values()
-        )
+        total = sum(item.cost_usd or 0 for item in receipts.values())
         if total > ceiling.usd:
             return "completed trial cost exceeded the campaign ceiling"
         return None
@@ -257,10 +248,7 @@ def _cost_violation(
     )
     if expensive:
         return f"trial {expensive.trial_name} reported cost above its ceiling"
-    exposure = sum(
-        item.cost_usd if item.cost_usd is not None else ceiling.usd
-        for item in receipts.values()
-    )
+    exposure = sum(item.cost_usd or 0 for item in receipts.values())
     if exposure > ceiling.usd * planned_trials:
         return "completed trial cost exposure exceeded the run ceiling"
     return None
