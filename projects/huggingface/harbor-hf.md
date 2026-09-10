@@ -268,7 +268,7 @@ Approved at: 2026-09-08T16:26:50+01:00
 - The configuration digest hashes benchmark identity, model identity, harness identity, trial count, reasoning effort, inference provider, and Harbor version from the campaign lock. It excludes worker revision, Job IDs, and cost.
 - Only `publication_role=final`, quality `clean`, fully scored campaigns enter the leaderboard snapshot. Diagnostic, cancelled, mixed, and policy-failed catalogs stay private candidate material.
 - Store each snapshot as an immutable SQLite object under the existing results prefix. Do not create another Bucket, Dataset, Space, or result service. Anonymous `GET /api/v1/leaderboard` is allowed and rate-limited separately from other anonymous API traffic. Result detail and publication click-through stay authenticated.
-- Keep the control credential fine-grained, owned by the selected user or organization namespace, and capable of the exact Bucket, Job, Endpoint-management, and provider-implied Endpoint-inference operations. Missing required permissions, the wrong namespace, a non-fine-grained credential, or a failed fresh Bucket write/read-back proof remain hard failures. Gated access, global grants, unrelated scoped entities, and additional permissions produce conspicuous non-blocking warnings. Never pass the control credential to a worker or use it for inference.
+- Keep the control credential fine-grained, owned by the selected user or organization namespace, and capable of the exact Bucket, Job, Endpoint-management, and provider-implied Endpoint-inference operations. Missing required permissions, the wrong namespace, a non-fine-grained credential, or a failed fresh Bucket write/read-back proof remain hard failures. Gated access, global grants, unrelated scoped entities, and additional permissions produce conspicuous non-blocking warnings.
 - Limit the installer control-scope warning amendment to local implementation, tests, documentation, and commits. Do not inspect or transfer a real credential, run a hosted installer command or probe, mutate a hosted resource, activate writes, spend, push, or open a pull request.
 - Limit the upstream integration-and-push amendment to the fetched canonical upstream tip and the tracked public `origin/tweaks` branch. Inspect the complete diff and public metadata, preserve placeholders, and run the public privacy checker before every commit and the push. Do not push to the canonical upstream default branch, open or merge a pull request, handle credentials, run hosted installer or campaign commands, mutate hosted resources, or incur cost.
 - Limit the installer clean-start inspection to read-only metadata for the exact privately supplied target and its default-derived Bucket. Do not read credential values. If the Space exists or the Bucket is non-empty, stop without mutation. If only an empty Bucket remains, stop and request separate deletion approval. Quarantine matching local state only after both remote resources are proven absent, then run a fresh read-only plan. Do not provision, configure, transfer credentials, activate writes, spend, push, or open a pull request.
@@ -1649,3 +1649,23 @@ Approved at: 2026-09-10T19:46:03.593377+00:00
   future local work, without changing their other authorization limits.
 - No branch deletion, public publication, deployment, credential transfer,
   remote mutation, or paid execution is authorized by this cleanup.
+
+### PR 209 deployment after parent-control clarification (2026-09-10)
+
+Approved at: 2026-09-10T19:54:01.080084+00:00
+
+- The user removed the historical prohibition on delivering the control
+  credential to a worker and explicitly requested proceeding with deployment.
+  The trusted parent control Job may receive the existing purpose-scoped
+  control credential for infrastructure; it must not use it for inference or
+  pass it to the benchmark agent. Inference credentials remain separate.
+- Deploy exact merged source 271303d7a21fa595a5a71e46ce5524b0aff6bb9f to the
+  previously selected existing control Space with verified worker digest
+  sha256:c853e53cd1b3bd4f1c69c9181d6b601756732e08ea5b4e67c13de25fa5b9f073.
+- Fresh read-only checks found no active Jobs or unfinished runnable intents.
+  Use a bounded pause of the idle control Space for an exclusive rollout,
+  preserving hardware, visibility, write mode, unrelated configuration, secrets,
+  and run records. Update only the reviewed parent and Workbench image settings.
+- Supersede prior control-token deployment holds for this trusted-parent
+  boundary only. No inference, diagnostic launch, grant mutation, provider
+  secret provisioning, public push, or new infrastructure is authorized.
