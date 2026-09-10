@@ -185,7 +185,7 @@ Harbor continues to own trial execution and reported cost handling.
 Browser-saved drafts keep their old command. After deploying this change, select
 the fast-agent starter again (preserve any custom recipe edits separately), check
 the new run command, and rerun setup. Recipe changes invalidate the old setup
-attestation. First run a small diagnostic with a bounded per-trial cost limit;
+attestation. First run a small diagnostic with a bounded campaign cost ceiling;
 a successful setup alone does not test model access or inference behavior.
 
 ## Task execution permissions
@@ -270,7 +270,7 @@ harbor-hf run submit \
   --provider provider \
   --harness recipe.json \
   --setup-test <setup-test-id> \
-  --cost-ceiling-usd-per-trial 0.25 \
+  --cost-ceiling-usd 100 \
   --role diagnostic \
   --yes
 ```

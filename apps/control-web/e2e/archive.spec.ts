@@ -14,7 +14,7 @@ const initial: RunView = {
     submission: {
       benchmark: { name: "fixture-benchmark", preset: "fixture-preset" },
       harness: { agent: "fixture-agent", version: "1" },
-      cost_ceiling_usd_per_trial: 1,
+      cost_ceiling_usd: 1,
     },
     harbor_job_config: { agents: [{ name: "fixture-agent" }] },
   },

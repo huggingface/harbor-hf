@@ -568,7 +568,7 @@ export function WorkbenchPage() {
           reasoning_effort: "off",
         },
         n_concurrent_trials: Number(concurrencyValue),
-        cost_ceiling_usd_per_trial: Number(ceiling),
+        cost_ceiling_usd: Number(ceiling),
         role,
         workbench: {
           recipe,
@@ -1115,7 +1115,7 @@ export function WorkbenchPage() {
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block text-sm text-slate-300">
-                  Cost limit per trial
+                  Campaign cost ceiling
                   <input
                     className={fieldClass()}
                     min="0.000001"
@@ -1214,8 +1214,8 @@ export function WorkbenchPage() {
                   checked={launchConfirmed}
                   onChange={(event) => setLaunchConfirmed(event.target.checked)}
                 />
-                Launch this exact tested recipe and accept the displayed per-trial cost
-                limit.
+                Launch this exact tested recipe and accept the displayed campaign cost
+                ceiling.
               </label>
               {launchError ? <ErrorNotice error={launchError} /> : null}
               <Button

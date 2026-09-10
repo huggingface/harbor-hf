@@ -89,7 +89,7 @@ export HARBOR_HF_CONTROL_URL='https://<control-space-host>'
 export HARBOR_HF_CONTROL_BEARER_TOKEN='<service-token>'
 ```
 
-The client can apply machine-wide limits to the explicit per-trial cost ceiling.
+The client can apply machine-wide limits to the explicit campaign cost ceiling.
 It reads `$XDG_CONFIG_HOME/harbor-hf/config.yaml`, or
 `~/.config/harbor-hf/config.yaml` when `XDG_CONFIG_HOME` is unset. Use
 `HARBOR_HF_CONFIG_PATH` to select a different file.
@@ -97,8 +97,8 @@ It reads `$XDG_CONFIG_HOME/harbor-hf/config.yaml`, or
 ```yaml
 schema_version: v1
 spend:
-  minimum_cost_ceiling_usd_per_trial: 25
-  maximum_cost_ceiling_usd_per_trial: 500
+  minimum_campaign_cost_ceiling_usd: 25
+  maximum_campaign_cost_ceiling_usd: 500
 ```
 
 Both limits are optional. A missing file also means that both limits are
@@ -106,9 +106,10 @@ unspecified. The client rejects an out-of-range submission before it sends a
 request. Run `harbor-hf config` to inspect the effective file and values. Do not
 put credentials in this file.
 
-These local limits do not authorize spending and do not convert a total campaign
-budget into a per-trial limit. They apply only to `harbor-hf` submissions. A
-direct `harbor run` command does not read this file.
+These local limits do not authorize spending. They bound the total ceiling for
+one Harbor-HF campaign and are never divided into per-trial limits. They apply
+only to `harbor-hf` submissions. A direct `harbor run` command does not read
+this file.
 
 Inspect runs and parent Jobs:
 
@@ -129,7 +130,7 @@ harbor-hf run submit \
   --provider provider \
   --agent pi \
   --agent-version 0.84.4 \
-  --cost-ceiling-usd-per-trial 0.25 \
+  --cost-ceiling-usd 100 \
   --role diagnostic \
   --yes
 harbor-hf run pause <run-id>
@@ -148,7 +149,7 @@ direct Harbor `JobConfig` for a diagnostic test:
 ```bash
 harbor-hf submit \
   --config job.yaml \
-  --cost-ceiling-usd-per-trial 0.25
+  --cost-ceiling-usd 100
 ```
 
 The service validates the file with the pinned Harbor schema. It sets the owned
@@ -161,11 +162,13 @@ release and translates FX gateway requests through the locked Hugging Face
 router. It does not require a Vercel credential.
 
 The cost check runs after each trial because Harbor saves a result before it
-calls the end hook. One trial can exceed its limit. When trials run at the same
-time, active work can also finish before cancellation completes. A trial with
-no reported cost after agent execution keeps its `null` value and reserves the
-per-trial ceiling in the aggregate cost check. A failure before agent execution
-records zero cost.
+calls the end hook. It compares the sum of all immutable attempt receipts with
+the campaign ceiling. When trials run at the same time, active work can finish
+before cancellation completes, so reported cost can exceed the ceiling. A trial
+with no reported cost after agent execution keeps its `null` value and stops the
+campaign because safe remaining spend cannot be proved. A failure before agent
+execution records zero cost. Existing immutable runs that contain the old
+per-trial field keep their original enforcement behavior.
 
 The parent stops when a cost limit is crossed and more work can spend money. If
 Harbor proves that every configured trial is terminal and retries are disabled,

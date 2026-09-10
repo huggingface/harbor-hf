@@ -105,7 +105,7 @@ const submission = {
     reasoning_effort: "off",
   },
   harness: { agent: "pi", version: "0.84.4" },
-  cost_ceiling_usd_per_trial: 0.25,
+  cost_ceiling_usd: 0.25,
 };
 
 describe("control API", () => {
@@ -514,7 +514,7 @@ describe("control API", () => {
       method: "POST",
       url: "/api/v1/runs",
       headers: { "idempotency-key": "conflict" },
-      payload: { ...submission, cost_ceiling_usd_per_trial: 0.5 },
+      payload: { ...submission, cost_ceiling_usd: 0.5 },
     });
     expect(conflict.statusCode).toBe(409);
     expect(conflict.json().error.code).toBe("conflict");
@@ -633,7 +633,7 @@ describe("control API", () => {
       url: "/api/v1/runs/config",
       headers: {
         "idempotency-key": "direct-unsafe",
-        "x-harbor-hf-cost-ceiling-usd-per-trial": "0.25",
+        "x-harbor-hf-cost-ceiling-usd": "0.25",
       },
       payload: {
         job_name: "caller-controlled",
@@ -738,7 +738,7 @@ describe("control API", () => {
       const payload = {
         benchmark: submission.benchmark,
         model: submission.model,
-        cost_ceiling_usd_per_trial: 0.25,
+        cost_ceiling_usd: 0.25,
         role: "diagnostic",
         workbench: {
           recipe: workbenchRecipe,
@@ -810,7 +810,7 @@ describe("control API", () => {
       payload: {
         benchmark: submission.benchmark,
         model: submission.model,
-        cost_ceiling_usd_per_trial: 0.25,
+        cost_ceiling_usd: 0.25,
         workbench: {
           recipe: workbenchRecipe,
           setup_test_id: workbenchSetup.setup_test_id,
@@ -841,7 +841,7 @@ describe("control API", () => {
         payload: {
           benchmark: submission.benchmark,
           model: submission.model,
-          cost_ceiling_usd_per_trial: 0.25,
+          cost_ceiling_usd: 0.25,
           role: "diagnostic",
           workbench: {
             recipe: workbenchRecipe,
@@ -878,7 +878,7 @@ describe("control API", () => {
           benchmark: submission.benchmark,
           model: submission.model,
           n_concurrent_trials,
-          cost_ceiling_usd_per_trial: 0.25,
+          cost_ceiling_usd: 0.25,
           role: "diagnostic",
           workbench: {
             recipe: workbenchRecipe,
@@ -921,7 +921,7 @@ describe("control API", () => {
       payload: {
         benchmark: submission.benchmark,
         model: submission.model,
-        cost_ceiling_usd_per_trial: 0.25,
+        cost_ceiling_usd: 0.25,
         role: "diagnostic",
         workbench: {
           recipe: workbenchRecipe,
@@ -1113,7 +1113,7 @@ describe("configurable launch", () => {
       payload: input,
       headers: {
         "idempotency-key": "disabled",
-        "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+        "x-harbor-hf-cost-ceiling-usd": "1",
       },
     });
     expect(launch.statusCode).toBe(503);
@@ -1129,7 +1129,7 @@ describe("configurable launch", () => {
       payload: input,
       headers: {
         "idempotency-key": "multi-agent",
-        "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+        "x-harbor-hf-cost-ceiling-usd": "1",
         "x-harbor-hf-validation": "checked",
       },
     };
@@ -1152,7 +1152,7 @@ describe("configurable launch", () => {
       payload: input,
       headers: {
         "idempotency-key": "changed",
-        "x-harbor-hf-cost-ceiling-usd-per-trial": "1",
+        "x-harbor-hf-cost-ceiling-usd": "1",
         "x-harbor-hf-validation": "stale",
       },
     };
@@ -1339,7 +1339,7 @@ describe("launch pricing API boundary", () => {
   const payload = {
     benchmark: { ...submission.benchmark, preset: "all-tasks-5-trials" },
     model: submission.model,
-    cost_ceiling_usd_per_trial: 100,
+    cost_ceiling_usd: 100,
     role: "final",
     pricing,
     workbench: { recipe: workbenchRecipe, setup_test_id: workbenchSetup.setup_test_id },

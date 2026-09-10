@@ -176,7 +176,7 @@ export class ControlService {
     idempotencyKey: string,
     actor: string,
   ): Promise<SubmissionResult> {
-    positiveCeiling(input.cost_ceiling_usd_per_trial);
+    positiveCeiling(input.cost_ceiling_usd);
     if (containsCredentialMaterial(input))
       throw new Error("preset submission contains credential material");
     const id = runId(idempotencyKey);
@@ -192,7 +192,7 @@ export class ControlService {
         benchmark: input.benchmark,
         model: input.model,
         harness: input.harness,
-        cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
+        cost_ceiling_usd: input.cost_ceiling_usd,
       },
       harbor_job_config: jobConfig,
     });
@@ -206,7 +206,7 @@ export class ControlService {
     actor: string,
     metadata: Pick<RunRecordV1, "workbench_recipe" | "pricing"> = {},
   ): Promise<SubmissionResult> {
-    positiveCeiling(input.cost_ceiling_usd_per_trial);
+    positiveCeiling(input.cost_ceiling_usd);
     if (
       !metadata ||
       typeof metadata !== "object" ||
@@ -236,7 +236,7 @@ export class ControlService {
         benchmark: input.benchmark,
         model: input.model,
         harness: input.harness,
-        cost_ceiling_usd_per_trial: input.cost_ceiling_usd_per_trial,
+        cost_ceiling_usd: input.cost_ceiling_usd,
       },
       ...(metadata.workbench_recipe !== undefined
         ? { workbench_recipe: metadata.workbench_recipe }
@@ -249,14 +249,14 @@ export class ControlService {
 
   async submitConfig(
     input: unknown,
-    costCeilingUsdPerTrial: number,
+    costCeilingUsd: number,
     idempotencyKey: string,
     actor: string,
   ): Promise<SubmissionResult> {
-    positiveCeiling(costCeilingUsdPerTrial);
+    positiveCeiling(costCeilingUsd);
     const id = runId(idempotencyKey);
     const config = prepareDirectJobConfig(id, input, this.options.mountRoot);
-    const submission = directSubmission(config, costCeilingUsdPerTrial);
+    const submission = directSubmission(config, costCeilingUsd);
     const record = validateRunRecord({
       schema_version: "v1",
       run_id: id,
@@ -268,7 +268,7 @@ export class ControlService {
         benchmark: submission.benchmark,
         model: submission.model,
         harness: submission.harness,
-        cost_ceiling_usd_per_trial: costCeilingUsdPerTrial,
+        cost_ceiling_usd: costCeilingUsd,
       },
       harbor_job_config: config,
     });

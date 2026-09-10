@@ -26,7 +26,7 @@ const record = {
     benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
     model: { id: "openai/model", provider: "provider", reasoning_effort: "off" },
     harness: { agent: "pi", version: "0.84.2" },
-    cost_ceiling_usd_per_trial: 0.25,
+    cost_ceiling_usd: 0.25,
   },
   harbor_job_config: { n_attempts: 1, n_concurrent_trials: 1 },
 } as const;
@@ -80,6 +80,38 @@ describe("contracts", () => {
     expect(harborJobResultPath(record.run_id)).toBe(
       `runs/${record.run_id}/job/result.json`,
     );
+  });
+
+  it("validates current and legacy stored cost ceilings", () => {
+    expect(validateRunRecord(record)).toEqual(record);
+    const legacy = {
+      ...record,
+      submission: {
+        ...record.submission,
+        cost_ceiling_usd: undefined,
+        cost_ceiling_usd_per_trial: 0.25,
+      },
+    };
+    expect(validateRunRecord(legacy)).toEqual(legacy);
+    expect(() =>
+      validateRunRecord({
+        ...record,
+        submission: {
+          ...record.submission,
+          cost_ceiling_usd_per_trial: 0.25,
+        },
+      }),
+    ).toThrow(ContractValidationError);
+    expect(() =>
+      validateRunRecord({
+        ...record,
+        submission: {
+          benchmark: record.submission.benchmark,
+          model: record.submission.model,
+          harness: record.submission.harness,
+        },
+      }),
+    ).toThrow(ContractValidationError);
   });
 
   it("validates stored records and rejects unknown fields", () => {

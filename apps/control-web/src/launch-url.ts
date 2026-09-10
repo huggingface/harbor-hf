@@ -2,7 +2,7 @@ import { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
 import type { NativeObject } from "./launch-draft";
 
 export const draftUrlLimit = 8192;
-const costKey = "cost_ceiling_usd_per_trial";
+const costKey = "cost_ceiling_usd";
 function fitsUrlBudget(search: string): boolean {
   // The existing sign-in flow nests this path in its return_to query.
   return (
@@ -15,7 +15,7 @@ function fitsUrlBudget(search: string): boolean {
 function cost(value: string): string {
   const number = Number(value);
   if (!value.trim() || !Number.isFinite(number) || number <= 0 || number > 10000)
-    throw new Error("Draft link has an invalid per-trial cost limit");
+    throw new Error("Draft link has an invalid campaign cost limit");
   return String(number);
 }
 

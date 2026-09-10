@@ -220,8 +220,9 @@ Operator write routes are:
 
 Preset, Workbench, setup-test, and direct submissions require
 `Idempotency-Key`. Direct submissions also require
-`X-Harbor-HF-Cost-Ceiling-USD-Per-Trial`. The configurable page also sends the
-Validate fingerprint in `X-Harbor-HF-Validation`; a changed request or admission
+`X-Harbor-HF-Cost-Ceiling-USD` for the complete campaign. The configurable page
+also sends the Validate fingerprint in `X-Harbor-HF-Validation`; a changed
+request or admission
 policy returns 409. Native validation and Workbench preview remain available
 when writes are disabled. Local Docker setup tests also remain available in
 explicit development mode, and setup cancellation remains available for safe
@@ -239,13 +240,16 @@ paused Harbor folder therefore stays resumable without losing paid-use evidence.
 
 The parent keeps the cost that Harbor reports for each attempt. A failure before
 agent execution records zero cost. A null cost after agent execution remains
-null in its immutable receipt and reserves that run's per-trial ceiling for
-budget control. The parent checks existing receipts before `Job.run()` and
-writes each new receipt before it makes a stop decision.
+null in its immutable receipt and stops the campaign because safe remaining
+spend cannot be proved. The parent checks existing receipts before `Job.run()`
+and writes each new receipt before it makes a stop decision.
 
-When a reported trial or total observed and reserved exposure crosses its
-ceiling, the parent reads Harbor's current `JobResult`. It raises the cost-stop
-exception while more work can spend money or while completion is uncertain. It
+The parent compares the sum of all attempt receipts with the campaign ceiling.
+It never divides that ceiling into per-trial limits. Existing immutable runs
+with the legacy per-trial field keep their original enforcement behavior. When
+the campaign total crosses its ceiling, or a post-agent cost is unknown, the
+parent reads Harbor's current `JobResult`. It raises the cost-stop exception
+while more work can spend money or while completion is uncertain. It
 suppresses the exception only when the native total matches the configured job
 size, completed equals total, running and pending are zero, and retries are
 disabled. Missing, malformed, inconsistent, incomplete, running, pending,

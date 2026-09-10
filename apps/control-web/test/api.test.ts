@@ -118,7 +118,7 @@ describe("browser API transport", () => {
       {
         benchmark: { name: "benchmark", preset: "one-task" },
         model: { id: "publisher/model", provider: "provider", reasoning_effort: "off" },
-        cost_ceiling_usd_per_trial: 0.25,
+        cost_ceiling_usd: 0.25,
         role: "diagnostic",
         workbench: { recipe, setup_test_id: "setup/one" },
       },

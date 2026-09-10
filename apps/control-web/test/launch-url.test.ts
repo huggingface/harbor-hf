@@ -39,11 +39,11 @@ describe("native launch draft URLs", () => {
     "?draft=[]",
     "?draft=1",
     "?draft={}&draft={}",
-    "?cost_ceiling_usd_per_trial=1",
-    "?draft={}&cost_ceiling_usd_per_trial=1&cost_ceiling_usd_per_trial=2",
-    "?draft={}&cost_ceiling_usd_per_trial=0",
-    "?draft={}&cost_ceiling_usd_per_trial=NaN",
-    "?draft={}&cost_ceiling_usd_per_trial=10001",
+    "?cost_ceiling_usd=1",
+    "?draft={}&cost_ceiling_usd=1&cost_ceiling_usd=2",
+    "?draft={}&cost_ceiling_usd=0",
+    "?draft={}&cost_ceiling_usd=NaN",
+    "?draft={}&cost_ceiling_usd=10001",
   ])("rejects invalid query %s", (search) => {
     expect(() => loadDraftUrl(search)).toThrow();
   });

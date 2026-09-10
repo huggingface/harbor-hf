@@ -137,11 +137,11 @@ def config() -> None:
             "path": str(value.path),
             "schema_version": "v1",
             "spend": {
-                "minimum_cost_ceiling_usd_per_trial": (
-                    value.spend.minimum_cost_ceiling_usd_per_trial
+                "minimum_campaign_cost_ceiling_usd": (
+                    value.spend.minimum_campaign_cost_ceiling_usd
                 ),
-                "maximum_cost_ceiling_usd_per_trial": (
-                    value.spend.maximum_cost_ceiling_usd_per_trial
+                "maximum_campaign_cost_ceiling_usd": (
+                    value.spend.maximum_campaign_cost_ceiling_usd
                 ),
             },
         }
@@ -151,14 +151,14 @@ def config() -> None:
 @app.command("submit")
 def submit(
     config: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False)],
-    cost_ceiling_usd_per_trial: Annotated[
+    cost_ceiling_usd: Annotated[
         float,
-        typer.Option("--cost-ceiling-usd-per-trial", min=0.000001, max=10_000),
+        typer.Option("--cost-ceiling-usd", min=0.000001, max=10_000),
     ],
     idempotency_key: Annotated[str | None, typer.Option("--idempotency-key")] = None,
 ) -> None:
     """Submit one validated Harbor JobConfig."""
-    _validate_cost_ceiling(cost_ceiling_usd_per_trial)
+    _validate_cost_ceiling(cost_ceiling_usd)
     key = idempotency_key or str(uuid4())
     if not idempotency_key:
         typer.echo(json.dumps({"idempotency_key": key}), err=True)
@@ -168,11 +168,7 @@ def submit(
             "/api/v1/runs/config",
             payload=_load_config(config),
             idempotency_key=key,
-            extra_headers={
-                "X-Harbor-HF-Cost-Ceiling-USD-Per-Trial": str(
-                    cost_ceiling_usd_per_trial
-                )
-            },
+            extra_headers={"X-Harbor-HF-Cost-Ceiling-USD": str(cost_ceiling_usd)},
         )
     )
 
@@ -183,9 +179,9 @@ def run_submit(  # noqa: C901 -- Keep one Typer command as one validation bounda
     preset: Annotated[str, typer.Option("--preset")],
     model: Annotated[str, typer.Option("--model")],
     provider: Annotated[str, typer.Option("--provider")],
-    cost_ceiling_usd_per_trial: Annotated[
+    cost_ceiling_usd: Annotated[
         float,
-        typer.Option("--cost-ceiling-usd-per-trial", min=0.000001, max=10_000),
+        typer.Option("--cost-ceiling-usd", min=0.000001, max=10_000),
     ],
     agent: Annotated[str | None, typer.Option("--agent")] = None,
     agent_version: Annotated[str | None, typer.Option("--agent-version")] = None,
@@ -215,10 +211,10 @@ def run_submit(  # noqa: C901 -- Keep one Typer command as one validation bounda
         )
     if workbench and reasoning_effort != "off":
         raise typer.BadParameter("Workbench submission requires reasoning effort off")
-    _validate_cost_ceiling(cost_ceiling_usd_per_trial)
+    _validate_cost_ceiling(cost_ceiling_usd)
     if not yes:
         typer.confirm(
-            "Submit this Harbor run with the displayed per-trial cost ceiling?",
+            "Submit this Harbor run with the displayed campaign cost ceiling?",
             abort=True,
         )
     key = idempotency_key or str(uuid4())
@@ -233,7 +229,7 @@ def run_submit(  # noqa: C901 -- Keep one Typer command as one validation bounda
             "provider": provider,
             "reasoning_effort": reasoning_effort,
         },
-        "cost_ceiling_usd_per_trial": cost_ceiling_usd_per_trial,
+        "cost_ceiling_usd": cost_ceiling_usd,
         "role": role,
     }
     if workbench:

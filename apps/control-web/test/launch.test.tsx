@@ -133,7 +133,7 @@ describe("native launch draft", () => {
     page("operator", "enabled", shared.pathname + shared.search);
     await screen.findByDisplayValue("example/model");
     expect(
-      (screen.getByLabelText("Post-trial cost limit (USD)") as HTMLInputElement).value,
+      (screen.getByLabelText("Campaign cost ceiling (USD)") as HTMLInputElement).value,
     ).toBe("2.5");
     expect(
       (screen.getByRole("button", { name: "Launch" }) as HTMLButtonElement).disabled,
@@ -161,8 +161,8 @@ describe("native launch draft", () => {
     expect(JSON.parse(url.searchParams.get("draft") ?? "")).toMatchObject({
       environment: { kwargs: { flavor: "a100-large" } },
     });
-    expect(url.searchParams.get("cost_ceiling_usd_per_trial")).toBe("2.5");
-    fireEvent.change(screen.getByLabelText("Post-trial cost limit (USD)"), {
+    expect(url.searchParams.get("cost_ceiling_usd")).toBe("2.5");
+    fireEvent.change(screen.getByLabelText("Campaign cost ceiling (USD)"), {
       target: { value: "3" },
     });
     expect(screen.queryByLabelText("Draft link")).toBeNull();
@@ -348,13 +348,13 @@ describe("launch page", () => {
     fireEvent.change(screen.getByLabelText("Sandbox flavor"), {
       target: { value: "cpu-upgrade" },
     });
-    fireEvent.change(screen.getByLabelText("Post-trial cost limit (USD)"), {
+    fireEvent.change(screen.getByLabelText("Campaign cost ceiling (USD)"), {
       target: { value: "0" },
     });
     expect(
       (screen.getByRole("button", { name: "Validate" }) as HTMLButtonElement).disabled,
     ).toBe(true);
-    fireEvent.change(screen.getByLabelText("Post-trial cost limit (USD)"), {
+    fireEvent.change(screen.getByLabelText("Campaign cost ceiling (USD)"), {
       target: { value: "0.5" },
     });
     expect(loadDraft().environment).toMatchObject({
