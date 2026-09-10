@@ -1101,3 +1101,26 @@ QEMU-fixed publication completed (2026-09-09):
 - No PR, merge, default-branch update, deployment, model inference, new compute,
   credential transfer, image upload or unrelated worktree change occurred.
   All managed validation processes ended; the discarded browser process stopped.
+
+### Held-50 QEMU-fixed preset amendment (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user request: implement and push the held-50 fixed variant on the
+  existing `feat/qemu-fixed-presets` branch. Record approval before implementation.
+- Add one diagnostic `held-50-1-trial-qemu-fixed` native preset, documentation
+  and focused tests. Verify the exact historical basic-48 plus upgrade-2 union
+  against the held-50 list, not an inferred first-50 selection. Preserve that
+  task set with current HF preset execution defaults, not historical hardware
+  partitioning or provider settings.
+- Local configuration, tests, metadata-only native resolution, commits and push
+  to that existing branch are approved. Retain the already approved public fork
+  and exact image/source references, pinned at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e. Existing privacy exceptions apply
+  only to the previously specified public destinations and values.
+- No PR, merge, deployment, Jobs, inference, source-fork changes, image builds
+  or publication, upstream changes, credential transfers or new resources.
+  Preserve original presets and unrelated worktrees. Keep private selection
+  paths and source hashes outside tracked records. Approval time is unspecified;
+  the timestamp records this session date only.
