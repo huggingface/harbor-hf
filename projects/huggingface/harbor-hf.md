@@ -1669,3 +1669,24 @@ Approved at: 2026-09-10T19:54:01.080084+00:00
 - Supersede prior control-token deployment holds for this trusted-parent
   boundary only. No inference, diagnostic launch, grant mutation, provider
   secret provisioning, public push, or new infrastructure is authorized.
+
+### Sandbox display-name and launch-form repair (2026-09-10)
+
+Approved at: 2026-09-10T20:28:23.460685+00:00
+
+- The user requested preparing and deploying a patch for invalid Sandbox Job
+  display-name tags, and examining launch pricing and the reported browser
+  provider-pattern error. Work in the primary checkout without new worktrees.
+- Sanitize only the infrastructure display name, retaining the full native
+  Harbor identity and its hash. Correct the browser pattern and add regression
+  coverage for fractional launch pricing and confirmation behavior.
+- Validate, make local commits, and prepare a matching worker and control
+  deployment to the existing canonical resources. Preserve credentials,
+  running work, hardware, visibility, and durable records; no trial retries,
+  benchmark launch, new resources, or budget changes are authorized.
+- The canonical worker publication workflow requires a public source-branch
+  push. Obtain explicit confirmation for that publication step before pushing
+  or dispatching the workflow; do not infer merge or PR authority.
+- Harbor boundary: reviewed src/harbor/environments/hf_sandbox.py and
+  src/harbor/environments/base.py at dcd0a7ac and history through 191d1b98.
+  No upstream change supplies this Harbor-HF display-name correction.
