@@ -1187,7 +1187,7 @@ Completed on 2026-09-10:
 
 ### Explicit Sandbox Job-name simplification
 
-Status: approved
+Status: completed
 Approved at: 2026-09-09T00:00:00Z
 
 - Direct user instruction: replace the SDK naming backport with a simple explicit
@@ -1231,3 +1231,13 @@ Wrapper-only implementation checkpoint:
   retry work or move credentials. The earlier deployed source remains unchanged.
   Historical SDK naming approval/completion entries above are superseded for
   future work by the wrapper-only authorization, not permission to reopen that PR.
+
+Wrapper-only publication completed (2026-09-09 session):
+
+- Normal push verified implementation `9452bd3d62a4597e6587e9437495379e3376343b`
+  on the existing topic branch. Updated PR #205 title/body to describe only the
+  wrapper naming approach and unchanged terminal backport; draft status and
+  existing empty label set preserved. CI is pending at this checkpoint.
+- This completion record changes no runtime source. No SDK repository/PR change,
+  deployment, image publication, merge, Job, retry or credential movement occurred.
+  Local image and test processes finished. Parent review remains the next action.
