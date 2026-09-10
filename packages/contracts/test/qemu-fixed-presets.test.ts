@@ -126,8 +126,11 @@ describe("QEMU-fixed diagnostic presets", () => {
       readdirSync(root).filter((name) => name.endsWith("-qemu-fixed.json")),
     ).toEqual([
       "terminal-bench-2-1-all-tasks-1-trial-qemu-fixed.json",
+      "terminal-bench-2-1-all-tasks-1-trial-with-6h-qemu-fixed.json",
       "terminal-bench-2-1-all-tasks-5-trials-qemu-fixed.json",
+      "terminal-bench-2-1-all-tasks-5-trials-with-6h-qemu-fixed.json",
       "terminal-bench-2-1-held-50-1-trial-qemu-fixed.json",
+      "terminal-bench-2-1-held-50-3-trials-qemu-fixed.json",
       "terminal-bench-2-1-two-tasks-2-trials-qemu-fixed.json",
     ]);
   });
