@@ -126,3 +126,92 @@ describe("HuggingFaceJobs", () => {
     await expect(jobs.cancel("none")).resolves.toBeUndefined();
   });
 });
+
+// Production adapter transport: synthetic source values only, never ambient env.
+describe("reviewed provider parent transport", () => {
+  it("substitutes one selected ref in the same runJob request without persisting values", async () => {
+    const {
+      fixture,
+      actor,
+      image: reviewedImage,
+    } = await import("../../control-core/test/inference-fixture.js");
+    const { InferenceBindings } = await import("@harbor-hf/control-core");
+    const { validateRunRecord } = await import("@harbor-hf/contracts");
+    const data = fixture();
+    data.manifest.bindings[0]!.source_env = "EXAMPLE_API_KEY";
+    const policy = new InferenceBindings(data.manifest);
+    const record = validateRunRecord({
+      schema_version: "v1",
+      run_id: runId,
+      created_at: "2026-01-01T00:00:00Z",
+      submitted_by: actor,
+      role: "diagnostic",
+      harbor_revision: "a".repeat(40),
+      submission: {
+        benchmark: { name: "synthetic", preset: "synthetic" },
+        cost_ceiling_usd: 1,
+      },
+      harbor_job_config: data.job(),
+    });
+    const before = JSON.stringify(record);
+    const requests: Record<string, unknown>[] = [];
+    let fail = false;
+    const options = {
+      namespace: "example",
+      accessToken: controlToken,
+      inferenceToken,
+      bucketId: "example/bucket",
+      parentImage: reviewedImage,
+      secrets: { UNREVIEWED_API_KEY: "synthetic-must-not-forward" },
+      environment: { AMBIENT_VALUE: "synthetic-must-not-forward" },
+      fetch: (async (_input, init) => {
+        requests.push(JSON.parse(String(init?.body)));
+        if (fail) throw Error("synthetic-selected-value EXAMPLE_API_KEY");
+        return new Response(JSON.stringify(apiJob()), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }) as typeof fetch,
+    };
+    const jobs = new HuggingFaceJobs(options);
+    options.parentImage = image; // Caller mutation cannot replace the reviewed image.
+    const reads: string[] = [];
+    const read = (source: string) => {
+      reads.push(source);
+      return "synthetic-selected-value";
+    };
+    await jobs.startReviewedParent(record, () => policy, read);
+    expect(reads).toEqual(["EXAMPLE_API_KEY"]);
+    expect(requests[0]?.dockerImage).toBe(reviewedImage);
+    expect(requests[0]?.secrets).toEqual({
+      HF_TOKEN: controlToken,
+      INFERENCE_API_KEY_EXAMPLE: "synthetic-selected-value",
+    });
+    expect(JSON.stringify(requests[0])).not.toContain("synthetic-must-not-forward");
+    expect(JSON.stringify(requests[0]?.environment)).not.toMatch(
+      /API_KEY|TOKEN|synthetic-selected/,
+    );
+    expect(JSON.stringify(record)).toBe(before);
+    expect(before).not.toContain("synthetic-selected-value");
+    expect(before).not.toContain('"source_env"');
+    await expect(
+      jobs.startReviewedParent(
+        record,
+        () => policy,
+        () => undefined,
+      ),
+    ).rejects.toThrow("missing");
+    await expect(
+      jobs.startReviewedParent(
+        { ...record, submitted_by: "ungranted" },
+        () => policy,
+        read,
+      ),
+    ).rejects.toThrow("not reviewed");
+    expect(requests).toHaveLength(1);
+    fail = true;
+    await expect(jobs.startReviewedParent(record, () => policy, read)).rejects.toThrow(
+      /^Reviewed inference delivery failed$/,
+    );
+  });
+});

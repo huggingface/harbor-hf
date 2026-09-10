@@ -1,3 +1,7 @@
+import {
+  InferenceBindingDenied,
+  InferenceRegistryError,
+} from "@harbor-hf/control-core";
 import { PricingConflictError, PricingUpdateError } from "@harbor-hf/control-core";
 import {
   PresentationConflictError,
@@ -219,7 +223,9 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       serializers: {
         req: (request: FastifyRequest) => ({
           method: request.method,
-          url: request.url.split("?", 1)[0] ?? "/",
+          url: request.url.startsWith("/api/v1/inference-bindings")
+            ? "/api/v1/inference-bindings"
+            : (request.url.split("?", 1)[0] ?? "/"),
         }),
       },
     },
@@ -252,6 +258,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     const path = request.url.split("?", 1)[0] ?? request.url;
     if (!path.startsWith("/api/v1/") || publicApi(path)) return;
     if (!(await authenticate(runtime, request, reply))) return reply;
+    if (
+      path.startsWith("/api/v1/inference-bindings") &&
+      Object.keys(request.query as object).length
+    )
+      return error(reply, 400, "invalid_request", "Query parameters are not accepted");
     const mutation = request.method !== "GET" && request.method !== "HEAD";
     if (mutation && requireActor(request).role !== "operator")
       return error(reply, 403, "operator_required", "operator access is required");
@@ -274,6 +285,15 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.setErrorHandler((failure, request, reply) => {
     if (reply.sent) return;
+    if (
+      request.url.startsWith("/api/v1/inference-bindings") &&
+      !(failure instanceof InferenceRegistryError)
+    )
+      return error(reply, 400, "invalid_request", "Inference binding request denied");
+    if (failure instanceof InferenceRegistryError)
+      return error(reply, failure.status, "inference_registry_error", failure.message);
+    if (failure instanceof InferenceBindingDenied)
+      return error(reply, 403, "inference_binding_denied", failure.message);
     if (failure instanceof PricingConflictError)
       return error(reply, 409, "pricing_conflict", failure.message);
     if (failure instanceof PricingUpdateError)
@@ -432,6 +452,48 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     };
   });
 
+  app.get("/api/v1/inference-bindings", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const actor = requireActor(request);
+    if (actor.role !== "operator")
+      return error(reply, 403, "operator_required", "operator access is required");
+    if (Object.keys(request.query as object).length)
+      return error(reply, 400, "invalid_request", "Query parameters are not accepted");
+    return runtime.inference.discovery(actor.subject);
+  });
+
+  app.post("/api/v1/inference-bindings", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return runtime.inference.register(request.body, requireActor(request).subject);
+  });
+  const bindingParameters = z.strictObject({
+    ref: z.string().regex(/^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$/),
+  });
+  app.post("/api/v1/inference-bindings/:ref/review", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return runtime.inference.review(
+      bindingParameters.parse(request.params).ref,
+      request.body,
+      requireActor(request).subject,
+    );
+  });
+  app.post("/api/v1/inference-bindings/:ref/approve", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return runtime.inference.approve(
+      bindingParameters.parse(request.params).ref,
+      request.body,
+      requireActor(request).subject,
+    );
+  });
+  app.patch("/api/v1/inference-bindings/:ref", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return runtime.inference.status(
+      bindingParameters.parse(request.params).ref,
+      request.body,
+      requireActor(request).subject,
+    );
+  });
+
   app.post("/api/v1/workbench/preview", async (request) =>
     runtime.workbench.preview(request.body),
   );
@@ -502,9 +564,13 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       const input = workbenchSubmissionSchema.parse(body);
       const preview = runtime.workbench.preview(input.workbench.recipe);
       const sources = new Set(preview.recipe.environment.map((item) => item.source));
-      if (!sources.has("model_base_url") || !sources.has("model_api_key"))
+      if (
+        (!sources.has("model_base_url") &&
+          !preview.recipe.environment.some((binding) => binding.credential_ref)) ||
+        !sources.has("model_api_key")
+      )
         throw new Error(
-          "Workbench Run requires model_base_url and model_api_key bindings",
+          "Workbench requires model_api_key with a reviewed credential reference or the legacy model_base_url binding",
         );
       await runtime.workbench.attestPassedSetup(
         input.workbench.setup_test_id,
@@ -520,7 +586,11 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
           cost_ceiling_usd: input.cost_ceiling_usd,
           role: input.role,
         },
-        { ...preview.harbor_agent, ...input.workbench.harbor_agent },
+        await runtime.service.compileWorkbench(
+          preview.recipe,
+          actor.subject,
+          input.workbench.harbor_agent?.model_name,
+        ),
         idempotencyKey(request),
         actor.subject,
         {

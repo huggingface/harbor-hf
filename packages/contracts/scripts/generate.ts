@@ -50,7 +50,17 @@ for (const file of files) {
   const outputName = `${stem}.ts`;
   const cleanOutput = output.replace(/[ \t]+$/gm, "");
   await writeFile(join(outputRoot, outputName), cleanOutput, "utf8");
-  exports.push(`export type * from "./${stem}.js";`);
+  const inferenceType = (
+    {
+      "inference-review-v1": "InferenceReviewV1",
+      "inference-review-request-v1": "InferenceReviewRequestV1",
+    } as Record<string, string>
+  )[stem];
+  exports.push(
+    inferenceType
+      ? `export type { ${inferenceType} } from "./${stem}.js";`
+      : `export type * from "./${stem}.js";`,
+  );
 }
 await writeFile(join(outputRoot, "index.ts"), `${exports.join("\n")}\n`, "utf8");
 

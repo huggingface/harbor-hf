@@ -10,7 +10,7 @@ const draftSchema = z.object({
     name: z.string(),
     setup_command: z.string(),
     run_command: z.string(),
-    route_api: z.enum(["chat-completions", "responses"]),
+    route_api: z.enum(["chat-completions", "responses", "native"]),
     setup_timeout_seconds: z.number(),
     environment: z.array(
       z
@@ -27,10 +27,16 @@ const draftSchema = z.object({
             "model_api_key",
           ]),
           value: z.string().optional(),
+          credential_ref: z
+            .string()
+            .regex(/^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$/)
+            .optional(),
         })
-        .transform(({ value, ...binding }) =>
-          value === undefined ? binding : { ...binding, value },
-        ),
+        .transform(({ value, credential_ref, ...binding }) => ({
+          ...binding,
+          ...(value === undefined ? {} : { value }),
+          ...(credential_ref === undefined ? {} : { credential_ref }),
+        })),
     ),
     outputs: z.object({
       results_path: z.string(),

@@ -18,6 +18,507 @@
       }
     },
     "schemas": {
+      "InferenceBindings": {
+        "title": "Inference Bindings V1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "bindings",
+          "revision"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "v1"
+          },
+          "bindings": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "ref",
+                "label",
+                "status",
+                "source_env",
+                "enabled",
+                "grants"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "status": {
+                  "enum": [
+                    "configured",
+                    "missing",
+                    "disabled"
+                  ]
+                },
+                "source_env": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,79}$",
+                  "not": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "HF_TOKEN",
+                          "HF_INFERENCE_TOKEN"
+                        ]
+                      },
+                      {
+                        "pattern": "^(?:HF_|HUGGING_FACE_|HUGGINGFACE_|HARBOR_HF_|OAUTH_|OPENID_|INFERENCE_API_KEY_)",
+                        "description": "Reserved authority name"
+                      },
+                      {
+                        "pattern": "(?:^|_)(?:TOKEN|OAUTH|OPENID|CONTROL|AUTH|SESSION|COOKIE|PASSWORD|PRIVATE|SIGNING)(?:_|$)",
+                        "description": "Reserved authority name"
+                      },
+                      {
+                        "pattern": "^(?:AWS_|AZURE_|GOOGLE_|GCP_|DATABASE_|REDIS_|SSH_|CI_|GITHUB_|LD_|DYLD_|NODE_|PYTHON|PATH$|HOME$|SHELL$|USER$)",
+                        "description": "Reserved authority name"
+                      },
+                      {
+                        "pattern": "(?:^|_)(?:CREDENTIALS?|AUTHORITY|ACCESS|ENCRYPTION|SERVICE|CLIENT)(?:_|$)",
+                        "description": "Reserved authority name"
+                      }
+                    ]
+                  }
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "grants": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "operator_subjects",
+                      "worker_image",
+                      "agent_import_path",
+                      "recipe_digest",
+                      "destination_env",
+                      "route_api",
+                      "base_url",
+                      "allowed_hosts",
+                      "allowed_models"
+                    ],
+                    "properties": {
+                      "operator_subjects": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160
+                        },
+                        "uniqueItems": true
+                      },
+                      "worker_image": {
+                        "type": "string",
+                        "pattern": "^[^\\s]+@sha256:[0-9a-f]{64}$"
+                      },
+                      "agent_import_path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "recipe_digest": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "destination_env": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[A-Z_][A-Z0-9_]{0,79}$"
+                        },
+                        "uniqueItems": true
+                      },
+                      "route_api": {
+                        "enum": [
+                          "chat-completions",
+                          "responses",
+                          "native"
+                        ]
+                      },
+                      "base_url": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 2048
+                      },
+                      "allowed_hosts": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
+                          "maxLength": 253
+                        },
+                        "uniqueItems": true
+                      },
+                      "allowed_models": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4096
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "uniqueItems": true
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "InferenceRegistrationRequest": {
+        "title": "Inference Registration Request V1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_revision",
+          "source_env",
+          "label",
+          "reason"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "source_env": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,79}$",
+            "not": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "HF_TOKEN",
+                    "HF_INFERENCE_TOKEN"
+                  ]
+                },
+                {
+                  "pattern": "^(?:HF_|HUGGING_FACE_|HUGGINGFACE_|HARBOR_HF_|OAUTH_|OPENID_|INFERENCE_API_KEY_)",
+                  "description": "Reserved authority name"
+                },
+                {
+                  "pattern": "(?:^|_)(?:TOKEN|OAUTH|OPENID|CONTROL|AUTH|SESSION|COOKIE|PASSWORD|PRIVATE|SIGNING)(?:_|$)",
+                  "description": "Reserved authority name"
+                },
+                {
+                  "pattern": "^(?:AWS_|AZURE_|GOOGLE_|GCP_|DATABASE_|REDIS_|SSH_|CI_|GITHUB_|LD_|DYLD_|NODE_|PYTHON|PATH$|HOME$|SHELL$|USER$)",
+                  "description": "Reserved authority name"
+                },
+                {
+                  "pattern": "(?:^|_)(?:CREDENTIALS?|AUTHORITY|ACCESS|ENCRYPTION|SERVICE|CLIENT)(?:_|$)",
+                  "description": "Reserved authority name"
+                }
+              ]
+            }
+          },
+          "label": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;!?()/_-]{0,499}$"
+          }
+        }
+      },
+      "InferenceReviewRequest": {
+        "title": "Inference Review Request V1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_revision",
+          "recipe",
+          "model_name",
+          "base_url",
+          "allowed_hosts"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/WorkbenchRecipe"
+          },
+          "model_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "allowed_hosts": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
+              "maxLength": 253
+            },
+            "uniqueItems": true
+          }
+        }
+      },
+      "InferenceApprovalRequest": {
+        "title": "Inference Approval Request V1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_revision",
+          "review_id",
+          "reviewed_confirmation",
+          "reason"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "review_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "reviewed_confirmation": {
+            "const": true
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;!?()/_-]{0,499}$"
+          }
+        }
+      },
+      "InferenceStatusRequest": {
+        "title": "Inference Status Request V1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_revision",
+          "enabled",
+          "reason"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;!?()/_-]{0,499}$"
+          }
+        }
+      },
+      "InferenceReview": {
+        "title": "Inference Review V1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "revision",
+          "review_id",
+          "expires_at",
+          "ref",
+          "source_env",
+          "label",
+          "presence",
+          "recipe",
+          "grant"
+        ],
+        "properties": {
+          "schema_version": {
+            "const": "v1"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "review_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ref": {
+            "type": "string",
+            "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$"
+          },
+          "source_env": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,79}$",
+            "not": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "HF_TOKEN",
+                    "HF_INFERENCE_TOKEN"
+                  ]
+                },
+                {
+                  "pattern": "^(?:HF_|HUGGING_FACE_|HUGGINGFACE_|HARBOR_HF_|OAUTH_|OPENID_|INFERENCE_API_KEY_)",
+                  "description": "Reserved authority name"
+                },
+                {
+                  "pattern": "(?:^|_)(?:TOKEN|OAUTH|OPENID|CONTROL|AUTH|SESSION|COOKIE|PASSWORD|PRIVATE|SIGNING)(?:_|$)",
+                  "description": "Reserved authority name"
+                },
+                {
+                  "pattern": "^(?:AWS_|AZURE_|GOOGLE_|GCP_|DATABASE_|REDIS_|SSH_|CI_|GITHUB_|LD_|DYLD_|NODE_|PYTHON|PATH$|HOME$|SHELL$|USER$)",
+                  "description": "Reserved authority name"
+                },
+                {
+                  "pattern": "(?:^|_)(?:CREDENTIALS?|AUTHORITY|ACCESS|ENCRYPTION|SERVICE|CLIENT)(?:_|$)",
+                  "description": "Reserved authority name"
+                }
+              ]
+            }
+          },
+          "label": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$"
+          },
+          "presence": {
+            "enum": [
+              "configured",
+              "missing"
+            ]
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/WorkbenchRecipe"
+          },
+          "grant": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "operator_subjects",
+              "worker_image",
+              "agent_import_path",
+              "recipe_digest",
+              "destination_env",
+              "route_api",
+              "base_url",
+              "allowed_hosts",
+              "allowed_models"
+            ],
+            "properties": {
+              "operator_subjects": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "uniqueItems": true
+              },
+              "worker_image": {
+                "type": "string",
+                "pattern": "^[^\\s]+@sha256:[0-9a-f]{64}$"
+              },
+              "agent_import_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "recipe_digest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "destination_env": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z_][A-Z0-9_]{0,79}$"
+                },
+                "uniqueItems": true
+              },
+              "route_api": {
+                "enum": [
+                  "chat-completions",
+                  "responses",
+                  "native"
+                ]
+              },
+              "base_url": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 2048
+              },
+              "allowed_hosts": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
+                  "maxLength": 253
+                },
+                "uniqueItems": true
+              },
+              "allowed_models": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              }
+            }
+          }
+        }
+      },
       "RunRecord": {
         "title": "RunRecordV1",
         "type": "object",
@@ -1090,6 +1591,7 @@
         }
       },
       "WorkbenchRecipe": {
+        "title": "Agent Workbench recipe v1",
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -1107,19 +1609,26 @@
             "const": "v1"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+            "minLength": 2,
+            "maxLength": 80
           },
           "setup_command": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768
           },
           "run_command": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768
           },
           "route_api": {
-            "type": "string",
             "enum": [
               "chat-completions",
-              "responses"
+              "responses",
+              "native"
             ]
           },
           "setup_timeout_seconds": {
@@ -1129,54 +1638,94 @@
           },
           "environment": {
             "type": "array",
+            "maxItems": 64,
             "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "name",
-                "source"
-              ],
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "source": {
-                  "type": "string",
-                  "enum": [
-                    "literal",
-                    "instruction_path",
-                    "workspace_path",
-                    "logs_path",
-                    "agent_home",
-                    "model_name",
-                    "model_base_url",
-                    "model_api_key"
-                  ]
-                },
-                "value": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/components/schemas/WorkbenchRecipe_EnvironmentBinding"
             }
           },
           "outputs": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "results_path",
-              "trajectory_path"
-            ],
-            "properties": {
-              "results_path": {
-                "type": "string"
+            "$ref": "#/components/schemas/WorkbenchRecipe_OutputDeclaration"
+          }
+        }
+      },
+      "WorkbenchRecipe_EnvironmentBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "source"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "source": {
+            "enum": [
+              "literal",
+              "instruction_path",
+              "workspace_path",
+              "logs_path",
+              "agent_home",
+              "model_name",
+              "model_base_url",
+              "model_api_key"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "credential_ref": {
+            "type": "string",
+            "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "credential_ref"
+              ]
+            },
+            "then": {
+              "properties": {
+                "source": {
+                  "const": "model_api_key"
+                }
               },
-              "trajectory_path": {
-                "type": [
-                  "string",
-                  "null"
+              "not": {
+                "required": [
+                  "value"
                 ]
               }
             }
+          }
+        ]
+      },
+      "WorkbenchRecipe_OutputDeclaration": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "results_path",
+          "trajectory_path"
+        ],
+        "properties": {
+          "results_path": {
+            "type": "string",
+            "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "trajectory_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^/logs/agent/[A-Za-z0-9._/-]+$",
+            "maxLength": 512
           }
         }
       },
@@ -1307,6 +1856,862 @@
     }
   },
   "paths": {
+    "/api/v1/inference-bindings/{ref}/review": {
+      "post": {
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$"
+            }
+          }
+        ],
+        "description": "Operator only; CSRF and write mode required. No query parameters. Revision-checked; Cache-Control: no-store. Values are never accepted or returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceReview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inference-bindings/{ref}/approve": {
+      "post": {
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$"
+            }
+          }
+        ],
+        "description": "Operator only; CSRF and write mode required. No query parameters. Revision-checked; Cache-Control: no-store. Values are never accepted or returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceApprovalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceBindings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inference-bindings/{ref}": {
+      "patch": {
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$"
+            }
+          }
+        ],
+        "description": "Operator only; CSRF and write mode required. No query parameters. Revision-checked; Cache-Control: no-store. Values are never accepted or returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceBindings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inference-bindings": {
+      "post": {
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "description": "Operator only; CSRF and write mode required. No query parameters. Revision-checked; Cache-Control: no-store. Values are never accepted or returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceRegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceBindings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "security": [
+          {
+            "cookieSession": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "description": "Owner-scoped registration names, current grants and presence, never secret values. No query parameters. Cache-Control: no-store.",
+        "responses": {
+          "200": {
+            "description": "Visible reviewed references",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceBindings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/session": {
       "get": {
         "summary": "Read the current session",

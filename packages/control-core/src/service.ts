@@ -1,3 +1,9 @@
+import {
+  InferenceBindingDenied,
+  InferenceBindings,
+  inferencePresence,
+} from "./inference-bindings.js";
+import type { AgentWorkbenchRecipeV1, HarborJobConfigV1 } from "@harbor-hf/contracts";
 import { correctPricing } from "./pricing-corrections.js";
 import type { RunRecordV1, RunStateV1, RunPresentationV1 } from "@harbor-hf/contracts";
 import {
@@ -22,7 +28,17 @@ import { isLiveJob, type JobObservation, type JobsPort } from "./jobs.js";
 import type { Projection } from "./projection.js";
 import { createJson, type ObjectStore, putJson, readJson } from "./store.js";
 
+export interface InferenceExecution {
+  policy(): InferenceBindings | Promise<InferenceBindings>;
+  sequence?<T>(operation: () => Promise<T>): Promise<T>;
+  image: string;
+  present(source: string): boolean;
+  /** InferenceBindingDenied certifies that no transport mutation was attempted. */
+  start(run: RunRecordV1): Promise<JobObservation>;
+}
+
 export interface ControlServiceOptions {
+  inference?: InferenceExecution;
   harborRevision: string;
   mountRoot: string;
   maxActiveJobs: number;
@@ -205,6 +221,39 @@ export class ControlService {
     return this.persistSubmission(record);
   }
 
+  async compileWorkbench(
+    recipe: AgentWorkbenchRecipeV1,
+    actor: string,
+    modelName: string | undefined,
+  ): Promise<HarborAgentFragment> {
+    const execution = this.options.inference;
+    return ((await execution?.policy()) ?? new InferenceBindings()).compile(
+      recipe,
+      actor,
+      execution?.image ?? "",
+      modelName,
+      execution?.present ?? (() => false),
+    );
+  }
+
+  private async selectedInference(
+    config: HarborJobConfigV1,
+    actor: string,
+  ): Promise<boolean> {
+    try {
+      const execution = this.options.inference;
+      const selected = (
+        (await execution?.policy()) ?? new InferenceBindings()
+      ).selected(config, actor, execution?.image ?? "");
+      if (!selected) return false;
+      if (!execution || !inferencePresence(execution.present, selected.source))
+        throw new InferenceBindingDenied();
+      return true;
+    } catch {
+      throw new InferenceBindingDenied();
+    }
+  }
+
   async submitWorkbench(
     input: PresetSubmission,
     harborAgent: HarborAgentFragment,
@@ -281,26 +330,35 @@ export class ControlService {
     return this.persistSubmission(record);
   }
 
+  private sequenceInference<T>(operation: () => Promise<T>): Promise<T> {
+    return this.options.inference?.sequence
+      ? this.options.inference.sequence(operation)
+      : operation();
+  }
+
   private async persistSubmission(record: RunRecordV1): Promise<SubmissionResult> {
-    const result = await this.withRunLock(record.run_id, async () => {
-      const path = runRecordPath(record.run_id);
-      const existingValue = await readIfPresent(this.store, path);
-      if (existingValue) {
-        const existing = validateRunRecord(existingValue);
-        if (!sameRequest(existing, record))
-          throw new Error("idempotency key already identifies a different run");
-        if (!(await readIfPresent(this.store, runStatePath(record.run_id))))
-          await putJson(
-            this.store,
-            runStatePath(record.run_id),
-            initialState(existing),
-          );
-        return { created: false, run: existing };
-      }
-      await createJson(this.store, path, record);
-      await putJson(this.store, runStatePath(record.run_id), initialState(record));
-      return { created: true, run: record };
-    });
+    const result = await this.withRunLock(record.run_id, () =>
+      this.sequenceInference(async () => {
+        await this.selectedInference(record.harbor_job_config, record.submitted_by);
+        const path = runRecordPath(record.run_id);
+        const existingValue = await readIfPresent(this.store, path);
+        if (existingValue) {
+          const existing = validateRunRecord(existingValue);
+          if (!sameRequest(existing, record))
+            throw new Error("idempotency key already identifies a different run");
+          if (!(await readIfPresent(this.store, runStatePath(record.run_id))))
+            await putJson(
+              this.store,
+              runStatePath(record.run_id),
+              initialState(existing),
+            );
+          return { created: false, run: existing };
+        }
+        await createJson(this.store, path, record);
+        await putJson(this.store, runStatePath(record.run_id), initialState(record));
+        return { created: true, run: record };
+      }),
+    );
     await this.refresh();
     return result;
   }
@@ -477,7 +535,37 @@ export class ControlService {
           Date.now() - Date.parse(latest.started_at) < this.options.restartDelayMs
         )
           return;
-        const parent = await this.jobs.startParent(projected.record.run_id);
+        let parent: JobObservation;
+        try {
+          parent = await this.sequenceInference(async () => {
+            const selected = await this.selectedInference(
+              projected.record.harbor_job_config,
+              projected.record.submitted_by,
+            );
+            return selected && this.options.inference
+              ? this.options.inference.start(projected.record)
+              : this.jobs.startParent(projected.record.run_id);
+          });
+        } catch (error) {
+          // Only certified pre-delivery denials may pause. An uncertain transport
+          // error may already have created a live Job; preserve normal observation.
+          if (!(error instanceof InferenceBindingDenied)) throw error;
+          // Only admission is blocked. Safety cleanup above and other runs continue.
+          // Reuse control's existing pause authority; never invent Job observations
+          // or alter Harbor results/retries. Explicit operator resume rechecks policy.
+          await putJson(
+            this.store,
+            runStatePath(projected.record.run_id),
+            validateRunState({
+              ...state,
+              revision: state.revision + 1,
+              updated_at: new Date().toISOString(),
+              desired_state: "paused",
+              actor: "harbor-hf-inference-blocked",
+            }),
+          );
+          return;
+        }
         await this.appendParent(projected.record.run_id, parent);
         observations = [...observations, parent];
         activeParents += 1;

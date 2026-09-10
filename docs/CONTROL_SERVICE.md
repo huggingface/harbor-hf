@@ -514,3 +514,23 @@ Boundary review: checked `src/harbor/models/trial/result.py` at Harbor pin
 `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and the available upstream history
 through `7d5285b4`. This is console layout only; existing projected native result
 measurements remain authoritative. No schema, persisted field or API changed.
+
+
+## Local provider credential references
+
+Workbench supports operator-managed Space secret references for
+provider inference: the app selects reviewed references and shows presence only,
+never accepts or stores key values. Explicit environment bindings deliver only the
+selected credential to reviewed execution. See [Provider credential references](provider-credential-references.md)
+for the operator-only register/select/review/approve flow after separately approved
+deployment. Workbench Manage secrets edits name-only references in the canonical
+Bucket registry; the server derives exact recipe/model/image grants. No manifest
+path or offline hash workflow remains. Revision conflicts and uncertain saves
+require refresh and review, never automatic retries. Standalone setup success is
+not approval.
+
+Deployment caveat: align the live two-secret inventory and control-only token
+instructions under separate explicit deployment and credential-transfer approval.
+This local implementation does not authorize activation.
+Standalone setup tests remain secret-free; Harbor's authorized benchmark agent env
+covers setup and run. Host review constraints are not firewall enforcement.

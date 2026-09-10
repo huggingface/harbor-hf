@@ -3,6 +3,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import type {
+  InferenceRegistrationRequestV1,
+  InferenceStatusRequestV1,
+  InferenceReviewRequestV1,
+  InferenceApprovalRequestV1,
+  InferenceReviewV1,
+  InferenceSourceRegistryV1,
+  InferenceBindingManifestV1,
+  InferenceBindingsV1,
   RunPricingCorrectionsV1,
   PricingCorrectionRequestV1,
   LaunchPricingV1,
@@ -24,6 +32,14 @@ function load(name: string): object {
 }
 
 export const schemas = {
+  inferenceReview: load("inference-review-v1.schema.json"),
+  inferenceApprovalRequest: load("inference-approval-request-v1.schema.json"),
+  inferenceReviewRequest: load("inference-review-request-v1.schema.json"),
+  inferenceStatusRequest: load("inference-status-request-v1.schema.json"),
+  inferenceRegistrationRequest: load("inference-registration-request-v1.schema.json"),
+  inferenceSourceRegistry: load("inference-source-registry-v1.schema.json"),
+  inferenceBindingManifest: load("inference-binding-manifest-v1.schema.json"),
+  inferenceBindings: load("inference-bindings-v1.schema.json"),
   runPricingCorrections: load("run-pricing-corrections-v1.schema.json"),
   pricingCorrectionRequest: load("pricing-correction-request-v1.schema.json"),
   launchPricing: load("launch-pricing-v1.schema.json"),
@@ -80,7 +96,19 @@ function configuredAjv(): Ajv2020 {
 const ajv = configuredAjv();
 const strictAjv = configuredAjv();
 ajv.addSchema(schemas.launchPricing);
+ajv.addSchema(
+  schemas.agentWorkbenchRecipe,
+  "https://harborframework.com/schemas/harbor-hf/agent-workbench-v1.schema.json",
+);
 const validators = {
+  inferenceReview: ajv.compile(schemas.inferenceReview),
+  inferenceApprovalRequest: ajv.compile(schemas.inferenceApprovalRequest),
+  inferenceReviewRequest: ajv.compile(schemas.inferenceReviewRequest),
+  inferenceStatusRequest: ajv.compile(schemas.inferenceStatusRequest),
+  inferenceRegistrationRequest: ajv.compile(schemas.inferenceRegistrationRequest),
+  inferenceSourceRegistry: ajv.compile(schemas.inferenceSourceRegistry),
+  inferenceBindingManifest: ajv.compile(schemas.inferenceBindingManifest),
+  inferenceBindings: ajv.compile(schemas.inferenceBindings),
   runPricingCorrections: ajv.compile(schemas.runPricingCorrections),
   pricingCorrectionRequest: ajv.compile(schemas.pricingCorrectionRequest),
   launchPricing: ajv.getSchema(
@@ -161,3 +189,38 @@ observationAjv.addFormat("date-time", {
 const progressValidator = observationAjv.compile(schemas.trialProgress);
 export const validateTrialProgress = (value: unknown): TrialProgressV1 =>
   validate(progressValidator, structuredClone(value), "trial progress");
+
+export const validateInferenceBindingManifest = (
+  value: unknown,
+): InferenceBindingManifestV1 =>
+  validate(validators.inferenceBindingManifest, value, "inference binding manifest");
+export const validateInferenceBindings = (value: unknown): InferenceBindingsV1 =>
+  validate(validators.inferenceBindings, value, "inference bindings");
+
+export const validateInferenceSourceRegistry = (
+  value: unknown,
+): InferenceSourceRegistryV1 =>
+  validate(validators.inferenceSourceRegistry, value, "inference source registry");
+
+export const validateInferenceRegistrationRequest = (
+  value: unknown,
+): InferenceRegistrationRequestV1 =>
+  validate(validators.inferenceRegistrationRequest, value, "inference request");
+
+export const validateInferenceStatusRequest = (
+  value: unknown,
+): InferenceStatusRequestV1 =>
+  validate(validators.inferenceStatusRequest, value, "inference request");
+
+export const validateInferenceReviewRequest = (
+  value: unknown,
+): InferenceReviewRequestV1 =>
+  validate(validators.inferenceReviewRequest, value, "inference request");
+
+export const validateInferenceApprovalRequest = (
+  value: unknown,
+): InferenceApprovalRequestV1 =>
+  validate(validators.inferenceApprovalRequest, value, "inference request");
+
+export const validateInferenceReview = (value: unknown): InferenceReviewV1 =>
+  validate(validators.inferenceReview, value, "inference request");

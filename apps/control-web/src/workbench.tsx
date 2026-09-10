@@ -1,3 +1,7 @@
+import type { InferenceBindingsV1 } from "@harbor-hf/contracts";
+import { ManageSecrets } from "./manage-secrets";
+import { nativeFastAgentStarter } from "./native-starter";
+import { InferenceBindingSelector } from "./inference-binding-selector";
 import { isReasoningIntent } from "@harbor-hf/contracts/credentials";
 import {
   emptyLaunchPricing,
@@ -293,6 +297,7 @@ export function WorkbenchPage() {
   const { actor, writesAllowed } = useControlState();
   const system = useSystem();
   const presets = usePresets();
+  const [discovery, setDiscovery] = useState<InferenceBindingsV1 | null>(null);
   const [draft] = useState(loadWorkbenchDraft);
   const [recipe, setRecipe] = useState<WorkbenchRecipe>(
     () => draft?.recipe ?? copyStarter(),
@@ -480,7 +485,8 @@ export function WorkbenchPage() {
       (system.data.workbench.runner === "docker" || writesAllowed),
   );
   const hasDirectRoute =
-    recipe.environment.some((binding) => binding.source === "model_base_url") &&
+    (recipe.environment.some((binding) => binding.source === "model_base_url") ||
+      recipe.environment.some((binding) => binding.credential_ref)) &&
     recipe.environment.some((binding) => binding.source === "model_api_key");
   const liveOutput = `${logs.stdout}${logs.stderr ? `\n[stderr]\n${logs.stderr}` : ""}`;
 
@@ -623,6 +629,12 @@ export function WorkbenchPage() {
                 </Button>
                 <Button
                   variant="outline"
+                  onClick={() => changeRecipe(nativeFastAgentStarter(fastAgentStarter))}
+                >
+                  Fast Agent · native (opt-in)
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={() => changeRecipe(copyStarter(fxStarter))}
                 >
                   <RotateCcw size={14} aria-hidden="true" /> FX
@@ -654,6 +666,9 @@ export function WorkbenchPage() {
                 >
                   <option value="chat-completions">Chat Completions</option>
                   <option value="responses">Responses</option>
+                  <option value="native">
+                    Native harness routing (review required)
+                  </option>
                 </select>
               </label>
               <label className="text-sm text-slate-300">
@@ -716,6 +731,14 @@ export function WorkbenchPage() {
                 <Plus size={14} aria-hidden="true" /> Add
               </Button>
             </div>
+            {actor.role === "operator" && (
+              <ManageSecrets
+                recipe={recipe}
+                model={harnessModel}
+                context={JSON.stringify([model, provider])}
+                onDiscovery={setDiscovery}
+              />
+            )}
             <div className="mt-3 space-y-2">
               {recipe.environment.map((binding, index) => (
                 <div
@@ -748,7 +771,9 @@ export function WorkbenchPage() {
                     }}
                   >
                     {sources.map((source) => (
-                      <option key={source}>{source}</option>
+                      <option key={source} value={source}>
+                        {source === "model_api_key" ? "Secret (model_api_key)" : source}
+                      </option>
                     ))}
                   </select>
                   {binding.source === "literal" ? (
@@ -762,6 +787,19 @@ export function WorkbenchPage() {
                           value: event.target.value,
                         })
                       }
+                    />
+                  ) : binding.source === "model_api_key" ? (
+                    <InferenceBindingSelector
+                      discovery={discovery}
+                      value={binding.credential_ref}
+                      operator={actor.role === "operator"}
+                      onChange={(ref) => {
+                        const { credential_ref: _ref, ...rest } = binding;
+                        updateEnvironment(
+                          binding,
+                          ref ? { ...rest, credential_ref: ref } : rest,
+                        );
+                      }}
                     />
                   ) : (
                     <span className="self-center text-xs text-slate-500">
@@ -1035,8 +1073,9 @@ export function WorkbenchPage() {
             ) : null}
             {!hasDirectRoute ? (
               <p className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-200">
-                Hosted launch requires both model_base_url and model_api_key bindings.
-                This recipe can still be setup-tested.
+                Bind model_api_key and select a reviewed provider reference, or retain
+                both legacy HF model_api_key and model_base_url bindings. This recipe
+                can still be setup-tested; setup grants no credential access.
               </p>
             ) : null}
             <form className="mt-4 space-y-4" onSubmit={(event) => void launch(event)}>
@@ -1118,15 +1157,19 @@ export function WorkbenchPage() {
               </label>
               <p className="text-sm text-slate-400">
                 Stored unchanged as Harbor agents[0].model_name. The model_name
-                environment binding delivers it to your command. The Fast-Agent starter
-                accepts hf.&lt;namespace&gt;/&lt;model&gt;:&lt;provider&gt;.
+                environment binding delivers it to your command. The existing HF starter
+                accepts hf.&lt;namespace&gt;/&lt;model&gt;:&lt;provider&gt;. The opt-in
+                native starter passes your string directly; the harness owns routing.
+                Manually edit both the model string and the synthetic EXAMPLE_API_KEY
+                destination to match the harness, then use Manage secrets to review and
+                approve the exact recipe.
               </p>
               <p className="text-sm text-slate-400">
                 Environment bindings deliver credentials; literal values and scripts
-                must never contain keys. Only the configured HF inference credential is
-                supported. Other providers require a reviewed credential path; the FX
-                starter requires a Vercel AI Gateway key and cannot launch through this
-                HF-only path.
+                must never contain keys. Omitted references retain the existing HF path.
+                Other providers require a reference granted to this exact recipe and
+                worker. Presence does not prove API validity or compatibility.
+                Deployment and actual credential provisioning require separate approval.
               </p>
               <ConcurrentTrialsField
                 value={concurrencyValue}

@@ -1,3 +1,4 @@
+import { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
 import type { AgentWorkbenchRecipeV1 } from "@harbor-hf/contracts";
 import {
   canonicalJson,
@@ -7,6 +8,9 @@ import {
 } from "@harbor-hf/contracts";
 
 const reservedEnvironment = new Set([
+  "OAUTH_CLIENT_SECRET",
+  "OAUTH_CLIENT_ID",
+  "OPENID_PROVIDER_URL",
   "BASH_ENV",
   "CDPATH",
   "DEBIAN_FRONTEND",
@@ -30,6 +34,13 @@ const reservedEnvironment = new Set([
   "HF_INFERENCE_TOKEN",
   "HARBOR_HF_WORKER_CAPABILITY",
 ]);
+
+export function isReservedWorkbenchEnvironment(name: string): boolean {
+  return (
+    reservedEnvironment.has(name) ||
+    /^(?:HARBOR_|OAUTH_|OPENID_|INFERENCE_SECRET_)/.test(name)
+  );
+}
 
 const secretName =
   /(?:^|_)(?:API_?KEY|TOKEN|PASSWORD|PASSWD|SECRET|CREDENTIALS?|AUTH|COOKIE|PRIVATE_?KEY)(?:_|$)/i;
@@ -273,9 +284,21 @@ function validateRecipeSemantics(recipe: AgentWorkbenchRecipeV1): void {
     throw new Error("commands must not contain NUL characters");
   if (
     suspiciousLiteral.test(recipe.setup_command) ||
-    suspiciousLiteral.test(recipe.run_command)
+    suspiciousLiteral.test(recipe.run_command) ||
+    [
+      ...`${recipe.setup_command}\n${recipe.run_command}`.matchAll(
+        /https?:\/\/[^\s"'<>]+/g,
+      ),
+    ].some(([url]) => containsCredentialMaterial(url))
   )
     throw new Error("commands must not contain credential-like values");
+  const refs = new Set(
+    recipe.environment
+      .filter((binding) => binding.source === "model_api_key")
+      .map((binding) => binding.credential_ref ?? null),
+  );
+  if (refs.size > 1)
+    throw new Error("A recipe must select one inference credential reference");
   const names = new Set<string>();
   const sources = new Map<
     string,
@@ -286,14 +309,17 @@ function validateRecipeSemantics(recipe: AgentWorkbenchRecipeV1): void {
       throw new Error(`environment variable ${binding.name} is duplicated`);
     names.add(binding.name);
     sources.set(binding.name, binding.source);
-    if (reservedEnvironment.has(binding.name) || binding.name.startsWith("HARBOR_"))
+    if (isReservedWorkbenchEnvironment(binding.name))
       throw new Error(`environment variable ${binding.name} is reserved`);
     if (secretName.test(binding.name) && binding.source !== "model_api_key")
       throw new Error(`environment variable ${binding.name} looks credential-like`);
     if (binding.source === "literal") {
       if (binding.value === undefined)
         throw new Error(`literal environment variable ${binding.name} needs a value`);
-      if (suspiciousLiteral.test(binding.value ?? ""))
+      if (
+        suspiciousLiteral.test(binding.value ?? "") ||
+        containsCredentialMaterial(binding.value ?? "")
+      )
         throw new Error(
           `literal environment variable ${binding.name} looks like a credential`,
         );

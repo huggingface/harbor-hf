@@ -599,3 +599,77 @@ async def test_clean_shell_preserves_task_identity_without_ambient_credentials(
         env={"OPENAI_API_KEY": "fixture-inference"},
     )
     assert environment.exec.call_args.kwargs["user"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model", ["example:native/model", "second:unchanged/model"])
+async def test_native_key_only_binding_preserves_model(
+    temp_dir: Path, model: str
+) -> None:
+    config = _config(
+        run={
+            "argv": ["agent"],
+            "bindings": {
+                "EXAMPLE_API_KEY": "model_api_key",
+                "MODEL": "model_name",
+            },
+        }
+    )
+    config["route_api"] = "native"
+    agent = CommandAgent(
+        logs_dir=temp_dir,
+        model_name=model,
+        extra_env={"OPENAI_API_KEY": "synthetic-presence-only"},
+        config=config,
+    )
+    environment = _environment(temp_dir)
+    await agent.run("solve", environment, AgentContext())
+    assert _phase_call(environment, "run").kwargs["env"] == {
+        "EXAMPLE_API_KEY": "synthetic-presence-only",
+        "MODEL": model,
+    }
+
+
+@pytest.mark.asyncio
+async def test_native_connection_does_not_fall_back_to_ambient_key(
+    temp_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "synthetic-ambient-not-authorized")
+    config = _config(
+        run={
+            "argv": ["agent"],
+            "bindings": {
+                "EXAMPLE_API_KEY": "model_api_key",
+            },
+        }
+    )
+    config["route_api"] = "native"
+    agent = CommandAgent(logs_dir=temp_dir, model_name="example:native", config=config)
+    with pytest.raises(RuntimeError, match="requires direct model settings"):
+        await agent.run("solve", _environment(temp_dir), AgentContext())
+
+
+@pytest.mark.parametrize("route", ["chat-completions", "responses"])
+@pytest.mark.parametrize("missing", ["OPENAI_API_KEY", "OPENAI_BASE_URL"])
+def test_legacy_partial_binding_still_requires_both_connection_slots(
+    temp_dir: Path, monkeypatch: pytest.MonkeyPatch, route: str, missing: str
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    slots = {
+        "OPENAI_API_KEY": "synthetic-only",
+        "OPENAI_BASE_URL": "https://example.invalid/v1",
+    }
+    del slots[missing]
+    binding = "model_base_url" if missing == "OPENAI_API_KEY" else "model_api_key"
+    config = _config(run={"argv": ["agent"], "bindings": {"DESTINATION": binding}})
+    config["route_api"] = route
+    agent = CommandAgent(
+        logs_dir=temp_dir,
+        model_name="example/model",
+        extra_env=slots,
+        config=config,
+    )
+    with pytest.raises(RuntimeError, match="requires direct model settings"):
+        agent._prepare_model_connection()

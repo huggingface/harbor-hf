@@ -185,7 +185,7 @@ page are unchanged.
 
 These fields do not enable new credential routes. Environment bindings deliver
 credentials from the configured source; they do not authorize arbitrary secrets.
-`model_api_key` still supplies only the existing HF inference credential. Never
+`model_api_key` without `credential_ref` still supplies only the existing HF inference credential. Never
 paste keys into commands, literal environment values, model strings, or config
 files. A non-HF provider needs its own reviewed credential source and delivery
 path before execution can be supported.
@@ -365,3 +365,23 @@ behavior; newer validation/dry-run changes do not supply missing behavior here.
 No upstream gap, pin update or execution patch is needed for this scope.
 Registry task membership remains Harbor-owned: no task counter, resolver or
 benchmark/model/harness-specific branch is added to the compilers.
+
+
+## Local provider credential references
+
+Workbench supports operator-managed Space secret references for
+provider inference: the app selects reviewed references and shows presence only,
+never accepts or stores key values. Explicit environment bindings deliver only the
+selected credential to reviewed execution. See [Provider credential references](provider-credential-references.md)
+for the operator-only register/select/review/approve flow after separately approved
+deployment. Workbench Manage secrets edits name-only references in the canonical
+Bucket registry; the server derives exact recipe/model/image grants. No manifest
+path or offline hash workflow remains. Revision conflicts and uncertain saves
+require refresh and review, never automatic retries. Standalone setup success is
+not approval.
+
+Deployment caveat: align the live two-secret inventory and control-only token
+instructions under separate explicit deployment and credential-transfer approval.
+This local implementation does not authorize activation.
+Standalone setup tests remain secret-free; Harbor's authorized benchmark agent env
+covers setup and run. Host review constraints are not firewall enforcement.

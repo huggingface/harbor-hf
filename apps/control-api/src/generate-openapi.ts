@@ -88,6 +88,10 @@ function embedSchema(name: string, source: object): Record<string, unknown> {
     components[`${name}_${key}`] = value;
   return JSON.parse(
     JSON.stringify(components)
+      .replaceAll(
+        "agent-workbench-v1.schema.json",
+        "#/components/schemas/WorkbenchRecipe",
+      )
       .replaceAll("launch-pricing-v1.schema.json", "#/components/schemas/LaunchPricing")
       .replaceAll(
         "shared-estimate-v1.schema.json#/$defs/group",
@@ -95,6 +99,44 @@ function embedSchema(name: string, source: object): Record<string, unknown> {
       )
       .replaceAll('"#/$defs/', `"#/components/schemas/${name}_`),
   ) as Record<string, unknown>;
+}
+
+const bindingParameter = {
+  name: "ref",
+  in: "path",
+  required: true,
+  schema: { type: "string", pattern: "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$" },
+} as const;
+function bindingMutation(
+  request: string,
+  response = "InferenceBindings",
+  parameter = true,
+) {
+  return {
+    security: authenticated,
+    ...(parameter ? { parameters: [bindingParameter] } : {}),
+    description:
+      "Operator only; CSRF and write mode required. No query parameters. Revision-checked; Cache-Control: no-store. Values are never accepted or returned.",
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": { schema: { $ref: `#/components/schemas/${request}` } },
+      },
+    },
+    responses: {
+      "200": {
+        description: "Success",
+        content: {
+          "application/json": { schema: { $ref: `#/components/schemas/${response}` } },
+        },
+      },
+      "400": error,
+      "401": error,
+      "403": error,
+      "409": error,
+      "503": error,
+    },
+  };
 }
 
 const embeddedRunRecord = embedSchema("RunRecord", schemas.runRecord);
@@ -112,6 +154,16 @@ const document = {
       bearerToken: { type: "http", scheme: "bearer" },
     },
     schemas: {
+      ...embedSchema("InferenceBindings", schemas.inferenceBindings),
+      ...embedSchema(
+        "InferenceRegistrationRequest",
+        schemas.inferenceRegistrationRequest,
+      ),
+      ...embedSchema("InferenceReviewRequest", schemas.inferenceReviewRequest),
+      ...embedSchema("InferenceApprovalRequest", schemas.inferenceApprovalRequest),
+      ...embedSchema("InferenceStatusRequest", schemas.inferenceStatusRequest),
+      ...embedSchema("InferenceReview", schemas.inferenceReview),
+
       ...embeddedRunRecord,
       ...embedSchema("LaunchPricing", schemas.launchPricing),
       ...embedSchema("SharedEstimate", schemas.sharedEstimate),
@@ -203,62 +255,7 @@ const document = {
           role: { type: "string", enum: ["final", "diagnostic"], default: "final" },
         },
       },
-      WorkbenchRecipe: {
-        type: "object",
-        additionalProperties: false,
-        required: [
-          "schema_version",
-          "name",
-          "setup_command",
-          "run_command",
-          "route_api",
-          "setup_timeout_seconds",
-          "environment",
-          "outputs",
-        ],
-        properties: {
-          schema_version: { const: "v1" },
-          name: { type: "string" },
-          setup_command: { type: "string" },
-          run_command: { type: "string" },
-          route_api: { type: "string", enum: ["chat-completions", "responses"] },
-          setup_timeout_seconds: { type: "integer", minimum: 30, maximum: 3600 },
-          environment: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              required: ["name", "source"],
-              properties: {
-                name: { type: "string" },
-                source: {
-                  type: "string",
-                  enum: [
-                    "literal",
-                    "instruction_path",
-                    "workspace_path",
-                    "logs_path",
-                    "agent_home",
-                    "model_name",
-                    "model_base_url",
-                    "model_api_key",
-                  ],
-                },
-                value: { type: "string" },
-              },
-            },
-          },
-          outputs: {
-            type: "object",
-            additionalProperties: false,
-            required: ["results_path", "trajectory_path"],
-            properties: {
-              results_path: { type: "string" },
-              trajectory_path: { type: ["string", "null"] },
-            },
-          },
-        },
-      },
+      ...embedSchema("WorkbenchRecipe", schemas.agentWorkbenchRecipe),
       WorkbenchSubmission: {
         type: "object",
         additionalProperties: false,
@@ -330,6 +327,35 @@ const document = {
     },
   },
   paths: {
+    "/api/v1/inference-bindings/{ref}/review": {
+      post: bindingMutation("InferenceReviewRequest", "InferenceReview"),
+    },
+    "/api/v1/inference-bindings/{ref}/approve": {
+      post: bindingMutation("InferenceApprovalRequest"),
+    },
+    "/api/v1/inference-bindings/{ref}": {
+      patch: bindingMutation("InferenceStatusRequest"),
+    },
+    "/api/v1/inference-bindings": {
+      post: bindingMutation("InferenceRegistrationRequest", "InferenceBindings", false),
+      get: {
+        security: authenticated,
+        description:
+          "Owner-scoped registration names, current grants and presence, never secret values. No query parameters. Cache-Control: no-store.",
+        responses: {
+          "200": {
+            description: "Visible reviewed references",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/InferenceBindings" },
+              },
+            },
+          },
+          "401": error,
+          "403": error,
+        },
+      },
+    },
     "/api/v1/session": {
       get: { summary: "Read the current session", responses: { "200": ok } },
     },

@@ -1,4 +1,498 @@
 export interface paths {
+    "/api/v1/inference-bindings/{ref}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Operator only; CSRF and write mode required. No query parameters. Revision-checked; Cache-Control: no-store. Values are never accepted or returned. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ref: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InferenceReviewRequest"];
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InferenceReview"];
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inference-bindings/{ref}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Operator only; CSRF and write mode required. No query parameters. Revision-checked; Cache-Control: no-store. Values are never accepted or returned. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ref: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InferenceApprovalRequest"];
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InferenceBindings"];
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/inference-bindings/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Operator only; CSRF and write mode required. No query parameters. Revision-checked; Cache-Control: no-store. Values are never accepted or returned. */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ref: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InferenceStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InferenceBindings"];
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/v1/inference-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Owner-scoped registration names, current grants and presence, never secret values. No query parameters. Cache-Control: no-store. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Visible reviewed references */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InferenceBindings"];
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** @description Operator only; CSRF and write mode required. No query parameters. Revision-checked; Cache-Control: no-store. Values are never accepted or returned. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["InferenceRegistrationRequest"];
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InferenceBindings"];
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/session": {
         parameters: {
             query?: never;
@@ -1702,6 +2196,88 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Inference Bindings V1 */
+        InferenceBindings: {
+            /** @constant */
+            schema_version: "v1";
+            bindings: {
+                ref: string;
+                label: string;
+                /** @enum {unknown} */
+                status: "configured" | "missing" | "disabled";
+                source_env: string;
+                enabled: boolean;
+                grants: {
+                    operator_subjects: string[];
+                    worker_image: string;
+                    agent_import_path: string;
+                    recipe_digest: string;
+                    destination_env: string[];
+                    /** @enum {unknown} */
+                    route_api: "chat-completions" | "responses" | "native";
+                    base_url: string | null;
+                    allowed_hosts: string[];
+                    allowed_models: string[];
+                }[];
+            }[];
+            revision: number;
+        };
+        /** Inference Registration Request V1 */
+        InferenceRegistrationRequest: {
+            expected_revision: number;
+            source_env: string;
+            label: string;
+            reason: string;
+        };
+        /** Inference Review Request V1 */
+        InferenceReviewRequest: {
+            expected_revision: number;
+            recipe: components["schemas"]["WorkbenchRecipe"];
+            model_name: string;
+            base_url: string | null;
+            allowed_hosts: string[];
+        };
+        /** Inference Approval Request V1 */
+        InferenceApprovalRequest: {
+            expected_revision: number;
+            review_id: string;
+            /** @constant */
+            reviewed_confirmation: true;
+            reason: string;
+        };
+        /** Inference Status Request V1 */
+        InferenceStatusRequest: {
+            expected_revision: number;
+            enabled: boolean;
+            reason: string;
+        };
+        /** Inference Review V1 */
+        InferenceReview: {
+            /** @constant */
+            schema_version: "v1";
+            revision: number;
+            review_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            ref: string;
+            source_env: string;
+            label: string;
+            /** @enum {unknown} */
+            presence: "configured" | "missing";
+            recipe: components["schemas"]["WorkbenchRecipe"];
+            grant: {
+                operator_subjects: string[];
+                worker_image: string;
+                agent_import_path: string;
+                recipe_digest: string;
+                destination_env: string[];
+                /** @enum {unknown} */
+                route_api: "chat-completions" | "responses" | "native";
+                base_url: string | null;
+                allowed_hosts: string[];
+                allowed_models: string[];
+            };
+        };
         /** RunRecordV1 */
         RunRecord: {
             /** @constant */
@@ -1943,25 +2519,29 @@ export interface components {
              */
             role: "final" | "diagnostic";
         };
+        /** Agent Workbench recipe v1 */
         WorkbenchRecipe: {
             /** @constant */
             schema_version: "v1";
             name: string;
             setup_command: string;
             run_command: string;
-            /** @enum {string} */
-            route_api: "chat-completions" | "responses";
+            /** @enum {unknown} */
+            route_api: "chat-completions" | "responses" | "native";
             setup_timeout_seconds: number;
-            environment: {
-                name: string;
-                /** @enum {string} */
-                source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
-                value?: string;
-            }[];
-            outputs: {
-                results_path: string;
-                trajectory_path: string | null;
-            };
+            environment: components["schemas"]["WorkbenchRecipe_EnvironmentBinding"][];
+            outputs: components["schemas"]["WorkbenchRecipe_OutputDeclaration"];
+        };
+        WorkbenchRecipe_EnvironmentBinding: {
+            name: string;
+            /** @enum {unknown} */
+            source: "literal" | "instruction_path" | "workspace_path" | "logs_path" | "agent_home" | "model_name" | "model_base_url" | "model_api_key";
+            value?: string;
+            credential_ref?: string;
+        } & unknown;
+        WorkbenchRecipe_OutputDeclaration: {
+            results_path: string;
+            trajectory_path: string | null;
         };
         WorkbenchSubmission: {
             pricing?: components["schemas"]["LaunchPricing"];

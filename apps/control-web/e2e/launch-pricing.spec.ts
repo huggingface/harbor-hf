@@ -137,6 +137,7 @@ function fixture() {
           workbench: { runner: "hf-jobs", setup_enabled: true },
           resources: { spaces: 1, buckets: 1, operator_secrets: 2 },
         },
+        "/api/v1/inference-bindings": { schema_version: "v1", bindings: [] },
         "/api/v1/presets": {
           benchmarks: [
             {
