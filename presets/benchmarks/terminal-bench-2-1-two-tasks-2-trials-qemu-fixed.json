@@ -1,0 +1,29 @@
+{
+  "schema_version": "v1",
+  "benchmark": "terminal-bench-2-1",
+  "preset": "two-tasks-2-trials-qemu-fixed",
+  "leaderboard_eligible": false,
+  "job": {
+    "datasets": [
+      {
+        "repo": "https://github.com/evalstate/terminal-bench-2-1.git@75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e",
+        "path": "tasks",
+        "task_names": ["qemu-startup", "qemu-alpine-ssh"]
+      }
+    ],
+    "n_attempts": 2,
+    "n_concurrent_trials": 2,
+    "environment": {
+      "type": "hf-sandbox",
+      "kwargs": {
+        "flavor": "cpu-upgrade",
+        "job_timeout": "none"
+      }
+    },
+    "agent_timeout_multiplier": 4,
+    "agent_setup_timeout_multiplier": 2,
+    "retry": {
+      "max_retries": 0
+    }
+  }
+}

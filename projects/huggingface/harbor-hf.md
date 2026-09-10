@@ -1042,3 +1042,111 @@ Main integration validation completed (2026-09-10):
   availability hold is unchanged; build success does not prove installation.
 - Publishing this branch integration to PR #200 only. No merge into main,
   deployment, live profile publication, cost correction, jobs or inference.
+
+### QEMU-fixed source and preset publication (2026-09-09)
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user YES: reuse or create the PUBLIC fork
+  https://github.com/evalstate/terminal-bench-2-1 and publish only `qemu-fixed`,
+  based on d49e28f1e4ddd13d289e85a5f312a66750951932 plus the reviewed two-task
+  repair and immutable image references. Never overwrite a conflicting branch.
+- Publish diagnostic, non-leaderboard-eligible `-qemu-fixed` variants of all
+  relevant current Terminal-Bench 2.1 presets and a two-task, two-native-attempt
+  smoke (four logical trials, concurrency two, retries zero). Preserve originals.
+  Push only `feat/qemu-fixed-presets` to the canonical Harbor-HF repository;
+  no PR, default-branch push, merge, deployment, run or model inference.
+- Explicit public privacy exception: the exact GitHub fork above and
+  `ghcr.io/evalstate/harbor-hf-trial-worker` image references may appear in
+  public source, Harbor-HF presets and their authorization/provenance records.
+  No other operator identifiers, credential values, aliases or local paths.
+- Inventory exception: one approved public Git fork is needed because canonical
+  benchmark write access is unavailable and native Harbor needs published task
+  definitions. The canonical control Space and Bucket are unchanged; the
+  existing GHCR package is retained. No additional repository, package, service,
+  paid compute or recurring resource is authorized. Retain pinned source/images
+  until upstream is fixed AND historical retention is satisfied; deletion needs
+  explicit approval. Existing fork identity and parent must match before reuse.
+- Verify image indexes/configs anonymously, source fetchability and native Harbor
+  metadata only. Reuse prior reference-validation evidence without rebuilding
+  or executing containers. No image push, visibility change, credentials sent to
+  a runtime, upstream issue/PR or contact. Preserve unrelated worktrees.
+- Approval is recorded before source implementation or publication. Date denotes
+  this session's direct approval; exact approval time was not supplied.
+
+QEMU-fixed implementation and validation checkpoint (2026-09-09):
+
+- Reused the verified public fork and published only `qemu-fixed` at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e. Baseline and reviewed dependency
+  repair were retained; only the two task image pins and README provenance were
+  added. Anonymous linux/amd64 index/manifest/config checks passed.
+- Native metadata resolved 89, 445 and four trials for the three diagnostic
+  presets. Exactly two effective image/fingerprint changes; 87 peers and native
+  order unchanged. No smoke, container, model, deployment or upstream PR.
+- Passed 1,063 unit and 64 isolated browser tests, formatting, lint, types, build,
+  generated checks, dependency audit, normal Slophammer and DRY. Default-port
+  browser reuse was discarded; absent baseline/mutation tooling is disclosed in
+  docs/terminal-bench-2-1-qemu-fixed.md. Topic publication remains the final step.
+
+QEMU-fixed publication completed (2026-09-09):
+
+- Verified public source branch at 75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e
+  and public Harbor-HF `feat/qemu-fixed-presets` at implementation commit
+  258cedf8a9b041ace3f3bc9087a3f990ed9bc12c. This completion record is the final
+  additive documentation-only commit on that same approved topic branch.
+- Three diagnostic presets are published, not deployed. Native metadata counts,
+  exact image pins, fingerprints and validation limitations are documented in
+  docs/terminal-bench-2-1-qemu-fixed.md. No smoke or other benchmark was launched.
+- No PR, merge, default-branch update, deployment, model inference, new compute,
+  credential transfer, image upload or unrelated worktree change occurred.
+  All managed validation processes ended; the discarded browser process stopped.
+
+### Held-50 QEMU-fixed preset amendment (2026-09-09)
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user request: implement and push the held-50 fixed variant on the
+  existing `feat/qemu-fixed-presets` branch. Record approval before implementation.
+- Add one diagnostic `held-50-1-trial-qemu-fixed` native preset, documentation
+  and focused tests. Verify the exact historical basic-48 plus upgrade-2 union
+  against the held-50 list, not an inferred first-50 selection. Preserve that
+  task set with current HF preset execution defaults, not historical hardware
+  partitioning or provider settings.
+- Local configuration, tests, metadata-only native resolution, commits and push
+  to that existing branch are approved. Retain the already approved public fork
+  and exact image/source references, pinned at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e. Existing privacy exceptions apply
+  only to the previously specified public destinations and values.
+- No PR, merge, deployment, Jobs, inference, source-fork changes, image builds
+  or publication, upstream changes, credential transfers or new resources.
+  Preserve original presets and unrelated worktrees. Keep private selection
+  paths and source hashes outside tracked records. Approval time is unspecified;
+  the timestamp records this session date only.
+
+Held-50 implementation checkpoint (2026-09-09):
+
+- Added only the single-attempt diagnostic preset, exact-membership regression
+  and documentation. Both historical partition unions match the 50-task held
+  list; source hashes remain private. Original presets and source fork unchanged.
+- Pinned native metadata inspection resolved 50 tasks and 50 trials; both QEMU
+  image references match the existing repair, and all 48 other task trees are
+  byte-identical to baseline. No execution or inference occurred.
+- Reviewed native DatasetConfig and Git dataset resolution at the existing Harbor
+  pin and upstream history through 191d1b98; no runtime logic or pin change needed.
+- Passed 1,064 unit tests, 64 isolated browser tests, formatting, lint, types,
+  build, generated checks, dependency audit and normal Slophammer/DRY. Missing
+  baseline and mutation-script limitations persist; no gate was weakened.
+- Publishing only this reviewed amendment on the already approved topic branch.
+  No PR, merge, deployment, Job, upstream change or credential movement.
+
+Held-50 publication completed (2026-09-09):
+
+- Remote topic branch verified at implementation commit
+  ef78513a42d862d7bdd78ee409b3cc774e19a393 after a normal, non-force push.
+  The authorization was committed separately before implementation.
+- Published one held-50 diagnostic preset, not deployed or executed. Fork pin,
+  original presets and unrelated worktrees remain unchanged. No PR was created.
+- All managed validation processes completed. This additive completion record
+  is the final documentation-only commit on the same approved topic branch.
