@@ -1042,3 +1042,35 @@ Main integration validation completed (2026-09-10):
   availability hold is unchanged; build success does not prove installation.
 - Publishing this branch integration to PR #200 only. No merge into main,
   deployment, live profile publication, cost correction, jobs or inference.
+
+### QEMU-fixed source and preset publication (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user YES: reuse or create the PUBLIC fork
+  https://github.com/evalstate/terminal-bench-2-1 and publish only `qemu-fixed`,
+  based on d49e28f1e4ddd13d289e85a5f312a66750951932 plus the reviewed two-task
+  repair and immutable image references. Never overwrite a conflicting branch.
+- Publish diagnostic, non-leaderboard-eligible `-qemu-fixed` variants of all
+  relevant current Terminal-Bench 2.1 presets and a two-task, two-native-attempt
+  smoke (four logical trials, concurrency two, retries zero). Preserve originals.
+  Push only `feat/qemu-fixed-presets` to the canonical Harbor-HF repository;
+  no PR, default-branch push, merge, deployment, run or model inference.
+- Explicit public privacy exception: the exact GitHub fork above and
+  `ghcr.io/evalstate/harbor-hf-trial-worker` image references may appear in
+  public source, Harbor-HF presets and their authorization/provenance records.
+  No other operator identifiers, credential values, aliases or local paths.
+- Inventory exception: one approved public Git fork is needed because canonical
+  benchmark write access is unavailable and native Harbor needs published task
+  definitions. The canonical control Space and Bucket are unchanged; the
+  existing GHCR package is retained. No additional repository, package, service,
+  paid compute or recurring resource is authorized. Retain pinned source/images
+  until upstream is fixed AND historical retention is satisfied; deletion needs
+  explicit approval. Existing fork identity and parent must match before reuse.
+- Verify image indexes/configs anonymously, source fetchability and native Harbor
+  metadata only. Reuse prior reference-validation evidence without rebuilding
+  or executing containers. No image push, visibility change, credentials sent to
+  a runtime, upstream issue/PR or contact. Preserve unrelated worktrees.
+- Approval is recorded before source implementation or publication. Date denotes
+  this session's direct approval; exact approval time was not supplied.
