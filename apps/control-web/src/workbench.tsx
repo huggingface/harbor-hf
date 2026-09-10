@@ -1144,8 +1144,9 @@ export function WorkbenchPage() {
               <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-400">
                 <p>Agent: command-agent · {preview?.revision_id ?? "Unavailable"}</p>
                 <p className="mt-1">
-                  Maximum inference cost per completed trial:{" "}
-                  {formatMoneyUsd(Number(ceiling))}
+                  Campaign inference cost ceiling: {formatMoneyUsd(Number(ceiling))}.
+                  The final request and concurrent work can take the reported total
+                  above this amount.
                 </p>
                 <p className="mt-1">Reasoning setting: Off</p>
               </div>
