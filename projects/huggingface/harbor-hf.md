@@ -1290,6 +1290,48 @@ Held-50 publication completed (2026-09-09):
 - All managed validation processes completed. This additive completion record
   is the final documentation-only commit on the same approved topic branch.
 
+### Simplify viewer freshness and publish focused fix (2026-09-10)
+
+Approved at: 2026-09-10T12:47:48.980153+00:00
+
+- Direct user request: simplify refresh behavior and stale warnings, improve
+  the viewer, push the fix and prepare the PR for merge. Keep ten-second
+  frontend polling and honest exceptional stale/error states. No false fresh
+  observations or execution-state inference. Add regression tests.
+- PR #200 is already merged and there is no open PR for this refresh scope;
+  create one focused PR from current main after implementation, validation,
+  independent privacy/correctness review, commit and push. Monitor CI read-only.
+- Preserve unrelated local provider-credential work; do not fold disabled,
+  incomplete delivery scaffolding into a merge-ready refresh fix. Investigate
+  and explain exact remaining provider setup prerequisites without claiming
+  live support or performing secret transfers.
+- No merge into main, deployment, secret configuration, credentials, live
+  profile publication, benchmark launch, retries, inference or new resources.
+
+Viewer freshness implementation checkpoint (2026-09-10):
+
+- Replaced sampled wall-clock state with render-time measurement; one cleaned-up
+  interval and focus/visibility listeners still expire evidence during hung
+  requests. No new polling loop, backend scan or execution authority added.
+- Recent cached observations survive a transient transport error with a quiet
+  Retry/Retrying action. The existing 60-second age threshold is unchanged;
+  invalid timestamps and genuinely old successful responses remain stale.
+- Corrected obsolete UI/documentation claims: visible browser polling is ten
+  seconds, artifact cache is ten seconds/on demand, reconciler defaults to
+  fifteen seconds with no overlap. None guarantees end-to-end delivery latency.
+- Passed 1076 unit tests and 65 browser tests, formatting, lint, types, build,
+  generated checks, dependency audit, normal Slophammer/DRY and privacy checks.
+  Original clock fails all four deterministic between-tick regressions. Missing
+  baseline/mutation files remain disclosed; no thresholds or budgets changed.
+- Reviewed pinned Harbor job/trial result models and viewer route plus history
+  through 191d1b98. No native execution behavior or pin change required.
+- Independent complete diff review found no implementation/privacy issue;
+  identified stale timing text was corrected and covered by regression tests.
+- Integrate the latest main's independent worker Job-name fix before publication
+  and let PR CI verify the exact combined head; preserve upstream worker behavior.
+- Provider-credential work remains private/local and unconnected to production
+  delivery; do not claim a ready direct-provider benchmark launch path.
+
 ### Digest-pinned image Job-name repair
 
 Status: completed
@@ -1380,6 +1422,32 @@ Wrapper-only publication completed (2026-09-09 session):
 - This completion record changes no runtime source. No SDK repository/PR change,
   deployment, image publication, merge, Job, retry or credential movement occurred.
   Local image and test processes finished. Parent review remains the next action.
+
+### Prominent estimated inference cost (2026-09-10)
+
+Approved at: 2026-09-10T13:37:44.914817+00:00
+
+- Direct user approval: make the shared estimated inference cost prominent when
+  native reported cost is unavailable. Keep explicit Estimated versus Reported
+  labels and original/corrected rates provenance; do not relabel estimates as
+  agent reports, change native costs or alter spend policies.
+- Implement and test the focused display fix on the open refresh PR. Existing
+  approval to commit, push, update PR and prepare it for merge covers this UI
+  refinement. No merge into main, deployment, price mutation or live workload.
+
+Prominent estimate validation checkpoint (2026-09-10):
+
+- Valid shared estimates now headline the inference-cost card when native
+  reported cost is absent, explicitly labelled Estimated with launch/corrected
+  rate provenance. Reported zero remains authoritative; unknown, malformed or
+  unavailable correction histories never fall back to old prices or scenarios.
+- Passed 1093 unit tests, 65 browser tests, 178 agent tests, formatting, lint,
+  types, build, generated checks, dependency audit and both image builds.
+  Independent review passed 28 focused tests and privacy/diff checks.
+- Cost arithmetic, execution policy, rates and original native costs unchanged.
+  Existing global coverage and absent baseline/mutation tooling remain disclosed.
+- Publishing the reviewed display refinement to PR #207 only. No merge,
+  deployment, live pricing edit, provider secret, benchmark run or inference.
 
 ### Six-hour fixed preset suite (2026-09-09)
 
@@ -1552,3 +1620,17 @@ Provider-reference integration ready for PR (2026-09-10):
 - Publish the reviewed source and open its PR only. Provider activation remains
   subject to separate operating-instruction alignment, reviewed worker image
   publication and deployment approval. No real key or remote execution used.
+
+Provider PR freshness-main integration (2026-09-10):
+
+- Integrated main d77ad22 after PR #207 merged. The only textual conflict was
+  competing appended browser tests; retained both complete credential-workflow
+  and delayed-refresh tests. Documentation and authorization histories preserve
+  both branches. No changes to provider execution or saved starter recipes.
+- Passed 1306 unit tests, 69 browser tests, 100 CLI tests at 89.10% coverage,
+  197 agent tests, formatting, lint, types, generated checks, build, dependency
+  audits, privacy, normal Slophammer/DRY and both Docker builds. The browser
+  suite used an isolated server after automatic startup stalled. Existing lint,
+  supplemental coverage and absent baseline/mutation limitations remain.
+- Publish this reviewed integration to existing PR #209 only; no merge into
+  main, deployment, image publication, live key or benchmark execution.

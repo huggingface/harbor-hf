@@ -141,10 +141,12 @@ it("renders native 89/89 completion as 100 percent in summary cards", () => {
     shared_estimate: { cost_usd: 2.5, unavailable_reason: null },
   };
   view.rerender(<RunSummaryCards run={priced} />);
-  expect(screen.getByText("Launch estimate:")).toBeInTheDocument();
+  expect(screen.getByText("Estimated · Launch rates")).toBeInTheDocument();
   expect(screen.getByLabelText("Launch estimate (USD): 2.5")).toBeInTheDocument();
-  expect(screen.getByLabelText("Reported cost (USD): unavailable")).toBeInTheDocument();
-  expect(screen.getByText(/Immutable launch rates/)).toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Reported cost (USD): unavailable"),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText(/Launch rates/)).toBeInTheDocument();
   view.rerender(
     <RunSummaryCards
       run={{
@@ -154,9 +156,7 @@ it("renders native 89/89 completion as 100 percent in summary cards", () => {
     />,
   );
   expect(screen.getByText("Reported usage unavailable or invalid")).toBeInTheDocument();
-  expect(
-    screen.getByLabelText("Launch estimate (USD): unavailable"),
-  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Reported cost (USD): unavailable")).toBeInTheDocument();
   view.rerender(
     <RunSummaryCards
       run={{ ...priced, shared_estimate: { cost_usd: 0, unavailable_reason: null } }}

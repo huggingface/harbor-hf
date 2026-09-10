@@ -956,7 +956,7 @@ for (const width of [1440, 390]) {
     });
     await unknown.focus();
     await expect(tooltip).toHaveText(
-      "Stale — refresh failed\nTask: task-one\nRepeat slot: 2\nState: Unknown / interrupted\nReward: -\nAgent time: −",
+      "Stale — observation is older than one minute or its timestamp is unavailable\nTask: task-one\nRepeat slot: 2\nState: Unknown / interrupted\nReward: -\nAgent time: −",
     );
     await expect(tooltip).not.toContainText("Artifact observation");
 
@@ -2463,4 +2463,61 @@ test("readers cannot see secret management or discover source names", async ({
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Manage secrets" })).toHaveCount(0);
   expect(discoveryReads).toBe(0);
+});
+
+test("delayed observations render fresh between ticks and retry without moving slots", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-09-10T12:00:00Z") });
+  await mockControl(page);
+  const task = { name: "synthetic-task", digest: "sha256:synthetic" };
+  let pending: Route | undefined;
+  await page.route("**/api/v1/runs/*/progress", (route) => {
+    pending = route;
+  });
+  await page.goto(`/runs/${runId}`);
+  const matrix = page.getByRole("region", { name: "Trial progress waffle" });
+  await expect.poll(() => Boolean(pending)).toBe(true);
+  await page.clock.runFor(7_000);
+  const observed = await page.evaluate(() => new Date().toISOString());
+  if (!pending) throw Error("missing request");
+  await json(pending, {
+    observed_at: observed,
+    jobs_observed_at: observed,
+    jobs: [],
+    lock: { trials: Array.from({ length: 9 }, () => ({ task })) },
+    trials: [
+      {
+        trial_name: "synthetic-unfinished",
+        config: {},
+        lock: { task },
+        result: null,
+        reward: null,
+        cost_usd: null,
+      },
+    ],
+  });
+  await expect(matrix.getByRole("cell")).toHaveCount(9);
+  const cell = matrix.getByRole("button", { name: /synthetic-unfinished.*Unfinished/ });
+  await expect(cell).toBeVisible();
+  await expect(matrix.getByText("● Stale")).toHaveCount(0);
+  await cell.focus();
+  const before = await matrix.boundingBox();
+  await page.route("**/api/v1/runs/*/progress", (route) =>
+    route.fulfill({ status: 503, body: "{}" }),
+  );
+  await page.clock.runFor(10_001);
+  await expect(
+    matrix.getByRole("button", { name: "Retry", exact: true }),
+  ).toBeVisible();
+  await expect(cell).toBeFocused();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Refresh failed; recent observation",
+  );
+  await expect(matrix.getByText("● Stale")).toHaveCount(0);
+  expect(await matrix.boundingBox()).toEqual(before);
+  await page.clock.runFor(60_000);
+  await expect(matrix.getByText("● Stale")).toBeVisible();
+  await expect(matrix.getByRole("cell")).toHaveCount(9);
+  expect(await matrix.boundingBox()).toEqual(before);
 });

@@ -82,10 +82,9 @@ export function waffleCells(
   _run: RunView,
   data: TrialProgress,
   now: number,
-  refreshFailed = false,
   previous: readonly WaffleCell[] = [],
 ): WaffleCell[] {
-  const fresh = !refreshFailed && recent(data.observed_at, now);
+  const fresh = recent(data.observed_at, now);
   const groups = new Map<
     string,
     { task: string; digest: string; planned: number; trials: ObservedTrial[] }

@@ -29,6 +29,23 @@ Infrastructure and verifier-bootstrap classifications require upstream typed
 Harbor evidence; this view does not infer them from logs or rewards and never
 changes scores or retries.
 
+Freshness uses the server's `observed_at` against the actual render-time clock,
+not the last browser timer tick or fetch completion time. The shared display
+clock advances during pending requests and on focus/visibility return. A failed
+refresh with recent cached evidence shows a quiet Retry/Retrying control, not
+Stale; artifact cells still describe that evidence, never live execution.
+Observations older than 60 seconds, missing/malformed timestamps, or timestamps
+more than five seconds ahead are stale/unavailable. Without cached data a failed
+request is Unavailable. Successful fetches of an old snapshot do not renew its age.
+
+Ten seconds is the visible-tab polling interval, not a delivery guarantee:
+requests may take longer and polling restarts after completion without catch-up.
+Background tabs may pause or throttle polling. Artifact reads are on demand with
+a 10-second backend cache, regardless of run status. The separate reconciler
+defaults to 15 seconds, is configurable via `HARBOR_HF_RECONCILE_INTERVAL_MS`, and
+skips ticks while a pass is running. Neither interval guarantees update latency.
+New responses render immediately, independently of the age timer.
+
 Run detail also keeps each agent's stored model/route, version, and reasoning
 kwargs together. These are configured values, not verified provider-effective
 settings. See [Run diagnostics and configuration provenance](run-diagnostics.md)
@@ -313,7 +330,7 @@ another completion value.
 The Runs overview remains a list with compact progress counts and native diagnostics;
 it makes no trial-progress requests. The individual run detail page shows a waffle
 beneath the summary cards, before identity and submission. Each task/input digest
-has one labelled row and one compact square per job-lock entry (or per observed
+has one labelled column and one compact square per job-lock entry (or per observed
 trial when no job lock is available). The existing trials table remains available
 for reported agent/model metadata, status, reward, cost, and full trial navigation.
 The waffle’s
@@ -321,7 +338,7 @@ read-only progress endpoint lists native `job/lock.json` trials without deduplic
 repetitions, and observes each trial's `config.json`, `lock.json`, and `result.json`.
 Trial locks supply the durable input digest, including for finalized trials;
 Harbor's legacy result checksum is a different hash and is never equated with a
-lock digest. Task names and lock input digests group display rows. Native
+lock digest. Task names and lock input digests group display columns. Native
 `trial_name` keys remain distinct. When a job lock is available, only its entries
 create planned squares: nine entries always produce nine squares. Current native
 trial locks map by exact task name and input digest, up to that group's capacity.
@@ -340,9 +357,10 @@ nor equivalent repetitions across runs.
 A planned square without a mapped observation is labelled **No mapped observation**,
 not proven queued. A fresh unfinished config/lock is **Unfinished
 artifact observed (live state unknown)**. Neither a live parent nor Harbor's
-aggregate heartbeat establishes per-trial execution. Stale or failed artifact
-refreshes make unfinished observations uncertain. The freshness window is 60
-seconds. Finalized native results supply outcome, reward, and reported cost;
+aggregate heartbeat establishes per-trial execution. Unfinished observations
+become uncertain when their timestamp is stale/unavailable, not merely because a
+refresh failed. The freshness window is 60 seconds, as described above. Finalized
+native results supply outcome, reward, and reported cost;
 missing reward is never scored as zero. Missing cells are **Unknown / not observed**
 unless an available prepared lock excludes that task/input group. A repeated
 trial's absence cannot be inferred from its display slot or a repetition count.
@@ -351,10 +369,12 @@ aggregate authority. No controller or completion behavior reads waffle state.
 
 Parent and child HF Jobs are displayed separately with their provider-observed
 queued/running/stopped/error states and snapshot time. Queued means waiting at HF,
-not a named trial waiting for a particular dependency. Failed reads retain a
-visible stale warning and retry action; cached incomplete cells become uncertain.
-A local freshness timer also expires observations during a hung refresh. Missing or malformed artifacts do not
-become invented successful or zero-reward results.
+not a named trial waiting for a particular dependency. Failed reads retain cached
+evidence with a Retry/Retrying control; Stale depends on observation age and
+timestamp validity. Without cached evidence, failed reads show Unavailable. HF Job
+freshness uses its separate observation timestamp. The display clock also expires
+observations during a hung refresh. Missing or malformed artifacts do not become
+invented successful or zero-reward results.
 
 The API shares artifact snapshots across callers for 10 seconds, coalesces in-flight
 reads per run, and retains at most 64 snapshots (including pending requests). At
@@ -365,8 +385,8 @@ identities. Expired snapshots are re-listed so additions and removals are observ
 a failed refresh invalidates the snapshot and decoded run entries and propagates
 the error, never falling back to stale success. The original artifact observation
 time is retained on cache hits; provider observations are attached independently
-on every response. Visible active rows poll every 15 seconds; terminal rows every
-two minutes. Explicit retry still surfaces fresh read failures.
+on every response. This cache is populated on demand, not by a status-dependent
+background scan. Explicit retry still surfaces read failures.
 
 Boundary review: also inspected `src/harbor/job.py` (resume removes unfinished
 folders and regenerates remaining configs/names) and `src/harbor/trial/trial.py`
@@ -379,11 +399,12 @@ cross-run repeated-trial ordinal. The intervening changes do not add one. This U
 therefore preserves unknown states rather than patching Harbor or changing the pin.
 
 
-The UI requests only the open run, polls active runs every 15 seconds and terminal
-runs every two minutes, and renders 25 task rows per page without splitting repeats.
-Search matches task, input, trial, state, or native exception and retains whole
-matching rows; totals and separate observations remain unfiltered. Navigation to
-another run resets filters, focus/tooltips, and mount-local observation history.
+The waffle requests only the open run, polls every 10 seconds while visible
+regardless of run status, and renders 100 task columns per page without splitting
+repeat rows. Search matches task, input, trial, state, or native exception and
+retains whole matching columns; totals and separate observations remain unfiltered.
+Navigation to another run resets filters, focus/tooltips, and mount-local
+observation history.
 The reader bounds concurrent artifact reads
 and caches unchanged content identities in memory. It exposes only allowlisted
 identity, timing, outcome and cost fields, never raw agent config, credentials,

@@ -1,7 +1,7 @@
 import { configuredTimeouts, RunStatusTiming } from "./agent-timing";
 import type { RunView } from "./api";
-import { LaunchEstimate } from "./launch-pricing";
-import { CostValue, ExactValue } from "./summary-values";
+import { RunInferenceCost } from "./run-inference-cost";
+import { ExactValue } from "./summary-values";
 export { CostValue, ExactValue } from "./summary-values";
 import { RunDiagnosticsSummary } from "./run-diagnostics";
 import {
@@ -94,34 +94,7 @@ export function RunSummaryCards({ run }: { run: RunView }) {
         </dl>
       </Card>
       <Card>
-        <h2>Inference cost</h2>
-        <p className="text-xl">
-          <CostValue value={resultStat(run.result, "cost_usd")} />
-        </p>
-        <p className="text-xs text-slate-400">Reported; may be partial; not billing</p>
-        {run.record.pricing ||
-        run.pricing_corrections ||
-        run.pricing_corrections_available === false ? (
-          <div className="mt-1 text-xs">
-            {run.shared_estimate?.basis === "corrected_rates_reported_usage" ||
-            run.shared_estimate?.basis === "effective_rates_reported_usage"
-              ? "Shared estimate:"
-              : "Launch estimate:"}{" "}
-            <LaunchEstimate run={run} />
-            <p className="text-slate-400">
-              {run.shared_estimate?.unavailable_reason ===
-              "correction_history_unavailable"
-                ? "Correction history unavailable — no launch fallback"
-                : run.shared_estimate?.unavailable_reason === "usage_unavailable"
-                  ? "Reported usage unavailable or invalid"
-                  : run.shared_estimate?.cost_usd == null
-                    ? "Estimate unavailable"
-                    : run.shared_estimate?.basis === "corrected_rates_reported_usage"
-                      ? "Audited corrected rates · reported usage may be partial"
-                      : "Immutable launch rates · reported usage may be partial"}
-            </p>
-          </div>
-        ) : null}
+        <RunInferenceCost run={run} />
       </Card>
     </section>
   );

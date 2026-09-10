@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parentJobTime } from "../src/agent-timing";
 
 const apiMocks = vi.hoisted(() => ({
   getJobs: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("../src/api", () => apiMocks);
 
 import {
   keys,
+  useRunClock,
   useJobs,
   useLeaderboard,
   usePresets,
@@ -122,4 +124,46 @@ describe("control queries", () => {
     expect(apiMocks.getTrials).not.toHaveBeenCalled();
     expect(apiMocks.getTrial).not.toHaveBeenCalled();
   });
+});
+
+it("uses render time between ticks and after throttled visibility/focus return", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-09-10T12:00:00Z"));
+  const start = Date.now();
+  const hook = renderHook(() => {
+    const now = useRunClock();
+    const elapsed = parentJobTime(
+      {
+        id: "parent-test",
+        run_id: "run-test",
+        role: "parent",
+        stage: "running",
+        created_at: new Date(start).toISOString(),
+        started_at: new Date(start).toISOString(),
+        finished_at: null,
+      },
+      now,
+    );
+    return { now, elapsed };
+  });
+  try {
+    vi.setSystemTime(start + 9_000);
+    hook.rerender();
+    expect(hook.result.current.now).toBe(start + 9_000);
+    expect(hook.result.current.elapsed).toBe("Elapsed since start: 9s");
+    // Simulate suspended timers, rather than assuming background intervals run.
+    vi.setSystemTime(start + 120_000);
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    expect(hook.result.current.now).toBe(start + 120_000);
+    vi.setSystemTime(start + 125_000);
+    act(() => window.dispatchEvent(new Event("focus")));
+    expect(hook.result.current.now).toBe(start + 125_000);
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(hook.result.current.now).toBe(start + 135_000);
+    expect(hook.result.current.elapsed).toBe("Elapsed since start: 2m 15s");
+  } finally {
+    hook.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  }
 });

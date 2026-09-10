@@ -25,7 +25,13 @@ export function pricingDescription(pricing: LaunchPricingV1 | undefined): string
     ? `USD/M: input ${pricing.input_usd_per_million}, cached ${pricing.cached_usd_per_million}, output ${pricing.output_usd_per_million}. Input includes cache; cached tokens are charged only at the cached rate.`
     : "Launch pricing was not recorded.";
 }
-export function LaunchEstimate({ run }: { run: RunView }) {
+export function LaunchEstimate({
+  run,
+  compact = false,
+}: {
+  run: RunView;
+  compact?: boolean;
+}) {
   return (
     <Hint
       text={`${pricingDescription(run.pricing_corrections?.revisions.at(-1)?.pricing ?? run.record.pricing)} ${estimateMeaning}`}
@@ -39,13 +45,15 @@ export function LaunchEstimate({ run }: { run: RunView }) {
               : "Launch estimate (USD)"
           }
         />
-        {run.shared_estimate?.basis === "corrected_rates_reported_usage" && (
-          <span className="block text-xs">corrected</span>
-        )}
-        {run.shared_estimate?.unavailable_reason ===
-          "correction_history_unavailable" && (
-          <span className="block text-xs">correction history unavailable</span>
-        )}
+        {!compact &&
+          run.shared_estimate?.basis === "corrected_rates_reported_usage" && (
+            <span className="block text-xs">corrected</span>
+          )}
+        {!compact &&
+          run.shared_estimate?.unavailable_reason ===
+            "correction_history_unavailable" && (
+            <span className="block text-xs">correction history unavailable</span>
+          )}
       </span>
     </Hint>
   );
