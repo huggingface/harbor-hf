@@ -1634,3 +1634,18 @@ Provider PR freshness-main integration (2026-09-10):
   supplemental coverage and absent baseline/mutation limitations remain.
 - Publish this reviewed integration to existing PR #209 only; no merge into
   main, deployment, image publication, live key or benchmark execution.
+
+### Local archived checkout cleanup (2026-09-10)
+
+Approved at: 2026-09-10T19:46:03.593377+00:00
+
+- The user explicitly requested inspecting and deleting unused archived
+  worktree directories after consolidation into the primary checkout.
+- Preserve all branch histories, the saved primary-checkout edits, and compact
+  private backups of unique files, including superseded dashboard edits. Verify
+  recoverability before deleting redundant source copies and rebuildable caches.
+- Use the primary checkout for subsequent work; do not create more worktrees
+  without asking. This supersedes earlier worktree-placement requirements for
+  future local work, without changing their other authorization limits.
+- No branch deletion, public publication, deployment, credential transfer,
+  remote mutation, or paid execution is authorized by this cleanup.
