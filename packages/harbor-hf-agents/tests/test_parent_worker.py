@@ -477,6 +477,7 @@ async def test_labels_the_child_job_atomically(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("HARBOR_HF_NAMESPACE", "test-namespace")
     environment = object.__new__(LabeledHFSandboxEnvironment)
     environment._run_label = RUN_ID
+    environment.environment_name = "test-task"
     await environment.start(False)
 
     assert calls == [
@@ -489,6 +490,7 @@ async def test_labels_the_child_job_atomically(monkeypatch: pytest.MonkeyPatch) 
                 "harbor-hf-run": RUN_ID,
             },
             "namespace": "test-namespace",
+            "name": "harbor-test-task-0a76cd9b6c5c",
         }
     ]
 

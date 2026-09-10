@@ -1192,3 +1192,94 @@ Viewer freshness implementation checkpoint (2026-09-10):
   and let PR CI verify the exact combined head; preserve upstream worker behavior.
 - Provider-credential work remains private/local and unconnected to production
   delivery; do not claim a ready direct-provider benchmark launch path.
+
+### Digest-pinned image Job-name repair
+
+Status: completed
+
+Approved at: 2026-09-10T11:54:20.135423+00:00
+
+- Direct user approval: make a minimal patch and pull request and deploy this low-risk change. Remove the image digest from the readable automatically generated Job name while preserving the actual immutable image reference and invocation hash.
+- Approved: SDK implementation and offline tests, upstream topic-branch publication and matching PR; Harbor-HF temporary SDK backport, tests, topic-branch publication and PR; publish the reviewed existing worker image through the existing workflow and deploy the reviewed revision to the existing user-selected control Space.
+- Preserve explicit names, ownership labels, task inputs, image digests, concurrency, costs, hardware, visibility, Bucket, persistent secrets, run records and unrelated work. Only the deployment source/image references may change as required for this fix.
+- No repository default-branch merge, new resource, benchmark/setup/inference Job, retry, credential movement or historical-result mutation is authorized. Deploy the reviewed topic revision if not merged; do not infer upstream merge permission from deployment approval.
+
+Completed on 2026-09-10:
+
+- SDK PR: https://github.com/huggingface/huggingface_hub/pull/4859,
+  immutable fix `3493b0d86bee92db7c10511c534cec455aa84df6`; 24 offline
+  Jobs tests and SDK quality checks pass. Existing terminal-result PR unchanged.
+- Harbor-HF draft PR: https://github.com/huggingface/harbor-hf/pull/205.
+  CI passed at `4b83cebf95ac52617479a79f67b8d11f8479b2ad`; that exact
+  unmerged topic source was deployed through the existing deployment script.
+- The existing worker workflow published digest
+  `sha256:8bc1364f1d91575d4895af0ead8153689a3d6713556dc3588791fd18fc466388`.
+  The pulled image passed all 46 offline SDK regressions and exact wheel audits.
+- The existing control service is RUNNING with JSON live/ready HTTP 200;
+  release and runtime revisions match. Build logs confirm the locked SDK version
+  and wheel hash. Parent/workbench image references match the published digest;
+  other variables, hardware, visibility and persistent-secret metadata remain
+  unchanged. No Jobs were launched and no active Jobs were observed.
+- Root: 100 tests, 89.10% coverage. Agents: 161 tests; npm: 1,064 tests;
+  browser: 64 tests. Both amd64 images pass offline installed-SDK tests.
+  Existing supplementary agent coverage debt (67.12%) and absent baseline/
+  mutation tooling remain disclosed; no gates were weakened.
+- Neither PR was merged. This local completion record is not part of the
+  deployed source; the PR/deployment source remains the exact commit above.
+
+### Explicit Sandbox Job-name simplification
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user instruction: replace the SDK naming backport with a simple explicit
+  short name in the existing Harbor-HF Sandbox wrapper, updating existing PR #205.
+  The timestamp records the session date, not the time of the original decision.
+- Approved: local adapter implementation, offline regression tests and image
+  builds, commits, normal push to the existing topic branch, and PR description
+  updates after privacy review. Preserve the separate exact terminal-result SDK
+  backport, native Harbor trial identity, immutable image payload and ownership
+  labels. Do not change unrelated work or merge main into the branch unnecessarily.
+- No SDK repository changes or publication, reopening the closed SDK naming PR,
+  merge, deployment, remote image publication, Jobs, retries, inference, credential
+  movement or new resources in this implementation stage. Parent review precedes
+  any later deployment decision; earlier deployment approval is not exercised here.
+
+Wrapper-only implementation checkpoint:
+
+- Replaced the naming backport with seven lines in the existing Sandbox adapter:
+  an explicit, deterministic display name from Harbor's public environment name,
+  capped at 90 characters. Explicit names/name labels and SDK conflict handling
+  remain unchanged; ownership labels, namespace and full image/command payloads
+  are preserved. No persisted field, identity, scheduler or new binding is added.
+- Restored the terminal-only SDK builder, dependency pin, lock and source-audit
+  tests to main exactly. Wheel SHA-256 is
+  `922641bbf132546da041086e73d6cdfca7f13f4e63609580575699396a5a8df1`;
+  only the existing exact terminal-result production patch remains.
+- Checked Harbor environments/base.py and environments/hf_sandbox.py at
+  dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e and history through 191d1b98.
+  This uses public environment_name and HfApi.run_job(name=...), not a Harbor
+  behavior backport. No relevant naming implementation has landed upstream.
+- Root: 100 tests, 89.10% coverage. Agents: 178 tests. Both linux/amd64 images
+  built locally and passed 63 offline cases each (40 terminal, 23 wrapper).
+  All 183 installed SDK Python files match the terminal-only wheel, and each
+  installed wrapper matches reviewed source. Ruff, formatting, ty, root dependency
+  audit, normal Slophammer and DRY passed. The control image typecheck/build passed.
+- Supplementary agent-wide coverage remains below 85% (62.13%; changed adapter
+  87%). The baseline file and mutation script remain absent. No gate was weakened.
+  No TypeScript changed; standalone npm/browser checks were not rerun locally.
+- Ready for publication to existing PR #205 and parent review. This stage did not
+  touch the SDK repository or its PRs, publish an image, deploy, merge, launch Jobs,
+  retry work or move credentials. The earlier deployed source remains unchanged.
+  Historical SDK naming approval/completion entries above are superseded for
+  future work by the wrapper-only authorization, not permission to reopen that PR.
+
+Wrapper-only publication completed (2026-09-09 session):
+
+- Normal push verified implementation `9452bd3d62a4597e6587e9437495379e3376343b`
+  on the existing topic branch. Updated PR #205 title/body to describe only the
+  wrapper naming approach and unchanged terminal backport; draft status and
+  existing empty label set preserved. CI is pending at this checkpoint.
+- This completion record changes no runtime source. No SDK repository/PR change,
+  deployment, image publication, merge, Job, retry or credential movement occurred.
+  Local image and test processes finished. Parent review remains the next action.
