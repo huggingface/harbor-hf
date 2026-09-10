@@ -85,6 +85,8 @@ function matchingOperatorOrganization(
   expectedSubject: string | null,
 ): string | null {
   if (!expectedSubject) return null;
+  // Hugging Face OAuth userinfo identifies organizations with `sub`. The
+  // separate /api/whoami-v2 response uses `id` and is not used in this flow.
   for (const field of ["orgs", "organizations"] as const) {
     const memberships = user[field];
     if (!Array.isArray(memberships)) continue;

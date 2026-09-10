@@ -1,7 +1,7 @@
-import Database from "better-sqlite3";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import {
   authorizationCodeGrant,
   Configuration,
@@ -130,7 +130,7 @@ describe("OAuth callback diagnostics", () => {
     },
   );
 
-  it("does not authorize organization names or unrelated subjects", async () => {
+  it("uses the OAuth organization subject, not whoami ids or names", async () => {
     const orgAuth = new AuthenticationService(
       "oauth",
       store,
@@ -149,8 +149,12 @@ describe("OAuth callback diagnostics", () => {
     vi.mocked(fetchUserInfo).mockResolvedValueOnce({
       sub: "unrelated-user",
       orgs: [
-        { sub: "unrelated-org-subject", name: "fixture-org-subject" },
-        { name: "fixture-org-subject" },
+        {
+          sub: "unrelated-org-subject",
+          id: "fixture-org-subject",
+          name: "fixture-org-subject",
+        },
+        { id: "fixture-org-subject", name: "fixture-org-subject" },
       ],
     });
 
