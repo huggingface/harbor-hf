@@ -50,6 +50,7 @@ const schema = z.object({
   HARBOR_HF_WORKBENCH_RUNNER: z.enum(["disabled", "docker", "hf-jobs"]).optional(),
   HARBOR_HF_WORKBENCH_IMAGE: z.string().min(1).max(1024).optional(),
   HARBOR_HF_BOOTSTRAP_OPERATOR_SUBJECTS: z.string().default(""),
+  HARBOR_HF_OPERATOR_ORG_SUBJECT: z.string().trim().min(1).max(160).optional(),
 });
 
 interface OAuthConfig {
@@ -59,6 +60,7 @@ interface OAuthConfig {
   scopes: string;
   callback_url: string;
   session_ttl_seconds: number;
+  operator_org_subject: string | null;
 }
 
 export interface AppConfig {
@@ -90,6 +92,13 @@ export interface AppConfig {
   workbench_runner: "disabled" | "docker" | "hf-jobs";
   workbench_image: string;
   bootstrap_operator_subjects: string[];
+}
+
+function oauthScopes(value: string, includeMemberships: boolean): string {
+  const scopes = [...new Set(value.split(/\s+/).filter(Boolean))];
+  if (includeMemberships && !scopes.includes("read-memberships"))
+    scopes.push("read-memberships");
+  return scopes.join(" ");
 }
 
 function normalizePublicOrigin(value: string): string {
@@ -158,9 +167,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
       issuer: parsed.OPENID_PROVIDER_URL,
       client_id: parsed.OAUTH_CLIENT_ID,
       client_secret: parsed.OAUTH_CLIENT_SECRET,
-      scopes: parsed.OAUTH_SCOPES,
+      scopes: oauthScopes(
+        parsed.OAUTH_SCOPES,
+        parsed.HARBOR_HF_OPERATOR_ORG_SUBJECT !== undefined,
+      ),
       callback_url: `${publicOrigin}/auth/callback`,
       session_ttl_seconds: 30 * 24 * 60 * 60,
+      operator_org_subject: parsed.HARBOR_HF_OPERATOR_ORG_SUBJECT ?? null,
     };
   }
   return {

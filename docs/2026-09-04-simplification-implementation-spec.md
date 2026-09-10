@@ -178,10 +178,11 @@ each Harbor trial attempt:
 ```
 
 The attempt ID is Harbor's trial result ID. A failure before agent execution
-records zero cost. The cost remains `null` when Harbor cannot report cost after
-agent execution. A null post-agent receipt stops a campaign because safe
-remaining spend cannot be proved. The parent loads all receipts before resume
-and backfills a receipt for each current Harbor trial result. Thus, Harbor can
+records zero cost. The cost remains `null` when Harbor cannot report cost. A
+null receipt contributes zero to the ceiling calculation and does not stop other
+campaign work. This policy does not change the receipt or claim that the
+provider observed zero cost. The parent loads all receipts before resume and
+backfills a receipt for each current Harbor trial result. Thus, Harbor can
 remove a failed retry folder without removing its cost evidence.
 
 The projection validates these receipts and combines them with current Harbor
@@ -288,16 +289,16 @@ same inference secret through the fixed router URL.
 The parent adds one `on_trial_ended` callback. The callback reads the completed
 trial's Harbor cost and writes its immutable attempt receipt before Harbor can
 remove a failed retry folder. A failure before agent execution records zero
-cost. A null cost after agent execution remains null in that receipt and stops
-the campaign because safe remaining spend cannot be proved. The same cost check
+cost. Any null cost remains null in that receipt and contributes zero to the
+ceiling calculation. It does not stop other campaign work. The same cost check
 runs after the parent loads existing receipts and after the callback writes a
 new receipt.
 
 The cost guard compares the sum of all attempt receipts with the campaign
 ceiling. It never divides that ceiling into per-trial limits. Existing immutable
-runs with `cost_ceiling_usd_per_trial` keep their original direct and aggregate
-checks. When the campaign total crosses its ceiling, or a post-agent cost is
-unknown, the parent reads Harbor's current `JobResult`. It raises
+runs with `cost_ceiling_usd_per_trial` keep their direct and aggregate checks and
+use the same null-as-zero rule. When the known campaign total crosses its
+ceiling, the parent reads Harbor's current `JobResult`. It raises
 `CostCeilingExceeded` if more work can spend money or if completion cannot be
 proved. It suppresses the exception only when the
 native total matches the configured job size, completed equals total, running

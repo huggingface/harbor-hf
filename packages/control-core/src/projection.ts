@@ -134,7 +134,6 @@ export function costLimitReached(
 ): boolean {
   const campaignCeiling = record.submission.cost_ceiling_usd;
   if (campaignCeiling !== undefined) {
-    if (attemptCosts.some((cost) => cost === null)) return true;
     return (
       attemptCosts.reduce<number>((sum, cost) => sum + (cost ?? 0), 0) > campaignCeiling
     );
@@ -143,10 +142,7 @@ export function costLimitReached(
   const legacyCeiling = record.submission.cost_ceiling_usd_per_trial;
   if (legacyCeiling === undefined) throw new Error("run record has no cost ceiling");
   if (attemptCosts.some((cost) => cost !== null && cost > legacyCeiling)) return true;
-  const exposure = attemptCosts.reduce<number>(
-    (sum, cost) => sum + (cost ?? legacyCeiling),
-    0,
-  );
+  const exposure = attemptCosts.reduce<number>((sum, cost) => sum + (cost ?? 0), 0);
   const planned = numeric(result?.n_total_trials);
   return planned !== null && planned > 0 && exposure > legacyCeiling * planned;
 }

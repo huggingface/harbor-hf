@@ -22,6 +22,18 @@ describe("control API configuration", () => {
     expect(config.workbench_runner).toBe("disabled");
     expect(config.workbench_image).toBe("python:3.12-slim");
     expect(config.oauth?.session_ttl_seconds).toBe(30 * 24 * 60 * 60);
+    expect(config.oauth?.scopes).toBe("openid profile");
+    expect(config.oauth?.operator_org_subject).toBeNull();
+  });
+
+  it("requests membership data for one stable operator organization", () => {
+    const config = loadConfig({
+      ...environment,
+      OAUTH_SCOPES: "openid profile profile",
+      HARBOR_HF_OPERATOR_ORG_SUBJECT: "fixture-org-subject",
+    });
+    expect(config.oauth?.scopes).toBe("openid profile read-memberships");
+    expect(config.oauth?.operator_org_subject).toBe("fixture-org-subject");
   });
 
   it("normalizes an origin trailing slash before deriving OAuth URLs", () => {

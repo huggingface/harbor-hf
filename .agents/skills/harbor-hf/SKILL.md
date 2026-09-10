@@ -104,7 +104,8 @@ projection. HF Job state is an observation, not the run record.
 The campaign cost ceiling is checked after each trial because Harbor writes the
 result before it calls the end hook. The parent writes one immutable cost receipt
 for each Harbor attempt before Harbor can remove a failed retry folder. It
-reloads these receipts after restart. A missing post-agent cost stops the run.
+reloads these receipts after restart. A missing cost stays null in the receipt
+and contributes zero to the ceiling calculation. It does not stop other work.
 
 The ceiling applies to the sum of all trial-attempt costs in the campaign. It is
 not divided into per-trial limits. With concurrent trials, work that is already
@@ -115,7 +116,7 @@ Treat a run as complete only when:
 - Harbor wrote `job/result.json` with a finished status;
 - no labeled parent or child Job is active;
 - each expected trial has a durable Harbor result;
-- observed trial cost is within the approved limit; and
+- the known trial cost total is within the approved limit; and
 - the projection rebuild gives the same run state.
 
 Only completed `final` runs from a leaderboard-eligible preset, with at least
