@@ -1268,3 +1268,21 @@ Approved at: 2026-09-09T00:00:00Z
   handling, resource creation, image publication or upstream mutation. Preserve
   unrelated worktrees. Run required local validation and privacy review without
   weakening gates. Timestamp denotes session date; exact approval time unknown.
+
+Six-hour suite local preparation checkpoint (2026-09-09 session):
+
+- Added 89/445-trial `with-6h-qemu-fixed` full variants and the 150-trial
+  `held-50-3-trials-qemu-fixed` preset. Held-50 uses the same explicit six-hour
+  agent budget; that choice is documented for parent review before publication.
+- Native override 21600, null max cap and multiplier one survive both compilers
+  and all expanded public JobPlan trials. Inspected pinned Harbor timeout source
+  and history through 191d1b98; existing native support needs no runtime change.
+- All eight old presets are byte-identical; catalog-first default, source/image
+  pins, held-50 membership, diagnostic status and other phase limits preserved.
+- Passed 1,140 unit tests, 64 isolated browser tests, 100 Python tests (89.10%
+  coverage), formatting, lint, types, build, generated checks, dependency audits,
+  normal Slophammer/DRY and privacy checks. Existing lint warnings and supplemental
+  TypeScript coverage below 85% remain; baseline/mutation files are still absent.
+- Local commits and private draft only. No push or PR yet; parent review remains
+  required. No launches, retries, inference, Jobs, merge, deployment, credential
+  transfer, source-fork mutation, new resource or image publication occurred.
