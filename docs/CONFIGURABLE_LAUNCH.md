@@ -136,7 +136,7 @@ ETA remain unavailable without measured evidence.
 
 Both POST bodies are native `JobConfig`, without another request envelope. The
 submission endpoint retains `Idempotency-Key` and
-`X-Harbor-HF-Cost-Ceiling-USD-Per-Trial`. The browser also sends
+`X-Harbor-HF-Cost-Ceiling-USD` for the complete campaign. The browser also sends
 `X-Harbor-HF-Validation` with the fingerprint returned by Validate. A configuration
 or policy change returns 409 and requires another review. CLI callers can still
 use `harbor-hf submit --config ...`; the server performs fresh inspection before
@@ -184,9 +184,9 @@ values stay distinct.
 
 Select **Copy draft link** to share the current editable configuration. Sharing
 is explicit; typing does not put the draft into the address bar. The link opens
-`/runs/new?draft=<URL-encoded JSON>&cost_ceiling_usd_per_trial=<USD>`.
+`/runs/new?draft=<URL-encoded JSON>&cost_ceiling_usd=<USD>`.
 The `draft` value is a native Harbor `JobConfig` object, not a separate form
-format. The cost query uses the existing service field and defaults to USD 1
+format. The cost query is the complete campaign ceiling and defaults to USD 1
 when absent. It is input, not spending approval.
 
 A valid URL draft takes precedence over a saved local draft and is preserved

@@ -980,7 +980,8 @@ export interface paths {
                     "Idempotency-Key": string;
                     /** @description Fingerprint from Validate. A changed configuration or policy returns 409. */
                     "X-Harbor-HF-Validation"?: string;
-                    "X-Harbor-HF-Cost-Ceiling-USD-Per-Trial": number;
+                    /** @description Maximum reported trial-attempt cost for the complete campaign. */
+                    "X-Harbor-HF-Cost-Ceiling-USD": number;
                 };
                 path?: never;
                 cookie?: never;
@@ -1628,8 +1629,11 @@ export interface components {
                     agent: components["schemas"]["RunRecord_slug"];
                     version: string;
                 };
-                cost_ceiling_usd_per_trial: number;
-            };
+                /** @description Maximum reported trial-attempt cost for the complete campaign. Enforcement occurs after each terminal trial attempt and can overshoot through concurrent work. */
+                cost_ceiling_usd?: number;
+                /** @description Legacy per-trial ceiling retained only so immutable existing runs remain readable. */
+                cost_ceiling_usd_per_trial?: number;
+            } & unknown;
             /** @description Immutable Workbench display provenance. Recipe revision is submission.harness.version; execution remains in harbor_job_config. */
             workbench_recipe?: {
                 name: string;
@@ -1811,7 +1815,8 @@ export interface components {
             };
             /** @description Harbor trial concurrency override. */
             n_concurrent_trials?: number;
-            cost_ceiling_usd_per_trial: number;
+            /** @description Maximum reported trial-attempt cost for the complete campaign. Enforcement occurs after terminal attempts and can overshoot through concurrent work. */
+            cost_ceiling_usd: number;
             /**
              * @default final
              * @enum {string}
@@ -1852,7 +1857,8 @@ export interface components {
                 /** @constant */
                 reasoning_effort: "off";
             };
-            cost_ceiling_usd_per_trial: number;
+            /** @description Maximum reported trial-attempt cost for the complete campaign. Enforcement occurs after terminal attempts and can overshoot through concurrent work. */
+            cost_ceiling_usd: number;
             /** @enum {string} */
             role: "final" | "diagnostic";
             workbench: {

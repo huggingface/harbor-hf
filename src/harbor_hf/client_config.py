@@ -12,7 +12,7 @@ from typing import cast
 import yaml
 
 _CONFIG_ENV = "HARBOR_HF_CONFIG_PATH"
-_MAX_COST_CEILING_USD_PER_TRIAL = 10_000.0
+_MAX_CAMPAIGN_COST_CEILING_USD = 10_000.0
 
 
 class ClientConfigError(ValueError):
@@ -21,10 +21,10 @@ class ClientConfigError(ValueError):
 
 @dataclass(frozen=True)
 class SpendLimits:
-    """Optional local bounds for an explicit per-trial cost ceiling."""
+    """Optional local bounds for an explicit campaign cost ceiling."""
 
-    minimum_cost_ceiling_usd_per_trial: float | None = None
-    maximum_cost_ceiling_usd_per_trial: float | None = None
+    minimum_campaign_cost_ceiling_usd: float | None = None
+    maximum_campaign_cost_ceiling_usd: float | None = None
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,7 @@ def _optional_ceiling(value: object, label: str) -> float | None:
     if (
         not math.isfinite(result)
         or result <= 0
-        or result > _MAX_COST_CEILING_USD_PER_TRIAL
+        or result > _MAX_CAMPAIGN_COST_CEILING_USD
     ):
         raise ClientConfigError(f"{label} must be greater than 0 and at most 10000")
     return result
@@ -79,17 +79,17 @@ def _spend_limits(value: object) -> SpendLimits:
         return SpendLimits()
     spend = _mapping(value, "spend")
     allowed = {
-        "minimum_cost_ceiling_usd_per_trial",
-        "maximum_cost_ceiling_usd_per_trial",
+        "minimum_campaign_cost_ceiling_usd",
+        "maximum_campaign_cost_ceiling_usd",
     }
     _reject_unknown(spend, allowed, "spend")
     minimum = _optional_ceiling(
-        spend.get("minimum_cost_ceiling_usd_per_trial"),
-        "spend.minimum_cost_ceiling_usd_per_trial",
+        spend.get("minimum_campaign_cost_ceiling_usd"),
+        "spend.minimum_campaign_cost_ceiling_usd",
     )
     maximum = _optional_ceiling(
-        spend.get("maximum_cost_ceiling_usd_per_trial"),
-        "spend.maximum_cost_ceiling_usd_per_trial",
+        spend.get("maximum_campaign_cost_ceiling_usd"),
+        "spend.maximum_campaign_cost_ceiling_usd",
     )
     if minimum is not None and maximum is not None and minimum > maximum:
         raise ClientConfigError("the minimum cost ceiling cannot exceed the maximum")
@@ -117,18 +117,18 @@ def load_client_config(
 
 
 def validate_cost_ceiling(value: float, config: ClientConfig) -> None:
-    """Reject an explicit per-trial ceiling outside the local policy."""
-    minimum = config.spend.minimum_cost_ceiling_usd_per_trial
-    maximum = config.spend.maximum_cost_ceiling_usd_per_trial
+    """Reject an explicit campaign ceiling outside the local policy."""
+    minimum = config.spend.minimum_campaign_cost_ceiling_usd
+    maximum = config.spend.maximum_campaign_cost_ceiling_usd
     if minimum is not None and value < minimum:
         message = (
-            f"cost ceiling must be at least ${minimum:g} per trial "
+            f"campaign cost ceiling must be at least ${minimum:g} "
             "under the global config"
         )
         raise ClientConfigError(message)
     if maximum is not None and value > maximum:
         message = (
-            f"cost ceiling must be at most ${maximum:g} per trial "
+            f"campaign cost ceiling must be at most ${maximum:g} "
             "under the global config"
         )
         raise ClientConfigError(message)

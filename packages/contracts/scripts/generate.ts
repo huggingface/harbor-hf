@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import standaloneCode from "ajv/dist/standalone/index.js";
 import { build } from "esbuild";
-import { compileFromFile } from "json-schema-to-typescript";
+import { compile, compileFromFile } from "json-schema-to-typescript";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const schemaRoot = join(packageRoot, "schemas");
@@ -20,7 +20,7 @@ const exports: string[] = [
 ];
 for (const file of files) {
   const stem = basename(file, ".schema.json");
-  const output = await compileFromFile(join(schemaRoot, file), {
+  const options = {
     bannerComment: "/* Generated from JSON Schema. Do not edit. */",
     cwd: schemaRoot,
     enableConstEnums: false,
@@ -30,10 +30,23 @@ for (const file of files) {
       semi: true,
       singleQuote: false,
       tabWidth: 2,
-      trailingComma: "all",
+      trailingComma: "all" as const,
     },
     unknownAny: true,
-  });
+  };
+  let output: string;
+  if (file === "run-record-v1.schema.json") {
+    // json-schema-to-typescript drops sibling properties beside nested
+    // conditionals. Keep the runtime schema strict, but omit that conditional
+    // from the generated structural type.
+    const typeSchema = JSON.parse(await readFile(join(schemaRoot, file), "utf8")) as {
+      properties: { submission: { allOf?: unknown } };
+    };
+    delete typeSchema.properties.submission.allOf;
+    output = await compile(typeSchema, stem, options);
+  } else {
+    output = await compileFromFile(join(schemaRoot, file), options);
+  }
   const outputName = `${stem}.ts`;
   const cleanOutput = output.replace(/[ \t]+$/gm, "");
   await writeFile(join(outputRoot, outputName), cleanOutput, "utf8");

@@ -153,7 +153,7 @@ const document = {
       PresetSubmission: {
         type: "object",
         additionalProperties: false,
-        required: ["benchmark", "model", "harness", "cost_ceiling_usd_per_trial"],
+        required: ["benchmark", "model", "harness", "cost_ceiling_usd"],
         properties: {
           benchmark: {
             type: "object",
@@ -184,7 +184,9 @@ const document = {
             },
           },
           n_concurrent_trials: concurrentTrialsSchema,
-          cost_ceiling_usd_per_trial: {
+          cost_ceiling_usd: {
+            description:
+              "Maximum reported trial-attempt cost for the complete campaign. Enforcement occurs after terminal attempts and can overshoot through concurrent work.",
             type: "number",
             exclusiveMinimum: 0,
             maximum: 10000,
@@ -251,13 +253,7 @@ const document = {
       WorkbenchSubmission: {
         type: "object",
         additionalProperties: false,
-        required: [
-          "benchmark",
-          "model",
-          "cost_ceiling_usd_per_trial",
-          "role",
-          "workbench",
-        ],
+        required: ["benchmark", "model", "cost_ceiling_usd", "role", "workbench"],
         properties: {
           pricing: { $ref: "#/components/schemas/LaunchPricing" },
           n_concurrent_trials: concurrentTrialsSchema,
@@ -280,7 +276,9 @@ const document = {
               reasoning_effort: { const: "off" },
             },
           },
-          cost_ceiling_usd_per_trial: {
+          cost_ceiling_usd: {
+            description:
+              "Maximum reported trial-attempt cost for the complete campaign. Enforcement occurs after terminal attempts and can overshoot through concurrent work.",
             type: "number",
             exclusiveMinimum: 0,
             maximum: 10000,
@@ -547,9 +545,11 @@ const document = {
             schema: { type: "string" },
           },
           {
-            name: "X-Harbor-HF-Cost-Ceiling-USD-Per-Trial",
+            name: "X-Harbor-HF-Cost-Ceiling-USD",
             in: "header",
             required: true,
+            description:
+              "Maximum reported trial-attempt cost for the complete campaign.",
             schema: { type: "number", exclusiveMinimum: 0 },
           },
         ],

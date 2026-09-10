@@ -85,7 +85,7 @@ const input = {
   benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
   model: { id: "openai/gpt-oss-20b", provider: "together", reasoning_effort: "off" },
   harness: { agent: "pi", version: "0.84.4" },
-  cost_ceiling_usd_per_trial: 0.25,
+  cost_ceiling_usd: 0.25,
 } as const;
 
 async function submit(key = "test-key") {
@@ -443,7 +443,7 @@ describe("run submission", () => {
     expect(second).toEqual({ created: false, run: first.run });
     await expect(
       service.submitPreset(
-        { ...input, cost_ceiling_usd_per_trial: 0.5 },
+        { ...input, cost_ceiling_usd: 0.5 },
         "test-key",
         "test-subject",
       ),
@@ -786,12 +786,21 @@ describe("status and projection", () => {
     expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [0.2, 0.2])).toBe(
       true,
     );
-    expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [null])).toBe(
-      false,
-    );
+    expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [null])).toBe(true);
     expect(costLimitReached(record, { n_total_trials: 1 }, [cheap], [null, 0.01])).toBe(
       true,
     );
+    const { cost_ceiling_usd: _campaignCeiling, ...identity } = record.submission;
+    const legacyRecord = {
+      ...record,
+      submission: { ...identity, cost_ceiling_usd_per_trial: 0.25 },
+    } satisfies RunRecordV1;
+    expect(costLimitReached(legacyRecord, { n_total_trials: 1 }, [cheap], [null])).toBe(
+      false,
+    );
+    expect(
+      costLimitReached(legacyRecord, { n_total_trials: 1 }, [cheap], [null, 0.01]),
+    ).toBe(true);
     expect(statusFor(record, state, null, [], [])).toBe("queued");
     expect(
       statusFor(
@@ -836,7 +845,7 @@ describe("status and projection", () => {
         [],
         [null],
       ),
-    ).toBe("finished");
+    ).toBe("cost_stopped");
     expect(
       statusFor(
         record,
@@ -1237,7 +1246,7 @@ describe("reconciliation", () => {
     expect(jobs.starts).toBe(1);
   });
 
-  it("restarts a run after a null-cost attempt", async () => {
+  it("stops a campaign after an unknown post-agent cost", async () => {
     const { run } = await submit("unknown-cost");
     const attemptId = "44444444-4444-4444-8444-444444444444";
     await putJson(store, `runs/${run.run_id}/job/result.json`, { n_total_trials: 2 });
@@ -1250,8 +1259,8 @@ describe("reconciliation", () => {
 
     await service.reconcile();
 
-    expect(jobs.starts).toBe(1);
-    expect(projection.run(run.run_id)?.status).toBe("running");
+    expect(jobs.starts).toBe(0);
+    expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
   });
 
   it("rechecks cost receipts after it acquires the run lock", async () => {

@@ -71,7 +71,7 @@ A preset submission creates this immutable record:
       "agent": "pi",
       "version": "0.84.4"
     },
-    "cost_ceiling_usd_per_trial": 0.25
+    "cost_ceiling_usd": 100
   },
   "harbor_job_config": {
     "job_name": "job",
@@ -179,10 +179,10 @@ each Harbor trial attempt:
 
 The attempt ID is Harbor's trial result ID. A failure before agent execution
 records zero cost. The cost remains `null` when Harbor cannot report cost after
-agent execution. Each null receipt reserves the per-trial ceiling in the
-aggregate cost calculation. The parent loads all receipts before resume and
-backfills a receipt for each current Harbor trial result. Thus, Harbor can remove
-a failed retry folder without removing its cost evidence.
+agent execution. A null post-agent receipt stops a campaign because safe
+remaining spend cannot be proved. The parent loads all receipts before resume
+and backfills a receipt for each current Harbor trial result. Thus, Harbor can
+remove a failed retry folder without removing its cost evidence.
 
 The projection validates these receipts and combines them with current Harbor
 trial results by attempt ID. This keeps retry costs after a parent restart
@@ -240,7 +240,7 @@ duplicate converter that the current Harbor source now owns.
 
 `POST /api/v1/runs/config` accepts an operator-supplied Harbor `JobConfig`. The
 CLI command `harbor-hf submit --config job.yaml` uses this route. The CLI also
-requires `--cost-ceiling-usd-per-trial`.
+requires `--cost-ceiling-usd` for the complete campaign.
 
 The service validates the file with a closed form of the pinned Harbor schema.
 It rejects unknown fields, multiple agents and any source job, user agent, local
@@ -288,14 +288,18 @@ same inference secret through the fixed router URL.
 The parent adds one `on_trial_ended` callback. The callback reads the completed
 trial's Harbor cost and writes its immutable attempt receipt before Harbor can
 remove a failed retry folder. A failure before agent execution records zero
-cost. A null cost after agent execution remains null in that receipt and
-reserves the per-trial ceiling for aggregate budget control. The same cost check
+cost. A null cost after agent execution remains null in that receipt and stops
+the campaign because safe remaining spend cannot be proved. The same cost check
 runs after the parent loads existing receipts and after the callback writes a
 new receipt.
 
-When an attempt or aggregate exposure crosses a limit, the parent reads Harbor's
-current `JobResult`. It raises `CostCeilingExceeded` if more work can spend money
-or if completion cannot be proved. It suppresses the exception only when the
+The cost guard compares the sum of all attempt receipts with the campaign
+ceiling. It never divides that ceiling into per-trial limits. Existing immutable
+runs with `cost_ceiling_usd_per_trial` keep their original direct and aggregate
+checks. When the campaign total crosses its ceiling, or a post-agent cost is
+unknown, the parent reads Harbor's current `JobResult`. It raises
+`CostCeilingExceeded` if more work can spend money or if completion cannot be
+proved. It suppresses the exception only when the
 native total matches the configured job size, completed equals total, running
 and pending are zero, and `retry.max_retries` is zero. The same `Job.run()` call
 then performs Harbor's final aggregation and writes `finished_at`.

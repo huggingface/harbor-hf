@@ -24,9 +24,10 @@ restarts a parent Job that stopped early, and polls the Bucket to show status.
 One `run.json` per run replaces the five profile kinds. About 90,000 lines of
 Python that no deployment uses are deleted. Everything lands in one cutover.
 
-**Status.** Proposed and reviewed by the maintainers on 2026-09-04. The design
-decisions below are settled. Two paid tests and one token decision, listed under
-preconditions, must happen before code is written.
+**Status.** This historical plan is superseded by the current
+[Harbor-centered cutover specification](2026-09-04-simplification-implementation-spec.md).
+In particular, new runs use one campaign cost ceiling. The legacy per-trial field
+remains only in immutable runs that were created before the campaign ceiling.
 
 ## Problem
 

@@ -35,7 +35,7 @@ export interface RunSubmission {
   benchmark: { name: string; preset: string };
   model: { id: string; provider: string; reasoning_effort: string };
   harness: { agent: string; version: string };
-  cost_ceiling_usd_per_trial: number;
+  cost_ceiling_usd: number;
 }
 
 export type RunRecord = components["schemas"]["RunRecord"];

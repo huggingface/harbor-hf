@@ -152,7 +152,7 @@ const run: RunView = {
       benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
       model: { id: "publisher/model", provider: "provider", reasoning_effort: "off" },
       harness: { agent: "pi", version: "0.84.4" },
-      cost_ceiling_usd_per_trial: 0.25,
+      cost_ceiling_usd: 0.25,
     },
     harbor_job_config: { job_name: "job" },
   },
@@ -434,7 +434,7 @@ describe("restored control console", () => {
     );
     await user.click(
       scope.getByLabelText(
-        "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+        "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
       ),
     );
     await user.click(scope.getByRole("button", { name: "Launch Harbor run" }));
@@ -493,7 +493,7 @@ describe("restored control console", () => {
     );
     await user.click(
       scope.getByLabelText(
-        "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+        "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
       ),
     );
     const previews = apiMocks.previewWorkbenchRecipe.mock.calls.length;
@@ -510,7 +510,7 @@ describe("restored control console", () => {
     expect(apiMocks.startWorkbenchSetup).toHaveBeenCalledTimes(1);
     await user.click(
       scope.getByLabelText(
-        "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+        "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
       ),
     );
     await user.click(scope.getByRole("button", { name: "Launch Harbor run" }));
@@ -646,7 +646,7 @@ describe("restored control console", () => {
     ).not.toBeChecked();
     expect(
       screen.getByLabelText(
-        "Launch this exact tested recipe and accept the displayed per-trial cost limit.",
+        "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
       ),
     ).not.toBeChecked();
   });

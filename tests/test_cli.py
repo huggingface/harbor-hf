@@ -53,7 +53,7 @@ def test_submit_sends_direct_config_without_printing_token(
             "submit",
             "--config",
             str(config),
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "0.25",
             "--idempotency-key",
             "test-key",
@@ -69,7 +69,7 @@ def test_submit_sends_direct_config_without_printing_token(
     headers = cast(dict[str, str], captured["headers"])
     assert agents[0]["name"] == "pi"
     assert headers["Idempotency-Key"] == "test-key"
-    assert headers["X-Harbor-HF-Cost-Ceiling-USD-Per-Trial"] == "0.25"
+    assert headers["X-Harbor-HF-Cost-Ceiling-USD"] == "0.25"
     assert "test-bearer" not in result.output
 
 
@@ -118,8 +118,8 @@ def test_global_config_blocks_out_of_range_cost_ceilings_before_network(
     global_config.write_text(
         """schema_version: v1
 spend:
-  minimum_cost_ceiling_usd_per_trial: 100
-  maximum_cost_ceiling_usd_per_trial: 1000
+  minimum_campaign_cost_ceiling_usd: 100
+  maximum_campaign_cost_ceiling_usd: 1000
 """,
         encoding="utf-8",
     )
@@ -139,12 +139,12 @@ spend:
             "submit",
             "--config",
             str(job_config),
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "99",
         ],
     )
     assert too_low.exit_code != 0
-    assert "at least $100 per trial" in too_low.output
+    assert "at least $100" in too_low.output
 
     too_high = runner.invoke(
         app,
@@ -163,20 +163,20 @@ spend:
             "pi",
             "--agent-version",
             "1.0.0",
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "1001",
             "--yes",
         ],
     )
     assert too_high.exit_code != 0
-    assert "at most $1000 per trial" in too_high.output
+    assert "at most $1000" in too_high.output
     assert not called
 
     shown = runner.invoke(app, ["config"])
     assert shown.exit_code == 0
     assert json.loads(shown.stdout)["spend"] == {
-        "maximum_cost_ceiling_usd_per_trial": 1000.0,
-        "minimum_cost_ceiling_usd_per_trial": 100.0,
+        "maximum_campaign_cost_ceiling_usd": 1000.0,
+        "minimum_campaign_cost_ceiling_usd": 100.0,
     }
 
 
@@ -192,7 +192,7 @@ def test_invalid_config_stops_before_network(
             "submit",
             "--config",
             str(config),
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "1",
         ],
     )
@@ -265,7 +265,7 @@ def test_rejects_invalid_json_and_malformed_yaml(
             "submit",
             "--config",
             str(config),
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "1",
         ],
     )
@@ -290,7 +290,7 @@ def test_generated_key_is_reported(
             "submit",
             "--config",
             str(config),
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "1",
         ],
     )
@@ -496,7 +496,7 @@ def test_run_submit_supports_reviewed_presets(
             "pi",
             "--agent-version",
             "1.0.0",
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "0.25",
             "--idempotency-key",
             "preset-run",
@@ -558,7 +558,7 @@ def test_run_submit_uses_an_exact_tested_workbench_recipe(
             str(source),
             "--setup-test",
             "setup-one",
-            "--cost-ceiling-usd-per-trial",
+            "--cost-ceiling-usd",
             "0.25",
             "--idempotency-key",
             "workbench-run",
@@ -593,7 +593,7 @@ def test_run_submit_rejects_mixed_or_incomplete_harness_selection(
         "publisher/model",
         "--provider",
         "provider",
-        "--cost-ceiling-usd-per-trial",
+        "--cost-ceiling-usd",
         "0.25",
         "--yes",
     ]

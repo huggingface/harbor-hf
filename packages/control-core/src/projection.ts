@@ -132,14 +132,23 @@ export function costLimitReached(
   trials: readonly TrialSummary[],
   attemptCosts: readonly (number | null)[] = trials.map((trial) => trial.cost_usd),
 ): boolean {
-  const ceiling = record.submission.cost_ceiling_usd_per_trial;
-  if (attemptCosts.some((cost) => cost !== null && cost > ceiling)) return true;
+  const campaignCeiling = record.submission.cost_ceiling_usd;
+  if (campaignCeiling !== undefined) {
+    if (attemptCosts.some((cost) => cost === null)) return true;
+    return (
+      attemptCosts.reduce<number>((sum, cost) => sum + (cost ?? 0), 0) > campaignCeiling
+    );
+  }
+
+  const legacyCeiling = record.submission.cost_ceiling_usd_per_trial;
+  if (legacyCeiling === undefined) throw new Error("run record has no cost ceiling");
+  if (attemptCosts.some((cost) => cost !== null && cost > legacyCeiling)) return true;
   const exposure = attemptCosts.reduce<number>(
-    (sum, cost) => sum + (cost ?? ceiling),
+    (sum, cost) => sum + (cost ?? legacyCeiling),
     0,
   );
   const planned = numeric(result?.n_total_trials);
-  return planned !== null && planned > 0 && exposure > ceiling * planned;
+  return planned !== null && planned > 0 && exposure > legacyCeiling * planned;
 }
 
 export function statusFor(
@@ -178,7 +187,11 @@ function authoritativeAttemptCosts(
     const attemptId = trialAttemptId(trial);
     const receipt = attemptId === null ? undefined : receiptsById.get(attemptId);
     if (!receipt) {
-      costs.push(trial.cost_usd);
+      costs.push(
+        trial.cost_usd === null && !agentExecutionStarted(trial.result)
+          ? 0
+          : trial.cost_usd,
+      );
       continue;
     }
     const preAgentZero =

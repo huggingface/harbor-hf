@@ -23,8 +23,8 @@ def test_missing_global_config_leaves_spend_limits_unspecified(tmp_path: Path) -
 
     assert config.path == path
     assert not config.exists
-    assert config.spend.minimum_cost_ceiling_usd_per_trial is None
-    assert config.spend.maximum_cost_ceiling_usd_per_trial is None
+    assert config.spend.minimum_campaign_cost_ceiling_usd is None
+    assert config.spend.maximum_campaign_cost_ceiling_usd is None
     validate_cost_ceiling(0.25, config)
 
 
@@ -40,20 +40,20 @@ def test_loads_and_enforces_global_spend_limits(tmp_path: Path) -> None:
         path,
         """schema_version: v1
 spend:
-  minimum_cost_ceiling_usd_per_trial: 100
-  maximum_cost_ceiling_usd_per_trial: 1000
+  minimum_campaign_cost_ceiling_usd: 100
+  maximum_campaign_cost_ceiling_usd: 1000
 """,
     )
     config = load_client_config({"HARBOR_HF_CONFIG_PATH": str(path)})
 
     assert config.exists
-    assert config.spend.minimum_cost_ceiling_usd_per_trial == 100
-    assert config.spend.maximum_cost_ceiling_usd_per_trial == 1000
+    assert config.spend.minimum_campaign_cost_ceiling_usd == 100
+    assert config.spend.maximum_campaign_cost_ceiling_usd == 1000
     validate_cost_ceiling(100, config)
     validate_cost_ceiling(1000, config)
-    with pytest.raises(ClientConfigError, match=r"at least \$100 per trial"):
+    with pytest.raises(ClientConfigError, match=r"at least \$100"):
         validate_cost_ceiling(99, config)
-    with pytest.raises(ClientConfigError, match=r"at most \$1000 per trial"):
+    with pytest.raises(ClientConfigError, match=r"at most \$1000"):
         validate_cost_ceiling(1001, config)
 
 
@@ -65,15 +65,15 @@ spend:
         (
             """schema_version: v1
 spend:
-  minimum_cost_ceiling_usd_per_trial: 10
-  maximum_cost_ceiling_usd_per_trial: 5
+  minimum_campaign_cost_ceiling_usd: 10
+  maximum_campaign_cost_ceiling_usd: 5
 """,
             "minimum cost ceiling cannot exceed the maximum",
         ),
         (
             """schema_version: v1
 spend:
-  minimum_cost_ceiling_usd_per_trial: false
+  minimum_campaign_cost_ceiling_usd: false
 """,
             "must be a number",
         ),

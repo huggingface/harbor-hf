@@ -188,12 +188,11 @@ SQLite has three tables:
 The projection combines `run.json`, `state.json`, attempt cost receipts, Harbor
 result files, and Job observations. It deduplicates current results and receipts
 by Harbor trial result ID. Desired cancellation and pause have the highest
-status priority. A reported per-trial overage or an aggregate exposure overage
-comes before normal completion, so an expensive run cannot enter the
+status priority. A campaign total above its ceiling, or an unknown post-agent
+cost, comes before normal completion, so an over-limit run cannot enter the
 leaderboard. This priority still applies when Harbor has written `finished_at`.
-A null cost after agent execution stays unknown and reserves the per-trial
-ceiling in the aggregate calculation. A failure before agent execution records
-zero cost.
+A failure before agent execution records zero cost. Existing immutable runs
+with the legacy per-trial field keep their original projection rules.
 
 The public leaderboard reads finished `final` runs that use an eligible preset
 and have at least one numeric reward. Rows group by benchmark preset, agent and
@@ -208,13 +207,14 @@ credential literals.
 Cost enforcement occurs after a trial result is written. The parent preserves
 an immutable receipt before Harbor can remove a failed retry folder. It reloads
 all receipts after restart and applies the same cost check before `Job.run()`.
-One trial can cross its limit, and concurrent work can finish before
-cancellation. A null cost after agent execution reserves the full per-trial
-ceiling without claiming that amount was observed. A failure before agent
-execution records zero cost.
+The guard compares the sum of attempt costs with one campaign ceiling and never
+divides it into per-trial limits. Concurrent work can finish before
+cancellation, so reported cost can exceed the ceiling. A null cost after agent
+execution stops the campaign without claiming that any amount was observed. A
+failure before agent execution records zero cost.
 
-When reported cost or total observed and reserved exposure crosses a limit, the
-parent reads Harbor's current `JobResult`. It raises immediately if work can
+When the campaign total crosses its ceiling, or a post-agent cost is unknown,
+the parent reads Harbor's current `JobResult`. It raises immediately if work can
 still spend money or if the result does not prove completion. The proof requires
 a matching native total, completed equal to total, zero running and pending
 trials, and zero configured retries. Missing, malformed, inconsistent, or
