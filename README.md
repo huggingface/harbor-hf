@@ -89,6 +89,27 @@ export HARBOR_HF_CONTROL_URL='https://<control-space-host>'
 export HARBOR_HF_CONTROL_BEARER_TOKEN='<service-token>'
 ```
 
+The client can apply machine-wide limits to the explicit per-trial cost ceiling.
+It reads `$XDG_CONFIG_HOME/harbor-hf/config.yaml`, or
+`~/.config/harbor-hf/config.yaml` when `XDG_CONFIG_HOME` is unset. Use
+`HARBOR_HF_CONFIG_PATH` to select a different file.
+
+```yaml
+schema_version: v1
+spend:
+  minimum_cost_ceiling_usd_per_trial: 25
+  maximum_cost_ceiling_usd_per_trial: 500
+```
+
+Both limits are optional. A missing file also means that both limits are
+unspecified. The client rejects an out-of-range submission before it sends a
+request. Run `harbor-hf config` to inspect the effective file and values. Do not
+put credentials in this file.
+
+These local limits do not authorize spending and do not convert a total campaign
+budget into a per-trial limit. They apply only to `harbor-hf` submissions. A
+direct `harbor run` command does not read this file.
+
 Inspect runs and parent Jobs:
 
 ```bash

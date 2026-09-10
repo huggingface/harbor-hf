@@ -10,6 +10,12 @@ import httpx
 import typer
 import yaml
 
+from harbor_hf.client_config import (
+    ClientConfig,
+    ClientConfigError,
+    load_client_config,
+    validate_cost_ceiling,
+)
 from harbor_hf.workbench_cli import (
     TransientControlError,
     read_workbench_recipe,
@@ -107,6 +113,41 @@ def _load_config(path: Path) -> dict[str, object]:
     return value
 
 
+def _client_config() -> ClientConfig:
+    try:
+        return load_client_config()
+    except ClientConfigError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+def _validate_cost_ceiling(value: float) -> None:
+    try:
+        validate_cost_ceiling(value, _client_config())
+    except ClientConfigError as error:
+        raise typer.BadParameter(str(error)) from error
+
+
+@app.command("config")
+def config() -> None:
+    """Show the global Harbor-HF client configuration."""
+    value = _client_config()
+    _echo(
+        {
+            "exists": value.exists,
+            "path": str(value.path),
+            "schema_version": "v1",
+            "spend": {
+                "minimum_cost_ceiling_usd_per_trial": (
+                    value.spend.minimum_cost_ceiling_usd_per_trial
+                ),
+                "maximum_cost_ceiling_usd_per_trial": (
+                    value.spend.maximum_cost_ceiling_usd_per_trial
+                ),
+            },
+        }
+    )
+
+
 @app.command("submit")
 def submit(
     config: Annotated[Path, typer.Option("--config", exists=True, dir_okay=False)],
@@ -117,6 +158,7 @@ def submit(
     idempotency_key: Annotated[str | None, typer.Option("--idempotency-key")] = None,
 ) -> None:
     """Submit one validated Harbor JobConfig."""
+    _validate_cost_ceiling(cost_ceiling_usd_per_trial)
     key = idempotency_key or str(uuid4())
     if not idempotency_key:
         typer.echo(json.dumps({"idempotency_key": key}), err=True)
@@ -173,6 +215,7 @@ def run_submit(  # noqa: C901 -- Keep one Typer command as one validation bounda
         )
     if workbench and reasoning_effort != "off":
         raise typer.BadParameter("Workbench submission requires reasoning effort off")
+    _validate_cost_ceiling(cost_ceiling_usd_per_trial)
     if not yes:
         typer.confirm(
             "Submit this Harbor run with the displayed per-trial cost ceiling?",

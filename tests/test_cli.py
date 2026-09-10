@@ -16,6 +16,11 @@ from harbor_hf.cli import app
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def isolate_global_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HARBOR_HF_CONFIG_PATH", str(tmp_path / "global-config.yaml"))
+
+
 def response(status: int, body: object) -> httpx.Response:
     return httpx.Response(
         status,
@@ -103,6 +108,76 @@ def test_cancel_requires_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
     accepted = runner.invoke(app, ["run", "cancel", "run-abc", "--yes"])
     assert accepted.exit_code == 0
     assert called
+
+
+def test_global_config_blocks_out_of_range_cost_ceilings_before_network(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    configure(monkeypatch)
+    global_config = tmp_path / "global-config.yaml"
+    global_config.write_text(
+        """schema_version: v1
+spend:
+  minimum_cost_ceiling_usd_per_trial: 100
+  maximum_cost_ceiling_usd_per_trial: 1000
+""",
+        encoding="utf-8",
+    )
+    job_config = tmp_path / "job.yaml"
+    job_config.write_text("agents:\n  - name: pi\n", encoding="utf-8")
+    called = False
+
+    def request(*_args: object, **_kwargs: object) -> httpx.Response:
+        nonlocal called
+        called = True
+        return response(201, {})
+
+    monkeypatch.setattr(httpx, "request", request)
+    too_low = runner.invoke(
+        app,
+        [
+            "submit",
+            "--config",
+            str(job_config),
+            "--cost-ceiling-usd-per-trial",
+            "99",
+        ],
+    )
+    assert too_low.exit_code != 0
+    assert "at least $100 per trial" in too_low.output
+
+    too_high = runner.invoke(
+        app,
+        [
+            "run",
+            "submit",
+            "--benchmark",
+            "benchmark",
+            "--preset",
+            "one-task",
+            "--model",
+            "publisher/model",
+            "--provider",
+            "provider",
+            "--agent",
+            "pi",
+            "--agent-version",
+            "1.0.0",
+            "--cost-ceiling-usd-per-trial",
+            "1001",
+            "--yes",
+        ],
+    )
+    assert too_high.exit_code != 0
+    assert "at most $1000 per trial" in too_high.output
+    assert not called
+
+    shown = runner.invoke(app, ["config"])
+    assert shown.exit_code == 0
+    assert json.loads(shown.stdout)["spend"] == {
+        "maximum_cost_ceiling_usd_per_trial": 1000.0,
+        "minimum_cost_ceiling_usd_per_trial": 100.0,
+    }
 
 
 def test_invalid_config_stops_before_network(
