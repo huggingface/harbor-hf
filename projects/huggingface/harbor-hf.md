@@ -1333,7 +1333,7 @@ Published draft PR #208 (https://github.com/huggingface/harbor-hf/pull/208) afte
 
 ### Two-task workdir diagnostic preset amendment (2026-09-09)
 
-Status: approved
+Status: completed
 Approved at: 2026-09-09T00:00:00Z
 
 - Direct user approval: add `prove-plus-comm` and `openssl-selfsigned-cert`
@@ -1360,3 +1360,7 @@ Completion checkpoint (2026-09-09 session):
   absent; no gate was weakened. No Python production or test files changed.
 - Local validation completed; existing PR branch publication follows privacy
   review. No run, deployment, image publication, inference or credentials used.
+
+Completed on 2026-09-09: pushed the addition to existing draft PR #208 and
+updated its body with validation and deployment prerequisites. No launch or
+deployment occurred; existing validation limitations remain disclosed.
