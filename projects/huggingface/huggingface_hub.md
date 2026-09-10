@@ -47,3 +47,14 @@ Approved at: 2026-09-09T17:44:31.882149+00:00
 - No merge, deployment, package/image publication, credential movement or remote
   workload was performed during the integration. Harbor-HF publication remains
   a separate authorized parent-owned action.
+
+### Digest-pinned image Job-name repair
+
+Status: approved
+
+Approved at: 2026-09-10T11:54:20.135423+00:00
+
+- Direct user approval: make a minimal patch and pull request and deploy this low-risk change. Remove the image digest from the readable automatically generated Job name while preserving the actual immutable image reference and invocation hash.
+- Approved: SDK implementation and offline tests, upstream topic-branch publication and matching PR; Harbor-HF temporary SDK backport, tests, topic-branch publication and PR; publish the reviewed existing worker image through the existing workflow and deploy the reviewed revision to the existing user-selected control Space.
+- Preserve explicit names, ownership labels, task inputs, image digests, concurrency, costs, hardware, visibility, Bucket, persistent secrets, run records and unrelated work. Only the deployment source/image references may change as required for this fix.
+- No repository default-branch merge, new resource, benchmark/setup/inference Job, retry, credential movement or historical-result mutation is authorized. Deploy the reviewed topic revision if not merged; do not infer upstream merge permission from deployment approval.
