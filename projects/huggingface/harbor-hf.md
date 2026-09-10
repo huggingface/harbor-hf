@@ -967,3 +967,19 @@ Approved at: 2026-09-10T07:21:57.441003+00:00
 - No push, pull-request update, merge, deployment, live profile publication,
   execution, inference, resource creation, credential movement, or upstream
   publication is approved. Earlier publication approval does not cover this scope.
+
+### Publish reasoning metadata and six-hour budgets; update starter (2026-09-10)
+
+Approved at: 2026-09-10T08:03:19.569001+00:00
+
+- Direct user approval: add completed metadata-only reasoning and native six-hour
+  agent-budget support to existing PR #200, commit and push the changes.
+- Update the default Fast-Agent setup recipe to fast-agent-mcp==0.10.23.
+  Preserve saved/custom recipes and existing run records; update matching
+  default source, tests and documentation, and verify native compatibility.
+- Run relevant validation, inspect the complete diff and public metadata, update
+  PR description and monitor CI read-only. Exact private benchmark profiles
+  and provenance remain outside public source; include only generic support.
+- Supersedes prior local-only restriction for this reviewed combined scope. No
+  merge, deployment, live profile publication, runs, inference, credential
+  movement, new resources or upstream publication.
