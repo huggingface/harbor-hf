@@ -5,6 +5,8 @@ import { InferenceBindingSelector } from "./inference-binding-selector";
 import { isReasoningIntent } from "@harbor-hf/contracts/credentials";
 import {
   emptyLaunchPricing,
+  launchPricingLabels,
+  launchRateError,
   finalizedPricing,
   pricingDescription,
   estimateMeaning,
@@ -37,6 +39,7 @@ import {
 } from "./api";
 import { useControlState } from "./control-state";
 import { PageHeader } from "./layout";
+import { LaunchReadiness, type LaunchChecks } from "./launch-readiness";
 import { cn, formatDate, formatMoneyUsd } from "./lib";
 import { usePresets, useSystem } from "./queries";
 import { Badge, Button, Card, ConcurrentTrialsField, ErrorNotice, Loading } from "./ui";
@@ -488,6 +491,17 @@ export function WorkbenchPage() {
     (recipe.environment.some((binding) => binding.source === "model_base_url") ||
       recipe.environment.some((binding) => binding.credential_ref)) &&
     recipe.environment.some((binding) => binding.source === "model_api_key");
+  const launchChecks: LaunchChecks = {
+    setup_matches: setupMatches,
+    direct_route: hasDirectRoute,
+    confirmed: launchConfirmed,
+    pricing_valid: pricingValid,
+    reasoning_valid: reasoningValid,
+    writes_allowed: writesAllowed,
+    idle: !launching,
+    operator: actor.role === "operator",
+  };
+  const launchBlocked = Object.values(launchChecks).some((passed) => !passed);
   const liveOutput = `${logs.stdout}${logs.stderr ? `\n[stderr]\n${logs.stderr}` : ""}`;
 
   function changeRecipe(next: WorkbenchRecipe) {
@@ -1239,30 +1253,41 @@ export function WorkbenchPage() {
                 {launchPricing.enabled ? (
                   <>
                     <div className="grid gap-2 sm:grid-cols-3">
-                      {(["input", "cached", "output"] as const).map((kind) => (
-                        <label key={kind}>
-                          {kind === "input"
-                            ? "Input incl. cache"
-                            : kind === "cached"
-                              ? "Cached input"
-                              : "Output"}{" "}
-                          USD/M
-                          <input
-                            className={fieldClass()}
-                            type="text"
-                            inputMode="decimal"
-                            required
-                            value={launchPricing[kind]}
-                            onChange={(event) => {
-                              setLaunchPricing({
-                                ...launchPricing,
-                                [kind]: event.target.value,
-                              });
-                              setLaunchConfirmed(false);
-                            }}
-                          />
-                        </label>
-                      ))}
+                      {(["input", "cached", "output"] as const).map((kind) => {
+                        const error = launchRateError(launchPricing[kind]);
+                        return (
+                          <label key={kind}>
+                            {launchPricingLabels[kind]} USD/M
+                            <input
+                              className={fieldClass()}
+                              aria-label={`${launchPricingLabels[kind]} USD/M`}
+                              aria-invalid={error !== null}
+                              aria-describedby={
+                                error ? `launch-price-${kind}-error` : undefined
+                              }
+                              type="text"
+                              inputMode="decimal"
+                              required
+                              value={launchPricing[kind]}
+                              onChange={(event) => {
+                                setLaunchPricing({
+                                  ...launchPricing,
+                                  [kind]: event.target.value,
+                                });
+                                setLaunchConfirmed(false);
+                              }}
+                            />
+                            {error && (
+                              <span
+                                id={`launch-price-${kind}-error`}
+                                className="mt-1 block text-xs text-amber-200"
+                              >
+                                {error}
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
                     </div>
                     {!pricingValid ? (
                       <p role="status">
@@ -1291,18 +1316,11 @@ export function WorkbenchPage() {
                 ceiling.
               </label>
               {launchError ? <ErrorNotice error={launchError} /> : null}
+              <LaunchReadiness checks={launchChecks} pricing={launchPricing} />
               <Button
                 className="w-full"
-                disabled={
-                  !setupMatches ||
-                  !hasDirectRoute ||
-                  !launchConfirmed ||
-                  !pricingValid ||
-                  !reasoningValid ||
-                  !writesAllowed ||
-                  launching ||
-                  actor.role !== "operator"
-                }
+                disabled={launchBlocked}
+                aria-describedby="workbench-launch-readiness"
                 type="submit"
               >
                 <PlayCircle size={16} aria-hidden="true" />

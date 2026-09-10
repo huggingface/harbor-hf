@@ -1742,3 +1742,20 @@ Pricing repair continuation checkpoint:
 - Reuse the existing worker image for this frontend-only change. No image
   publication, grant mutation, retry, inference or new run is needed. Prepare
   the reviewed source before any separately checked rollout.
+
+Local pricing diagnostic validation:
+
+- All eight launch-button gates remain unchanged and are now displayed as
+  explicit blockers. Rate fields distinguish missing values from invalid
+  numeric input and retain the existing schema-backed submission validation.
+- Copyable diagnostics project only fixed validation flags, numeric rates,
+  and blank/invalid/valid states. Raw inputs and extra object fields are
+  excluded; clipboard failure leaves a manual-copy summary available.
+- 1334 TypeScript tests and 69 browser tests pass, including fractional rates,
+  invalid decimal separators, diagnostic projection and clipboard fallback.
+  Formatting, lint, types, build, generated contracts, dependency audit, normal
+  Slophammer check and DRY pass. The control image builds locally.
+- Independent review found no blockers. The baseline and mutation commands
+  remain unavailable because their files are absent; no gate was weakened.
+- No remote change was made. The reported user-specific pricing failure is
+  still unconfirmed; these diagnostics are intended to identify its exact gate.

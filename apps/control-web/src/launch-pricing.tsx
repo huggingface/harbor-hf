@@ -1,12 +1,23 @@
 import type { LaunchPricingV1 } from "@harbor-hf/contracts";
 import type { RunView, LeaderboardRow } from "./api";
 import validatePricing from "./generated/launch-pricing-validator.js";
-import { parseRate } from "./pricing";
+import { MAX_TOKEN_RATE, parseRate } from "./pricing";
 import { CostValue } from "./summary-values";
 import { Hint } from "./ui";
 import type { WorkbenchDraft } from "./workbench-draft";
 
+export const launchPricingLabels = {
+  input: "Input incl. cache",
+  cached: "Cached input",
+  output: "Output",
+} as const;
 export const emptyLaunchPricing = { enabled: false, input: "", cached: "", output: "" };
+export function launchRateError(text: string): string | null {
+  if (!text.trim()) return "Enter a rate. Blank is not zero.";
+  return parseRate(text) === null
+    ? `Use a number from 0 to ${MAX_TOKEN_RATE.toLocaleString("en-US")}, such as 0.006 (decimal point).`
+    : null;
+}
 export function finalizedPricing(
   draft: NonNullable<WorkbenchDraft["pricing"]>,
 ): LaunchPricingV1 | null {

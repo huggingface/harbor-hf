@@ -270,8 +270,35 @@ for (const enabled of [true, false])
     const previews = shared.previews();
     if (enabled) {
       await page.getByLabel(confirmation).check();
-      await page.getByLabel("Cached input USD/M").fill("0.006");
+      await page.getByLabel("Cached input USD/M").fill("0,006");
       await page.getByLabel("Output USD/M").fill("8");
+      await page.getByLabel(confirmation).check();
+      await expect(page.getByLabel("Cached input USD/M")).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      await expect(
+        page.getByText(
+          "Use a number from 0 to 1,000,000, such as 0.006 (decimal point).",
+        ),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Launch Harbor run" }),
+      ).toBeDisabled();
+      await page.getByText("Show launch checks (no secrets)").click();
+      const diagnostic: unknown = JSON.parse(
+        await page.getByLabel("Launch diagnostic summary").inputValue(),
+      );
+      expect(diagnostic).toMatchObject({
+        checks: { pricing_valid: false, confirmed: true },
+        pricing: { rates: { cached: { state: "invalid", usd_per_million: null } } },
+      });
+      expect(shared.submission()).toBeUndefined();
+      await page.getByLabel("Cached input USD/M").fill("0.006");
+      await expect(page.getByLabel("Cached input USD/M")).toHaveAttribute(
+        "aria-invalid",
+        "false",
+      );
       await expect(page.getByLabel(confirmation)).not.toBeChecked();
       await expect(page.getByText("Setup passed")).toBeVisible();
       expect(shared.previews()).toBe(previews);
