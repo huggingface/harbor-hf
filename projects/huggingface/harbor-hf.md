@@ -1074,3 +1074,17 @@ Approved at: 2026-09-09T00:00:00Z
   a runtime, upstream issue/PR or contact. Preserve unrelated worktrees.
 - Approval is recorded before source implementation or publication. Date denotes
   this session's direct approval; exact approval time was not supplied.
+
+QEMU-fixed implementation and validation checkpoint (2026-09-09):
+
+- Reused the verified public fork and published only `qemu-fixed` at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e. Baseline and reviewed dependency
+  repair were retained; only the two task image pins and README provenance were
+  added. Anonymous linux/amd64 index/manifest/config checks passed.
+- Native metadata resolved 89, 445 and four trials for the three diagnostic
+  presets. Exactly two effective image/fingerprint changes; 87 peers and native
+  order unchanged. No smoke, container, model, deployment or upstream PR.
+- Passed 1,063 unit and 64 isolated browser tests, formatting, lint, types, build,
+  generated checks, dependency audit, normal Slophammer and DRY. Default-port
+  browser reuse was discarded; absent baseline/mutation tooling is disclosed in
+  docs/terminal-bench-2-1-qemu-fixed.md. Topic publication remains the final step.
