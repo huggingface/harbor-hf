@@ -983,3 +983,26 @@ Approved at: 2026-09-10T08:03:19.569001+00:00
 - Supersedes prior local-only restriction for this reviewed combined scope. No
   merge, deployment, live profile publication, runs, inference, credential
   movement, new resources or upstream publication.
+
+PR additions validation checkpoint (2026-09-10):
+
+- Completed metadata-only reasoning and native per-trial six-hour agent-budget
+  support. Safe reasoning text persists verbatim; credential-bearing draft text
+  is removed at storage/load boundaries. Native override, multiplier and cap
+  semantics are tested through both compilers, with other phase budgets intact.
+- Updated matching default setup recipes to fast-agent-mcp==0.10.23; regression
+  tests preserve previously saved versions and exact browser/server parity.
+- Passed 1051 unit tests, 64 browser tests, 51 CLI tests with 88.35% coverage,
+  155 agent tests, formatting, lint, types, builds, dependency audits and both
+  Docker builds. Generated files are deterministic. Normal Slophammer DRY and
+  privacy checks pass; baseline/mutation files and global coverage gaps remain.
+- Independent review passed 254 targeted TypeScript and 22 CLI tests and cleared
+  the complete addition diff and metadata for privacy and static correctness.
+- Fast-Agent public v0.10.23 source tag exists and reviewed CLI/routing/output
+  paths remain compatible. PyPI version endpoint returned 404 during review;
+  default package installation is not verified and blocks deployment readiness.
+- Updated main has a CLI conflict; no integration merge performed under this
+  scope. Reconciliation must retain upstream cost validation without restoring
+  the old Workbench reasoning-off restriction. Disclose both holds in PR #200.
+- Publishing approved source additions only. No merge, deployment, live profile
+  publication, rate correction, run, inference or credential movement.

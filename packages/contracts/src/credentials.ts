@@ -34,3 +34,12 @@ export function containsCredentialMaterial(value: unknown, key = ""): boolean {
     containsCredentialMaterial(child, childKey),
   );
 }
+
+// Workbench intent only: never normalize text or compile it into agent settings.
+export function isReasoningIntent(value: string): boolean {
+  return (
+    value.length <= 160 &&
+    !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value) &&
+    !containsCredentialMaterial(value)
+  );
+}

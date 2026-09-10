@@ -824,6 +824,57 @@ describe("control API", () => {
   });
 
   it.each([
+    undefined,
+    "100",
+    "75",
+    "high",
+    "  arbitrary future  ",
+    "",
+    "   ",
+    "off",
+    "bad\nvalue",
+    "bad\u0085value",
+    "bad\u202evalue",
+    "x".repeat(161),
+    "hf_" + "x".repeat(24),
+  ])("admits only safe verbatim reasoning metadata: %j", async (reasoning_effort) => {
+    const { runtime, app } = await setup();
+    await runtime.initialize();
+    const attest = vi.spyOn(runtime.workbench, "attestPassedSetup").mockResolvedValue({
+      setup_test_id: workbenchSetup.setup_test_id,
+      recipe_digest: workbenchSetup.recipe_digest,
+      revision_id: workbenchSetup.revision_id,
+      completed_at: "2026-01-01T00:00:00Z",
+      expires_at: "2026-01-01T01:00:00Z",
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      headers: { "idempotency-key": "reasoning-intent" },
+      payload: {
+        benchmark: submission.benchmark,
+        model: { ...submission.model, reasoning_effort },
+        cost_ceiling_usd_per_trial: 1,
+        role: "diagnostic",
+        workbench: {
+          recipe: workbenchRecipe,
+          setup_test_id: workbenchSetup.setup_test_id,
+        },
+      },
+    });
+    const invalid =
+      reasoning_effort?.startsWith("bad") ||
+      (reasoning_effort?.length ?? 0) > 160 ||
+      reasoning_effort?.startsWith("hf_");
+    expect(response.statusCode).toBe(invalid ? 400 : 201);
+    if (invalid) expect(attest).not.toHaveBeenCalled();
+    else
+      expect(response.json().run.submission.model.reasoning_effort).toBe(
+        reasoning_effort ?? "off",
+      );
+  });
+
+  it.each([
     { model_name: "model", env: { OPENAI_API_KEY: "fixture" } },
     { model_name: "model", import_path: "other.module:Agent" },
     { model_name: "" },

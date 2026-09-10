@@ -102,8 +102,8 @@
                   },
                   "reasoning_effort": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 40
+                    "maxLength": 160,
+                    "pattern": "^[^\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]*$"
                   }
                 }
               },
@@ -1193,8 +1193,7 @@
             "additionalProperties": false,
             "required": [
               "id",
-              "provider",
-              "reasoning_effort"
+              "provider"
             ],
             "properties": {
               "id": {
@@ -1204,7 +1203,10 @@
                 "type": "string"
               },
               "reasoning_effort": {
-                "const": "off"
+                "type": "string",
+                "maxLength": 160,
+                "default": "off",
+                "description": "Verbatim metadata-only intent. Empty text means unset; omitted values retain legacy off. Recipe alone controls execution. Controls and credentials are rejected."
               }
             }
           },

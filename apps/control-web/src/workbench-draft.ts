@@ -1,3 +1,4 @@
+import { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
 import { z } from "zod";
 
 export const workbenchDraftKey = "harbor-hf.workbench.draft.v1";
@@ -49,17 +50,47 @@ const draftSchema = z.object({
   model: z.string(),
   harbor_agent: z.object({ model_name: z.string() }).optional(),
   provider: z.string(),
+  reasoning_effort: z.string().optional(),
   ceiling: z.string(),
   role: z.enum(["final", "diagnostic"]),
 });
 
 export type WorkbenchDraft = z.infer<typeof draftSchema>;
 
+// Keep incomplete safe edits verbatim; submission validation is stricter.
+// Remove only reasoning, including from older drafts with unrecognized fields.
+function withoutCredentialReasoning(value: unknown): unknown {
+  if (
+    value &&
+    typeof value === "object" &&
+    "reasoning_effort" in value &&
+    containsCredentialMaterial(value.reasoning_effort)
+  ) {
+    const { reasoning_effort: _reasoning, ...rest } = value;
+    return rest;
+  }
+  return value;
+}
+
 export function loadWorkbenchDraft(): WorkbenchDraft | null {
   try {
-    const parsed = draftSchema.safeParse(
-      JSON.parse(window.localStorage.getItem(workbenchDraftKey) ?? "null"),
+    const stored: unknown = JSON.parse(
+      window.localStorage.getItem(workbenchDraftKey) ?? "null",
     );
+    const safe = withoutCredentialReasoning(stored);
+    if (safe !== stored) {
+      try {
+        window.localStorage.setItem(workbenchDraftKey, JSON.stringify(safe));
+      } catch {
+        // If rewriting is blocked, try to remove the contaminated copy.
+        try {
+          window.localStorage.removeItem(workbenchDraftKey);
+        } catch {
+          // Unavailable storage must not restore unsafe reasoning into the UI.
+        }
+      }
+    }
+    const parsed = draftSchema.safeParse(safe);
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
@@ -68,7 +99,10 @@ export function loadWorkbenchDraft(): WorkbenchDraft | null {
 
 export function saveWorkbenchDraft(draft: WorkbenchDraft): boolean {
   try {
-    window.localStorage.setItem(workbenchDraftKey, JSON.stringify(draft));
+    window.localStorage.setItem(
+      workbenchDraftKey,
+      JSON.stringify(withoutCredentialReasoning(draft)),
+    );
     return true;
   } catch {
     return false;

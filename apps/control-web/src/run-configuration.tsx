@@ -13,6 +13,16 @@ export function RunConfiguration({ record }: { record: RunRecord }) {
         options are preserved in JobConfig below, not interpreted here.
         Provider-effective reasoning and sampling are not established by these records.
       </p>
+      <dl className="mt-3 text-sm">
+        <dt className="text-slate-400">
+          Recorded reasoning intent (submission metadata)
+        </dt>
+        <dd className="whitespace-pre-wrap break-all text-slate-200">
+          {record.submission?.model?.reasoning_effort === ""
+            ? "Unset (empty text)"
+            : (record.submission?.model?.reasoning_effort ?? "Unavailable")}
+        </dd>
+      </dl>
       {agents.length === 0 ? (
         <p className="mt-3 text-sm text-slate-400">Agent configuration unavailable.</p>
       ) : (

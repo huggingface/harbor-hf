@@ -4,6 +4,7 @@ import {
   PresentationUpdateError,
 } from "@harbor-hf/control-core";
 import { readFile } from "node:fs/promises";
+import { isReasoningIntent } from "@harbor-hf/contracts/credentials";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
@@ -77,7 +78,14 @@ const workbenchSubmissionSchema = submissionSchema
       .object({
         id: z.string().min(1).max(320),
         provider: providerSchema,
-        reasoning_effort: z.literal("off").default("off"),
+        reasoning_effort: z
+          .string()
+          .max(160)
+          .refine(
+            isReasoningIntent,
+            "Reasoning intent must be control-free and credential-free",
+          )
+          .default("off"),
       })
       .strict(),
     workbench: z

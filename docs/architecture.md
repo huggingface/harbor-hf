@@ -121,8 +121,10 @@ on unavailable history without blocking execution. See
 
 Benchmark presets contain a safe Harbor job fragment. They can select datasets,
 attempts, trial concurrency, timeout multipliers, retry, and artifacts. They
-cannot set paths, agents, credentials, user agents, source jobs, or a custom
-environment.
+cannot set paths, agent identity, credentials, user agents, source jobs, or a custom
+environment. An optional single native `agents` timing fragment may set only
+`override_timeout_sec` and `max_timeout_sec`; both compilers merge it into the
+reviewed agent without changing setup, identity, environment or kwargs.
 
 Agent presets select one Harbor agent or import path, a fixed version, allowed
 reasoning values, and nonsecret options. A request cannot override the preset

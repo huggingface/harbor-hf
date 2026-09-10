@@ -38,7 +38,7 @@ record non-attestable, so the operator must run the test again.
 
 ## Fast-Agent starter connection defaults
 
-The Fast-Agent 0.10.21 starter uses its native HF provider routing and does not
+The Fast-Agent 0.10.23 starter uses its native HF provider routing and does not
 pass `--base-url`. The existing `MODEL_BASE_URL` binding remains only because
 hosted launch admission currently requires a `model_base_url` binding.
 
@@ -132,8 +132,29 @@ records, retry settings, hardware, budgets, and attempts are not rewritten.
 
 ## Fast-agent HF routing
 
-The reviewed fast-agent starter installs `fast-agent-mcp==0.10.21` and uses
+The reviewed fast-agent starter installs `fast-agent-mcp==0.10.23` and uses
 fast-agent's native Hugging Face adapter.
+
+This default-only update does not migrate saved/custom recipes or existing runs.
+The setup pin is the only script change; invocation, environment bindings, output
+paths, and metadata-only reasoning semantics remain unchanged. Source review of
+Fast-Agent tags v0.10.21 through v0.10.23 checked `pyproject.toml`,
+`src/fast_agent/cli/commands/go.py`, `cli/shared_options.py`,
+`cli/runtime/agent_setup.py`, `llm/model_factory.py`,
+`llm/provider_key_manager.py`, and `llm/provider/openai/llm_huggingface.py`
+(paths after the first CLI file are relative to `src/fast_agent/`). The CLI still
+accepts the starter's model, prompt-file, workspace, home, results, trajectory,
+shell and quiet options; native HF routing and inference-key mapping are intact.
+The intervening changes concern terminal UI, Codex authentication and native
+DeepSeek defaults, not this explicit HF route. This is source compatibility
+review, not a live inference or package-install verification.
+
+Harbor's `src/harbor/agents/installed/base.py` at pinned `dcd0a7ac` retains
+installation and execution authority through `setup`, `install`, and
+`exec_as_agent`; the existing command-agent adapter is unchanged. Reviewed
+upstream history through `191d1b98` adds no required behavior for this recipe pin,
+so this update needs neither a Harbor pin bump nor an execution patch.
+
 The guided Run form separates evaluation labels from execution:
 
 - **Recorded model** is the identity saved in `submission.model.id`. It does not
@@ -290,3 +311,57 @@ The FX starter uses its original Vercel AI Gateway assumptions. It can be
 setup-tested, but it cannot start a Harbor run until its recipe declares the
 direct model route and credential bindings required by Harbor-HF. This prevents
 an inference credential from going to an unintended endpoint.
+
+## Recorded reasoning intent
+
+Workbench accepts free text in the existing `submission.model.reasoning_effort`.
+It is metadata only, not a provider parameter or capability declaration. The
+compiler never appends it to model strings, environment variables, commands or
+kwargs; the exact tested recipe remains execution authority. Native agent preset
+reasoning options on Overview are unchanged.
+
+Text is preserved verbatim, including spaces and numeric-looking values such as
+`100` and `75`. Empty text explicitly means unset; whitespace-only text is retained,
+not silently normalized. Omitted API values and older browser drafts retain the
+legacy `off` default. The limit is 160 characters; Unicode controls/formatting and
+line/paragraph separators, plus recognizable credential material, are rejected.
+The CLI passes the exact string to the same service validation. Drafts persist
+intent outside the recipe, and run detail labels it as submission metadata rather
+than effective reasoning. Intent changes require renewed launch confirmation but
+not another setup test. Existing recipes and immutable submissions are untouched.
+
+## Native per-agent execution budgets
+
+Benchmark presets may now contain a single native `job.agents` fragment with only
+`override_timeout_sec` and `max_timeout_sec` (positive seconds or null). This is a
+restricted subset of Harbor AgentConfig, not an additional preset timeout field.
+The benchmark owns these execution timing values; the selected reviewed agent or
+Workbench recipe owns identity, environment, kwargs and setup timeout. Both
+compilers preserve the timing fragment when constructing that one reviewed agent.
+Multiple fragments and arbitrary agent configuration are rejected. This narrow
+merge trades the old prohibition on benchmark agent fragments for native timing
+expressiveness without exposing an alternative agent authority.
+
+For six hours of agent execution replacing task-specific budgets, use:
+
+```json
+{
+  "agents": [{ "override_timeout_sec": 21600, "max_timeout_sec": null }],
+  "agent_timeout_multiplier": 1
+}
+```
+
+Harbor applies the override instead of the task budget, the cap before the
+multiplier, and the explicit phase multiplier instead of the global multiplier.
+A null cap does not shorten this budget. Setup, verifier, environment build and
+whole-Job lifetime are independent and unchanged; infrastructure lifetime and
+cost stops can still interrupt execution. No timeout is resolved locally.
+
+Reviewed pinned Harbor `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`:
+`src/harbor/models/job/config.py`, `src/harbor/models/trial/config.py`, and
+`src/harbor/trial/trial.py`. Public configuration authority is JobConfig and its
+AgentConfig fields. Fresh upstream history through `191d1b98` retains this timing
+behavior; newer validation/dry-run changes do not supply missing behavior here.
+No upstream gap, pin update or execution patch is needed for this scope.
+Registry task membership remains Harbor-owned: no task counter, resolver or
+benchmark/model/harness-specific branch is added to the compilers.

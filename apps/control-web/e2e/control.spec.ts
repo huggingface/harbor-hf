@@ -521,6 +521,8 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
     .getByLabel("Harness model string", { exact: true })
     .fill("hf.publisher/runtime-model:together");
   await page.getByLabel("Recorded provider (optional)").fill("provider");
+  await page.getByLabel("Recorded reasoning intent", { exact: true }).fill("  100  ");
+  await expect(page.getByText(/Metadata only, stored verbatim/)).toBeVisible();
   await page.getByLabel("Concurrent trials").fill("12");
   await page
     .getByLabel(
@@ -533,7 +535,7 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
     model: {
       id: "publisher/workbench-model",
       provider: "provider",
-      reasoning_effort: "off",
+      reasoning_effort: "  100  ",
     },
     n_concurrent_trials: 12,
     workbench: {
@@ -586,6 +588,7 @@ test("model edits reset launch consent without rewriting the harness string", as
   );
   for (const [label, value] of [
     ["Recorded model", "publisher/recorded-model"],
+    ["Recorded reasoning intent", "  75  "],
     ["Concurrent trials", "16"],
     ["Recorded provider (optional)", "together"],
     ["Harness model string", "hf.publisher/another-model:together"],
@@ -604,6 +607,9 @@ test("model edits reset launch consent without rewriting the harness string", as
   await expect(harness).toHaveValue("hf.publisher/another-model:together");
   await page.reload();
   await expect(page.getByLabel("Concurrent trials")).toHaveValue("16");
+  await expect(
+    page.getByLabel("Recorded reasoning intent", { exact: true }),
+  ).toHaveValue("  75  ");
   await expect(harness).toHaveValue("hf.publisher/another-model:together");
   await expect(consent).not.toBeChecked();
   await expect(page.getByText("Setup passed")).not.toBeVisible();
@@ -794,6 +800,57 @@ test("binding name typing retains focus and reload preserves pending edits", asy
   await expect(page.getByLabel("Binding 2 name", { exact: true })).toHaveValue(
     "C_USTOM_KEY",
   );
+});
+
+test("reasoning credentials never persist through debounce, pagehide or reload", async ({
+  page,
+}) => {
+  await mockControl(page);
+  await page.goto("/workbench");
+  const reasoning = page.getByLabel("Recorded reasoning intent", { exact: true });
+  const sentinel = `hf_${"SYNTHETIC".repeat(4)}`;
+  const key = "harbor-hf.workbench.draft.v1";
+  await page.getByLabel("Recipe name").fill("safe-edited-recipe");
+  await reasoning.fill(sentinel);
+  await page.waitForTimeout(500);
+  expect(
+    await page.evaluate(
+      (key) => JSON.parse(localStorage.getItem(key) ?? "null").reasoning_effort,
+      key,
+    ),
+  ).toBeUndefined();
+  await reasoning.fill(`intent ${sentinel}`);
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  expect(
+    await page.evaluate(
+      (key) => JSON.parse(localStorage.getItem(key) ?? "null").reasoning_effort,
+      key,
+    ),
+  ).toBeUndefined();
+  await page.reload();
+  await expect(reasoning).not.toHaveValue(new RegExp("SYNTHETIC"));
+  await expect(page.getByLabel("Recipe name")).toHaveValue("safe-edited-recipe");
+  // Simulate a contaminated draft left by an older browser version.
+  await page.goto("/runs");
+  await page.evaluate(
+    ({ key, sentinel }) => {
+      const stored = JSON.parse(localStorage.getItem(key) ?? "null");
+      localStorage.setItem(
+        key,
+        JSON.stringify({ ...stored, reasoning_effort: sentinel }),
+      );
+    },
+    { key, sentinel },
+  );
+  await page.goto("/workbench");
+  await expect(reasoning).not.toHaveValue(new RegExp("SYNTHETIC"));
+  expect(await page.evaluate((key) => localStorage.getItem(key), key)).not.toContain(
+    sentinel,
+  );
+  await expect(page.getByLabel("Recipe name")).toHaveValue("safe-edited-recipe");
+  await reasoning.fill("  arbitrary 100 intent  ");
+  await page.reload();
+  await expect(reasoning).toHaveValue("  arbitrary 100 intent  ");
 });
 
 for (const width of [1440, 390]) {

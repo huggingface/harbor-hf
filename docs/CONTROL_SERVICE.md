@@ -34,6 +34,11 @@ kwargs together. These are configured values, not verified provider-effective
 settings. See [Run diagnostics and configuration provenance](run-diagnostics.md)
 for the source boundary, completion investigation, and proposed upstream evidence.
 
+Workbench additionally records verbatim free-text reasoning intent as submission
+metadata only; the recipe remains execution authority. Benchmark agent execution
+budgets use restricted native AgentConfig fragments, not duplicate timeout fields.
+See [Agent Workbench](agent-workbench.md#recorded-reasoning-intent).
+
 ## Shared archive visibility
 
 Operators can Archive/Restore a run for all users through the existing write-mode

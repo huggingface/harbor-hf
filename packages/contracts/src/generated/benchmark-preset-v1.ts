@@ -60,6 +60,16 @@ task_names?: [string, ...(string)[]]
 exclude_task_names?: [string, ...(string)[]]
 n_tasks?: number
 }))[]]
+/**
+ * One native AgentConfig timing fragment, merged into the reviewed agent. Identity, setup, environment and kwargs remain agent-owned.
+ *
+ * @minItems 1
+ * @maxItems 1
+ */
+agents?: [{
+override_timeout_sec?: (number | null)
+max_timeout_sec?: (number | null)
+}]
 n_attempts: number
 n_concurrent_trials: number
 environment: {

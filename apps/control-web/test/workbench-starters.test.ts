@@ -8,11 +8,13 @@ describe("Workbench starter recipes", () => {
     expect(fastAgentStarter.setup_command).toContain(
       "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
     );
-    expect(fastAgentStarter.setup_command).toContain("fast-agent-mcp==0.10.21");
+    expect(fastAgentStarter.setup_command).toContain("fast-agent-mcp==0.10.23");
     expect(fastAgentStarter.setup_command).toBe(
       fastAgentWorkbenchStarter.setup_command,
     );
     expect(fastAgentStarter.run_command).toBe(fastAgentWorkbenchStarter.run_command);
+    expect(fastAgentStarter.environment).toEqual(fastAgentWorkbenchStarter.environment);
+    expect(fastAgentStarter.outputs).toEqual(fastAgentWorkbenchStarter.outputs);
     expect(fastAgentStarter.run_command).toContain('HF_TOKEN="$OPENAI_API_KEY"');
     expect(fastAgentStarter.run_command).toContain('SSL_CERT_FILE="$ca_bundle"');
     expect(fastAgentStarter.run_command).toContain(

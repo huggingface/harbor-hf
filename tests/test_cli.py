@@ -436,7 +436,9 @@ def test_run_submit_supports_reviewed_presets(
     assert "workbench" not in payload
 
 
+@pytest.mark.parametrize("reasoning", ["off", "100", "75", "high", "  future  ", ""])
 def test_run_submit_uses_an_exact_tested_workbench_recipe(
+    reasoning: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -487,6 +489,8 @@ def test_run_submit_uses_an_exact_tested_workbench_recipe(
             "0.25",
             "--idempotency-key",
             "workbench-run",
+            "--reasoning-effort",
+            reasoning,
             "--yes",
         ],
     )
@@ -497,6 +501,7 @@ def test_run_submit_uses_an_exact_tested_workbench_recipe(
         "recipe": recipe,
         "setup_test_id": "setup-one",
     }
+    assert cast(dict[str, object], payload["model"])["reasoning_effort"] == reasoning
     assert "harness" not in payload
 
 

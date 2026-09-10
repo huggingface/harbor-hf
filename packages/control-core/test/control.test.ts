@@ -305,6 +305,55 @@ describe("run submission", () => {
     });
   });
 
+  it.each([
+    "100",
+    "75",
+    "high",
+    "arbitrary future value",
+    "  high  ",
+    "",
+    "   ",
+    "off",
+  ])(
+    "records Workbench intent verbatim without execution effects: %j",
+    async (reasoning_effort) => {
+      const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
+      const base = {
+        ...input,
+        harness: { agent: "command-agent", version: preview.revision_id },
+        role: "diagnostic" as const,
+      };
+      const original = await service.submitWorkbench(
+        base,
+        preview.harbor_agent,
+        "intent-off",
+        "test-subject",
+      );
+      const changed = await service.submitWorkbench(
+        { ...base, model: { ...base.model, reasoning_effort } },
+        preview.harbor_agent,
+        "intent-changed",
+        "test-subject",
+      );
+      if (reasoning_effort !== "off")
+        await expect(
+          service.submitWorkbench(
+            { ...base, model: { ...base.model, reasoning_effort } },
+            preview.harbor_agent,
+            "intent-off",
+            "test-subject",
+          ),
+        ).rejects.toThrow();
+      expect(changed.run.submission.model?.reasoning_effort).toBe(reasoning_effort);
+      expect(changed.run.harbor_job_config.agents).toEqual(
+        original.run.harbor_job_config.agents,
+      );
+      expect(
+        projection.run(changed.run.run_id)?.record.submission.model?.reasoning_effort,
+      ).toBe(reasoning_effort);
+    },
+  );
+
   it("submits a Workbench recipe through the same one-Run Harbor contract", async () => {
     const preview = compileAgentWorkbenchRecipe(fastAgentWorkbenchStarter);
     const workbenchInput = {
@@ -342,12 +391,12 @@ describe("run submission", () => {
     expect(projection.run(result.run.run_id)?.status).toBe("queued");
     await expect(
       service.submitWorkbench(
-        { ...workbenchInput, model: { ...input.model, reasoning_effort: "high" } },
+        { ...workbenchInput, model: { ...input.model, reasoning_effort: "high\n" } },
         preview.harbor_agent,
         "bad-workbench-reasoning",
         "test-subject",
       ),
-    ).rejects.toThrow("reasoning effort off only");
+    ).rejects.toThrow("control-free");
     await expect(
       service.submitWorkbench(
         workbenchInput,

@@ -1969,8 +1969,11 @@ export interface components {
             model: {
                 id: string;
                 provider: string;
-                /** @constant */
-                reasoning_effort: "off";
+                /**
+                 * @description Verbatim metadata-only intent. Empty text means unset; omitted values retain legacy off. Recipe alone controls execution. Controls and credentials are rejected.
+                 * @default off
+                 */
+                reasoning_effort: string;
             };
             cost_ceiling_usd_per_trial: number;
             /** @enum {string} */

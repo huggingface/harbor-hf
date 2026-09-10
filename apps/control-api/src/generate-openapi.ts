@@ -282,11 +282,17 @@ const document = {
           model: {
             type: "object",
             additionalProperties: false,
-            required: ["id", "provider", "reasoning_effort"],
+            required: ["id", "provider"],
             properties: {
               id: { type: "string" },
               provider: { type: "string" },
-              reasoning_effort: { const: "off" },
+              reasoning_effort: {
+                type: "string",
+                maxLength: 160,
+                default: "off",
+                description:
+                  "Verbatim metadata-only intent. Empty text means unset; omitted values retain legacy off. Recipe alone controls execution. Controls and credentials are rejected.",
+              },
             },
           },
           cost_ceiling_usd_per_trial: {

@@ -14,7 +14,7 @@ describe("Agent Workbench recipe compiler", () => {
       "68a509da24b06b4223a1c0175fb5eb5bc79342b76cbeff0cfe51ac3f5b17b6b2",
     );
     expect(preview.setup_command).toContain("python_version=3.12.14");
-    expect(preview.setup_command).toContain("fast-agent-mcp==0.10.21");
+    expect(preview.setup_command).toContain("fast-agent-mcp==0.10.23");
     expect(preview.setup_command).not.toContain('python -m venv "$AGENT_HOME/venv"');
     expect(preview.run_command).not.toContain("--base-url");
     expect(preview.run_command).not.toContain("<injected-model-base-url>");
@@ -101,13 +101,34 @@ describe("Agent Workbench recipe compiler", () => {
     const previousPin = compileAgentWorkbenchRecipe({
       ...structuredClone(fastAgentWorkbenchStarter),
       setup_command: fastAgentWorkbenchStarter.setup_command.replace(
-        "fast-agent-mcp==0.10.21",
+        "fast-agent-mcp==0.10.23",
         "fast-agent-mcp==0.10.16",
       ),
     });
+    expect(previousPin.recipe.setup_command).toContain("fast-agent-mcp==0.10.16");
     expect(previousPin.recipe_digest).not.toBe(first.recipe_digest);
     expect(previousPin.revision_id).not.toBe(first.revision_id);
   });
+
+  it.each(["0.10.16", "0.10.21", "custom-build"])(
+    "preserves saved/custom recipe commands and identity: %s",
+    (version) => {
+      const recipe = {
+        ...structuredClone(fastAgentWorkbenchStarter),
+        setup_command: `uv pip install fast-agent-mcp==${version}`,
+        run_command: "printf custom-command",
+      };
+      const original = structuredClone(recipe);
+      const preview = compileAgentWorkbenchRecipe(recipe);
+      expect(recipe).toEqual(original);
+      expect(preview.recipe).toEqual(original);
+      expect(preview.setup_command).toBe(original.setup_command);
+      expect(preview.run_command).toBe(original.run_command);
+      expect(compileAgentWorkbenchRecipe(preview.recipe).recipe_digest).toBe(
+        preview.recipe_digest,
+      );
+    },
+  );
 
   it("rejects duplicate, reserved, and credential-like literals", () => {
     expect(() =>
