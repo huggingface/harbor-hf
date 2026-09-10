@@ -1710,3 +1710,22 @@ Local repair validation checkpoint:
 - The requested mutation command cannot run because its script is absent.
   No validation gate was weakened. No image publication, remote deployment,
   credential change, benchmark launch, or trial retry occurred for this patch.
+
+### Patch publication and rollout confirmation (2026-09-10)
+
+Approved at: 2026-09-10T20:45:19.498024+00:00
+
+- The user explicitly approved pushing deploy/pr209-local and running the
+  existing worker-image publication workflow to complete the reviewed patch
+  deployment. Publish only this privacy-reviewed branch, without force push.
+- Publish one matching immutable worker through the canonical workflow, verify
+  its installed source and offline regressions, then deploy the same reviewed
+  source and image to the existing control Space. Preserve secrets, hardware,
+  visibility, write mode, active work, and durable run records.
+- Use one control authority during rollout. No new resources, secret copying,
+  provider grant mutation, benchmark launch, automatic trial retry, PR, merge,
+  or default-branch update is authorized. Existing image-bound grants require
+  separate operator review after the image changes.
+- This is an explicit temporary patch-branch deployment. The normal CI workflow
+  runs only for PRs and main; local equivalent checks and independent review
+  are recorded above rather than claiming branch CI has run.
