@@ -38,7 +38,6 @@ type CommandBinding = Literal[
 ]
 type RouteApi = Literal["chat-completions", "responses", "native"]
 
-_WORKSPACE_PATH = "/app"
 _LOGS_PATH = "/logs/agent"
 _INSTRUCTION_PATH = f"{_LOGS_PATH}/instruction.txt"
 _MAX_ATIF_BYTES = 64 * 1024 * 1024
@@ -226,6 +225,7 @@ class CommandAgent(BaseInstalledAgent):
         )
         self.command_config = _read_config(self.config_source)
         self._command_home_ready = False
+        self._workspace_path: str | None = None
 
     @staticmethod
     @override
@@ -235,6 +235,24 @@ class CommandAgent(BaseInstalledAgent):
     @override
     def get_version_command(self) -> str | None:
         return None
+
+    async def _resolve_workspace(self, environment: BaseEnvironment) -> None:
+        # Let Harbor select the task user and explicit workdir or image default.
+        # Avoid the installed-agent wrapper, which logs untrusted probe output.
+        try:
+            result = await environment.exec(command="pwd", cwd=None)
+        except Exception:
+            raise RuntimeError(
+                "Cannot resolve command-agent working directory"
+            ) from None
+        workspace = (result.stdout or "").rstrip("\r\n")
+        if (
+            result.return_code != 0
+            or not workspace.startswith("/")
+            or any(char in workspace for char in "\r\n\0")
+        ):
+            raise RuntimeError("Cannot resolve command-agent working directory")
+        self._workspace_path = workspace
 
     async def _prepare_command_home(self, environment: BaseEnvironment) -> None:
         if self._command_home_ready:
@@ -265,7 +283,7 @@ class CommandAgent(BaseInstalledAgent):
             f"{forwarded} /bin/bash -lc {shlex.quote(command)}"
         )
         await self.exec_as_agent(
-            environment, command=wrapped, env=env, cwd=_WORKSPACE_PATH
+            environment, command=wrapped, env=env, cwd=self._workspace_path
         )
 
     async def _stage_text(
@@ -328,7 +346,7 @@ class CommandAgent(BaseInstalledAgent):
     ) -> dict[str, str]:
         values: dict[CommandBinding, str | None] = {
             "instruction_path": _INSTRUCTION_PATH,
-            "workspace_path": _WORKSPACE_PATH,
+            "workspace_path": self._workspace_path,
             "logs_path": _LOGS_PATH,
             "agent_home": AGENT_HOME,
             "model_name": self.model_name,
@@ -370,6 +388,8 @@ class CommandAgent(BaseInstalledAgent):
 
     @override
     async def install(self, environment: BaseEnvironment) -> None:
+        self._workspace_path = None
+        await self._resolve_workspace(environment)
         if self.command_config.setup is not None:
             await self._execute(
                 environment,
@@ -535,6 +555,8 @@ class CommandAgent(BaseInstalledAgent):
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
+        if self._workspace_path is None:
+            await self._resolve_workspace(environment)
         await self._stage_text(
             environment,
             local_path=self.logs_dir / "instruction.txt",

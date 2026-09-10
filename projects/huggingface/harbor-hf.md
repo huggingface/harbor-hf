@@ -1181,3 +1181,374 @@ Approved at: 2026-09-10T17:14:44.513776+00:00
   instructions to align with the approved future credential design.
 - Preserve all unrelated worktrees and changes, including the separate refresh
   and prominent-cost PR. No new infrastructure or upstream modifications.
+
+### QEMU-fixed source and preset publication (2026-09-09)
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user YES: reuse or create the PUBLIC fork
+  https://github.com/evalstate/terminal-bench-2-1 and publish only `qemu-fixed`,
+  based on d49e28f1e4ddd13d289e85a5f312a66750951932 plus the reviewed two-task
+  repair and immutable image references. Never overwrite a conflicting branch.
+- Publish diagnostic, non-leaderboard-eligible `-qemu-fixed` variants of all
+  relevant current Terminal-Bench 2.1 presets and a two-task, two-native-attempt
+  smoke (four logical trials, concurrency two, retries zero). Preserve originals.
+  Push only `feat/qemu-fixed-presets` to the canonical Harbor-HF repository;
+  no PR, default-branch push, merge, deployment, run or model inference.
+- Explicit public privacy exception: the exact GitHub fork above and
+  `ghcr.io/evalstate/harbor-hf-trial-worker` image references may appear in
+  public source, Harbor-HF presets and their authorization/provenance records.
+  No other operator identifiers, credential values, aliases or local paths.
+- Inventory exception: one approved public Git fork is needed because canonical
+  benchmark write access is unavailable and native Harbor needs published task
+  definitions. The canonical control Space and Bucket are unchanged; the
+  existing GHCR package is retained. No additional repository, package, service,
+  paid compute or recurring resource is authorized. Retain pinned source/images
+  until upstream is fixed AND historical retention is satisfied; deletion needs
+  explicit approval. Existing fork identity and parent must match before reuse.
+- Verify image indexes/configs anonymously, source fetchability and native Harbor
+  metadata only. Reuse prior reference-validation evidence without rebuilding
+  or executing containers. No image push, visibility change, credentials sent to
+  a runtime, upstream issue/PR or contact. Preserve unrelated worktrees.
+- Approval is recorded before source implementation or publication. Date denotes
+  this session's direct approval; exact approval time was not supplied.
+
+QEMU-fixed implementation and validation checkpoint (2026-09-09):
+
+- Reused the verified public fork and published only `qemu-fixed` at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e. Baseline and reviewed dependency
+  repair were retained; only the two task image pins and README provenance were
+  added. Anonymous linux/amd64 index/manifest/config checks passed.
+- Native metadata resolved 89, 445 and four trials for the three diagnostic
+  presets. Exactly two effective image/fingerprint changes; 87 peers and native
+  order unchanged. No smoke, container, model, deployment or upstream PR.
+- Passed 1,063 unit and 64 isolated browser tests, formatting, lint, types, build,
+  generated checks, dependency audit, normal Slophammer and DRY. Default-port
+  browser reuse was discarded; absent baseline/mutation tooling is disclosed in
+  docs/terminal-bench-2-1-qemu-fixed.md. Topic publication remains the final step.
+
+QEMU-fixed publication completed (2026-09-09):
+
+- Verified public source branch at 75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e
+  and public Harbor-HF `feat/qemu-fixed-presets` at implementation commit
+  258cedf8a9b041ace3f3bc9087a3f990ed9bc12c. This completion record is the final
+  additive documentation-only commit on that same approved topic branch.
+- Three diagnostic presets are published, not deployed. Native metadata counts,
+  exact image pins, fingerprints and validation limitations are documented in
+  docs/terminal-bench-2-1-qemu-fixed.md. No smoke or other benchmark was launched.
+- No PR, merge, default-branch update, deployment, model inference, new compute,
+  credential transfer, image upload or unrelated worktree change occurred.
+  All managed validation processes ended; the discarded browser process stopped.
+
+### Held-50 QEMU-fixed preset amendment (2026-09-09)
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user request: implement and push the held-50 fixed variant on the
+  existing `feat/qemu-fixed-presets` branch. Record approval before implementation.
+- Add one diagnostic `held-50-1-trial-qemu-fixed` native preset, documentation
+  and focused tests. Verify the exact historical basic-48 plus upgrade-2 union
+  against the held-50 list, not an inferred first-50 selection. Preserve that
+  task set with current HF preset execution defaults, not historical hardware
+  partitioning or provider settings.
+- Local configuration, tests, metadata-only native resolution, commits and push
+  to that existing branch are approved. Retain the already approved public fork
+  and exact image/source references, pinned at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e. Existing privacy exceptions apply
+  only to the previously specified public destinations and values.
+- No PR, merge, deployment, Jobs, inference, source-fork changes, image builds
+  or publication, upstream changes, credential transfers or new resources.
+  Preserve original presets and unrelated worktrees. Keep private selection
+  paths and source hashes outside tracked records. Approval time is unspecified;
+  the timestamp records this session date only.
+
+Held-50 implementation checkpoint (2026-09-09):
+
+- Added only the single-attempt diagnostic preset, exact-membership regression
+  and documentation. Both historical partition unions match the 50-task held
+  list; source hashes remain private. Original presets and source fork unchanged.
+- Pinned native metadata inspection resolved 50 tasks and 50 trials; both QEMU
+  image references match the existing repair, and all 48 other task trees are
+  byte-identical to baseline. No execution or inference occurred.
+- Reviewed native DatasetConfig and Git dataset resolution at the existing Harbor
+  pin and upstream history through 191d1b98; no runtime logic or pin change needed.
+- Passed 1,064 unit tests, 64 isolated browser tests, formatting, lint, types,
+  build, generated checks, dependency audit and normal Slophammer/DRY. Missing
+  baseline and mutation-script limitations persist; no gate was weakened.
+- Publishing only this reviewed amendment on the already approved topic branch.
+  No PR, merge, deployment, Job, upstream change or credential movement.
+
+Held-50 publication completed (2026-09-09):
+
+- Remote topic branch verified at implementation commit
+  ef78513a42d862d7bdd78ee409b3cc774e19a393 after a normal, non-force push.
+  The authorization was committed separately before implementation.
+- Published one held-50 diagnostic preset, not deployed or executed. Fork pin,
+  original presets and unrelated worktrees remain unchanged. No PR was created.
+- All managed validation processes completed. This additive completion record
+  is the final documentation-only commit on the same approved topic branch.
+
+### Digest-pinned image Job-name repair
+
+Status: completed
+
+Approved at: 2026-09-10T11:54:20.135423+00:00
+
+- Direct user approval: make a minimal patch and pull request and deploy this low-risk change. Remove the image digest from the readable automatically generated Job name while preserving the actual immutable image reference and invocation hash.
+- Approved: SDK implementation and offline tests, upstream topic-branch publication and matching PR; Harbor-HF temporary SDK backport, tests, topic-branch publication and PR; publish the reviewed existing worker image through the existing workflow and deploy the reviewed revision to the existing user-selected control Space.
+- Preserve explicit names, ownership labels, task inputs, image digests, concurrency, costs, hardware, visibility, Bucket, persistent secrets, run records and unrelated work. Only the deployment source/image references may change as required for this fix.
+- No repository default-branch merge, new resource, benchmark/setup/inference Job, retry, credential movement or historical-result mutation is authorized. Deploy the reviewed topic revision if not merged; do not infer upstream merge permission from deployment approval.
+
+Completed on 2026-09-10:
+
+- SDK PR: https://github.com/huggingface/huggingface_hub/pull/4859,
+  immutable fix `3493b0d86bee92db7c10511c534cec455aa84df6`; 24 offline
+  Jobs tests and SDK quality checks pass. Existing terminal-result PR unchanged.
+- Harbor-HF draft PR: https://github.com/huggingface/harbor-hf/pull/205.
+  CI passed at `4b83cebf95ac52617479a79f67b8d11f8479b2ad`; that exact
+  unmerged topic source was deployed through the existing deployment script.
+- The existing worker workflow published digest
+  `sha256:8bc1364f1d91575d4895af0ead8153689a3d6713556dc3588791fd18fc466388`.
+  The pulled image passed all 46 offline SDK regressions and exact wheel audits.
+- The existing control service is RUNNING with JSON live/ready HTTP 200;
+  release and runtime revisions match. Build logs confirm the locked SDK version
+  and wheel hash. Parent/workbench image references match the published digest;
+  other variables, hardware, visibility and persistent-secret metadata remain
+  unchanged. No Jobs were launched and no active Jobs were observed.
+- Root: 100 tests, 89.10% coverage. Agents: 161 tests; npm: 1,064 tests;
+  browser: 64 tests. Both amd64 images pass offline installed-SDK tests.
+  Existing supplementary agent coverage debt (67.12%) and absent baseline/
+  mutation tooling remain disclosed; no gates were weakened.
+- Neither PR was merged. This local completion record is not part of the
+  deployed source; the PR/deployment source remains the exact commit above.
+
+### Explicit Sandbox Job-name simplification
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user instruction: replace the SDK naming backport with a simple explicit
+  short name in the existing Harbor-HF Sandbox wrapper, updating existing PR #205.
+  The timestamp records the session date, not the time of the original decision.
+- Approved: local adapter implementation, offline regression tests and image
+  builds, commits, normal push to the existing topic branch, and PR description
+  updates after privacy review. Preserve the separate exact terminal-result SDK
+  backport, native Harbor trial identity, immutable image payload and ownership
+  labels. Do not change unrelated work or merge main into the branch unnecessarily.
+- No SDK repository changes or publication, reopening the closed SDK naming PR,
+  merge, deployment, remote image publication, Jobs, retries, inference, credential
+  movement or new resources in this implementation stage. Parent review precedes
+  any later deployment decision; earlier deployment approval is not exercised here.
+
+Wrapper-only implementation checkpoint:
+
+- Replaced the naming backport with seven lines in the existing Sandbox adapter:
+  an explicit, deterministic display name from Harbor's public environment name,
+  capped at 90 characters. Explicit names/name labels and SDK conflict handling
+  remain unchanged; ownership labels, namespace and full image/command payloads
+  are preserved. No persisted field, identity, scheduler or new binding is added.
+- Restored the terminal-only SDK builder, dependency pin, lock and source-audit
+  tests to main exactly. Wheel SHA-256 is
+  `922641bbf132546da041086e73d6cdfca7f13f4e63609580575699396a5a8df1`;
+  only the existing exact terminal-result production patch remains.
+- Checked Harbor environments/base.py and environments/hf_sandbox.py at
+  dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e and history through 191d1b98.
+  This uses public environment_name and HfApi.run_job(name=...), not a Harbor
+  behavior backport. No relevant naming implementation has landed upstream.
+- Root: 100 tests, 89.10% coverage. Agents: 178 tests. Both linux/amd64 images
+  built locally and passed 63 offline cases each (40 terminal, 23 wrapper).
+  All 183 installed SDK Python files match the terminal-only wheel, and each
+  installed wrapper matches reviewed source. Ruff, formatting, ty, root dependency
+  audit, normal Slophammer and DRY passed. The control image typecheck/build passed.
+- Supplementary agent-wide coverage remains below 85% (62.13%; changed adapter
+  87%). The baseline file and mutation script remain absent. No gate was weakened.
+  No TypeScript changed; standalone npm/browser checks were not rerun locally.
+- Ready for publication to existing PR #205 and parent review. This stage did not
+  touch the SDK repository or its PRs, publish an image, deploy, merge, launch Jobs,
+  retry work or move credentials. The earlier deployed source remains unchanged.
+  Historical SDK naming approval/completion entries above are superseded for
+  future work by the wrapper-only authorization, not permission to reopen that PR.
+
+Wrapper-only publication completed (2026-09-09 session):
+
+- Normal push verified implementation `9452bd3d62a4597e6587e9437495379e3376343b`
+  on the existing topic branch. Updated PR #205 title/body to describe only the
+  wrapper naming approach and unchanged terminal backport; draft status and
+  existing empty label set preserved. CI is pending at this checkpoint.
+- This completion record changes no runtime source. No SDK repository/PR change,
+  deployment, image publication, merge, Job, retry or credential movement occurred.
+  Local image and test processes finished. Parent review remains the next action.
+
+### Six-hour fixed preset suite (2026-09-09)
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user request: add explicit six-hour per-trial agent execution variants
+  for the fixed 89-task one-attempt and five-attempt presets (89/445 trials),
+  and a fixed held-50 three-attempt preset (150 trials). Use the same six-hour
+  agent budget for the held-50 addition and clearly document that choice for
+  pre-publication review. Preserve every existing preset and default selection.
+- Approves isolated local configuration, tests, documentation and commits on
+  `feat/six-hour-fixed-presets`, followed by one canonical Harbor-HF push and PR
+  only after parent review. Stop at local commits and a private PR draft until
+  that review; this record does not bypass the publication hold.
+- Inspect pinned native Harbor timeout precedence and subsequent history first.
+  Use existing native configuration and compilation, with no duplicated timeout
+  resolver. Verify effective 21600-second agent limits through both submission
+  paths; preserve setup/verifier limits, concurrency eight, zero retries, source
+  and image pins, held-50 membership and diagnostic/non-leaderboard status.
+- Reuse only the previously approved public source and image references at
+  75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e, within their existing exact public
+  destinations. No source-fork mutation or new privacy exception.
+- No whole-run cap, launch, retry, inference, Jobs, merge, deployment, credential
+  handling, resource creation, image publication or upstream mutation. Preserve
+  unrelated worktrees. Run required local validation and privacy review without
+  weakening gates. Timestamp denotes session date; exact approval time unknown.
+
+Six-hour suite local preparation checkpoint (2026-09-09 session):
+
+- Added 89/445-trial `with-6h-qemu-fixed` full variants and the 150-trial
+  `held-50-3-trials-qemu-fixed` preset. Held-50 uses the same explicit six-hour
+  agent budget; that choice is documented for parent review before publication.
+- Native override 21600, null max cap and multiplier one survive both compilers
+  and all expanded public JobPlan trials. Inspected pinned Harbor timeout source
+  and history through 191d1b98; existing native support needs no runtime change.
+- All eight old presets are byte-identical; catalog-first default, source/image
+  pins, held-50 membership, diagnostic status and other phase limits preserved.
+- Passed 1,140 unit tests, 64 isolated browser tests, 100 Python tests (89.10%
+  coverage), formatting, lint, types, build, generated checks, dependency audits,
+  normal Slophammer/DRY and privacy checks. Existing lint warnings and supplemental
+  TypeScript coverage below 85% remain; baseline/mutation files are still absent.
+- Local commits and private draft only. No push or PR yet; parent review remains
+  required. No launches, retries, inference, Jobs, merge, deployment, credential
+  transfer, source-fork mutation, new resource or image publication occurred.
+
+Completed after review: published the three-preset suite in draft PR #206 (https://github.com/huggingface/harbor-hf/pull/206), with the shared six-hour held-50 budget and existing validation limitations explicitly documented. No merge, deployment or execution occurred.
+
+### Command-agent effective workdir correction (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user approval: a small local CommandAgent adapter fix and offline
+  regressions using Harbor's public execution API to honor explicit task workdir
+  and image defaults consistently for setup, run and workspace bindings.
+- Local code, tests, documentation and commits on `fix/command-agent-workdir`
+  are approved. Branch push and one PR require parent review first; prepare a
+  private draft and stop before publication. Timestamp denotes the session date.
+- No merge, deployment, image publication, Jobs, retries, reruns, inference,
+  credential movement, upstream changes or unrelated modifications. Preserve
+  existing worktrees, Harbor ownership and validation/privacy gates.
+
+Local preparation checkpoint (2026-09-09 session):
+
+- Replaced the adapter's fixed workspace with one native `pwd` probe before
+  install, cached for run and workspace bindings; direct run also discovers it.
+  Preserve task-user selection, whitespace/Unicode paths and clean bindings;
+  invalid or failed probes raise a fixed error without logging their output.
+- Reviewed Harbor `src/harbor/models/task/config.py`, `environments/base.py`,
+  `environments/hf_sandbox.py` and `agents/installed/base.py` at pin
+  `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`, plus history through `191d1b98`.
+  Existing public execution supports this adapter correction; no pin change,
+  upstream resolver, durable configuration, image or retry change is needed.
+- Eight new regressions failed against original production code and passed
+  after the fix. Root: 100 tests, 89.10% coverage. Agents: 186 tests; changed
+  agent file 94.02% branch-inclusive coverage. Ruff, format, ty, normal
+  Slophammer, DRY and privacy checks passed. Agent-wide coverage remains 62.46%;
+  baseline and mutation files are absent. No gate was weakened. No TypeScript
+  changed, so npm/browser checks were not rerun.
+- Local commits and private PR draft only; parent review and publication remain
+  pending. No push, PR creation, deployment, image publication, Jobs, retries,
+  inference, credentials or upstream mutation occurred.
+
+### CommandAgent workdir PR completion
+
+Status: completed
+
+Published draft PR #208 (https://github.com/huggingface/harbor-hf/pull/208) after implementation review and privacy checks. The task-directory fix passed 100 root tests and 186 agent tests; changed-file coverage is 94.02%. Existing agent-wide coverage and missing-tooling limitations are disclosed. No merge, deployment, image publication, remote execution or retries were performed.
+
+### Two-task workdir diagnostic preset amendment (2026-09-09)
+
+Status: completed
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user approval: add `prove-plus-comm` and `openssl-selfsigned-cert`
+  as a diagnostic preset in existing PR #208, one attempt per task, concurrency
+  two, with native task inputs and existing smoke timeout defaults unchanged.
+- Approved: additive JSON, focused tests and documentation, local commits,
+  privacy-reviewed push to the existing PR branch and PR body update.
+- No merge, deployment, image/source publication, Jobs, reruns, inference,
+  credential movement or changes to existing presets. Timestamp is session date.
+
+Completion checkpoint (2026-09-09 session):
+
+- Added the schema-loaded two-task preset, one contract regression and selector
+  documentation; existing presets, agent recipe selection and task inputs remain
+  unchanged. Pinned source Dockerfiles declare `/workspace` and `/app`, with no
+  task workdir override. Deployment of the agent fix remains a prerequisite.
+- Reviewed native filtering/repetitions in Harbor `src/harbor/models/job/config.py`
+  and `src/harbor/job.py` at the existing pin and history through `191d1b98`.
+  Pinned CLI `--print-config` accepts the configuration; metadata-only dry-run is
+  newer than the pin, so no native task resolution/execution is claimed.
+- Passed 1,141 unit tests and 64 isolated browser tests, formatting, lint (existing
+  warnings), root/Space types, build, generated contracts, dependency audit (zero
+  vulnerabilities), normal Slophammer and DRY. Baseline and mutation script remain
+  absent; no gate was weakened. No Python production or test files changed.
+- Local validation completed; existing PR branch publication follows privacy
+  review. No run, deployment, image publication, inference or credentials used.
+
+Completed on 2026-09-09: pushed the addition to existing draft PR #208 and
+updated its body with validation and deployment prerequisites. No launch or
+deployment occurred; existing validation limitations remain disclosed.
+
+### PR 208 merge, worker publication and control deployment (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user instruction: execute the merge of existing PR #208, rebuild and
+  publish the worker image, and deploy the control service; the user will run
+  the smoke test afterward. Timestamp denotes session date, not exact time.
+- Record this authorization on the existing PR branch, then wait for green CI
+  on its exact reviewed head. Mark the draft ready and squash-merge only that
+  PR, with a head-SHA guard and no administrator bypass or weakened gate.
+  The user accepts the already disclosed supplementary agent coverage and
+  missing baseline/mutation-tool limitations; existing CI must still pass.
+- Use the existing parent-worker GitHub Actions publication workflow and
+  canonical registry package. Build from the exact merged revision and verify
+  the published immutable digest and installed agent source with offline tests.
+- Deploy a clean bundle of that same merged revision to the existing
+  <control-space>. Update only its parent and hosted setup image references
+  to the verified digest, preserving any distinct setup configuration unless
+  confirmed to use the same reviewed worker. Verify release, runtime revision,
+  liveness, readiness and image references; retain private operational evidence.
+- Preserve write mode, hardware, visibility, secrets, other variables, existing
+  Runs, task inputs/images, concurrency, timeouts and cost limits. No new HF
+  Jobs, smoke/setup execution, inference, retries, credential movement, resource
+  creation, upstream changes, other PR merge or unrelated worktree changes.
+  Existing local API authentication stays local; never forward it to a runtime.
+- Public authorization records use placeholders for operational identifiers.
+  The exact user-selected deployment destination is retained privately.
+
+Provider-reference integration ready for PR (2026-09-10):
+
+- Local implementation commit 2441eda reviewed; integrated main at 53331be.
+  Resolved the CommandAgent overlap preserving main's task working directory
+  and native key-only/legacy connection requirements. Retained additive
+  authorization histories and upstream preset/Sandbox-name changes.
+- Passed 1277 TypeScript tests, 68 browser tests, 100 CLI tests at 89.10%
+  coverage, 197 agent tests, formatting, lint, types, generated contracts,
+  build, dependency audits, privacy and both actual Docker builds.
+- Independent complete integration/feature review passed 294 targeted
+  TypeScript and 96 Python tests; no new source/privacy regression blockers.
+  Native working-directory semantics remain task-derived, not a literal
+  directory approved by a credential grant. No provider routing inference.
+- Supplemental coverage remains below 85% (TypeScript lines 84.01%, branches
+  76.69%; agents 66.26%). Baseline/mutation tooling remains absent. No gates
+  or package line budgets weakened. Configured CI must verify published head.
+- Publish the reviewed source and open its PR only. Provider activation remains
+  subject to separate operating-instruction alignment, reviewed worker image
+  publication and deployment approval. No real key or remote execution used.

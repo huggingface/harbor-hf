@@ -47,3 +47,37 @@ Approved at: 2026-09-09T17:44:31.882149+00:00
 - No merge, deployment, package/image publication, credential movement or remote
   workload was performed during the integration. Harbor-HF publication remains
   a separate authorized parent-owned action.
+
+### Digest-pinned image Job-name repair
+
+Status: completed
+
+Approved at: 2026-09-10T11:54:20.135423+00:00
+
+- Direct user approval: make a minimal patch and pull request and deploy this low-risk change. Remove the image digest from the readable automatically generated Job name while preserving the actual immutable image reference and invocation hash.
+- Approved: SDK implementation and offline tests, upstream topic-branch publication and matching PR; Harbor-HF temporary SDK backport, tests, topic-branch publication and PR; publish the reviewed existing worker image through the existing workflow and deploy the reviewed revision to the existing user-selected control Space.
+- Preserve explicit names, ownership labels, task inputs, image digests, concurrency, costs, hardware, visibility, Bucket, persistent secrets, run records and unrelated work. Only the deployment source/image references may change as required for this fix.
+- No repository default-branch merge, new resource, benchmark/setup/inference Job, retry, credential movement or historical-result mutation is authorized. Deploy the reviewed topic revision if not merged; do not infer upstream merge permission from deployment approval.
+
+Completed on 2026-09-10:
+
+- SDK PR: https://github.com/huggingface/huggingface_hub/pull/4859,
+  immutable fix `3493b0d86bee92db7c10511c534cec455aa84df6`; 24 offline
+  Jobs tests and SDK quality checks pass. Existing terminal-result PR unchanged.
+- Harbor-HF draft PR: https://github.com/huggingface/harbor-hf/pull/205.
+  CI passed at `4b83cebf95ac52617479a79f67b8d11f8479b2ad`; that exact
+  unmerged topic source was deployed through the existing deployment script.
+- The existing worker workflow published digest
+  `sha256:8bc1364f1d91575d4895af0ead8153689a3d6713556dc3588791fd18fc466388`.
+  The pulled image passed all 46 offline SDK regressions and exact wheel audits.
+- The existing control service is RUNNING with JSON live/ready HTTP 200;
+  release and runtime revisions match. Build logs confirm the locked SDK version
+  and wheel hash. Parent/workbench image references match the published digest;
+  other variables, hardware, visibility and persistent-secret metadata remain
+  unchanged. No Jobs were launched and no active Jobs were observed.
+- Root: 100 tests, 89.10% coverage. Agents: 161 tests; npm: 1,064 tests;
+  browser: 64 tests. Both amd64 images pass offline installed-SDK tests.
+  Existing supplementary agent coverage debt (67.12%) and absent baseline/
+  mutation tooling remain disclosed; no gates were weakened.
+- Neither PR was merged. This local completion record is not part of the
+  deployed source; the PR/deployment source remains the exact commit above.

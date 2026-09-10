@@ -1,0 +1,86 @@
+{
+  "schema_version": "v1",
+  "benchmark": "terminal-bench-2-1",
+  "preset": "held-50-3-trials-qemu-fixed",
+  "leaderboard_eligible": false,
+  "job": {
+    "datasets": [
+      {
+        "repo": "https://github.com/evalstate/terminal-bench-2-1.git@75f5a2e66b2dfd9d7eba3065a9d919c1f9da5c5e",
+        "path": "tasks",
+        "task_names": [
+          "break-filter-js-from-html",
+          "build-cython-ext",
+          "build-pmars",
+          "caffe-cifar-10",
+          "cancel-async-tasks",
+          "chess-best-move",
+          "circuit-fibsqrt",
+          "cobol-modernization",
+          "compile-compcert",
+          "constraints-scheduling",
+          "count-dataset-tokens",
+          "crack-7z-hash",
+          "custom-memory-heap-crash",
+          "db-wal-recovery",
+          "dna-assembly",
+          "dna-insert",
+          "feal-differential-cryptanalysis",
+          "filter-js-from-html",
+          "financial-document-processor",
+          "fix-git",
+          "fix-ocaml-gc",
+          "gcode-to-text",
+          "gpt2-codegolf",
+          "hf-model-inference",
+          "large-scale-text-editing",
+          "largest-eigenval",
+          "llm-inference-batching-scheduler",
+          "mailman",
+          "make-doom-for-mips",
+          "make-mips-interpreter",
+          "mcmc-sampling-stan",
+          "modernize-scientific-stack",
+          "mteb-leaderboard",
+          "mteb-retrieve",
+          "multi-source-data-merger",
+          "nginx-request-logging",
+          "openssl-selfsigned-cert",
+          "overfull-hbox",
+          "path-tracing",
+          "path-tracing-reverse",
+          "polyglot-rust-c",
+          "portfolio-optimization",
+          "pytorch-model-cli",
+          "qemu-alpine-ssh",
+          "qemu-startup",
+          "raman-fitting",
+          "regex-chess",
+          "sparql-university",
+          "torch-pipeline-parallelism",
+          "video-processing"
+        ]
+      }
+    ],
+    "n_attempts": 3,
+    "n_concurrent_trials": 8,
+    "environment": {
+      "type": "hf-sandbox",
+      "kwargs": {
+        "flavor": "cpu-upgrade",
+        "job_timeout": "none"
+      }
+    },
+    "agent_timeout_multiplier": 1,
+    "agent_setup_timeout_multiplier": 2,
+    "retry": {
+      "max_retries": 0
+    },
+    "agents": [
+      {
+        "override_timeout_sec": 21600,
+        "max_timeout_sec": null
+      }
+    ]
+  }
+}

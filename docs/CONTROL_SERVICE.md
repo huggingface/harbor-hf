@@ -182,6 +182,24 @@ including `task.toml` and `instruction.md`, were verified through the public
 source tree at dataset revision `d49e28f1e4ddd13d289e85a5f312a66750951932`.
 No local Harbor execution or inference is needed to load or test the preset.
 
+The **terminal-bench-2-1 · two-tasks-1-trial-workdir-smoke** diagnostic
+preset selects `prove-plus-comm` and `openssl-selfsigned-cert`: one attempt per
+task (two logical trials for one agent), concurrency 2, and zero retries. It
+retains the 3×3 smoke's canonical dataset revision, CPU environment, unlimited
+parent Job timeout, and agent/setup timeout multipliers of 4/2, without a
+six-hour override. Existing presets and the selector default are unchanged.
+
+At that pinned dataset revision, the task Dockerfiles declare `/workspace` and
+`/app`, respectively; neither `task.toml` sets `environment.workdir`. This checks
+two image defaults, not explicit overrides (covered by CommandAgent unit tests).
+Use the same CommandAgent recipe as the affected run **after the PR #208 agent
+fix is deployed in the worker**. A preset alone cannot repair an old worker.
+No task revision, image change, source fork, or launch accompanies this addition;
+execution order is Harbor-owned. Native task filtering and attempts were checked
+in Harbor `src/harbor/models/job/config.py` and `src/harbor/job.py` at the pin
+above, with upstream history reviewed through `191d1b98`; no resolver or pin
+change is needed for this configuration.
+
 The separate [New Job page](CONFIGURABLE_LAUNCH.md) edits native configuration
 through the existing direct submission route. It uses native Harbor concurrency
 validation and an aggregate inspection budget, not a separate concurrency cap.

@@ -1,0 +1,29 @@
+{
+  "schema_version": "v1",
+  "benchmark": "terminal-bench-2-1",
+  "preset": "two-tasks-1-trial-workdir-smoke",
+  "leaderboard_eligible": false,
+  "job": {
+    "datasets": [
+      {
+        "repo": "https://github.com/harbor-framework/terminal-bench-2-1.git@d49e28f1e4ddd13d289e85a5f312a66750951932",
+        "path": "tasks",
+        "task_names": ["prove-plus-comm", "openssl-selfsigned-cert"]
+      }
+    ],
+    "n_attempts": 1,
+    "n_concurrent_trials": 2,
+    "environment": {
+      "type": "hf-sandbox",
+      "kwargs": {
+        "flavor": "cpu-upgrade",
+        "job_timeout": "none"
+      }
+    },
+    "agent_timeout_multiplier": 4,
+    "agent_setup_timeout_multiplier": 2,
+    "retry": {
+      "max_retries": 0
+    }
+  }
+}

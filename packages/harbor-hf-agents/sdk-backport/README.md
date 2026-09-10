@@ -89,3 +89,19 @@ baseline and mutation script are absent; those commands cannot pass. No TypeScri
 source changed; separate npm/browser gates were not run. The control image's
 existing typecheck and web build passed. Keep the integration PR draft while
 validation blockers remain. No rollout or live Sandbox behavior is claimed.
+
+## Sandbox display names
+
+Job naming is not an SDK backport. The existing Harbor-HF Sandbox adapter supplies
+public `HfApi.run_job(name=...)` only when neither an explicit name nor a `name`
+label is supplied. Its default is `harbor-<first 70 environment-name characters>-<12 hex SHA-256 characters>`
+(maximum 90 characters), hashing the full native Harbor `environment_name`.
+Images, commands, full trial identities, ownership labels and namespace selection
+are unchanged. Calls outside the adapter context keep SDK defaults.
+
+Reviewed Harbor `src/harbor/environments/base.py` and
+`src/harbor/environments/hf_sandbox.py` at the pin above and history through
+`191d1b98`: Harbor supplies public `environment_name` and delegates to
+`Sandbox.create`; no newer Sandbox naming fix requires a pin update. No new
+Harbor imports or SDK monkeypatches are added. Offline wrapper tests exercise the
+installed terminal-only SDK's actual HTTP payload construction.

@@ -55,25 +55,30 @@ Harbor owns environment resolution and execution; this UI uses existing control
 routes and adds no resolver or JobConfig field. Standalone setup is secret-free;
 authorized benchmark agent environment covers benchmark setup and run.
 
-## Local validation (2026-09-10)
+## Local integration validation (2026-09-10)
 
-- 1,176 unit tests and 68 mocked browser tests pass, including name-only
-  registration, operator visibility, revision conflicts, uncertain saves,
-  reactivation, recipe/model/poll invalidation and approval through setup/launch.
-- Formatting, lint (existing warnings), types, build, npm dependency tree and
-  audit pass; audit reports zero vulnerabilities. Privacy and Slophammer normal
-  check/DRY pass. Generated outputs are byte-stable on regeneration; the normal
-  git-diff generated gate remains nonzero because this worktree intentionally
-  retains uncommitted generated backend/API changes.
-- Existing global TypeScript coverage gates remain below 85%: lines 83.98%,
-  statements 82.01%, functions 83.64%, branches 76.60%. The new management panel
-  exceeds 85% in each metric. No threshold was weakened.
-- The optional `slophammer-baseline.json` and `scripts/check_mutation.py` are
-  absent; baseline and mutation commands cannot pass. Previously recorded
-  supplementary Python agent-package coverage gaps remain unmeasured here:
-  this UI work does not change Python, and prior Python changes are preserved.
-- No commits, pushes, hosted operations, real secret inputs, or credential
-  transfers were performed. No live provider authentication is claimed.
+- 1,277 unit tests, 68 mocked browser tests, 100 root Python tests and 197
+  agent-package tests pass after integrating main's task-working-directory,
+  Sandbox-name and preset changes. Native key-only tests cover two model strings
+  and two non-default task directories; legacy partial connections still fail.
+- Root and agent formatting, lint, types, build, dependency tree, npm/Python
+  audits, privacy and normal Slophammer check/DRY pass. Lint retains warnings.
+  Authoritative contracts, OpenAPI and browser types were regenerated and staged;
+  the normal generated-diff gate now passes.
+- Root Python coverage passes at 89.10%. Supplementary global TypeScript coverage
+  still fails 85%: lines 84.01%, statements 82.05%, functions 83.75%, branches
+  76.69%. Supplementary agent-package coverage fails at 66.26%. All tests pass;
+  no coverage threshold was weakened.
+- The optional `slophammer-baseline.json` and `scripts/check_mutation.py` remain
+  absent; the requested baseline and mutation commands were attempted and fail.
+- Both control and parent-worker Docker images build locally. Offline checks of
+  their immutable local image IDs confirm the pinned Harbor revision and exact
+  integrated CommandAgent/Sandbox source. No image publication is implied.
+- Browser checks passed on an isolated, explicitly started local Vite server
+  after the initial automatic-server check stalled probing an unopened port.
+- The feature is committed locally; the resolved integration is staged for
+  parent review, not merge-committed. No push, PR, deployment, real secret input,
+  credential transfer, hosted delivery or provider authentication was performed.
 
 ## Exclusive control authority
 
