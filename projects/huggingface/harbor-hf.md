@@ -1343,3 +1343,20 @@ Approved at: 2026-09-09T00:00:00Z
   privacy-reviewed push to the existing PR branch and PR body update.
 - No merge, deployment, image/source publication, Jobs, reruns, inference,
   credential movement or changes to existing presets. Timestamp is session date.
+
+Completion checkpoint (2026-09-09 session):
+
+- Added the schema-loaded two-task preset, one contract regression and selector
+  documentation; existing presets, agent recipe selection and task inputs remain
+  unchanged. Pinned source Dockerfiles declare `/workspace` and `/app`, with no
+  task workdir override. Deployment of the agent fix remains a prerequisite.
+- Reviewed native filtering/repetitions in Harbor `src/harbor/models/job/config.py`
+  and `src/harbor/job.py` at the existing pin and history through `191d1b98`.
+  Pinned CLI `--print-config` accepts the configuration; metadata-only dry-run is
+  newer than the pin, so no native task resolution/execution is claimed.
+- Passed 1,141 unit tests and 64 isolated browser tests, formatting, lint (existing
+  warnings), root/Space types, build, generated contracts, dependency audit (zero
+  vulnerabilities), normal Slophammer and DRY. Baseline and mutation script remain
+  absent; no gate was weakened. No Python production or test files changed.
+- Local validation completed; existing PR branch publication follows privacy
+  review. No run, deployment, image publication, inference or credentials used.
