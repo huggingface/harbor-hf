@@ -1202,3 +1202,32 @@ Approved at: 2026-09-09T00:00:00Z
   merge, deployment, remote image publication, Jobs, retries, inference, credential
   movement or new resources in this implementation stage. Parent review precedes
   any later deployment decision; earlier deployment approval is not exercised here.
+
+Wrapper-only implementation checkpoint:
+
+- Replaced the naming backport with seven lines in the existing Sandbox adapter:
+  an explicit, deterministic display name from Harbor's public environment name,
+  capped at 90 characters. Explicit names/name labels and SDK conflict handling
+  remain unchanged; ownership labels, namespace and full image/command payloads
+  are preserved. No persisted field, identity, scheduler or new binding is added.
+- Restored the terminal-only SDK builder, dependency pin, lock and source-audit
+  tests to main exactly. Wheel SHA-256 is
+  `922641bbf132546da041086e73d6cdfca7f13f4e63609580575699396a5a8df1`;
+  only the existing exact terminal-result production patch remains.
+- Checked Harbor environments/base.py and environments/hf_sandbox.py at
+  dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e and history through 191d1b98.
+  This uses public environment_name and HfApi.run_job(name=...), not a Harbor
+  behavior backport. No relevant naming implementation has landed upstream.
+- Root: 100 tests, 89.10% coverage. Agents: 178 tests. Both linux/amd64 images
+  built locally and passed 63 offline cases each (40 terminal, 23 wrapper).
+  All 183 installed SDK Python files match the terminal-only wheel, and each
+  installed wrapper matches reviewed source. Ruff, formatting, ty, root dependency
+  audit, normal Slophammer and DRY passed. The control image typecheck/build passed.
+- Supplementary agent-wide coverage remains below 85% (62.13%; changed adapter
+  87%). The baseline file and mutation script remain absent. No gate was weakened.
+  No TypeScript changed; standalone npm/browser checks were not rerun locally.
+- Ready for publication to existing PR #205 and parent review. This stage did not
+  touch the SDK repository or its PRs, publish an image, deploy, merge, launch Jobs,
+  retry work or move credentials. The earlier deployed source remains unchanged.
+  Historical SDK naming approval/completion entries above are superseded for
+  future work by the wrapper-only authorization, not permission to reopen that PR.

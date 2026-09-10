@@ -41,7 +41,6 @@ def test_reproducible_wheel_and_narrow_source_diff(tmp_path):
     assert before.keys() == normalized.keys()
     assert {n for n in before if before[n] != normalized[n]} == {
         "huggingface_hub/_sandbox.py",
-        "huggingface_hub/_jobs_api.py",
         "huggingface_hub/__init__.py",
         "huggingface_hub-1.28.0.dist-info/METADATA",
         "huggingface_hub-1.28.0.dist-info/RECORD",
@@ -53,17 +52,6 @@ def test_reproducible_wheel_and_narrow_source_diff(tmp_path):
             b"",
         )
         == before["huggingface_hub/_sandbox.py"]
-    )
-    assert (
-        normalized["huggingface_hub/_jobs_api.py"].replace(
-            b"        # Drop registry host, namespace and digest "
-            b"from the readable name only.\n"
-            b'        base = _sanitize_job_name(image.split("@", 1)[0]'
-            b'.rstrip("/").split("/")[-1] or image)',
-            b'        base = _sanitize_job_name(image.rstrip("/").split("/")[-1] '
-            b"or image)  # drop registry host and namespace",
-        )
-        == before["huggingface_hub/_jobs_api.py"]
     )
     for name in (
         "huggingface_hub/__init__.py",
@@ -95,7 +83,6 @@ def test_build_entrypoint(offline, tmp_path, monkeypatch, capsys):
     (root / "terminal-result.patch").write_bytes(
         (BACKPORT / "terminal-result.patch").read_bytes()
     )
-    (root / "job-name.patch").write_bytes((BACKPORT / "job-name.patch").read_bytes())
     monkeypatch.setattr(BUILD, "ROOT", root)
     monkeypatch.setattr(
         sys, "argv", ["build.py"] + (["--source", str(source)] if offline else [])
@@ -107,13 +94,9 @@ def test_build_entrypoint(offline, tmp_path, monkeypatch, capsys):
 
     monkeypatch.setattr(BUILD, "urlopen", fetch)
     BUILD.main()
-    wheel = (
-        root
-        / "dist"
-        / "huggingface_hub-1.28.0+terminal.f1c01f0.jobname.3493b0d-py3-none-any.whl"
-    )
+    wheel = root / "dist/huggingface_hub-1.28.0+terminal.f1c01f0-py3-none-any.whl"
     assert wheel.read_bytes() == (BACKPORT / "dist" / wheel.name).read_bytes()
     assert (
-        "sha256:fdd23ace680c9c09aafab55e88e888c6b314cf21808cc4601ec548a86a0a0e1b"
+        "sha256:922641bbf132546da041086e73d6cdfca7f13f4e63609580575699396a5a8df1"
         in capsys.readouterr().out
     )

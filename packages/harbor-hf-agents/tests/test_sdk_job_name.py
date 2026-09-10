@@ -1,59 +1,120 @@
-"""Offline regressions against the actual installed SDK; never submit a Job."""
+"""Offline wrapper regressions through the installed SDK's HTTP payload builder."""
 
-import hashlib
+from hashlib import sha256
 from unittest.mock import patch
 
 import httpx
 import pytest
-from huggingface_hub import HfApi
-from huggingface_hub._jobs_api import _default_job_name_from_image
+from harbor.environments.hf_sandbox import HFSandboxEnvironment
 
-
-@pytest.mark.parametrize("tag", ["", ":3.12"])
-def test_default_job_name_digest_is_only_removed_from_readable_name(tag: str) -> None:
-    command = ["python", "-c", "print(1)"]
-    names = []
-    for digest in ["a" * 64, "b" * 64]:
-        image = f"registry.example/namespace/benchmark-task-image{tag}@sha256:{digest}"
-        name = _default_job_name_from_image(image, command)
-        expected_hash = hashlib.sha256(
-            "\x00".join([image, *command]).encode()
-        ).hexdigest()[:8]
-        base = "benchmark-task-image" + ("-3-12" if tag else "")
-        assert name == f"{base}-{expected_hash}"
-        assert len(name) < 100
-        names.append(name)
-    assert names[0] != names[1]
-
-
-@pytest.mark.parametrize("explicit_name", [None, "custom-name"])
-@pytest.mark.parametrize(
-    "image", ["python:3.12", "registry.example/namespace/task@sha256:" + "a" * 64]
+from harbor_hf_agents.hf_sandbox import (
+    _JOB_CONTEXT,
+    LabeledHFSandboxEnvironment,
+    _LabeledHfApi,
 )
-def test_run_job_name_preserves_image_payload(
-    image: str, explicit_name: str | None
-) -> None:
-    command = ["echo", "hello"]
+
+RUN_ID = "run-" + "a" * 24
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("environment_name", ["task-one", "task-two", "task-" * 50])
+@pytest.mark.parametrize(
+    ("supplied", "expected"),
+    [
+        ({}, None),
+        ({"name": None}, None),
+        ({"name": "explicit-name"}, "explicit-name"),
+        ({"name": ""}, ""),
+        ({"labels": {"name": "label-name"}}, "label-name"),
+        ({"name": None, "labels": {"name": "label-name"}}, "label-name"),
+        (
+            {"name": "explicit-name", "labels": {"name": "label-name"}},
+            "conflict",
+        ),
+    ],
+)
+async def test_contextual_name_preserves_payload(
+    environment_name, supplied, expected, monkeypatch
+):
+    image = "registry.example/namespace/" + "long-image-" * 20 + "@sha256:" + "b" * 64
+    command = ["echo", "command-must-not-appear-in-name"]
+    labels = {
+        "hf-sandbox": "1",
+        "harbor-hf-role": "wrong-role",
+        "harbor-hf-run": "wrong-run",
+        **supplied.get("labels", {}),
+    }
+
+    async def start(_self, _force_build):
+        _LabeledHfApi(token=False).run_job(
+            image=image,
+            command=command,
+            flavor="cpu-basic",
+            namespace="wrong-namespace",
+            **{**supplied, "labels": labels},
+        )
+
+    monkeypatch.setattr(HFSandboxEnvironment, "start", start)
+    monkeypatch.setenv("HARBOR_HF_NAMESPACE", "test-namespace")
+    environment = object.__new__(LabeledHFSandboxEnvironment)
+    environment._run_label = RUN_ID
+    environment.environment_name = environment_name
     with patch("huggingface_hub.hf_api.get_session") as session:
         session.return_value.post.return_value = httpx.Response(
             200,
             request=httpx.Request("POST", "https://example.com/jobs"),
             json={
                 "id": "job-id",
-                "owner": {"id": "1234", "name": "user", "type": "user"},
+                "owner": {"id": "1234", "name": "namespace", "type": "user"},
                 "status": {"stage": "PENDING"},
             },
         )
-        HfApi(token=False).run_job(
-            image=image,
-            command=command,
-            flavor="cpu-basic",
-            namespace="namespace",
-            name=explicit_name,
-        )
+        if expected == "conflict":
+            with pytest.raises(ValueError, match="cannot both be provided"):
+                await environment.start(False)
+            session.return_value.post.assert_not_called()
+            assert _JOB_CONTEXT.get() is None
+            return
+        await environment.start(False)
+    assert _JOB_CONTEXT.get() is None
     payload = session.return_value.post.call_args.kwargs["json"]
     assert payload["dockerImage"] == image
     assert payload["command"] == command
-    assert payload["labels"]["name"] == (
-        explicit_name or _default_job_name_from_image(image, command)
-    )
+    assert "/jobs/test-namespace" in session.return_value.post.call_args.args[0]
+    assert payload["labels"] == {
+        "hf-sandbox": "1",
+        "harbor-hf-role": "trial",
+        "harbor-hf-run": RUN_ID,
+        "name": expected
+        if expected is not None
+        else (
+            f"harbor-{environment_name[:70]}-"
+            f"{sha256(environment_name.encode()).hexdigest()[:12]}"
+        ),
+    }
+    assert len(payload["labels"]["name"]) <= 90
+    assert labels["harbor-hf-role"] == "wrong-role"
+    assert environment.environment_name == environment_name
+
+
+def test_uncontextual_call_is_unchanged():
+    from huggingface_hub import HfApi
+
+    with patch.object(HfApi, "run_job") as run_job:
+        _LabeledHfApi(token=False).run_job(image="python:3.12", labels={"custom": "1"})
+    run_job.assert_called_once_with(image="python:3.12", labels={"custom": "1"})
+
+
+@pytest.mark.asyncio
+async def test_invalid_labels_still_fail_and_reset_context(monkeypatch):
+    async def start(_self, _force_build):
+        _LabeledHfApi(token=False).run_job(labels=["invalid"])
+
+    monkeypatch.setattr(HFSandboxEnvironment, "start", start)
+    monkeypatch.setenv("HARBOR_HF_NAMESPACE", "test-namespace")
+    environment = object.__new__(LabeledHFSandboxEnvironment)
+    environment._run_label = RUN_ID
+    environment.environment_name = "task"
+    with pytest.raises(TypeError, match="labels must be a dictionary"):
+        await environment.start(False)
+    assert _JOB_CONTEXT.get() is None

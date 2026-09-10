@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Harbor parent runner and temporary ATIF converters for Harbor-HF."
 requires-python = ">=3.12"
 dependencies = [
-  "huggingface-hub==1.28.0+terminal.f1c01f0.jobname.3493b0d",
+  "huggingface-hub==1.28.0+terminal.f1c01f0",
   "harbor[hf-sandbox] @ git+https://github.com/harbor-framework/harbor.git@dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e",
 ]
 
@@ -38,4 +38,4 @@ max-complexity = 8
 "tests/**/*.py" = ["ANN"]
 
 [tool.uv.sources]
-huggingface-hub = { path = "sdk-backport/dist/huggingface_hub-1.28.0+terminal.f1c01f0.jobname.3493b0d-py3-none-any.whl" }
+huggingface-hub = { path = "sdk-backport/dist/huggingface_hub-1.28.0+terminal.f1c01f0-py3-none-any.whl" }

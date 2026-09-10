@@ -6,6 +6,7 @@ import os
 import re
 from contextvars import ContextVar
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any, cast, override
 
 import huggingface_hub._sandbox as sandbox_module
@@ -21,6 +22,7 @@ _SUPPORTED_INFERENCE_KEYS = frozenset({"HF_TOKEN", "OPENAI_API_KEY"})
 class _JobContext:
     labels: dict[str, str]
     namespace: str
+    name: str
 
 
 _JOB_CONTEXT: ContextVar[_JobContext | None] = ContextVar(
@@ -44,6 +46,8 @@ class _LabeledHfApi(HfApi):
                 raise TypeError("Sandbox Job labels must be a dictionary")
             kwargs["labels"] = {**(supplied or {}), **context.labels}
             kwargs["namespace"] = context.namespace
+            if kwargs.get("name") is None and "name" not in kwargs["labels"]:
+                kwargs["name"] = context.name
         return super().run_job(*args, **kwargs)
 
 
@@ -95,6 +99,9 @@ class LabeledHFSandboxEnvironment(HFSandboxEnvironment):
                     "harbor-hf-run": self._run_label,
                 },
                 namespace=namespace,
+                # A bounded display name; Harbor retains the full trial identity.
+                name=f"harbor-{self.environment_name[:70]}-"
+                f"{sha256(self.environment_name.encode()).hexdigest()[:12]}",
             )
         )
         try:

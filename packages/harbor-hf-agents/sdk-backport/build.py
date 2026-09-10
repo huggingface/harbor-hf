@@ -1,4 +1,4 @@
-"""Repack the released SDK wheel with the reviewed SDK backports."""
+"""Repack the released SDK wheel with the reviewed terminal-result backport."""
 
 import argparse
 import base64
@@ -27,30 +27,17 @@ def repack(source: bytes, version: str, patch: Path) -> bytes:
         raise ValueError("SDK release wheel hash mismatch")
     with zipfile.ZipFile(io.BytesIO(source)) as archive:
         files = {name: archive.read(name) for name in archive.namelist()}
-    modules = ("huggingface_hub/_sandbox.py", "huggingface_hub/_jobs_api.py")
+    sdk = "huggingface_hub/_sandbox.py"
     with tempfile.TemporaryDirectory() as directory:
-        for sdk in modules:
-            target = Path(directory) / sdk
-            target.parent.mkdir(exist_ok=True)
-            target.write_bytes(files[sdk])
+        target = Path(directory) / sdk
+        target.parent.mkdir()
+        target.write_bytes(files[sdk])
         subprocess.run(
             ["git", "apply", "--no-index", "-p2", str(patch.resolve())],
             cwd=directory,
             check=True,
         )
-        subprocess.run(
-            [
-                "git",
-                "apply",
-                "--no-index",
-                "-p2",
-                str((ROOT / "job-name.patch").resolve()),
-            ],
-            cwd=directory,
-            check=True,
-        )
-        for sdk in modules:
-            files[sdk] = (Path(directory) / sdk).read_bytes()
+        files[sdk] = target.read_bytes()
     init = "huggingface_hub/__init__.py"
     files[init] = files[init].replace(
         b'__version__ = "1.28.0"', f'__version__ = "{version}"'.encode()
