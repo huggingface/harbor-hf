@@ -1283,3 +1283,15 @@ Wrapper-only publication completed (2026-09-09 session):
 - This completion record changes no runtime source. No SDK repository/PR change,
   deployment, image publication, merge, Job, retry or credential movement occurred.
   Local image and test processes finished. Parent review remains the next action.
+
+### Prominent estimated inference cost (2026-09-10)
+
+Approved at: 2026-09-10T13:37:44.914817+00:00
+
+- Direct user approval: make the shared estimated inference cost prominent when
+  native reported cost is unavailable. Keep explicit Estimated versus Reported
+  labels and original/corrected rates provenance; do not relabel estimates as
+  agent reports, change native costs or alter spend policies.
+- Implement and test the focused display fix on the open refresh PR. Existing
+  approval to commit, push, update PR and prepare it for merge covers this UI
+  refinement. No merge into main, deployment, price mutation or live workload.
