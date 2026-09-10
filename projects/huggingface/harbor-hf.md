@@ -1330,3 +1330,16 @@ Local preparation checkpoint (2026-09-09 session):
 Status: completed
 
 Published draft PR #208 (https://github.com/huggingface/harbor-hf/pull/208) after implementation review and privacy checks. The task-directory fix passed 100 root tests and 186 agent tests; changed-file coverage is 94.02%. Existing agent-wide coverage and missing-tooling limitations are disclosed. No merge, deployment, image publication, remote execution or retries were performed.
+
+### Two-task workdir diagnostic preset amendment (2026-09-09)
+
+Status: approved
+Approved at: 2026-09-09T00:00:00Z
+
+- Direct user approval: add `prove-plus-comm` and `openssl-selfsigned-cert`
+  as a diagnostic preset in existing PR #208, one attempt per task, concurrency
+  two, with native task inputs and existing smoke timeout defaults unchanged.
+- Approved: additive JSON, focused tests and documentation, local commits,
+  privacy-reviewed push to the existing PR branch and PR body update.
+- No merge, deployment, image/source publication, Jobs, reruns, inference,
+  credential movement or changes to existing presets. Timestamp is session date.
