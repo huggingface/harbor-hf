@@ -37,7 +37,7 @@ def _make_sandbox(base_url):
 def test_installed_sdk_version():
     import huggingface_hub
 
-    expected = "1.28.0+terminal.f1c01f0"
+    expected = "1.28.0+terminal.f1c01f0.jobname.3493b0d"
     assert version("huggingface-hub") == huggingface_hub.__version__ == expected
 
 

@@ -737,7 +737,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "harbor", extras = ["hf-sandbox"], git = "https://github.com/harbor-framework/harbor.git?rev=dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e" },
-    { name = "huggingface-hub", path = "sdk-backport/dist/huggingface_hub-1.28.0+terminal.f1c01f0-py3-none-any.whl" },
+    { name = "huggingface-hub", path = "sdk-backport/dist/huggingface_hub-1.28.0+terminal.f1c01f0.jobname.3493b0d-py3-none-any.whl" },
 ]
 
 [package.metadata.requires-dev]
@@ -816,8 +816,8 @@ http2 = [
 
 [[package]]
 name = "huggingface-hub"
-version = "1.28.0+terminal.f1c01f0"
-source = { path = "sdk-backport/dist/huggingface_hub-1.28.0+terminal.f1c01f0-py3-none-any.whl" }
+version = "1.28.0+terminal.f1c01f0.jobname.3493b0d"
+source = { path = "sdk-backport/dist/huggingface_hub-1.28.0+terminal.f1c01f0.jobname.3493b0d-py3-none-any.whl" }
 dependencies = [
     { name = "click" },
     { name = "filelock" },
@@ -830,7 +830,7 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { filename = "huggingface_hub-1.28.0+terminal.f1c01f0-py3-none-any.whl", hash = "sha256:922641bbf132546da041086e73d6cdfca7f13f4e63609580575699396a5a8df1" },
+    { filename = "huggingface_hub-1.28.0+terminal.f1c01f0.jobname.3493b0d-py3-none-any.whl", hash = "sha256:fdd23ace680c9c09aafab55e88e888c6b314cf21808cc4601ec548a86a0a0e1b" },
 ]
 
 [package.metadata]
