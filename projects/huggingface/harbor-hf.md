@@ -1124,3 +1124,19 @@ Approved at: 2026-09-09T00:00:00Z
   Preserve original presets and unrelated worktrees. Keep private selection
   paths and source hashes outside tracked records. Approval time is unspecified;
   the timestamp records this session date only.
+
+Held-50 implementation checkpoint (2026-09-09):
+
+- Added only the single-attempt diagnostic preset, exact-membership regression
+  and documentation. Both historical partition unions match the 50-task held
+  list; source hashes remain private. Original presets and source fork unchanged.
+- Pinned native metadata inspection resolved 50 tasks and 50 trials; both QEMU
+  image references match the existing repair, and all 48 other task trees are
+  byte-identical to baseline. No execution or inference occurred.
+- Reviewed native DatasetConfig and Git dataset resolution at the existing Harbor
+  pin and upstream history through 191d1b98; no runtime logic or pin change needed.
+- Passed 1,064 unit tests, 64 isolated browser tests, formatting, lint, types,
+  build, generated checks, dependency audit and normal Slophammer/DRY. Missing
+  baseline and mutation-script limitations persist; no gate was weakened.
+- Publishing only this reviewed amendment on the already approved topic branch.
+  No PR, merge, deployment, Job, upstream change or credential movement.

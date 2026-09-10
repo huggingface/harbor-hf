@@ -15,11 +15,12 @@ Original presets and historical results are unchanged.
 | --- | --- | ---: | ---: | ---: | ---: |
 | terminal-bench-2-1 | all-tasks-1-trial-qemu-fixed | 89 | 1 | 89 | 8 |
 | terminal-bench-2-1 | all-tasks-5-trials-qemu-fixed | 89 | 5 | 445 | 8 |
+| terminal-bench-2-1 | held-50-1-trial-qemu-fixed | 50 | 1 | 50 | 8 |
 | terminal-bench-2-1 | two-tasks-2-trials-qemu-fixed | 2 | 2 | 4 | 2 |
 
 The smoke selects `qemu-startup` and `qemu-alpine-ssh` with native
 `retry.max_retries: 0`. Full variants preserve the original native configuration
-except the source; all three set `leaderboard_eligible: false`. No unrelated
+except the source; all four set `leaderboard_eligible: false`. No unrelated
 adaptive-rejection-sampler or three-task smoke variant was added.
 
 ## Published source and image provenance
@@ -131,3 +132,40 @@ opened.
 - Public privacy checks and complete source/preset/metadata review passed using
   only the explicitly approved fork and image identifiers. Detailed native
   inspection and anonymous registry receipts remain in private evidence.
+
+## Exact held-50 selection
+
+`presets/benchmarks/terminal-bench-2-1-held-50-1-trial-qemu-fixed.json`
+contains the explicit native `DatasetConfig.task_names` selection. It is the
+50-distinct-task union of the historical basic-48 and upgrade-2 selections,
+cross-checked against the held-50 list and both historical partitioned
+configurations. Both QEMU tasks belong to basic-48. It is **not** the first 50
+of the 89-task dataset or a new canonical benchmark release.
+
+This preset preserves the task set and one native attempt, not historical job
+execution equivalence. It uses the current full HF preset defaults: concurrency
+8, `cpu-upgrade` for all tasks, agent timeout multiplier 4 and setup multiplier
+2, with explicit zero retries. Historical basic-48 used `cpu-basic` with
+concurrency 5 or 7; upgrade-2 used `cpu-upgrade` with concurrency 1. Their
+six-hour agent override and provider configuration are not copied. Harbor
+retains ownership of task resource metadata and sorted native resolution order;
+this is not the original two-job submission order.
+
+The source and image pins above are unchanged. Only task selection is added;
+no control logic, benchmark parser, agent special case or runtime patch is needed.
+Rechecked the pinned Harbor `models/job/config.py` and
+`registry/client/git_repo.py` and upstream history through `191d1b98`:
+native explicit selection already exists, so no pin update is required.
+
+Held-50 validation: the existing pinned native metadata CLI resolved **50 tasks,
+one agent and 50 trials** in a credential-free environment. Exact preset
+membership matches the historical union; every selected task exists at the pin.
+Git content comparison against the baseline found all 48 non-QEMU task trees
+unchanged and exactly the two previously published effective QEMU image changes.
+No task, container or model was executed. Private source-file hashes and native
+inspection receipts are retained outside this repository.
+
+The amendment passed 1,064 unit tests and 64 isolated browser tests, formatting,
+lint, types, build, generated-contract checks, dependency audit and normal
+Slophammer/DRY. Baseline and mutation commands were retried and remain unavailable
+for the missing files described above. No checks were weakened.
