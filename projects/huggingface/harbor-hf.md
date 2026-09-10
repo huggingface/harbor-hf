@@ -938,3 +938,32 @@ Combined implementation ready for pull request (2026-09-09):
   registry preset documents. No upstream behavior or execution patch added.
 - Publishing this combined branch and opening its PR only; no merge, deployment,
   profile publication, live pricing edit, run or credential transfer.
+
+### Full benchmark preparation and metadata-only reasoning (2026-09-09)
+
+Approved at: 2026-09-10T07:21:57.441003+00:00
+
+- Direct user request approves local implementation and tests for full
+  Terminal-Bench 2.1 preparation: all 89 tasks, five attempts each (445 trials),
+  no task filter, with six hours of agent execution per trial replacing
+  task-specific agent budgets. This is not a whole-run, setup or verifier limit.
+- Use native JobConfig agent override_timeout_sec of 21600 and agent timeout
+  multiplier 1; inspect native cap precedence and ensure no cap shortens it.
+  Preserve minimal safe native agent settings through native and Workbench
+  compilation; reviewed agent identity, environment and kwargs retain authority.
+  No duplicate timeout fields or local timeout resolver. Stop for upstream gaps.
+- Workbench reasoning is free text recorded verbatim in existing submission
+  metadata, including numeric-looking and arbitrary model values. Define blank
+  semantics, bound length and reject controls and credentials. Preserve old off
+  submissions and recipes. No fixed dropdown, provider-effect claims, model
+  query additions, environment binding or execution side effects. Recipe remains
+  execution authority; show exact recorded intent in run detail.
+- Prepare the full profile privately only after read-only native source evidence
+  proves 89 tasks from the immutable registry source. Preserve resource defaults;
+  CPU and concurrency approval are separate and no launch is authorized.
+- Commit this authorization only before implementation. Leave implementation
+  changes local and uncommitted. Run required validation without weakening gates.
+  Preserve the original dirty checkout and private source artifacts.
+- No push, pull-request update, merge, deployment, live profile publication,
+  execution, inference, resource creation, credential movement, or upstream
+  publication is approved. Earlier publication approval does not cover this scope.
