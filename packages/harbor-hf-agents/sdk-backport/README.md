@@ -94,8 +94,12 @@ validation blockers remain. No rollout or live Sandbox behavior is claimed.
 
 Job naming is not an SDK backport. The existing Harbor-HF Sandbox adapter supplies
 public `HfApi.run_job(name=...)` only when neither an explicit name nor a `name`
-label is supplied. Its default is `harbor-<first 70 environment-name characters>-<12 hex SHA-256 characters>`
+label is supplied. Its default is `harbor-<sanitized first 70 environment-name characters>-<12 hex SHA-256 characters>`
 (maximum 90 characters), hashing the full native Harbor `environment_name`.
+Display-prefix characters outside ASCII letters, digits, hyphens and underscores
+are replaced with hyphens. Dots, slashes, whitespace and Unicode cannot enter HF
+Job tags; the hash still distinguishes original names with the same sanitized
+prefix. Native Harbor identities are never sanitized or renamed.
 Images, commands, full trial identities, ownership labels and namespace selection
 are unchanged. Calls outside the adapter context keep SDK defaults.
 

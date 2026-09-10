@@ -92,6 +92,9 @@ class LabeledHFSandboxEnvironment(HFSandboxEnvironment):
         namespace = os.environ.get("HARBOR_HF_NAMESPACE", "").strip()
         if not namespace:
             raise RuntimeError("HARBOR_HF_NAMESPACE is required for child Jobs")
+        # HF Job tags accept ASCII letters, digits, hyphens and underscores.
+        # Sanitize display text only; hash and Harbor identity keep the original.
+        display_prefix = re.sub(r"[^A-Za-z0-9_-]", "-", self.environment_name[:70])
         token = _JOB_CONTEXT.set(
             _JobContext(
                 labels={
@@ -100,7 +103,7 @@ class LabeledHFSandboxEnvironment(HFSandboxEnvironment):
                 },
                 namespace=namespace,
                 # A bounded display name; Harbor retains the full trial identity.
-                name=f"harbor-{self.environment_name[:70]}-"
+                name=f"harbor-{display_prefix}-"
                 f"{sha256(self.environment_name.encode()).hexdigest()[:12]}",
             )
         )

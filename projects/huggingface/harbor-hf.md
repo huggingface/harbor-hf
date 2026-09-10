@@ -1690,3 +1690,23 @@ Approved at: 2026-09-10T20:28:23.460685+00:00
 - Harbor boundary: reviewed src/harbor/environments/hf_sandbox.py and
   src/harbor/environments/base.py at dcd0a7ac and history through 191d1b98.
   No upstream change supplies this Harbor-HF display-name correction.
+
+Local repair validation checkpoint:
+
+- Sanitized only the default HF display-name prefix; retained full native
+  identity hashes, explicit names, ownership labels, and namespace behavior.
+- Corrected the provider HTML pattern for Unicode-sets validation. Browser
+  regression accepts a hyphenated provider and rejects a dotted provider.
+  Fractional pricing including 0.006 passes both mocked browser launch and
+  numeric submission tests; rate edits still require launch reconfirmation.
+- Root Python: 100 tests, 89.10% coverage. Agents: 246 tests. TypeScript:
+  1307 tests. Browser: 69 tests plus rerun fractional-pricing cases. Formatting,
+  lint, types, build, generated contracts, dependency audit, and DRY pass.
+- Both local linux/amd64 images build and match the reviewed adapter source;
+  183 selected offline tests pass inside each. The original image fails the
+  ten new punctuation regressions and passes the other 62 naming cases.
+- The initial image test harness omitted a fixture; after restoring that
+  fixture, all installed tests pass. No production fix was needed for tooling.
+- The requested mutation command cannot run because its script is absent.
+  No validation gate was weakened. No image publication, remote deployment,
+  credential change, benchmark launch, or trial retry occurred for this patch.

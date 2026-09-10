@@ -459,88 +459,105 @@ describe("restored control console", () => {
     });
   });
 
-  it("records validated launch pricing without invalidating setup", async () => {
-    const user = userEvent.setup();
-    renderAt("/workbench");
-    expect(
-      await screen.findByRole("heading", { name: "Agent Workbench" }),
-    ).toBeVisible();
-    expect(screen.getByText("Configure → Test → Run")).toBeVisible();
-    await waitFor(() => expect(apiMocks.previewWorkbenchRecipe).toHaveBeenCalled());
+  it.each(["0", "0.006"])(
+    "records fractional launch pricing with cached rate %s without invalidating setup",
+    async (cachedRate) => {
+      const user = userEvent.setup();
+      renderAt("/workbench");
+      expect(
+        await screen.findByRole("heading", { name: "Agent Workbench" }),
+      ).toBeVisible();
+      expect(screen.getByText("Configure → Test → Run")).toBeVisible();
+      await waitFor(() => expect(apiMocks.previewWorkbenchRecipe).toHaveBeenCalled());
 
-    await user.click(
-      screen.getByLabelText(
-        "Start one disposable CPU setup test for this exact recipe.",
-      ),
-    );
-    await user.click(screen.getByRole("button", { name: "Run setup test" }));
-    expect(await screen.findByText("Setup passed")).toBeVisible();
-    expect(await screen.findByText("setup ready")).toBeVisible();
+      await user.click(
+        screen.getByLabelText(
+          "Start one disposable CPU setup test for this exact recipe.",
+        ),
+      );
+      await user.click(screen.getByRole("button", { name: "Run setup test" }));
+      expect(await screen.findByText("Setup passed")).toBeVisible();
+      expect(await screen.findByText("setup ready")).toBeVisible();
 
-    const runCard =
-      screen.getByRole("heading", { name: "3. Run with Harbor" }).closest("section") ??
-      screen.getByRole("heading", { name: "3. Run with Harbor" }).parentElement
-        ?.parentElement;
-    expect(runCard).not.toBeNull();
-    const scope = within(runCard as HTMLElement);
-    await user.type(
-      scope.getByLabelText("Recorded model"),
-      "publisher/workbench-model",
-    );
-    expect(scope.getByLabelText("Concurrent trials")).toHaveValue(1);
-    await user.clear(scope.getByLabelText("Concurrent trials"));
-    await user.type(scope.getByLabelText("Concurrent trials"), "12");
-    await user.type(scope.getByLabelText("Recorded provider (optional)"), "together");
-    await user.clear(scope.getByLabelText("Recorded provider (optional)"));
-    await user.type(
-      scope.getByLabelText("Harness model string"),
-      "hf.publisher/runtime-model:together",
-    );
-    await user.click(
-      scope.getByLabelText(
-        "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
-      ),
-    );
-    const previews = apiMocks.previewWorkbenchRecipe.mock.calls.length;
-    await user.click(scope.getByLabelText("Record launch pricing"));
-    expect(scope.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
-    for (const [label, value] of [
-      ["Input incl. cache USD/M", "2"],
-      ["Cached input USD/M", "0.5"],
-      ["Output USD/M", "8"],
-    ])
-      await user.type(scope.getByLabelText(label!), value!);
-    expect(screen.getByText("Setup passed")).toBeVisible();
-    expect(apiMocks.previewWorkbenchRecipe).toHaveBeenCalledTimes(previews);
-    expect(apiMocks.startWorkbenchSetup).toHaveBeenCalledTimes(1);
-    await user.click(
-      scope.getByLabelText(
-        "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
-      ),
-    );
-    await user.click(scope.getByRole("button", { name: "Launch Harbor run" }));
-    await waitFor(() => expect(apiMocks.submitRun).toHaveBeenCalledOnce());
-    expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
-      pricing: {
-        currency: "USD",
-        input_usd_per_million: 2,
-        output_usd_per_million: 8,
-        cached_usd_per_million: 0.5,
-      },
-    });
-    expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
-      n_concurrent_trials: 12,
-      model: {
-        id: "publisher/workbench-model",
-        provider: "unspecified",
-        reasoning_effort: "off",
-      },
-      workbench: {
-        setup_test_id: setup.setup_test_id,
-        harbor_agent: { model_name: "hf.publisher/runtime-model:together" },
-      },
-    });
-  });
+      const runCard =
+        screen
+          .getByRole("heading", { name: "3. Run with Harbor" })
+          .closest("section") ??
+        screen.getByRole("heading", { name: "3. Run with Harbor" }).parentElement
+          ?.parentElement;
+      expect(runCard).not.toBeNull();
+      const scope = within(runCard as HTMLElement);
+      await user.type(
+        scope.getByLabelText("Recorded model"),
+        "publisher/workbench-model",
+      );
+      expect(scope.getByLabelText("Concurrent trials")).toHaveValue(1);
+      await user.clear(scope.getByLabelText("Concurrent trials"));
+      await user.type(scope.getByLabelText("Concurrent trials"), "12");
+      await user.type(scope.getByLabelText("Recorded provider (optional)"), "together");
+      await user.clear(scope.getByLabelText("Recorded provider (optional)"));
+      await user.type(
+        scope.getByLabelText("Harness model string"),
+        "hf.publisher/runtime-model:together",
+      );
+      await user.click(
+        scope.getByLabelText(
+          "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
+        ),
+      );
+      const previews = apiMocks.previewWorkbenchRecipe.mock.calls.length;
+      await user.click(scope.getByLabelText("Record launch pricing"));
+      expect(scope.getByRole("button", { name: "Launch Harbor run" })).toBeDisabled();
+      for (const [label, value] of [
+        ["Input incl. cache USD/M", "0.006"],
+        ["Cached input USD/M", cachedRate],
+        ["Output USD/M", "0.06"],
+      ])
+        await user.type(scope.getByLabelText(label!), value!);
+      expect(screen.getByText("Setup passed")).toBeVisible();
+      expect(apiMocks.previewWorkbenchRecipe).toHaveBeenCalledTimes(previews);
+      expect(apiMocks.startWorkbenchSetup).toHaveBeenCalledTimes(1);
+      await user.click(
+        scope.getByLabelText(
+          "Launch this exact tested recipe and accept the displayed campaign cost ceiling.",
+        ),
+      );
+      await waitFor(() => {
+        const saved = JSON.parse(
+          localStorage.getItem("harbor-hf.workbench.draft.v1") ?? "null",
+        );
+        expect(saved?.pricing).toEqual({
+          enabled: true,
+          input: "0.006",
+          cached: cachedRate,
+          output: "0.06",
+        });
+      });
+      expect(scope.getByRole("button", { name: "Launch Harbor run" })).toBeEnabled();
+      await user.click(scope.getByRole("button", { name: "Launch Harbor run" }));
+      await waitFor(() => expect(apiMocks.submitRun).toHaveBeenCalledOnce());
+      expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
+        pricing: {
+          currency: "USD",
+          input_usd_per_million: 0.006,
+          output_usd_per_million: 0.06,
+          cached_usd_per_million: Number(cachedRate),
+        },
+      });
+      expect(apiMocks.submitRun.mock.calls[0]?.[0]).toMatchObject({
+        n_concurrent_trials: 12,
+        model: {
+          id: "publisher/workbench-model",
+          provider: "unspecified",
+          reasoning_effort: "off",
+        },
+        workbench: {
+          setup_test_id: setup.setup_test_id,
+          harbor_agent: { model_name: "hf.publisher/runtime-model:together" },
+        },
+      });
+    },
+  );
 
   it.each(["/overview", "/workbench"])(
     "uses the same concurrency field and preset defaults at %s",

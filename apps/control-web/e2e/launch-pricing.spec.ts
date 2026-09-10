@@ -8,7 +8,7 @@ const digest = "a".repeat(64);
 const pricing: LaunchPricingV1 = {
   currency: "USD",
   input_usd_per_million: 2,
-  cached_usd_per_million: 0.5,
+  cached_usd_per_million: 0.006,
   output_usd_per_million: 8,
 };
 const confirmation =
@@ -59,7 +59,7 @@ function fixture() {
     },
     shared_estimate: {
       basis: "launch_rates_reported_usage",
-      cost_usd: recordedPricing ? 2.425 : null,
+      cost_usd: recordedPricing ? 2.3015 : null,
       unavailable_reason: recordedPricing ? null : "pricing_unset",
     },
   });
@@ -220,8 +220,35 @@ for (const enabled of [true, false])
     const shared = fixture();
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (
+        message.type() === "error" &&
+        /pattern attribute|Invalid regular expression/i.test(message.text())
+      )
+        errors.push(message.text());
+    });
     await shared.mock(context);
     await page.goto("/workbench");
+    const provider = page.getByLabel("Recorded provider (optional)");
+    expect(
+      await provider.evaluate((element) => {
+        const input = element as HTMLInputElement;
+        return new RegExp(`^(?:${input.pattern})$`, "v").test("example-provider");
+      }),
+    ).toBe(true);
+    await provider.fill("example.provider");
+    expect(
+      await provider.evaluate(
+        (element) => (element as HTMLInputElement).validity.patternMismatch,
+      ),
+    ).toBe(true);
+    await provider.fill("example-provider");
+    expect(
+      await provider.evaluate((element) =>
+        (element as HTMLInputElement).checkValidity(),
+      ),
+    ).toBe(true);
+    await provider.fill("");
     await expect(page.getByLabel("Record launch pricing")).not.toBeChecked();
     if (enabled) {
       await page.getByLabel("Record launch pricing").check();
@@ -243,7 +270,7 @@ for (const enabled of [true, false])
     const previews = shared.previews();
     if (enabled) {
       await page.getByLabel(confirmation).check();
-      await page.getByLabel("Cached input USD/M").fill("0.5");
+      await page.getByLabel("Cached input USD/M").fill("0.006");
       await page.getByLabel("Output USD/M").fill("8");
       await expect(page.getByLabel(confirmation)).not.toBeChecked();
       await expect(page.getByText("Setup passed")).toBeVisible();
@@ -270,7 +297,7 @@ for (const enabled of [true, false])
         const reader = await other.newPage();
         await reader.goto(`/runs/${runId}`);
         await expect(
-          reader.getByLabel("Launch estimate (USD): 2.425", { exact: true }),
+          reader.getByLabel("Launch estimate (USD): 2.3015", { exact: true }),
         ).toBeVisible();
         await reader.screenshot({
           path: "/tmp/launch-pricing-detail.png",
@@ -281,7 +308,7 @@ for (const enabled of [true, false])
           reader.getByRole("columnheader", { name: "Shared estimate" }),
         ).toBeVisible();
         await expect(
-          reader.getByLabel("Launch estimate (USD): 2.425", { exact: true }),
+          reader.getByLabel("Launch estimate (USD): 2.3015", { exact: true }),
         ).toBeVisible();
         await reader.goto("/");
         await expect(reader.getByText("2/3 runs · partial subtotal")).toBeVisible();

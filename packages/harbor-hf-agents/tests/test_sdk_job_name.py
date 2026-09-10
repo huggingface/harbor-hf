@@ -1,5 +1,6 @@
 """Offline wrapper regressions through the installed SDK's HTTP payload builder."""
 
+import re
 from hashlib import sha256
 from unittest.mock import patch
 
@@ -17,7 +18,21 @@ RUN_ID = "run-" + "a" * 24
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("environment_name", ["task-one", "task-two", "task-" * 50])
+@pytest.mark.parametrize(
+    ("environment_name", "display_prefix"),
+    [
+        ("task-one", "task-one"),
+        ("task-two", "task-two"),
+        ("task-" * 50, "task-" * 14),
+        ("task-3.11__repeat", "task-3-11__repeat"),
+        ("task-3-11__repeat", "task-3-11__repeat"),
+        ("namespace/task:v2", "namespace-task-v2"),
+        ("task name\twith\nspaces", "task-name-with-spaces"),
+        ("task-\u00e9-\u4efb\u52a1-\U0001f680", "task-------"),
+        (".=/", "---"),
+        ("", ""),
+    ],
+)
 @pytest.mark.parametrize(
     ("supplied", "expected"),
     [
@@ -34,7 +49,7 @@ RUN_ID = "run-" + "a" * 24
     ],
 )
 async def test_contextual_name_preserves_payload(
-    environment_name, supplied, expected, monkeypatch
+    environment_name, display_prefix, supplied, expected, monkeypatch
 ):
     image = "registry.example/namespace/" + "long-image-" * 20 + "@sha256:" + "b" * 64
     command = ["echo", "command-must-not-appear-in-name"]
@@ -88,11 +103,17 @@ async def test_contextual_name_preserves_payload(
         "name": expected
         if expected is not None
         else (
-            f"harbor-{environment_name[:70]}-"
+            f"harbor-{display_prefix}-"
             f"{sha256(environment_name.encode()).hexdigest()[:12]}"
         ),
     }
     assert len(payload["labels"]["name"]) <= 90
+    if expected is None:
+        assert re.fullmatch(r"[A-Za-z0-9_-]{1,90}", payload["labels"]["name"])
+        if environment_name != display_prefix:
+            assert not payload["labels"]["name"].endswith(
+                sha256(display_prefix.encode()).hexdigest()[:12]
+            )
     assert labels["harbor-hf-role"] == "wrong-role"
     assert environment.environment_name == environment_name
 

@@ -1115,7 +1115,7 @@ export function WorkbenchPage() {
                 Recorded provider (optional)
                 <input
                   className={fieldClass()}
-                  pattern="[a-z0-9][a-z0-9-]{0,62}"
+                  pattern={"[a-z0-9][a-z0-9\\-]{0,62}"}
                   placeholder="unspecified"
                   value={provider}
                   onChange={(event) => setProvider(event.target.value)}
@@ -1274,7 +1274,8 @@ export function WorkbenchPage() {
                     )}
                     <p className="text-xs text-slate-400">
                       {estimateMeaning} Rates are saved immutably with this run; editing
-                      them does not invalidate setup.
+                      them does not invalidate setup. After editing rates, confirm
+                      launch again below.
                     </p>
                   </>
                 ) : null}
