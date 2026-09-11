@@ -106,3 +106,50 @@ describe("Workbench display provenance", () => {
     expect(runIdentity(historical).version).toBe("Not explicitly configured");
   });
 });
+
+describe("Workbench recorded provider", () => {
+  function workbench(provider: unknown, model = "native/model") {
+    return {
+      workbench_recipe: { name: "example-recipe" },
+      submission: { model: { provider } },
+      harbor_job_config: { agents: [{ model_name: model }] },
+    } as RunRecord;
+  }
+
+  it("uses the specified recorded label without altering native identity or routing", () => {
+    const record = workbench("recorded-provider", "native/model:native-provider");
+    const before = structuredClone(record);
+    expect(runIdentity(record)).toMatchObject({
+      provider: "recorded-provider",
+      providerSource:
+        "Recorded provider (Workbench submission metadata; not verified routing)",
+      model: "native/model:native-provider",
+    });
+    expect(runAgentIdentities(record)[0]?.provider).toBe("native-provider");
+    expect(record).toEqual(before);
+  });
+
+  it("shows the recorded provider when a native route has no provider suffix", () => {
+    expect(runIdentity(workbench("recorded-provider")).provider).toBe(
+      "recorded-provider",
+    );
+  });
+
+  it.each([undefined, "", "  ", "unspecified", "Unspecified"])(
+    "does not replace native evidence with an absent recorded provider: %s",
+    (provider) => {
+      expect(runIdentity(workbench(provider)).provider).toBe("Unspecified");
+      expect(
+        runIdentity(workbench(provider, "native/model:route-provider")).provider,
+      ).toBe("route-provider");
+    },
+  );
+
+  it("does not use submission metadata for non-Workbench runs", () => {
+    const { workbench_recipe: _recipe, ...record } = workbench("recorded-provider");
+    expect(runIdentity(record).provider).toBe("Unspecified");
+    expect(runIdentity(record).providerSource).toBe(
+      "Provider suffix in native model configuration",
+    );
+  });
+});

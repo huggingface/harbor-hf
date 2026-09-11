@@ -565,7 +565,10 @@ export function RunsPage() {
             to={`/runs/${row.original.record.run_id}`}
           >
             {runIdentity(row.original.record).model}
-            <span className="block text-xs font-normal text-slate-500">
+            <span
+              className="block text-xs font-normal text-slate-500"
+              title={runIdentity(row.original.record).providerSource}
+            >
               {runIdentity(row.original.record).provider}
             </span>
           </Link>
@@ -856,7 +859,11 @@ export function RunPage() {
               {item.record.submission.benchmark.preset}
             </Field>
             <Field label="Model">{runIdentity(item.record).model}</Field>
-            <Field label="Provider">{runIdentity(item.record).provider}</Field>
+            <Field label="Provider">
+              <span title={runIdentity(item.record).providerSource}>
+                {runIdentity(item.record).provider}
+              </span>
+            </Field>
             <Field label="Configured reasoning kwargs">
               {runIdentity(item.record).reasoning}
             </Field>

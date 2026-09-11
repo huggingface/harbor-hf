@@ -39,9 +39,19 @@ export function runIdentity(record: RunRecord) {
   const agents = runAgentIdentities(record);
   const join = (field: keyof (typeof agents)[number]) =>
     [...new Set(agents.map((agent) => agent[field]))].join(", ") || "Unavailable";
+  const recordedProvider = record.workbench_recipe
+    ? record.submission?.model?.provider?.trim()
+    : undefined;
+  // Workbench's recorded label is metadata, not an inference about its native route.
+  const hasRecordedProvider = Boolean(
+    recordedProvider && recordedProvider.toLowerCase() !== "unspecified",
+  );
   return {
     model: join("model"),
-    provider: join("provider"),
+    provider: hasRecordedProvider ? recordedProvider : join("provider"),
+    providerSource: hasRecordedProvider
+      ? "Recorded provider (Workbench submission metadata; not verified routing)"
+      : "Provider suffix in native model configuration",
     agent: record.workbench_recipe?.name ?? join("agent"),
     nativeAgent: join("agent"),
     version: record.workbench_recipe
