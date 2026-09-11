@@ -11,6 +11,17 @@ default_branch: main
 
 Status: approved
 
+### Local parent storage PR preparation (2026-09-11)
+
+Approved at: 2026-09-11T15:01:08Z
+
+- The user explicitly requested implementing the approved local-parent storage
+  change and preparing its pull request. This extends the local-only approval
+  below to implementation commits, branch push, and one reviewed pull request.
+- No merge, deployment, paid execution, new resource, credential movement, or
+  upstream issue or pull request is authorized. Public privacy checks and full
+  diff review remain required before publication.
+
 ### Local parent storage and durable artifact copies (2026-09-11)
 
 Approved at: 2026-09-11T14:58:47Z
@@ -327,6 +338,11 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-11 — Local parent storage PR
+
+- Approved implementing and preparing one pull request for the local-parent
+  storage change, including commits and branch push after privacy review.
 
 ### 2026-09-11 — Local parent storage
 
