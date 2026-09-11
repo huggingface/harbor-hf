@@ -1857,3 +1857,18 @@ Local implementation completed (2026-09-10):
   No Harbor execution, configuration contract, pin, or internal imports changed.
 - Independent complete-diff safety/privacy review found no blockers. Local work
   only: no run mutation, deployment, push, credential movement or new resource.
+
+### Run detail loading feedback
+
+Status: approved
+
+Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
+
+- The user requested clear loading feedback while Run detail data is pending.
+  Implement section-specific initial loading and background refresh indicators,
+  preserving previously loaded data and distinguishing errors from empty results.
+- Local frontend changes, mocked tests, visual review and commits are approved.
+  No new branch/worktree, push, PR, deployment, live run mutation, credential
+  movement, polling-frequency change or backend architecture change is included.
+- Preserve independent query freshness, native Harbor trial identities and prior
+  local reconciliation changes. No live inference or benchmark execution.
