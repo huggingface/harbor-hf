@@ -12,6 +12,7 @@ import importlib.metadata
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path, PurePosixPath
 from typing import cast
@@ -195,8 +196,15 @@ def check_sources(config: JobConfig) -> PrivateDatasetSources:
     }
     for task in config.tasks:
         check_task(task)
-    if private_datasets and not os.environ.get("HF_TOKEN"):
-        raise ValueError("HF_TOKEN is required for private Hugging Face Dataset access")
+    if private_datasets:
+        if not os.environ.get("HF_TOKEN"):
+            raise ValueError(
+                "HF_TOKEN is required for private Hugging Face Dataset access"
+            )
+        if shutil.which("git-lfs") is None:
+            raise ValueError(
+                "git-lfs is required for private Hugging Face Dataset access"
+            )
     return private_datasets
 
 

@@ -11,8 +11,10 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
         git \
+        git-lfs \
     && rm -rf /var/lib/apt/lists/* \
-    && git --version
+    && git --version \
+    && git lfs version
 
 COPY --from=uv /uv /usr/local/bin/uv
 COPY packages/harbor-hf-agents /opt/harbor-hf-agents

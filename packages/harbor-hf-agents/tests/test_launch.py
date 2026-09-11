@@ -78,7 +78,11 @@ def test_paths_cannot_escape_repo(path: str) -> None:
         launch.relative_path(path)
 
 
-def test_native_git_and_package_sources() -> None:
+def test_native_git_and_package_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(launch.shutil, "which", lambda _: None)
+
     assert launch.check_sources(config()) == set()
     launch.check_dataset(DatasetConfig(name="example-org/example-dataset", ref=HASH))
     launch.check_task(TaskConfig(name="example-org/example-task", ref=HASH))
@@ -93,6 +97,7 @@ def test_private_hf_dataset_source_uses_native_repo_and_path(
     job.datasets = [source]
     before = source.model_dump(mode="json")
     monkeypatch.setenv("HF_TOKEN", "test-control-token")
+    monkeypatch.setattr(launch.shutil, "which", lambda _: "/usr/bin/git-lfs")
 
     assert launch.check_sources(job) == {(HF_DATASET_URL, SHA)}
     assert source.model_dump(mode="json") == before
@@ -110,6 +115,18 @@ def test_private_hf_dataset_requires_the_control_token(
     monkeypatch.delenv("HF_TOKEN", raising=False)
 
     with pytest.raises(ValueError, match="HF_TOKEN is required"):
+        launch.check_sources(job)
+
+
+def test_private_hf_dataset_requires_git_lfs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = config()
+    job.datasets = [DatasetConfig(repo=f"{HF_DATASET_URL}@{SHA}", path=Path("tasks"))]
+    monkeypatch.setenv("HF_TOKEN", "test-control-token")
+    monkeypatch.setattr(launch.shutil, "which", lambda _: None)
+
+    with pytest.raises(ValueError, match="git-lfs is required"):
         launch.check_sources(job)
 
 
