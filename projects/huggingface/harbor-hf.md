@@ -1860,7 +1860,7 @@ Local implementation completed (2026-09-10):
 
 ### Run detail loading feedback
 
-Status: approved
+Status: completed
 
 Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
 
@@ -1872,3 +1872,22 @@ Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
   movement, polling-frequency change or backend architecture change is included.
 - Preserve independent query freshness, native Harbor trial identities and prior
   local reconciliation changes. No live inference or benchmark execution.
+
+Local implementation completed (2026-09-10):
+
+- Added section-specific Loading feedback before data arrives and Refreshing
+  feedback while retaining cached run details, trials, progress and parent Jobs.
+  Initial errors remain explicit; failed refreshes retain saved data with Retry.
+  Missing responses no longer appear as confirmed zero trials or empty progress.
+- Preserved polling intervals, evidence freshness, backend behavior and Harbor
+  identities. The previously reviewed pinned Harbor files above require no
+  execution change for this frontend-only presentation behavior.
+- Passed 1,448 unit tests, 73 browser tests, formatting, lint (existing warnings),
+  types, build, generated-contract checks, dependency audit and normal Slophammer
+  and DRY checks. Reviewed initial, refreshing and error states at desktop and
+  mobile widths. Global supplemental coverage remains below the unchanged 85%
+  threshold; no gate was weakened. The mutation script and baseline file are
+  absent, so those checks could not complete.
+- Completed only this local amendment. No push, PR, deployment, live run mutation,
+  credential movement, new resource or polling-frequency change was performed.
+  Loading feedback does not itself reduce backend latency.

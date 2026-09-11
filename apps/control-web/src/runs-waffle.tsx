@@ -1,3 +1,4 @@
+import { RunSectionQuery } from "./run-section-query";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { RunView } from "./api";
@@ -78,11 +79,23 @@ function RunWaffleContents({ run }: { run: RunView }) {
   const matrixStyle: CSSProperties & { "--cell-size": string } = {
     "--cell-size": `clamp(12px, calc((100cqw - ${rowLabelWidth + 2}px) / ${Math.max(1, shown.length)}), 18px)`,
   };
+  if (!query.data) {
+    return (
+      <section
+        aria-label="Trial progress waffle"
+        className="mt-6 rounded-xl border border-slate-800 bg-slate-950/70 p-4"
+      >
+        <h2 className="font-semibold">Trial progress</h2>
+        <RunSectionQuery label="trial progress" query={query} />
+      </section>
+    );
+  }
   return (
     <section
       aria-label="Trial progress waffle"
       className="mt-6 rounded-xl border border-slate-800 bg-slate-950/70 p-4"
     >
+      <RunSectionQuery label="trial progress" query={query} />
       <div className="mb-3 flex flex-wrap justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">
@@ -98,17 +111,6 @@ function RunWaffleContents({ run }: { run: RunView }) {
                     ? "● Unavailable"
                     : ""}
               </span>
-              {query.isError && (
-                <button
-                  type="button"
-                  className="underline"
-                  title={freshnessWarning}
-                  disabled={query.isFetching}
-                  onClick={() => void query.refetch()}
-                >
-                  {query.isFetching ? "Retrying" : "Retry"}
-                </button>
-              )}
             </fieldset>
           </div>
           <p className="text-xs text-slate-400">

@@ -1,3 +1,4 @@
+import { RunSectionQuery } from "./run-section-query";
 import { useRunClock } from "./queries";
 import { LaunchEstimate } from "./launch-pricing";
 import { parentJobTime, RunStatusTiming } from "./agent-timing";
@@ -789,9 +790,18 @@ export function RunPage() {
   const jobs = useJobs();
   if (!run.data)
     return (
-      <QueryContent query={run}>
-        <Empty>Run not found.</Empty>
-      </QueryContent>
+      <>
+        <PageHeader title="Run detail" description={runId} />
+        <RunSectionQuery label="run details" query={run}>
+          <Empty>Run not found.</Empty>
+        </RunSectionQuery>
+        <Card className="mt-6">
+          <h2 className="font-semibold text-white">Trials</h2>
+          <RunSectionQuery label="trials" query={trials}>
+            {trials.data ? <TrialsTable trials={trials.data} /> : null}
+          </RunSectionQuery>
+        </Card>
+      </>
     );
   const item = run.data;
   const jobIds = new Set(item.state.parent_jobs.map((job) => job.id));
@@ -805,6 +815,7 @@ export function RunPage() {
         description={item.record.run_id}
         action={<RunActions run={item} />}
       />
+      <RunSectionQuery label="run details" query={run} />
       {item.presentation?.archived ? <Badge>Archived</Badge> : null}
       {item.presentation_available === false ? (
         <p role="status">
@@ -907,18 +918,18 @@ export function RunPage() {
               Full trial data is loaded only when a trial is opened.
             </p>
           </div>
-          <Badge>{trials.data?.length ?? 0} projected</Badge>
+          {trials.data ? <Badge>{trials.data.length} projected</Badge> : null}
         </div>
-        <QueryContent query={trials}>
+        <RunSectionQuery label="trials" query={trials}>
           {trials.data ? <TrialsTable trials={trials.data} /> : null}
-        </QueryContent>
+        </RunSectionQuery>
       </Card>
       <Card className="mt-6">
         <h2 className="font-semibold text-white">Parent Jobs</h2>
         <div className="mt-5">
-          <QueryContent query={jobs}>
+          <RunSectionQuery label="parent Jobs" query={jobs}>
             {runJobs ? <JobsTable jobs={runJobs} showRun={false} /> : null}
-          </QueryContent>
+          </RunSectionQuery>
         </div>
       </Card>
       <div className="mt-6 space-y-3">
