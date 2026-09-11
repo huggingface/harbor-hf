@@ -515,6 +515,9 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
   await page.goto("/workbench");
   await expect(page.getByRole("heading", { name: "Agent Workbench" })).toBeVisible();
   await expect(page.getByText("Configure → Test → Run")).toBeVisible();
+  await page
+    .getByText("Compiled details: commands and bindings", { exact: true })
+    .click();
   await expect(page.getByText(/agent-recipe-/).first()).toBeVisible();
   await page
     .getByLabel("Start one disposable CPU setup test for this exact recipe.")
@@ -2212,8 +2215,10 @@ test("native starter selects only a presence reference and preserves native mode
     }),
   );
   await page.goto("/workbench");
+  await page.getByLabel("Fast-Agent connection").selectOption("native");
+  await page.getByRole("button", { name: "Apply Fast-Agent starter" }).click();
   await page
-    .getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true })
+    .getByText("Advanced recipe: commands, API and paths", { exact: true })
     .click();
   await expect(
     page.getByRole("combobox", { name: "Inference API", exact: true }),
@@ -2279,8 +2284,10 @@ test("submits the exact tested native recipe with only a safe credential referen
     }),
   );
   await page.goto("/workbench");
+  await page.getByLabel("Fast-Agent connection").selectOption("native");
+  await page.getByRole("button", { name: "Apply Fast-Agent starter" }).click();
   await page
-    .getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true })
+    .getByText("Advanced recipe: commands, API and paths", { exact: true })
     .click();
   await page
     .getByLabel("Inference credential reference")
@@ -2391,7 +2398,8 @@ test("operator registers a name, selects Secret, reviews and approves before set
         expected_revision: 1,
         review_id: "ephemeral-review",
         reviewed_confirmation: true,
-        reason: "Reviewed exact use",
+        reason:
+          "Save binding: use the displayed source for this exact recipe, model, worker image and destinations.",
       });
       approved = true;
       ++revision;
@@ -2401,22 +2409,23 @@ test("operator registers a name, selects Secret, reviews and approves before set
       expected_revision: 0,
       source_env: "MY_SECRET_KEY",
       label: "Example inference",
-      reason: "Reviewed exact use",
+      reason: "Register existing Space secret name for explicit binding selection.",
     });
     registered = true;
     ++revision;
     return json(route, discovery());
   });
   await page.goto("/workbench");
+  await page.getByLabel("Fast-Agent connection").selectOption("native");
+  await page.getByRole("button", { name: "Apply Fast-Agent starter" }).click();
   await page
-    .getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true })
+    .getByText("Advanced recipe: commands, API and paths", { exact: true })
     .click();
   await page.getByRole("button", { name: "Manage secrets", exact: true }).click();
   await page.getByLabel("Space secret name", { exact: true }).fill("MY_SECRET_KEY");
   await page.getByLabel("Friendly label", { exact: true }).fill("Example inference");
-  await page.getByLabel("Change reason", { exact: true }).fill("Reviewed exact use");
   await expect(page.locator("input[type=password]")).toHaveCount(0);
-  await page.getByRole("button", { name: "Register reference" }).click();
+  await page.getByRole("button", { name: "Register secret name" }).click();
   await page
     .locator('input[aria-label$=" name"][value="EXAMPLE_API_KEY"]')
     .fill("DEEPSEEK_API_KEY");
@@ -2424,12 +2433,37 @@ test("operator registers a name, selects Secret, reviews and approves before set
   await page
     .getByLabel("Harness model string", { exact: true })
     .fill("example:native-model");
-  await page.getByRole("button", { name: "Review credential use" }).click();
-  await expect(page.getByLabel("Credential review")).toContainText("DEEPSEEK_API_KEY");
-  await page
-    .getByLabel("I approve this exact recipe, model, image and destinations")
-    .check();
-  await page.getByRole("button", { name: "Approve credential use" }).click();
+  await page.getByRole("button", { name: "Preview binding scope" }).click();
+  await expect(page.getByLabel("Binding scope")).toContainText("DEEPSEEK_API_KEY");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const secretPanel = page.getByRole("region", { name: "Manage secrets", exact: true });
+  const bindingScope = page.getByRole("region", { name: "Binding scope", exact: true });
+  await bindingScope.getByText("Exact recipe scope", { exact: true }).click();
+  // The page clips ancestor overflow, so document width alone misses this bug.
+  for (const panel of [secretPanel, bindingScope]) {
+    const bounds = await panel.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds?.x).toBeGreaterThanOrEqual(0);
+    expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
+    expect(
+      await panel.evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+  }
+  const saveBounds = await page
+    .getByRole("button", { name: "Save binding", exact: true })
+    .boundingBox();
+  const refreshBounds = await page
+    .getByRole("button", { name: "Refresh secret registry", exact: true })
+    .boundingBox();
+  expect(saveBounds).not.toBeNull();
+  expect(refreshBounds).not.toBeNull();
+  if (saveBounds && refreshBounds) {
+    expect(
+      refreshBounds.y >= saveBounds.y + saveBounds.height + 8 ||
+        refreshBounds.x >= saveBounds.x + saveBounds.width + 8,
+    ).toBe(true);
+  }
+  await page.getByRole("button", { name: "Save binding" }).click();
   await expect.poll(() => approved).toBe(true);
   await page
     .getByLabel("Start one disposable CPU setup test for this exact recipe.")

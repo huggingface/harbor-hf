@@ -1742,6 +1742,8 @@ Focused publication validation:
 
 ### Workbench simplification on the current branch
 
+Status: completed
+
 Approved at: 2026-09-11T09:07:55.466762+00:00
 
 - The user approved local archive-persistence investigation, Workbench starter
@@ -1757,3 +1759,31 @@ Approved at: 2026-09-11T09:07:55.466762+00:00
   validation and commits are approved; no new worktree, branch, push, PR update,
   deployment, live secret/approval mutation, paid run or infrastructure change
   is authorized by this amendment.
+
+Local completion recorded (2026-09-10; prior approval timestamp preserved):
+
+- Confirmed archive is shared Bucket-backed presentation state, not browser-local;
+  it does not stop Jobs or remove results. Added this explanation beside Archive.
+- Consolidated Fast-Agent starters into one connection selector and explicit Apply
+  action. Changing the selector alone preserves edits; saved custom recipes remain
+  intact. Advanced recipe and compiled details are collapsed by default.
+- Simplified secret registration and binding consent to explicit Preview binding
+  scope followed by Save binding, without a separate checkbox or mandatory reason.
+  Server-normalized scope remains visible before saving; exact server grants,
+  click-time expiry, stale-response protection and conflict recovery are retained.
+  Rendering, typing and registry polling allocate no review tickets or approvals.
+- Completed two mocked desktop/mobile visual passes and a final expanded binding
+  scope review. Fixed mobile overflow and action spacing, with browser regression
+  assertions checking panel bounds rather than only clipped document width.
+- Passed 1,425 unit tests and 71 browser tests, formatting, lint, type checks,
+  build, generated-contract checks, dependency audit, privacy and Slophammer DRY.
+  Focused secret/selector tests reported 96.37% statement coverage. Existing
+  repository-wide supplemental coverage gaps remain; no threshold was weakened.
+  The required mutation-check script is absent. No structure or CI changes were
+  made; no baseline gate was required. Docker is unavailable in this environment;
+  browser checks used local mocked APIs, not remote execution.
+- Previously inspected Harbor installed agent and environment sources at
+  `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and available upstream history.
+  These presentation changes require no Harbor execution change or local patch.
+- Completed only this local amendment. No push, PR update, deployment, live grant
+  mutation, credential movement, paid run or infrastructure change was performed.

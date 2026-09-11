@@ -50,8 +50,10 @@ it("selects only a reference, retains unknown selection, and clears to the legac
     <InferenceBindingSelector value={undefined} operator onChange={change} />,
   );
   const select = screen.getByRole("combobox");
-  await screen.findByText("Registered: Synthetic first · configured");
-  expect(screen.getByText("Registered: Synthetic second · disabled")).toBeDisabled();
+  await screen.findByText("Registered: Synthetic first · MY_SECRET_KEY · configured");
+  expect(
+    screen.getByText("Registered: Synthetic second · SECOND_KEY · disabled"),
+  ).toBeDisabled();
   const user = userEvent.setup();
   await user.selectOptions(select, "INFERENCE_API_KEY_MISSING");
   expect(change).toHaveBeenLastCalledWith("INFERENCE_API_KEY_MISSING");
@@ -87,12 +89,12 @@ it("does not fetch for readers and resets on revoked operator access", async () 
   view.rerender(
     <InferenceBindingSelector value={undefined} operator onChange={vi.fn()} />,
   );
-  await screen.findByText("Registered: Synthetic first · configured");
+  await screen.findByText("Registered: Synthetic first · MY_SECRET_KEY · configured");
   view.rerender(
     <InferenceBindingSelector value={undefined} operator={false} onChange={vi.fn()} />,
   );
   expect(
-    screen.queryByText("Registered: Synthetic first · configured"),
+    screen.queryByText("Registered: Synthetic first · MY_SECRET_KEY · configured"),
   ).not.toBeInTheDocument();
 });
 
@@ -115,7 +117,7 @@ it("distinguishes failed discovery from missing and ignores stale refreshes", as
     finish?.(response);
   });
   expect(
-    screen.queryByText("Registered: Synthetic first · configured"),
+    screen.queryByText("Registered: Synthetic first · MY_SECRET_KEY · configured"),
   ).not.toBeInTheDocument();
   vi.mocked(getInferenceBindings).mockResolvedValueOnce({
     schema_version: "v1",
@@ -135,4 +137,41 @@ it("distinguishes failed discovery from missing and ignores stale refreshes", as
     finish?.(response);
   });
   await waitFor(() => expect(getInferenceBindings).toHaveBeenCalledTimes(4));
+});
+
+it("shared discovery stays metadata-only and never changes the selection on refresh", async () => {
+  const change = vi.fn();
+  const view = render(
+    <InferenceBindingSelector
+      value="INFERENCE_API_KEY_EXAMPLE"
+      operator
+      discovery={response}
+      onChange={change}
+    />,
+  );
+  expect(
+    screen.getByText(/Selecting a secret does not save or authorize its use/),
+  ).toBeInTheDocument();
+  view.rerender(
+    <InferenceBindingSelector
+      value="INFERENCE_API_KEY_EXAMPLE"
+      operator
+      discovery={{ ...response, revision: 2 }}
+      onChange={change}
+    />,
+  );
+  expect(getInferenceBindings).not.toHaveBeenCalled();
+  expect(change).not.toHaveBeenCalled();
+  view.rerender(
+    <InferenceBindingSelector
+      value="INFERENCE_API_KEY_EXAMPLE"
+      operator={false}
+      discovery={response}
+      onChange={change}
+    />,
+  );
+  expect(
+    screen.queryByText("Registered: Synthetic first · MY_SECRET_KEY · configured"),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("combobox")).toBeDisabled();
 });
