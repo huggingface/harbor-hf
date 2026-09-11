@@ -9,7 +9,7 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 
 ### Native scrubber ordering integration (2026-09-11)
 
@@ -357,6 +357,15 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-11 — Local storage PR prepared
+
+- Completed this branch's approved implementation and PR-preparation scope in
+  draft PR #218: https://github.com/huggingface/harbor-hf/pull/218.
+- Disclosed validation limitations and runtime risks in the PR. Publication
+  excludes unrelated dashboard edits. No merge, deployment, paid Job, remote
+  canary, credential movement, or upstream publication was performed.
+
 
 ### 2026-09-11 — Local storage implementation and PR validation
 
