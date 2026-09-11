@@ -1808,3 +1808,23 @@ Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
 - Verify the merged source revision, build/runtime health, readiness and existing
   service capabilities without submitting a run. Stop and report any deployment
   blocker rather than broadening credential or infrastructure scope.
+
+### Queued-run reconciliation performance investigation
+
+Status: approved
+
+Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
+
+- The user approved investigating whether control reconciliation is the queued
+  smoke run's performance bottleneck and implementing a targeted local fix.
+- Measure phase latency and operation counts with read-only observations and
+  mocked local tests. Distinguish confirmed findings from hypotheses; add
+  regression tests for any behavior change and preserve parent verification,
+  complete Jobs-list validation, cost enforcement and orphan cleanup safety.
+- Preserve the existing queued run. No launch, retry, resume, cancellation,
+  credential transfer, infrastructure change, deployment, push or PR is included.
+  Local implementation, validation and commits in this checkout are approved;
+  no new branch or worktree. Do not run a second live reconciler.
+- Keep Harbor execution and native trial identity unchanged. Check pinned Harbor
+  source and upstream history before designing any execution-adjacent change.
+  Keep private operational timings and identifiers out of public fixtures/logs.
