@@ -2069,3 +2069,14 @@ Approved at: 2026-09-11T13:08:50Z
 - Preserve durable partial outputs and verify a real pause and resume before the
   full run. Stop for a shared deterministic defect, lost durable state, duplicate
   execution, provenance or backend mismatch, or possible cumulative overspend.
+
+### Workbench cancellation CI test amendment (2026-09-11)
+
+Status: approved
+
+- The user directly approved adding the proposed explicit five-second polling
+  timeout to the local Workbench cancellation test on the current branch and
+  committing it with a relevant message.
+- Scope is the test-only timing fix and offline validation. Preserve unrelated
+  working changes. No push, pull request, merge, deployment, paid compute,
+  credential movement, or live run mutation is authorized by this amendment.
