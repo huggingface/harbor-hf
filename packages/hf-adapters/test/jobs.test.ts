@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { HuggingFaceJobs, NoopJobs, ReadOnlyHuggingFaceJobs } from "../src/index.js";
+import {
+  HuggingFaceJobs,
+  isolatedGitSourceEnvironment,
+  NoopJobs,
+  ReadOnlyHuggingFaceJobs,
+} from "../src/index.js";
 
 const runId = "run-0123456789abcdef01234567";
 const image = `ghcr.io/example/parent@sha256:${"a".repeat(64)}`;
@@ -47,14 +52,7 @@ describe("HuggingFaceJobs", () => {
         HARBOR_HF_RUN_ID: runId,
         HARBOR_HF_MOUNT_ROOT: "/data",
         HARBOR_HF_NAMESPACE: "example",
-        GIT_CONFIG_NOSYSTEM: "1",
-        GIT_CONFIG_GLOBAL: "/dev/null",
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_CONFIG_COUNT: "2",
-        GIT_CONFIG_KEY_0: "credential.helper",
-        GIT_CONFIG_VALUE_0: "",
-        GIT_CONFIG_KEY_1: "credential.https://huggingface.co.helper",
-        GIT_CONFIG_VALUE_1: "harbor-hf",
+        ...isolatedGitSourceEnvironment(),
       },
       attempts: 1,
       labels: { "harbor-hf-role": "parent", "harbor-hf-run": runId },

@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { canonicalJson } from "@harbor-hf/contracts";
 import { prepareDirectJobConfig } from "@harbor-hf/control-core";
+import { isolatedGitSourceEnvironment } from "@harbor-hf/hf-adapters";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import { lookupHuggingFaceHardware } from "./huggingface-hardware.js";
@@ -86,19 +87,16 @@ export class NativeLaunch implements LaunchPort {
               TMPDIR: cwd,
               XDG_CACHE_HOME: cwd,
               PYTHONDONTWRITEBYTECODE: "1",
-              GIT_CONFIG_NOSYSTEM: "1",
-              GIT_CONFIG_GLOBAL: "/dev/null",
-              GIT_TERMINAL_PROMPT: "0",
               ...(request.operation === "validate"
                 ? {
-                    GIT_CONFIG_COUNT: "2",
-                    GIT_CONFIG_KEY_0: "credential.helper",
-                    GIT_CONFIG_VALUE_0: "",
-                    GIT_CONFIG_KEY_1: "credential.https://huggingface.co.helper",
-                    GIT_CONFIG_VALUE_1: "harbor-hf",
+                    ...isolatedGitSourceEnvironment(),
                     ...(this.config.hf_token ? { HF_TOKEN: this.config.hf_token } : {}),
                   }
-                : {}),
+                : {
+                    GIT_CONFIG_NOSYSTEM: "1",
+                    GIT_CONFIG_GLOBAL: "/dev/null",
+                    GIT_TERMINAL_PROMPT: "0",
+                  }),
             },
           },
         );

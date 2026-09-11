@@ -158,7 +158,9 @@ result format, or API.
 
 Control-side launch inspection and the trusted parent configure a non-persistent
 Git credential helper that reads the existing `HF_TOKEN` and answers only for
-`huggingface.co`. The token does not enter the source URL, process arguments,
+`huggingface.co`. The same isolated Git process settings configure Git LFS
+filters for each temporary clone without a global, system, or repository
+credential file. The token does not enter the source URL, process arguments,
 Git credential files, run records, Bucket objects, projections, browser
 responses, logs, or trial agents. A missing token, inaccessible repository,
 missing commit, or rejected source stops the launch before inference. There is
