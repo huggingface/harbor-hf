@@ -163,10 +163,36 @@ describe("bounded native inspector", () => {
     const config = await fixture(
       `if (process.env.HF_TOKEN || process.env.HF_INFERENCE_TOKEN || process.env.GITHUB_TOKEN) process.exit(9); console.log(${JSON.stringify(JSON.stringify({ harbor_revision: revision, agents: [], job_schema: {} }))});`,
     );
-    const launch = new NativeLaunch(config);
+    const launch = new NativeLaunch({
+      ...config,
+      hf_token: "test-only-control-value",
+      hf_inference_token: "test-only-inference-value",
+    });
     const first = await launch.catalog();
     expect(first.harbor_revision).toBe(revision);
     expect(await launch.catalog()).toBe(first);
+  });
+  it("gives only validation the host-restricted Git credential bridge", async () => {
+    const token = ["test", "control", "credential"].join("-");
+    const config = await fixture(`
+      if (process.env.HF_TOKEN !== ${JSON.stringify(token)}) process.exit(10);
+      if (process.env.HF_INFERENCE_TOKEN || process.env.GITHUB_TOKEN) process.exit(17);
+      if (process.env.GIT_CONFIG_COUNT !== "2") process.exit(11);
+      if (process.env.GIT_CONFIG_KEY_0 !== "credential.helper") process.exit(12);
+      if (process.env.GIT_CONFIG_VALUE_0 !== "") process.exit(13);
+      if (process.env.GIT_CONFIG_KEY_1 !== "credential.https://huggingface.co.helper") process.exit(14);
+      if (process.env.GIT_CONFIG_VALUE_1 !== "harbor-hf") process.exit(15);
+      if (process.argv.some((value) => value.includes(${JSON.stringify(token)}))) process.exit(16);
+      console.log(${JSON.stringify(JSON.stringify(inspection))});
+    `);
+
+    const result = await new NativeLaunch({
+      ...config,
+      hf_token: token,
+      hf_inference_token: "test-inference-credential",
+    }).validate(input);
+
+    expect(JSON.stringify(result)).not.toContain(token);
   });
   it("prepares native config, checks provider availability and fingerprints current policy", async () => {
     const config = await fixture(

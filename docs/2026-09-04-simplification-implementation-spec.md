@@ -222,6 +222,20 @@ The job can contain timeout multipliers, `retry` and
 `artifacts`. It cannot set paths, agents, credentials, user agents, custom
 environments or source jobs.
 
+Each dataset keeps Harbor's native `repo` and `path` fields. A reviewed private
+Hugging Face Dataset uses this source form:
+
+```text
+repo: https://huggingface.co/datasets/example-org/<dataset>.git@<40-character-commit>
+path: <task-tree-path>
+```
+
+Admission requires HTTPS, the exact `huggingface.co` host, the Dataset path
+form, no embedded credentials, port, query, or fragment, and an exact immutable
+40-character Git commit. Current public GitHub source admission remains
+unchanged. The service passes `repo` and `path` to Harbor unchanged. It does not
+add a source schema, downloader, resolver, scheduler, result format, or API.
+
 An agent preset contains `schema_version`, `agent`, `version`, `harbor_agent`,
 `reasoning_option` and `reasoning_values`. `harbor_agent` selects `name` or
 `import_path`. It can also set fixed nonsecret `kwargs` and timeout multipliers.
@@ -253,6 +267,11 @@ It sets `job_name`, `jobs_dir`, the labeled environment import path, and the
 router credential template. Other accepted fields stay unchanged. Direct runs
 are stored with role `diagnostic` and do not enter the leaderboard.
 
+Private Hugging Face Dataset admission uses the same strict source form as a
+reviewed preset. ACP and other executable source admission stays separate and
+unchanged. Private Dataset access does not authorize private agent source
+installation.
+
 ## Parent Job
 
 The control service starts one CPU parent Job with:
@@ -266,6 +285,25 @@ The control service starts one CPU parent Job with:
 The parent reads `run.json` and validates `harbor_job_config`. It then calls
 `Job.create()` and `Job.run()` from Harbor. It does not implement a task loop,
 retry loop, resume rule, result writer, or lock writer.
+
+The pinned Harbor revision
+`dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` already resolves Hugging Face
+Dataset Git URLs through `DatasetConfig`, `resolve_repo_source`,
+`GitRepoRegistryClient`, `RegistryClientFactory`, and `TaskClient`. The checked
+files are `src/harbor/models/job/config.py`,
+`src/harbor/registry/client/git_repo.py`,
+`src/harbor/registry/client/factory.py`, and `src/harbor/tasks/client.py`.
+Harbor owns checkout, task discovery, task loading, and execution. Harbor-HF
+owns only admission and credential delivery.
+
+Control-side launch inspection and the trusted parent configure a small Git
+credential helper that reads the existing `HF_TOKEN`. It follows Git's
+credential protocol, returns credentials only for the exact `huggingface.co`
+host, and does not persist them. The token never enters the source URL, process
+arguments, a Git credential file, run configuration, Bucket records,
+projections, browser responses, or logs. The control token does not enter trial
+agent environments. Delivery of the separate inference credential remains
+unchanged.
 
 `LabeledHFSandboxEnvironment` subclasses Harbor's `HFSandboxEnvironment`. It
 adds ownership labels and the configured namespace to the same
@@ -429,6 +467,11 @@ and credential literals. Unsafe direct JobConfig fields and immutable
 idempotency conflicts are errors. The response is one JSON error object with a
 stable code and a plain message.
 
+A private Dataset source fails before model inference when `HF_TOKEN` is
+missing, repository access fails, the exact commit is missing, source admission
+fails, or Harbor cannot resolve the source. There is no fallback to another
+repository, revision, source kind, or local copy.
+
 Local validation runs:
 
 ```bash
@@ -448,7 +491,17 @@ npm run test:e2e
 The test suite covers submission, idempotency, status and reconciliation. It
 also covers capacity, pause, resume, cancel, orphan cleanup, cost stops and
 projection rebuild. Other tests cover leaderboard filtering and API
-authorization plus the parent callback, child labeling and the thin CLI.
+authorization plus the parent callback, child labeling and the thin CLI. Private
+Dataset tests cover accepted and rejected URLs, immutable commits, unchanged
+public GitHub behavior, the credential protocol and host restriction, missing
+credentials, non-disclosure, control and parent helper configuration, trial
+credential isolation, unchanged inference credential delivery, and unchanged
+native `repo` and `path` values.
+
+The local Git credential bridge is temporary. Replace it when a pinned Harbor
+release provides an equivalent documented private Hugging Face Git credential
+mechanism. That simplification removes the helper, its configuration, and its
+bridge-specific tests while keeping Harbor's native dataset contract.
 
 ## Verified preconditions
 

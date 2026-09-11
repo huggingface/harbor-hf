@@ -90,8 +90,9 @@ receipts, and current Job observations.
 
 The Space has two secrets:
 
-- `HF_TOKEN` is a purpose-scoped control credential with access to the Bucket
-  and HF Jobs.
+- `HF_TOKEN` is a purpose-scoped control credential with access to the Bucket,
+  HF Jobs, and approved private Hugging Face Dataset Git repositories when they
+  are configured.
 - `HF_INFERENCE_TOKEN` is a separate inference credential for the Hugging Face
   router.
 
@@ -138,6 +139,31 @@ requires that stable organization subject during sign-in. It never authorizes an
 organization by name. Explicit user subjects remain available for administrators
 and exceptions. Logging out, losing explicit authorization, changing the
 configured organization, or clearing browser cookies ends the session sooner.
+
+### Private dataset credentials
+
+A reviewed benchmark can use a private Hugging Face Dataset Git repository
+through Harbor's native dataset `repo` and `path` fields. The repository URL must
+use HTTPS, the exact `huggingface.co` host, the
+`/datasets/<namespace>/<dataset>.git` path, and an exact 40-character commit. It
+must not include credentials, a port, query, or fragment. Public GitHub source
+admission remains unchanged.
+
+No additional secret is required. Grant the existing purpose-scoped `HF_TOKEN`
+read access only to each approved private Dataset repository that the deployment
+must run. Control-side launch inspection and the trusted parent Job configure a
+non-persistent Git credential helper. The helper returns credentials only for
+`huggingface.co` and reads the token from the current process environment.
+
+The control token must not appear in the repository URL, process arguments, Git
+credential files, run configuration, Bucket objects, projections, browser
+responses, or logs. It must not enter trial agent environments or agent source
+installation. The separate inference credential path remains unchanged.
+
+Admission and repository inspection occur before model inference. A missing
+token, denied repository, missing commit, malformed source, or native Harbor
+resolution failure stops the launch. The service does not fall back to another
+source or revision.
 
 ### Sign-in diagnostics
 
@@ -446,7 +472,10 @@ projection during deployment.
 The parent image is built from `deploy/parent-worker/Dockerfile`. It pins Harbor
 to the revision recorded in `packages/harbor-hf-agents/pyproject.toml` and
 contains the Harbor parent runner, the reviewed agents, the generic Workbench
-command agent, and the labeled HF Sandbox adapter.
+command agent, the labeled HF Sandbox adapter, and the host-restricted Git
+credential helper used for admitted private Hugging Face Dataset sources. Remove
+the local helper when the pinned Harbor release provides an equivalent
+documented credential mechanism.
 
 Publish an `linux/amd64` image with the `Publish parent worker` workflow. Record
 the registry digest from the workflow output. Configure the control Space with
@@ -483,10 +512,12 @@ Before enabling writes:
 3. set `HARBOR_HF_WORKBENCH_RUNNER=hf-jobs` and use the same immutable image for
    `HARBOR_HF_WORKBENCH_IMAGE` when hosted setup tests are required;
 4. verify that the two Space secrets are present and distinct;
-5. keep `HARBOR_HF_WRITE_MODE=disabled` for the first startup;
-6. verify liveness, readiness, OAuth, presets, Bucket projection, Workbench
+5. when private Dataset sources are configured, verify that `HF_TOKEN` has read
+   access to the approved repositories and that pinned source inspection passes;
+6. keep `HARBOR_HF_WRITE_MODE=disabled` for the first startup;
+7. verify liveness, readiness, OAuth, presets, Bucket projection, Workbench
    runner state, and the source revision; and
-7. set write mode to `enabled` and restart once.
+8. set write mode to `enabled` and restart once.
 
 After deployment, verify the intended repository revision, runtime revision,
 Space stage, build logs, runtime logs, and authenticated `/api/v1/system`
