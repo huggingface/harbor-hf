@@ -1926,3 +1926,31 @@ Release blocked during read-only preflight (2026-09-11):
   publishing replacement workers. Stop pending an explicit scope decision.
 - No public push, pull request, merge, deployment, configuration change or run
   mutation occurred. Existing branches and implementation commits are preserved.
+
+### Loading and reconciliation integration amendment (2026-09-11)
+
+Status: approved
+
+Approved at: 2026-09-11T12:45:55Z
+
+- The user directly approved integrating current main, publishing a pull request,
+  waiting for green CI, merging the exact tested commit, and deploying the merged
+  source through the existing control Space's normal rebuild.
+- This additively supersedes the preceding exact-old-image preservation limit:
+  verify and reuse the already published immutable parent worker image for main
+  `65c74b69bf9a8e869e54da0c29184370bc9b652e`, including registry/source provenance
+  and applicable offline tests, for both parent and Workbench settings. Do not
+  dispatch or perform an additional worker image build. A successful existing
+  publication was found; the earlier preflight did not establish a rebuild need.
+- Reuse an existing branch/ref, preserving the worker-release authorization and
+  unrelated commits. No new branch/worktree, force push, reset, or restoration of
+  removed QR functionality. Inspect intervening upstream changes before adoption.
+- Preserve unrelated service settings and secrets, existing resources, and all
+  benchmark runs. No run launch, retry, resume, cancellation, paid integration
+  test, credential transfer, grant mutation, or permission workaround is approved.
+- Review deployment interruption safety before mutation; minimize interruption.
+  Verify merged source, image references, liveness, readiness and capabilities.
+  Stop on permission errors or unresolved provenance/safety conflicts.
+- Repeated scans are confirmed in the deployed reconciliation implementation;
+  attribution of the additional slow-starting run remains unmeasured. Do not
+  present synthetic operation-count improvements as a measured production SLA.
