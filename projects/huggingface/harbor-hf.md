@@ -9,7 +9,27 @@ default_branch: main
 
 ## Current authorization
 
-Status: completed
+Status: approved
+
+### Combined PR merge and matched release (2026-09-11)
+
+Approved at: 2026-09-11T16:12:15Z
+
+- The user explicitly approved adding the other six local commits to PR #218,
+  after previously requesting merge and deployment to the exact existing
+  control Space identified in the private operational context.
+- Include committed refresh feedback and cancellation-test cleanup with their
+  authorization history. Do not silently include concurrent uncommitted work.
+- Approved operations: reviewed local integration, validation, commit/push, PR
+  update and merge after required CI succeeds, and rebuild/publication of the
+  matching parent-worker image through the existing release workflow.
+- Deploy the merged revision and matched immutable worker image to the existing
+  control Space. Preserve its visibility, hardware, Bucket, credentials, and
+  operator configuration; do not publish the private destination in this file.
+- Benchmark task images are unchanged. No new resources, credential movement,
+  benchmark launch/retry/resume, or interruption of running Jobs is approved.
+  Defer cutover if live execution or unresolved release gates require a further
+  operational decision. Existing validation limitations remain disclosed.
 
 ### Native scrubber ordering integration (2026-09-11)
 
@@ -357,6 +377,14 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-11 — Combined PR and deployment approval
+
+- Approved including the six other local commits in PR #218 and rebuilding the
+  parent worker; the earlier direct request also approved merge and deployment
+  to the privately identified existing control Space. Scope and limits above
+  supersede the earlier no-merge/no-deployment limits for this release only.
+
 
 ### 2026-09-11 — Local storage PR prepared
 
