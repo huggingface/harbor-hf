@@ -1,3 +1,4 @@
+import { ConsolidatedRunRefresh, RunRefreshStatus } from "./run-refresh-status";
 import { RunSectionQuery } from "./run-section-query";
 import { useRunClock } from "./queries";
 import { LaunchEstimate } from "./launch-pricing";
@@ -790,8 +791,9 @@ export function RunPage() {
   const jobs = useJobs();
   if (!run.data)
     return (
-      <>
+      <ConsolidatedRunRefresh.Provider value={true}>
         <PageHeader title="Run detail" description={runId} />
+        <RunRefreshStatus runId={runId} />
         <RunSectionQuery label="run details" query={run}>
           <Empty>Run not found.</Empty>
         </RunSectionQuery>
@@ -801,7 +803,7 @@ export function RunPage() {
             {trials.data ? <TrialsTable trials={trials.data} /> : null}
           </RunSectionQuery>
         </Card>
-      </>
+      </ConsolidatedRunRefresh.Provider>
     );
   const item = run.data;
   const jobIds = new Set(item.state.parent_jobs.map((job) => job.id));
@@ -809,13 +811,13 @@ export function RunPage() {
     (job) => job.run_id === item.record.run_id || jobIds.has(job.id),
   );
   return (
-    <>
+    <ConsolidatedRunRefresh.Provider value={true}>
       <PageHeader
         title="Run detail"
         description={item.record.run_id}
         action={<RunActions run={item} />}
       />
-      <RunSectionQuery label="run details" query={run} />
+      <RunRefreshStatus runId={runId} />
       {item.presentation?.archived ? <Badge>Archived</Badge> : null}
       {item.presentation_available === false ? (
         <p role="status">
@@ -938,7 +940,7 @@ export function RunPage() {
           <JsonDetails label="Complete Harbor job result" value={item.result} />
         ) : null}
       </div>
-    </>
+    </ConsolidatedRunRefresh.Provider>
   );
 }
 

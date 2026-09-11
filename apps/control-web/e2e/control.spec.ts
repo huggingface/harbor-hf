@@ -950,7 +950,9 @@ for (const width of [1440, 390]) {
     await page.clock.fastForward(125_000);
     expect(await waffle.boundingBox()).toEqual(beforeFailure);
     await expect(
-      waffle.getByRole("button", { name: "Retry", exact: true }),
+      page
+        .getByRole("region", { name: "Refresh status" })
+        .getByRole("button", { name: "Retry Trial progress", exact: true }),
     ).toBeVisible();
     await expect(waffle.getByText(/● Stale/)).toBeVisible();
     const unknown = page.getByRole("button", {
@@ -1888,7 +1890,7 @@ for (const cache of [0, null]) {
 for (const width of [1440, 390]) {
   test(`stable measured timing during delayed background polling at ${width}px`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await mockControl(page);
     await page.setViewportSize({ width, height: 900 });
     await page.clock.install();
@@ -1966,15 +1968,20 @@ for (const width of [1440, 390]) {
     expect(text.split("\n").filter((line) => line.startsWith("Agent time:"))).toEqual([
       "Agent time: 1m26s",
     ]);
+    const refresh = page.getByRole("region", { name: "Refresh status" });
+    const refreshBefore = await refresh.boundingBox();
     const before = await matrix.boundingBox();
     const squareBefore = await square.boundingBox();
     await page.clock.runFor(30_001);
     await expect.poll(() => progressReads).toBe(2);
     expect(release).toBeDefined();
-    await expect(page.getByText("Refreshing…", { exact: true })).toHaveCount(0);
+    await expect(refresh.getByText("Refreshing…", { exact: true })).toBeVisible();
+    await expect(matrix.getByText(/Refreshing/)).toHaveCount(0);
+    expect(await refresh.boundingBox()).toEqual(refreshBefore);
     expect(await matrix.boundingBox()).toEqual(before);
     expect(await square.boundingBox()).toEqual(squareBefore);
     await expect(square).toBeFocused();
+    await refresh.screenshot({ path: testInfo.outputPath("refresh-status.png") });
     release?.();
     await page.getByText("Agent Σ 12m30s · partial").locator("..").focus();
     await expect(page.getByRole("tooltip")).toHaveText(
@@ -2078,7 +2085,9 @@ for (const coarse of [false, true]) {
     );
     await page.clock.runFor(60001);
     await expect(
-      matrix.getByRole("button", { name: "Retry", exact: true }),
+      page
+        .getByRole("region", { name: "Refresh status" })
+        .getByRole("button", { name: "Retry Trial progress", exact: true }),
     ).toBeVisible();
     expect(await matrix.boundingBox()).toEqual(before);
     expect(await slot.boundingBox()).toEqual(slotBefore);
@@ -2556,7 +2565,9 @@ test("delayed observations render fresh between ticks and retry without moving s
   );
   await page.clock.runFor(30_001);
   await expect(
-    matrix.getByRole("button", { name: "Retry", exact: true }),
+    page
+      .getByRole("region", { name: "Refresh status" })
+      .getByRole("button", { name: "Retry Trial progress", exact: true }),
   ).toBeVisible();
   await expect(cell).toBeFocused();
   await expect(page.getByRole("tooltip")).toContainText(

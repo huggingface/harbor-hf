@@ -77,8 +77,11 @@ for (const width of [1440, 390]) {
     });
     await page.clock.install();
     await page.goto(`/runs/${id}`);
-    await expect(page.getByText("Loading run details…")).toBeVisible();
-    await expect(page.getByText("Loading trials…")).toBeVisible();
+    const refresh = page.getByRole("region", { name: "Refresh status" });
+    const entry = (label: string) =>
+      refresh.getByRole("group", { name: `${label} refresh` });
+    await expect(entry("Run details").getByText("Loading…")).toBeVisible();
+    await expect(entry("Trials").getByText("Loading…")).toBeVisible();
     await expect(page.getByText("No trial result is available yet.")).toHaveCount(0);
     releaseTrials();
     await expect(page.getByText("No trial result is available yet.")).toBeVisible();
@@ -87,9 +90,9 @@ for (const width of [1440, 390]) {
     pending = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await expect(page.getByText("Loading trial progress…")).toBeVisible();
+    await expect(entry("Trial progress").getByText("Loading…")).toBeVisible();
     await expect(page.getByText("0 tasks × 0 repeat slots")).toHaveCount(0);
-    await expect(page.getByText("Loading parent Jobs…")).toBeVisible();
+    await expect(entry("Parent Jobs").getByText("Loading…")).toBeVisible();
     await expect(page.getByText("No parent Jobs are available.")).toHaveCount(0);
     releaseJobs();
     const shots = process.env.RUN_LOADING_SCREENSHOTS;
@@ -97,14 +100,14 @@ for (const width of [1440, 390]) {
       await page.screenshot({ path: `${shots}/${width}-initial.png`, fullPage: true });
     held.clear();
     release();
-    await expect(page.getByText("Loading trial progress…")).toHaveCount(0);
+    await expect(entry("Trial progress").getByText("Loading…")).toHaveCount(0);
     held = new Set([base, `${base}/trials`, `${base}/progress`, "/api/v1/jobs"]);
     pending = new Promise<void>((resolve) => {
       release = resolve;
     });
     await page.clock.runFor(30_001);
-    for (const label of ["run details", "trials", "trial progress", "parent Jobs"]) {
-      await expect(page.getByText(`Refreshing ${label}…`)).toBeVisible();
+    for (const label of ["Run details", "Trials", "Trial progress", "Parent Jobs"]) {
+      await expect(entry(label).getByText("Refreshing…")).toBeVisible();
     }
     await expect(page.getByText("No trial result is available yet.")).toBeVisible();
     await expect(page.getByText("7 / -", { exact: true })).toBeVisible();
@@ -114,7 +117,7 @@ for (const width of [1440, 390]) {
     held.clear();
     release();
     await page.clock.runFor(15_000);
-    await expect(page.getByText("Showing saved data")).toHaveCount(4);
+    await expect(refresh.getByText("Refresh failed · saved data")).toHaveCount(4);
     await expect(page.getByText("7 / -", { exact: true })).toBeVisible();
     if (shots)
       await page.screenshot({ path: `${shots}/${width}-error.png`, fullPage: true });
