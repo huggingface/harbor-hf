@@ -180,6 +180,7 @@ test("swapped output/cache correction is confirmed, audited and shared across de
   const reader = await browser.newContext();
   await state.install(reader, "reader");
   const other = await reader.newPage();
+  await other.clock.install();
   await other.goto(`/runs/${id}`);
   await expect(other.getByRole("button", { name: "Correct shared rates" })).toHaveCount(
     0,
@@ -211,9 +212,10 @@ test("swapped output/cache correction is confirmed, audited and shared across de
     page.getByText(/Reason: Output and cache rates were transposed/),
   ).toBeVisible();
   await other.bringToFront();
+  await other.clock.runFor(30_001);
   await expect(
     other.getByLabel("Corrected estimate (USD): 2.425", { exact: true }),
-  ).toBeVisible({ timeout: 15000 });
+  ).toBeVisible();
   await page.goto("/runs");
   await expect(
     page.getByLabel("Corrected estimate (USD): 2.425", { exact: true }),

@@ -437,9 +437,12 @@ export class ControlService {
       });
       await putJson(this.store, runStatePath(runIdValue), next);
       if (desired !== "run") {
-        const liveJobs = (await this.jobs.list()).filter(
-          (job) => job.run_id === runIdValue && isLiveJob(job),
+        let runJobs = (await this.jobs.list()).filter(
+          (job) => job.run_id === runIdValue,
         );
+        if (runJobs.some(isLiveJob))
+          runJobs = await this.verifyRecordedParents(runIdValue, next, runJobs);
+        const liveJobs = runJobs.filter(isLiveJob);
         const liveParents = liveJobs.filter((job) => job.role === "parent");
         const jobsToStop = liveParents.length > 0 ? liveParents : liveJobs;
         await Promise.all(jobsToStop.map((job) => this.jobs.cancel(job.id)));
@@ -448,6 +451,29 @@ export class ControlService {
     });
     await this.refresh();
     return state;
+  }
+
+  private async verifyRecordedParents(
+    runIdValue: string,
+    state: RunStateV1,
+    observations: readonly JobObservation[],
+  ): Promise<JobObservation[]> {
+    if (
+      observations.some(
+        (job) => job.run_id === runIdValue && job.role === "parent" && isLiveJob(job),
+      )
+    )
+      return [...observations];
+    // Neither listing absence nor a stale terminal entry proves death. Check
+    // all recorded parents: an older parent may outlive the latest one.
+    const verified = new Map(observations.map((job) => [job.id, job]));
+    for (const parent of state.parent_jobs) {
+      const job = await this.jobs.inspect(parent.id);
+      if (job.id !== parent.id || job.run_id !== runIdValue || job.role !== "parent")
+        throw new Error("Recorded parent inspection identity mismatch");
+      verified.set(job.id, job);
+    }
+    return [...verified.values()];
   }
 
   private async appendParent(
@@ -485,6 +511,7 @@ export class ControlService {
       (job) => job.role === "parent" && isLiveJob(job),
     ).length;
 
+    const inspectionErrors: unknown[] = [];
     for (const initialView of runs) {
       await this.withRunLock(initialView.record.run_id, async () => {
         const observedById = new Map(observations.map((job) => [job.id, job]));
@@ -498,6 +525,29 @@ export class ControlService {
         const state = validateRunState(
           await readJson(this.store, runStatePath(initialView.record.run_id)),
         );
+        const observedLiveJobs = observations.filter(
+          (job) => job.run_id === projected.record.run_id && isLiveJob(job),
+        );
+        const runnable =
+          state.desired_state === "run" &&
+          !["finished", "cost_stopped"].includes(projected.status);
+        if (runnable || observedLiveJobs.length > 0) {
+          try {
+            observations = await this.verifyRecordedParents(
+              projected.record.run_id,
+              state,
+              observations,
+            );
+          } catch (error) {
+            // Defer this run's recovery, but keep unrelated safety stops working.
+            // Unknown parent liveness also makes launch capacity uncertain.
+            inspectionErrors.push(error);
+            return;
+          }
+        }
+        activeParents = observations.filter(
+          (job) => job.role === "parent" && isLiveJob(job),
+        ).length;
         const runJobs = observations.filter(
           (job) => job.run_id === projected.record.run_id,
         );
@@ -528,7 +578,8 @@ export class ControlService {
         }
         const orphans = liveJobs.filter((job) => job.role === "trial");
         await Promise.all(orphans.map((job) => this.jobs.cancel(job.id)));
-        if (activeParents >= this.options.maxActiveJobs) return;
+        if (inspectionErrors.length > 0 || activeParents >= this.options.maxActiveJobs)
+          return;
         const latest = state.parent_jobs.at(-1);
         if (
           latest &&
@@ -572,6 +623,8 @@ export class ControlService {
       });
     }
     await this.projection.rebuild(this.store, await this.jobs.list());
+    if (inspectionErrors.length > 0)
+      throw new AggregateError(inspectionErrors, "Recorded parent inspection failed");
   }
 }
 

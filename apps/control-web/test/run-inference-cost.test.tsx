@@ -152,8 +152,73 @@ it.each([null, 0])(
         .getByLabelText(`Reported cost (USD): ${cost ?? "unavailable"}`)
         .closest("p"),
     ).toHaveClass("text-xl");
-    expect(screen.getAllByRole("status")).toHaveLength(1);
+    expect(screen.getAllByRole("status")).toHaveLength(2);
     expect(screen.queryByText(/Estimated/)).not.toBeInTheDocument();
     expect(screen.getByText(/no launch fallback/)).toBeInTheDocument();
+  },
+);
+
+it.each([
+  [8, 4, "$2.00", 2],
+  [0, 4, "$0.00", 0],
+  [null, 4, "-", null],
+  [8, 0, "-", null],
+  [8, null, "-", null],
+  [8, -1, "-", null],
+  [8, 1.5, "-", null],
+])(
+  "cost %s over completed %s preserves zero and unknown",
+  (cost, completed, text, exact) => {
+    render(
+      <RunInferenceCost
+        run={{
+          ...run,
+          shared_estimate: undefined,
+          result: {
+            n_total_trials: 100,
+            stats: { cost_usd: cost, n_completed_trials: completed },
+          },
+        }}
+      />,
+    );
+    expect(
+      screen.getByLabelText(
+        `Cost per completed trial (USD): ${exact ?? "unavailable"}`,
+      ),
+    ).toHaveTextContent(text);
+    expect(screen.getByText(/Denominator:/)).toHaveTextContent(
+      "native completed trials (including errors)",
+    );
+    expect(screen.getByText(/Denominator:/)).toHaveTextContent(
+      "includes trials with unknown cost in the denominator",
+    );
+    expect(screen.getByText(/Denominator:/)).toHaveTextContent("Not billed charges");
+  },
+);
+
+it.each(["launch_rates_reported_usage", "corrected_rates_reported_usage"] as const)(
+  "uses supplied %s estimate, not planned trials or a recomputed total",
+  (basis) => {
+    render(
+      <RunInferenceCost
+        run={{
+          ...run,
+          result: {
+            n_total_trials: 100,
+            stats: { cost_usd: null, n_completed_trials: 2 },
+          },
+          shared_estimate: { ...run.shared_estimate, cost_usd: 8, basis },
+        }}
+      />,
+    );
+    expect(
+      screen.getByLabelText("Cost per completed trial (USD): 4"),
+    ).toHaveTextContent("$4.00");
+    expect(screen.getByText(/Denominator:/)).toHaveTextContent(
+      "Denominator: 2 native completed trials",
+    );
+    expect(screen.getByText(/Denominator:/)).toHaveTextContent(
+      "Uses the headline estimate",
+    );
   },
 );

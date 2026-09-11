@@ -1225,6 +1225,11 @@
             "items": {
               "type": "object",
               "properties": {
+                "observed_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When this trial's artifact identity was last checked. Retained completed records keep their previous check time."
+                },
                 "trial_name": {
                   "type": "string"
                 },

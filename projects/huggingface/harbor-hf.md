@@ -1726,3 +1726,16 @@ Approved at: 2026-09-11T08:33:05.689364+00:00
   pull request to main are approved. Disclose unavailable checks and coverage gaps.
 - No merge, deployment, default-branch update, upstream-library issue, credential
   movement, infrastructure change, paid execution or run mutation is authorized.
+
+Focused publication validation:
+
+- Prepared the approved repair/dashboard changes against current main without
+  including older launch-form or sandbox-naming patches. The prior branch and
+  its deployment history remain intact.
+- The focused branch passes 1,390 TypeScript tests, 71 browser tests, and 100
+  root Python tests with 89.10% coverage, plus format/lint/type/build/generated
+  checks, npm audit, normal Slophammer and DRY. The lower TypeScript count
+  reflects exclusion of unrelated earlier frontend changes.
+- PR notes explicitly retain the unavailable baseline/mutation checks,
+  repository-wide supplemental coverage gaps, independent dashboard requests,
+  mount-local display slots, periodic reconciliation and partial cost semantics.

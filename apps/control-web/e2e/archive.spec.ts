@@ -224,7 +224,7 @@ test("normal polling shares archive across two independent browser contexts with
       page.getByRole("button", { name: "Restore", exact: true }),
     ).toBeVisible();
     fixture.requests.length = 0;
-    await list.clock.fastForward(10_001);
+    await list.clock.fastForward(30_001);
     await expect(
       list.getByRole("cell", { name: "Archive fixture recipe 1", exact: true }),
     ).toHaveCount(0);
@@ -332,7 +332,7 @@ test("polling shares unavailable last-known archives and valid resynchronization
     await detail.clock.install();
     await detail.goto(`/runs/${runId}`);
     fixture.run.presentation_available = false;
-    await detail.clock.fastForward(10_001);
+    await detail.clock.fastForward(30_001);
     await expect(
       detail.getByText(/Archive state unavailable \(last known\)/),
     ).toBeVisible();
@@ -348,7 +348,7 @@ test("polling shares unavailable last-known archives and valid resynchronization
       page.getByText("Archive state unavailable (last known)"),
     ).toBeVisible();
     fixture.run.presentation_available = true;
-    await detail.clock.fastForward(10_001);
+    await detail.clock.fastForward(30_001);
     await expect(
       detail.getByRole("button", { name: "Restore", exact: true }),
     ).toBeEnabled();

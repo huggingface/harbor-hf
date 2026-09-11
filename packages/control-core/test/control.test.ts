@@ -38,6 +38,12 @@ class FakeJobs implements JobsPort {
     return structuredClone(this.values);
   }
 
+  async inspect(jobId: string): Promise<JobObservation> {
+    const job = this.values.find((item) => item.id === jobId);
+    if (!job) throw new Error("Job inspection unavailable");
+    return structuredClone(job);
+  }
+
   async startParent(runId: string): Promise<JobObservation> {
     this.starts += 1;
     const created = new Date(Date.now() - 10_000).toISOString();
@@ -1128,8 +1134,10 @@ describe("reconciliation", () => {
     await service.reconcile();
     expect(jobs.starts).toBe(1);
     expect(projection.run(first.run.run_id)?.state.parent_jobs).toHaveLength(1);
+    const inspect = vi.spyOn(jobs, "inspect");
     await service.reconcile();
     expect(jobs.starts).toBe(1);
+    expect(inspect).not.toHaveBeenCalled();
   });
 
   it("keeps a just-started parent in capacity during listing lag", async () => {
@@ -1201,6 +1209,172 @@ describe("reconciliation", () => {
     expect(jobs.starts).toBe(1);
     expect(projection.run(run.run_id)?.status).toBe("cancelled");
   });
+
+  it.each(["omitted", "stale"])(
+    "does not recover children of a %s known live parent",
+    async (listing) => {
+      await submit(`known-parent-${listing}`);
+      await service.reconcile();
+      const parent = jobs.values[0];
+      if (!parent) throw new Error("Expected recorded parent");
+      const child: JobObservation = { ...parent, id: "child", role: "trial" };
+      jobs.values.push(child);
+      vi.spyOn(jobs, "list").mockImplementation(async () =>
+        listing === "omitted" ? [child] : [{ ...parent, stage: "stopped" }, child],
+      );
+      const inspect = vi.spyOn(jobs, "inspect");
+      await service.reconcile();
+      expect(inspect).toHaveBeenCalledWith(parent.id);
+      expect(jobs.cancelled).toEqual([]);
+      expect(jobs.starts).toBe(1);
+    },
+  );
+
+  it.each(["omitted", "stale"])(
+    "explicit pause/cancel stops a verified %s parent before children",
+    async (listing) => {
+      const { run } = await submit(`explicit-${listing}`);
+      await service.reconcile();
+      const parent = jobs.values[0];
+      if (!parent) throw new Error("Expected recorded parent");
+      const child: JobObservation = { ...parent, id: "child", role: "trial" };
+      jobs.values.push(child);
+      vi.spyOn(jobs, "list").mockResolvedValue(
+        listing === "omitted" ? [child] : [{ ...parent, stage: "stopped" }, child],
+      );
+      const inspect = vi.spyOn(jobs, "inspect");
+      await service.setDesiredState(
+        run.run_id,
+        listing === "omitted" ? "paused" : "cancelled",
+        "test-subject",
+      );
+      expect(inspect).toHaveBeenCalledWith(parent.id);
+      expect(jobs.cancelled).toEqual([parent.id]);
+      expect(child.stage).toBe("queued");
+    },
+  );
+
+  it("inspects all known parents and adopts an older live parent", async () => {
+    const { run } = await submit("older-live");
+    await service.reconcile();
+    const parent = jobs.values[0];
+    if (!parent) throw new Error("Expected recorded parent");
+    const state = projection.run(run.run_id)?.state;
+    if (!state) throw new Error("Expected state");
+    const newer = { ...parent, id: "newer", stage: "stopped" as const };
+    jobs.values.push(newer);
+    await putJson(store, runStatePath(run.run_id), {
+      ...state,
+      parent_jobs: [
+        ...state.parent_jobs,
+        { id: newer.id, started_at: newer.created_at },
+      ],
+    });
+    vi.spyOn(jobs, "list").mockResolvedValue([]);
+    const inspect = vi.spyOn(jobs, "inspect");
+    await service.reconcile();
+    expect(inspect.mock.calls).toEqual([[parent.id], [newer.id]]);
+    expect(jobs.starts).toBe(1);
+    expect(jobs.cancelled).toEqual([]);
+  });
+
+  it("unknown old parent defers recovery and launches, not unrelated pause cleanup", async () => {
+    const { run } = await submit("unknown-old");
+    await service.reconcile();
+    const parent = jobs.values[0];
+    if (!parent) throw new Error("Expected recorded parent");
+    const paused = await submit("unrelated-pause");
+    await service.setDesiredState(paused.run.run_id, "paused", "test-subject");
+    await submit("waiting-after-unknown");
+    jobs.values.splice(0);
+    jobs.values.push({
+      ...parent,
+      id: "paused-child",
+      run_id: paused.run.run_id,
+      role: "trial",
+    });
+    const inspect = vi.spyOn(jobs, "inspect");
+    await expect(service.reconcile()).rejects.toThrow(
+      "Recorded parent inspection failed",
+    );
+    expect(inspect).toHaveBeenCalledWith(parent.id);
+    expect(jobs.cancelled).toEqual(["paused-child"]);
+    expect(jobs.starts).toBe(1);
+    expect(projection.run(run.run_id)?.state.desired_state).toBe("run");
+  });
+
+  it.each(["finished", "cancelled"])(
+    "does not inspect idle %s history",
+    async (status) => {
+      const { run } = await submit(`idle-${status}`);
+      await service.reconcile();
+      if (status === "cancelled")
+        await service.setDesiredState(run.run_id, "cancelled", "test-subject");
+      else
+        await putJson(store, `runs/${run.run_id}/job/result.json`, {
+          n_total_trials: 1,
+          finished_at: "2026-09-07T12:00:00Z",
+        });
+      jobs.values.splice(0);
+      const inspect = vi.spyOn(jobs, "inspect");
+      await service.reconcile();
+      expect(inspect).not.toHaveBeenCalled();
+      expect(jobs.starts).toBe(1);
+    },
+  );
+
+  it.each(["error", "identity"])(
+    "does not perform destructive recovery on inspection %s",
+    async (failure) => {
+      await submit(`inspect-${failure}`);
+      await service.reconcile();
+      const parent = jobs.values[0];
+      if (!parent) throw new Error("Expected recorded parent");
+      const child: JobObservation = { ...parent, id: "child", role: "trial" };
+      vi.spyOn(jobs, "list").mockResolvedValue([child]);
+      if (failure === "error")
+        vi.spyOn(jobs, "inspect").mockRejectedValue(new Error("inspection failed"));
+      else vi.spyOn(jobs, "inspect").mockResolvedValue({ ...parent, role: "trial" });
+      await expect(service.reconcile()).rejects.toThrow();
+      expect(jobs.cancelled).toEqual([]);
+      expect(jobs.starts).toBe(1);
+    },
+  );
+
+  it.each([false, true])(
+    "uses all pages before recovery (later page fails: %s)",
+    async (fails) => {
+      const { ReadOnlyHuggingFaceJobs } = await import("../../hf-adapters/src/jobs.js");
+      const { run } = await submit(`pagination-${fails}`);
+      const raw = (role: string, id: string) => ({
+        id,
+        labels: { "harbor-hf-run": run.run_id, "harbor-hf-role": role },
+        status: { stage: "RUNNING" },
+        createdAt: "2026-09-04T00:00:00Z",
+      });
+      const reader = new ReadOnlyHuggingFaceJobs({
+        namespace: "example",
+        accessToken: "synthetic",
+        fetch: async (input) => {
+          if (String(input).includes("cursor=second"))
+            return fails
+              ? new Response("unavailable", { status: 503 })
+              : new Response(JSON.stringify([raw("parent", "existing-parent")]));
+          return new Response(
+            JSON.stringify(
+              Array.from({ length: 100 }, (_, i) => raw("trial", `child-${i}`)),
+            ),
+            { headers: { link: '<?cursor=second>; rel="next"' } },
+          );
+        },
+      });
+      vi.spyOn(jobs, "list").mockImplementation(() => reader.list());
+      if (fails) await expect(service.reconcile()).rejects.toThrow();
+      else await service.reconcile();
+      expect(jobs.cancelled).toEqual([]);
+      expect(jobs.starts).toBe(0);
+    },
+  );
 
   it("cleans an orphan before it starts a replacement parent", async () => {
     const { run } = await submit("orphan");
