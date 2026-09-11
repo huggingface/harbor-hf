@@ -43,6 +43,19 @@ describe("HuggingFaceJobs", () => {
     expect(body).toMatchObject({
       dockerImage: image,
       command: ["python", "-m", "harbor_hf_agents.parent_worker"],
+      environment: {
+        HARBOR_HF_RUN_ID: runId,
+        HARBOR_HF_MOUNT_ROOT: "/data",
+        HARBOR_HF_NAMESPACE: "example",
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_CONFIG_COUNT: "2",
+        GIT_CONFIG_KEY_0: "credential.helper",
+        GIT_CONFIG_VALUE_0: "",
+        GIT_CONFIG_KEY_1: "credential.https://huggingface.co.helper",
+        GIT_CONFIG_VALUE_1: "harbor-hf",
+      },
       attempts: 1,
       labels: { "harbor-hf-role": "parent", "harbor-hf-run": runId },
       volumes: [
@@ -58,6 +71,9 @@ describe("HuggingFaceJobs", () => {
       HF_TOKEN: controlToken,
       HF_INFERENCE_TOKEN: inferenceToken,
     });
+    const { secrets: _secrets, ...secretFreeBody } = body;
+    expect(JSON.stringify(secretFreeBody)).not.toContain(controlToken);
+    expect(JSON.stringify(body.environment)).not.toMatch(/HF_TOKEN|API_KEY/);
   });
 
   it("filters unrelated Jobs and cancels an owned Job", async () => {

@@ -20,7 +20,7 @@ from harbor.models.trial.result import TrialResult
 from harbor.trial.hooks import HookCallback, TrialHookEvent
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from harbor_hf_agents.launch import REVISION, check_revision
+from harbor_hf_agents.launch import REVISION, check_revision, check_sources
 
 _RUN_ID = re.compile(r"^run-[0-9a-f]{24}$")
 
@@ -334,6 +334,7 @@ async def run_parent() -> None:
     if record.get("harbor_revision") != REVISION:
         raise ValueError("Run Harbor revision does not match the parent image")
     config = job_config(record, mount_root, run_id)
+    check_sources(config)
     job = await Job.create(config)
     run_dir = mount_root / "runs" / run_id
     try:

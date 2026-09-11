@@ -136,6 +136,34 @@ Schema generated from the pinned Harbor revision. Harbor-defined open extension
 maps stay open. The service then sets the run paths, labeled HF Sandbox
 environment, and inference router variables.
 
+## Private Hugging Face dataset sources
+
+A reviewed benchmark can use a Harbor-format task tree in a private Hugging Face
+Dataset Git repository. The benchmark keeps Harbor's native source values:
+
+```text
+repo: https://huggingface.co/datasets/example-org/<dataset>.git@<40-character-commit>
+path: <task-tree-path>
+```
+
+Admission requires HTTPS, the exact `huggingface.co` host, the Dataset repository
+path form, no embedded credentials, port, query, or fragment, and an exact
+40-character commit. Existing public GitHub admission remains unchanged. ACP
+and other executable source admission stays separate.
+
+Harbor-HF passes `repo` and `path` unchanged to Harbor. Harbor's
+`GitRepoRegistryClient` checks out the repository, and `TaskClient` resolves the
+tasks. Harbor-HF does not add a source record, downloader, resolver, scheduler,
+result format, or API.
+
+Control-side launch inspection and the trusted parent configure a non-persistent
+Git credential helper that reads the existing `HF_TOKEN` and answers only for
+`huggingface.co`. The token does not enter the source URL, process arguments,
+Git credential files, run records, Bucket objects, projections, browser
+responses, logs, or trial agents. A missing token, inaccessible repository,
+missing commit, or rejected source stops the launch before inference. There is
+no fallback.
+
 ## Parent and child Jobs
 
 The reconciler starts one parent Job per active run. The parent image is selected
@@ -143,10 +171,13 @@ by an immutable digest. The Job gets the Bucket mounted at `/data` and reads the
 run record from that mount.
 
 The parent receives the two approved service credentials as ephemeral Job
-secrets. It uses the control credential to start and label child Sandbox Jobs.
-The stored agent configuration contains the fixed `${HF_INFERENCE_TOKEN}`
-template. The Sandbox adapter resolves it from the parent's ephemeral secret
-only when it builds an agent command environment. Pi receives it as `HF_TOKEN`.
+secrets. It uses the control credential to start and label child Sandbox Jobs
+and, when required, to authenticate native Git access to an admitted private
+Hugging Face Dataset. The control secret named `HF_TOKEN` does not enter a trial
+agent environment. The stored agent configuration contains the fixed
+`${HF_INFERENCE_TOKEN}` template. The Sandbox adapter resolves the separate
+inference credential from the parent's ephemeral secret only when it builds an
+agent command environment. Pi receives that inference credential as `HF_TOKEN`.
 Its adapter combines Pi's public base model metadata with live provider prices,
 tool support and context metadata from the public Hugging Face router. The
 provider-pinned entry exists only in Pi's temporary configuration, so Pi calls

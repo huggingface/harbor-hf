@@ -23,6 +23,7 @@ from harbor.trial.hooks import HookCallback, TrialEvent, TrialHookEvent
 from harbor.trial.trial import Trial
 from huggingface_hub import HfApi, Sandbox
 
+from harbor_hf_agents import parent_worker
 from harbor_hf_agents.hf_sandbox import (
     LabeledHFSandboxEnvironment,
     _resolve_inference_env,
@@ -45,6 +46,8 @@ from harbor_hf_agents.parent_worker import (
 RUN_ID = "run-0123456789abcdef01234567"
 CAMPAIGN_CEILING = CostCeiling(usd=0.25, scope="campaign")
 LEGACY_TRIAL_CEILING = CostCeiling(usd=0.25, scope="trial")
+PRIVATE_DATASET_URL = "https://huggingface.co/datasets/example-org/example-dataset.git"
+PRIVATE_DATASET_COMMIT = "a" * 40
 
 
 def make_cost_hook(
@@ -83,6 +86,63 @@ def record(root: Path) -> dict[str, Any]:
             },
         },
     }
+
+
+def _write_parent_record(tmp_path: Path) -> dict[str, Any]:
+    value = record(tmp_path)
+    value["harbor_revision"] = parent_worker.REVISION
+    value["harbor_job_config"]["datasets"] = [
+        {
+            "repo": f"{PRIVATE_DATASET_URL}@{PRIVATE_DATASET_COMMIT}",
+            "path": "tasks",
+        }
+    ]
+    path = tmp_path / "runs" / RUN_ID / "run.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(value), encoding="utf-8")
+    return value
+
+
+@pytest.mark.asyncio
+async def test_parent_rejects_missing_private_dataset_token_before_job_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_parent_record(tmp_path)
+    create = AsyncMock()
+    monkeypatch.setattr(parent_worker.Job, "create", create)
+    monkeypatch.setattr(parent_worker, "check_revision", lambda: None)
+    monkeypatch.setenv("HARBOR_HF_RUN_ID", RUN_ID)
+    monkeypatch.setenv("HARBOR_HF_MOUNT_ROOT", str(tmp_path))
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+
+    with pytest.raises(ValueError, match="HF_TOKEN is required"):
+        await parent_worker.run_parent()
+
+    create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_parent_passes_native_private_dataset_config_to_harbor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_parent_record(tmp_path)
+    create = AsyncMock(side_effect=RuntimeError("stop after Harbor Job creation"))
+    monkeypatch.setattr(parent_worker.Job, "create", create)
+    monkeypatch.setattr(parent_worker, "check_revision", lambda: None)
+    monkeypatch.setenv("HARBOR_HF_RUN_ID", RUN_ID)
+    monkeypatch.setenv("HARBOR_HF_MOUNT_ROOT", str(tmp_path))
+    monkeypatch.setenv("HF_TOKEN", "test-control-token")
+
+    with pytest.raises(RuntimeError, match="stop after Harbor Job creation"):
+        await parent_worker.run_parent()
+
+    native = create.await_args.args[0]
+    assert native.datasets[0].repo == (
+        f"{PRIVATE_DATASET_URL}@{PRIVATE_DATASET_COMMIT}"
+    )
+    assert native.datasets[0].path == Path("tasks")
 
 
 def test_loads_and_validates_the_assigned_record(tmp_path: Path) -> None:

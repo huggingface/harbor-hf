@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[3] / "presets"
 SHA = "a" * 40
 HASH = "sha256:" + "b" * 64
 URL = "https://github.com/example-org/example-task.git"
+HF_DATASET_URL = "https://huggingface.co/datasets/example-org/example-dataset.git"
 
 
 def config() -> JobConfig:
@@ -78,10 +79,89 @@ def test_paths_cannot_escape_repo(path: str) -> None:
 
 
 def test_native_git_and_package_sources() -> None:
-    launch.check_sources(config())
+    assert launch.check_sources(config()) == set()
     launch.check_dataset(DatasetConfig(name="example-org/example-dataset", ref=HASH))
     launch.check_task(TaskConfig(name="example-org/example-task", ref=HASH))
     launch.check_task(TaskConfig(git_url=URL, git_commit_id=SHA, path=Path("task")))
+
+
+def test_private_hf_dataset_source_uses_native_repo_and_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = DatasetConfig(repo=f"{HF_DATASET_URL}@{SHA}", path=Path("tasks"))
+    job = config()
+    job.datasets = [source]
+    before = source.model_dump(mode="json")
+    monkeypatch.setenv("HF_TOKEN", "test-control-token")
+
+    assert launch.check_sources(job) == {(HF_DATASET_URL, SHA)}
+    assert source.model_dump(mode="json") == before
+    launch.check_task(
+        TaskConfig(git_url=HF_DATASET_URL, git_commit_id=SHA, path=Path("tasks/one")),
+        {(HF_DATASET_URL, SHA)},
+    )
+
+
+def test_private_hf_dataset_requires_the_control_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = config()
+    job.datasets = [DatasetConfig(repo=f"{HF_DATASET_URL}@{SHA}", path=Path("tasks"))]
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+
+    with pytest.raises(ValueError, match="HF_TOKEN is required"):
+        launch.check_sources(job)
+
+
+@pytest.mark.parametrize(
+    "repo",
+    [
+        f"http://huggingface.co/datasets/example-org/example-dataset.git@{SHA}",
+        f"https://HUGGINGFACE.CO/datasets/example-org/example-dataset.git@{SHA}",
+        f"https://user:pass@huggingface.co/datasets/example-org/example-dataset.git@{SHA}",
+        f"https://huggingface.co:443/datasets/example-org/example-dataset.git@{SHA}",
+        f"https://huggingface.co/datasets/example-org/example-dataset.git?x=1@{SHA}",
+        f"https://huggingface.co/datasets/example-org/example-dataset.git#x@{SHA}",
+        f"https://huggingface.co/models/example-org/example-dataset.git@{SHA}",
+        f"https://huggingface.co/datasets/example-org/example-dataset@{SHA}",
+        f"https://huggingface.co/datasets/example-org/example-dataset.git/extra@{SHA}",
+        f"{HF_DATASET_URL}@main",
+        f"{HF_DATASET_URL}@{'A' * 40}",
+    ],
+)
+def test_private_hf_dataset_source_requires_exact_url_and_commit(repo: str) -> None:
+    with pytest.raises(ValueError):
+        launch.check_dataset(DatasetConfig(repo=repo, path=Path("tasks")))
+
+
+def test_private_hf_git_tasks_are_not_admitted_as_direct_sources() -> None:
+    task = TaskConfig(
+        git_url=HF_DATASET_URL,
+        git_commit_id=SHA,
+        path=Path("tasks/one"),
+    )
+    with pytest.raises(ValueError, match="must resolve from an admitted dataset"):
+        launch.check_task(task)
+
+
+@pytest.mark.asyncio
+async def test_metric_inspection_passes_native_repo_and_path_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = DatasetConfig(repo=f"{HF_DATASET_URL}@{SHA}", path=Path("tasks"))
+    job = config()
+    job.datasets = [source]
+    client = SimpleNamespace(
+        get_dataset_metadata=AsyncMock(
+            return_value=SimpleNamespace(files=[], metrics=[])
+        )
+    )
+    create = Mock(return_value=client)
+    monkeypatch.setattr(launch.RegistryClientFactory, "create", create)
+
+    await launch.check_metrics(job)
+
+    create.assert_called_once_with(repo=source.repo, path=source.path)
 
 
 @pytest.mark.parametrize(

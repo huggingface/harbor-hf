@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { canonicalJson } from "@harbor-hf/contracts";
 import { prepareDirectJobConfig } from "@harbor-hf/control-core";
@@ -55,7 +55,7 @@ export class LaunchError extends Error {
   }
 }
 
-/** One bounded, secret-free native inspection at a time; no validation service or queue. */
+/** One bounded native inspection at a time; no validation service or queue. */
 export class NativeLaunch implements LaunchPort {
   private busy = false;
   private cachedCatalog: Promise<LaunchCatalog> | undefined;
@@ -81,7 +81,7 @@ export class NativeLaunch implements LaunchPort {
             detached: true,
             stdio: ["pipe", "pipe", "ignore"],
             env: {
-              PATH: "/usr/local/bin:/usr/bin:/bin",
+              PATH: `${dirname(executable)}:/usr/local/bin:/usr/bin:/bin`,
               HOME: cwd,
               TMPDIR: cwd,
               XDG_CACHE_HOME: cwd,
@@ -89,6 +89,16 @@ export class NativeLaunch implements LaunchPort {
               GIT_CONFIG_NOSYSTEM: "1",
               GIT_CONFIG_GLOBAL: "/dev/null",
               GIT_TERMINAL_PROMPT: "0",
+              ...(request.operation === "validate"
+                ? {
+                    GIT_CONFIG_COUNT: "2",
+                    GIT_CONFIG_KEY_0: "credential.helper",
+                    GIT_CONFIG_VALUE_0: "",
+                    GIT_CONFIG_KEY_1: "credential.https://huggingface.co.helper",
+                    GIT_CONFIG_VALUE_1: "harbor-hf",
+                    ...(this.config.hf_token ? { HF_TOKEN: this.config.hf_token } : {}),
+                  }
+                : {}),
             },
           },
         );
