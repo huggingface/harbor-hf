@@ -111,8 +111,7 @@ export async function listJobPages(
   const first = endpoint(options);
   let url: URL | null = first;
   const seen = new Set<string>();
-  const values: JobObservation[] = [];
-  const ids = new Set<string>();
+  const values = new Map<string, JobObservation>();
   while (url) {
     if (seen.has(url.href) || seen.size >= 1000)
       throw new Error("Jobs pagination loop or page limit");
@@ -123,14 +122,22 @@ export async function listJobPages(
     for (const input of page) {
       const job = observation(input);
       if (job) {
-        if (ids.has(job.id)) throw new Error("Duplicate Job in pagination");
-        ids.add(job.id);
-        values.push(job);
+        const previous = values.get(job.id);
+        if (
+          previous &&
+          (previous.run_id !== job.run_id ||
+            previous.role !== job.role ||
+            previous.created_at !== job.created_at)
+        )
+          throw new Error("Conflicting Job in pagination");
+        // New Jobs can shift offset-based pages while this list is in flight.
+        // Keep the later observation when the same stable identity overlaps.
+        values.set(job.id, job);
       }
     }
     url = nextPage(response.headers.get("link"), url, first);
   }
-  return values;
+  return [...values.values()];
 }
 
 export async function inspectJob(
