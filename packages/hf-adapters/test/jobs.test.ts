@@ -331,7 +331,7 @@ describe("paginated Job reads", () => {
     expect(transport).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects duplicate Jobs across distinct pages", async () => {
+  it("coalesces a stable Job repeated by moving pagination", async () => {
     const transport = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -339,8 +339,50 @@ describe("paginated Job reads", () => {
           headers: { link: "<?cursor=second>; rel=next" },
         }),
       )
-      .mockResolvedValueOnce(new Response(JSON.stringify([apiJob()])));
-    await expect(reader(transport).list()).rejects.toThrow("Duplicate Job");
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              ...apiJob(),
+              status: { stage: "COMPLETED" },
+              finishedAt: "2026-09-04T00:01:00Z",
+            },
+          ]),
+        ),
+      );
+
+    await expect(reader(transport).list()).resolves.toEqual([
+      expect.objectContaining({
+        id: "parent-job",
+        stage: "stopped",
+        finished_at: "2026-09-04T00:01:00Z",
+      }),
+    ]);
+  });
+
+  it("rejects a repeated Job whose stable identity changes", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([apiJob()]), {
+          headers: { link: "<?cursor=second>; rel=next" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              ...apiJob(),
+              labels: {
+                "harbor-hf-role": "parent",
+                "harbor-hf-run": "run-fedcba9876543210fedcba98",
+              },
+            },
+          ]),
+        ),
+      );
+
+    await expect(reader(transport).list()).rejects.toThrow("Conflicting Job");
   });
 
   it.each(["http://untrusted.invalid", "https://user:password@example.invalid"])(
