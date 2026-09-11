@@ -2124,3 +2124,48 @@ Approved at: 2026-09-11T13:08:50Z
 - Preserve durable partial outputs and verify a real pause and resume before the
   full run. Stop for a shared deterministic defect, lost durable state, duplicate
   execution, provenance or backend mismatch, or possible cumulative overspend.
+
+### Workbench cancellation CI test amendment (2026-09-11)
+
+Status: approved
+
+- The user directly approved adding the proposed explicit five-second polling
+  timeout to the local Workbench cancellation test on the current branch and
+  committing it with a relevant message.
+- Scope is the test-only timing fix and offline validation. Preserve unrelated
+  working changes. No push, pull request, merge, deployment, paid compute,
+  credential movement, or live run mutation is authorized by this amendment.
+
+### Consolidated Run detail refresh feedback (2026-09-11)
+
+Status: approved
+
+- The user requested a small top-of-page refresh status area to prevent scattered
+  loading and refreshing labels from causing layout movement, with refresh age
+  or timing feedback.
+- Implement and validate this local UI-only change using existing query state.
+  Preserve polling frequency, Harbor evidence freshness, errors and retry access.
+  Preserve unrelated work. No push, deployment, paid compute, live run mutation,
+  credential transfer, or backend behavior change is included.
+
+### Workbench recorded provider display (2026-09-11)
+
+Status: approved
+
+- The user requested investigation and correction of the Runs list showing an
+  unspecified provider for Workbench runs with a specified recorded provider.
+- Use the existing immutable submission provider for Workbench display when
+  explicitly supplied. Preserve native per-agent configuration, non-Workbench
+  display behavior, execution routing, and unspecified values when not recorded.
+- This is local UI and offline test work only. Preserve unrelated edits. No push,
+  deployment, live run mutation, paid compute, or credential transfer is included.
+
+### Fast-agent Workbench starter version update (2026-09-11)
+
+Status: approved
+
+- The user requested changing the fast-agent Workbench recipe pin to 0.10.24.
+- Update the existing UI and control-core starter definitions and matching tests.
+  Preserve saved/custom recipes, immutable runs, and unrelated working changes.
+- Local source changes and offline validation only. No publication, deployment,
+  live setup or benchmark launch, paid compute, or credential movement is included.
