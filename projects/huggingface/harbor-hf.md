@@ -1808,3 +1808,170 @@ Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
 - Verify the merged source revision, build/runtime health, readiness and existing
   service capabilities without submitting a run. Stop and report any deployment
   blocker rather than broadening credential or infrastructure scope.
+
+### Worker compatibility and deployment completion
+
+Status: approved
+
+Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
+
+- The user explicitly approved clearing CI and merging PR #212, rebuilding and
+  publishing the parent worker with the Sandbox-name and private-dataset fixes,
+  then deploying the updated control service to the existing `<control-space>`.
+- Reconciled the existing worker image to publication source `a7b6a67`; it contains
+  name sanitation but not the private-dataset support now merged to main.
+- Use existing checkout, registry, publication workflow and configured credentials
+  in place. No new branch or worktree. Update only the existing parent/Workbench
+  immutable image references needed for this release; preserve other settings.
+- Verify image provenance and offline behavior, green CI and merged source, then
+  deployment health/readiness and revision. No benchmark, remote setup test,
+  inference, credential transfer, live grant mutation, or new infrastructure.
+- Keep deployment identifiers, image references and private session evidence out
+  of public repository content and release metadata. Record only safe source
+  revisions and verification outcomes publicly.
+
+### Queued-run reconciliation performance investigation
+
+Status: completed
+
+Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
+
+- The user approved investigating whether control reconciliation is the queued
+  smoke run's performance bottleneck and implementing a targeted local fix.
+- Measure phase latency and operation counts with read-only observations and
+  mocked local tests. Distinguish confirmed findings from hypotheses; add
+  regression tests for any behavior change and preserve parent verification,
+  complete Jobs-list validation, cost enforcement and orphan cleanup safety.
+- Preserve the existing queued run. No launch, retry, resume, cancellation,
+  credential transfer, infrastructure change, deployment, push or PR is included.
+  Local implementation, validation and commits in this checkout are approved;
+  no new branch or worktree. Do not run a second live reconciler.
+- Keep Harbor execution and native trial identity unchanged. Check pinned Harbor
+  source and upstream history before designing any execution-adjacent change.
+  Keep private operational timings and identifiers out of public fixtures/logs.
+
+Local implementation completed (2026-09-10):
+
+- Confirmed repeated global projection rebuilds and Jobs listings in the deployed
+  reconciliation loop. Read-only observations support a performance bottleneck;
+  exact phase dominance inside the live service remains unmeasured.
+- Added scoped per-run projection replacement under the existing run lock.
+  Full opening/closing rebuilds remain; global observation timestamps advance
+  only with a full rebuild. Preserve unrelated projection rows and metadata.
+- Inactive histories with no live Jobs in the complete snapshot can authorize
+  only inaction after a locked state-revision recheck. Mutation paths retain
+  complete fresh Jobs listings, recorded-parent inspection, capacity checks,
+  fresh costs/results and parent-first cleanup. Late Jobs may wait until a later
+  successful pass; provider failures impose no guaranteed wall-clock bound.
+- Synthetic regressions establish linear projection I/O and three complete Jobs
+  listings for inactive history plus one queued run, independent of history size.
+  Active runs retain per-run listings. No synthetic latency is a production SLA.
+- Passed 1,445 unit tests, 71 browser tests, 235 worker tests, both amd64 Docker
+  builds, formatting/lint/types, generated contracts, dependency audit, privacy,
+  normal Slophammer and DRY checks. Both changed source files exceed 85% across
+  coverage metrics; repository-wide supplemental coverage still misses the
+  unchanged threshold. Baseline data and the mutation script are unavailable;
+  manually restoring the projection regression fails the performance tests.
+- Reviewed Harbor at `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and history through
+  `e1be9bd3`, including `src/harbor/job.py`, `src/harbor/models/job/config.py`,
+  `src/harbor/models/job/result.py`, and `src/harbor/environments/hf_sandbox.py`.
+  No Harbor execution, configuration contract, pin, or internal imports changed.
+- Independent complete-diff safety/privacy review found no blockers. Local work
+  only: no run mutation, deployment, push, credential movement or new resource.
+
+### Run detail loading feedback
+
+Status: completed
+
+Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
+
+- The user requested clear loading feedback while Run detail data is pending.
+  Implement section-specific initial loading and background refresh indicators,
+  preserving previously loaded data and distinguishing errors from empty results.
+- Local frontend changes, mocked tests, visual review and commits are approved.
+  No new branch/worktree, push, PR, deployment, live run mutation, credential
+  movement, polling-frequency change or backend architecture change is included.
+- Preserve independent query freshness, native Harbor trial identities and prior
+  local reconciliation changes. No live inference or benchmark execution.
+
+Local implementation completed (2026-09-10):
+
+- Added section-specific Loading feedback before data arrives and Refreshing
+  feedback while retaining cached run details, trials, progress and parent Jobs.
+  Initial errors remain explicit; failed refreshes retain saved data with Retry.
+  Missing responses no longer appear as confirmed zero trials or empty progress.
+- Preserved polling intervals, evidence freshness, backend behavior and Harbor
+  identities. The previously reviewed pinned Harbor files above require no
+  execution change for this frontend-only presentation behavior.
+- Passed 1,448 unit tests, 73 browser tests, formatting, lint (existing warnings),
+  types, build, generated-contract checks, dependency audit and normal Slophammer
+  and DRY checks. Reviewed initial, refreshing and error states at desktop and
+  mobile widths. Global supplemental coverage remains below the unchanged 85%
+  threshold; no gate was weakened. The mutation script and baseline file are
+  absent, so those checks could not complete.
+- Completed only this local amendment. No push, PR, deployment, live run mutation,
+  credential movement, new resource or polling-frequency change was performed.
+  Loading feedback does not itself reduce backend latency.
+
+### Loading feedback and reconciliation release
+
+Status: approved
+
+Approved at: 2026-09-11T12:34:26Z
+
+- The user explicitly requested a pull request, green CI, merge and deployment
+  of the completed Run detail loading feedback and preceding reconciliation
+  performance fixes. This supersedes their local-only publication limits.
+- Reuse a suitable existing branch/ref in this checkout without force pushing,
+  resetting diverged main, discarding unrelated commits or creating a branch or
+  worktree. Preserve the existing worker-release authorization commit.
+- Publish only after full diff and public metadata review and the public privacy
+  scan. Clear CI without weakening checks; merge only with green CI.
+- Deploy the exact merged source to the existing canonical `<control-space>` and
+  `<artifact-bucket>` configuration. This release is frontend/control TypeScript
+  only: preserve exact existing immutable worker image references and all other
+  settings and secrets. Use configured credentials in place; no transfer.
+- Verify source, liveness, readiness and existing capabilities. No benchmark
+  launch, retry, resume, cancellation, paid test, endpoint change, credential
+  workaround or new resource is authorized. Stop for permission or revision
+  mismatches. Do not restore the previously removed QR functionality.
+
+Release blocked during read-only preflight (2026-09-11):
+
+- Upstream main advanced from `f14f6d8` to `65c74b6` through PR #213. That change
+  modifies both Dockerfiles and the worker launch module for Git LFS support.
+- The existing live service is running and ready at `f14f6d8`; both configured
+  immutable worker images still match that preceding verified release.
+- Deploying new merged main is no longer a frontend/control-only release with
+  unchanged worker inputs. The exact-image preservation limit prevents silently
+  publishing replacement workers. Stop pending an explicit scope decision.
+- No public push, pull request, merge, deployment, configuration change or run
+  mutation occurred. Existing branches and implementation commits are preserved.
+
+### Loading and reconciliation integration amendment (2026-09-11)
+
+Status: approved
+
+Approved at: 2026-09-11T12:45:55Z
+
+- The user directly approved integrating current main, publishing a pull request,
+  waiting for green CI, merging the exact tested commit, and deploying the merged
+  source through the existing control Space's normal rebuild.
+- This additively supersedes the preceding exact-old-image preservation limit:
+  verify and reuse the already published immutable parent worker image for main
+  `65c74b69bf9a8e869e54da0c29184370bc9b652e`, including registry/source provenance
+  and applicable offline tests, for both parent and Workbench settings. Do not
+  dispatch or perform an additional worker image build. A successful existing
+  publication was found; the earlier preflight did not establish a rebuild need.
+- Reuse an existing branch/ref, preserving the worker-release authorization and
+  unrelated commits. No new branch/worktree, force push, reset, or restoration of
+  removed QR functionality. Inspect intervening upstream changes before adoption.
+- Preserve unrelated service settings and secrets, existing resources, and all
+  benchmark runs. No run launch, retry, resume, cancellation, paid integration
+  test, credential transfer, grant mutation, or permission workaround is approved.
+- Review deployment interruption safety before mutation; minimize interruption.
+  Verify merged source, image references, liveness, readiness and capabilities.
+  Stop on permission errors or unresolved provenance/safety conflicts.
+- Repeated scans are confirmed in the deployed reconciliation implementation;
+  attribution of the additional slow-starting run remains unmeasured. Do not
+  present synthetic operation-count improvements as a measured production SLA.
