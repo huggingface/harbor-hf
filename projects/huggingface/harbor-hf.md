@@ -11,6 +11,25 @@ default_branch: main
 
 Status: approved
 
+### Native scrubber ordering integration (2026-09-11)
+
+Approved at: 2026-09-11T15:16:23Z
+
+- The user explicitly approved a narrow private integration at Harbor revision
+  `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` which calls Harbor's existing
+  scrubber on the actual trial before END callbacks, preserving the normal
+  final scrub as a backstop. Do not copy the scrubber or reconstruct trials.
+- This supersedes the interim end-of-run-only direction: preserve live native
+  metadata, attempt receipts, and scrubbed per-trial uploads, with a final copy.
+- Test ordering on success, failure, cancellation, retry, and unsupported
+  revisions. Fail explicitly on integration or upload failures.
+- Removal boundary: the first reviewed Harbor pin providing a supported
+  post-sanitization upload hook, or sanitization before END, replaces this
+  adapter. No such revision exists in the inspected history through
+  `e1be9bd39c368f88a27fee4cbd26655e9994ee5a`; do not invent a future SHA.
+- The existing local implementation and PR authorization applies. No upstream
+  publication, merge, deployment, paid run, or credential movement is approved.
+
 ### Local parent storage PR preparation (2026-09-11)
 
 Approved at: 2026-09-11T15:01:08Z
@@ -338,6 +357,13 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-11 — Native sanitization ordering
+
+- Approved invoking the pinned native scrubber before END callbacks, retaining
+  Harbor's final scrub, and preserving per-trial monitoring and persistence.
+- This replaces the interim end-of-run-only simplification. The exact revision,
+  tests, removal condition, and publication limits are recorded above.
 
 ### 2026-09-11 — Local parent storage PR
 
