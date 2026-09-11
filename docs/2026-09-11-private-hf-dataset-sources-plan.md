@@ -95,9 +95,12 @@ environment. Existing delivery of the separate inference credential must not
 change.
 
 The control and parent images include Git LFS so Harbor's `TaskClient` can
-materialize LFS objects during its native checkout. Admission fails before source
-resolution when Git LFS is not available. Git LFS supports Harbor's checkout; it
-does not add a Harbor-HF downloader or task resolver.
+materialize LFS objects during its native checkout. The same temporary Git
+environment supplies the standard `filter.lfs.*` settings that `git lfs install`
+would otherwise persist. This is required because global and system Git
+configuration is disabled. Admission fails before source resolution when Git LFS
+is not available. Git LFS supports Harbor's checkout; it does not add a
+Harbor-HF downloader or task resolver.
 
 ## Failure behavior
 

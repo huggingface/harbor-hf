@@ -177,12 +177,20 @@ describe("bounded native inspector", () => {
     const config = await fixture(`
       if (process.env.HF_TOKEN !== ${JSON.stringify(token)}) process.exit(10);
       if (process.env.HF_INFERENCE_TOKEN || process.env.GITHUB_TOKEN) process.exit(17);
-      if (process.env.GIT_CONFIG_COUNT !== "2") process.exit(11);
+      if (process.env.GIT_CONFIG_COUNT !== "6") process.exit(11);
       if (process.env.GIT_CONFIG_KEY_0 !== "credential.helper") process.exit(12);
       if (process.env.GIT_CONFIG_VALUE_0 !== "") process.exit(13);
       if (process.env.GIT_CONFIG_KEY_1 !== "credential.https://huggingface.co.helper") process.exit(14);
       if (process.env.GIT_CONFIG_VALUE_1 !== "harbor-hf") process.exit(15);
       if (process.argv.some((value) => value.includes(${JSON.stringify(token)}))) process.exit(16);
+      if (process.env.GIT_CONFIG_KEY_2 !== "filter.lfs.clean") process.exit(18);
+      if (process.env.GIT_CONFIG_VALUE_2 !== "git-lfs clean -- %f") process.exit(19);
+      if (process.env.GIT_CONFIG_KEY_3 !== "filter.lfs.smudge") process.exit(20);
+      if (process.env.GIT_CONFIG_VALUE_3 !== "git-lfs smudge -- %f") process.exit(21);
+      if (process.env.GIT_CONFIG_KEY_4 !== "filter.lfs.process") process.exit(22);
+      if (process.env.GIT_CONFIG_VALUE_4 !== "git-lfs filter-process") process.exit(23);
+      if (process.env.GIT_CONFIG_KEY_5 !== "filter.lfs.required") process.exit(24);
+      if (process.env.GIT_CONFIG_VALUE_5 !== "true") process.exit(25);
       console.log(${JSON.stringify(JSON.stringify(inspection))});
     `);
 

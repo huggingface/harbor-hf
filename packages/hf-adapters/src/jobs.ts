@@ -6,8 +6,8 @@ import type {
 } from "@harbor-hf/control-core";
 import { cancelJob, runJob, type SpaceHardwareFlavor } from "@huggingface/hub";
 
+import { isolatedGitSourceEnvironment } from "./git-environment.js";
 import { inspectJob, listJobPages, observation } from "./jobs-read.js";
-
 import { withSelectedInferenceSecret } from "./inference-secrets.js";
 
 export type ParentHardware = SpaceHardwareFlavor;
@@ -122,14 +122,7 @@ export class HuggingFaceJobs implements JobsPort {
         HARBOR_HF_RUN_ID: runId,
         HARBOR_HF_MOUNT_ROOT: this.mountRoot,
         HARBOR_HF_NAMESPACE: this.options.namespace,
-        GIT_CONFIG_NOSYSTEM: "1",
-        GIT_CONFIG_GLOBAL: "/dev/null",
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_CONFIG_COUNT: "2",
-        GIT_CONFIG_KEY_0: "credential.helper",
-        GIT_CONFIG_VALUE_0: "",
-        GIT_CONFIG_KEY_1: "credential.https://huggingface.co.helper",
-        GIT_CONFIG_VALUE_1: "harbor-hf",
+        ...isolatedGitSourceEnvironment(),
       },
       secrets: {
         HF_TOKEN: this.options.accessToken,

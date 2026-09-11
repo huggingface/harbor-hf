@@ -99,7 +99,10 @@ The Space has two secrets:
 The values must differ. Keep both out of Space variables, source files, build
 arguments, request bodies, Job labels, and logs. The control and parent images
 must include Git LFS so Harbor can materialize LFS objects from admitted private
-Dataset repositories. Private Dataset admission fails if Git LFS is not available.
+Dataset repositories. The clean Git process environment supplies the standard
+`filter.lfs.*` settings for each temporary clone because global and system Git
+configuration is disabled. Private Dataset admission fails if Git LFS is not
+available.
 
 ## Configuration
 
