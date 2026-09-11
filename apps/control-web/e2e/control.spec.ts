@@ -2584,8 +2584,8 @@ for (const width of [1440, 390]) {
     let discovery = now.toISOString();
     let trialChecked = old;
     await page.route("**/api/v1/runs/*/progress", async (route) => {
-      reads++;
       discovery = await page.evaluate(() => new Date().toISOString());
+      reads++;
       await json(route, {
         observed_at: discovery,
         jobs_observed_at: discovery,
