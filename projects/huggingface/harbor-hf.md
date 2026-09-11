@@ -1787,3 +1787,24 @@ Local completion recorded (2026-09-10; prior approval timestamp preserved):
   These presentation changes require no Harbor execution change or local patch.
 - Completed only this local amendment. No push, PR update, deployment, live grant
   mutation, credential movement, paid run or infrastructure change was performed.
+
+### Workbench publication, merge and control deployment
+
+Status: approved
+
+Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
+
+- The user explicitly approved pushing the current branch, clearing CI, merging
+  the existing pull request, and deploying the merged revision to the existing
+  canonical `<control-space>` so they can test and launch a benchmark themselves.
+- Update the existing pull request with the Workbench scope and validation;
+  diagnose and fix CI failures without weakening checks. Merge only with green CI.
+- Work in the existing checkout; no new branch or worktree. Reuse the existing
+  deployment tooling and configured credentials in place. Preserve current image
+  digests when worker inputs are unchanged, and preserve service settings.
+- No benchmark launch, retry, paid test execution, credential transfer, live grant
+  mutation, new infrastructure, or unrelated change is authorized. Do not publish
+  the private deployment identifier in repository content or public metadata.
+- Verify the merged source revision, build/runtime health, readiness and existing
+  service capabilities without submitting a run. Stop and report any deployment
+  blocker rather than broadening credential or infrastructure scope.
