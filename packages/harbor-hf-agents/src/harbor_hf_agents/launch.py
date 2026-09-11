@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import importlib.metadata
 import json
+import os
 import re
 import sys
 from pathlib import Path, PurePosixPath
@@ -33,6 +34,11 @@ from pydantic import ValidationError
 REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e"
 COMMIT = re.compile(r"[0-9a-f]{40}")
 CONTENT = re.compile(r"sha256:[0-9a-f]{64}")
+HF_DATASET_GIT_PATH = re.compile(
+    r"/datasets/[A-Za-z0-9][A-Za-z0-9._-]*/"
+    r"[A-Za-z0-9][A-Za-z0-9._-]*\.git"
+)
+PrivateDatasetSources = set[tuple[str, str]]
 
 
 def record(value: object) -> dict[str, object]:
@@ -110,26 +116,65 @@ def public_git(value: str) -> None:
         raise ValueError("Sources must use credential-free public GitHub HTTPS URLs")
 
 
-def check_dataset(source: DatasetConfig) -> None:
+def private_hf_dataset_git(value: str) -> bool:
+    """Return whether an admitted URL is a Hugging Face Dataset Git URL."""
+    url = urlsplit(value)
+    if url.hostname != "huggingface.co":
+        return False
+    if (
+        url.scheme != "https"
+        or url.netloc != "huggingface.co"
+        or url.username
+        or url.password
+        or url.port
+        or url.query
+        or url.fragment
+        or not HF_DATASET_GIT_PATH.fullmatch(url.path)
+    ):
+        raise ValueError("Private Hugging Face datasets require an exact HTTPS Git URL")
+    return True
+
+
+def check_dataset(source: DatasetConfig) -> tuple[str, str] | None:
+    private: tuple[str, str] | None = None
     if source.repo:
         # Harbor owns repository syntax; admission restricts its parsed result.
         repo = resolve_repo_source(source.repo)
-        public_git(repo.git_url)
         if not repo.ref or not COMMIT.fullmatch(repo.ref):
             raise ValueError("Git datasets require a full immutable commit")
+        if private_hf_dataset_git(repo.git_url):
+            if source.repo != f"{repo.git_url}@{repo.ref}":
+                raise ValueError(
+                    "Private Hugging Face datasets require an exact HTTPS Git URL"
+                )
+            private = (repo.git_url, repo.ref)
+        else:
+            public_git(repo.git_url)
         relative_path(source.path if source.path is not None else repo.subdir or ".")
     elif source.is_package():
         if not source.ref or not CONTENT.fullmatch(source.ref):
             raise ValueError("Package datasets require an immutable sha256 ref")
     else:
-        raise ValueError("Use a package dataset or a pinned public Git dataset")
+        raise ValueError("Use a package dataset or a pinned admitted Git dataset")
     if source.registry_url or source.registry_path or source.download_dir:
         raise ValueError("Registry overrides and local download paths are not admitted")
+    return private
 
 
-def check_task(task: TaskConfig) -> None:
+def check_task(
+    task: TaskConfig,
+    private_datasets: PrivateDatasetSources | None = None,
+) -> None:
     if task.git_url:
-        public_git(task.git_url)
+        if private_hf_dataset_git(task.git_url):
+            identity = (task.git_url, task.git_commit_id or "")
+            if private_datasets is None or identity not in private_datasets:
+                raise ValueError(
+                    "Private Hugging Face Git tasks must resolve from "
+                    "an admitted dataset"
+                )
+        else:
+            public_git(task.git_url)
         if not task.git_commit_id or not COMMIT.fullmatch(task.git_commit_id):
             raise ValueError("Git tasks require a full immutable commit")
         relative_path(task.path)
@@ -142,11 +187,17 @@ def check_task(task: TaskConfig) -> None:
         raise ValueError("Local task download paths are not admitted")
 
 
-def check_sources(config: JobConfig) -> None:
-    for source in config.datasets:
-        check_dataset(source)
+def check_sources(config: JobConfig) -> PrivateDatasetSources:
+    private_datasets = {
+        private
+        for source in config.datasets
+        if (private := check_dataset(source)) is not None
+    }
     for task in config.tasks:
         check_task(task)
+    if private_datasets and not os.environ.get("HF_TOKEN"):
+        raise ValueError("HF_TOKEN is required for private Hugging Face Dataset access")
+    return private_datasets
 
 
 def check_agents(
@@ -256,12 +307,12 @@ async def inspect(
     # validates concurrency and retry minima; do not repeat those rules here.
     if not config.agents or config.n_attempts < 1:
         raise ValueError("Diagnostic jobs require at least one agent and attempt")
-    check_sources(config)
+    private_datasets = check_sources(config)
     check_agents(config, catalog(root), approved)
     await check_metrics(config)
     tasks = await JobPlan.resolve_task_configs(config)
     for task_config in tasks:
-        check_task(task_config)
+        check_task(task_config, private_datasets)
     # Native planning eagerly materializes every TrialConfig and trial lock.
     # Bound that work before downloads and plan allocation in the control Space;
     # do not impose separate caps on sources, agents, attempts, or concurrency.

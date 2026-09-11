@@ -25,7 +25,8 @@ RUN python /opt/harbor-hf-agents/sdk-backport/build.py \
         --no-editable \
     && rm -rf /opt/harbor-hf-agents \
     && python --version \
-    && python -c "import harbor, harbor_hf_agents, huggingface_hub"
+    && python -c "import harbor, harbor_hf_agents, huggingface_hub" \
+    && test -x /opt/harbor-hf-parent/bin/git-credential-harbor-hf
 
 WORKDIR /data
 CMD ["python", "-m", "harbor_hf_agents.parent_worker"]

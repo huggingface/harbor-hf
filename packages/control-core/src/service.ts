@@ -501,6 +501,9 @@ export class ControlService {
 
   async reconcile(): Promise<void> {
     let observations = await this.jobs.list();
+    const initiallyLiveRuns = new Set(
+      observations.filter(isLiveJob).map((job) => job.run_id),
+    );
     await this.projection.rebuild(this.store, observations);
     const runs = this.projection
       .listRuns()
@@ -514,10 +517,37 @@ export class ControlService {
     const inspectionErrors: unknown[] = [];
     for (const initialView of runs) {
       await this.withRunLock(initialView.record.run_id, async () => {
+        const lockedState = validateRunState(
+          await readJson(this.store, runStatePath(initialView.record.run_id)),
+        );
+        // A complete snapshot may authorize only inaction, never a cached
+        // start/stop. Re-read state under the lock so resume/pause invalidates
+        // this shortcut. Initial live Jobs must not disappear from eligibility
+        // merely because a later listing reports them stopped.
+        if (
+          lockedState.revision === initialView.state.revision &&
+          (lockedState.desired_state !== "run" ||
+            ["finished", "cost_stopped"].includes(initialView.status)) &&
+          !initiallyLiveRuns.has(initialView.record.run_id) &&
+          !observations.some(
+            (job) => job.run_id === initialView.record.run_id && isLiveJob(job),
+          )
+        )
+          // Late Jobs are discovered by the closing/next complete scan and
+          // cleaned on the next successful pass (parents before children).
+          // The closing rebuild also refreshes inactive results/costs/state.
+          return;
         const observedById = new Map(observations.map((job) => [job.id, job]));
         for (const job of await this.jobs.list()) observedById.set(job.id, job);
         observations = [...observedById.values()];
-        await this.projection.rebuild(this.store, observations);
+        // Keep fresh per-run cost/result reads without rescanning all history.
+        // Jobs remain freshly listed above: starts/stops and late children make
+        // pass-wide liveness caching unsafe.
+        await this.projection.rebuild(
+          this.store,
+          observations,
+          initialView.record.run_id,
+        );
         activeParents = observations.filter(
           (job) => job.role === "parent" && isLiveJob(job),
         ).length;

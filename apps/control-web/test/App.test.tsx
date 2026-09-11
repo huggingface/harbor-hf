@@ -376,7 +376,7 @@ describe("restored control console", () => {
     const user = userEvent.setup();
     renderAt(`/runs/${runId}`);
     expect(await screen.findByRole("heading", { name: "Run detail" })).toBeVisible();
-    expect(screen.getByText("Run identity")).toBeVisible();
+    expect(await screen.findByText("Run identity")).toBeVisible();
     expect(screen.getByText("Harbor totals")).toBeVisible();
     expect(screen.getByRole("link", { name: trial.trial_name })).toHaveAttribute(
       "href",

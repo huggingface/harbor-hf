@@ -14,8 +14,15 @@ from harbor.environments.hf_sandbox import HFSandboxEnvironment
 from huggingface_hub import HfApi
 
 _RUN_ID = re.compile(r"^run-[0-9a-f]{24}$")
+_UNSAFE_JOB_NAME = re.compile(r"[^A-Za-z0-9_-]+")
 _INFERENCE_TOKEN_TEMPLATE = "$" + "{HF_INFERENCE_TOKEN}"
 _SUPPORTED_INFERENCE_KEYS = frozenset({"HF_TOKEN", "OPENAI_API_KEY"})
+
+
+def _sandbox_job_name(environment_name: str) -> str:
+    safe_name = _UNSAFE_JOB_NAME.sub("-", environment_name).strip("-_") or "trial"
+    digest = sha256(environment_name.encode()).hexdigest()[:12]
+    return f"harbor-{safe_name[:70]}-{digest}"
 
 
 @dataclass(frozen=True)
@@ -100,8 +107,7 @@ class LabeledHFSandboxEnvironment(HFSandboxEnvironment):
                 },
                 namespace=namespace,
                 # A bounded display name; Harbor retains the full trial identity.
-                name=f"harbor-{self.environment_name[:70]}-"
-                f"{sha256(self.environment_name.encode()).hexdigest()[:12]}",
+                name=_sandbox_job_name(self.environment_name),
             )
         )
         try:

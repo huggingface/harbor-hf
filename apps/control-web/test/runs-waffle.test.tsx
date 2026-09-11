@@ -156,13 +156,13 @@ it("paginates whole task columns at 100 without hiding repeat rows", async () =>
   await user.type(screen.getByRole("searchbox"), "task-100");
   expect(screen.getAllByRole("cell")).toHaveLength(5);
 });
-it("shows unavailable without data but only Retry for recent cached observations", async () => {
+it("shows errors without data and retained evidence with Retry after refresh failure", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => new Response("{}", { status: 403 })),
   );
   show(run());
-  expect(await screen.findByText("● Unavailable")).toBeVisible();
+  expect(await screen.findByRole("alert")).toBeVisible();
   cleanup();
   const cached = progress();
   const client = show(run(), { "run-a": cached });
@@ -264,7 +264,7 @@ it("shows loading without inventing pending trials before any artifact response"
     vi.fn(() => new Promise<Response>(() => {})),
   );
   show(run());
-  expect(screen.getByText("Loading trial artifacts…")).toBeVisible();
+  expect(screen.getByText("Loading trial progress…")).toBeVisible();
   expect(screen.queryAllByRole("cell")).toHaveLength(0);
 });
 
@@ -641,7 +641,7 @@ it("keeps recent evidence on transport failure, then exposes an outage after 60s
     );
     act(() => screen.getByRole("button", { name: "Retry" }).click());
     await act(() => vi.advanceTimersByTimeAsync(1));
-    expect(screen.getByRole("button", { name: "Retrying" })).toBeDisabled();
+    expect(screen.getByText("Refreshing trial progress…")).toBeVisible();
     await act(() => vi.advanceTimersByTimeAsync(70_000));
     expect(screen.getByText("● Stale")).toBeVisible();
     expect(cell).toHaveAccessibleName(/Unknown/);
