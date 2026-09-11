@@ -97,7 +97,9 @@ The Space has two secrets:
   router.
 
 The values must differ. Keep both out of Space variables, source files, build
-arguments, request bodies, Job labels, and logs.
+arguments, request bodies, Job labels, and logs. The control and parent images
+must include Git LFS so Harbor can materialize LFS objects from admitted private
+Dataset repositories. Private Dataset admission fails if Git LFS is not available.
 
 ## Configuration
 

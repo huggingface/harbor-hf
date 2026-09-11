@@ -94,6 +94,11 @@ browser responses, and logs. The control `HF_TOKEN` must not enter a trial agent
 environment. Existing delivery of the separate inference credential must not
 change.
 
+The control and parent images include Git LFS so Harbor's `TaskClient` can
+materialize LFS objects during its native checkout. Admission fails before source
+resolution when Git LFS is not available. Git LFS supports Harbor's checkout; it
+does not add a Harbor-HF downloader or task resolver.
+
 ## Failure behavior
 
 Source checks must finish before model inference. The launch must fail closed
@@ -116,9 +121,11 @@ copy.
 3. Configure the helper for control-side native launch inspection.
 4. Include the helper in the trusted parent image and configure it for parent
    Harbor execution.
-5. Prove that the native dataset `repo` and `path` reach Harbor unchanged.
-6. Prove that trial agent environments do not receive the control `HF_TOKEN`.
-7. Update operator documentation for the existing token's required private
+5. Install Git LFS in the control and parent images, and reject private Dataset
+   sources when Git LFS is not available.
+6. Prove that the native dataset `repo` and `path` reach Harbor unchanged.
+7. Prove that trial agent environments do not receive the control `HF_TOKEN`.
+8. Update operator documentation for the existing token's required private
    Dataset read access.
 
 Creating a private Dataset repository, changing token grants, deploying the
@@ -135,7 +142,8 @@ Add tests that prove:
 - public GitHub admission is unchanged;
 - the credential helper follows the Git protocol and answers only for
   `huggingface.co`;
-- a missing token fails before inference;
+- a missing token or missing Git LFS executable fails before source resolution;
+- the control and parent images include Git LFS;
 - the token is not disclosed in output, arguments, files, records, responses,
   or logs;
 - control-side inspection and the trusted parent receive the helper
