@@ -2687,3 +2687,47 @@ for (const width of [1440, 390]) {
     await expect(matrix.getByRole("cell")).toHaveCount(3);
   });
 }
+
+test("Workbench recorded provider appears in Runs and detail without changing the native route", async ({
+  page,
+}) => {
+  await mockControl(page);
+  const value = {
+    ...run,
+    record: {
+      ...record,
+      workbench_recipe: { name: "synthetic-recipe" },
+      submission: {
+        ...record.submission,
+        model: { ...record.submission.model, provider: "recorded-provider" },
+      },
+      harbor_job_config: {
+        ...record.harbor_job_config,
+        agents: [
+          {
+            import_path: "example:CommandAgent",
+            model_name: "native/model",
+            kwargs: {},
+          },
+        ],
+      },
+    },
+  };
+  await page.route("**/api/v1/runs", (route) => json(route, { runs: [value] }));
+  await page.route(`**/api/v1/runs/${runId}`, (route) => json(route, value));
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET") writes.push(request.url());
+  });
+  await page.goto("/runs");
+  const model = page.getByRole("link", { name: "native/model recorded-provider" });
+  await expect(model).toBeVisible();
+  await expect(model.getByText("recorded-provider")).toHaveAttribute(
+    "title",
+    "Recorded provider (Workbench submission metadata; not verified routing)",
+  );
+  await model.click();
+  await expect(page.getByText("recorded-provider", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Configured agents")).toContainText("native/model");
+  expect(writes).toEqual([]);
+});

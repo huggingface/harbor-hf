@@ -2169,3 +2169,24 @@ Status: approved
   Preserve saved/custom recipes, immutable runs, and unrelated working changes.
 - Local source changes and offline validation only. No publication, deployment,
   live setup or benchmark launch, paid compute, or credential movement is included.
+
+### Workbench provider and starter release (2026-09-11)
+
+Status: approved
+
+Approved at: 2026-09-11T17:20:40.872135+00:00
+
+- The user explicitly requested a PR, green-CI merge, and deployment of the two
+  completed Workbench tweaks: recorded-provider display and fast-agent 0.10.24.
+- Commit and publish only these changes, their tests/documentation, and this
+  authorization. Base the PR on reviewed current main; preserve unrelated local
+  storage edits and prior commits. Use an isolated clean release checkout.
+- Deploy the exact merged source to the existing private control Space, retaining
+  its existing verified immutable worker images, Bucket, hardware, settings, and
+  secrets. No worker/task image rebuild, credential transfer, new resource, paid
+  test, or benchmark control action is included.
+- Check interruption safety and current execution before deployment. The earlier
+  active-run exception was revision-specific; stop for additional approval if
+  active execution prevents the normal idle cutover or another safety gate fails.
+- Review the full public diff and metadata and run the privacy scan before
+  publication. Merge only the exact reviewed commit after CI passes.
