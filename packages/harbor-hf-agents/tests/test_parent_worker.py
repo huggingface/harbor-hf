@@ -113,7 +113,9 @@ async def test_parent_rejects_missing_private_dataset_token_before_job_creation(
     monkeypatch.setattr(parent_worker.Job, "create", create)
     monkeypatch.setattr(parent_worker, "check_revision", lambda: None)
     monkeypatch.setenv("HARBOR_HF_RUN_ID", RUN_ID)
-    monkeypatch.setenv("HARBOR_HF_MOUNT_ROOT", str(tmp_path))
+    monkeypatch.setenv("HARBOR_HF_LOCAL_ROOT", str(tmp_path))
+    monkeypatch.setenv("HARBOR_HF_BUCKET_ID", "example/artifacts")
+    monkeypatch.setattr(parent_worker.BucketArtifacts, "restore", AsyncMock())
     monkeypatch.delenv("HF_TOKEN", raising=False)
 
     with pytest.raises(ValueError, match="HF_TOKEN is required"):
@@ -132,8 +134,13 @@ async def test_parent_passes_native_private_dataset_config_to_harbor(
     monkeypatch.setattr(parent_worker.Job, "create", create)
     monkeypatch.setattr(parent_worker, "check_revision", lambda: None)
     monkeypatch.setenv("HARBOR_HF_RUN_ID", RUN_ID)
-    monkeypatch.setenv("HARBOR_HF_MOUNT_ROOT", str(tmp_path))
+    monkeypatch.setenv("HARBOR_HF_LOCAL_ROOT", str(tmp_path))
+    monkeypatch.setenv("HARBOR_HF_BUCKET_ID", "example/artifacts")
+    monkeypatch.setattr(parent_worker.BucketArtifacts, "restore", AsyncMock())
     monkeypatch.setenv("HF_TOKEN", "test-control-token")
+    monkeypatch.setattr(
+        "harbor_hf_agents.launch.shutil.which", lambda _: "/test/git-lfs"
+    )
 
     with pytest.raises(RuntimeError, match="stop after Harbor Job creation"):
         await parent_worker.run_parent()

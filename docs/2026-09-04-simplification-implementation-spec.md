@@ -16,7 +16,11 @@ credentials plus the Bucket. It controls HF Job lifecycle, cost stops and the
 leaderboard.
 
 The cutover keeps schema version `v1`. It does not add a compatibility reader or
-migrate historical objects.
+migrate historical objects. The approved 2026-09-11 local-parent implementation
+changes transport, not durable schemas: parent `/data` is local disk with SDK
+restore and snapshot uploads to the existing Bucket. Control Space storage is
+unchanged. See [Local parent storage](2026-09-11-local-parent-storage.md) for the
+current contract and private native scrub ordering approval.
 
 ## Files in the Bucket
 
@@ -42,8 +46,9 @@ runs/run-19ecb4608a42c1e9f4610f25/
 
 The control service creates `run.json` once and rewrites `state.json`. The
 parent worker creates immutable receipts below `attempt-costs/`. Harbor alone
-writes below `job/`. Historical objects outside `runs/` stay unchanged and are
-not loaded into the new projection.
+authors files below `job/` on local disk; the parent copies native bytes to the
+Bucket without a competing result writer. Historical objects outside `runs/`
+stay unchanged and are not loaded into the new projection.
 
 ### `run.json`
 
@@ -160,8 +165,9 @@ They stay in the three-table SQLite cache and do not become competing durable
 state.
 
 A pause cancels the active parent and its labeled children. Resume changes
-`desired_state` to `run`; the next parent uses Harbor's existing `job/` folder
-and completes only missing trials. Cancellation is terminal.
+`desired_state` to `run`; the next parent restores the saved `job/` folder into
+fresh local disk and lets native `Job.create()` decide what to resume.
+Cancellation is terminal.
 
 ### Attempt cost receipts
 
@@ -277,14 +283,21 @@ installation.
 The control service starts one CPU parent Job with:
 
 - an immutable parent image reference
-- one writable mount of the canonical Bucket at `/data`
+- local disk at `/data`, with no Bucket volume mount
+- runtime `HARBOR_HF_LOCAL_ROOT` and `HARBOR_HF_BUCKET_ID` instead of
+  `HARBOR_HF_MOUNT_ROOT`; no new durable schema fields
 - the run id as an environment value and Job label
 - the control and inference credentials as ephemeral Job secrets
 - one attempt and no public port
 
-The parent reads `run.json` and validates `harbor_job_config`. It then calls
-`Job.create()` and `Job.run()` from Harbor. It does not implement a task loop,
-retry loop, resume rule, result writer, or lock writer.
+The parent restores `runs/<run-id>/` via `HfApi.sync_bucket()` into a fresh local
+run directory, fetches current `state.json` via the Bucket API, reads `run.json`,
+and validates `harbor_job_config`. Native `jobs_dir` remains
+`/data/runs/<run-id>` and `job_name` remains `job`; a configured local root must
+match the immutable native path. It then calls `Job.create()` and `Job.run()`
+from Harbor, which own resume from the restored config, locks, and results. It
+does not implement a task loop, retry loop, resume rule, result writer, or lock
+writer.
 
 The pinned Harbor revision
 `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` already resolves Hugging Face
@@ -324,7 +337,10 @@ the requested provider and records its current prices so Harbor receives a
 non-null inference cost. Agents that need an OpenAI-compatible endpoint use the
 same inference secret through the fixed router URL.
 
-The parent adds one `on_trial_ended` callback. The callback reads the completed
+The parent registers `on_trial_started` and `on_trial_ended` callbacks. Each
+refreshes `state.json` from the Bucket API before checking control intent. START
+stops paused/cancelled work or uploads native config/lock/job result metadata,
+checking write access before inference. END reads the completed
 trial's Harbor cost and writes its immutable attempt receipt before Harbor can
 remove a failed retry folder. A failure before agent execution records zero
 cost. Any null cost remains null in that receipt and contributes zero to the
@@ -346,14 +362,18 @@ then performs Harbor's final aggregation and writes `finished_at`.
 A missing, malformed, inconsistent, incomplete, running, pending,
 mismatched-total, or retry-enabled result fails closed. Harbor-HF does not count
 trial folders, read private queue fields, reproduce Harbor retry rules, or store
-a second completion value. The receipt is always durable before this decision.
+a second completion value. The receipt is written locally before this decision;
+the END callback uploads the trial subtree, native job metadata, then receipts
+in its `finally`, including for handled cost/control exceptions. A successful
+acknowledged Bucket copy is the remote durability boundary.
 
 If `state.json` shows a requested pause or cancellation, the callback preserves
 any non-null cost and raises a controlled-stop exception. After Harbor unwinds,
 the parent removes the interrupted trial folder and the incomplete job result.
 A stop before inference creates no cost receipt. On resume, Harbor therefore
 sees the controlled interruption as a missing trial and starts it again while
-keeping all cost from earlier provider use.
+keeping acknowledged cost receipts from earlier provider use. A hard kill can
+prevent cleanup or copies and lose unsaved outputs and cost evidence.
 
 This is a post-trial stop. It cannot prevent one trial from crossing its limit.
 With concurrency greater than one, already-running trials can also finish or be
@@ -404,7 +424,32 @@ A `cost_stopped` run can have `finished_at`. This means Harbor completed its
 execution and does not mean that the run complied with the cost policy.
 
 A parent that stops before Harbor finishes is not a new logical attempt. A later
-parent opens the same Harbor job folder and uses Harbor's resume behavior.
+parent restores the saved Harbor job folder into fresh local disk and uses
+Harbor's resume behavior, not a local scheduler.
+
+### Artifact ordering and failure boundary
+
+Per-trial and final subtree uploads copy current bytes without mtime/size-based
+skipping and publish the subtree root `result.json` after its other files and
+deletions. Lifecycle metadata is a separate native snapshot, not a whole-run
+atomic transaction. The final copy writes receipts before the settled job tree
+and publishes aggregate `job/result.json` last. It runs only after success or a
+handled expected cost/control stop with no scrub failure veto. Unexpected
+failures propagate without a final whole-tree upload and rely on the last
+acknowledged per-trial copies. Upload failures are explicit. Forced cancellation
+or hard kill cannot guarantee a final copy; local disk must fit the working data.
+
+The approved private `scrub_before_upload` adapter calls the actual trial
+`Trial._scrub_jobs_dir()` before END; native `finally` remains a backstop. Harbor
+pin `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and inspected latest
+`e1be9bd39c368f88a27fee4cbd26655e9994ee5a` still emit END before scrub. Remove
+the workaround at the first reviewed supported post-scrub native hook/pin or
+native pre-END scrub; no future SHA is invented. The adapter does not copy the
+sanitizer or reconstruct trials. Native best-effort UTF-8 scrubbing can skip
+files and does not guarantee arbitrary secret safety, sanitized in-memory
+results, aggregation, or job-level logs. See the
+[implementation note](2026-09-11-local-parent-storage.md) for checked source and
+the exact approval/removal boundary.
 
 ## SQLite projection
 
@@ -414,6 +459,12 @@ from `runs/` plus current HF Job observations:
 - `runs`: immutable record and mutable state plus computed status and job summary
 - `trials`: one row per Harbor trial result
 - `parent_jobs`: one row per labeled parent Job observation
+
+Dashboard snapshots require native job config/lock/result, per-trial results,
+and cost receipts alongside HF Job observations. This is snapshot observability,
+not streaming live logs, fabricated progress, or a full POSIX Bucket promise.
+Existing schema values, API/UI projections, and cost semantics are unchanged;
+no new durable field or second scheduler is introduced.
 
 No API write depends on data that exists only in SQLite. Deleting the database
 and restarting the Space must produce the same control state.
@@ -503,7 +554,7 @@ release provides an equivalent documented private Hugging Face Git credential
 mechanism. That simplification removes the helper, its configuration, and its
 bridge-specific tests while keeping Harbor's native dataset contract.
 
-## Verified preconditions
+## Historical verified preconditions
 
 The precondition run used Harbor
 `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and Terminal-Bench 2.1
@@ -512,7 +563,9 @@ The precondition run used Harbor
 Two `install_only` trials completed through `hf-sandbox`. Environment startup
 took 10.8 and 13.0 seconds. Pi 0.84.2 installation took 15.5 and 9.8 seconds.
 A separate parent Job mounted the Bucket and wrote and read a file. It started a
-child Sandbox Job and saved its result on the mount.
+child Sandbox Job and saved its result on the mount. This was evidence for the
+earlier mounted-parent topology, not validation of the current local-disk SDK
+implementation. The approved local change does not claim a new remote canary.
 
 The tests also confirmed that Harbor updates job-level `result.json` during a
 run and resumes completed trials. They found that `hf-sandbox` does not copy a
@@ -527,3 +580,21 @@ continuation and repair records, launch-policy enforcement, budget holds,
 Parquet publication and result catalogs plus receipts and supersession logic. It also
 retires `docs/run-spec.md` and rewrites the architecture and control service
 documents for this contract.
+
+### Snapshot synchronization and retry publication
+
+Native aggregate snapshots and local cost checks share Harbor's pinned
+`Job._trial_completion_lock` with its writer; transport does not fabricate a
+second progress record. START publishes native trial config/lock identity and
+removes that name's previous terminal result. For errored trials in retry-enabled
+runs, terminal trial results are withheld until final tree publication so a
+snapshot taken during native retry backoff cannot falsely mark missing work
+completed on restore. Receipts and scrubbed artifacts are still saved. See
+[the local storage contract](2026-09-11-local-parent-storage.md) for the
+conservative failure-reporting and abrupt-termination trade-offs.
+
+The global native `job/job.log` is deliberately excluded from Bucket uploads:
+it receives trial log messages but is outside Harbor's trial-directory scrubber.
+Scrubbed per-trial logs remain available, and the existing dashboard reads native
+JSON observations rather than this global log. Final reconciliation removes any
+previous copy of that global log in the run's job subtree.

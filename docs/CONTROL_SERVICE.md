@@ -13,11 +13,50 @@ The control service is one Node.js process in a private Docker Space. It serves
 the Fastify API and React application, rebuilds SQLite from the private Bucket,
 and reconciles parent and child HF Jobs.
 
-The service is the only run control authority. Parent Jobs call Harbor and write
-Harbor's normal job folder to the mounted Bucket. They also keep one immutable
-cost receipt for each Harbor attempt, so retry cost survives a parent restart.
+The service is the only run control authority. Parent Jobs call Harbor on local
+`/data` disk without a Bucket mount and copy native files through the Hub SDK to
+the existing private Bucket. They preserve immutable attempt-cost receipts with
+those acknowledged snapshots so saved retry costs survive a parent restart.
 Reviewed benchmark presets select either CPU Basic or CPU Upgrade for temporary
 task Jobs; they cannot select accelerator hardware.
+
+## Parent storage and snapshots
+
+The approved local parent implementation restores `runs/<run-id>/` into a fresh
+local directory via the SDK and delegates resume to native `Job.create()`. It
+reads `state.json` afresh through the Bucket API before START and END callbacks;
+the parent never uploads controller-owned run or state records. Control Space
+storage, Bucket identity, and the three-table projection remain unchanged.
+
+The parent launch supplies `HARBOR_HF_LOCAL_ROOT` (default `/data`) and
+`HARBOR_HF_BUCKET_ID` instead of `HARBOR_HF_MOUNT_ROOT`, with no Bucket volume.
+These are runtime environment values, not new durable schema fields or Space
+storage settings. Native `jobs_dir` must still match the immutable run path.
+
+Lifecycle uploads supply native job config, lock, and result metadata. Per-trial
+uploads copy current bytes, publish the subtree root result last, then publish
+job metadata and cost receipts. The dashboard needs these native snapshots and
+HF Job observations; it does not invent progress or operate a second scheduler.
+This is snapshot observability, not streaming live logs or a full POSIX promise
+for Bucket storage. Polling cannot expose local output not yet uploaded.
+
+A separately approved private adapter invokes the actual trial
+`Trial._scrub_jobs_dir()` before END callbacks, retaining native `finally`
+scrubbing. Its revision check and failure veto are explicit. Native scrubbing is
+best-effort UTF-8 text handling, not arbitrary secret safety; job-level logs,
+aggregation, and skipped files have no stronger guarantee.
+
+Only successful execution or a handled expected cost/control stop proceeds to a
+final whole-tree copy, with receipts first and aggregate result last, subject to
+the scrub failure veto. Unexpected failures rely on the last acknowledged
+per-trial copies. Upload failures propagate. A hard kill can lose unsaved output
+and cost evidence; forced cancellation cannot guarantee cleanup or final copy.
+Size local disk for restored and working artifacts.
+
+See [Local parent storage](2026-09-11-local-parent-storage.md) for implementation
+evidence, unchanged-schema comparison, and removal of the private workaround at
+the first supported native post-scrub hook/pin. This documents local approval,
+not deployment or remote validation.
 
 ## Run diagnostics
 
@@ -321,8 +360,10 @@ change runs.
 Pause and cancel first stop live parent Jobs. A later reconciliation stops any
 remaining labeled child after the parent is terminal. If Harbor still reports
 an in-flight trial as terminal during this stop, the parent preserves any
-reported provider cost and removes the interrupted result before it exits. A
-paused Harbor folder therefore stays resumable without losing paid-use evidence.
+reported provider cost and removes the interrupted result when a handled stop
+allows cleanup. After acknowledged copies, the saved Harbor folder stays
+resumable with those cost receipts. A forced stop can prevent these copies and
+lose unsaved paid-use evidence.
 
 The parent keeps the cost that Harbor reports for each attempt. A failure before
 agent execution records zero cost. Any null cost remains null in its immutable
@@ -609,3 +650,21 @@ instructions under separate explicit deployment and credential-transfer approval
 This local implementation does not authorize activation.
 Standalone setup tests remain secret-free; Harbor's authorized benchmark agent env
 covers setup and run. Host review constraints are not firewall enforcement.
+
+### Snapshot synchronization and retry publication
+
+Native aggregate snapshots and local cost checks share Harbor's pinned
+`Job._trial_completion_lock` with its writer; transport does not fabricate a
+second progress record. START publishes native trial config/lock identity and
+removes that name's previous terminal result. For errored trials in retry-enabled
+runs, terminal trial results are withheld until final tree publication so a
+snapshot taken during native retry backoff cannot falsely mark missing work
+completed on restore. Receipts and scrubbed artifacts are still saved. See
+[the local storage contract](2026-09-11-local-parent-storage.md) for the
+conservative failure-reporting and abrupt-termination trade-offs.
+
+The global native `job/job.log` is deliberately excluded from Bucket uploads:
+it receives trial log messages but is outside Harbor's trial-directory scrubber.
+Scrubbed per-trial logs remain available, and the existing dashboard reads native
+JSON observations rather than this global log. Final reconciliation removes any
+previous copy of that global log in the run's job subtree.

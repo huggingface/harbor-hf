@@ -18,9 +18,12 @@ from harbor.models.job.config import JobConfig
 from harbor.models.job.result import JobResult
 from harbor.models.trial.result import TrialResult
 from harbor.trial.hooks import HookCallback, TrialHookEvent
+from huggingface_hub import HfApi
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from harbor_hf_agents.bucket_artifacts import BucketArtifacts
 from harbor_hf_agents.launch import REVISION, check_revision, check_sources
+from harbor_hf_agents.scrub_before_upload import scrub_before_upload
 
 _RUN_ID = re.compile(r"^run-[0-9a-f]{24}$")
 
@@ -326,17 +329,39 @@ def make_cost_hook(
 
 
 async def run_parent() -> None:
-    """Create Harbor over the mounted job directory and run missing trials."""
+    """Run Harbor on local disk and persist native files through the Bucket API."""
     run_id = os.environ.get("HARBOR_HF_RUN_ID", "")
-    mount_root = Path(os.environ.get("HARBOR_HF_MOUNT_ROOT", "/data")).resolve()
-    record = load_run_record(mount_root, run_id)
+    if not _RUN_ID.fullmatch(run_id):
+        raise ValueError("HARBOR_HF_RUN_ID is invalid")
+    local_root = Path(os.environ.get("HARBOR_HF_LOCAL_ROOT", "/data")).resolve()
+    run_dir = local_root / "runs" / run_id
+    artifacts = BucketArtifacts(
+        HfApi(), os.environ.get("HARBOR_HF_BUCKET_ID", ""), run_dir
+    )
     check_revision()
+    await artifacts.restore()
+    record = load_run_record(local_root, run_id)
     if record.get("harbor_revision") != REVISION:
         raise ValueError("Run Harbor revision does not match the parent image")
-    config = job_config(record, mount_root, run_id)
+    config = job_config(record, local_root, run_id)
     check_sources(config)
-    job = await Job.create(config)
-    run_dir = mount_root / "runs" / run_id
+    with scrub_before_upload() as scrub:
+        job = await Job.create(config)
+        await _run_local_job(job, record, config, artifacts)
+        # Expected cost/control stops have completed native cleanup. Unexpected
+        # failures propagate without a whole-tree upload of uncertain output.
+        if scrub.failed:
+            raise RuntimeError("Native sanitization failed; final upload blocked")
+        await artifacts.finish()
+
+
+async def _run_local_job(
+    job: Job,
+    record: dict[str, object],
+    config: JobConfig,
+    artifacts: BucketArtifacts,
+) -> None:
+    run_dir = artifacts.run_dir
     try:
         hook = make_cost_hook(
             cost_ceiling(record),
@@ -347,7 +372,10 @@ async def run_parent() -> None:
     except CostCeilingExceeded as error:
         print(str(error), flush=True)
         return
-    job.on_trial_ended(hook)
+
+    started, ended = _persistence_hooks(job, artifacts, hook)
+    job.on_trial_started(started)
+    job.on_trial_ended(ended)
     try:
         await job.run()
     except* ControlledRunStop as errors:
@@ -357,6 +385,46 @@ async def run_parent() -> None:
     except* CostCeilingExceeded as errors:
         for error in errors.exceptions:
             print(str(error), flush=True)
+
+
+def _persistence_hooks(
+    job: Job, artifacts: BucketArtifacts, hook: HookCallback
+) -> tuple[HookCallback, HookCallback]:
+    run_dir = artifacts.run_dir
+
+    async def started(event: TrialHookEvent) -> None:
+        # Same pinned native lock used by Harbor's aggregate writer. Do not
+        # snapshot its truncate/write operation or race the local cost check.
+        async with artifacts.lock, job._trial_completion_lock:
+            await artifacts.refresh_state()
+            if _desired_state(run_dir) in {"paused", "cancelled"}:
+                raise ControlledRunStop(event.trial_name)
+            # First real metadata upload checks write access before inference.
+            await artifacts.started(event.trial_name)
+
+    async def ended(event: TrialHookEvent) -> None:
+        # Same pinned native lock used by Harbor's aggregate writer. Do not
+        # snapshot its truncate/write operation or race the local cost check.
+        async with artifacts.lock, job._trial_completion_lock:
+            await artifacts.refresh_state()
+            try:
+                await hook(event)
+            except ControlledRunStop:
+                cleanup_interrupted_trial(run_dir, event.trial_name)
+                raise
+            finally:
+                await artifacts.trial(
+                    event.trial_name,
+                    # Do not infer retry attempts or backoff. A failed result in
+                    # any retry-enabled run is nonterminal in durable snapshots
+                    # until native job completion settles the whole tree.
+                    publish_result=(
+                        job.config.retry.max_retries == 0
+                        or event.result.exception_info is None
+                    ),
+                )
+
+    return started, ended
 
 
 def main() -> None:

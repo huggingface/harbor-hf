@@ -358,6 +358,24 @@ No project-scope amendment remains pending. Operational gates still apply:
 
 ## Approval history
 
+### 2026-09-11 — Local storage implementation and PR validation
+
+- Implemented the approved local parent filesystem, acknowledged Bucket copies,
+  pinned pre-END native scrub invocation, live native metadata and receipts,
+  and final result-last publication. No remote benchmark or deployment ran.
+- Snapshot reads share Harbor's native completion lock. Failed retry-enabled
+  trial results are withheld until the settled final copy; no retry loop or
+  completion schema was added. The unsanitized global job log is not uploaded.
+- Isolated validation passed root Ruff/format/ty, 102 CLI tests at 89.10%
+  coverage, 321 agent tests, changed agent modules at 91.44% coverage, 1,450
+  TypeScript tests, 73 browser tests, generated-contract checks, dependency
+  audits, both linux/amd64 Docker builds, and an offline Python 3.12 binding
+  smoke check. Normal Slophammer and DRY checks passed.
+- Prepare a draft PR: package-wide agent coverage is 71.84%, below the 85%
+  target, and the requested Slophammer baseline file is absent. No validation
+  threshold was reduced and no baseline file was generated to hide findings.
+- Unrelated concurrent dashboard work was excluded from the isolated change.
+
 ### 2026-09-11 — Native sanitization ordering
 
 - Approved invoking the pinned native scrubber before END callbacks, retaining
