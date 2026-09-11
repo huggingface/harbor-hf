@@ -11,13 +11,30 @@ from harbor_hf_agents.hf_sandbox import (
     _JOB_CONTEXT,
     LabeledHFSandboxEnvironment,
     _LabeledHfApi,
+    _sandbox_job_name,
 )
 
 RUN_ID = "run-" + "a" * 24
 
 
+@pytest.mark.parametrize(
+    ("environment_name", "safe_name"),
+    [
+        ("install-windows-3.11", "install-windows-3-11"),
+        ("task name/ü", "task-name"),
+        ("...", "trial"),
+    ],
+)
+def test_sandbox_job_name_uses_valid_label_characters(environment_name, safe_name):
+    digest = sha256(environment_name.encode()).hexdigest()[:12]
+    assert _sandbox_job_name(environment_name) == f"harbor-{safe_name}-{digest}"
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("environment_name", ["task-one", "task-two", "task-" * 50])
+@pytest.mark.parametrize(
+    "environment_name",
+    ["task-one", "task-two", "install-windows-3.11", "task-" * 50],
+)
 @pytest.mark.parametrize(
     ("supplied", "expected"),
     [
@@ -87,12 +104,11 @@ async def test_contextual_name_preserves_payload(
         "harbor-hf-run": RUN_ID,
         "name": expected
         if expected is not None
-        else (
-            f"harbor-{environment_name[:70]}-"
-            f"{sha256(environment_name.encode()).hexdigest()[:12]}"
-        ),
+        else _sandbox_job_name(environment_name),
     }
     assert len(payload["labels"]["name"]) <= 90
+    if expected is None:
+        assert payload["labels"]["name"].replace("-", "").replace("_", "").isalnum()
     assert labels["harbor-hf-role"] == "wrong-role"
     assert environment.environment_name == environment_name
 
