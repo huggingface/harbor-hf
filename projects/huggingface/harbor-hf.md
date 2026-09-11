@@ -11,6 +11,23 @@ default_branch: main
 
 Status: approved
 
+### Local parent storage and durable artifact copies (2026-09-11)
+
+Approved at: 2026-09-11T14:58:47Z
+
+- The user explicitly approved local implementation, tests, documentation, and
+  this authorization-record commit for moving Harbor parent execution to local
+  disk with per-trial and final durable artifact uploads to the existing Bucket.
+- Preserve Harbor-native artifacts, lifecycle hooks, reward interpretation, and
+  resume authority. Surface upload failures explicitly; do not add a second
+  trial scheduler or result format. Inspect native persistence APIs and relevant
+  history before implementation.
+- Accepted risks: abrupt termination can lose work since the last successful
+  copy, reporting reflects saved snapshots, local disk must fit working data,
+  and forced cancellation cannot guarantee a final copy.
+- No deployment, paid canary, new resources, credential movement, upstream
+  publication, or implementation publication is authorized by this amendment.
+
 ### Current main redeployment (2026-09-09)
 
 Approved at: 2026-09-09T07:49:21Z
@@ -310,6 +327,12 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-11 — Local parent storage
+
+- Approved local implementation, tests, documentation, and the authorization
+  commit for local Harbor execution with per-trial and final Bucket uploads.
+- Accepted the risks and limits recorded in the current authorization above.
 
 ### 2026-08-17
 
