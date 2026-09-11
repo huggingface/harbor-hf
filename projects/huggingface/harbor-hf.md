@@ -2092,3 +2092,15 @@ Status: approved
   Preserve polling frequency, Harbor evidence freshness, errors and retry access.
   Preserve unrelated work. No push, deployment, paid compute, live run mutation,
   credential transfer, or backend behavior change is included.
+
+### Workbench recorded provider display (2026-09-11)
+
+Status: approved
+
+- The user requested investigation and correction of the Runs list showing an
+  unspecified provider for Workbench runs with a specified recorded provider.
+- Use the existing immutable submission provider for Workbench display when
+  explicitly supplied. Preserve native per-agent configuration, non-Workbench
+  display behavior, execution routing, and unspecified values when not recorded.
+- This is local UI and offline test work only. Preserve unrelated edits. No push,
+  deployment, live run mutation, paid compute, or credential transfer is included.
