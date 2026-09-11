@@ -2104,3 +2104,13 @@ Status: approved
   display behavior, execution routing, and unspecified values when not recorded.
 - This is local UI and offline test work only. Preserve unrelated edits. No push,
   deployment, live run mutation, paid compute, or credential transfer is included.
+
+### Fast-agent Workbench starter version update (2026-09-11)
+
+Status: approved
+
+- The user requested changing the fast-agent Workbench recipe pin to 0.10.24.
+- Update the existing UI and control-core starter definitions and matching tests.
+  Preserve saved/custom recipes, immutable runs, and unrelated working changes.
+- Local source changes and offline validation only. No publication, deployment,
+  live setup or benchmark launch, paid compute, or credential movement is included.
