@@ -1891,3 +1891,38 @@ Local implementation completed (2026-09-10):
 - Completed only this local amendment. No push, PR, deployment, live run mutation,
   credential movement, new resource or polling-frequency change was performed.
   Loading feedback does not itself reduce backend latency.
+
+### Loading feedback and reconciliation release
+
+Status: approved
+
+Approved at: 2026-09-11T12:34:26Z
+
+- The user explicitly requested a pull request, green CI, merge and deployment
+  of the completed Run detail loading feedback and preceding reconciliation
+  performance fixes. This supersedes their local-only publication limits.
+- Reuse a suitable existing branch/ref in this checkout without force pushing,
+  resetting diverged main, discarding unrelated commits or creating a branch or
+  worktree. Preserve the existing worker-release authorization commit.
+- Publish only after full diff and public metadata review and the public privacy
+  scan. Clear CI without weakening checks; merge only with green CI.
+- Deploy the exact merged source to the existing canonical `<control-space>` and
+  `<artifact-bucket>` configuration. This release is frontend/control TypeScript
+  only: preserve exact existing immutable worker image references and all other
+  settings and secrets. Use configured credentials in place; no transfer.
+- Verify source, liveness, readiness and existing capabilities. No benchmark
+  launch, retry, resume, cancellation, paid test, endpoint change, credential
+  workaround or new resource is authorized. Stop for permission or revision
+  mismatches. Do not restore the previously removed QR functionality.
+
+Release blocked during read-only preflight (2026-09-11):
+
+- Upstream main advanced from `f14f6d8` to `65c74b6` through PR #213. That change
+  modifies both Dockerfiles and the worker launch module for Git LFS support.
+- The existing live service is running and ready at `f14f6d8`; both configured
+  immutable worker images still match that preceding verified release.
+- Deploying new merged main is no longer a frontend/control-only release with
+  unchanged worker inputs. The exact-image preservation limit prevents silently
+  publishing replacement workers. Stop pending an explicit scope decision.
+- No public push, pull request, merge, deployment, configuration change or run
+  mutation occurred. Existing branches and implementation commits are preserved.
