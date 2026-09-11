@@ -121,6 +121,31 @@ for (const view of ["refresh", "pending-run", "pending-jobs"] as const) {
           summary.getByText("Reported usage unavailable or invalid"),
         ).toBeVisible();
       }
+      const waffle = page.getByRole("region", { name: "Trial progress waffle" });
+      const sharedRates = page.getByRole("region", {
+        name: "Shared pricing correction",
+      });
+      const scenarios = page.getByText(
+        "Pricing scenarios · editable USD / million tokens",
+      );
+      for (const [first, second] of [
+        [summary, waffle],
+        [waffle, sharedRates],
+        [waffle, scenarios],
+      ] as const) {
+        const next = await second.elementHandle();
+        expect(
+          await first.evaluate(
+            (element, other) =>
+              !!other &&
+              Boolean(
+                element.compareDocumentPosition(other) &
+                  Node.DOCUMENT_POSITION_FOLLOWING,
+              ),
+            next,
+          ),
+        ).toBe(true);
+      }
       const timeouts = summary.getByText("Configured timeouts");
       await timeouts.hover();
       await expect(page.getByRole("tooltip")).toContainText("timeout_multiplier: 2");
@@ -135,6 +160,10 @@ for (const view of ["refresh", "pending-run", "pending-jobs"] as const) {
     const before = paths.map((path) => counts.get(path) ?? 0);
     await page.clock.setFixedTime(new Date("2026-01-01T00:02:10Z"));
     await page.clock.runFor(10_100);
+    for (const [index, path] of paths.entries()) {
+      expect(counts.get(path)).toBe(before[index]);
+    }
+    await page.clock.runFor(20_000);
     for (const [index, path] of paths.entries()) {
       await expect.poll(() => counts.get(path)).toBe(before[index] + 1);
     }

@@ -515,6 +515,9 @@ test("completes Workbench configure, setup, and normal Run submission", async ({
   await page.goto("/workbench");
   await expect(page.getByRole("heading", { name: "Agent Workbench" })).toBeVisible();
   await expect(page.getByText("Configure → Test → Run")).toBeVisible();
+  await page
+    .getByText("Compiled details: commands and bindings", { exact: true })
+    .click();
   await expect(page.getByText(/agent-recipe-/).first()).toBeVisible();
   await page
     .getByLabel("Start one disposable CPU setup test for this exact recipe.")
@@ -911,7 +914,7 @@ for (const width of [1440, 390]) {
     const tooltip = page.getByRole("tooltip");
     await expect(tooltip).not.toContainText("not an attempt ordinal");
     await expect(tooltip).toHaveText(
-      "Task: task-one\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −\nReported cost (USD): $0.10",
+      `Task: task-one\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −\nTrial last checked: ${timestamp}\nReported cost (USD): $0.10`,
     );
     await expect(tooltip).not.toContainText("Artifact observation");
     await page.screenshot({
@@ -932,7 +935,7 @@ for (const width of [1440, 390]) {
     });
     await unfinished.focus();
     await expect(tooltip).toHaveText(
-      "Task: task-one\nRepeat slot: 2\nState: Unfinished\nReward: -\nAgent time: −",
+      `Task: task-one\nRepeat slot: 2\nState: Unfinished\nReward: -\nAgent time: −\nTrial last checked: ${timestamp}`,
     );
     await unfinished.blur();
     await page.screenshot({ path: testInfo.outputPath("native-waffle.png") });
@@ -956,7 +959,7 @@ for (const width of [1440, 390]) {
     });
     await unknown.focus();
     await expect(tooltip).toHaveText(
-      "Stale — observation is older than one minute or its timestamp is unavailable\nTask: task-one\nRepeat slot: 2\nState: Unknown / interrupted\nReward: -\nAgent time: −",
+      `Stale — discovery observation is older than one minute or its timestamp is unavailable\nTask: task-one\nRepeat slot: 2\nState: Unknown / interrupted\nReward: -\nAgent time: −\nTrial last checked: ${timestamp}`,
     );
     await expect(tooltip).not.toContainText("Artifact observation");
 
@@ -1163,7 +1166,7 @@ test("native waffle polls preserve positions and pending slots within one run", 
   );
   await original.focus();
   names = ["trial-a", "trial-z"];
-  await page.clock.runFor(15_001);
+  await page.clock.runFor(30_001);
   await expect(row.locator("td").nth(1)).toContainText("✓");
   await expect(original).toBeFocused();
   await expect(row.locator("td").nth(0).getByRole("link")).toHaveAccessibleName(
@@ -1173,7 +1176,7 @@ test("native waffle polls preserve positions and pending slots within one run", 
     `trial-a in ${runId}: Completed`,
   );
   names = ["trial-a"];
-  await page.clock.runFor(15_001);
+  await page.clock.runFor(30_001);
   await expect(original).toHaveCount(0);
   await expect(row.locator("td").nth(0).getByRole("button")).toHaveAccessibleName(
     /No mapped observation/,
@@ -1191,14 +1194,13 @@ test("nine lock entries stay nine squares through partial and replacement observ
 }) => {
   await mockControl(page);
   await page.clock.install();
-  const timestamp = new Date().toISOString();
   const task = { name: "task-one", digest: `sha256:${"d".repeat(64)}` };
   let locked = false;
   let nativeLock = false;
   let names = ["trial-partial"];
-  await page.route("**/api/v1/runs/*/progress", (route) =>
+  await page.route("**/api/v1/runs/*/progress", async (route) =>
     json(route, {
-      observed_at: timestamp,
+      observed_at: await page.evaluate(() => new Date().toISOString()),
       jobs_observed_at: null,
       jobs: [],
       lock: locked ? { trials: Array.from({ length: 9 }, () => ({ task })) } : null,
@@ -1219,28 +1221,28 @@ test("nine lock entries stay nine squares through partial and replacement observ
   await expect(page.getByText(/Planned total unknown \(no job lock\)/)).toBeVisible();
   await expect(row.locator("td")).toHaveCount(1);
   locked = true;
-  await page.clock.runFor(15_001);
+  await page.clock.runFor(30_001);
   await expect(row.locator("td")).toHaveCount(9);
   await expect(
     page.getByText(/9 planned squares · 1 separate observations/),
   ).toBeVisible();
   nativeLock = true;
-  await page.clock.runFor(15_001);
+  await page.clock.runFor(30_001);
   await expect(
     page.getByText(/9 planned squares · 0 separate observations/),
   ).toBeVisible();
   names = Array.from({ length: 9 }, (_, i) => `old-${i}`);
-  await page.clock.runFor(15_001);
+  await page.clock.runFor(30_001);
   await expect(row.getByRole("button", { name: /Unfinished/ })).toHaveCount(9);
   const original = row.getByRole("button", { name: /^old-0 / });
   await original.focus();
   names = [];
-  await page.clock.runFor(15_001);
+  await page.clock.runFor(30_001);
   await expect(row.getByRole("button", { name: /No mapped observation/ })).toHaveCount(
     9,
   );
   names = Array.from({ length: 9 }, (_, i) => `replacement-${i}`);
-  await page.clock.runFor(15_001);
+  await page.clock.runFor(30_001);
   await expect(row.locator("td")).toHaveCount(9);
   await expect(row.getByRole("button", { name: /^replacement-/ })).toHaveCount(9);
   await expect(row.getByRole("button", { name: /^replacement-0 / })).not.toBeFocused();
@@ -1298,7 +1300,7 @@ test("completed run diagnostics refresh automatically and drill into native evid
   await page.goto("/runs");
   await expect(page.getByText("No recorded exceptions", { exact: true })).toBeVisible();
   completed = true;
-  await page.clock.runFor(10_100);
+  await page.clock.runFor(30_001);
   const diagnostic = page.getByRole("link", {
     name: /Harbor-reported exceptions.*1 affected trial/,
   });
@@ -1504,13 +1506,26 @@ for (const width of [1600, 1440, 390]) {
     );
     if (width === 1600) {
       const cards = page.getByRole("region", { name: "Run summary" });
-      expect(
-        await cards.evaluate((el) =>
-          Math.max(
-            ...[...el.children].map((card) => card.getBoundingClientRect().height),
-          ),
-        ),
-      ).toBeLessThanOrEqual(130);
+      // Cost coverage/denominator copy is now part of the summary. Preserve
+      // the single-row, unclipped layout rather than its former text height.
+      const geometry = await cards.evaluate((el) =>
+        [...el.children].map((card) => ({
+          top: card.getBoundingClientRect().top,
+          bottom: card.getBoundingClientRect().bottom,
+          fits:
+            card.scrollWidth <= card.clientWidth &&
+            card.scrollHeight <= card.clientHeight,
+        })),
+      );
+      expect(geometry).toHaveLength(6);
+      expect(new Set(geometry.map((card) => card.top)).size).toBe(1);
+      expect(new Set(geometry.map((card) => card.bottom)).size).toBe(1);
+      expect(geometry.every((card) => card.fits)).toBe(true);
+      const waffle = await page
+        .getByRole("region", { name: "Trial progress waffle" })
+        .boundingBox();
+      expect(waffle?.y).toBeGreaterThanOrEqual(geometry[0].bottom);
+      expect(waffle?.y).toBeLessThan(900);
     }
     await page.screenshot({
       path: testInfo.outputPath(`synthetic-summary-${width}.png`),
@@ -1697,6 +1712,7 @@ test("missing summaries do not masquerade as zeros", async ({ page }) => {
 test("pricing is cache-inclusive, hypothetical, retained and GET-only", async ({
   page,
 }) => {
+  await page.clock.install();
   const pricingResult = {
     ...summaryResult,
     stats: { ...summaryResult.stats, n_output_tokens: 250_000 },
@@ -1745,7 +1761,8 @@ test("pricing is cache-inclusive, hypothetical, retained and GET-only", async ({
     ).toHaveText("-");
   }
   const before = reads;
-  await expect.poll(() => reads, { timeout: 15000 }).toBeGreaterThan(before);
+  await page.clock.runFor(30_001);
+  await expect.poll(() => reads).toBeGreaterThan(before);
   await expect(page.getByLabel("Standard input (USD/M)", { exact: true })).toHaveValue(
     "2",
   );
@@ -1933,7 +1950,7 @@ for (const width of [1440, 390]) {
     });
     await page.goto("/runs");
     await expect(page.getByText("Agent Σ 12m30s · partial")).toBeVisible();
-    await page.clock.runFor(15001);
+    await page.clock.runFor(30_001);
     expect(progressReads).toBe(0);
     const affected = page.getByText("1 affected trial", { exact: true }).first();
     await expect(affected).toHaveClass(/text-red-400/);
@@ -1951,7 +1968,7 @@ for (const width of [1440, 390]) {
     ]);
     const before = await matrix.boundingBox();
     const squareBefore = await square.boundingBox();
-    await page.clock.runFor(15001);
+    await page.clock.runFor(30_001);
     await expect.poll(() => progressReads).toBe(2);
     expect(release).toBeDefined();
     await expect(page.getByText("Refreshing…", { exact: true })).toHaveCount(0);
@@ -2046,7 +2063,7 @@ for (const coarse of [false, true]) {
     await expect(cards).toContainText("4.9%");
     await matrix.scrollIntoViewIfNeeded();
     const before = await matrix.boundingBox();
-    const slot = page.getByRole("group", { name: "Observation freshness" });
+    const slot = page.getByRole("group", { name: "Discovery observation freshness" });
     const slotBefore = await slot.boundingBox();
     await page.clock.runFor(65001);
     await expect(matrix.getByText("● Stale")).toBeVisible();
@@ -2198,8 +2215,10 @@ test("native starter selects only a presence reference and preserves native mode
     }),
   );
   await page.goto("/workbench");
+  await page.getByLabel("Fast-Agent connection").selectOption("native");
+  await page.getByRole("button", { name: "Apply Fast-Agent starter" }).click();
   await page
-    .getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true })
+    .getByText("Advanced recipe: commands, API and paths", { exact: true })
     .click();
   await expect(
     page.getByRole("combobox", { name: "Inference API", exact: true }),
@@ -2265,8 +2284,10 @@ test("submits the exact tested native recipe with only a safe credential referen
     }),
   );
   await page.goto("/workbench");
+  await page.getByLabel("Fast-Agent connection").selectOption("native");
+  await page.getByRole("button", { name: "Apply Fast-Agent starter" }).click();
   await page
-    .getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true })
+    .getByText("Advanced recipe: commands, API and paths", { exact: true })
     .click();
   await page
     .getByLabel("Inference credential reference")
@@ -2377,7 +2398,8 @@ test("operator registers a name, selects Secret, reviews and approves before set
         expected_revision: 1,
         review_id: "ephemeral-review",
         reviewed_confirmation: true,
-        reason: "Reviewed exact use",
+        reason:
+          "Save binding: use the displayed source for this exact recipe, model, worker image and destinations.",
       });
       approved = true;
       ++revision;
@@ -2387,22 +2409,23 @@ test("operator registers a name, selects Secret, reviews and approves before set
       expected_revision: 0,
       source_env: "MY_SECRET_KEY",
       label: "Example inference",
-      reason: "Reviewed exact use",
+      reason: "Register existing Space secret name for explicit binding selection.",
     });
     registered = true;
     ++revision;
     return json(route, discovery());
   });
   await page.goto("/workbench");
+  await page.getByLabel("Fast-Agent connection").selectOption("native");
+  await page.getByRole("button", { name: "Apply Fast-Agent starter" }).click();
   await page
-    .getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true })
+    .getByText("Advanced recipe: commands, API and paths", { exact: true })
     .click();
   await page.getByRole("button", { name: "Manage secrets", exact: true }).click();
   await page.getByLabel("Space secret name", { exact: true }).fill("MY_SECRET_KEY");
   await page.getByLabel("Friendly label", { exact: true }).fill("Example inference");
-  await page.getByLabel("Change reason", { exact: true }).fill("Reviewed exact use");
   await expect(page.locator("input[type=password]")).toHaveCount(0);
-  await page.getByRole("button", { name: "Register reference" }).click();
+  await page.getByRole("button", { name: "Register secret name" }).click();
   await page
     .locator('input[aria-label$=" name"][value="EXAMPLE_API_KEY"]')
     .fill("DEEPSEEK_API_KEY");
@@ -2410,12 +2433,37 @@ test("operator registers a name, selects Secret, reviews and approves before set
   await page
     .getByLabel("Harness model string", { exact: true })
     .fill("example:native-model");
-  await page.getByRole("button", { name: "Review credential use" }).click();
-  await expect(page.getByLabel("Credential review")).toContainText("DEEPSEEK_API_KEY");
-  await page
-    .getByLabel("I approve this exact recipe, model, image and destinations")
-    .check();
-  await page.getByRole("button", { name: "Approve credential use" }).click();
+  await page.getByRole("button", { name: "Preview binding scope" }).click();
+  await expect(page.getByLabel("Binding scope")).toContainText("DEEPSEEK_API_KEY");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const secretPanel = page.getByRole("region", { name: "Manage secrets", exact: true });
+  const bindingScope = page.getByRole("region", { name: "Binding scope", exact: true });
+  await bindingScope.getByText("Exact recipe scope", { exact: true }).click();
+  // The page clips ancestor overflow, so document width alone misses this bug.
+  for (const panel of [secretPanel, bindingScope]) {
+    const bounds = await panel.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds?.x).toBeGreaterThanOrEqual(0);
+    expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
+    expect(
+      await panel.evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+  }
+  const saveBounds = await page
+    .getByRole("button", { name: "Save binding", exact: true })
+    .boundingBox();
+  const refreshBounds = await page
+    .getByRole("button", { name: "Refresh secret registry", exact: true })
+    .boundingBox();
+  expect(saveBounds).not.toBeNull();
+  expect(refreshBounds).not.toBeNull();
+  if (saveBounds && refreshBounds) {
+    expect(
+      refreshBounds.y >= saveBounds.y + saveBounds.height + 8 ||
+        refreshBounds.x >= saveBounds.x + saveBounds.width + 8,
+    ).toBe(true);
+  }
+  await page.getByRole("button", { name: "Save binding" }).click();
   await expect.poll(() => approved).toBe(true);
   await page
     .getByLabel("Start one disposable CPU setup test for this exact recipe.")
@@ -2506,13 +2554,13 @@ test("delayed observations render fresh between ticks and retry without moving s
   await page.route("**/api/v1/runs/*/progress", (route) =>
     route.fulfill({ status: 503, body: "{}" }),
   );
-  await page.clock.runFor(10_001);
+  await page.clock.runFor(30_001);
   await expect(
     matrix.getByRole("button", { name: "Retry", exact: true }),
   ).toBeVisible();
   await expect(cell).toBeFocused();
   await expect(page.getByRole("tooltip")).toContainText(
-    "Refresh failed; recent observation",
+    "Refresh failed; recent discovery observation",
   );
   await expect(matrix.getByText("● Stale")).toHaveCount(0);
   expect(await matrix.boundingBox()).toEqual(before);
@@ -2521,3 +2569,110 @@ test("delayed observations render fresh between ticks and retry without moving s
   await expect(matrix.getByRole("cell")).toHaveCount(9);
   expect(await matrix.boundingBox()).toEqual(before);
 });
+
+for (const width of [1440, 390]) {
+  test(`30s polling keeps trial identity and independent last-check freshness at ${width}px`, async ({
+    page,
+  }) => {
+    const now = new Date("2026-09-10T12:00:00Z");
+    const old = "2026-09-10T11:58:00.000Z";
+    await page.clock.install({ time: now });
+    await page.setViewportSize({ width, height: 900 });
+    await mockControl(page);
+    const task = { name: "synthetic-freshness", digest: "sha256:synthetic" };
+    let reads = 0;
+    let discovery = now.toISOString();
+    let trialChecked = old;
+    await page.route("**/api/v1/runs/*/progress", async (route) => {
+      discovery = await page.evaluate(() => new Date().toISOString());
+      reads++;
+      await json(route, {
+        observed_at: discovery,
+        jobs_observed_at: discovery,
+        jobs: [],
+        lock: { trials: Array.from({ length: 3 }, () => ({ task })) },
+        trials: [
+          {
+            trial_name: "synthetic-complete",
+            observed_at: old,
+            config: {},
+            lock: { task },
+            result: { finished_at: old },
+            reward: 1,
+            cost_usd: null,
+          },
+          {
+            trial_name: "synthetic-unfinished",
+            observed_at: trialChecked,
+            config: {},
+            lock: { task },
+            result: null,
+            reward: null,
+            cost_usd: null,
+          },
+        ],
+      });
+    });
+    await page.goto(`/runs/${runId}`);
+    const matrix = page.getByRole("region", { name: "Trial progress waffle" });
+    await expect(matrix.getByRole("cell")).toHaveCount(3);
+    const complete = matrix.getByRole("link", {
+      name: /synthetic-complete.*Completed/,
+    });
+    const unfinished = matrix.getByRole("button", { name: /^synthetic-unfinished / });
+    const identity = await unfinished.elementHandle();
+    const completeIdentity = await complete.elementHandle();
+    await expect(unfinished).toHaveAccessibleName(/Unknown \/ interrupted/);
+    await expect(matrix.getByText("● Stale")).toHaveCount(0);
+    await complete.focus();
+    await expect(page.getByRole("tooltip")).toContainText(`Trial last checked: ${old}`);
+    await unfinished.focus();
+    await expect(page.getByRole("tooltip")).toContainText(`Trial last checked: ${old}`);
+    const before = await matrix.boundingBox();
+    const slot = await unfinished.boundingBox();
+    expect(reads).toBe(1);
+    await page.clock.runFor(10_000);
+    expect(reads).toBe(1);
+    await page.clock.runFor(10_000);
+    expect(reads).toBe(1);
+    trialChecked = "2026-09-10T12:00:30.000Z";
+    await page.clock.runFor(10_001);
+    await expect.poll(() => reads).toBe(2);
+    await expect(unfinished).toHaveAccessibleName(/Unfinished$/);
+    await expect(unfinished).toBeFocused();
+    expect(
+      await unfinished.evaluate((element, previous) => element === previous, identity),
+    ).toBe(true);
+    expect(
+      await complete.evaluate(
+        (element, previous) => element === previous,
+        completeIdentity,
+      ),
+    ).toBe(true);
+    await expect(page.getByRole("tooltip")).toContainText(
+      `Trial last checked: ${trialChecked}`,
+    );
+    expect(await matrix.boundingBox()).toEqual(before);
+    expect(await unfinished.boundingBox()).toEqual(slot);
+    // Successful discovery alone must not rejuvenate a cached trial record.
+    for (let tick = 0; tick < 3; tick++) {
+      await page.clock.runFor(30_001);
+      await expect.poll(() => reads).toBe(3 + tick);
+      // Wait for the response to render before advancing the next interval.
+      await expect(page.getByText(/^HF observations:/)).toContainText(discovery);
+    }
+    await expect(matrix.getByText("● Stale")).toHaveCount(0);
+    await expect(unfinished).toHaveAccessibleName(/Unknown \/ interrupted/);
+    await expect(unfinished).toBeFocused();
+    await expect(page.getByRole("tooltip")).toContainText(
+      `Trial last checked: ${trialChecked}`,
+    );
+    expect(await matrix.boundingBox()).toEqual(before);
+    await complete.focus();
+    await expect(complete).toHaveAccessibleName(/Completed$/);
+    await expect(page.getByRole("tooltip")).toContainText(`Trial last checked: ${old}`);
+    await matrix.getByRole("button", { name: /No mapped observation/ }).focus();
+    await expect(page.getByRole("tooltip")).not.toContainText("Trial last checked:");
+    await expect(matrix.getByRole("cell")).toHaveCount(3);
+  });
+}

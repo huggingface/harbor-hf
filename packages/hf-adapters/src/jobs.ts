@@ -2,21 +2,15 @@ import { assertRunId, type RunRecordV1 } from "@harbor-hf/contracts";
 import type {
   InferenceBindings,
   JobObservation,
-  JobRole,
-  JobStage,
   JobsPort,
 } from "@harbor-hf/control-core";
-import {
-  cancelJob,
-  listJobs,
-  runJob,
-  type SpaceHardwareFlavor,
-} from "@huggingface/hub";
+import { cancelJob, runJob, type SpaceHardwareFlavor } from "@huggingface/hub";
+
+import { inspectJob, listJobPages, observation } from "./jobs-read.js";
 
 import { withSelectedInferenceSecret } from "./inference-secrets.js";
 
 export type ParentHardware = SpaceHardwareFlavor;
-type ApiJob = Awaited<ReturnType<typeof runJob>>;
 
 const ROLE_LABEL = "harbor-hf-role";
 const RUN_LABEL = "harbor-hf-run";
@@ -38,48 +32,15 @@ export interface HuggingFaceJobsOptions extends ReadOnlyHuggingFaceJobsOptions {
   timeoutSeconds?: number;
 }
 
-function stage(value: string): JobStage {
-  if (["RUNNING", "UPDATING", "SCHEDULING", "PENDING"].includes(value))
-    return value === "PENDING" || value === "SCHEDULING" ? "queued" : "running";
-  if (value === "ERROR") return "error";
-  return "stopped";
-}
-
-function observation(value: ApiJob): JobObservation | null {
-  const labels = value.labels;
-  const runId = labels?.[RUN_LABEL];
-  const role = labels?.[ROLE_LABEL];
-  if (!runId || (role !== "parent" && role !== "trial")) return null;
-  try {
-    assertRunId(runId);
-  } catch {
-    return null;
-  }
-  if (!value.id || !value.createdAt || !value.status?.stage) return null;
-  return {
-    id: value.id,
-    run_id: runId,
-    role: role as JobRole,
-    stage: stage(value.status.stage),
-    created_at: value.createdAt,
-    started_at: value.startedAt ?? null,
-    finished_at: value.finishedAt ?? null,
-  };
-}
-
 export class ReadOnlyHuggingFaceJobs implements JobsPort {
   constructor(private readonly options: ReadOnlyHuggingFaceJobsOptions) {}
 
   async list(): Promise<readonly JobObservation[]> {
-    const values = await listJobs({
-      namespace: this.options.namespace,
-      accessToken: this.options.accessToken,
-      ...(this.options.hubUrl ? { hubUrl: this.options.hubUrl } : {}),
-      ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
-    });
-    return values
-      .map(observation)
-      .filter((value): value is JobObservation => value !== null);
+    return listJobPages(this.options);
+  }
+
+  async inspect(jobId: string): Promise<JobObservation> {
+    return inspectJob(this.options, jobId);
   }
 
   async startParent(_runId: string): Promise<JobObservation> {
@@ -120,10 +81,11 @@ export class HuggingFaceJobs implements JobsPort {
   }
 
   async list(): Promise<readonly JobObservation[]> {
-    const values = await listJobs(this.credentials());
-    return values
-      .map(observation)
-      .filter((value): value is JobObservation => value !== null);
+    return listJobPages(this.options);
+  }
+
+  async inspect(jobId: string): Promise<JobObservation> {
+    return inspectJob(this.options, jobId);
   }
 
   async startParent(runId: string): Promise<JobObservation> {
@@ -160,6 +122,14 @@ export class HuggingFaceJobs implements JobsPort {
         HARBOR_HF_RUN_ID: runId,
         HARBOR_HF_MOUNT_ROOT: this.mountRoot,
         HARBOR_HF_NAMESPACE: this.options.namespace,
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_CONFIG_COUNT: "2",
+        GIT_CONFIG_KEY_0: "credential.helper",
+        GIT_CONFIG_VALUE_0: "",
+        GIT_CONFIG_KEY_1: "credential.https://huggingface.co.helper",
+        GIT_CONFIG_VALUE_1: "harbor-hf",
       },
       secrets: {
         HF_TOKEN: this.options.accessToken,
@@ -191,6 +161,10 @@ export class HuggingFaceJobs implements JobsPort {
 export class NoopJobs implements JobsPort {
   async list(): Promise<readonly JobObservation[]> {
     return [];
+  }
+
+  async inspect(_jobId: string): Promise<JobObservation> {
+    throw new Error("Job inspection is unavailable");
   }
 
   async startParent(_runId: string): Promise<JobObservation> {

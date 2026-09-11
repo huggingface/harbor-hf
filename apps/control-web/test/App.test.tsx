@@ -400,6 +400,45 @@ describe("restored control console", () => {
     expect(document.querySelector("script")).toBeNull();
   });
 
+  it("preserves custom drafts when choosing a connection and only replaces on Apply", async () => {
+    const user = userEvent.setup();
+    const view = renderAt("/workbench");
+    await screen.findByLabelText("Recipe name");
+    const advanced = screen.getByText("Advanced recipe: commands, API and paths");
+    expect(advanced.closest("details")).not.toHaveAttribute("open");
+    await user.click(advanced);
+    await user.clear(screen.getByLabelText("Recipe name"));
+    await user.type(screen.getByLabelText("Recipe name"), "custom-acp");
+    await user.clear(screen.getByLabelText("Run command"));
+    await user.type(screen.getByLabelText("Run command"), "custom-agent --acp");
+    view.unmount();
+    renderAt("/workbench");
+    expect(await screen.findByLabelText("Recipe name")).toHaveValue("custom-acp");
+    await user.selectOptions(screen.getByLabelText("Fast-Agent connection"), "native");
+    await user.selectOptions(screen.getByLabelText("Fast-Agent connection"), "hf");
+    expect(screen.getByLabelText("Recipe name")).toHaveValue("custom-acp");
+    expect(screen.getByLabelText("Run command")).toHaveValue("custom-agent --acp");
+    expect(screen.getByLabelText("Harness model string")).toHaveAttribute(
+      "form",
+      "workbench-launch",
+    );
+    await user.selectOptions(screen.getByLabelText("Fast-Agent connection"), "native");
+    await user.click(screen.getByRole("button", { name: "Apply Fast-Agent starter" }));
+    expect(screen.getByLabelText("Inference API")).toHaveValue("native");
+    expect(screen.getByDisplayValue("EXAMPLE_API_KEY")).toBeInTheDocument();
+    expect(screen.getByLabelText("Run command")).not.toHaveValue("custom-agent --acp");
+    await user.selectOptions(screen.getByLabelText("Fast-Agent connection"), "hf");
+    expect(screen.getByLabelText("Inference API")).toHaveValue("native");
+    await user.click(screen.getByRole("button", { name: "Apply Fast-Agent starter" }));
+    expect(screen.getByLabelText("Inference API")).toHaveValue("chat-completions");
+    expect(screen.getByDisplayValue("OPENAI_API_KEY")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText("Compiled details: commands and bindings").closest("details"),
+      ).not.toHaveAttribute("open"),
+    );
+  });
+
   it("runs the Workbench configure, setup, and standard Harbor submission flow", async () => {
     const user = userEvent.setup();
     renderAt("/workbench");
@@ -434,7 +473,7 @@ describe("restored control console", () => {
     await user.type(scope.getByLabelText("Recorded provider (optional)"), "together");
     await user.clear(scope.getByLabelText("Recorded provider (optional)"));
     await user.type(
-      scope.getByLabelText("Harness model string"),
+      screen.getByLabelText("Harness model string"),
       "hf.publisher/runtime-model:together",
     );
     await user.click(
@@ -493,7 +532,7 @@ describe("restored control console", () => {
     await user.type(scope.getByLabelText("Recorded provider (optional)"), "together");
     await user.clear(scope.getByLabelText("Recorded provider (optional)"));
     await user.type(
-      scope.getByLabelText("Harness model string"),
+      screen.getByLabelText("Harness model string"),
       "hf.publisher/runtime-model:together",
     );
     await user.click(
@@ -685,9 +724,8 @@ it("configures and submits the opt-in native starter with a reviewed reference",
   const user = userEvent.setup();
   renderAt("/workbench");
   await screen.findByRole("heading", { name: "Agent Workbench" });
-  await user.click(
-    screen.getByRole("button", { name: "Fast Agent · native (opt-in)", exact: true }),
-  );
+  await user.selectOptions(screen.getByLabelText("Fast-Agent connection"), "native");
+  await user.click(screen.getByRole("button", { name: "Apply Fast-Agent starter" }));
   const destination = screen.getByDisplayValue("EXAMPLE_API_KEY");
   await user.clear(destination);
   await user.type(destination, "SYNTHETIC_PROVIDER_API_KEY");

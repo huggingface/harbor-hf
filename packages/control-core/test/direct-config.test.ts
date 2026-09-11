@@ -34,6 +34,15 @@ describe("direct native configuration", () => {
       kwargs: { flavor: "a100-large", job_timeout: "none" },
     });
   });
+  it("preserves a private Hugging Face Dataset repo and its native path", () => {
+    const repo = `https://huggingface.co/datasets/example-org/example-dataset.git@${"b".repeat(40)}`;
+    const datasets = [{ repo, path: "reviewed/tasks" }];
+
+    const output = prepare({ ...config, datasets });
+
+    expect(output.datasets).toEqual(datasets);
+    expect(output).not.toHaveProperty("dataset_source");
+  });
   it("disables the Sandbox idle timeout until the upstream fix is deployed", () => {
     expect(
       prepare({

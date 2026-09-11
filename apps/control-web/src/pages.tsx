@@ -813,10 +813,10 @@ export function RunPage() {
         </p>
       ) : null}
       <RunArchive key={item.record.run_id} run={item} />
-      <RunPricingCorrections key={`pricing-${item.record.run_id}`} run={item} />
       <RunSummaryCards run={item} />
-      <PricingPanel result={item.result} />
       <RunWaffle run={item} />
+      <RunPricingCorrections key={`pricing-${item.record.run_id}`} run={item} />
+      <PricingPanel result={item.result} />
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <Card>
           <h2 className="font-semibold text-white">Run identity</h2>

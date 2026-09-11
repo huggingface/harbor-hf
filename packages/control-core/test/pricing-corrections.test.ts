@@ -43,7 +43,12 @@ let root: string;
 let store: FilesystemObjectStore;
 let projection: Projection;
 let service: ControlService;
-const jobs = { list: vi.fn(async () => []), startParent: vi.fn(), cancel: vi.fn() };
+const jobs = {
+  inspect: vi.fn(),
+  list: vi.fn(async () => []),
+  startParent: vi.fn(),
+  cancel: vi.fn(),
+};
 const presets = { leaderboardEligible: () => true } as unknown as PresetCatalog;
 const request = (expected_revision = 0) => ({
   expected_revision,

@@ -53,7 +53,8 @@ COPY packages/harbor-hf-agents /tmp/harbor-hf-agents
 RUN uv python install 3.12.14 \
     && uv run --no-project --python 3.12.14 /tmp/harbor-hf-agents/sdk-backport/build.py \
     && uv sync --project /tmp/harbor-hf-agents --python 3.12.14 --frozen --no-dev --no-editable \
-    && /opt/harbor-launch/bin/python -c "from harbor_hf_agents.launch import check_revision; check_revision()"
+    && /opt/harbor-launch/bin/python -c "from harbor_hf_agents.launch import check_revision; check_revision()" \
+    && test -x /opt/harbor-launch/bin/git-credential-harbor-hf
 
 FROM node:22.22.0-bookworm-slim@sha256:7cc56ef285a8568121537d17b05e72128f01b89c54607b51acf084a50ef483f3 AS runtime
 

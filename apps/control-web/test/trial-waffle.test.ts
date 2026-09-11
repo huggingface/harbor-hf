@@ -370,6 +370,7 @@ it.each([
         `State: ${state}`,
         `Reward: ${formatted}`,
         "Agent time: −",
+        "Trial last checked: unavailable",
         ...extra,
       ].join("\n"),
     );
@@ -381,10 +382,10 @@ it.each([
 
 it("keeps unfinished and unknown short without claiming live running", () => {
   expect(cellDescription(first(waffleCells(run, data(), now)))).toBe(
-    "Task: task-a\nRepeat slot: 1\nState: Unfinished\nReward: -\nAgent time: −",
+    "Task: task-a\nRepeat slot: 1\nState: Unfinished\nReward: -\nAgent time: −\nTrial last checked: unavailable",
   );
   expect(cellDescription(first(waffleCells(run, data(), now + 61_000)))).toBe(
-    "Task: task-a\nRepeat slot: 1\nState: Unknown / interrupted\nReward: -\nAgent time: −",
+    "Task: task-a\nRepeat slot: 1\nState: Unknown / interrupted\nReward: -\nAgent time: −\nTrial last checked: unavailable",
   );
 });
 
@@ -411,4 +412,42 @@ it("keeps the one-minute age and five-second future-skew boundaries", () => {
   expect(recent(new Date(now - 60_001).toISOString(), now)).toBe(false);
   expect(recent(new Date(now + 5_000).toISOString(), now)).toBe(true);
   expect(recent(new Date(now + 5_001).toISOString(), now)).toBe(false);
+});
+
+it("uses each trial's check time independently of fresh discovery", () => {
+  const value = data();
+  const active = first(value.trials);
+  active.observed_at = timestamp;
+  value.trials.push({
+    ...active,
+    trial_name: "trial-done",
+    observed_at: new Date(now - 120_000).toISOString(),
+    result: { finished_at: timestamp },
+  });
+  expect(
+    waffleCells(run, value, now)
+      .slice(0, 2)
+      .map((cell) => cell.state),
+  ).toEqual(["unfinished", "completed"]);
+  value.observed_at = new Date(now + 61_000).toISOString();
+  const cells = waffleCells(run, value, now + 61_000);
+  expect(cells.slice(0, 2).map((cell) => cell.state)).toEqual([
+    "uncertain",
+    "completed",
+  ]);
+  expect(cellDescription(first(cells), value.observed_at)).toContain(
+    `Trial last checked: ${timestamp}`,
+  );
+});
+
+it("falls back to discovery freshness only for legacy trials without a check time", () => {
+  const value = data();
+  expect(waffleCells(run, value, now)[0]?.state).toBe("unfinished");
+  expect(
+    cellDescription(first(waffleCells(run, value, now)), value.observed_at),
+  ).toContain(`Trial last checked: ${timestamp}`);
+  value.observed_at = new Date(now - 61_000).toISOString();
+  expect(waffleCells(run, value, now)[0]?.state).toBe("uncertain");
+  first(value.trials).observed_at = timestamp;
+  expect(waffleCells(run, value, now)[0]?.state).toBe("unfinished");
 });

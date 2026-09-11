@@ -67,10 +67,10 @@ function RunWaffleContents({ run }: { run: RunView }) {
   const evidence = projectRunExceptions(run.result);
   const stale = !!(query.data && !recent(query.data.observed_at, now));
   const freshnessWarning = stale
-    ? "Stale — observation is older than one minute or its timestamp is unavailable"
+    ? "Stale — discovery observation is older than one minute or its timestamp is unavailable"
     : query.isError
       ? query.data
-        ? "Refresh failed; recent observation"
+        ? "Refresh failed; recent discovery observation"
         : "Trial observations unavailable"
       : undefined;
   const repeats = Math.max(0, ...[...groups.values()].map((group) => group.length));
@@ -88,7 +88,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
           <div className="flex items-center gap-3">
             <h2 className="font-semibold">Trial progress</h2>
             <fieldset
-              aria-label="Observation freshness"
+              aria-label="Discovery observation freshness"
               className="flex h-6 w-36 shrink-0 items-center gap-2 text-xs text-amber-400/80"
             >
               <span role="status" title={freshnessWarning}>
@@ -149,8 +149,11 @@ function RunWaffleContents({ run }: { run: RunView }) {
           Tasks/input digests are columns; repetitions are display slots, not aligned
           real attempt numbers. One square per lock entry (observations only without a
           lock). Artifact observations are not scheduling authority: unfinished does not
-          mean running. The browser polls every 10s while visible. Artifact reads are on
-          demand with a 10s backend cache, regardless of run status. The separate
+          mean running. The browser polls every 30s while visible. Artifact reads are on
+          demand with a 30s backend cache, regardless of run status. Completed records
+          are reconciled every 5 minutes on demand and retain their last-checked time
+          between checks. Header freshness reflects discovery; unfinished squares use
+          each trial's last check (discovery time for legacy responses). The separate
           reconciler defaults to 15s (configurable, non-overlapping). These intervals do
           not guarantee update latency; requests and background tabs can delay updates.
           Slots do not establish equivalent repetitions across runs or individual HF Job
@@ -237,7 +240,7 @@ function RunWaffleContents({ run }: { run: RunView }) {
                   );
                   const content = (
                     <Hint
-                      text={`${freshnessWarning ? `${freshnessWarning}\n` : ""}${cellDescription(cell)}`}
+                      text={`${freshnessWarning ? `${freshnessWarning}\n` : ""}${cellDescription(cell, query.data?.observed_at)}`}
                     >
                       <span
                         aria-hidden="true"

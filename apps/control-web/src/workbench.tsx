@@ -1,14 +1,5 @@
 import type { InferenceBindingsV1 } from "@harbor-hf/contracts";
-import { ManageSecrets } from "./manage-secrets";
-import { nativeFastAgentStarter } from "./native-starter";
-import { InferenceBindingSelector } from "./inference-binding-selector";
 import { isReasoningIntent } from "@harbor-hf/contracts/credentials";
-import {
-  emptyLaunchPricing,
-  finalizedPricing,
-  pricingDescription,
-  estimateMeaning,
-} from "./launch-pricing";
 import {
   CheckCircle2,
   FlaskConical,
@@ -36,8 +27,17 @@ import {
   type WorkbenchSetup,
 } from "./api";
 import { useControlState } from "./control-state";
+import { InferenceBindingSelector } from "./inference-binding-selector";
+import {
+  emptyLaunchPricing,
+  estimateMeaning,
+  finalizedPricing,
+  pricingDescription,
+} from "./launch-pricing";
 import { PageHeader } from "./layout";
 import { cn, formatDate, formatMoneyUsd } from "./lib";
+import { ManageSecrets } from "./manage-secrets";
+import { nativeFastAgentStarter } from "./native-starter";
 import { usePresets, useSystem } from "./queries";
 import { Badge, Button, Card, ConcurrentTrialsField, ErrorNotice, Loading } from "./ui";
 import { createWorkbenchDraftSaver, loadWorkbenchDraft } from "./workbench-draft";
@@ -301,6 +301,9 @@ export function WorkbenchPage() {
   const [draft] = useState(loadWorkbenchDraft);
   const [recipe, setRecipe] = useState<WorkbenchRecipe>(
     () => draft?.recipe ?? copyStarter(),
+  );
+  const [starterConnection, setStarterConnection] = useState(() =>
+    draft?.recipe.route_api === "native" ? "native" : "hf",
   );
   const [draftSaved, setDraftSaved] = useState<boolean | null>(true);
   const [draftSaver] = useState(() => createWorkbenchDraftSaver(setDraftSaved));
@@ -621,17 +624,28 @@ export function WorkbenchPage() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
+                <label className="text-sm text-slate-300">
+                  Fast-Agent connection
+                  <select
+                    className={fieldClass()}
+                    value={starterConnection}
+                    onChange={(event) => setStarterConnection(event.target.value)}
+                  >
+                    <option value="hf">HF router</option>
+                    <option value="native">Provider-native</option>
+                  </select>
+                </label>
                 <Button
                   variant="outline"
-                  onClick={() => changeRecipe(copyStarter(fastAgentStarter))}
+                  onClick={() =>
+                    changeRecipe(
+                      starterConnection === "native"
+                        ? nativeFastAgentStarter(fastAgentStarter)
+                        : copyStarter(fastAgentStarter),
+                    )
+                  }
                 >
-                  <RotateCcw size={14} aria-hidden="true" /> Fast Agent
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => changeRecipe(nativeFastAgentStarter(fastAgentStarter))}
-                >
-                  Fast Agent · native (opt-in)
+                  <RotateCcw size={14} aria-hidden="true" /> Apply Fast-Agent starter
                 </Button>
                 <Button
                   variant="outline"
@@ -641,73 +655,42 @@ export function WorkbenchPage() {
                 </Button>
               </div>
             </div>
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <label className="text-sm text-slate-300">
-                Recipe name
-                <input
-                  className={fieldClass()}
-                  value={recipe.name}
-                  onChange={(event) =>
-                    changeRecipe({ ...recipe, name: event.target.value })
-                  }
-                />
-              </label>
-              <label className="text-sm text-slate-300">
-                Inference API
-                <select
-                  className={fieldClass()}
-                  value={recipe.route_api}
-                  onChange={(event) =>
-                    changeRecipe({
-                      ...recipe,
-                      route_api: event.target.value as WorkbenchRecipe["route_api"],
-                    })
-                  }
-                >
-                  <option value="chat-completions">Chat Completions</option>
-                  <option value="responses">Responses</option>
-                  <option value="native">
-                    Native harness routing (review required)
-                  </option>
-                </select>
-              </label>
-              <label className="text-sm text-slate-300">
-                Setup timeout (seconds)
-                <input
-                  className={fieldClass()}
-                  min={30}
-                  max={3600}
-                  type="number"
-                  value={recipe.setup_timeout_seconds}
-                  onChange={(event) =>
-                    changeRecipe({
-                      ...recipe,
-                      setup_timeout_seconds: Number(event.target.value),
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <label className="mt-4 block text-sm text-slate-300">
-              Setup command
-              <textarea
-                className={`${fieldClass()} min-h-52 font-mono text-xs leading-5`}
-                value={recipe.setup_command}
+            <p className="mt-4 text-sm text-slate-400">
+              Both connections use fast-agent-mcp. Choosing a connection keeps your
+              edits; Apply replaces the recipe, commands and bindings. HF router adapts
+              supported model strings and maps the injected key to process-local
+              HF_TOKEN. Provider-native passes the model unchanged.
+            </p>
+            <label className="text-sm text-slate-300">
+              Recipe name
+              <input
+                className={fieldClass()}
+                value={recipe.name}
                 onChange={(event) =>
-                  changeRecipe({ ...recipe, setup_command: event.target.value })
+                  changeRecipe({ ...recipe, name: event.target.value })
                 }
               />
             </label>
             <label className="mt-4 block text-sm text-slate-300">
-              Run command
-              <textarea
-                className={`${fieldClass()} min-h-32 font-mono text-xs leading-5`}
-                value={recipe.run_command}
-                onChange={(event) =>
-                  changeRecipe({ ...recipe, run_command: event.target.value })
-                }
+              Harness model string
+              <input
+                className={fieldClass()}
+                maxLength={320}
+                form="workbench-launch"
+                placeholder="Exact model string accepted by your harness"
+                required
+                value={harnessModel}
+                onChange={(event) => setHarnessModel(event.target.value)}
               />
             </label>
+            <p className="mt-2 text-sm text-slate-400">
+              Stored unchanged as Harbor agents[0].model_name. HF router accepts
+              hf.&lt;namespace&gt;/&lt;model&gt;:&lt;provider&gt;; provider-native uses
+              the harness’s model syntax. For native use, replace EXAMPLE_API_KEY with
+              the provider’s secret destination, then Save binding in Manage secrets.
+              Never enter keys in commands or literals.
+            </p>
+
             <div className="mt-5 flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-sm font-medium text-white">Environment bindings</h3>
@@ -823,37 +806,102 @@ export function WorkbenchPage() {
                 </div>
               ))}
             </div>
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <label className="text-sm text-slate-300">
-                Results path
-                <input
-                  className={fieldClass()}
-                  value={recipe.outputs.results_path}
+            <details className="mt-5 rounded-lg border border-slate-800 p-3">
+              <summary className="cursor-pointer text-sm text-slate-300">
+                Advanced recipe: commands, API and paths
+              </summary>
+              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                <label className="text-sm text-slate-300">
+                  Inference API
+                  <select
+                    className={fieldClass()}
+                    value={recipe.route_api}
+                    onChange={(event) =>
+                      changeRecipe({
+                        ...recipe,
+                        route_api: event.target.value as WorkbenchRecipe["route_api"],
+                      })
+                    }
+                  >
+                    <option value="chat-completions">Chat Completions</option>
+                    <option value="responses">Responses</option>
+                    <option value="native">
+                      Native harness routing (review required)
+                    </option>
+                  </select>
+                </label>
+                <label className="text-sm text-slate-300">
+                  Setup timeout (seconds)
+                  <input
+                    className={fieldClass()}
+                    min={30}
+                    max={3600}
+                    type="number"
+                    value={recipe.setup_timeout_seconds}
+                    onChange={(event) =>
+                      changeRecipe({
+                        ...recipe,
+                        setup_timeout_seconds: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <label className="mt-4 block text-sm text-slate-300">
+                Setup command
+                <textarea
+                  className={`${fieldClass()} min-h-52 font-mono text-xs leading-5`}
+                  value={recipe.setup_command}
                   onChange={(event) =>
-                    changeRecipe({
-                      ...recipe,
-                      outputs: { ...recipe.outputs, results_path: event.target.value },
-                    })
+                    changeRecipe({ ...recipe, setup_command: event.target.value })
                   }
                 />
               </label>
-              <label className="text-sm text-slate-300">
-                ATIF trajectory path (optional)
-                <input
-                  className={fieldClass()}
-                  value={recipe.outputs.trajectory_path ?? ""}
+              <label className="mt-4 block text-sm text-slate-300">
+                Run command
+                <textarea
+                  className={`${fieldClass()} min-h-32 font-mono text-xs leading-5`}
+                  value={recipe.run_command}
                   onChange={(event) =>
-                    changeRecipe({
-                      ...recipe,
-                      outputs: {
-                        ...recipe.outputs,
-                        trajectory_path: event.target.value || null,
-                      },
-                    })
+                    changeRecipe({ ...recipe, run_command: event.target.value })
                   }
                 />
               </label>
-            </div>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <label className="text-sm text-slate-300">
+                  Results path
+                  <input
+                    className={fieldClass()}
+                    value={recipe.outputs.results_path}
+                    onChange={(event) =>
+                      changeRecipe({
+                        ...recipe,
+                        outputs: {
+                          ...recipe.outputs,
+                          results_path: event.target.value,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <label className="text-sm text-slate-300">
+                  ATIF trajectory path (optional)
+                  <input
+                    className={fieldClass()}
+                    value={recipe.outputs.trajectory_path ?? ""}
+                    onChange={(event) =>
+                      changeRecipe({
+                        ...recipe,
+                        outputs: {
+                          ...recipe.outputs,
+                          trajectory_path: event.target.value || null,
+                        },
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </details>
           </Card>
 
           <Card>
@@ -875,32 +923,6 @@ export function WorkbenchPage() {
             ) : null}
             {preview ? (
               <div className="mt-4 space-y-4">
-                <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                  <div>
-                    <dt className="text-slate-500">Recipe digest</dt>
-                    <dd className="mt-1 break-all font-mono text-xs text-slate-200">
-                      {preview.recipe_digest}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-500">Compiler revision</dt>
-                    <dd className="mt-1 break-all font-mono text-xs text-slate-200">
-                      {preview.revision_id}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-500">Harbor import</dt>
-                    <dd className="mt-1 break-all font-mono text-xs text-slate-200">
-                      {preview.harbor_agent.import_path}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-500">Setup timeout</dt>
-                    <dd className="mt-1 text-slate-200">
-                      {preview.harbor_agent.override_setup_timeout_sec}s
-                    </dd>
-                  </div>
-                </dl>
                 {preview.warnings.map((warning) => (
                   <p
                     className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-200"
@@ -911,8 +933,34 @@ export function WorkbenchPage() {
                 ))}
                 <details className="rounded-lg border border-slate-800">
                   <summary className="cursor-pointer px-3 py-2 text-sm text-slate-300">
-                    Resolved commands and bindings
+                    Compiled details: commands and bindings
                   </summary>
+                  <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                      <dt className="text-slate-500">Recipe digest</dt>
+                      <dd className="mt-1 break-all font-mono text-xs text-slate-200">
+                        {preview.recipe_digest}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Compiler revision</dt>
+                      <dd className="mt-1 break-all font-mono text-xs text-slate-200">
+                        {preview.revision_id}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Harbor import</dt>
+                      <dd className="mt-1 break-all font-mono text-xs text-slate-200">
+                        {preview.harbor_agent.import_path}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-slate-500">Setup timeout</dt>
+                      <dd className="mt-1 text-slate-200">
+                        {preview.harbor_agent.override_setup_timeout_sec}s
+                      </dd>
+                    </div>
+                  </dl>
                   <pre className="max-h-80 overflow-auto border-t border-slate-800 p-3 text-xs text-slate-300">
                     {JSON.stringify(
                       {
@@ -1078,7 +1126,11 @@ export function WorkbenchPage() {
                 can still be setup-tested; setup grants no credential access.
               </p>
             ) : null}
-            <form className="mt-4 space-y-4" onSubmit={(event) => void launch(event)}>
+            <form
+              id="workbench-launch"
+              className="mt-4 space-y-4"
+              onSubmit={(event) => void launch(event)}
+            >
               <label className="block text-sm text-slate-300">
                 Benchmark preset
                 <select
@@ -1144,33 +1196,6 @@ export function WorkbenchPage() {
                   credential-free.
                 </p>
               ) : null}
-              <label className="block text-sm text-slate-300">
-                Harness model string
-                <input
-                  className={fieldClass()}
-                  maxLength={320}
-                  placeholder="Exact model string accepted by your harness"
-                  required
-                  value={harnessModel}
-                  onChange={(event) => setHarnessModel(event.target.value)}
-                />
-              </label>
-              <p className="text-sm text-slate-400">
-                Stored unchanged as Harbor agents[0].model_name. The model_name
-                environment binding delivers it to your command. The existing HF starter
-                accepts hf.&lt;namespace&gt;/&lt;model&gt;:&lt;provider&gt;. The opt-in
-                native starter passes your string directly; the harness owns routing.
-                Manually edit both the model string and the synthetic EXAMPLE_API_KEY
-                destination to match the harness, then use Manage secrets to review and
-                approve the exact recipe.
-              </p>
-              <p className="text-sm text-slate-400">
-                Environment bindings deliver credentials; literal values and scripts
-                must never contain keys. Omitted references retain the existing HF path.
-                Other providers require a reference granted to this exact recipe and
-                worker. Presence does not prove API validity or compatibility.
-                Deployment and actual credential provisioning require separate approval.
-              </p>
               <ConcurrentTrialsField
                 value={concurrencyValue}
                 onChange={setConcurrentTrials}

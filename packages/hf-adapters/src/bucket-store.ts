@@ -1,6 +1,7 @@
 import { sha256 } from "@harbor-hf/contracts";
 import {
   type CreateResult,
+  type DirectoryListing,
   ImmutableConflictError,
   type ObjectEntry,
   type ObjectStore,
@@ -106,8 +107,28 @@ export class HuggingFaceBucketStore implements ObjectStore {
     return files;
   }
 
+  async listDirectory(
+    prefix: string,
+    filenames?: readonly string[],
+  ): Promise<DirectoryListing> {
+    const directories: string[] = [];
+    const files = await this.listEntriesWithRetry(
+      prefix,
+      false,
+      directories,
+      filenames,
+    );
+    this.observeSourceIdentities(files);
+    return { files, directories: directories.sort() };
+  }
+
   private observeSourceIdentities(entries: readonly ObjectEntry[]): void {
     for (const entry of entries) {
+      if (this.sourceIdentities.size >= 8192) {
+        this.sourceIdentities.clear();
+        this.cache.clear();
+        this.cacheBytes = 0;
+      }
       const previous = this.sourceIdentities.get(entry.key);
       if (previous !== undefined && previous !== entry.source_identity)
         this.deleteCached(entry.key);
@@ -142,10 +163,13 @@ export class HuggingFaceBucketStore implements ObjectStore {
   private async listEntriesWithRetry(
     key: string,
     recursive: boolean,
+    directories?: string[],
+    filenames?: readonly string[],
   ): Promise<ObjectEntry[]> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.listEntries(key, recursive);
+        directories?.splice(0);
+        return await this.listEntries(key, recursive, directories, filenames);
       } catch (error) {
         const delay = this.retryDelaysMs[attempt];
         if (delay === undefined || !transientDownloadError(error)) throw error;
@@ -282,7 +306,12 @@ export class HuggingFaceBucketStore implements ObjectStore {
     return entry;
   }
 
-  private async listEntries(key: string, recursive: boolean): Promise<ObjectEntry[]> {
+  private async listEntries(
+    key: string,
+    recursive: boolean,
+    directories?: string[],
+    filenames?: readonly string[],
+  ): Promise<ObjectEntry[]> {
     const entries: ObjectEntry[] = [];
     for await (const entry of listFiles({
       repo: this.repo,
@@ -296,7 +325,21 @@ export class HuggingFaceBucketStore implements ObjectStore {
         }),
       ...this.credentials,
     })) {
-      if (entry.type === "file" && (recursive || entry.path === key))
+      const prefix = `${key.replace(/\/$/, "")}/`;
+      const child = entry.path.startsWith(prefix)
+        ? entry.path.slice(prefix.length).replace(/\/$/, "")
+        : "";
+      if (directories && child && !child.includes("/") && entry.type === "directory")
+        directories.push(`${prefix}${child}/`);
+      if (
+        entry.type === "file" &&
+        (recursive ||
+          entry.path === key ||
+          (directories &&
+            child &&
+            !child.includes("/") &&
+            (!filenames || filenames.includes(child))))
+      )
         entries.push({
           key: entry.path,
           size: entry.size,

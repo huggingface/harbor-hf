@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, type RunView } from "./api";
-import { Button } from "./ui";
 import { useControlState } from "./control-state";
 import { keys } from "./queries";
+import { Button } from "./ui";
 
 /** Shared display state only. Never use execution actions for archive/restore. */
 export function RunArchive({ run }: { run: RunView }) {
@@ -54,7 +54,8 @@ export function RunArchive({ run }: { run: RunView }) {
         {run.presentation?.archived ? "Restore" : "Archive"}
       </Button>
       <span className="ml-3 text-slate-400">
-        Hides from default Runs view; running jobs continue.
+        Shared across browsers. Hides from default Runs view; jobs continue and results
+        are kept.
       </span>
       {mutation.error ? (
         <p role="alert">

@@ -14,6 +14,7 @@ const apiMocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   getSystem: vi.fn(),
   getTrial: vi.fn(),
+  getTrialProgress: vi.fn(),
   getTrials: vi.fn(),
 }));
 
@@ -31,6 +32,7 @@ import {
   useSystem,
   useTrial,
   useTrials,
+  useTrialProgress,
 } from "../src/queries";
 
 function harness() {
@@ -59,6 +61,7 @@ beforeEach(() => {
   apiMocks.getTrials.mockResolvedValue([]);
   apiMocks.getTrial.mockResolvedValue({ trial_name: "trial-one" });
   apiMocks.getJobs.mockResolvedValue([]);
+  apiMocks.getTrialProgress.mockResolvedValue({ trials: [] });
 });
 
 describe("query keys", () => {
@@ -164,6 +167,46 @@ it("uses render time between ticks and after throttled visibility/focus return",
   } finally {
     hook.unmount();
     expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  }
+});
+
+it("polls dashboard data every 30 seconds, independently of the 10-second display clock", async () => {
+  vi.useFakeTimers();
+  const { client, wrapper } = harness();
+  const hook = renderHook(
+    () => {
+      useSystem();
+      useRuns();
+      useRun("run-one");
+      useTrials("run-one");
+      useJobs();
+      useTrialProgress("run-one");
+      return useRunClock();
+    },
+    { wrapper },
+  );
+  const requests = [
+    apiMocks.getSystem,
+    apiMocks.getRuns,
+    apiMocks.getRun,
+    apiMocks.getTrials,
+    apiMocks.getJobs,
+    apiMocks.getTrialProgress,
+  ];
+  try {
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    for (const request of requests) expect(request).toHaveBeenCalledTimes(1);
+    const start = hook.result.current;
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(hook.result.current).toBe(start + 10_000);
+    await act(() => vi.advanceTimersByTimeAsync(19_999));
+    for (const request of requests) expect(request).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    for (const request of requests) expect(request).toHaveBeenCalledTimes(2);
+  } finally {
+    hook.unmount();
+    client.clear();
     vi.useRealTimers();
   }
 });

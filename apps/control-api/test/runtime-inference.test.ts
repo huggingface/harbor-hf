@@ -110,10 +110,13 @@ it.each(["example:native", "second:unchanged/model"])(
       store.put(key, bytes),
     );
     const requests: Record<string, unknown>[] = [];
+    let parent: unknown;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (_input: unknown, init?: RequestInit) => {
-        let response: unknown = [];
+      vi.fn(async (input: unknown, init?: RequestInit) => {
+        let response: unknown = String(input).endsWith("/synthetic-parent")
+          ? parent
+          : [];
         if (init?.method === "POST") {
           const body = JSON.parse(String(init.body)) as Record<string, unknown>;
           requests.push(body);
@@ -123,6 +126,7 @@ it.each(["example:native", "second:unchanged/model"])(
             status: { stage: "RUNNING" },
             labels: body.labels,
           };
+          parent = response;
         }
         return new Response(JSON.stringify(response), {
           status: 200,

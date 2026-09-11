@@ -1634,3 +1634,177 @@ Provider PR freshness-main integration (2026-09-10):
   supplemental coverage and absent baseline/mutation limitations remain.
 - Publish this reviewed integration to existing PR #209 only; no merge into
   main, deployment, image publication, live key or benchmark execution.
+
+### Jobs pagination and parent-observation repair (2026-09-10)
+
+Approved at: 2026-09-11T06:50:58.810625+00:00
+
+- The user explicitly approved local implementation of direct, paginated HF
+  Jobs reads, defensive verification of recorded parents before destructive
+  recovery, and mocked regression tests exceeding one response page.
+- Investigate and explain independent updates of the waffle and summary
+  indicators; frontend behavior changes are outside this repair.
+- Work in the existing checkout. Local authorization and implementation commits
+  are permitted. No deployment, push, upstream issue, pull request, merge, paid
+  Job, retry, cancellation, credential movement or resource change is approved
+  by this amendment. Preserve native Harbor execution and result ownership.
+
+Local implementation completed:
+
+- Replaced single-page Job reads with validated direct REST pagination and
+  same-origin next-link checks. Added recorded-parent inspection before orphan
+  recovery and parent-first stop handling. Uncertain inspections block recovery
+  and further launches without suppressing unrelated safety cleanup.
+- Checked Harbor `src/harbor/job.py` at
+  `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and cached upstream history through
+  `7d5285b4`. This is an HF observation/control adapter correction; native
+  execution, resume, results, and the Harbor pin remain unchanged.
+- Passed 1,388 unit tests, 69 browser tests, formatting, lint, type checks,
+  build, generated-contract checks, dependency audit, normal Slophammer and
+  DRY checks. Regression tests use mocked HTTP only, not remote Jobs.
+- The optional Slophammer baseline and mutation-check script are absent, so
+  those gates could not run. Repository-wide supplementary TypeScript coverage
+  remains below 85%; no threshold was weakened.
+- Confirmed that summary, trials, Jobs and waffle requests poll independently;
+  the waffle also has a separate artifact cache. No UI behavior was changed.
+- No deployment, publication, upstream issue, inference, or remote mutation was
+  performed. This amendment is complete for local implementation only.
+
+### Incremental operational dashboard (2026-09-10)
+
+Approved at: 2026-09-11T07:38:17.624767+00:00
+
+- The user approved local incremental, identity-keyed trial-progress caching,
+  30-second dashboard polling, inference cost per trial, and moving pricing
+  scenarios and shared rates below trial progress. Include regression tests.
+- Preserve Harbor's ownership of native trial identities, execution, aggregate
+  metrics, and results. Keep derived caches disposable, periodically reconcile
+  completed records, and distinguish unknown costs from zero.
+- Local implementation, validation and commits in the existing checkout only.
+  No deployment, push, upstream issue, PR, merge, credential movement, resource
+  change, paid computation or run mutation is authorized by this amendment.
+
+Local implementation completed:
+
+- Added disposable native-trial-name-keyed observations with shallow directory
+  discovery, 30-second refresh, and five-minute on-demand reconciliation of
+  completed records. Removed directories are noticed at discovery; retained
+  completed contents can remain unchanged until their reconciliation check.
+- Added per-trial observation timestamps to the generated read-only API contract.
+  Discovery and per-trial freshness are distinct. This does not introduce a
+  pre-cutover Bucket compatibility reader or migrate native records.
+- Dashboard polling is 30 seconds; the visual age clock remains 10 seconds and
+  the control reconciler is unchanged. Cost per completed trial uses the same
+  reported/estimated headline total and native completed-trial denominator,
+  including errors, with explicit unknown/partial-cost and non-billing caveats.
+- Moved shared rates and pricing scenarios below trial progress. Preserved native
+  trial identities and existing display-slot semantics; browser assignments are
+  still mount-local rather than durable Harbor repeat ordinals.
+- Checked Harbor job, trial, trial paths/config/result and job lock/result sources
+  at `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`, plus available upstream history.
+  No change to Harbor execution, aggregation, resume or its pin was needed.
+- Passed 1,418 unit tests and 71 browser tests, formatting, lint, types, build,
+  dependency audit, normal Slophammer and DRY. Generated contracts were rebuilt.
+  Focused reader/inference-cost coverage is 98.87% lines and 96.85% branches.
+  Added HTTP-mocked directory pagination and partial-page retry regressions,
+  plus same-length Xet replacement checks for both root and trial artifacts.
+- The Slophammer baseline and mutation script remain absent; those commands
+  cannot pass. Existing repository-wide supplemental coverage gaps remain; no
+  thresholds were weakened. No remote Jobs or inference were used for tests.
+- No deployment, publication, upstream issue, credential movement or run mutation
+  occurred. This amendment is complete for local implementation only.
+
+### Operational dashboard pull request publication
+
+Approved at: 2026-09-11T08:33:05.689364+00:00
+
+- The user explicitly approved raising one pull request for the completed Jobs
+  pagination/parent-observation repair and incremental operational dashboard.
+- Prepare a focused branch against current main in the existing checkout,
+  excluding unrelated earlier deployment patches. Preserve their existing branch.
+- Local branch preparation, tests, privacy-reviewed commits, branch push and one
+  pull request to main are approved. Disclose unavailable checks and coverage gaps.
+- No merge, deployment, default-branch update, upstream-library issue, credential
+  movement, infrastructure change, paid execution or run mutation is authorized.
+
+Focused publication validation:
+
+- Prepared the approved repair/dashboard changes against current main without
+  including older launch-form or sandbox-naming patches. The prior branch and
+  its deployment history remain intact.
+- The focused branch passes 1,390 TypeScript tests, 71 browser tests, and 100
+  root Python tests with 89.10% coverage, plus format/lint/type/build/generated
+  checks, npm audit, normal Slophammer and DRY. The lower TypeScript count
+  reflects exclusion of unrelated earlier frontend changes.
+- PR notes explicitly retain the unavailable baseline/mutation checks,
+  repository-wide supplemental coverage gaps, independent dashboard requests,
+  mount-local display slots, periodic reconciliation and partial cost semantics.
+
+### Workbench simplification on the current branch
+
+Status: completed
+
+Approved at: 2026-09-11T09:07:55.466762+00:00
+
+- The user approved local archive-persistence investigation, Workbench starter
+  and connection-choice simplification, simpler secret-binding UX without a
+  separate reauthorization screen, and two visual review passes on this branch.
+- Consolidate explicit binding consent into a normal save/use action while
+  retaining server-side source/destination, operator, recipe/model/image checks,
+  stale-response protection, and the separation of control and inference secrets.
+  Do not silently authorize credential delivery on render or background refresh.
+- Preserve existing saved recipes, archive semantics, native Harbor ownership,
+  and unrelated branch changes. Add tests and use local mocked browser previews.
+- Work only in the existing checkout and current branch. Local implementation,
+  validation and commits are approved; no new worktree, branch, push, PR update,
+  deployment, live secret/approval mutation, paid run or infrastructure change
+  is authorized by this amendment.
+
+Local completion recorded (2026-09-10; prior approval timestamp preserved):
+
+- Confirmed archive is shared Bucket-backed presentation state, not browser-local;
+  it does not stop Jobs or remove results. Added this explanation beside Archive.
+- Consolidated Fast-Agent starters into one connection selector and explicit Apply
+  action. Changing the selector alone preserves edits; saved custom recipes remain
+  intact. Advanced recipe and compiled details are collapsed by default.
+- Simplified secret registration and binding consent to explicit Preview binding
+  scope followed by Save binding, without a separate checkbox or mandatory reason.
+  Server-normalized scope remains visible before saving; exact server grants,
+  click-time expiry, stale-response protection and conflict recovery are retained.
+  Rendering, typing and registry polling allocate no review tickets or approvals.
+- Completed two mocked desktop/mobile visual passes and a final expanded binding
+  scope review. Fixed mobile overflow and action spacing, with browser regression
+  assertions checking panel bounds rather than only clipped document width.
+- Passed 1,425 unit tests and 71 browser tests, formatting, lint, type checks,
+  build, generated-contract checks, dependency audit, privacy and Slophammer DRY.
+  Focused secret/selector tests reported 96.37% statement coverage. Existing
+  repository-wide supplemental coverage gaps remain; no threshold was weakened.
+  The required mutation-check script is absent. No structure or CI changes were
+  made; no baseline gate was required. Docker is unavailable in this environment;
+  browser checks used local mocked APIs, not remote execution.
+- Previously inspected Harbor installed agent and environment sources at
+  `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and available upstream history.
+  These presentation changes require no Harbor execution change or local patch.
+- Completed only this local amendment. No push, PR update, deployment, live grant
+  mutation, credential movement, paid run or infrastructure change was performed.
+
+### Workbench publication, merge and control deployment
+
+Status: approved
+
+Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
+
+- The user explicitly approved pushing the current branch, clearing CI, merging
+  the existing pull request, and deploying the merged revision to the existing
+  canonical `<control-space>` so they can test and launch a benchmark themselves.
+- Update the existing pull request with the Workbench scope and validation;
+  diagnose and fix CI failures without weakening checks. Merge only with green CI.
+- Work in the existing checkout; no new branch or worktree. Reuse the existing
+  deployment tooling and configured credentials in place. Preserve current image
+  digests when worker inputs are unchanged, and preserve service settings.
+- No benchmark launch, retry, paid test execution, credential transfer, live grant
+  mutation, new infrastructure, or unrelated change is authorized. Do not publish
+  the private deployment identifier in repository content or public metadata.
+- Verify the merged source revision, build/runtime health, readiness and existing
+  service capabilities without submitting a run. Stop and report any deployment
+  blocker rather than broadening credential or infrastructure scope.

@@ -12,6 +12,8 @@ export interface JobObservation {
 }
 
 export interface JobsPort {
+  // Unavailable, malformed, or unowned Jobs must reject, never imply termination.
+  inspect(jobId: string): Promise<JobObservation>;
   list(): Promise<readonly JobObservation[]>;
   startParent(runId: string): Promise<JobObservation>;
   cancel(jobId: string): Promise<void>;

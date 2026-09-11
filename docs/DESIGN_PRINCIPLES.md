@@ -103,6 +103,36 @@ it into per-trial limits. Existing immutable runs with the legacy per-trial
 field MUST remain readable and MUST keep their per-trial ceiling behavior. The
 same null-as-zero calculation rule applies to them.
 
+## Private Hugging Face dataset sources
+
+Harbor owns Git repository checkout and task resolution. Harbor-HF MAY admit a
+reviewed private Hugging Face Dataset source, but it MUST keep Harbor's native
+`DatasetConfig.repo` and `DatasetConfig.path` fields and MUST pass both values to
+Harbor unchanged. It MUST use Harbor's `GitRepoRegistryClient` and `TaskClient`.
+It MUST NOT add a source schema, downloader, task resolver, scheduler, result
+format, or API.
+
+A private source MUST use HTTPS, the exact `huggingface.co` host, the
+`/datasets/<namespace>/<dataset>.git` path form, and an exact 40-character Git
+commit. It MUST NOT contain credentials, a port, query, or fragment. Current
+public GitHub source behavior MUST remain unchanged. ACP and other executable
+source admission MUST remain separate and MUST NOT gain private Dataset
+credentials.
+
+For an admitted private source, Harbor-HF MUST provide the existing `HF_TOKEN`
+to Git through a small credential bridge because the pinned Harbor release has
+no documented private Hugging Face credential mechanism. The bridge MUST answer only for `huggingface.co`, MUST be
+non-persistent, and MUST be available only to control-side launch inspection and
+the trusted parent Job. The token MUST NOT enter URLs, arguments, Git credential
+files, run configuration, Bucket records, projections, browser responses, logs,
+or trial agent environments. Existing inference credential delivery MUST remain
+unchanged.
+
+A missing token, inaccessible repository, missing commit, or rejected source
+MUST fail before model inference. There MUST be no fallback. Replace the local
+credential bridge when a pinned Harbor release provides an equivalent documented
+mechanism.
+
 ## Cost stops and native finalization
 
 Harbor MUST remain the only owner of job completion and finalization. Harbor-HF
@@ -248,5 +278,6 @@ the behavior.
 
 - [Architecture](architecture.md)
 - [Harbor-centered cutover specification](2026-09-04-simplification-implementation-spec.md)
+- [Private Hugging Face dataset sources](2026-09-11-private-hf-dataset-sources-plan.md)
 - [Control service](CONTROL_SERVICE.md)
 - [Harbor integration contract](harbor-integration-contract.md)

@@ -123,7 +123,7 @@ test("Runs recipe identity, exact role and URL search survive refresh, reload an
   await expect.poll(() => listRequests).toBeGreaterThan(previousRequests);
   await expect(search).toHaveValue("RECIPE-ONE");
   const beforePolling = listRequests;
-  await page.clock.fastForward(10_001);
+  await page.clock.fastForward(30_001);
   await expect.poll(() => listRequests).toBeGreaterThan(beforePolling);
   await expect(role).toHaveValue("diagnostic");
   await expect(search).toHaveValue("RECIPE-ONE");

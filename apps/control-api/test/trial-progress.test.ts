@@ -169,22 +169,22 @@ it("rejects malformed finish timestamps rather than displaying completion", asyn
 it("coalesces snapshots across callers, expires them, and keeps provider observations separate", async () => {
   let now = Date.parse("2026-09-09T00:00:00Z");
   const reader = new TrialProgressReader(store, { now: () => now });
-  const list = vi.spyOn(store, "list");
+  const list = vi.spyOn(store, "listDirectory");
   const [first, second] = await Promise.all([
     reader.snapshot(runId, [], null),
     reader.snapshot(runId, [], "2026-09-09T00:00:01Z"),
   ]);
-  expect(list).toHaveBeenCalledTimes(1);
+  expect(list).toHaveBeenCalledTimes(2);
   expect(first.jobs_observed_at).toBeNull();
   expect(second.jobs_observed_at).toBe("2026-09-09T00:00:01Z");
-  now += 9_999;
+  now += 29_999;
   expect((await reader.snapshot(runId, [], null)).observed_at).toBe(first.observed_at);
-  expect(list).toHaveBeenCalledTimes(1);
+  expect(list).toHaveBeenCalledTimes(2);
   now++;
   await putJson(store, `${base}trial-a/config.json`, { trial_name: "trial-a" });
   expect((await reader.snapshot(runId, [], null)).trials).toHaveLength(1);
-  expect(list).toHaveBeenCalledTimes(2);
-  now += 10_000;
+  expect(list).toHaveBeenCalledTimes(5);
+  now += 30_000;
   await rm(join(root, base, "trial-a"), { recursive: true });
   expect((await reader.snapshot(runId, [], null)).trials).toHaveLength(0);
 });
@@ -193,16 +193,16 @@ it("invalidates failed refreshes instead of serving stale success, then recovers
   let now = 0;
   const reader = new TrialProgressReader(store, { now: () => now });
   await reader.snapshot(runId, [], null);
-  now = 10_000;
+  now = 30_000;
   const list = vi
-    .spyOn(store, "list")
+    .spyOn(store, "listDirectory")
     .mockRejectedValueOnce(new Error("fresh failure"));
   await expect(reader.snapshot(runId, [], null)).rejects.toThrow("fresh failure");
   await putJson(store, `${base}lock.json`, { trials: "invalid" });
   await expect(reader.snapshot(runId, [], null)).rejects.toThrow("schema validation");
   await putJson(store, `${base}lock.json`, { trials: [] });
   expect((await reader.snapshot(runId, [], null)).lock?.trials).toEqual([]);
-  expect(list).toHaveBeenCalledTimes(3);
+  expect(list).toHaveBeenCalledTimes(5);
 });
 
 it("bounds shared snapshots and pending requests without evicting in-flight work", async () => {
@@ -211,8 +211,8 @@ it("bounds shared snapshots and pending requests without evicting in-flight work
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const original = store.list.bind(store);
-  const list = vi.spyOn(store, "list").mockImplementation(async (prefix) => {
+  const original = store.listDirectory.bind(store);
+  const list = vi.spyOn(store, "listDirectory").mockImplementation(async (prefix) => {
     await gate;
     return original(prefix);
   });
@@ -225,7 +225,7 @@ it("bounds shared snapshots and pending requests without evicting in-flight work
   await Promise.all([pending, coalesced]);
   await reader.snapshot(other, [], null);
   await reader.snapshot(runId, [], null);
-  expect(list).toHaveBeenCalledTimes(3);
+  expect(list).toHaveBeenCalledTimes(6);
 });
 
 it("allowlists native agent and step timestamps and isolates malformed timing", async () => {
