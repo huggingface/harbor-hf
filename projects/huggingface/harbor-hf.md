@@ -1634,3 +1634,95 @@ Provider PR freshness-main integration (2026-09-10):
   supplemental coverage and absent baseline/mutation limitations remain.
 - Publish this reviewed integration to existing PR #209 only; no merge into
   main, deployment, image publication, live key or benchmark execution.
+
+### Jobs pagination and parent-observation repair (2026-09-10)
+
+Approved at: 2026-09-11T06:50:58.810625+00:00
+
+- The user explicitly approved local implementation of direct, paginated HF
+  Jobs reads, defensive verification of recorded parents before destructive
+  recovery, and mocked regression tests exceeding one response page.
+- Investigate and explain independent updates of the waffle and summary
+  indicators; frontend behavior changes are outside this repair.
+- Work in the existing checkout. Local authorization and implementation commits
+  are permitted. No deployment, push, upstream issue, pull request, merge, paid
+  Job, retry, cancellation, credential movement or resource change is approved
+  by this amendment. Preserve native Harbor execution and result ownership.
+
+Local implementation completed:
+
+- Replaced single-page Job reads with validated direct REST pagination and
+  same-origin next-link checks. Added recorded-parent inspection before orphan
+  recovery and parent-first stop handling. Uncertain inspections block recovery
+  and further launches without suppressing unrelated safety cleanup.
+- Checked Harbor `src/harbor/job.py` at
+  `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and cached upstream history through
+  `7d5285b4`. This is an HF observation/control adapter correction; native
+  execution, resume, results, and the Harbor pin remain unchanged.
+- Passed 1,388 unit tests, 69 browser tests, formatting, lint, type checks,
+  build, generated-contract checks, dependency audit, normal Slophammer and
+  DRY checks. Regression tests use mocked HTTP only, not remote Jobs.
+- The optional Slophammer baseline and mutation-check script are absent, so
+  those gates could not run. Repository-wide supplementary TypeScript coverage
+  remains below 85%; no threshold was weakened.
+- Confirmed that summary, trials, Jobs and waffle requests poll independently;
+  the waffle also has a separate artifact cache. No UI behavior was changed.
+- No deployment, publication, upstream issue, inference, or remote mutation was
+  performed. This amendment is complete for local implementation only.
+
+### Incremental operational dashboard (2026-09-10)
+
+Approved at: 2026-09-11T07:38:17.624767+00:00
+
+- The user approved local incremental, identity-keyed trial-progress caching,
+  30-second dashboard polling, inference cost per trial, and moving pricing
+  scenarios and shared rates below trial progress. Include regression tests.
+- Preserve Harbor's ownership of native trial identities, execution, aggregate
+  metrics, and results. Keep derived caches disposable, periodically reconcile
+  completed records, and distinguish unknown costs from zero.
+- Local implementation, validation and commits in the existing checkout only.
+  No deployment, push, upstream issue, PR, merge, credential movement, resource
+  change, paid computation or run mutation is authorized by this amendment.
+
+Local implementation completed:
+
+- Added disposable native-trial-name-keyed observations with shallow directory
+  discovery, 30-second refresh, and five-minute on-demand reconciliation of
+  completed records. Removed directories are noticed at discovery; retained
+  completed contents can remain unchanged until their reconciliation check.
+- Added per-trial observation timestamps to the generated read-only API contract.
+  Discovery and per-trial freshness are distinct. This does not introduce a
+  pre-cutover Bucket compatibility reader or migrate native records.
+- Dashboard polling is 30 seconds; the visual age clock remains 10 seconds and
+  the control reconciler is unchanged. Cost per completed trial uses the same
+  reported/estimated headline total and native completed-trial denominator,
+  including errors, with explicit unknown/partial-cost and non-billing caveats.
+- Moved shared rates and pricing scenarios below trial progress. Preserved native
+  trial identities and existing display-slot semantics; browser assignments are
+  still mount-local rather than durable Harbor repeat ordinals.
+- Checked Harbor job, trial, trial paths/config/result and job lock/result sources
+  at `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`, plus available upstream history.
+  No change to Harbor execution, aggregation, resume or its pin was needed.
+- Passed 1,418 unit tests and 71 browser tests, formatting, lint, types, build,
+  dependency audit, normal Slophammer and DRY. Generated contracts were rebuilt.
+  Focused reader/inference-cost coverage is 98.87% lines and 96.85% branches.
+  Added HTTP-mocked directory pagination and partial-page retry regressions,
+  plus same-length Xet replacement checks for both root and trial artifacts.
+- The Slophammer baseline and mutation script remain absent; those commands
+  cannot pass. Existing repository-wide supplemental coverage gaps remain; no
+  thresholds were weakened. No remote Jobs or inference were used for tests.
+- No deployment, publication, upstream issue, credential movement or run mutation
+  occurred. This amendment is complete for local implementation only.
+
+### Operational dashboard pull request publication
+
+Approved at: 2026-09-11T08:33:05.689364+00:00
+
+- The user explicitly approved raising one pull request for the completed Jobs
+  pagination/parent-observation repair and incremental operational dashboard.
+- Prepare a focused branch against current main in the existing checkout,
+  excluding unrelated earlier deployment patches. Preserve their existing branch.
+- Local branch preparation, tests, privacy-reviewed commits, branch push and one
+  pull request to main are approved. Disclose unavailable checks and coverage gaps.
+- No merge, deployment, default-branch update, upstream-library issue, credential
+  movement, infrastructure change, paid execution or run mutation is authorized.
