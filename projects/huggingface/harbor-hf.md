@@ -1808,3 +1808,24 @@ Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
 - Verify the merged source revision, build/runtime health, readiness and existing
   service capabilities without submitting a run. Stop and report any deployment
   blocker rather than broadening credential or infrastructure scope.
+
+### Worker compatibility and deployment completion
+
+Status: approved
+
+Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
+
+- The user explicitly approved clearing CI and merging PR #212, rebuilding and
+  publishing the parent worker with the Sandbox-name and private-dataset fixes,
+  then deploying the updated control service to the existing `<control-space>`.
+- Reconciled the existing worker image to publication source `a7b6a67`; it contains
+  name sanitation but not the private-dataset support now merged to main.
+- Use existing checkout, registry, publication workflow and configured credentials
+  in place. No new branch or worktree. Update only the existing parent/Workbench
+  immutable image references needed for this release; preserve other settings.
+- Verify image provenance and offline behavior, green CI and merged source, then
+  deployment health/readiness and revision. No benchmark, remote setup test,
+  inference, credential transfer, live grant mutation, or new infrastructure.
+- Keep deployment identifiers, image references and private session evidence out
+  of public repository content and release metadata. Record only safe source
+  revisions and verification outcomes publicly.
