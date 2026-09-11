@@ -2080,3 +2080,15 @@ Status: approved
 - Scope is the test-only timing fix and offline validation. Preserve unrelated
   working changes. No push, pull request, merge, deployment, paid compute,
   credential movement, or live run mutation is authorized by this amendment.
+
+### Consolidated Run detail refresh feedback (2026-09-11)
+
+Status: approved
+
+- The user requested a small top-of-page refresh status area to prevent scattered
+  loading and refreshing labels from causing layout movement, with refresh age
+  or timing feedback.
+- Implement and validate this local UI-only change using existing query state.
+  Preserve polling frequency, Harbor evidence freshness, errors and retry access.
+  Preserve unrelated work. No push, deployment, paid compute, live run mutation,
+  credential transfer, or backend behavior change is included.
