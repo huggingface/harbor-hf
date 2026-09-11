@@ -84,7 +84,6 @@ export function waffleCells(
   now: number,
   previous: readonly WaffleCell[] = [],
 ): WaffleCell[] {
-  const fresh = recent(data.observed_at, now);
   const groups = new Map<
     string,
     { task: string; digest: string; planned: number; trials: ObservedTrial[] }
@@ -145,7 +144,9 @@ export function waffleCells(
           digest: value.digest,
           slot: slot + 1,
           trial,
-          state: trial ? state(trial, fresh) : "pending",
+          state: trial
+            ? state(trial, recent(trial.observed_at ?? data.observed_at, now))
+            : "pending",
         };
       });
     });
@@ -160,7 +161,7 @@ export function trialExceptionLabel(trial: ObservedTrial | null): string {
     : "Native exception evidence: unknown / unavailable";
 }
 
-export function cellDescription(cell: WaffleCell): string {
+export function cellDescription(cell: WaffleCell, observedAt?: string): string {
   const exception = cell.trial?.result?.exception_info?.exception_type;
   const cost = cell.trial?.cost_usd;
   return [
@@ -169,6 +170,9 @@ export function cellDescription(cell: WaffleCell): string {
     `State: ${waffleStates[cell.state].label}`,
     `Reward: ${roundedScore(cell.trial?.reward ?? null)}`,
     `Agent time: ${agentTimeLabel(trialAgentTiming(cell.trial?.result))}`,
+    ...(cell.trial
+      ? [`Trial last checked: ${cell.trial.observed_at ?? observedAt ?? "unavailable"}`]
+      : []),
     ...(exception ? [`Exception: ${exception}`] : []),
     ...(cost != null ? [`Reported cost (USD): ${formatMoneyUsd(cost)}`] : []),
   ].join("\n");

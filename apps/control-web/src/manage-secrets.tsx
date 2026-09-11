@@ -10,6 +10,24 @@ import {
   type WorkbenchRecipe,
 } from "./api";
 
+// Compare server metadata without depending on JSON object property order.
+function sameMetadata(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object")
+    return false;
+  if (Array.isArray(left) !== Array.isArray(right)) return false;
+  const a = Object.entries(left);
+  const b = Object.entries(right);
+  return (
+    a.length === b.length &&
+    a.every(
+      ([key, value]) =>
+        Object.hasOwn(right, key) &&
+        sameMetadata(value, (right as Record<string, unknown>)[key]),
+    )
+  );
+}
+
 /** Operator-only metadata editor. Never persist reviews, reasons or source names. */
 export function ManageSecrets({
   recipe,
@@ -30,24 +48,27 @@ export function ManageSecrets({
   const [baseUrl, setBaseUrl] = useState("");
   const [hosts, setHosts] = useState("");
   const [review, setReview] = useState<InferenceReviewV1 | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
+  const [reviewContext, setReviewContext] = useState("");
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [message, setMessage] = useState("");
   const epoch = useRef(0);
   const latest = useRef("");
   const fingerprint = JSON.stringify([recipe, model, context, baseUrl, hosts]);
-  latest.current = fingerprint;
+  const [previewMessage, setPreviewMessage] = useState("");
+  const [previewing, setPreviewing] = useState(false);
   const invalidate = useCallback(() => {
     ++epoch.current;
     setReview(null);
-    setConfirmed(false);
+    setReviewContext("");
+    setPreviewMessage("");
+    setPreviewing(false);
   }, []);
   useEffect(() => {
     void fingerprint;
     invalidate();
   }, [fingerprint, invalidate]);
-  const registryIdentity = useRef("");
+  const registryIdentity = useRef<InferenceBindingsV1 | null>(null);
   const reads = useRef(0);
   const refresh = useCallback(
     async (explicit = false) => {
@@ -55,18 +76,15 @@ export function ManageSecrets({
       try {
         const result = await getInferenceBindings();
         if (request !== reads.current) return;
-        const identity = JSON.stringify(result);
-        if (identity !== registryIdentity.current) {
+        if (!sameMetadata(result, registryIdentity.current)) {
           invalidate();
-          registryIdentity.current = identity;
+          registryIdentity.current = result;
         }
-        setRegistry(result);
+        setRegistry((previous) => (sameMetadata(previous, result) ? previous : result));
         onDiscovery(result);
         if (explicit) {
           setBlocked(false);
-          setMessage(
-            "Registry refreshed. Inspect current state before saving or reviewing again.",
-          );
+          setMessage("Registry refreshed. Inspect current state before saving again.");
         }
       } catch {
         if (request !== reads.current) return;
@@ -116,22 +134,32 @@ export function ManageSecrets({
         error instanceof ApiError && error.status === 409
           ? "Conflict: refresh and review current state. Nothing will be retried automatically."
           : error instanceof ApiError && error.status === 400
-            ? "Request rejected. Check the name, label, reason and connection settings, then refresh before trying again."
+            ? "Request rejected. Check the name and connection settings, then refresh before trying again."
             : "Save not confirmed; it may have succeeded. Refresh and inspect current state before trying again.",
       );
     } finally {
       setBusy(false);
     }
   }
-  async function requestReview() {
-    if (!registry || !selected) return;
+  // Reviews allocate retained server tickets: request only on explicit action.
+  const identity = JSON.stringify(registry);
+  const scope = JSON.stringify([fingerprint, identity]);
+  latest.current = scope;
+  const currentReview = !blocked && reviewContext === scope ? review : null;
+  const bindingSaved =
+    currentReview &&
+    selected?.enabled &&
+    selected.grants.some((grant) => sameMetadata(grant, currentReview.grant));
+  async function previewBinding() {
+    if (!ready || previewing || !registry || !selected?.enabled || !model.trim())
+      return;
+    if (currentReview && Date.now() < Date.parse(currentReview.expires_at)) return;
     invalidate();
-    const current = epoch.current;
-    const input = fingerprint;
-    setBusy(true);
-    setMessage("");
+    setPreviewing(true);
+    const current = ++epoch.current;
+    const input = scope;
     try {
-      const result = await reviewInferenceBinding(selected.ref, {
+      await reviewInferenceBinding(selected.ref, {
         expected_revision: registry.revision,
         recipe,
         model_name: model,
@@ -140,19 +168,80 @@ export function ManageSecrets({
           .split(",")
           .map((host) => host.trim())
           .filter(Boolean),
-      });
-      if (current === epoch.current && input === latest.current) setReview(result);
-    } catch {
-      setBlocked(true);
-      setMessage("Review unavailable or stale. Refresh and review again.");
+      })
+        .then((result) => {
+          if (current !== epoch.current || input !== latest.current) return;
+          // The full server-normalized recipe and image are displayed before consent.
+          if (
+            result.ref !== selected.ref ||
+            result.revision !== registry.revision ||
+            result.source_env !== selected.source_env ||
+            !sameMetadata(result.recipe, recipe) ||
+            !sameMetadata(result.grant.allowed_models, [model]) ||
+            result.grant.route_api !== recipe.route_api ||
+            !sameMetadata(
+              result.grant.destination_env,
+              recipe.environment
+                .filter((row) => row.source === "model_api_key")
+                .map((row) => row.name)
+                .sort(),
+            ) ||
+            result.grant.base_url !== (baseUrl.trim() || null) ||
+            !sameMetadata(
+              result.grant.allowed_hosts,
+              hosts
+                .split(",")
+                .map((host) => host.trim())
+                .filter(Boolean),
+            )
+          ) {
+            setPreviewMessage(
+              "Binding preview did not match the selection. Check the scope and preview again.",
+            );
+            return;
+          }
+          setReview(result);
+          setReviewContext(input);
+        })
+        .catch(() => {
+          if (current !== epoch.current || input !== latest.current) return;
+          setPreviewMessage(
+            "Binding preview unavailable or stale. Correct the scope or refresh the registry, then preview again.",
+          );
+        });
     } finally {
-      setBusy(false);
+      if (current === epoch.current) setPreviewing(false);
     }
+  }
+  const auditReason =
+    "Save binding: use the displayed source for this exact recipe, model, worker image and destinations.";
+  function saveBinding() {
+    if (!ready || !currentReview || bindingSaved) return;
+    if (
+      !Number.isFinite(Date.parse(currentReview.expires_at)) ||
+      Date.now() >= Date.parse(currentReview.expires_at)
+    ) {
+      invalidate();
+      setPreviewMessage(
+        "Binding preview expired. Preview again before saving; nothing was retried.",
+      );
+      return;
+    }
+    void save(
+      () =>
+        approveInferenceBinding(currentReview.ref, {
+          expected_revision: currentReview.revision,
+          review_id: currentReview.review_id,
+          reviewed_confirmation: true,
+          reason: auditReason,
+        }),
+      "Binding saved for the submitted scope. Preview to check the current form against the registry.",
+    );
   }
   const inputClass =
     "mt-1 block w-full rounded border border-slate-700 bg-slate-950 p-2 text-slate-100";
   return (
-    <section className="my-3 space-y-3 rounded border border-slate-700 p-3 text-sm">
+    <section className="my-3 min-w-0 max-w-full space-y-3 rounded border border-slate-700 p-3 text-sm [overflow-wrap:anywhere]">
       <button type="button" className="underline" onClick={() => setOpen(!open)}>
         Manage secrets
       </button>
@@ -173,7 +262,7 @@ export function ManageSecrets({
             />
           </label>
           <label className="block">
-            Friendly label
+            Friendly label (optional)
             <input
               className={inputClass}
               aria-label="Friendly label"
@@ -182,25 +271,10 @@ export function ManageSecrets({
               onChange={(event) => setLabel(event.target.value)}
             />
           </label>
-          <label className="block">
-            Change reason
-            <input
-              className={inputClass}
-              aria-label="Change reason"
-              value={reason}
-              maxLength={500}
-              onChange={(event) => setReason(event.target.value)}
-            />
-          </label>
           <button
             className="rounded border border-slate-600 px-3 py-2 text-cyan-300 disabled:opacity-40"
             type="button"
-            disabled={
-              !ready ||
-              !/^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(name) ||
-              !label.trim() ||
-              !reason.trim()
-            }
+            disabled={!ready || !/^[A-Za-z_][A-Za-z0-9_]{0,79}$/.test(name)}
             onClick={() =>
               registry &&
               void save(
@@ -208,45 +282,59 @@ export function ManageSecrets({
                   registerInferenceBinding({
                     expected_revision: registry.revision,
                     source_env: name,
-                    label,
-                    reason,
+                    label: label.trim() || "Inference secret",
+                    reason:
+                      "Register existing Space secret name for explicit binding selection.",
                   }),
                 "Reference registered. Select it in a Secret environment binding.",
               )
             }
           >
-            Register reference
+            Register secret name
           </button>
           <p>
             Control and infrastructure names are reserved and rejected by the server.
             Ownership is enforced by the server.
           </p>
-          <ul>
-            {registry?.bindings.map((binding) => (
-              <li key={binding.ref}>
-                {binding.label} · {binding.source_env} · {binding.status}
-                <button
-                  className="ml-2 rounded border border-slate-600 px-2 py-1 text-cyan-300 disabled:opacity-40"
-                  type="button"
-                  disabled={!ready || !reason.trim()}
-                  onClick={() =>
-                    registry &&
-                    void save(
-                      () =>
-                        setInferenceBindingStatus(binding.ref, {
-                          expected_revision: registry.revision,
-                          enabled: !binding.enabled,
-                          reason,
-                        }),
-                      "Reference status saved. Review again before approving.",
-                    )
-                  }
-                >
-                  {binding.enabled ? "Disable" : "Re-enable"} {binding.label}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <details>
+            <summary>Advanced reference controls</summary>
+            <label className="block">
+              Change reason
+              <input
+                className={inputClass}
+                aria-label="Change reason"
+                value={reason}
+                maxLength={500}
+                onChange={(event) => setReason(event.target.value)}
+              />
+            </label>
+            <ul>
+              {registry?.bindings.map((binding) => (
+                <li key={binding.ref}>
+                  {binding.label} · {binding.source_env} · {binding.status}
+                  <button
+                    className="ml-2 rounded border border-slate-600 px-2 py-1 text-cyan-300 disabled:opacity-40"
+                    type="button"
+                    disabled={!ready || !reason.trim()}
+                    onClick={() =>
+                      registry &&
+                      void save(
+                        () =>
+                          setInferenceBindingStatus(binding.ref, {
+                            expected_revision: registry.revision,
+                            enabled: !binding.enabled,
+                            reason,
+                          }),
+                        "Reference status saved. Check binding status before saving.",
+                      )
+                    }
+                  >
+                    {binding.enabled ? "Disable" : "Re-enable"} {binding.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
           <details>
             <summary>Advanced connection settings</summary>
             <p>
@@ -273,89 +361,84 @@ export function ManageSecrets({
             </label>
           </details>
           <p>
-            Choose one registered credential per run; multiple destinations of that same
-            key are allowed. Legacy HF and registered references cannot be mixed. Enter
-            the exact harness model below before review.
+            Select one registered secret in the environment rows and enter the exact
+            harness model. Multiple destinations for the same secret are allowed;
+            registered and legacy HF bindings cannot be mixed.
+          </p>
+          <p role="status">
+            {bindingSaved
+              ? "Binding saved for this scope."
+              : currentReview
+                ? "Binding needs saving."
+                : blocked
+                  ? "Binding status unverified. Refresh before continuing."
+                  : selected?.enabled && model.trim()
+                    ? previewing
+                      ? "Checking binding scope…"
+                      : "Preview the exact binding scope before saving."
+                    : "Select a registered secret and exact model to check binding status."}
           </p>
           <button
             className="rounded border border-slate-600 px-3 py-2 text-cyan-300 disabled:opacity-40"
             type="button"
-            disabled={!ready || !selected?.enabled || !model.trim()}
-            onClick={() => void requestReview()}
+            disabled={!ready || previewing || !selected?.enabled || !model.trim()}
+            onClick={() => void previewBinding()}
           >
-            Review credential use
+            Preview binding scope
           </button>
-          {review && (
-            <section aria-label="Credential review" className="space-y-2">
+          {currentReview && (
+            <section aria-label="Binding scope" className="space-y-2">
               <p>
-                {review.label} · {review.source_env} · presence: {review.presence} (not
-                authentication)
+                {currentReview.source_env} →{" "}
+                {currentReview.grant.destination_env.join(", ")}
+                {" · "}presence: {currentReview.presence} (not authentication)
               </p>
               <p>
-                Model: {review.grant.allowed_models.join(", ")} · Protocol:{" "}
-                {review.grant.route_api}
+                Model: {currentReview.grant.allowed_models.join(", ")} · Route:{" "}
+                {currentReview.grant.route_api}
               </p>
-              <p>Worker image: {review.grant.worker_image}</p>
+              <p>Worker image: {currentReview.grant.worker_image}</p>
+              <p>Agent: {currentReview.grant.agent_import_path}</p>
+              <p>Recipe digest: {currentReview.grant.recipe_digest}</p>
               <p>
-                Agent: {review.grant.agent_import_path} · Server-derived digest:{" "}
-                {review.grant.recipe_digest}
+                Base URL: {currentReview.grant.base_url ?? "none"} · Declared hosts:{" "}
+                {currentReview.grant.allowed_hosts.join(", ") || "none"}
               </p>
-              <p>Destinations: {review.grant.destination_env.join(", ")}</p>
+              <details>
+                <summary>Exact recipe scope</summary>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap">
+                  {JSON.stringify(currentReview.recipe, null, 2)}
+                </pre>
+              </details>
+              <p>{auditReason}</p>
               <p>
-                Base URL: {review.grant.base_url ?? "none"} · Declared hosts:{" "}
-                {review.grant.allowed_hosts.join(", ") || "none"}
+                Preview expires: {currentReview.expires_at}. No secret values are read
+                or sent by this action.
               </p>
-              <pre className="max-h-64 overflow-auto">
-                {JSON.stringify(review.recipe, null, 2)}
-              </pre>
-              <p>Review expires: {review.expires_at}. Setup success is not approval.</p>
-              <label>
-                <input
-                  className="mr-2"
-                  type="checkbox"
-                  checked={confirmed}
-                  onChange={(event) => setConfirmed(event.target.checked)}
-                />
-                I approve this exact recipe, model, image and destinations
-              </label>
-              <button
-                className="rounded border border-slate-600 px-3 py-2 text-cyan-300 disabled:opacity-40"
-                type="button"
-                disabled={
-                  !ready ||
-                  !confirmed ||
-                  !reason.trim() ||
-                  Date.now() >= Date.parse(review.expires_at)
-                }
-                onClick={() =>
-                  void save(
-                    () =>
-                      approveInferenceBinding(review.ref, {
-                        expected_revision: review.revision,
-                        review_id: review.review_id,
-                        reviewed_confirmation: true,
-                        reason,
-                      }),
-                    "Credential use approved. Run standalone setup, then launch with the existing launch confirmation.",
-                  )
-                }
-              >
-                Approve credential use
-              </button>
             </section>
           )}
-          <button
-            className="rounded border border-slate-600 px-3 py-2 text-cyan-300 disabled:opacity-40"
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              invalidate();
-              void refresh(true);
-            }}
-          >
-            Refresh secret registry
-          </button>
-          {message && <p role="status">{message}</p>}
+          <div className="flex flex-wrap gap-3">
+            <button
+              className="rounded border border-slate-600 px-3 py-2 text-cyan-300 disabled:opacity-40"
+              type="button"
+              disabled={!ready || !currentReview || !!bindingSaved}
+              onClick={saveBinding}
+            >
+              Save binding
+            </button>
+            <button
+              className="rounded border border-slate-600 px-3 py-2 text-cyan-300 disabled:opacity-40"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                void refresh(true);
+              }}
+            >
+              Refresh secret registry
+            </button>
+          </div>
+          {previewMessage && <p role="alert">{previewMessage}</p>}
+          {message && <p role="alert">{message}</p>}
         </section>
       )}
     </section>

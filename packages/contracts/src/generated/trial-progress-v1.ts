@@ -12,6 +12,10 @@ digest: string
 }[]
 } | null)
 trials: {
+/**
+ * When this trial's artifact identity was last checked. Retained completed records keep their previous check time.
+ */
+observed_at?: string
 trial_name: string
 config: ({
 trial_name?: string

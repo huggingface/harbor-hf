@@ -9,6 +9,12 @@ export interface ObjectEntry {
   source_identity: string;
 }
 
+export interface DirectoryListing {
+  files: readonly ObjectEntry[];
+  /** Immediate child directory keys, including the trailing slash. */
+  directories: readonly string[];
+}
+
 export interface CreateResult {
   created: boolean;
   digest: string;
@@ -17,6 +23,11 @@ export interface CreateResult {
 
 export interface ObjectStore {
   list(prefix: string): Promise<readonly ObjectEntry[]>;
+  /** Shallow listing; optional basenames restrict file metadata, not directories. */
+  listDirectory(
+    prefix: string,
+    filenames?: readonly string[],
+  ): Promise<DirectoryListing>;
   read(key: string, options?: { fresh?: boolean }): Promise<Uint8Array>;
   create(key: string, bytes: Uint8Array): Promise<CreateResult>;
   put(key: string, bytes: Uint8Array): Promise<{ digest: string }>;
@@ -72,6 +83,31 @@ export class FilesystemObjectStore implements ObjectStore {
         return { key, size: info.size, source_identity: sha256(bytes) };
       }),
     );
+  }
+
+  async listDirectory(
+    prefix: string,
+    filenames?: readonly string[],
+  ): Promise<DirectoryListing> {
+    const files: ObjectEntry[] = [];
+    const directories: string[] = [];
+    let handle: Awaited<ReturnType<typeof opendir>>;
+    try {
+      handle = await opendir(safePath(this.root, prefix));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT")
+        return { files, directories };
+      throw error;
+    }
+    for await (const entry of handle) {
+      const key = `${prefix.replace(/\/$/, "")}/${entry.name}`;
+      if (entry.isDirectory()) directories.push(`${key}/`);
+      else if (entry.isFile() && (!filenames || filenames.includes(entry.name))) {
+        const bytes = await readFile(safePath(this.root, key));
+        files.push({ key, size: bytes.byteLength, source_identity: sha256(bytes) });
+      }
+    }
+    return { files, directories: directories.sort() };
   }
 
   async read(key: string): Promise<Uint8Array> {

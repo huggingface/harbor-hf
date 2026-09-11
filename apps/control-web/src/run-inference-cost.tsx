@@ -25,6 +25,17 @@ export function RunInferenceCost({ run }: { run: RunView }) {
     : estimate?.unavailable_reason === "usage_unavailable"
       ? "Reported usage unavailable or invalid"
       : "Estimate unavailable";
+  // Use the same supplied total as the headline, never reaggregate trial costs.
+  const completed = resultStat(run.result, "n_completed_trials");
+  const denominator =
+    completed !== null && Number.isSafeInteger(completed) && completed >= 0
+      ? completed
+      : null;
+  const total = reported ?? (available ? estimate.cost_usd : null);
+  const perTrial =
+    total !== null && total >= 0 && denominator !== null && denominator > 0
+      ? total / denominator
+      : null;
   return (
     <>
       <h2>Inference cost</h2>
@@ -41,6 +52,23 @@ export function RunInferenceCost({ run }: { run: RunView }) {
           {reported === null && available ? ` · ${source}` : ""}
         </Hint>
       </p>
+      <div className="mt-2 text-xs">
+        <p>
+          Cost / completed trial:{" "}
+          <CostValue value={perTrial} label="Cost per completed trial (USD)" />
+        </p>
+        <p className="text-slate-400">
+          Denominator: {denominator ?? "unknown"} native completed trials (including
+          errors). Uses the headline{" "}
+          {reported !== null
+            ? "reported total"
+            : available
+              ? "estimate"
+              : "unavailable total"}
+          . Cost coverage may be partial; includes trials with unknown cost in the
+          denominator. Not billed charges.
+        </p>
+      </div>
       {reported !== null && available ? (
         <div className="mt-1 text-xs">
           Estimated: <LaunchEstimate run={run} compact />

@@ -58,7 +58,7 @@ export function InferenceBindingSelector({
             value={binding.ref}
             disabled={binding.status === "disabled"}
           >
-            Registered: {binding.label} · {binding.status}
+            Registered: {binding.label} · {binding.source_env} · {binding.status}
           </option>
         ))}
       </select>
@@ -70,8 +70,8 @@ export function InferenceBindingSelector({
             : "Presence only; not API validity, quota or compatibility."}
       </p>
       <p>
-        Set the destination name required by the harness. Setup success grants no
-        credential access.
+        Set the environment destination required by the harness, then Save binding in
+        Manage secrets. Selecting a secret does not save or authorize its use.
       </p>
       {operator && sharedDiscovery === undefined ? (
         <button type="button" className="underline" onClick={refresh}>

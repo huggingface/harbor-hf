@@ -60,19 +60,25 @@ afterEach(() => {
 
 it("distinguishes browser polling, artifact caching, and reconciliation in help", () => {
   show(run(), { "run-a": progress() });
-  const help = screen.getByText(/The browser polls every 10s while visible/);
+  const help = screen.getByText(/The browser polls every 30s while visible/);
   expect(help).toHaveTextContent(
-    "Artifact reads are on demand with a 10s backend cache, regardless of run status.",
+    "Artifact reads are on demand with a 30s backend cache, regardless of run status.",
   );
   expect(help).toHaveTextContent(
     "The separate reconciler defaults to 15s (configurable, non-overlapping).",
   );
   expect(help).toHaveTextContent("do not guarantee update latency");
   expect(help).not.toHaveTextContent("terminal runs every 2m");
+  expect(help).toHaveTextContent(
+    "Completed records are reconciled every 5 minutes on demand",
+  );
+  expect(help).toHaveTextContent("Header freshness reflects discovery");
+  expect(help).not.toHaveTextContent("oldest retained observation");
 });
 
 it("renders one task column with five distinct repetition rows and focus details", async () => {
-  show(run(), { "run-a": progress() });
+  const value = progress();
+  show(run(), { "run-a": value });
   expect(screen.getAllByRole("rowheader")).toHaveLength(5);
   expect(screen.getAllByRole("cell")).toHaveLength(5);
   const zero = screen.getByRole("link", { name: "trial-a in run-a: Zero reward" });
@@ -80,7 +86,7 @@ it("renders one task column with five distinct repetition rows and focus details
   act(() => zero.focus());
   expect(screen.getByRole("tooltip")).not.toHaveTextContent("not an attempt ordinal");
   expect(screen.getByRole("tooltip").textContent).toBe(
-    "Task: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −",
+    `Task: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −\nTrial last checked: ${value.observed_at}`,
   );
   expect(screen.getByRole("tooltip")).not.toHaveTextContent("Artifact observation");
   const row = zero.closest("tr");
@@ -158,7 +164,8 @@ it("shows unavailable without data but only Retry for recent cached observations
   show(run());
   expect(await screen.findByText("● Unavailable")).toBeVisible();
   cleanup();
-  const client = show(run(), { "run-a": progress() });
+  const cached = progress();
+  const client = show(run(), { "run-a": cached });
   await act(() => client.invalidateQueries({ queryKey: ["trial-progress", "run-a"] }));
   expect(await screen.findByRole("button", { name: "Retry" })).toBeVisible();
   expect(screen.queryByText("● Stale")).not.toBeInTheDocument();
@@ -166,7 +173,7 @@ it("shows unavailable without data but only Retry for recent cached observations
     screen.getByRole("link", { name: "trial-a in run-a: Zero reward" }).focus(),
   );
   expect(screen.getByRole("tooltip").textContent).toBe(
-    "Refresh failed; recent observation\nTask: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −",
+    `Refresh failed; recent discovery observation\nTask: task-a\nRepeat slot: 1\nState: Zero reward\nReward: 0.000\nAgent time: −\nTrial last checked: ${cached.observed_at}`,
   );
   vi.stubGlobal(
     "fetch",
@@ -348,10 +355,10 @@ it("keeps the same native DOM identity and position across incremental polls and
 });
 
 it.each([
-  ["running", 10_000],
-  ["finished", 10_000],
-  ["cancelled", 10_000],
-  ["cost_stopped", 10_000],
+  ["running", 30_000],
+  ["finished", 30_000],
+  ["cancelled", 30_000],
+  ["cost_stopped", 30_000],
 ] as const)(
   "polls %s runs at the shared run-panel interval",
   async (status, interval) => {
@@ -551,7 +558,7 @@ it("reserves three-digit repeat labels and derives CSS only from display counts"
     "overflow-auto",
   );
   expect(
-    screen.getByRole("group", { name: "Observation freshness" }),
+    screen.getByRole("group", { name: "Discovery observation freshness" }),
   ).toBeInTheDocument();
 });
 
@@ -626,7 +633,7 @@ it("keeps recent evidence on transport failure, then exposes an outage after 60s
     const cell = screen.getByRole("button", { name: /trial-a.*Unfinished/ });
     act(() => cell.focus());
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Refresh failed; recent observation",
+      "Refresh failed; recent discovery observation",
     );
     vi.stubGlobal(
       "fetch",
@@ -638,7 +645,9 @@ it("keeps recent evidence on transport failure, then exposes an outage after 60s
     await act(() => vi.advanceTimersByTimeAsync(70_000));
     expect(screen.getByText("● Stale")).toBeVisible();
     expect(cell).toHaveAccessibleName(/Unknown/);
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Stale — observation");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Stale — discovery observation",
+    );
   } finally {
     cleanup();
     vi.useRealTimers();
@@ -673,4 +682,21 @@ it("retains a recent empty observation on refresh failure", async () => {
     screen.getByText("No trial artifacts or prepared lock observed yet."),
   ).toBeVisible();
   expect(screen.queryByText(/Trial observations unavailable/)).not.toBeInTheDocument();
+});
+
+it("keeps discovery fresh without renewing stale trial evidence", () => {
+  const value = progress();
+  const trial = value.trials[0];
+  if (!trial) throw new Error("missing fixture");
+  trial.observed_at = new Date(Date.now() - 120_000).toISOString();
+  trial.result = null;
+  show(run(), { "run-a": value });
+  expect(screen.queryByText("● Stale")).not.toBeInTheDocument();
+  const cell = screen.getByRole("button", {
+    name: "trial-a in run-a: Unknown / interrupted",
+  });
+  act(() => cell.focus());
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    `Trial last checked: ${trial.observed_at}`,
+  );
 });

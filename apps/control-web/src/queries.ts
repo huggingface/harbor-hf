@@ -14,14 +14,14 @@ import {
   getTrials,
 } from "./api";
 
-export const RUN_POLL_INTERVAL_MS = 10_000;
+export const RUN_POLL_INTERVAL_MS = 30_000;
 
 // Display age and freshness must advance even while a request hangs.
 export function useRunClock() {
   const [, render] = useState(0);
   useEffect(() => {
     const refresh = () => render((tick) => tick + 1);
-    const timer = setInterval(refresh, RUN_POLL_INTERVAL_MS);
+    const timer = setInterval(refresh, 10_000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
@@ -55,7 +55,7 @@ export function useSystem() {
   return useQuery({
     queryKey: keys.system,
     queryFn: getSystem,
-    refetchInterval: 15_000,
+    refetchInterval: RUN_POLL_INTERVAL_MS,
   });
 }
 

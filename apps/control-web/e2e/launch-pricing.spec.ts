@@ -230,6 +230,9 @@ for (const enabled of [true, false])
       await expect(page.getByLabel("Input incl. cache USD/M")).toHaveValue("2");
       await expect(page.getByLabel("Cached input USD/M")).toHaveValue("");
     }
+    await page
+      .getByText("Compiled details: commands and bindings", { exact: true })
+      .click();
     await expect(page.getByText(revision).first()).toBeVisible();
     await page
       .getByLabel("Start one disposable CPU setup test for this exact recipe.")
