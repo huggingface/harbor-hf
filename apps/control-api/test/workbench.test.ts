@@ -162,10 +162,16 @@ while :; do sleep 1; done
       expect(cancelling?.status).toBe("cancelling");
 
       await expect
-        .poll(async () => {
-          const setup = await runtime.getSetup(started.setup_test_id, "test-operator");
-          return setup?.status;
-        })
+        .poll(
+          async () => {
+            const setup = await runtime.getSetup(
+              started.setup_test_id,
+              "test-operator",
+            );
+            return setup?.status;
+          },
+          { timeout: 5_000 },
+        )
         .toBe("cancelled");
       expect(
         (await runtime.logs(started.setup_test_id, "test-operator"))?.stdout,

@@ -25,7 +25,7 @@ function apiJob(role: "parent" | "trial" = "parent") {
 }
 
 describe("HuggingFaceJobs", () => {
-  it("launches one immutable parent with the Bucket and two ephemeral secrets", async () => {
+  it("launches a local-disk parent with Bucket API access and ephemeral secrets", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const fakeFetch: typeof fetch = async (input, init) => {
       requests.push({ url: String(input), ...(init ? { init } : {}) });
@@ -50,21 +50,15 @@ describe("HuggingFaceJobs", () => {
       command: ["python", "-m", "harbor_hf_agents.parent_worker"],
       environment: {
         HARBOR_HF_RUN_ID: runId,
-        HARBOR_HF_MOUNT_ROOT: "/data",
+        HARBOR_HF_LOCAL_ROOT: "/data",
+        HARBOR_HF_BUCKET_ID: "example/bucket",
         HARBOR_HF_NAMESPACE: "example",
         ...isolatedGitSourceEnvironment(),
       },
       attempts: 1,
       labels: { "harbor-hf-role": "parent", "harbor-hf-run": runId },
-      volumes: [
-        {
-          type: "bucket",
-          source: "example/bucket",
-          mountPath: "/data",
-          readOnly: false,
-        },
-      ],
     });
+    expect(body).not.toHaveProperty("volumes");
     expect(body.secrets).toEqual({
       HF_TOKEN: controlToken,
       HF_INFERENCE_TOKEN: inferenceToken,

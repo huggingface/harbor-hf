@@ -11,6 +11,73 @@ default_branch: main
 
 Status: approved
 
+### Combined PR merge and matched release (2026-09-11)
+
+Approved at: 2026-09-11T16:12:15Z
+
+- The user explicitly approved adding the other six local commits to PR #218,
+  after previously requesting merge and deployment to the exact existing
+  control Space identified in the private operational context.
+- Include committed refresh feedback and cancellation-test cleanup with their
+  authorization history. Do not silently include concurrent uncommitted work.
+- Approved operations: reviewed local integration, validation, commit/push, PR
+  update and merge after required CI succeeds, and rebuild/publication of the
+  matching parent-worker image through the existing release workflow.
+- Deploy the merged revision and matched immutable worker image to the existing
+  control Space. Preserve its visibility, hardware, Bucket, credentials, and
+  operator configuration; do not publish the private destination in this file.
+- Benchmark task images are unchanged. No new resources, credential movement,
+  benchmark launch/retry/resume, or interruption of running Jobs is approved.
+  Defer cutover if live execution or unresolved release gates require a further
+  operational decision. Existing validation limitations remain disclosed.
+
+### Native scrubber ordering integration (2026-09-11)
+
+Approved at: 2026-09-11T15:16:23Z
+
+- The user explicitly approved a narrow private integration at Harbor revision
+  `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` which calls Harbor's existing
+  scrubber on the actual trial before END callbacks, preserving the normal
+  final scrub as a backstop. Do not copy the scrubber or reconstruct trials.
+- This supersedes the interim end-of-run-only direction: preserve live native
+  metadata, attempt receipts, and scrubbed per-trial uploads, with a final copy.
+- Test ordering on success, failure, cancellation, retry, and unsupported
+  revisions. Fail explicitly on integration or upload failures.
+- Removal boundary: the first reviewed Harbor pin providing a supported
+  post-sanitization upload hook, or sanitization before END, replaces this
+  adapter. No such revision exists in the inspected history through
+  `e1be9bd39c368f88a27fee4cbd26655e9994ee5a`; do not invent a future SHA.
+- The existing local implementation and PR authorization applies. No upstream
+  publication, merge, deployment, paid run, or credential movement is approved.
+
+### Local parent storage PR preparation (2026-09-11)
+
+Approved at: 2026-09-11T15:01:08Z
+
+- The user explicitly requested implementing the approved local-parent storage
+  change and preparing its pull request. This extends the local-only approval
+  below to implementation commits, branch push, and one reviewed pull request.
+- No merge, deployment, paid execution, new resource, credential movement, or
+  upstream issue or pull request is authorized. Public privacy checks and full
+  diff review remain required before publication.
+
+### Local parent storage and durable artifact copies (2026-09-11)
+
+Approved at: 2026-09-11T14:58:47Z
+
+- The user explicitly approved local implementation, tests, documentation, and
+  this authorization-record commit for moving Harbor parent execution to local
+  disk with per-trial and final durable artifact uploads to the existing Bucket.
+- Preserve Harbor-native artifacts, lifecycle hooks, reward interpretation, and
+  resume authority. Surface upload failures explicitly; do not add a second
+  trial scheduler or result format. Inspect native persistence APIs and relevant
+  history before implementation.
+- Accepted risks: abrupt termination can lose work since the last successful
+  copy, reporting reflects saved snapshots, local disk must fit working data,
+  and forced cancellation cannot guarantee a final copy.
+- No deployment, paid canary, new resources, credential movement, upstream
+  publication, or implementation publication is authorized by this amendment.
+
 ### Current main redeployment (2026-09-09)
 
 Approved at: 2026-09-09T07:49:21Z
@@ -310,6 +377,59 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-11 — Combined PR and deployment approval
+
+- Approved including the six other local commits in PR #218 and rebuilding the
+  parent worker; the earlier direct request also approved merge and deployment
+  to the privately identified existing control Space. Scope and limits above
+  supersede the earlier no-merge/no-deployment limits for this release only.
+
+
+### 2026-09-11 — Local storage PR prepared
+
+- Completed this branch's approved implementation and PR-preparation scope in
+  draft PR #218: https://github.com/huggingface/harbor-hf/pull/218.
+- Disclosed validation limitations and runtime risks in the PR. Publication
+  excludes unrelated dashboard edits. No merge, deployment, paid Job, remote
+  canary, credential movement, or upstream publication was performed.
+
+
+### 2026-09-11 — Local storage implementation and PR validation
+
+- Implemented the approved local parent filesystem, acknowledged Bucket copies,
+  pinned pre-END native scrub invocation, live native metadata and receipts,
+  and final result-last publication. No remote benchmark or deployment ran.
+- Snapshot reads share Harbor's native completion lock. Failed retry-enabled
+  trial results are withheld until the settled final copy; no retry loop or
+  completion schema was added. The unsanitized global job log is not uploaded.
+- Isolated validation passed root Ruff/format/ty, 102 CLI tests at 89.10%
+  coverage, 321 agent tests, changed agent modules at 91.44% coverage, 1,450
+  TypeScript tests, 73 browser tests, generated-contract checks, dependency
+  audits, both linux/amd64 Docker builds, and an offline Python 3.12 binding
+  smoke check. Normal Slophammer and DRY checks passed.
+- Prepare a draft PR: package-wide agent coverage is 71.84%, below the 85%
+  target, and the requested Slophammer baseline file is absent. No validation
+  threshold was reduced and no baseline file was generated to hide findings.
+- Unrelated concurrent dashboard work was excluded from the isolated change.
+
+### 2026-09-11 — Native sanitization ordering
+
+- Approved invoking the pinned native scrubber before END callbacks, retaining
+  Harbor's final scrub, and preserving per-trial monitoring and persistence.
+- This replaces the interim end-of-run-only simplification. The exact revision,
+  tests, removal condition, and publication limits are recorded above.
+
+### 2026-09-11 — Local parent storage PR
+
+- Approved implementing and preparing one pull request for the local-parent
+  storage change, including commits and branch push after privacy review.
+
+### 2026-09-11 — Local parent storage
+
+- Approved local implementation, tests, documentation, and the authorization
+  commit for local Harbor execution with per-trial and final Bucket uploads.
+- Accepted the risks and limits recorded in the current authorization above.
 
 ### 2026-08-17
 
@@ -2004,3 +2124,48 @@ Approved at: 2026-09-11T13:08:50Z
 - Preserve durable partial outputs and verify a real pause and resume before the
   full run. Stop for a shared deterministic defect, lost durable state, duplicate
   execution, provenance or backend mismatch, or possible cumulative overspend.
+
+### Workbench cancellation CI test amendment (2026-09-11)
+
+Status: approved
+
+- The user directly approved adding the proposed explicit five-second polling
+  timeout to the local Workbench cancellation test on the current branch and
+  committing it with a relevant message.
+- Scope is the test-only timing fix and offline validation. Preserve unrelated
+  working changes. No push, pull request, merge, deployment, paid compute,
+  credential movement, or live run mutation is authorized by this amendment.
+
+### Consolidated Run detail refresh feedback (2026-09-11)
+
+Status: approved
+
+- The user requested a small top-of-page refresh status area to prevent scattered
+  loading and refreshing labels from causing layout movement, with refresh age
+  or timing feedback.
+- Implement and validate this local UI-only change using existing query state.
+  Preserve polling frequency, Harbor evidence freshness, errors and retry access.
+  Preserve unrelated work. No push, deployment, paid compute, live run mutation,
+  credential transfer, or backend behavior change is included.
+
+### Workbench recorded provider display (2026-09-11)
+
+Status: approved
+
+- The user requested investigation and correction of the Runs list showing an
+  unspecified provider for Workbench runs with a specified recorded provider.
+- Use the existing immutable submission provider for Workbench display when
+  explicitly supplied. Preserve native per-agent configuration, non-Workbench
+  display behavior, execution routing, and unspecified values when not recorded.
+- This is local UI and offline test work only. Preserve unrelated edits. No push,
+  deployment, live run mutation, paid compute, or credential transfer is included.
+
+### Fast-agent Workbench starter version update (2026-09-11)
+
+Status: approved
+
+- The user requested changing the fast-agent Workbench recipe pin to 0.10.24.
+- Update the existing UI and control-core starter definitions and matching tests.
+  Preserve saved/custom recipes, immutable runs, and unrelated working changes.
+- Local source changes and offline validation only. No publication, deployment,
+  live setup or benchmark launch, paid compute, or credential movement is included.

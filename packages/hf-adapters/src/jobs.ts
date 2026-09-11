@@ -28,7 +28,7 @@ export interface HuggingFaceJobsOptions extends ReadOnlyHuggingFaceJobsOptions {
   bucketId: string;
   parentImage: string;
   hardware?: SpaceHardwareFlavor;
-  mountRoot?: string;
+  localRoot?: string;
   timeoutSeconds?: number;
 }
 
@@ -54,7 +54,7 @@ export class ReadOnlyHuggingFaceJobs implements JobsPort {
 
 export class HuggingFaceJobs implements JobsPort {
   private readonly hardware: SpaceHardwareFlavor;
-  private readonly mountRoot: string;
+  private readonly localRoot: string;
   private readonly timeoutSeconds: number;
 
   constructor(private readonly options: HuggingFaceJobsOptions) {
@@ -62,7 +62,7 @@ export class HuggingFaceJobs implements JobsPort {
       throw new Error("parent image must use an immutable sha256 digest");
     this.options = Object.freeze({ ...options });
     this.hardware = options.hardware ?? "cpu-basic";
-    this.mountRoot = options.mountRoot ?? "/data";
+    this.localRoot = options.localRoot ?? "/data";
     this.timeoutSeconds = options.timeoutSeconds ?? 86_400;
   }
 
@@ -120,7 +120,8 @@ export class HuggingFaceJobs implements JobsPort {
       command: ["python", "-m", "harbor_hf_agents.parent_worker"],
       environment: {
         HARBOR_HF_RUN_ID: runId,
-        HARBOR_HF_MOUNT_ROOT: this.mountRoot,
+        HARBOR_HF_LOCAL_ROOT: this.localRoot,
+        HARBOR_HF_BUCKET_ID: this.options.bucketId,
         HARBOR_HF_NAMESPACE: this.options.namespace,
         ...isolatedGitSourceEnvironment(),
       },
@@ -133,13 +134,6 @@ export class HuggingFaceJobs implements JobsPort {
       timeoutSeconds: this.timeoutSeconds,
       attempts: 1,
       labels: { [ROLE_LABEL]: "parent", [RUN_LABEL]: runId },
-      volumes: [
-        {
-          source: { type: "bucket", name: this.options.bucketId },
-          mountPath: this.mountRoot,
-          readOnly: false,
-        },
-      ],
     });
     const result = observation(value);
     if (!result) throw new Error("created parent Job has invalid metadata");

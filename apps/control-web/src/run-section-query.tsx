@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useContext } from "react";
+import { ConsolidatedRunRefresh } from "./run-refresh-status";
 import { QueryContent } from "./ui";
 
 /** Fetch feedback is separate from the freshness of Harbor evidence. */
@@ -17,7 +18,9 @@ export function RunSectionQuery({
   };
   children?: ReactNode;
 }) {
+  const consolidated = useContext(ConsolidatedRunRefresh);
   const hasData = query.data !== undefined;
+  if (consolidated) return hasData ? children : null;
   return (
     <>
       {/* Reserve feedback space so background requests never move cached evidence. */}
