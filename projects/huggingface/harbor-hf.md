@@ -1739,3 +1739,21 @@ Focused publication validation:
 - PR notes explicitly retain the unavailable baseline/mutation checks,
   repository-wide supplemental coverage gaps, independent dashboard requests,
   mount-local display slots, periodic reconciliation and partial cost semantics.
+
+### Workbench simplification on the current branch
+
+Approved at: 2026-09-11T09:07:55.466762+00:00
+
+- The user approved local archive-persistence investigation, Workbench starter
+  and connection-choice simplification, simpler secret-binding UX without a
+  separate reauthorization screen, and two visual review passes on this branch.
+- Consolidate explicit binding consent into a normal save/use action while
+  retaining server-side source/destination, operator, recipe/model/image checks,
+  stale-response protection, and the separation of control and inference secrets.
+  Do not silently authorize credential delivery on render or background refresh.
+- Preserve existing saved recipes, archive semantics, native Harbor ownership,
+  and unrelated branch changes. Add tests and use local mocked browser previews.
+- Work only in the existing checkout and current branch. Local implementation,
+  validation and commits are approved; no new worktree, branch, push, PR update,
+  deployment, live secret/approval mutation, paid run or infrastructure change
+  is authorized by this amendment.
