@@ -1975,3 +1975,32 @@ Approved at: 2026-09-11T12:45:55Z
 - Repeated scans are confirmed in the deployed reconciliation implementation;
   attribution of the additional slow-starting run remains unmeasured. Do not
   present synthetic operation-count improvements as a measured production SLA.
+
+### Private structured benchmark run amendment (2026-09-11)
+
+Status: approved
+
+Approved at: 2026-09-11T13:08:50Z
+
+- The user directly approved a cumulative maximum of USD 200 for the already
+  requested private structured benchmark campaign. This is an outer maximum,
+  not a spending target.
+- First finish the existing one-task source healthcheck. Then run one fresh
+  three-task pause-resume canary. Start one 89-task full run only after both
+  checks preserve durable Harbor results without credential, source, runtime,
+  backend, or resume defects.
+- Use the reviewed Pi 0.84.4 agent, approved DeepSeek Flash route, private pinned
+  Dataset source, immutable runtime and parent images, CPU Basic trial hardware,
+  CPU Upgrade parent hardware, one attempt per task, no automatic retries, and
+  at most eight concurrent trials. Do not change these inputs during recovery.
+- The service-required USD 100 campaign ceiling is allowed for each logical run.
+  Immutable per-task output-token limits keep the full run's maximum model cost
+  below USD 69.10. Count all related observed cost and unsettled exposure against
+  the cumulative USD 200 approval.
+- Use the existing private control Space, Bucket, Dataset, and configured
+  credentials in place. Do not create a resource, edit Dataset content, move a
+  credential, change permissions, publish private evidence, or launch unrelated
+  work. Do not repeat a logical submission after an uncertain response.
+- Preserve durable partial outputs and verify a real pause and resume before the
+  full run. Stop for a shared deterministic defect, lost durable state, duplicate
+  execution, provenance or backend mismatch, or possible cumulative overspend.
