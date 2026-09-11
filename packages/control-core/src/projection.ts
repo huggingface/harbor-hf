@@ -272,18 +272,27 @@ export class Projection {
     return new Projection(database);
   }
 
-  async rebuild(store: ObjectStore, jobs: readonly JobObservation[]): Promise<void> {
+  async rebuild(
+    store: ObjectStore,
+    jobs: readonly JobObservation[],
+    runIdScope?: string,
+  ): Promise<void> {
+    if (runIdScope !== undefined && !/^run-[0-9a-f]{24}$/.test(runIdScope))
+      throw new Error("invalid projection run scope");
     // Capture before any reads, including the asynchronous listing. This orders
     // disposable cache writes, independently of durable presentation revisions.
     const rebuildStart = this.presentationGeneration;
     const pricingEpoch = this.pricing.generation;
     const observedAt = new Date().toISOString();
-    const entries = await store.list("runs");
+    const entries = await store.list(runIdScope ? `runs/${runIdScope}/` : "runs");
     const keys = new Set(entries.map((entry) => entry.key));
     const runIds = [...keys]
       .filter((key) => /^runs\/run-[0-9a-f]{24}\/run\.json$/.test(key))
       .map((key) => key.split("/")[1])
-      .filter((value): value is string => Boolean(value))
+      .filter(
+        (value): value is string =>
+          Boolean(value) && (!runIdScope || value === runIdScope),
+      )
       .sort();
     const rows: Array<{
       view: RunView;
@@ -373,8 +382,10 @@ export class Projection {
       // Rebuilds can overlap. Retain cache writes committed since this read epoch,
       // including equal-revision availability changes and null presentations.
       const cached = this.database
-        .prepare("SELECT run_id, presentation_body, presentation_available FROM runs")
-        .all() as Array<{
+        .prepare(
+          `SELECT run_id, presentation_body, presentation_available FROM runs${runIdScope ? " WHERE run_id = ?" : ""}`,
+        )
+        .all(...(runIdScope ? [runIdScope] : [])) as Array<{
         run_id: string;
         presentation_body: string | null;
         presentation_available: number;
@@ -410,9 +421,17 @@ export class Projection {
           }),
         ]),
       );
-      this.database.exec(
-        "DELETE FROM trials; DELETE FROM parent_jobs; DELETE FROM runs;",
-      );
+      if (runIdScope) {
+        // A locked reconciliation refresh must not erase concurrently created runs.
+        for (const table of ["trials", "parent_jobs", "runs"])
+          this.database
+            .prepare(`DELETE FROM ${table} WHERE run_id = ?`)
+            .run(runIdScope);
+      } else {
+        this.database.exec(
+          "DELETE FROM trials; DELETE FROM parent_jobs; DELETE FROM runs;",
+        );
+      }
       const insertRun = this.database.prepare(
         "INSERT INTO runs (run_id, created_at, record_body, state_body, status, result_body, agent_timing_body, presentation_body, presentation_available) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       );
@@ -447,7 +466,9 @@ export class Projection {
             JSON.stringify(trial.result),
           );
       }
-      for (const job of jobs.filter((item) => item.role === "parent"))
+      for (const job of jobs.filter(
+        (item) => item.role === "parent" && (!runIdScope || item.run_id === runIdScope),
+      ))
         insertJob.run(
           job.id,
           job.run_id,
@@ -461,8 +482,11 @@ export class Projection {
     // validated snapshot fences older overlapping reads (valid or failed).
     for (const { view } of rows) this.notePresentationMutation(view.record.run_id);
     for (const { view } of rows) this.pricing.committed(view.record.run_id);
-    this.observations = structuredClone(jobs);
-    this.observationsAt = observedAt;
+    // Only a full rebuild advances the globally published observation snapshot.
+    if (!runIdScope) {
+      this.observations = structuredClone(jobs);
+      this.observationsAt = observedAt;
+    }
   }
 
   markPresentationUnavailable(runId: string): void {

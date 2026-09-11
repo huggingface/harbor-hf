@@ -1507,7 +1507,7 @@ describe("reconciliation", () => {
     const originalList = store.list.bind(store);
     let runListings = 0;
     store.list = async (prefix) => {
-      if (prefix === "runs" && ++runListings === 2)
+      if (prefix === `runs/${run.run_id}/` && ++runListings === 1)
         await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
           schema_version: "v1",
           attempt_id: attemptId,
@@ -1519,7 +1519,7 @@ describe("reconciliation", () => {
 
     await service.reconcile();
 
-    expect(runListings).toBeGreaterThanOrEqual(2);
+    expect(runListings).toBe(1);
     expect(jobs.starts).toBe(0);
     expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
   });

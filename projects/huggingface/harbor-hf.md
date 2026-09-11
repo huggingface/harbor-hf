@@ -1811,7 +1811,7 @@ Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
 
 ### Queued-run reconciliation performance investigation
 
-Status: approved
+Status: completed
 
 Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
 
@@ -1828,3 +1828,32 @@ Approved at: 2026-09-10T00:00:00Z (date-only approval recorded at UTC midnight)
 - Keep Harbor execution and native trial identity unchanged. Check pinned Harbor
   source and upstream history before designing any execution-adjacent change.
   Keep private operational timings and identifiers out of public fixtures/logs.
+
+Local implementation completed (2026-09-10):
+
+- Confirmed repeated global projection rebuilds and Jobs listings in the deployed
+  reconciliation loop. Read-only observations support a performance bottleneck;
+  exact phase dominance inside the live service remains unmeasured.
+- Added scoped per-run projection replacement under the existing run lock.
+  Full opening/closing rebuilds remain; global observation timestamps advance
+  only with a full rebuild. Preserve unrelated projection rows and metadata.
+- Inactive histories with no live Jobs in the complete snapshot can authorize
+  only inaction after a locked state-revision recheck. Mutation paths retain
+  complete fresh Jobs listings, recorded-parent inspection, capacity checks,
+  fresh costs/results and parent-first cleanup. Late Jobs may wait until a later
+  successful pass; provider failures impose no guaranteed wall-clock bound.
+- Synthetic regressions establish linear projection I/O and three complete Jobs
+  listings for inactive history plus one queued run, independent of history size.
+  Active runs retain per-run listings. No synthetic latency is a production SLA.
+- Passed 1,445 unit tests, 71 browser tests, 235 worker tests, both amd64 Docker
+  builds, formatting/lint/types, generated contracts, dependency audit, privacy,
+  normal Slophammer and DRY checks. Both changed source files exceed 85% across
+  coverage metrics; repository-wide supplemental coverage still misses the
+  unchanged threshold. Baseline data and the mutation script are unavailable;
+  manually restoring the projection regression fails the performance tests.
+- Reviewed Harbor at `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` and history through
+  `e1be9bd3`, including `src/harbor/job.py`, `src/harbor/models/job/config.py`,
+  `src/harbor/models/job/result.py`, and `src/harbor/environments/hf_sandbox.py`.
+  No Harbor execution, configuration contract, pin, or internal imports changed.
+- Independent complete-diff safety/privacy review found no blockers. Local work
+  only: no run mutation, deployment, push, credential movement or new resource.
