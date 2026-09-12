@@ -1,4 +1,258 @@
 export interface paths {
+    "/api/v1/runs/{run_id}/replacements/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReplacementInput"];
+                };
+            };
+            responses: {
+                /** @description Reviewed selection and budget */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LaunchValidation"];
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/replacements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Ephemeral native assembly and reported attempt cost coverage (not infrastructure billing) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReplacementView"];
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReplacementSubmission"];
+                };
+            };
+            responses: {
+                /** @description Exact retry */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SubmissionResult"];
+                    };
+                };
+                /** @description Replacement submitted */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SubmissionResult"];
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/inference-bindings/{ref}/review": {
         parameters: {
             query?: never;
@@ -2006,7 +2260,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List trials for one run */
+        /** List native trial identities for one run */
         get: {
             parameters: {
                 query?: never;
@@ -2018,13 +2272,15 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Success */
+                /** @description Native result.id and exception type for operator selection */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": Record<string, unknown>;
+                        "application/json": {
+                            trials: components["schemas"]["TrialIdentity"][];
+                        };
                     };
                 };
                 /** @description Request error */
@@ -2314,6 +2570,12 @@ export interface components {
             };
             pricing?: components["schemas"]["LaunchPricing"];
             harbor_job_config: Record<string, unknown>;
+            operator_selection?: {
+                original_run_id: string;
+                trial_ids: string[];
+                /** @description Native source evidence fingerprint (sha256-prefixed), not the public budget-bound review hash. */
+                source_fingerprint: string;
+            };
         } & unknown;
         /** RunRecordSlug */
         RunRecord_slug: string;
@@ -2580,6 +2842,87 @@ export interface components {
         ModelProvidersResponse: {
             model: string;
             providers: string[];
+        };
+        TrialIdentity: {
+            run_id: string;
+            trial_name: string;
+            reward: number | null;
+            cost_usd: number | null;
+            /** @enum {string} */
+            status: "completed" | "error" | "cancelled";
+            result: {
+                id: string | null;
+                exception_info: {
+                    exception_type: string | null;
+                } | null;
+                config: {
+                    agent: {
+                        name: string | null;
+                        import_path: string | null;
+                        model_name: string | null;
+                    };
+                };
+                agent_info: {
+                    version: string | null;
+                };
+            };
+        };
+        ReplacementInput: {
+            trial_ids: string[];
+            cost_ceiling_usd: number;
+        };
+        ReplacementSubmission: {
+            trial_ids: string[];
+            cost_ceiling_usd: number;
+            fingerprint: string;
+        };
+        ReplacementView: {
+            run_id: string;
+            operator_selection: {
+                original_run_id: string;
+                trial_ids: string[];
+                source_fingerprint: string;
+            } | null;
+            children: {
+                run_id: string;
+                status: ("queued" | "running" | "paused" | "cancelled" | "finished" | "cost_stopped") | null;
+                operator_selection: {
+                    original_run_id: string;
+                    trial_ids: string[];
+                    source_fingerprint: string;
+                };
+            }[];
+            assembly: {
+                /** @enum {string} */
+                availability: "none" | "pending" | "available" | "unavailable";
+                result: {
+                    [key: string]: unknown;
+                } | null;
+            };
+            incurred: {
+                cost_usd: number | null;
+                reported_attempts: number;
+                unknown_attempts: number;
+                total_attempts: number;
+            } | null;
+            selected_cost_usd: number | null;
+        };
+        LaunchValidation: {
+            harbor_revision: string;
+            tasks: number;
+            agents: number;
+            trials: number;
+            warnings: string[];
+            not_performed: string[];
+            effective_config: {
+                [key: string]: unknown;
+            };
+            fingerprint: string;
+            credentials_available: boolean;
+        };
+        SubmissionResult: {
+            created: boolean;
+            run: components["schemas"]["RunRecord"];
         };
     };
     responses: never;

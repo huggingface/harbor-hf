@@ -1,0 +1,9 @@
+{
+  "single": {
+    "mean": 0.5
+  },
+  "multi_reward": {
+    "accuracy": 0.1,
+    "mean": 0.9
+  }
+}

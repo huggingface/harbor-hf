@@ -344,7 +344,12 @@ async def run_parent() -> None:
     if record.get("harbor_revision") != REVISION:
         raise ValueError("Run Harbor revision does not match the parent image")
     config = job_config(record, local_root, run_id)
-    check_sources(config)
+    if "operator_selection" in record:
+        from harbor_hf_agents.replacement_preflight import preflight
+
+        await preflight(artifacts, record, config)
+    else:
+        check_sources(config)
     with scrub_before_upload() as scrub:
         job = await Job.create(config)
         await _run_local_job(job, record, config, artifacts)

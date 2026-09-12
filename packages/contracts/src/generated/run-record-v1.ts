@@ -42,6 +42,17 @@ pricing?: LaunchPricingV1
 harbor_job_config: {
 [k: string]: unknown
 }
+operator_selection?: {
+original_run_id: string
+/**
+ * @minItems 1
+ */
+trial_ids: [string, ...(string)[]]
+/**
+ * Native source evidence fingerprint (sha256-prefixed), not the public budget-bound review hash.
+ */
+source_fingerprint: string
+}
 })
 export type RunRecordSlug = string
 

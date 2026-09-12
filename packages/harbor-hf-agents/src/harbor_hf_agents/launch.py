@@ -318,6 +318,13 @@ async def inspect(
     private_datasets = check_sources(config)
     check_agents(config, catalog(root), approved)
     await check_metrics(config)
+    return await inspect_plan(config, private_datasets)
+
+
+async def inspect_plan(
+    config: JobConfig, private_datasets: PrivateDatasetSources
+) -> dict[str, object]:
+    """Inspect native planning after source, metric and agent admission."""
     tasks = await JobPlan.resolve_task_configs(config)
     for task_config in tasks:
         check_task(task_config, private_datasets)
@@ -337,10 +344,14 @@ async def inspect(
         task = Task(download.path, disable_verification=config.verifier.disable)
         if not task.config.environment.docker_image:
             raise ValueError("Every HF Sandbox task requires a prebuilt Docker image")
+    return inspection_fields(plan)
+
+
+def inspection_fields(plan: JobPlan) -> dict[str, object]:
     return {
         "harbor_revision": REVISION,
         "tasks": len(plan.task_configs),
-        "agents": len(config.agents),
+        "agents": len(plan.config.agents),
         "trials": len(plan.trial_configs),
         "warnings": [
             "Post-trial cost stops do not cap in-flight inference "
@@ -381,7 +392,10 @@ def failure_response(exc: Exception) -> dict[str, object]:
 def main() -> None:
     try:
         check_revision()
-        request = record(json.loads(sys.stdin.read(1_048_577)))
+        payload = sys.stdin.buffer.read(32 * 1024 * 1024 + 1)
+        if len(payload) > 32 * 1024 * 1024:
+            raise ValueError("Launch request exceeds 32 MiB")
+        request = record(json.loads(payload))
         root = Path(sys.argv[1])
         # Keep native progress messages out of the machine-readable response.
         with contextlib.redirect_stdout(sys.stderr):
@@ -395,6 +409,18 @@ def main() -> None:
                         cast(list[object], request.get("approved_sources", [])),
                     )
                 )
+            elif request.get("operation") in {
+                "replacement_review",
+                "replacement_aggregate",
+            }:
+                from harbor_hf_agents import replacements
+
+                operation = (
+                    replacements.review
+                    if request["operation"] == "replacement_review"
+                    else replacements.aggregate
+                )
+                result = asyncio.run(operation(request, root))
             else:
                 raise ValueError("Unknown launch inspection operation")
         print(json.dumps(result))

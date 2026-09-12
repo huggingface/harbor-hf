@@ -1,3 +1,13 @@
+import { Replacements } from "./replacements.js";
+import {
+  ReplacementEvidence,
+  ReplacementError,
+  replacementInput,
+  reviewFingerprint,
+  type ReplacementInput,
+  type ReplacementNativePort,
+  type SourceBundle,
+} from "./replacement-evidence.js";
 import {
   InferenceBindingDenied,
   InferenceBindings,
@@ -13,6 +23,7 @@ import {
   runStatePath,
   runPresentationPath,
   validateRunPresentation,
+  validateAttemptCost,
   validateRunRecord,
   validateRunState,
 } from "@harbor-hf/contracts";
@@ -25,7 +36,12 @@ import {
   type PresetSubmission,
 } from "./presets.js";
 import { isLiveJob, type JobObservation, type JobsPort } from "./jobs.js";
-import type { Projection } from "./projection.js";
+import {
+  authoritativeAttemptCosts,
+  statusFor,
+  summarizeTrial,
+  type Projection,
+} from "./projection.js";
 import { createJson, type ObjectStore, putJson, readJson } from "./store.js";
 
 export interface InferenceExecution {
@@ -38,6 +54,7 @@ export interface InferenceExecution {
 }
 
 export interface ControlServiceOptions {
+  replacements?: ReplacementNativePort;
   inference?: InferenceExecution;
   harborRevision: string;
   mountRoot: string;
@@ -101,6 +118,7 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
       submission: left.submission,
       workbench_recipe: left.workbench_recipe,
       pricing: left.pricing,
+      operator_selection: left.operator_selection,
       harbor_job_config: left.harbor_job_config,
     }) ===
     canonicalJson({
@@ -110,6 +128,7 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
       submission: right.submission,
       workbench_recipe: right.workbench_recipe,
       pricing: right.pricing,
+      operator_selection: right.operator_selection,
       harbor_job_config: right.harbor_job_config,
     })
   );
@@ -153,6 +172,16 @@ export class ControlService {
     return this.withRunLock(id, () =>
       correctPricing(this.store, this.projection, id, body, actor),
     );
+  }
+  private replacementViews: Replacements | undefined;
+  replacements(id: string) {
+    this.replacementViews ??= new Replacements(
+      this.store,
+      this.projection,
+      this.replacementNative(),
+      (source) => this.completedSource(source),
+    );
+    return this.replacementViews.view(id);
   }
   private readonly runOperations = new Map<string, Promise<void>>();
 
@@ -219,6 +248,166 @@ export class ControlService {
       harbor_job_config: jobConfig,
     });
     return this.persistSubmission(record);
+  }
+
+  private replacementNative(): ReplacementNativePort {
+    if (!this.options.replacements)
+      throw new ReplacementError(503, "Native replacement inspection is unavailable");
+    return this.options.replacements;
+  }
+
+  private async completedSource(source: SourceBundle): Promise<void> {
+    const id = source.record.run_id;
+    const reader = new ReplacementEvidence(this.store);
+    const state = validateRunState(await reader.read(runStatePath(id)));
+    const jobs = await this.verifyRecordedParents(id, state, await this.jobs.list());
+    const prefix = `runs/${id}/attempt-costs/`;
+    const { files } = await this.store.listDirectory(prefix);
+    const receipts = [];
+    for (const file of files.filter((file) => file.key.endsWith(".json"))) {
+      const receipt = validateAttemptCost(await reader.read(file.key));
+      if (file.key !== `${prefix}${receipt.attempt_id}.json`)
+        throw new ReplacementError(409, "Attempt receipt identity mismatch");
+      receipts.push(receipt);
+    }
+    const trials = source.trials.map((trial) => summarizeTrial(id, "", trial));
+    const status = statusFor(
+      source.record,
+      state,
+      source.result,
+      trials,
+      jobs.filter((job) => job.run_id === id),
+      authoritativeAttemptCosts(receipts, trials),
+    );
+    if (
+      state.run_id !== id ||
+      status !== "finished" ||
+      jobs.some((job) => job.run_id === id && isLiveJob(job))
+    )
+      throw new ReplacementError(
+        409,
+        "Replacement source must be complete with no live owned Jobs",
+      );
+  }
+
+  private async inspectReplacement(
+    id: string,
+    input: ReplacementInput,
+    target: string,
+    actor: string,
+  ) {
+    const evidence = new ReplacementEvidence(this.store);
+    const original = await evidence.bundle(id);
+    await this.completedSource(original);
+    const original_ancestors = await evidence.ancestors(original);
+    const inspected = await this.replacementNative().replacementReview({
+      original,
+      original_ancestors,
+      trial_ids: input.trial_ids,
+      run_id: target,
+      local_root: this.options.mountRoot,
+    });
+    if (inspected.harbor_revision !== this.options.harborRevision)
+      throw new ReplacementError(503, "Native replacement revision mismatch");
+    await this.selectedInference(inspected.effective_config, actor);
+    return { original, inspected };
+  }
+
+  async validateReplacement(id: string, request: ReplacementInput, actor: string) {
+    const input = replacementInput(request);
+    return this.withRunLock(id, async () => {
+      const { inspected } = await this.inspectReplacement(
+        id,
+        input,
+        "run-000000000000000000000000",
+        actor,
+      );
+      return {
+        ...inspected,
+        fingerprint: reviewFingerprint(inspected.fingerprint, input),
+      };
+    });
+  }
+
+  async submitReplacement(
+    id: string,
+    request: ReplacementInput & { fingerprint: string },
+    key: string,
+    actor: string,
+  ): Promise<SubmissionResult> {
+    const input = replacementInput(request);
+    const target = runId(key);
+    if (target === id)
+      throw new ReplacementError(409, "Replacement must have a distinct run identity");
+    return this.withRunLock(id, async () => {
+      // Exact retries repair missing state through the ordinary persistence path,
+      // before overlap or changed source/liveness checks.
+      const previous = await readIfPresent(this.store, runRecordPath(target));
+      if (previous) {
+        const record = validateRunRecord(previous);
+        const selected = record.operator_selection;
+        if (
+          record.submitted_by !== actor ||
+          selected?.original_run_id !== id ||
+          canonicalJson(selected.trial_ids) !== canonicalJson(input.trial_ids) ||
+          record.submission.cost_ceiling_usd !== input.cost_ceiling_usd ||
+          reviewFingerprint(selected.source_fingerprint, input) !== request.fingerprint
+        )
+          throw new ReplacementError(
+            409,
+            "Idempotency key already identifies a different request",
+          );
+        return this.persistSubmission(record);
+      }
+      const { original, inspected } = await this.inspectReplacement(
+        id,
+        input,
+        target,
+        actor,
+      );
+      if (!inspected.credentials_available)
+        throw new ReplacementError(503, "Inference credentials are unavailable");
+      if (reviewFingerprint(inspected.fingerprint, input) !== request.fingerprint)
+        throw new ReplacementError(
+          409,
+          "Source selection or budget changed; review again",
+        );
+      const records = await new ReplacementEvidence(this.store).records();
+      if (
+        records.some(
+          (record) =>
+            record.operator_selection?.original_run_id === id &&
+            record.operator_selection.trial_ids.some((trial) =>
+              input.trial_ids.includes(trial),
+            ),
+        )
+      )
+        throw new ReplacementError(
+          409,
+          "Native trial selection already has a replacement",
+        );
+      const { cost_ceiling_usd_per_trial: _legacy, ...submission } =
+        original.record.submission;
+      const record = validateRunRecord({
+        schema_version: "v1",
+        run_id: target,
+        created_at: new Date().toISOString(),
+        submitted_by: actor,
+        role: original.record.role,
+        harbor_revision: inspected.harbor_revision,
+        submission: { ...submission, cost_ceiling_usd: input.cost_ceiling_usd },
+        ...(original.record.workbench_recipe
+          ? { workbench_recipe: original.record.workbench_recipe }
+          : {}),
+        operator_selection: {
+          original_run_id: id,
+          trial_ids: input.trial_ids,
+          source_fingerprint: inspected.fingerprint,
+        },
+        harbor_job_config: inspected.effective_config,
+      });
+      return this.persistSubmission(record);
+    });
   }
 
   async compileWorkbench(

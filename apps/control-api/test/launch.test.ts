@@ -341,10 +341,105 @@ describe("bounded native inspector", () => {
   });
   it("kills an inspector that exceeds the response limit", async () => {
     const config = await fixture(
-      'process.stdout.write("x".repeat(2 * 1024 * 1024)); setInterval(() => {}, 1000);',
+      'process.stdout.write("x".repeat(34 * 1024 * 1024)); setInterval(() => {}, 1000);',
     );
     await expect(new NativeLaunch(config).catalog()).rejects.toThrow(
       "exceeded its limit",
     );
+  });
+});
+
+describe("replacement native transport", () => {
+  const original = {
+    record: {} as never,
+    config: {},
+    lock: {},
+    result: {},
+    trials: [],
+  };
+  const request = {
+    original,
+    original_ancestors: [],
+    trial_ids: ["11111111-1111-4111-8111-111111111111"],
+    run_id: "run-000000000000000000000000",
+    local_root: "/data",
+  };
+  it("reviews admitted native components without any direct provider lookup", async () => {
+    vi.mocked(lookupHuggingFaceModelProviders).mockClear();
+    vi.mocked(lookupHuggingFaceHardware).mockClear();
+    const config = await fixture(`
+      let data = ''; process.stdin.on('data', c => data += c);
+      process.stdin.on('end', () => {
+        const request = JSON.parse(data);
+        if (request.operation !== 'replacement_review' || request.local_root !== '/data' || !Array.isArray(request.original_ancestors)) process.exit(9);
+        console.log(JSON.stringify({ ...${JSON.stringify(inspection)}, effective_config: { tasks: [], agents: [{ import_path: 'example:Agent' }] }, fingerprint: 'sha256:${"a".repeat(64)}' }));
+      });`);
+    const result = await new NativeLaunch(config).replacementReview(request);
+    expect(result.effective_config.agents).toEqual([{ import_path: "example:Agent" }]);
+    expect(lookupHuggingFaceModelProviders).not.toHaveBeenCalled();
+    expect(lookupHuggingFaceHardware).not.toHaveBeenCalled();
+  });
+  it("supports multi-megabyte source evidence and native full JobResults through the same busy gate", async () => {
+    const config = await fixture(
+      `let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => console.log(JSON.stringify({ result: { trial_results: [], padding: 'x'.repeat(5 * 1024 * 1024), received: JSON.parse(data).original.result.padding.length } })));`,
+    );
+    const launch = new NativeLaunch(config);
+    const pending = launch.replacementAggregate({
+      original: { ...original, result: { padding: "x".repeat(5 * 1024 * 1024) } },
+      original_ancestors: [],
+      parts: [],
+    });
+    await expect(launch.catalog()).rejects.toMatchObject({ status: 503 });
+    expect((await pending).result.received).toBe(5 * 1024 * 1024);
+  });
+  it("rejects oversized stdin before spawning", async () => {
+    const config = await fixture("process.exit(99)");
+    await expect(
+      new NativeLaunch(config).replacementAggregate({
+        original: { ...original, result: { padding: "x".repeat(33 * 1024 * 1024) } },
+        original_ancestors: [],
+        parts: [],
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+  it("checks native replacement response contracts and revision", async () => {
+    for (const output of [
+      {
+        ...inspection,
+        harbor_revision: "wrong",
+        effective_config: {},
+        fingerprint: `sha256:${"a".repeat(64)}`,
+      },
+      { ...inspection, effective_config: {}, fingerprint: "a".repeat(64) },
+      { result: null },
+    ]) {
+      const config = await fixture(
+        `process.stdin.resume(); process.stdin.on('end', () => console.log(${JSON.stringify(JSON.stringify(output))}));`,
+      );
+      const launch = new NativeLaunch(config);
+      await expect(launch.replacementReview(request)).rejects.toMatchObject({
+        status: 503,
+      });
+      await expect(
+        launch.replacementAggregate({ original, original_ancestors: [], parts: [] }),
+      ).rejects.toMatchObject({ status: 503 });
+    }
+  });
+  it("uses only configured control authority for source inspection, never ambient inference secrets", async () => {
+    vi.stubEnv("HF_INFERENCE_TOKEN", "ambient-inference-test-only");
+    vi.stubEnv("GITHUB_TOKEN", "ambient-git-test-only");
+    const config = await fixture(`
+      process.stdin.resume(); process.stdin.on('end', () => {
+        if (process.env.HF_TOKEN !== 'control-test-only' || process.env.HF_INFERENCE_TOKEN || process.env.GITHUB_TOKEN) process.exit(9);
+        console.log(JSON.stringify({ result: {} }));
+      });`);
+    config.hf_token = "control-test-only";
+    await expect(
+      new NativeLaunch(config).replacementAggregate({
+        original,
+        original_ancestors: [],
+        parts: [],
+      }),
+    ).resolves.toEqual({ result: {} });
   });
 });
