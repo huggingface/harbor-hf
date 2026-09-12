@@ -206,7 +206,6 @@ class Evidence:
             raise ValueError("Non-Cartesian native trial configuration")
         if (
             native(trial.task_id) != native(trial.config.task.get_task_id())
-            or trial.task_name != trial.task_id.get_name()
             or trial.source != trial.config.task.source
         ):
             raise ValueError("Native task identity mismatch")
@@ -244,8 +243,9 @@ class Evidence:
 
 def lock_matches(lock: TrialLock, trial: TrialResult) -> bool:
     task = trial.config.task
+    # Native locks name task IDs; result names may use Task.name metadata overrides.
     if (
-        lock.task.name != trial.task_name
+        lock.task.name != trial.task_id.get_name()
         or lock.task.source != trial.source
         or lock.task.path != task.path
         or lock.task.git_url != task.git_url
