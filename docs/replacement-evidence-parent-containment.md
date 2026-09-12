@@ -111,6 +111,38 @@ added. The parent reads existing desired intent but never writes controller stat
 The UI uses the existing paused state and control actor to explain the stop; the
 actor is explanatory only, never a launch or resume authorization input.
 
+## Follow-up validation gate closure
+
+The initial 501-test agent run passed tests but measured 76.87% whole-package
+coverage; the prescribed Slophammer baseline was also missing. Those historical
+failures remain recorded in the project authorization history, not waived.
+
+Offline test-only follow-up adds 97 cases for parent ownership rejection,
+immutable receipt replay/conflicts, atomic-write cleanup, nested controlled stops,
+DSH session parsing and native trajectory metrics, sandbox upload/install
+boundaries, and FX protocol/usage validation. External execution is mocked;
+parsers, native models, receipt filesystem operations and validation paths execute
+real product code. No production behavior, coverage omission, exclusion, threshold,
+provider admission rule or resource changes accompany these tests.
+
+Fresh whole-agent coverage is **87.33%** (598 tests; 2,304 statements, 292 missed).
+This is the package's statement-coverage measurement, not a branch-coverage claim.
+Root coverage remains **89.10%** with 102 tests. Root and agent Ruff, format and ty
+checks pass, as does the root dependency audit. Node formatting, lint, types,
+1,575 unit tests, build, generated checks and dependency audit pass; all 76 browser
+tests pass. Both Dockerfiles build locally for `linux/amd64` without publication.
+Existing native numeric transport and parent/controller regression tests remain in
+the passing suites. No live private replay or remote integration was repeated.
+
+The installed Slophammer CLI documents `check . --baseline-write` as its snapshot
+command. Its native baseline writer/reader were inspected. An ordinary check
+first reported zero findings across all 27 production files; the official writer
+then generated `slophammer-baseline.json` with version 1 and an empty findings
+array. It contains no paths or suppressed debt. Regeneration is byte-identical.
+`uv run slophammer-py check . --baseline` passes with zero baselined and zero new
+findings, and `uv run slophammer-py dry .` reports zero candidates. Do not grow the
+baseline to hide new findings.
+
 ## Release boundary
 
 This is local implementation and offline validation only. Independent review must

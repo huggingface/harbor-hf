@@ -73,6 +73,30 @@ Approved at: 2026-09-12T11:29:13.370662+00:00
   paid compute or new remote resource occurred. Release approval remains subject
   to independent review and fresh safety checks; it never authorizes run resume.
 
+#### Local validation follow-up — gate closure
+
+- Continued inside the approved offline tests/documentation scope after independent
+  code GO and release HOLD. Added 97 meaningful cases in three agent test files;
+  no production behavior, schema, persisted field, API/UI value, admission rule,
+  exclusion or threshold changed. Native ownership therefore remains unchanged.
+- Whole-agent coverage now passes at 87.33%: 598 tests, 2,304 statements and 292
+  missed. Root coverage is 89.10% with 102 passing tests. Root and agent Ruff,
+  format and ty checks pass; root dependency audit passes. Existing native numeric
+  transport and controller regressions remain passing. Existing native checksum
+  deprecation warnings remain; no new Ruff warnings were introduced.
+- Generated the previously absent baseline using the installed official
+  `uv run slophammer-py check . --baseline-write` after an ordinary zero-finding
+  check. The version-1 empty findings snapshot suppresses nothing, contains no
+  paths, and regenerates identically. Prescribed baseline and DRY checks pass.
+- Fresh Node formatting, lint, types, 1,575 unit tests, build, generated checks,
+  dependency audit and all 76 browser tests pass. Both Dockerfiles build locally
+  for linux/amd64. Full privacy and diff review precede the local commit.
+- Historical gate failures above are retained. Follow-up test/baseline changes
+  still require review before release; neither closing these gates nor the earlier
+  code GO authorizes automatic publication or deployment. No push, deployment,
+  inference, run control, remote integration, credential movement or new remote
+  resource occurred. The paused run was not touched.
+
 ### Replacement pause and read-only startup investigation
 
 Status: completed
