@@ -11,6 +11,28 @@ default_branch: main
 
 Status: approved
 
+### Run-recorded inference access review — local implementation
+
+Status: approved
+
+Approved at: 2026-09-12T08:58:50Z
+
+- The user directly requested implementation in the primary checkout and stated:
+  “yes -- it should just use the recipe that was used for the run, without
+  needing too much ceremony; it's already been approved for the main run”.
+- Implement a narrowly scoped run-page inference access review using the
+  immutable original native configuration and existing inference binding. Reuse
+  valid exact approvals; explicitly review the current worker image and exact
+  existing credential scope when renewed approval is necessary. Preserve all
+  policy, revision, actor, operator, CSRF and write-mode checks.
+- Local implementation, offline tests, documentation and commits only. Do not
+  create worktrees; preserve existing stashes, archives and other worktrees.
+- No publication, pull request, merge, deployment, live grant change, credential
+  transfer, remote execution, paid run or new resource is authorized. Report
+  readiness for separate publication approval. This is not blanket trust for
+  future images or actors, nor permission to broaden credential scope.
+- Earlier release scopes are completed, not renewed by this authorization.
+
 ### Native replacement evidence name correction (2026-09-12)
 
 Status: approved
@@ -38,6 +60,48 @@ Approved at: 2026-09-12T07:18:59Z
 - No replacement submission, benchmark controls, paid canary, inference or
   actual replacement execution is authorized. Offline source-evidence checks
   are permitted without persisting or rewriting benchmark artifacts.
+
+#### Recovered completion evidence — prior release
+
+- The prior release authorization is completed. The following completion record
+  is recovered additively from retained local Git history.
+
+#### Completion evidence — 2026-09-12T07:51:02.428718+00:00
+
+- PR #221 passed complete CI at exact reviewed head
+  `5f812c3863f8052be8106a60776ac41dff763785` and was squash-merged as
+  `cfa88dfa2cbc98de808fd208dc1f482b70c58657`. Merged-source CI also passed.
+- The existing publication workflow succeeded at that exact merged revision.
+  Registry verification matched its source tag and immutable image, with
+  `linux/amd64` platform:
+  `ghcr.io/huggingface/harbor-hf-trial-worker@sha256:2f101b6f6081b6fbdc07ac26e8882fc436b41aa14b21df3d4ce20840ecb68f07`.
+- Deployed the clean exact merged source to the existing private control Space
+  with writes disabled during staging. Verified the release manifest and hashes,
+  exact patched file bytes, matching Space/runtime revision, liveness/readiness,
+  authentication, presets, projection, console and read-only replacements view.
+  Both worker image settings match the verified immutable image.
+- Restored the prior enabled write mode after fresh eligibility checks. A further
+  30-second reconciliation wait preserved Job identities and observations, all
+  immutable run records and execution states, and the absence of active Jobs or
+  setup Jobs. Hardware, visibility, unrelated variables and credentials remained
+  unchanged. No replacement submission, benchmark controls, inference, new
+  resource or paid benchmark canary occurred.
+- Image staging briefly raced the automatic restart; read-only waiting and a
+  fresh complete gate passed without repeating the variable mutations. Final
+  runtime logs had no error candidates; the build-log candidate was a dependency
+  name, not a build failure.
+- Validation: root Ruff/format/ty and 102 tests at 89.10% coverage passed; agent
+  Ruff/format/ty and 481 tests passed. Replacement modules achieved 98.02%
+  coverage, each above 85%. Node 22.22.0 checks, 1,523 unit tests, 75 browser tests,
+  generated contracts, dependency audits and both linux/amd64 Docker builds
+  passed. Privacy, normal Slophammer and DRY checks passed.
+- Disclosures retained: the required Slophammer baseline file is absent, and
+  the pre-existing agent whole-package coverage gap remains. No threshold was
+  weakened. The browser startup probe stalled before the successful isolated
+  full-suite run; tests were unchanged. Native checksum deprecations and existing
+  lint warnings remain.
+- The original dirty workspace and prior completion history were preserved.
+  Actual replacement selection and paid execution still need separate approval.
 
 ### Infrastructure replacement workflow and combined release (2026-09-11)
 
@@ -2338,3 +2402,8 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 
 - The user directly approved the narrow correction and matched release above.
   Actual replacement selection and paid execution remain separately gated.
+
+### 2026-09-11 — Local run inference review approval
+
+- Direct approval recorded above; prior PR #221 release and local checkout
+  synchronization are completed. No earlier mutation scope carries forward.
