@@ -10,3 +10,6 @@ export * from "./workbench.js";
 export * from "./inference-bindings.js";
 
 export * from "./inference-source-registry.js";
+
+export * from "./replacement-evidence.js";
+export * from "./replacements.js";

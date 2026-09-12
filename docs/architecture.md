@@ -360,3 +360,24 @@ it receives trial log messages but is outside Harbor's trial-directory scrubber.
 Scrubbed per-trial logs remain available, and the existing dashboard reads native
 JSON observations rather than this global log. Final reconciliation removes any
 previous copy of that global log in the run's job subtree.
+
+## Original and replacement cohorts
+
+Infrastructure replacement is an operator-reviewed relationship between ordinary
+immutable runs, not a second trial scheduler. The optional run-record selection
+references exact original native trial IDs and their reviewed evidence fingerprint.
+Original artifacts and execution state remain authoritative and unchanged.
+
+Harbor expands the selected task configurations and owns new trial identities,
+execution and retries. Its public `JobPlan.aggregate` supplies assembled results.
+The approved revision-scoped bridge checks cross-run provenance and one-for-one
+coverage; it does not calculate metrics or rewrite identities. A bounded memory
+cache holds derived assembly views, with no additional SQLite table or Bucket
+result format. Selected-cohort cost and all-incurred reported attempt cost are
+distinct views of existing native evidence.
+
+The console distinguishes Original, Replacements and Combined. Leaderboard
+selection excludes constituent subsets and fails closed on incomplete or invalid
+assemblies. Native metrics that cannot unambiguously populate its scalar field
+remain available in the full combined view rather than being reduced locally.
+See [the replacement contract](2026-09-11-replacement-backend.md).

@@ -118,7 +118,9 @@ export async function createRuntime(
     randomUUID,
   );
   const admittedPolicy = () => inference.policy();
+  const launch = new NativeLaunch(config);
   const service = new ControlService(store, projection, presets, jobs, {
+    replacements: launch,
     inference: {
       policy: admittedPolicy,
       sequence: (operation) => inference.sequence(operation),
@@ -179,7 +181,7 @@ export async function createRuntime(
     reconciler,
     presets,
     workbench,
-    launch: new NativeLaunch(config),
+    launch,
     get ready() {
       return ready;
     },

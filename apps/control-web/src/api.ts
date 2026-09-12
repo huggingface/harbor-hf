@@ -209,9 +209,9 @@ export const getRuns = async (): Promise<RunView[]> =>
   (await api<{ runs: RunView[] }>("/api/v1/runs")).runs;
 export const getRun = (runId: string): Promise<RunView> =>
   api(`/api/v1/runs/${encodeURIComponent(runId)}`);
-export const getTrials = async (runId: string): Promise<TrialSummary[]> =>
+export const getTrials = async (runId: string): Promise<TrialIdentity[]> =>
   (
-    await api<{ trials: TrialSummary[] }>(
+    await api<{ trials: TrialIdentity[] }>(
       `/api/v1/runs/${encodeURIComponent(runId)}/trials`,
     )
   ).trials;
@@ -324,3 +324,30 @@ export const approveInferenceBinding = (
     `/api/v1/inference-bindings/${encodeURIComponent(ref)}/approve`,
     { method: "POST", body: JSON.stringify(input) },
   );
+
+export type TrialIdentity = components["schemas"]["TrialIdentity"];
+export type ReplacementInput = components["schemas"]["ReplacementInput"];
+export type ReplacementSubmission = components["schemas"]["ReplacementSubmission"];
+export type ReplacementView = components["schemas"]["ReplacementView"];
+export type LaunchValidation = components["schemas"]["LaunchValidation"];
+export type SubmissionResult = components["schemas"]["SubmissionResult"];
+
+const replacementPath = (runId: string) =>
+  `/api/v1/runs/${encodeURIComponent(runId)}/replacements`;
+export const getReplacements = (runId: string) =>
+  api<ReplacementView>(replacementPath(runId));
+export const validateReplacements = (runId: string, input: ReplacementInput) =>
+  api<LaunchValidation>(`${replacementPath(runId)}/validate`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+export const submitReplacements = (
+  runId: string,
+  input: ReplacementSubmission,
+  idempotencyKey: string,
+) =>
+  api<SubmissionResult>(replacementPath(runId), {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(input),
+  });

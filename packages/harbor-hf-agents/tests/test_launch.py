@@ -291,7 +291,10 @@ async def test_inspection_reports_native_counts_and_checks_not_performed(
         launch.JobPlan,
         "from_resolved",
         lambda *_args, **_kwargs: SimpleNamespace(
-            task_configs=[task], trial_configs=[1, 2], task_download_results=downloads
+            config=job,
+            task_configs=[task],
+            trial_configs=[1, 2],
+            task_download_results=downloads,
         ),
     )
     monkeypatch.setattr(

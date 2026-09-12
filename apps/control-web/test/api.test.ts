@@ -6,6 +6,10 @@ import {
   getLeaderboard,
   getModelProviders,
   getTrial,
+  getTrials,
+  getReplacements,
+  validateReplacements,
+  submitReplacements,
   getWorkbenchFile,
   submitRun,
   type WorkbenchRecipe,
@@ -165,4 +169,46 @@ describe("browser API transport", () => {
       "/api/v1/workbench/setup-tests/setup%2Fvalue/files/file%2Fvalue",
     );
   });
+});
+
+it("transports native replacement inputs and exact idempotent replay through normal CSRF API", async () => {
+  const runId = "run-0123456789abcdef01234567";
+  const input = {
+    trial_ids: ["00000000-0000-4000-8000-000000000001"],
+    cost_ceiling_usd: 4,
+  };
+  const body = { ...input, fingerprint: "a".repeat(64) };
+  const fetchMock = vi.fn(
+    async () =>
+      new Response(JSON.stringify({ trials: [], fingerprint: body.fingerprint }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API.
+  document.cookie = "hhf_csrf=synthetic-csrf";
+  expect(await getTrials(runId)).toEqual([]);
+  await getReplacements(runId);
+  await validateReplacements(runId, input);
+  await submitReplacements(runId, body, "synthetic-idempotency-key");
+  await submitReplacements(runId, body, "synthetic-idempotency-key");
+  expect(fetchMock.mock.calls).toHaveLength(5);
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    2,
+    `/api/v1/runs/${runId}/replacements`,
+    expect.objectContaining({ credentials: "same-origin" }),
+  );
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    3,
+    `/api/v1/runs/${runId}/replacements/validate`,
+    expect.objectContaining({ method: "POST", body: JSON.stringify(input) }),
+  );
+  const calls = vi.mocked(globalThis.fetch).mock.calls;
+  const first = calls[3]?.[1];
+  expect(first?.body).toBe(JSON.stringify(body));
+  expect(new Headers(first?.headers).get("X-CSRF-Token")).toBe("synthetic-csrf");
+  expect(new Headers(first?.headers).get("Idempotency-Key")).toBe(
+    "synthetic-idempotency-key",
+  );
+  expect(calls[4]).toEqual(calls[3]);
 });

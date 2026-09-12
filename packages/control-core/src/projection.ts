@@ -173,7 +173,7 @@ function trialAttemptId(trial: TrialSummary): string | null {
   return typeof trial.result.id === "string" ? trial.result.id : null;
 }
 
-function authoritativeAttemptCosts(
+export function authoritativeAttemptCosts(
   receipts: readonly AttemptCostV1[],
   trials: readonly TrialSummary[],
 ): Array<number | null> {
@@ -589,6 +589,9 @@ export class Projection {
       result === "full"
         ? "result_body"
         : `json_object(
+      'id', json_extract(result_body, '$.id'),
+      'exception_info', CASE WHEN json_type(result_body, '$.exception_info') = 'object'
+        THEN json_object('exception_type', json_extract(result_body, '$.exception_info.exception_type')) ELSE NULL END,
       'config', json_object('agent', json_object(
         'name', json_extract(result_body, '$.config.agent.name'),
         'import_path', json_extract(result_body, '$.config.agent.import_path'),

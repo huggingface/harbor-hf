@@ -973,6 +973,8 @@ describe("status and projection", () => {
     await service.refresh();
     const summary = projection.trials(run.run_id, "identity");
     expect(summary[0]?.result).toEqual({
+      id: "11111111-1111-4111-8111-111111111111",
+      exception_info: null,
       config: {
         agent: {
           name: "openclaw",

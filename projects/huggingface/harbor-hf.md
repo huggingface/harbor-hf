@@ -11,6 +11,44 @@ default_branch: main
 
 Status: approved
 
+### Infrastructure replacement workflow and combined release (2026-09-11)
+
+Status: approved
+
+Approved at: 2026-09-11T21:51:25Z
+
+- The user directly approved implementation, tests, documentation, PR publication
+  and merge, required image builds/publication, and deployment to the existing
+  privately identified control Space. Include the already-merged PR #219 in the
+  release baseline; preserve concurrent work and existing resources.
+- Scope: operator selection of infrastructure-failed native trial attempts from
+  a completed run, normal reviewed replacement execution, and an original /
+  replacement / assembled result presentation with replacement-aware leaderboard
+  selection and transparent incurred versus selected-cohort cost reporting.
+- Preserve original runs and artifacts. Replace exact attempts one-for-one,
+  preserve repeat multiplicity, and retain unsuccessful replacement evidence.
+  Do not select outcomes by reward or count original and replacement twice.
+- Use pinned Harbor native planning, execution, identities, results, accounting,
+  and public JobPlan.aggregate. Do not create another scheduler, metric engine,
+  result format, or reconstructed trial identity.
+- Separately approved temporary bridge: operator-reviewed cross-run selection,
+  provenance and coverage validation absent from the checked local aggregation
+  contract at Harbor dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e. Inspect native
+  source_jobs/source_trial derivation before adding any persisted relationship;
+  their current regrade-only action is not replacement authority.
+- Remove this bridge at the first reviewed Harbor revision providing equivalent
+  storage-neutral replacement selection/provenance/coverage validation. No such
+  revision has yet been identified; do not invent a removal SHA. Stop if the
+  approved scope requires duplicating other Harbor behavior or expanding the gap.
+- Deployment may stage writes disabled and restore the previous mode after
+  provenance, readiness, projection and active-execution checks. Do not stop,
+  replace or resume existing benchmark Jobs or cancel active setup Jobs.
+- No actual replacement launch is authorized by this project approval: obtain
+  separate approval for the exact trial selection and paid execution budget.
+  No credential movement, new persistent resources, or upstream publication.
+
+
+
 ### Combined PR merge and matched release (2026-09-11)
 
 Approved at: 2026-09-11T16:12:15Z
@@ -2190,3 +2228,9 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
   active execution prevents the normal idle cutover or another safety gate fails.
 - Review the full public diff and metadata and run the privacy scan before
   publication. Merge only the exact reviewed commit after CI passes.
+
+### 2026-09-11 — Infrastructure replacement implementation approval
+
+- Approved the workflow and combined release scope above, including the narrow
+  temporary native-contract bridge, with PR #219 included in the baseline.
+  Benchmark execution approval remains separate.

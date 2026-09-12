@@ -1,4 +1,13 @@
 import {
+  ReplacementError,
+  ReplacementEvidence,
+  type ReplacementView,
+} from "@harbor-hf/control-core";
+import {
+  replacementInputSchema,
+  replacementSubmissionSchema,
+} from "./replacement-schemas.js";
+import {
   InferenceBindingDenied,
   InferenceRegistryError,
 } from "@harbor-hf/control-core";
@@ -12,7 +21,11 @@ import { isReasoningIntent } from "@harbor-hf/contracts/credentials";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import fastifyStatic from "@fastify/static";
-import { validateLaunchPricing, ContractValidationError } from "@harbor-hf/contracts";
+import {
+  validateLaunchPricing,
+  ContractValidationError,
+  type RunRecordV1,
+} from "@harbor-hf/contracts";
 import { leaderboard } from "@harbor-hf/control-core";
 import Fastify, {
   type FastifyInstance,
@@ -285,6 +298,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
 
   app.setErrorHandler((failure, request, reply) => {
     if (reply.sent) return;
+    if (failure instanceof ReplacementError)
+      return error(reply, failure.status, "replacement_denied", failure.message);
     if (
       request.url.startsWith("/api/v1/inference-bindings") &&
       !(failure instanceof InferenceRegistryError)
@@ -339,6 +354,22 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
       return error(reply, 404, "model_not_found", failure.message);
     if (failure instanceof HuggingFaceModelLookupError)
       return error(reply, 502, "hub_lookup_failed", failure.message);
+    if (
+      failure instanceof Error &&
+      failure.message === "Idempotency-Key header is required"
+    )
+      return error(reply, 400, "invalid_request", failure.message);
+    if (
+      /^\/api\/v1\/runs\/run-[0-9a-f]{24}\/replacements(?:\/validate)?(?:\?|$)/.test(
+        request.url,
+      )
+    )
+      return error(
+        reply,
+        503,
+        "replacement_unavailable",
+        "Replacement request could not be confirmed; refresh before retrying",
+      );
     const message = failure instanceof Error ? failure.message : "request failed";
     if (message.includes("not found")) return error(reply, 404, "not_found", message);
     if (message.includes("already identifies") || message.includes("cancelled run"))
@@ -639,6 +670,29 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
     return reply.code(result.created ? 201 : 200).send(result);
   });
 
+  app.post("/api/v1/runs/:run_id/replacements/validate", async (request) => {
+    const { run_id } = runParameters.parse(request.params);
+    return runtime.service.validateReplacement(
+      run_id,
+      replacementInputSchema.parse(request.body),
+      requireActor(request).subject,
+    );
+  });
+  app.post("/api/v1/runs/:run_id/replacements", async (request, reply) => {
+    const { run_id } = runParameters.parse(request.params);
+    const result = await runtime.service.submitReplacement(
+      run_id,
+      replacementSubmissionSchema.parse(request.body),
+      idempotencyKey(request),
+      requireActor(request).subject,
+    );
+    return reply.code(result.created ? 201 : 200).send(result);
+  });
+  app.get("/api/v1/runs/:run_id/replacements", async (request) => {
+    const { run_id } = runParameters.parse(request.params);
+    return runtime.service.replacements(run_id);
+  });
+
   app.get("/api/v1/runs", async () => ({ runs: runtime.projection.listRuns() }));
   app.get("/api/v1/runs/:run_id", async (request) => {
     const { run_id } = runParameters.parse(request.params);
@@ -707,9 +761,30 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   });
 
   app.get("/api/v1/jobs", async () => ({ jobs: runtime.projection.jobs() }));
-  app.get("/api/v1/leaderboard", async () => ({
-    rows: leaderboard(runtime.projection, runtime.presets),
-  }));
+  app.get("/api/v1/leaderboard", async () => {
+    let records: RunRecordV1[];
+    try {
+      records = await new ReplacementEvidence(runtime.store).records();
+    } catch {
+      return { rows: [] };
+    }
+    const parents = new Set(
+      records.flatMap((record) =>
+        record.operator_selection ? [record.operator_selection.original_run_id] : [],
+      ),
+    );
+    const assembled = new Map<string, ReplacementView>();
+    for (const id of parents) {
+      try {
+        assembled.set(id, await runtime.service.replacements(id));
+      } catch {
+        /* Withhold, never fall back. */
+      }
+    }
+    return {
+      rows: leaderboard(runtime.projection, runtime.presets, assembled, records),
+    };
+  });
 
   await app.register(fastifyStatic, {
     root: runtime.config.web_root,

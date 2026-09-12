@@ -668,3 +668,34 @@ it receives trial log messages but is outside Harbor's trial-directory scrubber.
 Scrubbed per-trial logs remain available, and the existing dashboard reads native
 JSON observations rather than this global log. Final reconciliation removes any
 previous copy of that global log in the run's job subtree.
+
+## Operator-reviewed infrastructure replacements
+
+After native completion and confirmed absence of live owned Jobs, an operator
+can select exact errored native trial IDs and review a separate execution budget.
+The original remains immutable. Normal submission, authorization, credential
+binding and idempotency protections apply to the related run.
+
+`POST /api/v1/runs/:run_id/replacements/validate` reviews the selection;
+`POST /api/v1/runs/:run_id/replacements` submits it with the review fingerprint
+and an idempotency key. `GET /api/v1/runs/:run_id/replacements` provides related
+runs, native combined results and reported cost coverage. The run-page panel
+loads these views on demand. Exceptions identify candidates, not an automatic
+infrastructure classification.
+
+Only optional `RunRecord.operator_selection` is durable. The bounded assembly
+cache is disposable and never feeds execution reconciliation. Source records and
+native config/lock/result evidence are rechecked; changed or missing evidence
+fails closed. Parent preflight independently validates the same provenance.
+No source artifacts enter the new run's upload tree.
+
+Harbor runs the exact selected task multiplicity and aggregates the chosen
+native results. Related subset runs are not independently pooled on the
+leaderboard. Pending or invalid assemblies are withheld, not replaced with a
+more favorable original score. Reported spend across all constituent attempts
+remains visible separately from the selected cohort's native cost.
+
+See [the replacement contract](2026-09-11-replacement-backend.md) for recursive
+selection, native ownership, scalar leaderboard limits and removal of the
+revision-scoped integration. Actual replacement execution requires separate
+operator review and budget approval; deployment is not launch authorization.

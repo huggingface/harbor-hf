@@ -598,3 +598,24 @@ it receives trial log messages but is outside Harbor's trial-directory scrubber.
 Scrubbed per-trial logs remain available, and the existing dashboard reads native
 JSON observations rather than this global log. Final reconciliation removes any
 previous copy of that global log in the run's job subtree.
+
+## Infrastructure replacement extension
+
+The approved operator-replacement extension adds only optional immutable
+`RunRecord.operator_selection` (`original_run_id`, exact native `trial_ids`, and
+`source_fingerprint`). It records an operator decision, not a renamed native
+regrade relationship or mirrored progress state. Existing run lifecycle, native
+output ownership, Bucket layout and the three-table projection remain unchanged.
+
+A separate normal run executes the selected native task multiplicity. A
+revision-scoped provenance/coverage bridge invokes Harbor's public planning and
+aggregation APIs; source evidence is never rewritten. Assembly is a disposable
+presentation and is never a completion input to the reconciler. Overlapping
+selections and changed review evidence fail closed; exact idempotent replay
+retains the normal immutable-write recovery semantics.
+
+Related run selection must precede leaderboard contribution so original and
+replacement evidence cannot both count. Preserve failed replacement outcomes
+and all incurred attempt costs. No replacement launch is implicit in a project
+release. Detailed endpoints, validation and limitations are specified in the
+[replacement contract](2026-09-11-replacement-backend.md).

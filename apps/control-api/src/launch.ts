@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { canonicalJson } from "@harbor-hf/contracts";
-import { prepareDirectJobConfig } from "@harbor-hf/control-core";
+import {
+  NATIVE_PAYLOAD_LIMIT,
+  type ReplacementNativePort,
+  prepareDirectJobConfig,
+} from "@harbor-hf/control-core";
 import { isolatedGitSourceEnvironment } from "@harbor-hf/hf-adapters";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
@@ -57,7 +61,7 @@ export class LaunchError extends Error {
 }
 
 /** One bounded native inspection at a time; no validation service or queue. */
-export class NativeLaunch implements LaunchPort {
+export class NativeLaunch implements LaunchPort, ReplacementNativePort {
   private busy = false;
   private cachedCatalog: Promise<LaunchCatalog> | undefined;
   constructor(private readonly config: AppConfig) {}
@@ -65,6 +69,9 @@ export class NativeLaunch implements LaunchPort {
   private async invoke(request: Record<string, unknown>): Promise<unknown> {
     if (this.busy)
       throw new LaunchError(503, "Launch inspection is busy; try again shortly");
+    const payload = JSON.stringify(request);
+    if (Buffer.byteLength(payload) > NATIVE_PAYLOAD_LIMIT)
+      throw new LaunchError(400, "Native inspection request exceeded its limit");
     this.busy = true;
     let directory: string | undefined;
     try {
@@ -87,7 +94,9 @@ export class NativeLaunch implements LaunchPort {
               TMPDIR: cwd,
               XDG_CACHE_HOME: cwd,
               PYTHONDONTWRITEBYTECODE: "1",
-              ...(request.operation === "validate"
+              ...(["validate", "replacement_review", "replacement_aggregate"].includes(
+                String(request.operation),
+              )
                 ? {
                     ...isolatedGitSourceEnvironment(),
                     ...(this.config.hf_token ? { HF_TOKEN: this.config.hf_token } : {}),
@@ -120,7 +129,8 @@ export class NativeLaunch implements LaunchPort {
         );
         child.stdout.on("data", (chunk: Buffer) => {
           bytes += chunk.length;
-          if (bytes > 1_048_576) stop("Native inspection response exceeded its limit");
+          if (bytes > NATIVE_PAYLOAD_LIMIT)
+            stop("Native inspection response exceeded its limit");
           else output += decoder.write(chunk);
         });
         child.stdin.on("error", () =>
@@ -150,7 +160,9 @@ export class NativeLaunch implements LaunchPort {
               throw new LaunchError(
                 message.success &&
                   message.data.invalid &&
-                  request.operation === "validate"
+                  ["validate", "replacement_review", "replacement_aggregate"].includes(
+                    String(request.operation),
+                  )
                   ? 400
                   : 503,
                 message.success ? message.data.error : "Native inspection failed",
@@ -165,7 +177,7 @@ export class NativeLaunch implements LaunchPort {
             );
           }
         });
-        child.stdin.end(JSON.stringify(request));
+        child.stdin.end(payload);
       });
     } catch (error) {
       throw error instanceof LaunchError
@@ -175,6 +187,52 @@ export class NativeLaunch implements LaunchPort {
       if (directory) await rm(directory, { recursive: true, force: true });
       this.busy = false;
     }
+  }
+
+  async replacementReview(
+    input: Parameters<ReplacementNativePort["replacementReview"]>[0],
+  ) {
+    const parsed = inspectionSchema
+      .extend({
+        effective_config: object,
+        // Native source identity, not the public budget-bound review hash.
+        fingerprint: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+      })
+      .safeParse(
+        await this.invoke({
+          ...input,
+          operation: "replacement_review",
+          approved_sources: this.config.approved_agent_sources ?? [],
+        }),
+      );
+    if (!parsed.success || parsed.data.harbor_revision !== REVISION)
+      throw new LaunchError(
+        503,
+        "Native replacement review response or revision mismatch",
+      );
+    return {
+      ...parsed.data,
+      credentials_available: Boolean(
+        this.config.hf_token &&
+          this.config.hf_inference_token &&
+          this.config.hf_token !== this.config.hf_inference_token,
+      ),
+    };
+  }
+
+  async replacementAggregate(
+    input: Parameters<ReplacementNativePort["replacementAggregate"]>[0],
+  ) {
+    const parsed = z.object({ result: object }).safeParse(
+      await this.invoke({
+        ...input,
+        operation: "replacement_aggregate",
+        approved_sources: this.config.approved_agent_sources ?? [],
+      }),
+    );
+    if (!parsed.success)
+      throw new LaunchError(503, "Native replacement aggregate response mismatch");
+    return parsed.data;
   }
 
   async catalog(): Promise<LaunchCatalog> {

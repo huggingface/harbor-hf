@@ -1854,3 +1854,124 @@ it("does not log submitted secret names, values or malformed reference paths", a
     /MY_SECRET_KEY|ghp_123456789012345678901234567890123456/,
   );
 });
+
+describe("replacement API contracts and existing write defenses", () => {
+  const run = `run-${"a".repeat(24)}`;
+  const input = {
+    trial_ids: ["11111111-1111-4111-8111-111111111111"],
+    cost_ceiling_usd: 10,
+  };
+  it("routes strict review/submission requests with normal idempotency and result statuses", async () => {
+    const { app, runtime } = await setup();
+    await runtime.initialize();
+    const validation = {
+      harbor_revision: "d".repeat(40),
+      tasks: 1,
+      agents: 1,
+      trials: 1,
+      warnings: [],
+      not_performed: [],
+      effective_config: {},
+      fingerprint: "a".repeat(64),
+      credentials_available: true,
+    };
+    const validate = vi
+      .spyOn(runtime.service, "validateReplacement")
+      .mockResolvedValue(validation);
+    const review = await app.inject({
+      method: "POST",
+      url: `/api/v1/runs/${run}/replacements/validate`,
+      payload: input,
+    });
+    expect(review.statusCode).toBe(200);
+    expect(review.json()).toEqual(validation);
+    expect(validate).toHaveBeenCalledWith(run, input, expect.any(String));
+    const original = await runtime.service.submitPreset(
+      submission,
+      "replacement-api-original",
+      "operator",
+    );
+    const submit = vi
+      .spyOn(runtime.service, "submitReplacement")
+      .mockResolvedValue(original);
+    const payload = { ...input, fingerprint: validation.fingerprint };
+    for (const created of [true, false]) {
+      submit.mockResolvedValue({ ...original, created });
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/runs/${run}/replacements`,
+        payload,
+        headers: { "idempotency-key": "replacement-api" },
+      });
+      expect(response.statusCode).toBe(created ? 201 : 200);
+      expect(submit).toHaveBeenCalledWith(
+        run,
+        payload,
+        "replacement-api",
+        expect.any(String),
+      );
+    }
+    const missingKey = await app.inject({
+      method: "POST",
+      url: `/api/v1/runs/${run}/replacements`,
+      payload,
+    });
+    expect(missingKey.statusCode).toBe(400);
+    for (const bad of [
+      { ...input, original: {} },
+      { ...input, trial_ids: ["task-name"] },
+      { ...input, cost_ceiling_usd: 0 },
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/runs/${run}/replacements/validate`,
+        payload: bad,
+      });
+      expect(response.statusCode).toBe(400);
+    }
+    await app.close();
+  });
+  it("does not exempt replacement review or submit from write-disable", async () => {
+    const { app, runtime } = await setup("disabled");
+    await runtime.initialize();
+    for (const suffix of ["replacements", "replacements/validate"]) {
+      const response = await app.inject({
+        method: "POST",
+        url: `/api/v1/runs/${run}/${suffix}`,
+        payload: input,
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe("write_disabled");
+    }
+    await app.close();
+  });
+  it("returns the independent native assembly view", async () => {
+    const { app, runtime } = await setup();
+    await runtime.initialize();
+    const view = {
+      run_id: run,
+      operator_selection: null,
+      children: [],
+      assembly: { availability: "none" as const, result: null },
+      incurred: null,
+      selected_cost_usd: null,
+    };
+    vi.spyOn(runtime.service, "replacements").mockResolvedValue(view);
+    const response = await app.inject(`/api/v1/runs/${run}/replacements`);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(view);
+    await app.close();
+  });
+});
+
+it("does not expose provider read failures from replacement views", async () => {
+  const { app, runtime } = await setup();
+  await runtime.initialize();
+  vi.spyOn(runtime.service, "replacements").mockRejectedValue(
+    new Error("provider-private-diagnostic"),
+  );
+  const response = await app.inject(`/api/v1/runs/run-${"a".repeat(24)}/replacements`);
+  expect(response.statusCode).toBe(503);
+  expect(response.body).not.toContain("provider-private-diagnostic");
+  await app.close();
+});

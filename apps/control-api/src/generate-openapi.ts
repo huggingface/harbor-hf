@@ -1,3 +1,9 @@
+import {
+  replacementInputSchema,
+  replacementSubmissionSchema,
+  replacementViewSchema,
+  trialIdentitySchema,
+} from "./replacement-schemas.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -324,9 +330,103 @@ const document = {
           providers: { type: "array", items: { type: "string" } },
         },
       },
+      TrialIdentity: z.toJSONSchema(trialIdentitySchema),
+      ReplacementInput: z.toJSONSchema(replacementInputSchema),
+      ReplacementSubmission: z.toJSONSchema(replacementSubmissionSchema),
+      ReplacementView: z.toJSONSchema(replacementViewSchema),
+      LaunchValidation: z.toJSONSchema(validationSchema),
+      SubmissionResult: {
+        type: "object",
+        required: ["created", "run"],
+        properties: {
+          created: { type: "boolean" },
+          run: { $ref: "#/components/schemas/RunRecord" },
+        },
+      },
     },
   },
   paths: {
+    "/api/v1/runs/{run_id}/replacements/validate": {
+      post: {
+        security: authenticated,
+        parameters: [runParameter],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ReplacementInput" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Reviewed selection and budget",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LaunchValidation" },
+              },
+            },
+          },
+          "400": error,
+          "403": error,
+          "409": error,
+          "503": error,
+        },
+      },
+    },
+    "/api/v1/runs/{run_id}/replacements": {
+      get: {
+        security: authenticated,
+        parameters: [runParameter],
+        responses: {
+          "200": {
+            description:
+              "Ephemeral native assembly and reported attempt cost coverage (not infrastructure billing)",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/ReplacementView" },
+              },
+            },
+          },
+          "400": error,
+          "503": error,
+        },
+      },
+      post: {
+        security: authenticated,
+        parameters: [runParameter, idempotencyHeader],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ReplacementSubmission" },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Exact retry",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SubmissionResult" },
+              },
+            },
+          },
+          "201": {
+            description: "Replacement submitted",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SubmissionResult" },
+              },
+            },
+          },
+          "400": error,
+          "403": error,
+          "409": error,
+          "503": error,
+        },
+      },
+    },
     "/api/v1/inference-bindings/{ref}/review": {
       post: bindingMutation("InferenceReviewRequest", "InferenceReview"),
     },
@@ -746,10 +846,29 @@ const document = {
     },
     "/api/v1/runs/{run_id}/trials": {
       get: {
-        summary: "List trials for one run",
+        summary: "List native trial identities for one run",
         security: authenticated,
         parameters: [runParameter],
-        responses: { "200": ok, "404": error },
+        responses: {
+          "200": {
+            description: "Native result.id and exception type for operator selection",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["trials"],
+                  properties: {
+                    trials: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/TrialIdentity" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          "404": error,
+        },
       },
     },
     "/api/v1/runs/{run_id}/trials/{trial_name}": {

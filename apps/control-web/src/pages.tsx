@@ -1,3 +1,4 @@
+import { RunReplacements } from "./run-replacements";
 import { ConsolidatedRunRefresh, RunRefreshStatus } from "./run-refresh-status";
 import { RunSectionQuery } from "./run-section-query";
 import { useRunClock } from "./queries";
@@ -829,6 +830,12 @@ export function RunPage() {
         </p>
       ) : null}
       <RunArchive key={item.record.run_id} run={item} />
+      <RunReplacements
+        key={`replacements-${item.record.run_id}`}
+        run={item}
+        trials={trials.data ?? []}
+      />
+      <h2 className="mt-6 font-semibold text-white">Original execution</h2>
       <RunSummaryCards run={item} />
       <RunWaffle run={item} />
       <RunPricingCorrections key={`pricing-${item.record.run_id}`} run={item} />
