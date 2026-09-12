@@ -11,6 +11,91 @@ default_branch: main
 
 Status: approved
 
+### Replacement evidence and parent failure containment
+
+Status: approved
+
+Approved at: 2026-09-12T11:29:13.370662+00:00
+
+- The user explicitly approved: “yep, those are 2 clear fixes” and “fix both
+  issues, PR and deploy”, preferring the primary checkout over worktrees.
+- Implement numeric-equivalent replacement evidence fingerprinting and generic
+  containment of failed HF parent startup relaunches, with offline regression
+  tests and documentation. Preserve native Harbor execution, immutable source
+  artifacts, stored review fingerprints, and existing schema ownership.
+- Commit this authorization before implementation. Preserve existing branches,
+  stashes and operations completion history; create no worktrees.
+- Release approval covers PR publication, exact green reviewed-head merge,
+  matched immutable worker image publication and deployment to the existing
+  private <control-space>, retaining <artifact-bucket> and existing resources.
+  This implementation phase MUST stop at local commits for independent review
+  before any publication or deployment; a separate release phase follows review.
+- No run launch, resume, replacement submission, paid compute, inference grant,
+  credential change/transfer, permission change or new resource is authorized.
+  Preserve the paused replacement and all unrelated execution. No remote
+  mutation during this implementation phase. Stop for provenance mismatch,
+  exposure, immutable conflict, duplicate execution or unapproved cost.
+
+### Replacement pause and read-only startup investigation
+
+Status: completed
+
+Approved at: 2026-09-12T10:29:15Z
+
+- The user explicitly approved: “yes pause it and investigate the logs”.
+  Scope is only the exact replacement run identified in the private operator
+  request, represented here as `<replacement-run>`, on `<control-space>` with
+  existing `<artifact-bucket>` storage. Persist desired pause through the normal
+  authenticated control-service CSRF route and verify reconciliation leaves no
+  active owned parent or child Jobs, even if parents are already terminal.
+- Read-only investigation may inspect bounded sanitized parent logs, allowlisted
+  Job/image provenance, native artifact evidence, deployed source and pinned
+  Harbor source/history. Do not expose credentials, signed URLs, private IDs,
+  operator aliases, full configurations or authentication/session headers.
+  Use configured credentials in place and keep session material in memory only.
+- Preserve the original and all other runs, images, bindings, budgets, credentials,
+  resources, branches and stashes. No resume, retry, launch, direct Job kill,
+  deployment, credential change/transfer, implementation or remote publication.
+  Stop and report revision mismatch, exposure, deterministic shared defects or
+  owned Jobs that cannot be stopped. Remediation requires separate approval.
+- Use an operations branch in the primary checkout, no new worktrees. Commit
+  this additive authorization locally before mutation; do not push. Record actual
+  completion additively without renewing earlier scopes.
+
+#### Completion — 2026-09-12T10:33:20Z
+
+- Authorization commit preceded the sole external mutation: the normal pause
+  endpoint returned success at 10:30:33Z. Normal session GET confirmed operator
+  access using the existing supported bearer transport; that transport does not
+  require cookie-session CSRF. No authentication material was persisted.
+- Desired state and projection both remained paused after reconciliation and at
+  final verification. Eight owned parent Jobs were terminal ERROR; no owned child
+  Jobs or active owned execution were found. No aggregate result or projected
+  native trial results were present. Native spend remains unknown, not zero;
+  infrastructure charges are not established by native result absence.
+- All eight inspected parent images matched the expected immutable worker image.
+  The live service source and Harbor revision matched the reviewed expectations.
+  All eight bounded parent log tails had the same sanitized failure chain:
+  `parent_worker.py:350` -> `replacement_preflight.py:120` ->
+  `replacement_preflight.py:105`, raising
+  `ValueError: Replacement source fingerprint mismatch` before `Job.create()`.
+- Stopped operational investigation at the deterministic shared-defect boundary.
+  Local source proves the stored source fingerprint differs from the parent's
+  freshly computed evidence fingerprint; it does not identify the differing
+  input or prove whether source drift or transport normalization caused it.
+  No immutable configuration or credential failure was observed in these tails.
+- Inspected local fingerprint creation/comparison and existing cross-language
+  preflight tests, plus pinned Harbor `JobConfig`, `Job.create()` and relevant
+  configuration/lock/result history. Any separately approved follow-up should
+  isolate the first differing canonical input through the real review-to-parent
+  transport, retaining native models and the fail-closed provenance check.
+  Do not bypass fingerprint validation, rewrite source evidence or infer a fix.
+- No resume, retry, launch, direct remote Job kill, source implementation,
+  deployment, credential change or remote publication occurred. Original and
+  unrelated runs were not controlled. Local documentation commits only, in the
+  primary checkout with no new worktree; existing branches and stashes preserved.
+  Patch, PR, deployment and any later execution require separate approval.
+
 ### Run-recorded inference review release (2026-09-11)
 
 Status: approved
@@ -2479,3 +2564,9 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 - Direct user publication, exact green-head squash merge, matched worker image
   publication and existing private Space deployment approval recorded above.
   Live inference approval and all benchmark execution remain excluded.
+
+### 2026-09-11 — Replacement evidence and parent containment approval
+
+- Direct approval and the mandatory pre-publication independent-review stop are
+  recorded above. Earlier scopes are not renewed. Operations completion history
+  is preserved additively from the retained investigation branch.
