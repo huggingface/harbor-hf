@@ -30,6 +30,26 @@ No original artifacts are modified. Native result/status/reconciliation remain
 independent of the view-only assembled result. No SQLite table, durable aggregate,
 new infrastructure, or execution scheduler is introduced.
 
+## Native task names
+
+At the pinned revision, `models/task/task.py` gives `Task.name` the explicit
+`task.toml` metadata name when present, otherwise the directory name.
+`trial/trial.py` writes that value unchanged as `TrialResult.task_name`, while
+`models/task/id.py` defines `get_name()` independently for Git, local and package
+identities. `models/job/lock.py` builds `TaskLock.name` from that task-ID API.
+History `1d97c20a1` (#1285) introduced the metadata override; `7f6ae226b` (#1552)
+introduced the task-ID-based lock name.
+
+Replacement evidence therefore compares result/config native IDs and sources,
+and compares lock names with `trial.task_id.get_name()`, not result display names.
+It preserves the original result name, without prefix stripping, aliases or
+source-specific rules. Full-source configuration, lock coverage, digest/checksum,
+UUID and repeat checks remain in place, including for unselected attempts.
+No schema, persisted field, API or UI value changes; Harbor remains authoritative.
+Offline regression fixtures load real native `Task` metadata and exercise both
+metadata overrides and fallback names through review, parent preflight and native
+aggregation, with separate Git/local/package identity checks.
+
 ## API and UI integration
 
 Generated OpenAPI components now include `ReplacementInput`,

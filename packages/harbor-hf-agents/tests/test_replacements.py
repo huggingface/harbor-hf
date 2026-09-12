@@ -30,8 +30,8 @@ def run_id(number):
     return f"run-{number:024x}"
 
 
-@pytest.fixture
-def factory(tmp_path, monkeypatch):
+@pytest.fixture(params=[True, False], ids=["metadata-name", "fallback-name"])
+def factory(tmp_path, monkeypatch, request):
     downloads = {}
     for name in ("A", "B"):
         path = tmp_path / name
@@ -40,7 +40,8 @@ def factory(tmp_path, monkeypatch):
         (path / "tests/test.sh").write_text("#!/bin/sh\nexit 0\n")
         (path / "instruction.md").write_text("Do the task.")
         (path / "task.toml").write_text(
-            '[environment]\ndocker_image="example/task:fixed"\n'
+            (f'[task]\nname="example-org/{name}"\n' if request.param else "")
+            + '[environment]\ndocker_image="example/task:fixed"\n'
         )
         task = TaskConfig(path=Path(name), git_url=URL, git_commit_id=SHA)
         downloads[task.get_task_id()] = TaskDownloadResult(
@@ -52,6 +53,13 @@ def factory(tmp_path, monkeypatch):
             }
         )
         downloads[private_task.get_task_id()] = downloads[task.get_task_id()]
+        for other in (
+            TaskConfig(path=Path(name)),
+            TaskConfig(name=f"example-org/{name}", ref="sha256:" + "d" * 64),
+        ):
+            downloads[other.get_task_id()] = TaskDownloadResult(
+                path=path, download_time_sec=0, cached=True
+            )
     monkeypatch.setattr(JobPlan, "cache_tasks", AsyncMock(return_value=downloads))
 
     def make(names=("A", "A", "B"), number=1, config=None, failures=None):
@@ -89,7 +97,7 @@ def factory(tmp_path, monkeypatch):
             task = trial_config.task
             trials.append(
                 TrialResult(
-                    task_name=task.get_task_id().get_name(),
+                    task_name=Task(downloads[task.get_task_id()].path).name,
                     trial_name=trial_config.trial_name,
                     trial_uri=f"file://{trial_config.trials_dir}/{trial_config.trial_name}",
                     task_id=task.get_task_id(),
