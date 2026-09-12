@@ -233,3 +233,24 @@ or live private-source execution test.
 Only an unambiguous single-eval, single-metric object containing exactly `mean`
 is admitted to the scalar leaderboard. Native multi-reward metrics with a reward
 key named `mean` are not mistaken for that scalar metric.
+
+## Final release validation addendum
+
+The final committed feature snapshot passed root Ruff, format, ty and all 102
+Python tests (89.10% coverage), all 1,523 TypeScript tests, all 75 browser tests,
+and all 394 agent-package tests with agent Ruff, format and ty. Formatting,
+lint, typecheck, build, generated-output checks and dependency audits passed;
+lint warnings remain. Generated outputs now match the committed snapshot.
+
+Both normal-network Docker builds completed successfully for `linux/amd64`,
+locally and in feature-head CI. This supersedes the earlier offline-only build
+limitation above without erasing that unsuccessful attempt. These builds are
+validation evidence, not image publication or deployment evidence.
+
+Ordinary Slophammer scanned 27 of 27 production files with no findings and DRY
+reported zero candidates. The required `--baseline` invocation still fails
+because the baseline file is absent. Agent whole-package coverage remains
+approximately 77%, a pre-existing gap; changed modules meet 85%. No threshold
+was weakened. Independent final design review was GO after both fingerprint
+format and ambiguous-metric fixes. No paid execution or live-source canary was
+performed. Image publication and runtime verification are separate release gates.
