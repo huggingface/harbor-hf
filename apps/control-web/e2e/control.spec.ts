@@ -2964,3 +2964,26 @@ test("operator reviews exact infrastructure failures, creates related run and in
     page.getByRole("heading", { name: "Original execution", exact: true }),
   ).toBeVisible();
 });
+
+test("parent failure pause explains explicit resume without starting work", async ({
+  page,
+}) => {
+  const actions: string[] = [];
+  await mockControl(page, { onAction: (action) => actions.push(action) });
+  await page.route(`**/api/v1/runs/${runId}`, (route) =>
+    json(route, {
+      ...run,
+      status: "paused",
+      state: {
+        ...state,
+        desired_state: "paused",
+        actor: "harbor-hf-parent-failed",
+      },
+    }),
+  );
+  await page.goto(`/runs/${runId}`);
+  await expect(
+    page.getByText("Paused after a parent Job failed.", { exact: false }),
+  ).toBeVisible();
+  expect(actions).toEqual([]);
+});

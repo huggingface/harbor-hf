@@ -325,6 +325,15 @@ async def test_real_native_source_fingerprint_crosslanguage_gate(
     replacement["record"] = record
     replacements.request_ancestry(Evidence.parse(replacement), [original])
     await replacement_preflight.preflight(artifacts, record, config)
+    unchanged = copy.deepcopy(original)
+    original["trials"][0]["verifier_result"]["rewards"]["reward"] = 0.25
+    if original["result"].get("trial_results"):
+        original["result"]["trial_results"] = copy.deepcopy(original["trials"])
+    store(original)
+    with pytest.raises(ValueError, match="fingerprint"):
+        await replacement_preflight.preflight(artifacts, record, config)
+    store(unchanged)
+    original = unchanged
     record["operator_selection"]["source_fingerprint"] = response["fingerprint"][7:]
     with pytest.raises(ValueError, match="fingerprint"):
         replacements.request_ancestry(Evidence.parse(replacement), [original])

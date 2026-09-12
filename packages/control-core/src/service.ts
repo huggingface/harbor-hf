@@ -617,8 +617,29 @@ export class ControlService {
       const current = validateRunState(value);
       if (current.desired_state === "cancelled" && desired !== "cancelled")
         throw new Error("a cancelled run cannot be resumed");
+      // Resume acknowledges only errors observed under this intent lock. Unknown
+      // liveness or a later parent error cannot become an implicit retry grant.
+      const acknowledged = new Set(current.acknowledged_parent_failures ?? []);
+      if (desired === "run") {
+        const observed = await this.verifyRecordedParents(
+          runIdValue,
+          current,
+          await this.jobs.list(),
+          true,
+        );
+        for (const job of observed)
+          if (
+            job.run_id === runIdValue &&
+            job.role === "parent" &&
+            job.stage === "error"
+          )
+            acknowledged.add(job.id);
+      }
       const next = validateRunState({
         ...current,
+        ...(desired === "run"
+          ? { acknowledged_parent_failures: [...acknowledged].sort() }
+          : {}),
         revision: current.revision + 1,
         updated_at: new Date().toISOString(),
         desired_state: desired,
@@ -646,8 +667,10 @@ export class ControlService {
     runIdValue: string,
     state: RunStateV1,
     observations: readonly JobObservation[],
+    inspectAll = false,
   ): Promise<JobObservation[]> {
     if (
+      !inspectAll &&
       observations.some(
         (job) => job.run_id === runIdValue && job.role === "parent" && isLiveJob(job),
       )
@@ -797,6 +820,29 @@ export class ControlService {
         }
         const orphans = liveJobs.filter((job) => job.role === "trial");
         await Promise.all(orphans.map((job) => this.jobs.cancel(job.id)));
+        // HF parent failure is not a Harbor trial retry. Provider error stages
+        // do not certify transient causes; fail closed without parsing logs.
+        if (
+          runJobs.some(
+            (job) =>
+              job.role === "parent" &&
+              job.stage === "error" &&
+              !state.acknowledged_parent_failures?.includes(job.id),
+          )
+        ) {
+          await putJson(
+            this.store,
+            runStatePath(projected.record.run_id),
+            validateRunState({
+              ...state,
+              revision: state.revision + 1,
+              updated_at: new Date().toISOString(),
+              desired_state: "paused",
+              actor: "harbor-hf-parent-failed",
+            }),
+          );
+          return;
+        }
         if (inspectionErrors.length > 0 || activeParents >= this.options.maxActiveJobs)
           return;
         const latest = state.parent_jobs.at(-1);

@@ -837,6 +837,13 @@ export function RunPage() {
       />
       <h2 className="mt-6 font-semibold text-white">Original execution</h2>
       <RunSummaryCards run={item} />
+      {item.state.desired_state === "paused" &&
+        item.state.actor === "harbor-hf-parent-failed" && (
+          <p role="status" className="mt-4 text-amber-200">
+            Paused after a parent Job failed. Review its diagnostics before explicitly
+            resuming. Resume acknowledges observed parent errors; it does not fix them.
+          </p>
+        )}
       <RunWaffle run={item} />
       <RunPricingCorrections key={`pricing-${item.record.run_id}`} run={item} />
       <PricingPanel result={item.result} />

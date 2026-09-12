@@ -152,11 +152,13 @@ def native_transport_roundtrip(tmp_path, request, response):
     """Replay real Python output through compiled TS transport + immutable storage.
 
     CI builds Node workspaces before setting up the agent test environment. Never
-    skip this gate or require a Python environment during npm test. Only the
-    inspector process is replaced; its JSON is the unmodified native response.
+    skip this gate or require a Python environment during npm test. The real
+    launch entry point reads actual TS-serialized stdin. Only external admission
+    and task downloads are stubbed; evidence validation and hashing are real.
     """
     import json
     import subprocess
+    import sys
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[3]
@@ -171,18 +173,37 @@ const { loadConfig } = await load('apps/control-api/dist/config.js');
 const { replacementViewSchema } =
   await load('apps/control-api/dist/replacement-schemas.js');
 const { validateRunRecord } = await load('packages/contracts/dist/index.js');
-const { FilesystemObjectStore, createJson, readJson, reviewFingerprint } =
+const { FilesystemObjectStore, ReplacementEvidence, createJson,
+  readJson, reviewFingerprint } =
   await load('packages/control-core/dist/index.js');
-const { request, response } = JSON.parse(await readFile(process.argv[1], 'utf8'));
+const { request, response, python } = JSON.parse(
+  await readFile(process.argv[1], 'utf8'));
 const directory = process.argv[2];
 const executable = `${directory}/inspector.mjs`;
+request.original = await new ReplacementEvidence(
+  new FilesystemObjectStore(`${directory}/evidence`)
+).bundle(request.original.record.run_id);
 async function output(value) {
   await writeFile(executable, `#!${process.execPath}\nprocess.stdin.resume();
 process.stdin.on('end', () =>
   console.log(${JSON.stringify(JSON.stringify(value))}));\n`,
     {mode: 0o700});
 }
-await output(response);
+await writeFile(executable, `#!${python}
+import sys
+from unittest.mock import patch
+from harbor_hf_agents import launch, replacements
+async def admission(*args, **kwargs):
+    return set(), []
+async def plan(config, private):
+    return {"harbor_revision": launch.REVISION, "tasks": len(config.tasks),
+        "agents": len(config.agents), "trials": len(config.tasks) * config.n_attempts,
+        "warnings": [], "not_performed": ["offline external admission and downloads"]}
+sys.argv = [sys.argv[0], sys.argv[-1]]
+with (patch.object(replacements, "admit", admission),
+      patch.object(launch, "inspect_plan", plan)):
+    launch.main()
+`, {mode: 0o700});
 const config = loadConfig({ NODE_ENV: 'test', HARBOR_HF_NAMESPACE: 'test',
   HARBOR_HF_BUCKET_ID: 'test/artifacts', HARBOR_HF_AUTH_MODE: 'development',
   HARBOR_HF_STORE_MODE: 'filesystem' });
@@ -223,8 +244,21 @@ await assert.rejects(createJson(store, key,
 assert.deepEqual(validateRunRecord(await readJson(store, key)), stored);
 console.log(JSON.stringify(stored));
 """
+    evidence = tmp_path / "evidence/runs" / request["original"]["record"]["run_id"]
+    evidence.mkdir(parents=True)
+    (evidence / "run.json").write_text(json.dumps(request["original"]["record"]))
+    job = evidence / "job"
+    job.mkdir()
+    for name in ("config", "lock", "result"):
+        (job / f"{name}.json").write_text(json.dumps(request["original"][name]))
+    for trial in request["original"]["trials"]:
+        folder = job / trial["trial_name"]
+        folder.mkdir()
+        (folder / "result.json").write_text(json.dumps(trial))
     payload = tmp_path / "native-response.json"
-    payload.write_text(json.dumps({"request": request, "response": response}))
+    payload.write_text(
+        json.dumps({"request": request, "response": response, "python": sys.executable})
+    )
     completed = subprocess.run(
         ["node", "--input-type=module", "-e", script, str(payload), str(tmp_path)],
         cwd=root,

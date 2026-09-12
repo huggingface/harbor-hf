@@ -36,6 +36,43 @@ Approved at: 2026-09-12T11:29:13.370662+00:00
   mutation during this implementation phase. Stop for provenance mismatch,
   exposure, immutable conflict, duplicate execution or unapproved cost.
 
+#### Local implementation completion — 2026-09-12
+
+- Completed the two local fixes, tests and documentation after the dedicated
+  authorization commit. Fresh fetch still matches the reviewed main base. Primary
+  checkout only; existing operations history, branches and stashes are preserved.
+- Numeric equivalence is applied once before native evidence validation, not to
+  the final native hash. Saved-source offline replay matches the already stored
+  source fingerprint and immutable child configuration, and real parent preflight
+  succeeds without artifact or run-record rewrites. The regression now exercises
+  real TS evidence loading, subprocess stdin, native inspection and parent reads.
+- HF parent errors now persist desired pause. This is deliberately generic for
+  all typed parent errors, not a log-based deterministic classifier or a Harbor
+  trial retry policy. Explicit resume records observed error acknowledgments in
+  one optional control-owned state field; new errors pause again. The existing
+  actor only explains the stop in the UI, never authorizes restart. Native result
+  and cost-stop priority, live-parent handling and run-lock fencing are retained.
+- Native ownership, checked pinned source/history, the new operator-decision
+  field, compatibility limits and release boundary are documented in
+  `docs/replacement-evidence-parent-containment.md` for independent review.
+- Validation passed: root Ruff/format/ty, 102 Python tests at 89.10% coverage and
+  dependency audit; agent Ruff/format/ty and 501 tests. Changed evidence-module
+  combined coverage is 96.54%; controller line coverage is 92.08% (90% branches).
+  Node 22.22.0 formatting, lint, types, 1,575 unit tests, build, generated checks
+  and dependency audit passed. All 76 browser tests passed. Both Dockerfiles
+  built locally for linux/amd64; no image was published.
+- Disclosed gates: the prescribed Slophammer baseline check still cannot run
+  because the pre-existing baseline file is absent. Normal Slophammer and DRY
+  pass. Whole-agent coverage is 76.87%, below 85%, despite all tests passing;
+  the pre-existing package-wide coverage gap is not waived or hidden. The initial
+  browser startup probe stalled and was stopped; the full suite passed using an
+  isolated local test server. Initial lint and documentation-link failures were
+  corrected and their gates passed again. No tests or thresholds were weakened.
+- Stop here for independent review. No push, PR, merge, image publication,
+  deployment, remote run control, live inference approval, credential movement,
+  paid compute or new remote resource occurred. Release approval remains subject
+  to independent review and fresh safety checks; it never authorizes run resume.
+
 ### Replacement pause and read-only startup investigation
 
 Status: completed
@@ -2570,3 +2607,8 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 - Direct approval and the mandatory pre-publication independent-review stop are
   recorded above. Earlier scopes are not renewed. Operations completion history
   is preserved additively from the retained investigation branch.
+
+### 2026-09-12 — Replacement fixes local review handoff
+
+- Local implementation completion and disclosed validation gaps are recorded
+  above. Publication and deployment have not started; independent review is next.
