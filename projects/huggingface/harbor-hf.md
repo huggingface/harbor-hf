@@ -37,6 +37,53 @@ Approved at: 2026-09-12T16:51:25Z
   release scopes are not renewed. Report unresolved integrity or performance
   blockers rather than weakening validation or claiming an unverified score.
 
+#### Local investigation — implementation held
+
+- Fresh main matched the requested base. The authorization was committed before
+  implementation; only the primary checkout is used. No behavior patch has been
+  made. This scope remains approved and incomplete, not release-ready.
+- A disposable offline diagnostic exercised the actual `Replacements.view` and
+  `ReplacementEvidence` with filesystem-backed synthetic evidence: 445 original
+  and five replacement trial artifacts. A storage wrapper added 10 ms latency
+  per read/list operation and counted operations. Native aggregation and source
+  completion were stand-ins, so this measures evidence loading only; it neither
+  validates native provenance nor establishes any benchmark score.
+- Cold: 2,846 ms, 910 reads, 907 directory listings. Warm: 2,810 ms, the same
+  reads and listings. The aggregate stand-in was called only once across both
+  requests. Peak concurrent storage operations was 13 because the eight-worker
+  evidence pools are nested, not a global eight-operation limit. These are
+  synthetic local timings, not measurements of the hosted service.
+- `packages/control-core/src/replacements.ts` reads incurred trial costs before
+  independently loading assembly evidence; it consults the aggregate cache only
+  after that evidence is loaded. `replacement-evidence.ts` requests fresh bytes.
+  The warm aggregate cache therefore does not eliminate these storage operations.
+- `apps/control-api/src/trial-progress-reader.ts` is not a drop-in native evidence
+  cache: it projects trial results and retains completed observations under a
+  separate reconciliation window (default five minutes). Its exposed snapshot
+  does not provide the original complete native evidence required by the bridge.
+  `packages/hf-adapters/src/bucket-store.ts` serializes writes, not reads; its
+  download path has no explicit timeout signal, unlike directory listing.
+- Inspected pinned Harbor `src/harbor/job_plan.py` native `aggregate` and
+  `aggregate_stats`, their references to native trial results, and relevant
+  planning/result history including the JobPlan extraction. The existing bridge
+  in `packages/harbor-hf-agents/src/harbor_hf_agents/replacements.py` delegates
+  metrics to Harbor. No new general Harbor capability has been shown necessary.
+- The RunPage summary and Runs table currently use original native results;
+  replacement querying starts inside the opened replacement panel. The existing
+  scalar parser deliberately requires exactly one evaluation and one mean metric.
+  No UI changes were made, and no alternate score or favorable fallback was added.
+- Held before a speculative cache redesign: a safe optimization must preserve
+  complete native bytes, fresh relationship discovery, provider-identity fencing,
+  failure invalidation and bounded total in-flight work without borrowing weaker
+  display freshness. Cold-loading improvement is still unproven. No actual native
+  Combined score was obtained. The full contract review, implementation, regression
+  matrix, validation gates and independent review remain outstanding.
+- Only authorization, read-only source inspection and disposable offline profiling
+  occurred. No live diagnostic request, remote run control, inference, credential
+  movement, resource creation, publication or deployment occurred. Privacy and diff
+  checks cover the local documentation commits; historical full test results are
+  not claimed as fresh validation for this scope.
+
 ### Replacement evidence and parent failure containment
 
 Status: approved
