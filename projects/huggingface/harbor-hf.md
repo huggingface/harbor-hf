@@ -9,7 +9,38 @@ default_branch: main
 
 ## Current authorization
 
-Status: completed
+Status: approved
+
+### Run-recorded inference review release (2026-09-11)
+
+Status: approved
+
+Approved at: 2026-09-12T09:26:58+00:00
+
+- The user directly approved: “perfect -- yes, please publish merge and deploy”.
+  Publish the reviewed local run-inference feature through a pull request, merge
+  only its exact green reviewed head, publish the matched existing worker image
+  workflow, and deploy exact merged source to the existing private control Space.
+- This is a new release approval; previous completed scopes remain completed.
+  Preserve the primary checkout, existing branches, stashes and worktrees. Do not
+  create worktrees or discard work. Return the primary checkout to clean main at
+  the exact merged and deployed revision; completion may remain on the feature
+  branch without changing the released source snapshot.
+- Verify fresh expected main and feature revisions, the complete public diff and
+  metadata, privacy checks and relevant validation before publication. Disclose
+  existing baseline and agent coverage gaps without weakening gates. Stop for
+  unexpected source, image, provenance, CI or safety failures.
+- Use the existing image workflow and immutable linux/amd64 image. Preserve the
+  existing private Space, Bucket, visibility, hardware and credentials. No new
+  resources, credential movement or permission change is authorized.
+- Recheck all runs, owned Jobs and Workbench setup Jobs before cutover. Require
+  no active setup Jobs or execution and no restart-eligible work. Disable writes
+  during matched image/source staging; restore only the prior mode after fresh
+  eligibility checks and verify reconciliation leaves execution unchanged.
+- No live inference grants, replacement submission, run launch, paid canary,
+  inference, pause, resume, cancellation or other benchmark control is approved.
+  Stop for exposure, duplicate execution, immutable conflict, deterministic shared
+  defects, unapproved cost or a labeled Job that cannot be stopped.
 
 ### Run-recorded inference access review — local implementation
 
@@ -2442,3 +2473,9 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
   occurred. Ready for independent review and separate publication approval,
   retaining the disclosed pre-existing validation gaps. Earlier release scopes
   remain completed and do not authorize a new release.
+
+### 2026-09-11 — Run inference release approval
+
+- Direct user publication, exact green-head squash merge, matched worker image
+  publication and existing private Space deployment approval recorded above.
+  Live inference approval and all benchmark execution remain excluded.
