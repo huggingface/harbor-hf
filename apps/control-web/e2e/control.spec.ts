@@ -1,3 +1,4 @@
+import { noReplacements } from "./replacement-fixture";
 import { readFileSync } from "node:fs";
 import type { BenchmarkPresetV1 } from "@harbor-hf/contracts";
 import { expect, type Page, type Route, test } from "@playwright/test";
@@ -194,6 +195,8 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     const url = new URL(request.url());
     const path = url.pathname;
     const method = request.method();
+    if (method === "GET" && path === `/api/v1/runs/${runId}/replacements`)
+      return json(route, noReplacements(runId));
     if (path === "/api/v1/session")
       return json(
         route,
@@ -2896,7 +2899,10 @@ test("operator reviews exact infrastructure failures, creates related run and in
   await expect(
     page.getByRole("heading", { name: "Original execution", exact: true }),
   ).toBeVisible();
-  expect(replacementReads).toBe(0);
+  await expect(
+    page.getByText("No replacement runs. Original execution only."),
+  ).toBeVisible();
+  expect(replacementReads).toBe(1);
   await page.getByRole("button", { name: "Replace infrastructure failures" }).click();
   await expect(page.getByLabel(uuid, { exact: true })).toBeEnabled();
   await expect(
@@ -2946,7 +2952,7 @@ test("operator reviews exact infrastructure failures, creates related run and in
     },
   ]);
   await expect(page).toHaveURL(new RegExp(`/runs/${runId}$`));
-  await page.getByRole("button", { name: "Combined", exact: true }).click();
+  await page.getByRole("button", { name: "Close replacements" }).click();
   await expect(page.getByText("Combined · available")).toBeVisible();
   await expect(page.getByText("Score · reward mean: 0.500")).toBeVisible();
   await expect(

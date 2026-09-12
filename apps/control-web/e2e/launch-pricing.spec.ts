@@ -1,3 +1,4 @@
+import { noReplacements } from "./replacement-fixture";
 import { expect, type BrowserContext, test } from "@playwright/test";
 import type { LaunchPricingV1 } from "@harbor-hf/contracts";
 
@@ -73,6 +74,8 @@ function fixture() {
           contentType: "application/json",
           body: JSON.stringify(body),
         });
+      if (request.method() === "GET" && path === `/api/v1/runs/${runId}/replacements`)
+        return json(noReplacements(runId));
       if (path === "/api/v1/workbench/preview") {
         previews++;
         const recipe = request.postDataJSON();

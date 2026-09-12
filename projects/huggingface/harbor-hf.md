@@ -9,11 +9,11 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 
 ### Combined score rollup and loading — local implementation
 
-Status: approved
+Status: completed
 
 Approved at: 2026-09-12T16:51:25Z
 
@@ -83,6 +83,48 @@ Approved at: 2026-09-12T16:51:25Z
   movement, resource creation, publication or deployment occurred. Privacy and diff
   checks cover the local documentation commits; historical full test results are
   not claimed as fresh validation for this scope.
+
+#### Local implementation completion — 2026-09-12
+
+- Completed the approved local implementation in the primary checkout, following
+  the committed authorization. Ready for independent review, not publication or
+  deployment. The earlier profiling hold remains historical evidence, superseded
+  by this implementation and its fresh validation.
+- Original versus Combined native scores now appear above the collapsed operator
+  panel through one shared query. Loading, pending, unavailable, failed refresh,
+  expired saved evidence and explicit Retry are visible. A bounded browser request
+  reports timeout rather than remaining indefinitely in Refreshing. Full native
+  JSON remains inspectable/downloadable; arbitrary metrics are not averaged.
+- One request-scoped native evidence reader now coalesces exact fresh reads and
+  shallow listings for incurred costs and assembly. Nested storage I/O is capped
+  at eight. Every new request rediscovers relationships and reads fresh evidence;
+  completion checks and the existing aggregate cache remain intact. All retained
+  receipts, unknown costs and failed replacements preserve existing semantics.
+- The same offline synthetic profile improved from about 2.85 seconds to 1.43
+  seconds: 910 to 458 reads, 907 to 455 listings, peak concurrency 13 to eight.
+  This is not a hosted latency guarantee or a verified private Combined score.
+  Warm requests still read native evidence, and this patch does not claim one
+  recursive metadata listing per run or cancellation of server inspection when
+  the browser times out.
+- Pinned Harbor aggregation, native result fields and relevant planning history
+  were checked; the ownership and unchanged-schema comparison is documented in
+  `docs/2026-09-11-replacement-backend.md`. No native behavior, persisted field,
+  alternate cost/result format, provider rule, resource or API schema was added.
+- Validation passed: root Ruff/format/ty, 102 tests at 89.10% and dependency audit;
+  agent Ruff/format/ty and 598 tests at 87.33% (coverage used an ephemeral
+  pytest-cov dependency, not a manifest or lockfile change). Node 22.22.0 format,
+  lint, types, 1,585 unit tests, build, generated checks and dependency audit pass.
+  Changed rollup/evidence module coverage is 98.12% lines and 92.53% branches.
+  All 76 browser tests pass. Both Dockerfiles build locally for linux/amd64.
+  Slophammer baseline and DRY pass with zero findings. No threshold was weakened.
+- Initial test failures were corrected: immediate querying required existing
+  browser fixtures to supply the normal no-replacements response; query-state
+  tests await rendering and restore mocks. The first browser server startup
+  stalled and was stopped; the full suite passed against an isolated local web
+  server. The optional coverage plugin was supplied only for the coverage check.
+- No worktree, remote mutation, publication, merge, deployment, run control,
+  inference, paid compute, credential movement or live private-source diagnostic
+  occurred. Independent review and separate release authorization remain required.
 
 ### Replacement evidence and parent failure containment
 

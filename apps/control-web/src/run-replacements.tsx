@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -15,7 +15,7 @@ import {
 import { RunInferenceAccess } from "./run-inference-review";
 import { useControlState } from "./control-state";
 import { formatMoneyUsd } from "./lib";
-import { RUN_POLL_INTERVAL_MS } from "./queries";
+import { RUN_POLL_INTERVAL_MS, useRunClock } from "./queries";
 import { nativeScore, resultStat, roundedScore } from "./run-summary";
 import { Button, Card } from "./ui";
 
@@ -34,9 +34,49 @@ export function RunReplacements({
   trials: TrialIdentity[];
 }) {
   const [open, setOpen] = useState<boolean | null>(null);
+  const query = useQuery({
+    queryKey: ["replacements", run.record.run_id],
+    queryFn: () => getReplacements(run.record.run_id),
+    refetchInterval: RUN_POLL_INTERVAL_MS,
+    retry: false,
+  });
+  const originalScore = nativeScore(run.result);
+  const now = useRunClock();
+  const expired = now - query.dataUpdatedAt > 60_000;
+  const current = !query.error && !expired ? query.data : undefined;
   return (
     <Card className="my-6">
-      <h2 className="font-semibold text-white">Infrastructure replacements</h2>
+      <h2 className="font-semibold text-white">Original versus Combined rollup</h2>
+      <p className="text-xl tabular-nums">
+        Original · {originalScore.label}: {roundedScore(originalScore.value)}
+      </p>
+      <div aria-live="polite">
+        {query.isFetching ? <p>Loading fresh combined evidence…</p> : null}
+        {query.error || (query.data && expired) ? (
+          <p role="alert">
+            Combined unavailable: {query.error?.message ?? "saved evidence has expired"}
+            . Original is not a Combined fallback.
+          </p>
+        ) : null}
+        {query.error || (query.data && expired) ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            Retry combined rollup
+          </Button>
+        ) : null}
+        {current && query.isFetching ? (
+          <p>Showing the last completed evidence check while refreshing.</p>
+        ) : null}
+        {current?.children.length ? <CombinedReplacementView view={current} /> : null}
+        {current && !current.children.length ? (
+          <p>No replacement runs. Original execution only.</p>
+        ) : null}
+      </div>
+      <h3 className="mt-3 font-semibold">Infrastructure replacements</h3>
       {run.record.operator_selection ? (
         <p>
           This is a replacement run.{" "}
@@ -61,7 +101,7 @@ export function RunReplacements({
       {/* Keep an uncertain submission in memory when the panel is closed. */}
       <div id="replacement-panel" hidden={!open}>
         {open !== null ? (
-          <ReplacementPanel run={run} trials={trials} open={open} />
+          <ReplacementPanel run={run} trials={trials} query={query} />
         ) : null}
       </div>
     </Card>
@@ -71,22 +111,15 @@ export function RunReplacements({
 function ReplacementPanel({
   run,
   trials,
-  open,
+  query,
 }: {
   run: RunView;
   trials: TrialIdentity[];
-  open: boolean;
+  query: UseQueryResult<ReplacementView, Error>;
 }) {
   const { writesAllowed } = useControlState();
   const eligible = writesAllowed && run.status === "finished";
   const runId = run.record.run_id;
-  const query = useQuery({
-    queryKey: ["replacements", runId],
-    queryFn: () => getReplacements(runId),
-    enabled: open,
-    refetchInterval: open ? RUN_POLL_INTERVAL_MS : false,
-    retry: false,
-  });
   const [tab, setTab] = useState<Tab>("Original");
   const [selected, setSelected] = useState<string[]>([]);
   const [budget, setBudget] = useState("");
@@ -431,8 +464,8 @@ function ReplacementPanel({
           )}
         </section>
       ) : null}
-      {tab === "Combined" && query.data ? (
-        <CombinedReplacementView view={query.data} />
+      {tab === "Combined" ? (
+        <p>Combined native results are shown in the rollup above.</p>
       ) : null}
     </div>
   );
@@ -457,9 +490,12 @@ export function CombinedReplacementView({ view }: { view: ReplacementView }) {
         </p>
       ) : (
         <>
-          <p>
+          <p className="text-xl tabular-nums">
             {score.label}: {roundedScore(score.value)}
           </p>
+          {score.value === null ? (
+            <p>No single native mean is available; inspect the native metrics below.</p>
+          ) : null}
           <p>
             Native completed trials:{" "}
             {resultStat(result, "n_completed_trials") ?? "Unknown"} · Native errors:{" "}

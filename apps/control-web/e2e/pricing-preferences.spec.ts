@@ -1,3 +1,4 @@
+import { noReplacements } from "./replacement-fixture";
 import { expect, type Page, test } from "@playwright/test";
 
 const runId = "run-0123456789abcdef01234567";
@@ -89,6 +90,7 @@ async function mockPricing(page: Page, writes: string[]) {
       "/api/v1/runs": { runs: [run] },
       "/api/v1/jobs": { jobs: [] },
       [`/api/v1/runs/${runId}`]: run,
+      [`/api/v1/runs/${runId}/replacements`]: noReplacements(runId),
       [`/api/v1/runs/${runId}/trials`]: { trials: [] },
       [`/api/v1/runs/${runId}/progress`]: {
         observed_at: "2026-01-01T00:00:03Z",

@@ -4,7 +4,7 @@ import {
   validateRunRecord,
   type RunRecordV1,
 } from "@harbor-hf/contracts";
-import type { ObjectStore } from "./store.js";
+import type { DirectoryListing, ObjectStore } from "./store.js";
 
 export const NATIVE_PAYLOAD_LIMIT = 32 * 1024 * 1024;
 export interface SourceBundle {
@@ -106,10 +106,43 @@ export async function evidenceMap<T, U>(
 }
 export class ReplacementEvidence {
   private bytes = 0;
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
+  private async io<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.active >= 8) await new Promise<void>((ready) => this.waiting.push(ready));
+    else this.active++;
+    try {
+      return await operation();
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.active--;
+    }
+  }
+  // One inspection owns these promises, including failures. Never reused by a GET.
+  private readonly reads = new Map<string, Promise<Record<string, unknown>>>();
+  private readonly listings = new Map<string, Promise<DirectoryListing>>();
+  directory(prefix: string, filenames?: readonly string[]): Promise<DirectoryListing> {
+    const key = canonicalJson([prefix, filenames ?? null]);
+    let pending = this.listings.get(key);
+    if (!pending) {
+      pending = this.io(() => this.store.listDirectory(prefix, filenames));
+      this.listings.set(key, pending);
+    }
+    return pending;
+  }
   readonly identities: string[] = [];
   constructor(readonly store: ObjectStore) {}
-  async read(key: string): Promise<Record<string, unknown>> {
-    const bytes = await this.store.read(key, { fresh: true });
+  read(key: string): Promise<Record<string, unknown>> {
+    let pending = this.reads.get(key);
+    if (!pending) {
+      pending = this.readFresh(key);
+      this.reads.set(key, pending);
+    }
+    return pending.then((value) => structuredClone(value));
+  }
+  private async readFresh(key: string): Promise<Record<string, unknown>> {
+    const bytes = await this.io(() => this.store.read(key, { fresh: true }));
     this.bytes += bytes.byteLength;
     if (this.bytes > NATIVE_PAYLOAD_LIMIT)
       throw new ReplacementError(
@@ -120,7 +153,7 @@ export class ReplacementEvidence {
     return nativeObject(JSON.parse(new TextDecoder().decode(bytes)));
   }
   async records(): Promise<RunRecordV1[]> {
-    const listing = await this.store.listDirectory("runs/", []);
+    const listing = await this.directory("runs/", []);
     return evidenceMap(listing.directories, async (prefix) => {
       const record = validateRunRecord(await this.read(`${prefix}run.json`));
       if (prefix !== `runs/${record.run_id}/`)
@@ -143,9 +176,9 @@ export class ReplacementEvidence {
     );
     if (!config || !lock || !result)
       throw new ReplacementError(409, "Missing native evidence");
-    const listing = await this.store.listDirectory(job, []);
+    const listing = await this.directory(job, []);
     const results = await evidenceMap(listing.directories, async (directory) => {
-      const files = await this.store.listDirectory(directory, ["result.json"]);
+      const files = await this.directory(directory, ["result.json"]);
       const entry = files.files.find((file) => file.key === `${directory}result.json`);
       if (!entry)
         throw new ReplacementError(409, "Source has unfinished native trial artifacts");

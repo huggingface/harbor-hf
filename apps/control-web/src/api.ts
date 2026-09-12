@@ -334,8 +334,20 @@ export type SubmissionResult = components["schemas"]["SubmissionResult"];
 
 const replacementPath = (runId: string) =>
   `/api/v1/runs/${encodeURIComponent(runId)}/replacements`;
-export const getReplacements = (runId: string) =>
-  api<ReplacementView>(replacementPath(runId));
+export const getReplacements = async (runId: string) => {
+  const signal = AbortSignal.timeout(60_000);
+  try {
+    return await api<ReplacementView>(replacementPath(runId), { signal });
+  } catch (error) {
+    if (signal.aborted)
+      throw new ApiError(
+        0,
+        "request_timeout",
+        "Combined evidence request timed out; retry to check fresh evidence.",
+      );
+    throw error;
+  }
+};
 export const validateReplacements = (runId: string, input: ReplacementInput) =>
   api<LaunchValidation>(`${replacementPath(runId)}/validate`, {
     method: "POST",

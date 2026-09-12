@@ -110,12 +110,14 @@ export class Replacements {
     ];
   }
 
-  private async incurred(ids: string[]): Promise<ReportedAttemptCostCoverage> {
-    const reader = new ReplacementEvidence(this.store);
+  private async incurred(
+    ids: string[],
+    reader: ReplacementEvidence,
+  ): Promise<ReportedAttemptCostCoverage> {
     const receipts = (
       await evidenceMap(ids, async (id) => {
         const prefix = `runs/${id}/attempt-costs/`;
-        const { files } = await this.store.listDirectory(prefix);
+        const { files } = await reader.directory(prefix);
         return evidenceMap(
           files.filter((file) => file.key.endsWith(".json")),
           async (file) => {
@@ -132,12 +134,10 @@ export class Replacements {
     const trials = (
       await evidenceMap(ids, async (id) => {
         const job = `runs/${id}/job/`;
-        const { directories } = await this.store.listDirectory(job, []);
+        const { directories } = await reader.directory(job, []);
         return (
           await evidenceMap(directories, async (directory) => {
-            const { files } = await this.store.listDirectory(directory, [
-              "result.json",
-            ]);
+            const { files } = await reader.directory(directory, ["result.json"]);
             const entry = files.find((file) => file.key === `${directory}result.json`);
             return entry ? summarizeTrial(id, "", await reader.read(entry.key)) : null;
           })
@@ -180,7 +180,7 @@ export class Replacements {
       selected_cost_usd: null,
     };
     try {
-      view.incurred = await this.incurred(this.descendants(id, records));
+      view.incurred = await this.incurred(this.descendants(id, records), reader);
     } catch {
       /* Unknown coverage, never zero. */
     }

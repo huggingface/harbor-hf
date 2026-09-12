@@ -274,3 +274,71 @@ approximately 77%, a pre-existing gap; changed modules meet 85%. No threshold
 was weakened. Independent final design review was GO after both fingerprint
 format and ambiguous-metric fixes. No paid execution or live-source canary was
 performed. Image publication and runtime verification are separate release gates.
+
+## Combined rollup loading — local implementation
+
+The RunPage now queries replacement evidence above the collapsed operator panel.
+One query owns polling, refresh and submission-triggered invalidation; opening
+or closing the panel does not create another fetch. Original and Combined native
+scores are explicitly labeled. Original execution status and counts remain in
+their existing section; Combined never replaces them. The scalar display still
+uses `nativeScore`: exactly one native evaluation and one mean metric. Other
+metrics and pass-at-k remain accessible in the complete native JSON, not reduced
+to an invented score.
+
+Loading, pending native assembly, unavailable evidence, and transport failure are
+visible without opening the panel. A replacement GET has a 60-second browser
+request timeout with an explicit timeout message and Retry. Failed refreshes
+withhold the saved Combined result. A successful response retained during refresh
+is labeled as the last completed check and expires after 60 seconds, using the
+existing advancing display clock. This is browser response age, not a newly
+invented native observation timestamp or a guarantee of transactionally atomic
+Bucket reads. The existing polling interval is unchanged. Browser timeout does
+not cancel server-side native inspection or establish a hosted latency guarantee.
+
+`Replacements.view` shares one `ReplacementEvidence` reader across relationship
+discovery, all-incurred reconciliation and native assembly. That reader coalesces
+exact-key fresh JSON reads and exact-argument shallow directory listings, including
+in-flight promises and failures, only for that operation. Consumers receive
+independent copies of parsed native JSON. New requests construct new readers:
+no TTL, completed-progress cache, provider adapter cache change or durable snapshot
+is introduced. The existing content-identity aggregate cache is still consulted
+only after fresh native evidence and live completion checks. All retained attempt
+receipts, including removed attempts and unknown costs, still use the existing
+`authoritativeAttemptCosts` reconciliation.
+
+An inspection-wide eight-operation storage limit bounds nested evidence pools.
+Unique native/receipt bytes share the existing 32 MiB inspection limit. Shallow
+listings deliberately retain existing unfinished-directory detection rather than
+reconstructing directories from a recursive file-only listing. This minimal patch
+halves redundant I/O; it does **not** claim one metadata listing per entire run or
+eliminate warm-request native reads.
+
+Offline synthetic profiling used 445 original and five child trial artifacts,
+10 ms latency for every storage read/list, and stand-ins for aggregation and
+completion. No receipts were present in this timing fixture; the old 910 reads
+were predominantly duplicate trial reads, not receipt reads. Before: cold 2,846 ms,
+warm 2,810 ms, 910 reads and 907 listings each, peak 13 storage operations. After:
+cold 1,426 ms, warm 1,430 ms, 458 reads and 455 listings each, peak eight. The native
+aggregate stand-in was called once across both requests. These measurements are
+not hosted latency, native task-resolution profiling, or evidence of an actual
+Combined benchmark score. Retained-receipt accounting is covered separately in
+regression tests.
+
+### Ownership and unchanged-schema review
+
+Checked pinned Harbor `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`:
+`src/harbor/job_plan.py` (`JobPlan.aggregate`, `aggregate_stats`, metric resolution),
+`src/harbor/models/job/result.py` (`JobResult`, `JobStats`, native metrics), and
+planning history including `00c19fe2` (JobPlan extraction) and `abeae607`.
+The existing bridge in
+`packages/harbor-hf-agents/src/harbor_hf_agents/replacements.py` still delegates to
+those APIs unchanged. Harbor already supplies aggregation; there is no new
+upstream behavior gap, local metric engine, or upstream proposal.
+
+The changed behavior belongs to Harbor-HF's evidence transport and console.
+No durable record, schema, API response field, SQLite table, native result field,
+cost format, retry rule or resource was added. UI states use existing assembly
+availability and query state. Failed replacements, ancestry/provenance checks,
+source completion, null costs and complete native metrics remain authoritative.
+Local approval does not authorize publication, deployment or run control.

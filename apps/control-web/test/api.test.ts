@@ -33,6 +33,7 @@ afterEach(() => {
   // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API.
   document.cookie = "hhf_csrf=; Max-Age=0";
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("browser API transport", () => {
@@ -211,4 +212,32 @@ it("transports native replacement inputs and exact idempotent replay through nor
     "synthetic-idempotency-key",
   );
   expect(calls[4]).toEqual(calls[3]);
+});
+
+it("exposes a bounded replacement timeout distinctly from ordinary request failure", async () => {
+  const controller = new AbortController();
+  vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      controller.abort();
+      throw new Error("aborted");
+    }),
+  );
+  await expect(getReplacements("run-synthetic")).rejects.toMatchObject({
+    code: "request_timeout",
+  });
+  expect(AbortSignal.timeout).toHaveBeenCalledWith(60_000);
+});
+
+it("preserves non-timeout replacement errors", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new Error("offline");
+    }),
+  );
+  await expect(getReplacements("run-synthetic")).rejects.toMatchObject({
+    code: "network_error",
+  });
 });
