@@ -351,3 +351,13 @@ export const submitReplacements = (
     headers: { "Idempotency-Key": idempotencyKey },
     body: JSON.stringify(input),
   });
+
+export type RunInferenceReview = components["schemas"]["RunInferenceReview"];
+export const reviewRunInference = (runId: string) =>
+  api<RunInferenceReview>(
+    `/api/v1/runs/${encodeURIComponent(runId)}/inference-review`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );

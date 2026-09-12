@@ -9,11 +9,11 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 
 ### Run-recorded inference access review — local implementation
 
-Status: approved
+Status: completed
 
 Approved at: 2026-09-12T08:58:50Z
 
@@ -2407,3 +2407,38 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 
 - Direct approval recorded above; prior PR #221 release and local checkout
   synchronization are completed. No earlier mutation scope carries forward.
+
+### 2026-09-12 — Local run inference review completion
+
+- Completed only the local scope above, in the primary checkout. Authorization
+  was committed before implementation. Preserved the existing stash, retained
+  branches and other worktrees; no worktree was created.
+- Reused immutable native configuration and the existing inference policy matcher,
+  registry, revision checks, bounded review cache and approval endpoint. The
+  run-page action reuses a valid current-image grant or explicitly reviews the
+  same owned scope for the current image. No recipe reconstruction, durable
+  schema addition, credential source change or automatic launch was introduced.
+- Self-reviewed native ownership, complete source/test/docs and generated diffs,
+  including unchanged existing OpenAPI components. Evidence and API boundaries
+  are documented in `docs/run-inference-access-review.md`.
+- Validation: Node 22.22.0 formatting, lint, types, build, generated checks and
+  dependency audit passed; 1,568 unit tests and 75 browser tests passed. The
+  updated browser flow covers denial, preserved recorded configuration, explicit
+  inference approval and subsequent normal replacement creation with mocks only.
+- Changed modules have 97.59% combined line coverage and 91.11% branch coverage;
+  each of the three measured behavioral modules exceeds 85%. Root checks and
+  Ruff/format/ty passed, with 102 tests at
+  89.10% coverage and dependency audit passed. Agent Ruff/format/ty and all 481
+  tests passed. Both Dockerfiles built locally for linux/amd64.
+- Public privacy, normal Slophammer and DRY checks passed. The prescribed
+  Slophammer baseline invocation remains blocked by the pre-existing absent
+  baseline file. Agent whole-package coverage remains about 77%; no agent code
+  changed and no threshold was weakened. The first optional agent coverage
+  invocation lacked the plugin; the isolated plugin-enabled measurement passed.
+- The initial browser startup probe stalled and was stopped; the complete suite
+  passed against an isolated local test server. No browser test was weakened.
+- No publication, pull request, merge, deployment, remote grant change,
+  credential transfer, paid compute, model inference or remote resource creation
+  occurred. Ready for independent review and separate publication approval,
+  retaining the disclosed pre-existing validation gaps. Earlier release scopes
+  remain completed and do not authorize a new release.
