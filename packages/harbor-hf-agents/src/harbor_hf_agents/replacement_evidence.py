@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -30,6 +31,26 @@ RUN_ID = re.compile(r"run-[0-9a-f]{24}")
 
 def canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _json_numbers(value: object) -> object:
+    """Choose one representation before Harbor restores its declared field types.
+
+    JSON has no int/float distinction. Normalize only exact integral floats;
+    never round fractions, coerce booleans, or pass arbitrary integers via float.
+    Normalizing the final native dump instead would change existing fingerprints
+    for fields that Harbor explicitly declares as float.
+    """
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("Replacement evidence requires finite JSON numbers")
+        if value.is_integer():
+            return int(value)
+    if isinstance(value, dict):
+        return {key: _json_numbers(item) for key, item in launch.record(value).items()}
+    if isinstance(value, list):
+        return [_json_numbers(item) for item in objects(value)]
+    return value
 
 
 def native(value: BaseModel) -> dict[str, object]:
@@ -105,7 +126,7 @@ class Evidence:
 
     @classmethod
     def parse(cls, value: object) -> Evidence:
-        bundle = launch.record(value)
+        bundle = launch.record(_json_numbers(value))
         trials = objects(bundle["trials"])
         if any("id" not in launch.record(item) for item in trials):
             raise ValueError("Native trial UUID must be recorded, never generated")

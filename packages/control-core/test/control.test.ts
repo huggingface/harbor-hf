@@ -1130,6 +1130,150 @@ describe("status and projection", () => {
 });
 
 describe("reconciliation", () => {
+  it("serializes explicit resume after a stale failure reconciliation", async () => {
+    const { run } = await submit("error-resume-race");
+    await service.reconcile();
+    const parent = jobs.values[0];
+    if (!parent) throw new Error("missing parent");
+    parent.stage = "error";
+    let release = (): void => undefined;
+    let entered = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inspecting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const inspect = jobs.inspect.bind(jobs);
+    vi.spyOn(jobs, "inspect").mockImplementationOnce(async (id) => {
+      entered();
+      await gate;
+      return inspect(id);
+    });
+    const reconciliation = service.reconcile();
+    await inspecting;
+    const resume = service.setDesiredState(run.run_id, "run", "test-subject");
+    release();
+    await reconciliation;
+    await resume;
+    await service.reconcile();
+    expect(jobs.starts).toBe(2);
+    expect(projection.run(run.run_id)?.state.desired_state).toBe("run");
+    expect(projection.run(run.run_id)?.state.acknowledged_parent_failures).toEqual([
+      parent.id,
+    ]);
+  });
+
+  it("preserves cost-stop priority over parent error containment", async () => {
+    const { run } = await submit("error-cost-stop");
+    await service.reconcile();
+    const parent = jobs.values[0];
+    if (!parent) throw new Error("missing parent");
+    parent.stage = "error";
+    await putJson(store, `runs/${run.run_id}/job/task__trial/result.json`, trial(1));
+    await service.reconcile();
+    expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
+    expect(projection.run(run.run_id)?.state.desired_state).toBe("run");
+    expect(jobs.starts).toBe(1);
+  });
+
+  it("does not acknowledge unknown recorded parents on resume", async () => {
+    const { run } = await submit("unknown-parent-resume");
+    await service.reconcile();
+    await service.setDesiredState(run.run_id, "paused", "test-subject");
+    vi.spyOn(jobs, "inspect").mockRejectedValue(new Error("unavailable"));
+    await expect(
+      service.setDesiredState(run.run_id, "run", "test-subject"),
+    ).rejects.toThrow("unavailable");
+    await service.refresh();
+    expect(projection.run(run.run_id)?.status).toBe("paused");
+    expect(
+      projection.run(run.run_id)?.state.acknowledged_parent_failures,
+    ).toBeUndefined();
+  });
+
+  it("cleans orphan children before containing parent failure", async () => {
+    const { run } = await submit("parent-error-orphan");
+    await service.reconcile();
+    const parent = jobs.values[0];
+    if (!parent) throw new Error("missing parent");
+    parent.stage = "error";
+    jobs.values.push({ ...parent, id: "orphan", role: "trial", stage: "running" });
+    await service.reconcile();
+    expect(jobs.cancelled).toContain("orphan");
+    expect(jobs.starts).toBe(1);
+    expect(projection.run(run.run_id)?.status).toBe("paused");
+  });
+
+  it("contains parent errors until explicit resume, including after rebuild", async () => {
+    const { run } = await submit("parent-failure");
+    await service.reconcile();
+    const first = jobs.values[0];
+    if (!first) throw new Error("missing parent");
+    first.stage = "error";
+    // No completion timestamp is needed; provider error is authoritative.
+    await service.reconcile();
+    const paused = projection.run(run.run_id)?.state;
+    expect(paused?.desired_state).toBe("paused");
+    expect(paused?.actor).toBe("harbor-hf-parent-failed");
+    await service.initialize();
+    await service.reconcile();
+    expect(projection.run(run.run_id)?.state).toEqual(paused);
+    expect(jobs.starts).toBe(1);
+    await service.setDesiredState(run.run_id, "run", "test-subject");
+    expect(projection.run(run.run_id)?.state.acknowledged_parent_failures).toEqual([
+      first.id,
+    ]);
+    await service.reconcile();
+    expect(jobs.starts).toBe(2);
+    const second = jobs.values[1];
+    if (!second) throw new Error("missing resumed parent");
+    second.stage = "error";
+    await service.reconcile();
+    await service.reconcile();
+    expect(jobs.starts).toBe(2);
+    expect(projection.run(run.run_id)?.status).toBe("paused");
+  });
+
+  it("acknowledges all historical errors but never an active parent's future error", async () => {
+    const { run } = await submit("historical-errors");
+    await service.reconcile();
+    const first = jobs.values[0];
+    if (!first) throw new Error("missing parent");
+    first.stage = "error";
+    jobs.values.push({ ...first, id: "historical-parent" });
+    await service.reconcile();
+    await service.setDesiredState(run.run_id, "run", "test-subject");
+    await service.reconcile();
+    await service.setDesiredState(run.run_id, "run", "test-subject");
+    expect(projection.run(run.run_id)?.state.acknowledged_parent_failures).toEqual([
+      "historical-parent",
+      "parent-1",
+    ]);
+    const active = jobs.values.find((job) => job.id === "parent-2");
+    if (!active) throw new Error("missing active parent");
+    active.stage = "error";
+    await service.reconcile();
+    expect(projection.run(run.run_id)?.status).toBe("paused");
+    expect(jobs.starts).toBe(2);
+  });
+
+  it("keeps native completion authoritative despite a parent error", async () => {
+    const { run } = await submit("finished-parent-error");
+    await service.reconcile();
+    const parent = jobs.values[0];
+    if (!parent) throw new Error("missing parent");
+    parent.stage = "error";
+    await putJson(store, `runs/${run.run_id}/job/result.json`, {
+      finished_at: "2026-01-01T00:00:00Z",
+      stats: { n_completed_trials: 1 },
+    });
+    await service.reconcile();
+    expect(projection.run(run.run_id)?.status).toBe("finished");
+    expect(projection.run(run.run_id)?.state.desired_state).toBe("run");
+    expect(jobs.starts).toBe(1);
+  });
+
   it("starts one parent, adopts it, and respects capacity", async () => {
     const first = await submit("first");
     await submit("second");

@@ -2770,6 +2770,8 @@ export interface components {
             /** @enum {unknown} */
             desired_state: "run" | "paused" | "cancelled";
             actor: string;
+            /** @description Owned parent error IDs explicitly acknowledged by operator resume; not Job status or retry state. */
+            acknowledged_parent_failures?: string[];
             parent_jobs: {
                 id: string;
                 /** Format: date-time */

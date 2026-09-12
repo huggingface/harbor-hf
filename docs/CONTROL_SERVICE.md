@@ -162,7 +162,7 @@ The service reads these Space variables:
 | `HARBOR_HF_PARENT_TIMEOUT_SECONDS` | no | `86400` | parent Job timeout |
 | `HARBOR_HF_MAX_ACTIVE_JOBS` | no | `16` | live parent Job limit |
 | `HARBOR_HF_RECONCILE_INTERVAL_MS` | no | `15000` | reconcile interval |
-| `HARBOR_HF_PARENT_RESTART_DELAY_MS` | no | `60000` | failed parent restart delay |
+| `HARBOR_HF_PARENT_RESTART_DELAY_MS` | no | `60000` | eligible parent restart delay |
 | `HARBOR_HF_PROJECTION_PATH` | no | `/tmp/harbor-hf/control.sqlite` | SQLite projection |
 | `HARBOR_HF_AUTH_PATH` | no | `/tmp/harbor-hf/auth.sqlite` | OAuth session store |
 | `HARBOR_HF_WEB_ROOT` | no | `./apps/control-web/dist` | built web application |
@@ -706,3 +706,22 @@ configuration and the exact existing owned scope, then saves explicit approval
 through the existing registry API without launching anything. See
 [Run-recorded inference access review](run-inference-access-review.md) for the
 server-only input, review fencing and policy boundaries.
+
+## Parent error containment
+
+After existing native completion, cost-stop, desired-state, live-parent and orphan
+cleanup checks, an owned HF parent `error` pauses execution instead of repeatedly
+starting parents. This includes startup failures, but does not claim to classify
+errors as deterministic or transient. Logs and native trial exceptions are not
+control inputs. Non-error terminal parents retain the existing restart delay.
+
+Explicit operator resume acknowledges only currently observed owned parent errors
+in optional `state.json.acknowledged_parent_failures`, a set of Job IDs recording
+that operator decision, not mirrored Job status or Harbor retry state. An absent
+field means no acknowledgment. New errors require a new review; old acknowledged
+errors do not prevent resume. Intent and reconciliation remain under the same run
+lock. Failed/unknown recorded-parent inspection prevents acknowledgment or launch.
+The parent never writes this field. No error message, retry counter, completion
+state, additional resource or projection table is added. Disabled-write runtime
+still does not start the reconciler or permit resume. Deployment never resumes a
+paused run. See [review evidence](replacement-evidence-parent-containment.md).

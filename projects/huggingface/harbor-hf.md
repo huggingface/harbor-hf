@@ -11,6 +11,152 @@ default_branch: main
 
 Status: approved
 
+### Replacement evidence and parent failure containment
+
+Status: approved
+
+Approved at: 2026-09-12T11:29:13.370662+00:00
+
+- The user explicitly approved: “yep, those are 2 clear fixes” and “fix both
+  issues, PR and deploy”, preferring the primary checkout over worktrees.
+- Implement numeric-equivalent replacement evidence fingerprinting and generic
+  containment of failed HF parent startup relaunches, with offline regression
+  tests and documentation. Preserve native Harbor execution, immutable source
+  artifacts, stored review fingerprints, and existing schema ownership.
+- Commit this authorization before implementation. Preserve existing branches,
+  stashes and operations completion history; create no worktrees.
+- Release approval covers PR publication, exact green reviewed-head merge,
+  matched immutable worker image publication and deployment to the existing
+  private <control-space>, retaining <artifact-bucket> and existing resources.
+  This implementation phase MUST stop at local commits for independent review
+  before any publication or deployment; a separate release phase follows review.
+- No run launch, resume, replacement submission, paid compute, inference grant,
+  credential change/transfer, permission change or new resource is authorized.
+  Preserve the paused replacement and all unrelated execution. No remote
+  mutation during this implementation phase. Stop for provenance mismatch,
+  exposure, immutable conflict, duplicate execution or unapproved cost.
+
+#### Local implementation completion — 2026-09-12
+
+- Completed the two local fixes, tests and documentation after the dedicated
+  authorization commit. Fresh fetch still matches the reviewed main base. Primary
+  checkout only; existing operations history, branches and stashes are preserved.
+- Numeric equivalence is applied once before native evidence validation, not to
+  the final native hash. Saved-source offline replay matches the already stored
+  source fingerprint and immutable child configuration, and real parent preflight
+  succeeds without artifact or run-record rewrites. The regression now exercises
+  real TS evidence loading, subprocess stdin, native inspection and parent reads.
+- HF parent errors now persist desired pause. This is deliberately generic for
+  all typed parent errors, not a log-based deterministic classifier or a Harbor
+  trial retry policy. Explicit resume records observed error acknowledgments in
+  one optional control-owned state field; new errors pause again. The existing
+  actor only explains the stop in the UI, never authorizes restart. Native result
+  and cost-stop priority, live-parent handling and run-lock fencing are retained.
+- Native ownership, checked pinned source/history, the new operator-decision
+  field, compatibility limits and release boundary are documented in
+  `docs/replacement-evidence-parent-containment.md` for independent review.
+- Validation passed: root Ruff/format/ty, 102 Python tests at 89.10% coverage and
+  dependency audit; agent Ruff/format/ty and 501 tests. Changed evidence-module
+  combined coverage is 96.54%; controller line coverage is 92.08% (90% branches).
+  Node 22.22.0 formatting, lint, types, 1,575 unit tests, build, generated checks
+  and dependency audit passed. All 76 browser tests passed. Both Dockerfiles
+  built locally for linux/amd64; no image was published.
+- Disclosed gates: the prescribed Slophammer baseline check still cannot run
+  because the pre-existing baseline file is absent. Normal Slophammer and DRY
+  pass. Whole-agent coverage is 76.87%, below 85%, despite all tests passing;
+  the pre-existing package-wide coverage gap is not waived or hidden. The initial
+  browser startup probe stalled and was stopped; the full suite passed using an
+  isolated local test server. Initial lint and documentation-link failures were
+  corrected and their gates passed again. No tests or thresholds were weakened.
+- Stop here for independent review. No push, PR, merge, image publication,
+  deployment, remote run control, live inference approval, credential movement,
+  paid compute or new remote resource occurred. Release approval remains subject
+  to independent review and fresh safety checks; it never authorizes run resume.
+
+#### Local validation follow-up — gate closure
+
+- Continued inside the approved offline tests/documentation scope after independent
+  code GO and release HOLD. Added 97 meaningful cases in three agent test files;
+  no production behavior, schema, persisted field, API/UI value, admission rule,
+  exclusion or threshold changed. Native ownership therefore remains unchanged.
+- Whole-agent coverage now passes at 87.33%: 598 tests, 2,304 statements and 292
+  missed. Root coverage is 89.10% with 102 passing tests. Root and agent Ruff,
+  format and ty checks pass; root dependency audit passes. Existing native numeric
+  transport and controller regressions remain passing. Existing native checksum
+  deprecation warnings remain; no new Ruff warnings were introduced.
+- Generated the previously absent baseline using the installed official
+  `uv run slophammer-py check . --baseline-write` after an ordinary zero-finding
+  check. The version-1 empty findings snapshot suppresses nothing, contains no
+  paths, and regenerates identically. Prescribed baseline and DRY checks pass.
+- Fresh Node formatting, lint, types, 1,575 unit tests, build, generated checks,
+  dependency audit and all 76 browser tests pass. Both Dockerfiles build locally
+  for linux/amd64. Full privacy and diff review precede the local commit.
+- Historical gate failures above are retained. Follow-up test/baseline changes
+  still require review before release; neither closing these gates nor the earlier
+  code GO authorizes automatic publication or deployment. No push, deployment,
+  inference, run control, remote integration, credential movement or new remote
+  resource occurred. The paused run was not touched.
+
+### Replacement pause and read-only startup investigation
+
+Status: completed
+
+Approved at: 2026-09-12T10:29:15Z
+
+- The user explicitly approved: “yes pause it and investigate the logs”.
+  Scope is only the exact replacement run identified in the private operator
+  request, represented here as `<replacement-run>`, on `<control-space>` with
+  existing `<artifact-bucket>` storage. Persist desired pause through the normal
+  authenticated control-service CSRF route and verify reconciliation leaves no
+  active owned parent or child Jobs, even if parents are already terminal.
+- Read-only investigation may inspect bounded sanitized parent logs, allowlisted
+  Job/image provenance, native artifact evidence, deployed source and pinned
+  Harbor source/history. Do not expose credentials, signed URLs, private IDs,
+  operator aliases, full configurations or authentication/session headers.
+  Use configured credentials in place and keep session material in memory only.
+- Preserve the original and all other runs, images, bindings, budgets, credentials,
+  resources, branches and stashes. No resume, retry, launch, direct Job kill,
+  deployment, credential change/transfer, implementation or remote publication.
+  Stop and report revision mismatch, exposure, deterministic shared defects or
+  owned Jobs that cannot be stopped. Remediation requires separate approval.
+- Use an operations branch in the primary checkout, no new worktrees. Commit
+  this additive authorization locally before mutation; do not push. Record actual
+  completion additively without renewing earlier scopes.
+
+#### Completion — 2026-09-12T10:33:20Z
+
+- Authorization commit preceded the sole external mutation: the normal pause
+  endpoint returned success at 10:30:33Z. Normal session GET confirmed operator
+  access using the existing supported bearer transport; that transport does not
+  require cookie-session CSRF. No authentication material was persisted.
+- Desired state and projection both remained paused after reconciliation and at
+  final verification. Eight owned parent Jobs were terminal ERROR; no owned child
+  Jobs or active owned execution were found. No aggregate result or projected
+  native trial results were present. Native spend remains unknown, not zero;
+  infrastructure charges are not established by native result absence.
+- All eight inspected parent images matched the expected immutable worker image.
+  The live service source and Harbor revision matched the reviewed expectations.
+  All eight bounded parent log tails had the same sanitized failure chain:
+  `parent_worker.py:350` -> `replacement_preflight.py:120` ->
+  `replacement_preflight.py:105`, raising
+  `ValueError: Replacement source fingerprint mismatch` before `Job.create()`.
+- Stopped operational investigation at the deterministic shared-defect boundary.
+  Local source proves the stored source fingerprint differs from the parent's
+  freshly computed evidence fingerprint; it does not identify the differing
+  input or prove whether source drift or transport normalization caused it.
+  No immutable configuration or credential failure was observed in these tails.
+- Inspected local fingerprint creation/comparison and existing cross-language
+  preflight tests, plus pinned Harbor `JobConfig`, `Job.create()` and relevant
+  configuration/lock/result history. Any separately approved follow-up should
+  isolate the first differing canonical input through the real review-to-parent
+  transport, retaining native models and the fail-closed provenance check.
+  Do not bypass fingerprint validation, rewrite source evidence or infer a fix.
+- No resume, retry, launch, direct remote Job kill, source implementation,
+  deployment, credential change or remote publication occurred. Original and
+  unrelated runs were not controlled. Local documentation commits only, in the
+  primary checkout with no new worktree; existing branches and stashes preserved.
+  Patch, PR, deployment and any later execution require separate approval.
+
 ### Run-recorded inference review release (2026-09-11)
 
 Status: approved
@@ -2479,3 +2625,14 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 - Direct user publication, exact green-head squash merge, matched worker image
   publication and existing private Space deployment approval recorded above.
   Live inference approval and all benchmark execution remain excluded.
+
+### 2026-09-11 — Replacement evidence and parent containment approval
+
+- Direct approval and the mandatory pre-publication independent-review stop are
+  recorded above. Earlier scopes are not renewed. Operations completion history
+  is preserved additively from the retained investigation branch.
+
+### 2026-09-12 — Replacement fixes local review handoff
+
+- Local implementation completion and disclosed validation gaps are recorded
+  above. Publication and deployment have not started; independent review is next.

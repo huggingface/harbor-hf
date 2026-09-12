@@ -233,7 +233,8 @@ For each run it:
    finished Harbor job unchanged;
 5. adopts an existing live parent;
 6. cancels live child Jobs that have no live parent; and
-7. starts a new parent after the restart delay when capacity is available.
+7. pauses on an unacknowledged HF parent error; otherwise starts a new parent
+   after the restart delay when capacity is available.
 
 The parent-first stop reduces the child-shutdown race. If Harbor still reports
 an in-flight trial as terminal during a controlled stop, the parent preserves
@@ -311,7 +312,8 @@ per-trial copies; upload failures propagate explicitly. A hard kill can lose
 unsaved outputs and cost evidence and cannot guarantee a final copy. Local disk
 must fit the working data.
 
-A failed parent can restart after the fixed delay. A cancelled run cannot
+An unacknowledged parent error pauses the run for explicit operator review.
+A non-error terminal parent can restart after the fixed delay. A cancelled run cannot
 resume. A projection rebuild failure, immutable run conflict, unlabeled child,
 or Job cancellation failure requires operator review rather than a second
 control path.
@@ -381,3 +383,12 @@ selection excludes constituent subsets and fails closed on incomplete or invalid
 assemblies. Native metrics that cannot unambiguously populate its scalar field
 remain available in the full combined view rather than being reduced locally.
 See [the replacement contract](2026-09-11-replacement-backend.md).
+
+## Parent error containment
+
+Explicit resume records observed HF parent error acknowledgments in optional
+`state.json.acknowledged_parent_failures`; this is an operator decision, not
+mirrored Job status or native retry state. New errors pause again. No schema
+version, native field, result writer or projection table is added. See the
+[control policy](CONTROL_SERVICE.md#parent-error-containment) and
+[ownership and compatibility evidence](replacement-evidence-parent-containment.md).

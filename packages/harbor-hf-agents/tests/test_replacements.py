@@ -535,3 +535,60 @@ async def test_private_descendant_review_without_ancestor_evidence_fails_closed(
             },
             ROOT,
         )
+
+
+def test_json_numeric_equality_before_native_types(factory):
+    original, _ = factory()
+    transported = copy.deepcopy(original)
+    for trial in transported["trials"]:
+        trial["verifier_result"]["rewards"]["reward"] = int(
+            trial["verifier_result"]["rewards"]["reward"]
+        )
+    # Native aggregation can embed the same results, or omit them.
+    transported["result"]["trial_results"] = transported["trials"]
+    before = copy.deepcopy(original)
+    source = Evidence.parse(original)
+    other = Evidence.parse(transported)
+    ids = [trial["id"] for trial in original["trials"]]
+    assert source.fingerprint(source.select(ids)) == other.fingerprint(
+        other.select(ids)
+    )
+    assert original == before
+    assert type(source.config.timeout_multiplier) is float
+    assert type(source.trials[0].verifier_result.rewards["reward"]) is int
+    transported["trials"][0]["verifier_result"]["rewards"]["reward"] = 0.25
+    changed = Evidence.parse(transported)
+    assert source.fingerprint(source.select(ids)) != changed.fingerprint(
+        changed.select(ids)
+    )
+
+
+@pytest.mark.parametrize("value", [0.0, -0.0, 1.0, 1e20, 1e30])
+def test_integral_json_numbers(value):
+    from harbor_hf_agents.replacement_evidence import _json_numbers
+
+    assert _json_numbers({"nested": [value]}) == {"nested": [int(value)]}
+    assert type(_json_numbers(value)) is int
+
+
+@pytest.mark.parametrize("value", [True, False, 0.125, 1e-7, 2**53 + 1, 10**100])
+def test_json_normalization_never_rounds_or_coerces(value):
+    from harbor_hf_agents.replacement_evidence import _json_numbers, canonical
+
+    assert canonical(_json_numbers(value)) == canonical(value)
+    assert type(_json_numbers(value)) is type(value)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_nonfinite_evidence_is_rejected_at_boundary(factory, value):
+    original, _ = factory()
+    original["record"]["extra"] = {"nested": [value]}
+    with pytest.raises(ValueError, match="finite JSON"):
+        Evidence.parse(original)
+
+
+def test_boolean_and_fractional_evidence_remain_distinct():
+    from harbor_hf_agents.replacement_evidence import _json_numbers, canonical
+
+    assert canonical(_json_numbers(True)) != canonical(_json_numbers(1))
+    assert canonical(_json_numbers(0.125)) != canonical(_json_numbers(0.126))

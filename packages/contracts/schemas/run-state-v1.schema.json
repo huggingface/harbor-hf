@@ -20,6 +20,12 @@
     "updated_at": { "type": "string", "format": "date-time" },
     "desired_state": { "enum": ["run", "paused", "cancelled"] },
     "actor": { "type": "string", "minLength": 1, "maxLength": 320 },
+    "acknowledged_parent_failures": {
+      "description": "Owned parent error IDs explicitly acknowledged by operator resume; not Job status or retry state.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 160 }
+    },
     "parent_jobs": {
       "type": "array",
       "items": {

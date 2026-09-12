@@ -400,8 +400,9 @@ For each run it applies these rules in order:
 4. If Harbor's job result is finished, do not start a parent.
 5. If one labeled parent is live, adopt it if needed and wait.
 6. Cancel orphaned labeled child Jobs.
-7. If capacity is available and the fixed restart delay has passed, start one
-   parent and append it to `state.json`.
+7. If an owned parent has an unacknowledged error, persist desired pause.
+   Otherwise, if capacity is available and the fixed restart delay has passed,
+   start one parent and append it to `state.json`.
 
 Stopping parents before children reduces the interval in which a child shutdown
 can become an error while its parent still observes it. If Harbor still returns
@@ -619,3 +620,12 @@ replacement evidence cannot both count. Preserve failed replacement outcomes
 and all incurred attempt costs. No replacement launch is implicit in a project
 release. Detailed endpoints, validation and limitations are specified in the
 [replacement contract](2026-09-11-replacement-backend.md).
+
+## Parent error containment
+
+Explicit resume records observed HF parent error acknowledgments in optional
+`state.json.acknowledged_parent_failures`; this is an operator decision, not
+mirrored Job status or native retry state. New errors pause again. No schema
+version, native field, result writer or projection table is added. See the
+[control policy](CONTROL_SERVICE.md#parent-error-containment) and
+[ownership and compatibility evidence](replacement-evidence-parent-containment.md).
