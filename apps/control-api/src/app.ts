@@ -500,6 +500,16 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   const bindingParameters = z.strictObject({
     ref: z.string().regex(/^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$/),
   });
+  app.post("/api/v1/runs/:run_id/inference-review", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    z.strictObject({}).parse(request.query);
+    z.strictObject({}).parse(request.body);
+    return runtime.inference.reviewRun(
+      runParameters.parse(request.params).run_id,
+      requireActor(request).subject,
+      HARBOR_REVISION,
+    );
+  });
   app.post("/api/v1/inference-bindings/:ref/review", async (request, reply) => {
     reply.header("Cache-Control", "no-store");
     return runtime.inference.review(

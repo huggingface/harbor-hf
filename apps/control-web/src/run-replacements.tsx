@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  ApiError,
   getReplacements,
   submitReplacements,
   validateReplacements,
@@ -11,6 +12,7 @@ import {
   type RunView,
   type TrialIdentity,
 } from "./api";
+import { RunInferenceAccess } from "./run-inference-review";
 import { useControlState } from "./control-state";
 import { formatMoneyUsd } from "./lib";
 import { RUN_POLL_INTERVAL_MS } from "./queries";
@@ -137,7 +139,14 @@ function ReplacementPanel({
           key: crypto.randomUUID(),
         });
     } catch (reason) {
-      if (version === revision.current) setError(String(reason));
+      if (version === revision.current)
+        setError(
+          reason instanceof ApiError && reason.code === "inference_binding_denied"
+            ? "The current worker image cannot use this run’s inference binding. Use Review inference access for this run below; the recorded recipe is preserved. An empty Replacements tab does not mean access was approved."
+            : reason instanceof Error
+              ? reason.message
+              : "Replacement review failed. Refresh evidence and review again.",
+        );
     } finally {
       setBusy(null);
     }
@@ -217,6 +226,14 @@ function ReplacementPanel({
         </p>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
+      {run.record.workbench_recipe ? (
+        <RunInferenceAccess
+          key={runId}
+          runId={runId}
+          disabled={!eligible || Boolean(busy) || uncertain}
+          onReview={invalidate}
+        />
+      ) : null}
       {uncertain ? (
         <div role="status">
           <p>
@@ -407,7 +424,10 @@ function ReplacementPanel({
               ))}
             </ul>
           ) : (
-            <p>No related replacement runs yet.</p>
+            <p>
+              No related replacement runs yet. Inference approval and budget review do
+              not create a run; return to Original to review and submit.
+            </p>
           )}
         </section>
       ) : null}

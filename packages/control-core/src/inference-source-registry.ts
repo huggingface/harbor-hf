@@ -1,5 +1,9 @@
 import {
   canonicalJson,
+  runRecordPath,
+  validateRunRecord,
+  validateHarborJobConfig,
+  type HarborJobConfigV1,
   sha256,
   validateInferenceSourceRegistry,
   validateInferenceRegistrationRequest,
@@ -28,6 +32,10 @@ export const INFERENCE_SOURCE_REGISTRY_KEY = "control/inference-bindings.json";
 const MAX_BYTES = 1024 * 1024;
 type Registry = InferenceSourceRegistryV1;
 type Entry = Registry["entries"][number];
+export type RunInferenceReview = Omit<InferenceReviewV1, "recipe"> & {
+  run_id: string;
+  approval_required: boolean;
+};
 type Grant = InferenceBindingManifestV1["bindings"][number]["uses"][number];
 export class InferenceRegistryError extends Error {
   constructor(readonly status: 400 | 403 | 409 | 503 = 503) {
@@ -155,7 +163,11 @@ export class InferenceRegistry {
   private tail: Promise<unknown> = Promise.resolve();
   private readonly reviews = new Map<
     string,
-    { actor: string; response: InferenceReviewV1 }
+    {
+      actor: string;
+      response: Omit<InferenceReviewV1, "recipe">;
+      run?: { id: string; digest: string; harborRevision: string };
+    }
   >();
   constructor(
     private readonly store: ObjectStore,
@@ -310,6 +322,124 @@ export class InferenceRegistry {
       return this.display(registry, actor);
     });
   }
+  private async runRecord(id: string, actor: string, harborRevision: string) {
+    try {
+      const bytes = await this.store.read(runRecordPath(id), { fresh: true });
+      const record = validateRunRecord(JSON.parse(new TextDecoder().decode(bytes)));
+      if (
+        record.run_id !== id ||
+        record.submitted_by !== actor ||
+        record.harbor_revision !== harborRevision
+      )
+        throw new Error();
+      return {
+        config: validateHarborJobConfig(record.harbor_job_config),
+        digest: sha256(canonicalJson(record)),
+      };
+    } catch {
+      throw new InferenceRegistryError(409);
+    }
+  }
+
+  private retainReview(
+    id: string,
+    review: {
+      actor: string;
+      response: Omit<InferenceReviewV1, "recipe">;
+      run?: { id: string; digest: string; harborRevision: string };
+    },
+  ) {
+    for (const [key, entry] of this.reviews)
+      if (Date.parse(entry.response.expires_at) <= this.now().getTime())
+        this.reviews.delete(key);
+    if (this.reviews.size >= 256) throw new InferenceRegistryError();
+    this.reviews.set(id, structuredClone(review));
+  }
+
+  /** Reuse authoritative native input, never reverse-compile a browser recipe.
+   * Existing policy remains the sole matcher, including exact env and hosts. */
+  reviewRun(
+    id: string,
+    actor: string,
+    harborRevision: string,
+  ): Promise<RunInferenceReview> {
+    return this.sequence(async () => {
+      const registry = await this.read();
+      const run = await this.runRecord(id, actor, harborRevision);
+      const candidates = new Map<string, { entry: Entry; grant: Grant }>();
+      for (const entry of registry.entries) {
+        if (entry.registration.actor !== actor || !active(entry)) continue;
+        for (const grant of grants(entry)) {
+          if (!this.matches(entry, grant, run.config, actor)) continue;
+          const current = { ...grant, worker_image: this.image };
+          candidates.set(canonicalJson({ ref: entry.ref, grant: current }), {
+            entry,
+            grant: current,
+          });
+        }
+      }
+      // Multiple distinct scopes require a choice this run flow must not invent.
+      if (candidates.size !== 1) throw new InferenceRegistryError(403);
+      const { entry, grant } = [...candidates.values()][0]!;
+      if (this.presence(entry.source_env) !== "configured")
+        throw new InferenceRegistryError(403);
+      if (!this.matches(entry, grant, run.config, actor))
+        throw new InferenceRegistryError(403);
+      let approval_required = true;
+      try {
+        approval_required = !policy(registry).selected(run.config, actor, this.image);
+      } catch {
+        /* A new image needs explicit approval, never automatic delivery. */
+      }
+      const response: RunInferenceReview = {
+        schema_version: "v1",
+        revision: registry.revision,
+        review_id: sha256(this.nonce()),
+        expires_at: new Date(this.now().getTime() + 15 * 60 * 1000).toISOString(),
+        ref: entry.ref,
+        source_env: entry.source_env,
+        label: entry.label,
+        presence: "configured",
+        grant,
+        run_id: id,
+        approval_required,
+      };
+      if (approval_required)
+        this.retainReview(response.review_id, {
+          actor,
+          response,
+          run: { id, digest: run.digest, harborRevision },
+        });
+      return response;
+    });
+  }
+
+  private matches(
+    entry: Entry,
+    grant: Grant,
+    config: HarborJobConfigV1,
+    actor: string,
+  ): boolean {
+    try {
+      return (
+        new InferenceBindings({
+          schema_version: "v1",
+          bindings: [
+            {
+              ref: entry.ref,
+              source_env: entry.source_env,
+              label: entry.label,
+              enabled: true,
+              uses: [grant],
+            },
+          ],
+        }).selected(config, actor, grant.worker_image)?.ref === entry.ref
+      );
+    } catch {
+      return false;
+    }
+  }
+
   review(ref: string, body: unknown, actor: string): Promise<InferenceReviewV1> {
     const input = validateInferenceReviewRequest(body);
     return this.sequence(async () => {
@@ -375,14 +505,7 @@ export class InferenceRegistry {
         recipe: preview.recipe,
         grant,
       });
-      for (const [id, review] of this.reviews)
-        if (Date.parse(review.response.expires_at) <= this.now().getTime())
-          this.reviews.delete(id);
-      if (this.reviews.size >= 256) throw new InferenceRegistryError();
-      this.reviews.set(response.review_id, {
-        actor,
-        response: structuredClone(response),
-      });
+      this.retainReview(response.review_id, { actor, response });
       return response;
     });
   }
@@ -402,6 +525,20 @@ export class InferenceRegistry {
         Date.parse(review.response.expires_at) <= this.now().getTime()
       )
         throw new InferenceRegistryError(409);
+      if (review.run) {
+        const run = await this.runRecord(
+          review.run.id,
+          actor,
+          review.run.harborRevision,
+        );
+        if (
+          run.digest !== review.run.digest ||
+          review.response.grant.worker_image !== this.image ||
+          this.presence(entry.source_env) !== "configured" ||
+          !this.matches(entry, review.response.grant, run.config, actor)
+        )
+          throw new InferenceRegistryError(409);
+      }
       entry.history.push({
         ...this.audit(registry, actor, input.reason),
         kind: "approve",

@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
+import { HARBOR_REVISION } from "../src/harbor-revision.js";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import type { components } from "../../control-web/src/generated/api.js";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  InferenceRegistry,
   compileAgentWorkbenchRecipe,
   fastAgentWorkbenchStarter,
   putJson,
@@ -1973,5 +1976,183 @@ it("does not expose provider read failures from replacement views", async () => 
   const response = await app.inject(`/api/v1/runs/run-${"a".repeat(24)}/replacements`);
   expect(response.statusCode).toBe(503);
   expect(response.body).not.toContain("provider-private-diagnostic");
+  await app.close();
+});
+
+it("run inference review rejects browser scope overrides and keeps authentication, CSRF and write-mode gates", async () => {
+  const { runtime, app } = await setup();
+  const url = `/api/v1/runs/run-${"a".repeat(24)}/inference-review`;
+  const review = vi
+    .spyOn(runtime.inference, "reviewRun")
+    .mockRejectedValue(new Error("not called for invalid requests"));
+  for (const payload of [
+    { recipe: workbenchRecipe },
+    { harbor_job_config: {} },
+    { ref: "INFERENCE_API_KEY_OTHER" },
+    { actor: "other" },
+    { worker_image: "other" },
+  ]) {
+    expect((await app.inject({ method: "POST", url, payload })).statusCode).toBe(400);
+  }
+  expect(
+    (await app.inject({ method: "POST", url: `${url}?ref=other`, payload: {} }))
+      .statusCode,
+  ).toBe(400);
+  runtime.config.write_mode = "disabled";
+  expect(
+    (await app.inject({ method: "POST", url, payload: {} })).json().error.code,
+  ).toBe("write_disabled");
+  runtime.config.write_mode = "enabled";
+  const actor = vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+    subject: "fixture-reader",
+    username: "fixture-reader",
+    role: "reader",
+    transport: "development",
+  });
+  expect((await app.inject({ method: "POST", url, payload: {} })).statusCode).toBe(403);
+  actor.mockRestore();
+  runtime.config.auth_mode = "oauth";
+  expect((await app.inject({ method: "POST", url, payload: {} })).statusCode).toBe(401);
+  const session = runtime.auth.store.createSession(
+    "fixture-subject",
+    "fixture-user",
+    3600,
+  );
+  vi.spyOn(runtime.auth, "role").mockResolvedValue("operator");
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url,
+        payload: {},
+        cookies: { hhf_session: session.id },
+      })
+    ).json().error.code,
+  ).toBe("csrf_rejected");
+  expect(review).not.toHaveBeenCalled();
+  review.mockRestore();
+  const response = await app.inject({
+    method: "POST",
+    url,
+    payload: {},
+    cookies: { hhf_session: session.id },
+    headers: { "x-csrf-token": session.csrf },
+  });
+  expect(response.statusCode).toBe(409);
+  expect(response.headers["cache-control"]).toBe("no-store");
+  await app.close();
+});
+
+it("run review uses server-recorded compiled input and saves through the existing policy endpoint", async () => {
+  const oldImage = `example.invalid/worker@sha256:${"a".repeat(64)}`;
+  const currentImage = oldImage.replace(/a{64}$/, "b".repeat(64));
+  const { runtime, app } = await setup("enabled", false, currentImage);
+  const actor = "development-operator";
+  const original = new InferenceRegistry(
+    runtime.store,
+    oldImage,
+    () => true,
+    () => new Date(),
+    randomUUID,
+  );
+  const registered = await original.register(
+    {
+      expected_revision: 0,
+      source_env: "MY_SECRET_KEY",
+      label: "Example",
+      reason: "Register",
+    },
+    actor,
+  );
+  const ref = registered.bindings[0]!.ref;
+  const recipe = structuredClone(workbenchRecipe);
+  recipe.route_api = "native";
+  recipe.environment = recipe.environment.filter(
+    (row) => row.source !== "model_base_url",
+  );
+  recipe.environment.find((row) => row.source === "model_api_key")!.credential_ref =
+    ref;
+  const prior = await original.review(
+    ref,
+    {
+      expected_revision: 1,
+      recipe,
+      model_name: "example:native",
+      base_url: null,
+      allowed_hosts: [],
+    },
+    actor,
+  );
+  await original.approve(
+    ref,
+    {
+      expected_revision: 1,
+      review_id: prior.review_id,
+      reviewed_confirmation: true,
+      reason: "Approve original",
+    },
+    actor,
+  );
+  const agent = (await original.policy()).compile(
+    recipe,
+    actor,
+    oldImage,
+    "example:native",
+    () => true,
+  );
+  const id = `run-${"a".repeat(24)}`;
+  await putJson(runtime.store, `runs/${id}/run.json`, {
+    schema_version: "v1",
+    run_id: id,
+    created_at: "2026-01-01T00:00:00Z",
+    submitted_by: actor,
+    role: "diagnostic",
+    harbor_revision: HARBOR_REVISION,
+    submission: {
+      benchmark: { name: "synthetic", preset: "synthetic" },
+      cost_ceiling_usd: 1,
+    },
+    harbor_job_config: { agents: [agent] },
+  });
+  runtime.inference = new InferenceRegistry(
+    runtime.store,
+    currentImage,
+    () => true,
+    () => new Date(),
+    randomUUID,
+  );
+  const post = () =>
+    app.inject({
+      method: "POST",
+      url: `/api/v1/runs/${id}/inference-review`,
+      payload: {},
+    });
+  const result = await post();
+  expect(result.statusCode).toBe(200);
+  const review = result.json<components["schemas"]["RunInferenceReview"]>();
+  expect(review.grant).toEqual({ ...prior.grant, worker_image: currentImage });
+  expect(review.approval_required).toBe(true);
+  const doc = JSON.parse(await readFile("docs/control-api-v1.openapi.json", "utf8"));
+  const ajv = new Ajv2020({ strict: false });
+  ajv.addFormat("date-time", () => true);
+  ajv.addSchema(doc, "api");
+  expect(
+    ajv.compile({ $ref: "api#/components/schemas/RunInferenceReview" })(review),
+  ).toBe(true);
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: `/api/v1/inference-bindings/${ref}/approve`,
+        payload: {
+          expected_revision: review.revision,
+          review_id: review.review_id,
+          reviewed_confirmation: true,
+          reason: "Reviewed current image",
+        },
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect((await post()).json().approval_required).toBe(false);
   await app.close();
 });

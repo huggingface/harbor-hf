@@ -699,3 +699,10 @@ See [the replacement contract](2026-09-11-replacement-backend.md) for recursive
 selection, native ownership, scalar leaderboard limits and removal of the
 revision-scoped integration. Actual replacement execution requires separate
 operator review and budget approval; deployment is not launch authorization.
+
+For a recorded Workbench run whose current worker image needs renewed inference
+approval, use **Review inference access for this run**. It preserves native recorded
+configuration and the exact existing owned scope, then saves explicit approval
+through the existing registry API without launching anything. See
+[Run-recorded inference access review](run-inference-access-review.md) for the
+server-only input, review fencing and policy boundaries.

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { fixture, image } from "./inference-fixture.js";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -10,6 +12,7 @@ import {
   type RunRecordV1,
 } from "@harbor-hf/contracts";
 import {
+  InferenceRegistry,
   ControlService,
   FilesystemObjectStore,
   Projection,
@@ -731,4 +734,106 @@ it("does not authorize a completed source using stale cached state", async () =>
     key === path && !options?.fresh ? cached : read(key),
   );
   await expect(child()).rejects.toThrow("complete");
+});
+
+it("reviews real compiled inference scope for a new image before normal replacement validation and submission", async () => {
+  const currentImage = image.replace(/a{64}$/, "b".repeat(64));
+  const previous = new InferenceRegistry(
+    store,
+    image,
+    () => true,
+    () => new Date(),
+    randomUUID,
+  );
+  const registration = await previous.register(
+    {
+      expected_revision: 0,
+      source_env: "MY_SECRET_KEY",
+      label: "Example",
+      reason: "Register",
+    },
+    "operator",
+  );
+  const ref = registration.bindings[0]!.ref;
+  const recipe = fixture().recipe;
+  recipe.environment[0]!.credential_ref = ref;
+  const grant = await previous.review(
+    ref,
+    {
+      expected_revision: 1,
+      recipe,
+      model_name: "example:native",
+      base_url: null,
+      allowed_hosts: [],
+    },
+    "operator",
+  );
+  await previous.approve(
+    ref,
+    {
+      expected_revision: 1,
+      review_id: grant.review_id,
+      reviewed_confirmation: true,
+      reason: "Approve",
+    },
+    "operator",
+  );
+  const agent = (await previous.policy()).compile(
+    recipe,
+    "operator",
+    image,
+    "example:native",
+    () => true,
+  );
+  source.harbor_job_config.agents = [agent];
+  source.workbench_recipe = { name: recipe.name };
+  await putJson(store, `runs/${source.run_id}/run.json`, source);
+  await artifacts(source);
+  const registry = new InferenceRegistry(
+    store,
+    currentImage,
+    () => true,
+    () => new Date(),
+    randomUUID,
+  );
+  const start = vi.fn(async () => {
+    throw new Error("Execution not permitted");
+  });
+  service = new ControlService(
+    store,
+    projection,
+    presets,
+    { list: async () => [], inspect: start, cancel: start, startParent: start },
+    {
+      replacements: native,
+      harborRevision: revision,
+      mountRoot: "/data",
+      maxActiveJobs: 1,
+      restartDelayMs: 0,
+      inference: {
+        policy: () => registry.policy(),
+        sequence: (op) => registry.sequence(op),
+        image: currentImage,
+        present: () => true,
+        start,
+      },
+    },
+  );
+  await expect(child()).rejects.toThrow("not reviewed");
+  const reviewed = await registry.reviewRun(source.run_id, "operator", revision);
+  await registry.approve(
+    ref,
+    {
+      expected_revision: reviewed.revision,
+      review_id: reviewed.review_id,
+      reviewed_confirmation: true,
+      reason: "Reviewed current image",
+    },
+    "operator",
+  );
+  const replacement = await child();
+  expect(replacement.run.harbor_job_config.agents).toEqual([agent]);
+  expect(replacement.run.workbench_recipe).toEqual(source.workbench_recipe);
+  expect((await child()).created).toBe(false);
+  expect(start).not.toHaveBeenCalled();
 });

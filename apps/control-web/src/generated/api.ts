@@ -253,6 +253,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/inference-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Review the immutable run configuration against existing owned approval scope for the current image. No recipe, binding override, execution or credential values. Save through the existing inference binding approval endpoint. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RunInferenceReviewRequest"];
+                };
+            };
+            responses: {
+                /** @description Success */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunInferenceReview"];
+                    };
+                };
+                /** @description Request error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/inference-bindings/{ref}/review": {
         parameters: {
             query?: never;
@@ -2534,6 +2646,34 @@ export interface components {
                 allowed_models: string[];
             };
         };
+        RunInferenceReview: {
+            /** @constant */
+            schema_version: "v1";
+            revision: number;
+            review_id: string;
+            /** Format: date-time */
+            expires_at: string;
+            ref: string;
+            source_env: string;
+            label: string;
+            /** @enum {unknown} */
+            presence: "configured" | "missing";
+            grant: {
+                operator_subjects: string[];
+                worker_image: string;
+                agent_import_path: string;
+                recipe_digest: string;
+                destination_env: string[];
+                /** @enum {unknown} */
+                route_api: "chat-completions" | "responses" | "native";
+                base_url: string | null;
+                allowed_hosts: string[];
+                allowed_models: string[];
+            };
+            run_id: string;
+            approval_required: boolean;
+        };
+        RunInferenceReviewRequest: Record<string, unknown>;
         /** RunRecordV1 */
         RunRecord: {
             /** @constant */

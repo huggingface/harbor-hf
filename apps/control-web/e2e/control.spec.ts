@@ -2740,11 +2740,53 @@ test("operator reviews exact infrastructure failures, creates related run and in
   const relatedId = "run-abcdef0123456789abcdef01";
   const fingerprint = "a".repeat(64);
   let created = false;
+  let inferenceApproved = false;
+  const inferenceReview = {
+    schema_version: "v1",
+    run_id: runId,
+    revision: 2,
+    review_id: "d".repeat(64),
+    approval_required: true,
+    expires_at: "2099-01-01T00:00:00Z",
+    ref: "INFERENCE_API_KEY_EXAMPLE",
+    source_env: "MY_SECRET_KEY",
+    label: "Example",
+    presence: "configured",
+    grant: {
+      operator_subjects: ["test-operator"],
+      worker_image: `example.invalid/worker@sha256:${"b".repeat(64)}`,
+      agent_import_path: "harbor_hf_agents.command.agent:CommandAgent",
+      recipe_digest: "c".repeat(64),
+      destination_env: ["EXAMPLE_API_KEY"],
+      route_api: "native",
+      base_url: null,
+      allowed_hosts: [],
+      allowed_models: ["example:native"],
+    },
+  };
+  await page.route(`**/api/v1/runs/${runId}/inference-review`, (route) => {
+    expect(route.request().postDataJSON()).toEqual({});
+    return json(route, { ...inferenceReview, approval_required: !inferenceApproved });
+  });
+  await page.route(
+    "**/api/v1/inference-bindings/INFERENCE_API_KEY_EXAMPLE/approve",
+    (route) => {
+      expect(route.request().postDataJSON()).toEqual({
+        expected_revision: 2,
+        review_id: inferenceReview.review_id,
+        reviewed_confirmation: true,
+        reason: "Reviewed existing run inference scope for current worker image",
+      });
+      inferenceApproved = true;
+      return json(route, { schema_version: "v1", revision: 3, bindings: [] });
+    },
+  );
   let replacementReads = 0;
   const posts: Array<{ body: unknown; key: string | undefined }> = [];
   await page.route(`**/api/v1/runs/${runId}`, (route) =>
     json(route, {
       ...run,
+      record: { ...record, workbench_recipe: { name: "recorded-recipe" } },
       status: "finished",
       result: { ...run.result, finished_at: "2026-01-01T01:00:00Z" },
     }),
@@ -2776,6 +2818,18 @@ test("operator reviews exact infrastructure failures, creates related run and in
       trial_ids: [uuid],
       cost_ceiling_usd: 7,
     });
+    if (!inferenceApproved)
+      return json(
+        route,
+        {
+          error: {
+            code: "inference_binding_denied",
+            message:
+              "Inference binding is unavailable or not reviewed for this execution",
+          },
+        },
+        403,
+      );
     return json(route, {
       harbor_revision: "b".repeat(40),
       tasks: 1,
@@ -2851,6 +2905,30 @@ test("operator reviews exact infrastructure failures, creates related run and in
   await page.getByLabel(uuid, { exact: true }).check();
   await page.getByLabel("Replacement cost ceiling (USD)").fill("7");
   await page.getByLabel("I reviewed these as infrastructure failures").check();
+  await page.getByRole("button", { name: "Review replacements" }).click();
+  await expect(page.getByRole("alert")).toContainText("recorded recipe is preserved");
+  await page.getByRole("button", { name: "Replacements", exact: true }).click();
+  await expect(
+    page.getByText(/Inference approval and budget review do not create a run/),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Review inference access for this run" })
+    .click();
+  await expect(page.getByText(/Current worker image:/)).toContainText(
+    inferenceReview.grant.worker_image,
+  );
+  expect(inferenceApproved).toBe(false);
+  expect(posts).toHaveLength(0);
+  await page
+    .getByRole("button", { name: "Approve this image for the existing scope" })
+    .click();
+  await expect(
+    page.getByText(
+      "Inference access approved. Review replacements next; nothing was launched.",
+    ),
+  ).toBeVisible();
+  expect(posts).toHaveLength(0);
+  await page.getByRole("button", { name: "Original", exact: true }).click();
   await page.getByRole("button", { name: "Review replacements" }).click();
   await expect(page.getByText("No inference performed", { exact: true })).toBeVisible();
   await page

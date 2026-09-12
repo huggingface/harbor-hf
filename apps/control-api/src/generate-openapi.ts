@@ -145,6 +145,27 @@ function bindingMutation(
   };
 }
 
+const inferenceReviewSchema = schemas.inferenceReview as {
+  required: string[];
+  properties: Record<string, object>;
+};
+const { recipe: _recipe, ...inferenceReviewProperties } =
+  inferenceReviewSchema.properties;
+const runInferenceReviewSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    ...inferenceReviewSchema.required.filter((key) => key !== "recipe"),
+    "run_id",
+    "approval_required",
+  ],
+  properties: {
+    ...inferenceReviewProperties,
+    run_id: runParameter.schema,
+    approval_required: { type: "boolean" },
+  },
+};
+
 const embeddedRunRecord = embedSchema("RunRecord", schemas.runRecord);
 
 const document = {
@@ -169,6 +190,8 @@ const document = {
       ...embedSchema("InferenceApprovalRequest", schemas.inferenceApprovalRequest),
       ...embedSchema("InferenceStatusRequest", schemas.inferenceStatusRequest),
       ...embedSchema("InferenceReview", schemas.inferenceReview),
+      RunInferenceReview: runInferenceReviewSchema,
+      RunInferenceReviewRequest: { type: "object", additionalProperties: false },
 
       ...embeddedRunRecord,
       ...embedSchema("LaunchPricing", schemas.launchPricing),
@@ -425,6 +448,14 @@ const document = {
           "409": error,
           "503": error,
         },
+      },
+    },
+    "/api/v1/runs/{run_id}/inference-review": {
+      post: {
+        ...bindingMutation("RunInferenceReviewRequest", "RunInferenceReview", false),
+        parameters: [runParameter],
+        description:
+          "Review the immutable run configuration against existing owned approval scope for the current image. No recipe, binding override, execution or credential values. Save through the existing inference binding approval endpoint.",
       },
     },
     "/api/v1/inference-bindings/{ref}/review": {
