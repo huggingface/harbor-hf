@@ -11,6 +11,32 @@ default_branch: main
 
 Status: approved
 
+### Combined score rollup and loading — local implementation
+
+Status: approved
+
+Approved at: 2026-09-12T16:51:25Z
+
+- The user directly approved local implementation: “yes -- the rollup view
+  should show the \"corrected\" score if possible”. Improve slow combined-view
+  loading and show prominent Original versus Combined native scores, with
+  explicit pending and unavailable states rather than persistent Refreshing.
+- Scope is local implementation, offline profiling, tests, documentation and
+  commits in the primary checkout. Preserve branches, stashes and existing
+  worktrees; create no worktrees. Commit this additive authorization first.
+- Harbor's pinned native `JobPlan.aggregate` remains score authority through
+  the already approved replacement bridge. Preserve failed replacements,
+  provenance, native execution counts and reported costs. No manual metric
+  engine, persisted aggregate, projection table or new resource is authorized.
+- Read-only diagnostics may use existing private evidence and configured SDK
+  authentication in place. Never publish operator identifiers, raw private
+  responses, signed URLs or authentication material. No credential movement.
+- No publication, push, pull request, merge, deployment, execution, run control,
+  inference approval, paid compute or remote mutation is authorized. Stop at
+  local commits for independent review and separate release approval. Earlier
+  release scopes are not renewed. Report unresolved integrity or performance
+  blockers rather than weakening validation or claiming an unverified score.
+
 ### Replacement evidence and parent failure containment
 
 Status: approved
