@@ -76,6 +76,7 @@ Approved at: 2026-09-11T21:51:25Z
   No credential movement, new persistent resources, or upstream publication.
 
 
+
 #### Completion evidence — 2026-09-12T00:44:46Z
 
 - PR #220 passed fresh complete CI at exact reviewed head
@@ -121,6 +122,26 @@ Approved at: 2026-09-11T16:52:33Z
   reconciliation eligibility, provenance conflicts, or execution disruption.
 - Keep the release checkout at its reviewed revision. This authorization-only
   record does not require rebuilding unchanged application code.
+
+### Combined PR merge and matched release (2026-09-11)
+
+Approved at: 2026-09-11T16:12:15Z
+
+- The user explicitly approved adding the other six local commits to PR #218,
+  after previously requesting merge and deployment to the exact existing
+  control Space identified in the private operational context.
+- Include committed refresh feedback and cancellation-test cleanup with their
+  authorization history. Do not silently include concurrent uncommitted work.
+- Approved operations: reviewed local integration, validation, commit/push, PR
+  update and merge after required CI succeeds, and rebuild/publication of the
+  matching parent-worker image through the existing release workflow.
+- Deploy the merged revision and matched immutable worker image to the existing
+  control Space. Preserve its visibility, hardware, Bucket, credentials, and
+  operator configuration; do not publish the private destination in this file.
+- Benchmark task images are unchanged. No new resources, credential movement,
+  benchmark launch/retry/resume, or interruption of running Jobs is approved.
+  Defer cutover if live execution or unresolved release gates require a further
+  operational decision. Existing validation limitations remain disclosed.
 
 ### Native scrubber ordering integration (2026-09-11)
 
@@ -492,6 +513,42 @@ Completed at: 2026-09-11T17:00:33Z
   benchmark Jobs remain in flight, without stopping or replacing them.
   Scope and operational limits are recorded above.
 
+
+
+### 2026-09-11 — Combined PR and deployment approval
+
+- Approved including the six other local commits in PR #218 and rebuilding the
+  parent worker; the earlier direct request also approved merge and deployment
+  to the privately identified existing control Space. Scope and limits above
+  supersede the earlier no-merge/no-deployment limits for this release only.
+
+
+### 2026-09-11 — Local storage PR prepared
+
+- Completed this branch's approved implementation and PR-preparation scope in
+  draft PR #218: https://github.com/huggingface/harbor-hf/pull/218.
+- Disclosed validation limitations and runtime risks in the PR. Publication
+  excludes unrelated dashboard edits. No merge, deployment, paid Job, remote
+  canary, credential movement, or upstream publication was performed.
+
+
+### 2026-09-11 — Local storage implementation and PR validation
+
+- Implemented the approved local parent filesystem, acknowledged Bucket copies,
+  pinned pre-END native scrub invocation, live native metadata and receipts,
+  and final result-last publication. No remote benchmark or deployment ran.
+- Snapshot reads share Harbor's native completion lock. Failed retry-enabled
+  trial results are withheld until the settled final copy; no retry loop or
+  completion schema was added. The unsanitized global job log is not uploaded.
+- Isolated validation passed root Ruff/format/ty, 102 CLI tests at 89.10%
+  coverage, 321 agent tests, changed agent modules at 91.44% coverage, 1,450
+  TypeScript tests, 73 browser tests, generated-contract checks, dependency
+  audits, both linux/amd64 Docker builds, and an offline Python 3.12 binding
+  smoke check. Normal Slophammer and DRY checks passed.
+- Prepare a draft PR: package-wide agent coverage is 71.84%, below the 85%
+  target, and the requested Slophammer baseline file is absent. No validation
+  threshold was reduced and no baseline file was generated to hide findings.
+- Unrelated concurrent dashboard work was excluded from the isolated change.
 
 ### 2026-09-11 — Native sanitization ordering
 
