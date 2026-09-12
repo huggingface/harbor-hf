@@ -11,9 +11,37 @@ default_branch: main
 
 Status: approved
 
-### Infrastructure replacement workflow and combined release (2026-09-11)
+### Native replacement evidence name correction (2026-09-12)
 
 Status: approved
+
+Approved at: 2026-09-12T07:18:59Z
+
+- The user explicitly approved the narrow fix, tests, PR publication and merge,
+  matched worker image publication, and deployment to the existing private
+  control Space so replacements can subsequently be scheduled.
+- Correct replacement evidence validation to honor native Task.name metadata
+  overrides and native task-ID names in locks, retaining unchanged result names,
+  native identities, sources, configuration, digests, checksums, UUIDs and repeat
+  multiplicity. Inspect pinned Harbor source and history before implementation.
+- Preserve the unrelated dirty checkout and previous release completion record;
+  use a clean worktree from fresh main. Run required validation and public
+  privacy checks, review the complete diff, and merge only the exact green head.
+- Publish the existing worker workflow at the exact merged revision, verify
+  immutable linux/amd64 image provenance, and deploy matched source and images
+  to the existing private control Space. Preserve resources, hardware and
+  credentials; no credential transfer or new resources is authorized.
+- Disable writes during staging; restore the prior mode only after execution,
+  setup-Job and reconciliation eligibility checks. Stop on active setup Jobs,
+  unexpected eligibility, revision mismatch, exposure, immutable conflicts,
+  duplicate execution, shared deterministic defects or unapproved cost.
+- No replacement submission, benchmark controls, paid canary, inference or
+  actual replacement execution is authorized. Offline source-evidence checks
+  are permitted without persisting or rewriting benchmark artifacts.
+
+### Infrastructure replacement workflow and combined release (2026-09-11)
+
+Status: completed
 
 Approved at: 2026-09-11T21:51:25Z
 
@@ -48,26 +76,51 @@ Approved at: 2026-09-11T21:51:25Z
   No credential movement, new persistent resources, or upstream publication.
 
 
+#### Completion evidence — 2026-09-12T00:44:46Z
 
-### Combined PR merge and matched release (2026-09-11)
+- PR #220 passed fresh complete CI at exact reviewed head
+  `71bde2cd4dcd759f010499171804921c4cb32ff3` and was squash-merged as
+  `dafc6a3c0a98f806d23f26cd5438ceb8367390ec`, including the PR #219 baseline.
+- The existing publication workflow succeeded at that exact merged revision.
+  Published parent and Workbench image:
+  `ghcr.io/huggingface/harbor-hf-trial-worker@sha256:c24c55dc0c8da19afd498de104aa92157415c950430cb64a11f81c8d1e6d9e41`.
+  Registry manifest/config verification confirmed `linux/amd64`.
+- Deployed the clean exact merged source to the existing private control Space,
+  with writes disabled during staging. Verified the release manifest and hashes,
+  matching Space/runtime revision, readiness, authenticated session, presets,
+  projection, console bundle and read-only replacements endpoint. Restored the
+  prior enabled write mode only after eligibility checks; reverified after a
+  30-second reconciliation wait. Existing parent and child identities and parent
+  observations were unchanged; no duplicate execution or active setup Jobs.
+- Build and runtime logs had no detected error candidates. Existing hardware,
+  private visibility, unrelated variables, resources and credentials were
+  preserved. No benchmark controls, replacement execution or paid canary ran.
+- Final evidence retains the absent Slophammer baseline and pre-existing agent
+  whole-package coverage gap; no threshold was weakened. Actual replacement
+  execution still requires separate exact-selection and budget approval.
 
-Approved at: 2026-09-11T16:12:15Z
+### Active-run matched control release (2026-09-11)
 
-- The user explicitly approved adding the other six local commits to PR #218,
-  after previously requesting merge and deployment to the exact existing
-  control Space identified in the private operational context.
-- Include committed refresh feedback and cancellation-test cleanup with their
-  authorization history. Do not silently include concurrent uncommitted work.
-- Approved operations: reviewed local integration, validation, commit/push, PR
-  update and merge after required CI succeeds, and rebuild/publication of the
-  matching parent-worker image through the existing release workflow.
-- Deploy the merged revision and matched immutable worker image to the existing
-  control Space. Preserve its visibility, hardware, Bucket, credentials, and
-  operator configuration; do not publish the private destination in this file.
-- Benchmark task images are unchanged. No new resources, credential movement,
-  benchmark launch/retry/resume, or interruption of running Jobs is approved.
-  Defer cutover if live execution or unresolved release gates require a further
-  operational decision. Existing validation limitations remain disclosed.
+Status: completed
+
+Approved at: 2026-09-11T16:52:33Z
+
+- The user explicitly approved proceeding with the existing control Space
+  deployment/restart while benchmark execution remains in flight. This amends
+  the idle-cutover gate recorded with the combined PR release authorization.
+- Deploy reviewed merged source `ec1020c77cd3c159c91b7d1d68639317fb133c32`
+  and its published, verified immutable parent-worker image to the previously
+  approved existing private control Space; preserve the existing Bucket,
+  hardware, secrets, and benchmark task images.
+- Temporarily disable controller writes to prevent mixed-version admission,
+  stage the matched configuration and source, verify the rebuilt projection and
+  unchanged running Job identities, then restore the existing write mode after
+  checking reconciliation eligibility. Existing parents remain independent.
+- Do not stop, replace, retry, or resume benchmark Jobs, cancel setup Jobs,
+  change cost limits, move credentials, or add resources. Stop for unexpected
+  reconciliation eligibility, provenance conflicts, or execution disruption.
+- Keep the release checkout at its reviewed revision. This authorization-only
+  record does not require rebuilding unchanged application code.
 
 ### Native scrubber ordering integration (2026-09-11)
 
@@ -416,40 +469,29 @@ No project-scope amendment remains pending. Operational gates still apply:
 
 ## Approval history
 
-### 2026-09-11 — Combined PR and deployment approval
+### 2026-09-11 — Active control release verified
 
-- Approved including the six other local commits in PR #218 and rebuilding the
-  parent worker; the earlier direct request also approved merge and deployment
-  to the privately identified existing control Space. Scope and limits above
-  supersede the earlier no-merge/no-deployment limits for this release only.
+Completed at: 2026-09-11T17:00:33Z
+
+- Deployed reviewed source `ec1020c77cd3c159c91b7d1d68639317fb133c32`
+  with its verified immutable worker image to the existing private control
+  Space. Restored the prior enabled write mode after disabled-mode verification.
+- Verified release manifest and runtime provenance, readiness and liveness,
+  operator authentication, presets, rebuilt projection, current console assets,
+  live progress, and build/runtime logs. The existing parent was adopted after
+  reconciliation without replacement; benchmark progress continued.
+- No benchmark control action, credential movement, new persistent resource,
+  task-image rebuild, or concurrent Workbench implementation publication occurred.
+- This release scope is complete. Separate approved local Workbench work remains
+  open and its working edits are preserved.
 
 
-### 2026-09-11 — Local storage PR prepared
+### 2026-09-11 — Active execution cutover approval
 
-- Completed this branch's approved implementation and PR-preparation scope in
-  draft PR #218: https://github.com/huggingface/harbor-hf/pull/218.
-- Disclosed validation limitations and runtime risks in the PR. Publication
-  excludes unrelated dashboard edits. No merge, deployment, paid Job, remote
-  canary, credential movement, or upstream publication was performed.
+- Approved proceeding with the matched control release while existing
+  benchmark Jobs remain in flight, without stopping or replacing them.
+  Scope and operational limits are recorded above.
 
-
-### 2026-09-11 — Local storage implementation and PR validation
-
-- Implemented the approved local parent filesystem, acknowledged Bucket copies,
-  pinned pre-END native scrub invocation, live native metadata and receipts,
-  and final result-last publication. No remote benchmark or deployment ran.
-- Snapshot reads share Harbor's native completion lock. Failed retry-enabled
-  trial results are withheld until the settled final copy; no retry loop or
-  completion schema was added. The unsanitized global job log is not uploaded.
-- Isolated validation passed root Ruff/format/ty, 102 CLI tests at 89.10%
-  coverage, 321 agent tests, changed agent modules at 91.44% coverage, 1,450
-  TypeScript tests, 73 browser tests, generated-contract checks, dependency
-  audits, both linux/amd64 Docker builds, and an offline Python 3.12 binding
-  smoke check. Normal Slophammer and DRY checks passed.
-- Prepare a draft PR: package-wide agent coverage is 71.84%, below the 85%
-  target, and the requested Slophammer baseline file is absent. No validation
-  threshold was reduced and no baseline file was generated to hide findings.
-- Unrelated concurrent dashboard work was excluded from the isolated change.
 
 ### 2026-09-11 — Native sanitization ordering
 
@@ -2234,3 +2276,8 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 - Approved the workflow and combined release scope above, including the narrow
   temporary native-contract bridge, with PR #219 included in the baseline.
   Benchmark execution approval remains separate.
+
+### 2026-09-12 — Native replacement evidence correction approval
+
+- The user directly approved the narrow correction and matched release above.
+  Actual replacement selection and paid execution remain separately gated.
