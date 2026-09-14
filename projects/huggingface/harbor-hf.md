@@ -44,6 +44,14 @@ Approved at: 2026-09-12T00:00:00Z
   detail rendering exposes an undefined-length browser error before Back;
   fast local navigation could previously outrun it. Hosted CI artifacts were
   unavailable; the reproduction used a private local copy of the test.
+- Reused the existing typed no-replacements fixture and waited for detail
+  rendering before Back. Added empty browser-error assertions; navigation and
+  no-write assertions remain intact. No production code, timeouts or retries
+  changed. Independent narrow review: GO, no blockers.
+- Local validation: 20 repeated navigation checks with two workers, all 76
+  browser tests with two workers, 1,632 unit tests, formatting, lint, types,
+  build, generated checks and dependency audit pass. Push the reviewed fix and
+  inspect hosted CI at that exact head; earlier failure is not waived.
 
 ### Results browsing follow-up — local implementation
 

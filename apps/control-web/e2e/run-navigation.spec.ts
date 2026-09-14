@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { noReplacements } from "./replacement-fixture";
 
 const runs = [
   { role: "diagnostic", status: "finished", name: "recipe-one", model: "model-one" },
@@ -43,6 +44,8 @@ const runs = [
 test("Runs recipe identity, exact role and URL search survive refresh, reload and back", async ({
   page,
 }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   const writes: string[] = [];
   const progressRequests: string[] = [];
   let listRequests = 0;
@@ -80,6 +83,7 @@ test("Runs recipe identity, exact role and URL search survive refresh, reload an
     for (const run of runs) {
       const base = `/api/v1/runs/${run.record.run_id}`;
       responses[base] = run;
+      responses[`${base}/replacements`] = noReplacements(run.record.run_id);
       responses[`${base}/trials`] = { trials: [] };
       responses[`${base}/progress`] = {
         observed_at: "2026-01-01T00:00:00Z",
@@ -135,6 +139,12 @@ test("Runs recipe identity, exact role and URL search survive refresh, reload an
   expect(progressRequests).toEqual([]);
   await table.getByRole("link", { name: /model-one/ }).click();
   await expect(page).toHaveURL(new RegExp(`/runs/${runs[0]?.record.run_id}$`));
+  // URL updates precede rendering: do not let Back outrun the automatic
+  // replacement response and hide a detail-render failure.
+  await expect(
+    page.getByText("No replacement runs. Original execution only."),
+  ).toBeVisible();
+  expect(pageErrors).toEqual([]);
   await page.goBack();
   await expect(role).toHaveValue("diagnostic");
   await expect(search).toHaveValue("RECIPE-ONE");
@@ -151,4 +161,5 @@ test("Runs recipe identity, exact role and URL search survive refresh, reload an
   );
   await expect(table.getByRole("link", { name: /model-two/ })).toBeVisible();
   expect(writes).toEqual([]);
+  expect(pageErrors).toEqual([]);
 });
