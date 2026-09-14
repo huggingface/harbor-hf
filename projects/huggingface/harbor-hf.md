@@ -9,7 +9,7 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 
 ### Results browsing deployment approval
 
@@ -2961,3 +2961,26 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 - The user explicitly confirmed the consolidated existing-Space cutover plan
   above. Record and commit approval before deployment work. No active-execution
   exception, worker-image publication or credential transfer is included.
+
+### 2026-09-12 — Results browsing deployment completed
+
+- Deployed exact merged revision
+  `1499be727f999faef6a10babf1465749d81be15e` to the existing private control
+  Space. Successful CI, exact bundle contents, repository/runtime provenance,
+  Harbor pin and immutable worker-image provenance were verified. Worker inputs
+  were unchanged; both existing image references were retained.
+- Fresh provider inventory was terminal before and after cutover. Existing
+  paused runs remained paused. Writes were disabled during rebuilding and
+  restored only after authenticated liveness/readiness, session, presets,
+  projection, policy, run records and console-asset checks passed. Stable
+  enabled-mode verification also passed with no runtime errors.
+- Historical setup recovery briefly reports queued while replaying a terminal
+  Job's saved events and regenerates its observational completion timestamp.
+  Held upload, inspected the native service recovery path, and independently
+  reviewed bounded read-only recovery verification. Setup identity, outcome,
+  artifacts and exact terminal provider inventory remained unchanged; no setup
+  or benchmark execution occurred. No service behavior was changed for this.
+- Space privacy, hardware, Bucket, secrets, images and unrelated settings were
+  preserved. No credential transfer, inference grant, new resource, worker-image
+  publication, benchmark mutation or paid test was performed. Private evidence
+  remains outside the public repository; this completion record is local.
