@@ -158,13 +158,16 @@ test("browser-only pricing CRUD, reload, route drafts and list estimates", async
   ).toBeVisible();
   await page.getByRole("link", { name: "Runs", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Scenario estimate", exact: true }),
+    page.getByRole("button", { name: "Original · scenario estimate", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByLabel("Scenario estimate USD: 4.85", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Reported cost", exact: true }),
+    page.getByRole("button", {
+      name: "Native result · score / tokens / cost",
+      exact: true,
+    }),
   ).toBeVisible();
   await page.locator(`a[href="/runs/${runId}"]`).click();
   await openEditor(page);

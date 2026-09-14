@@ -9,7 +9,7 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 
 ### Results browsing follow-up — local implementation
 
@@ -33,6 +33,38 @@ Approved at: 2026-09-12T00:00:00Z
 - No push, PR creation, publication, merge, deployment, credential transfer,
   inference, paid compute, replacement submission or run-control action.
 - Approval date uses the session date; the exact decision time was not recorded.
+
+#### Completion — 2026-09-12
+
+- Implemented locally after the committed approval. Runs now show valid native
+  Combined scores, tokens and selected reported costs together, with explicit
+  Original/subset, pending, unavailable and expired-evidence presentation.
+  Native costs show missing trial-result counts when evidence is present;
+  historical summaries without trial evidence explicitly show unknown coverage.
+  All-incurred coverage remains separate. No alternative metric was calculated.
+- Recorded reasoning intent is visible beside native kwargs on run detail;
+  neither metadata nor a model query is claimed as effective provider reasoning.
+- Only rendered parent rows inspect combined evidence. Shared 30-second browser
+  queries, a two-request concurrency bound and started-request coalescing avoid
+  duplicate inspections. No backend source cache was added. Relationship changes
+  fence ancestors, including hidden descendants. Original execution status and
+  Original shared/scenario estimates remain labeled separately.
+- Native fields/APIs and relevant Harbor history were checked. No durable field,
+  schema, API, projection table, resource, provider rule or execution behavior
+  changed. See `docs/2026-09-12-results-browsing-ui.md` for evidence and limits.
+- Independent review identified two medium freshness/deduplication issues; both
+  were fixed and re-reviewed with GO and no blocking finding. Final Node checks
+  pass: formatting, lint, types, 1,632 unit tests, build, generated contracts,
+  audit and 76 browser tests. Changed modules have 100% line/function coverage,
+  98.18% branches and 98.83% statements across 92 focused tests.
+- Root Ruff/format/ty, 102 tests at 89.10% coverage and audit pass. Agent
+  Ruff/format/ty and 598 tests pass. Both Dockerfiles build for linux/amd64;
+  Slophammer baseline/DRY and privacy checks pass. Initial automatic browser
+  server startup stalled and was stopped; all browser tests passed on an
+  isolated explicitly started local server with unchanged layout assertions.
+- No publication, deployment, worktree, paid execution, credential movement or
+  run mutation. Ready for separate release approval; no earlier release scope
+  is renewed. These are offline results, not a hosted performance guarantee.
 
 
 ### Combined score rollup and loading — local implementation
@@ -875,6 +907,8 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Approved directly: local reasoning display, combined score/token browsing,
   missing-cost item counts, evidence-preserving performance investigation,
   validation, documentation and local commits. No remote mutation or release.
+- Completed locally with independent review, full validation and documented
+  evidence/freshness limits. No release, run mutation or paid work performed.
 
 
 ### 2026-09-11 — Active control release verified

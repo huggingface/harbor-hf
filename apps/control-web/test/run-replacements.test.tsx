@@ -318,6 +318,7 @@ it("displays native mean and full source evidence, separating selected cost from
     stats: {
       n_completed_trials: 2,
       n_errored_trials: 1,
+      cost_usd: 2,
       evals: { synthetic: { metrics: [{ mean: 0.25 }], reward_stats: { reward: {} } } },
     },
     trial_results: [{ id, source: "synthetic-source" }],

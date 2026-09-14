@@ -1,9 +1,10 @@
 import type { RunRecord } from "./api";
-import { runAgentIdentities } from "./run-identity";
+import { recordedReasoningIntent, runAgentIdentities } from "./run-identity";
 import { Card } from "./ui";
 
 export function RunConfiguration({ record }: { record: RunRecord }) {
   const agents = runAgentIdentities(record);
+  const intent = recordedReasoningIntent(record);
   return (
     <Card className="mt-6" aria-label="Configured agents">
       <h2 className="font-semibold text-white">Configured agents</h2>
@@ -14,15 +15,10 @@ export function RunConfiguration({ record }: { record: RunRecord }) {
         Provider-effective reasoning and sampling are not established by these records.
       </p>
       <dl className="mt-3 text-sm">
-        <dt className="text-slate-400">
-          Recorded reasoning intent (submission metadata)
-        </dt>
-        <dd className="whitespace-pre-wrap break-all text-slate-200">
-          {record.submission?.model?.reasoning_effort === ""
-            ? "Unset (empty text)"
-            : (record.submission?.model?.reasoning_effort ?? "Unavailable")}
-        </dd>
+        <dt className="text-slate-400">{intent.label}</dt>
+        <dd className="whitespace-pre-wrap break-all text-slate-200">{intent.value}</dd>
       </dl>
+      <p className="mt-2 text-sm text-slate-400">{intent.description}</p>
       {agents.length === 0 ? (
         <p className="mt-3 text-sm text-slate-400">Agent configuration unavailable.</p>
       ) : (

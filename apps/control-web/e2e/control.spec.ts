@@ -1795,7 +1795,7 @@ test("pricing is cache-inclusive, hypothetical, retained and GET-only", async ({
   expect(writes).toEqual([]);
 });
 
-test("list sorts raw scores and tokens rather than rounded labels", async ({
+test("list keeps native result unsortable and exposes exact scores and tokens", async ({
   page,
 }, testInfo) => {
   await mockControl(page);
@@ -1832,24 +1832,40 @@ test("list sorts raw scores and tokens rather than rounded labels", async ({
       .evaluateAll((links) =>
         links.map((link) => link.getAttribute("href")?.replace("/runs/", "")),
       );
-  for (const column of ["Score", "Input incl. cache (M)"]) {
-    const header = page.getByRole("columnheader", { name: column, exact: true });
+  const header = page.getByRole("columnheader", {
+    name: "Native result · score / tokens / cost",
+    exact: true,
+  });
+  await expect(header).toBeVisible();
+  const before = await names();
+  for (let click = 0; click < 2; click += 1) {
     await header.getByRole("button").click();
-    const first = await names();
-    await header.getByRole("button").click();
-    const second = await names();
-    expect(first.indexOf("synthetic-low") < first.indexOf("synthetic-high")).not.toBe(
-      second.indexOf("synthetic-low") < second.indexOf("synthetic-high"),
-    );
+    expect(await names()).toEqual(before);
   }
-  await expect(page.getByLabel("Score: 0", { exact: true })).toHaveText("0.000");
-  await expect(page.getByLabel("Score: unavailable", { exact: true })).toHaveText("-");
-  await expect(page.getByLabel("Input tokens: 0", { exact: true })).toHaveText(
-    "0.000M",
+  await expect(page.getByLabel("Score: 0.51681", { exact: true })).toHaveText(
+    "Score · mean: 0.517",
+  );
+  await expect(page.getByLabel("Score: 0.51689", { exact: true })).toHaveText(
+    "Score · mean: 0.517",
   );
   await expect(
-    page.getByLabel("Input tokens: unavailable", { exact: true }),
-  ).toHaveText("-");
+    page.getByLabel("Input incl. cache tokens: 20484101", { exact: true }),
+  ).toHaveText("Input incl. cache: 20.484M");
+  await expect(
+    page.getByLabel("Input incl. cache tokens: 20484199", { exact: true }),
+  ).toHaveText("Input incl. cache: 20.484M");
+  await expect(page.getByLabel("Score: 0", { exact: true })).toHaveText(
+    "Score · mean: 0.000",
+  );
+  await expect(page.getByLabel("Score: unavailable", { exact: true })).toHaveText(
+    "Score: -",
+  );
+  await expect(
+    page.getByLabel("Input incl. cache tokens: 0", { exact: true }),
+  ).toHaveText("Input incl. cache: 0.000M");
+  await expect(
+    page.getByLabel("Input incl. cache tokens: unavailable", { exact: true }),
+  ).toHaveText("Input incl. cache: -");
   await page.screenshot({
     path: testInfo.outputPath("synthetic-list-desktop.png"),
     fullPage: true,

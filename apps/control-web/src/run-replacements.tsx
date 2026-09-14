@@ -1,9 +1,8 @@
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ApiError,
-  getReplacements,
   submitReplacements,
   validateReplacements,
   type LaunchValidation,
@@ -15,7 +14,10 @@ import {
 import { RunInferenceAccess } from "./run-inference-review";
 import { useControlState } from "./control-state";
 import { formatMoneyUsd } from "./lib";
-import { RUN_POLL_INTERVAL_MS, useRunClock } from "./queries";
+import { useRunClock } from "./queries";
+import { useReplacementResult } from "./result-browsing-query";
+import { NativeResultSummary } from "./result-browsing";
+import { costCoverageLabel } from "./native-cost-coverage";
 import { nativeScore, resultStat, roundedScore } from "./run-summary";
 import { Button, Card } from "./ui";
 
@@ -34,18 +36,13 @@ export function RunReplacements({
   trials: TrialIdentity[];
 }) {
   const [open, setOpen] = useState<boolean | null>(null);
-  const query = useQuery({
-    queryKey: ["replacements", run.record.run_id],
-    queryFn: () => getReplacements(run.record.run_id),
-    refetchInterval: RUN_POLL_INTERVAL_MS,
-    retry: false,
-  });
+  const query = useReplacementResult(run.record.run_id);
   const originalScore = nativeScore(run.result);
   const now = useRunClock();
   const expired = now - query.dataUpdatedAt > 60_000;
   const current = !query.error && !expired ? query.data : undefined;
   return (
-    <Card className="my-6">
+    <Card className="mt-6 mb-4">
       <h2 className="font-semibold text-white">Original versus Combined rollup</h2>
       <p className="text-xl tabular-nums">
         Original · {originalScore.label}: {roundedScore(originalScore.value)}
@@ -79,7 +76,7 @@ export function RunReplacements({
       <h3 className="mt-3 font-semibold">Infrastructure replacements</h3>
       {run.record.operator_selection ? (
         <p>
-          This is a replacement run.{" "}
+          This is a replacement subset run.{" "}
           <Link
             className="underline"
             to={`/runs/${run.record.operator_selection.original_run_id}`}
@@ -490,9 +487,7 @@ export function CombinedReplacementView({ view }: { view: ReplacementView }) {
         </p>
       ) : (
         <>
-          <p className="text-xl tabular-nums">
-            {score.label}: {roundedScore(score.value)}
-          </p>
+          <NativeResultSummary result={result} includeCost={false} />
           {score.value === null ? (
             <p>No single native mean is available; inspect the native metrics below.</p>
           ) : null}
@@ -520,10 +515,11 @@ export function CombinedReplacementView({ view }: { view: ReplacementView }) {
       )}
       <p>
         Selected native cohort cost:{" "}
-        {view.selected_cost_usd === null
+        {resultStat(result, "cost_usd") === null
           ? "Unknown"
-          : formatMoneyUsd(view.selected_cost_usd)}
+          : formatMoneyUsd(resultStat(result, "cost_usd"))}
       </p>
+      <p>{costCoverageLabel(result)}</p>
       <p>
         All-incurred reported agent-cost subtotal:{" "}
         {view.incurred?.cost_usd == null
