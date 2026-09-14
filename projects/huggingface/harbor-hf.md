@@ -9,7 +9,26 @@ default_branch: main
 
 ## Current authorization
 
-Status: completed
+Status: approved
+
+### Results browsing deployment approval
+
+Approved at: 2026-09-12T00:00:00Z
+
+- The user explicitly confirmed the proposed consolidated deployment plan.
+  Approved cutover scope: deploy exact merged
+  revision `1499be727f999faef6a10babf1465749d81be15e` to the existing private
+  control Space, retaining its Bucket, hardware, settings and secrets.
+- Reuse existing verified immutable parent and Workbench image digests only if
+  their package, lockfile and Dockerfile inputs are unchanged. Otherwise stop
+  for separate image-publication approval.
+- Require fresh idle inventory before cutover; do not interrupt or cancel active
+  runs or setup Jobs. Temporarily disable writes, rebuild the control Space,
+  verify provenance and authenticated readiness, then restore writes only after
+  validation. No new resources, credential transfers, inference or paid tests.
+- The user reports no active runs; verify fresh inventory rather than treating
+  that observation as enduring cutover evidence. This approval does not reopen
+  the completed implementation/merge scope. Exact approval time not recorded.
 
 ### Built-in inference review fix and exact-green-head PR merge
 
@@ -2929,3 +2948,16 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
   credential transfer, grant, run mutation, inference or paid compute occurred.
 - Any deployment requires new explicit authorization and fresh release gates;
   earlier private deployment preparation is not current-head readiness proof.
+
+### 2026-09-12 — Results browsing deployment scope pending
+
+- User requested deployment after the approved merge completed. The consolidated
+  existing-Space cutover scope above is pending explicit confirmation, including
+  a temporary write outage and verified immutable-image reuse. No external
+  mutation or deployment has started.
+
+### 2026-09-12 — Results browsing deployment approved
+
+- The user explicitly confirmed the consolidated existing-Space cutover plan
+  above. Record and commit approval before deployment work. No active-execution
+  exception, worker-image publication or credential transfer is included.
