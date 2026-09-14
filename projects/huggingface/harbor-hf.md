@@ -32,6 +32,19 @@ Approved at: 2026-09-12T00:00:00Z
   every public mutation. Further behavior changes require separate approval.
 - Approval date uses the session date; the exact decision time was not recorded.
 
+#### CI follow-through — 2026-09-12
+
+- The user requested walking the failed PR CI through. Within the current
+  publication/revalidation scope, repair the omitted browser-test API fixture,
+  strengthen navigation readiness/error assertions, validate and push the narrow
+  regression fix. No production behavior expansion, retry/timeout weakening,
+  deployment or benchmark execution is included.
+- Read-only reproduction established that the navigation fixture returned an
+  invalid empty object for the newly automatic replacements read. Waiting for
+  detail rendering exposes an undefined-length browser error before Back;
+  fast local navigation could previously outrun it. Hosted CI artifacts were
+  unavailable; the reproduction used a private local copy of the test.
+
 ### Results browsing follow-up — local implementation
 
 Approved at: 2026-09-12T00:00:00Z
