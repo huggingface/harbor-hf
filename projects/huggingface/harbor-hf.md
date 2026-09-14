@@ -11,6 +11,30 @@ default_branch: main
 
 Status: approved
 
+### Built-in inference review fix and exact-green-head PR merge
+
+Approved at: 2026-09-12T00:00:00Z
+
+- The user explicitly requested fixing the misleading built-in HF-route
+  inference-review message in the existing results-browsing PR, making it merge
+  ready, and merging once CI passes. This extends the earlier publication scope
+  and supersedes its exclusion of this narrow fix and PR merge.
+- Implement native-recorded inference-review presentation using the existing
+  authoritative binding policy. Built-in inference must not be forced through
+  a named-key approval. Preserve all named-key ownership, scope, presence,
+  revision, image, CSRF and write-mode gates. Do not grant credentials or infer
+  provider authentication from configuration or presence.
+- Authorized: local changes, generated API contracts if necessary, tests,
+  documentation, independent review, commits, branch push, PR updates, CI
+  inspection and squash merge of this PR only at the exact reviewed green head.
+  Resolve CI regressions without weakening checks or expanding functionality.
+- No deployment, image publication, new resource, run mutation, live inference,
+  credential movement or grant, paid compute, force push or history rewrite.
+  Stop for changed-head/revision conflicts or unexpected scope expansion.
+- Keep public metadata free of operator-specific evidence and identifiers;
+  inspect the complete diff and run privacy checks before each public mutation.
+- Approval date uses the session date; exact decision time was not recorded.
+
 ### Results browsing publication and deployment preparation
 
 Approved at: 2026-09-12T00:00:00Z
@@ -943,6 +967,13 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-12 — Built-in inference review and merge amendment
+
+- Approved directly: fix the misleading built-in inference-review message in
+  the existing PR, validate and review it, push updates, and merge the exact
+  reviewed head only after CI passes. No deployment or live credential action.
+
 
 ### 2026-09-12 — Results browsing publication request
 
