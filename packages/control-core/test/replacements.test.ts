@@ -821,6 +821,7 @@ it("reviews real compiled inference scope for a new image before normal replacem
   );
   await expect(child()).rejects.toThrow("not reviewed");
   const reviewed = await registry.reviewRun(source.run_id, "operator", revision);
+  if (reviewed.binding !== "named") throw new Error("Expected named review");
   await registry.approve(
     ref,
     {

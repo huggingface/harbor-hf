@@ -127,3 +127,20 @@ measured work, not weaker freshness or a persisted aggregate.
 
 No publication, deployment, paid work, credential transfer, run mutation or native
 artifact rewrite is included. Local commits require separate release approval.
+
+## Approved release follow-through
+
+The subsequent PR scope includes the narrow
+[built-in inference review correction](run-inference-access-review.md). The
+existing authoritative binding policy distinguishes no named binding from a
+reviewed named binding. Its ephemeral response contract and generated browser
+types now express that distinction; no durable schema, native configuration,
+grant or admission rule changes. No-binding review makes no credential-presence
+or authentication claim and cannot offer an approval action.
+
+Independent security review found no blockers. The combined local release
+validation passes 1,641 Node unit tests and 77 browser tests, including named
+and no-binding replacement flows. All configured Node, Python, agent, Docker,
+Slophammer and privacy gates pass. Publication and exact-green-head squash merge
+are separately approved in the project authorization; deployment, image
+publication, credential transfers and paid execution are not included.

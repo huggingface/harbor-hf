@@ -2898,3 +2898,21 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 
 - Local implementation completion and disclosed validation gaps are recorded
   above. Publication and deployment have not started; independent review is next.
+
+### 2026-09-12 — Built-in inference review validation and merge readiness
+
+- Implemented the approved narrow fix using `InferenceBindings.selected`: only
+  its explicit no-binding result returns the ephemeral `binding: none` review.
+  No approval, grant, credential-presence claim or authentication test is added.
+  Named-binding gates and normal replacement submission remain unchanged.
+- Independent security review: GO, no blockers; 168 focused tests independently
+  passed. Implementation coverage: 97.22% lines and 90.90% branches across the
+  changed review runtime. Native ownership and generated contract comparisons
+  found no duplicate Harbor configuration or durable field.
+- Full local checks pass: 1,641 Node unit tests, 77 browser tests, formatting,
+  lint, types, build, generated reproducibility and dependency audit. Root
+  checks pass with 102 tests and 89.10% coverage; agent checks pass with 598
+  tests. Both Dockerfiles build for linux/amd64. Slophammer and privacy pass.
+- Publish the reviewed fix and updated PR scope, then wait for hosted CI on the
+  exact latest head before the authorized squash merge. Merge remains pending
+  at this entry; deployment and image publication remain unauthorized.

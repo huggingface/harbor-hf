@@ -23,8 +23,9 @@ async function setup() {
   const store = new FilesystemObjectStore(root);
   let now = new Date("2026-09-11T00:00:00Z");
   const present = vi.fn(() => true);
+  const nonce = vi.fn(randomUUID);
   const create = (worker = currentImage) =>
-    new InferenceRegistry(store, worker, present, () => now, randomUUID);
+    new InferenceRegistry(store, worker, present, () => now, nonce);
   const original = create(image);
   const registered = await original.register(
     {
@@ -91,6 +92,7 @@ async function setup() {
     ref,
     config,
     present,
+    nonce,
     create,
     time: (value: Date) => {
       now = value;
@@ -99,6 +101,7 @@ async function setup() {
   };
 }
 function approval(review: Awaited<ReturnType<InferenceRegistry["reviewRun"]>>) {
+  if (review.binding !== "named") throw new Error("Expected named review");
   return {
     expected_revision: review.revision,
     review_id: review.review_id,
@@ -115,6 +118,7 @@ it("carries forward the real compiled configuration through existing policy appr
   const review = await registry.reviewRun(id, actor, revision);
   expect(review.approval_required).toBe(true);
   expect(review).not.toHaveProperty("recipe");
+  if (review.binding !== "named") throw new Error("Expected named review");
   expect(review.grant).toEqual({ ...grant, worker_image: currentImage });
   const saved = await registry.approve(ref, approval(review), actor);
   expect(saved.revision).toBe(3);
@@ -216,6 +220,7 @@ it.each(["revision", "record", "presence", "actor", "expiry", "restart", "ref"])
       await putJson(store, runRecordPath(id), record);
     }
     if (field === "presence") present.mockReturnValue(false);
+    if (review.binding !== "named") throw new Error("Expected named review");
     if (field === "expiry") time(new Date(review.expires_at));
     const target = field === "restart" ? create(image) : registry;
     await expect(
@@ -282,3 +287,70 @@ it("fences two outstanding reviews across the first successful save", async () =
   });
   expect((await registry.reviewRun(id, actor, revision)).approval_required).toBe(false);
 });
+
+const unnamedEnvironments = [
+  {
+    OPENAI_API_KEY: "${HF_INFERENCE_TOKEN}",
+    OPENAI_BASE_URL: "https://router.huggingface.co/v1",
+  },
+  { HF_TOKEN: "${HF_INFERENCE_TOKEN}" },
+  {},
+];
+it.each(unnamedEnvironments)(
+  "explains validated unnamed env %j without presence, writes or cached approval",
+  async (env) => {
+    const { registry, record, store, present, nonce, ref } = await setup();
+    record.harbor_job_config = validateHarborJobConfig({
+      agents: [{ model_name: "generic/model", env }],
+    });
+    await putJson(store, runRecordPath(id), record);
+    const before = await readJson(store, "control/inference-bindings.json");
+    const write = vi.spyOn(store, "put");
+    present.mockClear().mockReturnValue(false);
+    nonce.mockClear();
+    for (let i = 0; i < 260; i++)
+      expect(await registry.reviewRun(id, actor, revision)).toEqual({
+        schema_version: "v1",
+        run_id: id,
+        binding: "none",
+        approval_required: false,
+      });
+    expect(present).not.toHaveBeenCalled();
+    expect(nonce).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    await expect(
+      registry.approve(
+        ref,
+        {
+          expected_revision: 2,
+          review_id: "a".repeat(64),
+          reviewed_confirmation: true,
+          reason: "No review exists",
+        },
+        actor,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await readJson(store, "control/inference-bindings.json")).toEqual(before);
+  },
+);
+it.each(["router", "credential", "foreign", "revision", "invalid"])(
+  "does not explain away invalid unnamed record: %s",
+  async (field) => {
+    const { registry, record, store } = await setup();
+    record.harbor_job_config = validateHarborJobConfig({
+      agents: [{ env: { ...unnamedEnvironments[0] } }],
+    });
+    if (field === "router")
+      record.harbor_job_config.agents![0]!.env!.OPENAI_BASE_URL =
+        "https://other.invalid/v1";
+    if (field === "credential")
+      record.harbor_job_config.agents![0]!.env!.OPENAI_API_KEY = "${UNREVIEWED_KEY}";
+    if (field === "foreign") record.submitted_by = "other-operator";
+    if (field === "revision") record.harbor_revision = "b".repeat(40);
+    if (field === "invalid") record.harbor_job_config = { agents: "invalid" } as never;
+    await putJson(store, runRecordPath(id), record);
+    await expect(registry.reviewRun(id, actor, revision)).rejects.toMatchObject({
+      status: ["router", "credential"].includes(field) ? 403 : 409,
+    });
+  },
+);
