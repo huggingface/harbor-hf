@@ -9,7 +9,31 @@ default_branch: main
 
 ## Current authorization
 
-Status: completed
+Status: approved
+
+### Results browsing follow-up — local implementation
+
+Approved at: 2026-09-12T00:00:00Z
+
+- The user directly approved the proposed local follow-up and clarified that
+  browsing should show valid post-replacement combined scores and token counts,
+  and cost displays should state how many items lack cost data.
+- Implement clear recorded reasoning intent versus native kwargs on run detail;
+  use the existing native combined-result path for Runs browsing; preserve
+  explicit pending, unavailable, failed-replacement and stale-evidence states.
+  Preserve original evidence and distinguish selected-cohort from all-incurred
+  cost. Unknown coverage must remain unknown, not zero.
+- Scope includes local implementation, offline profiling of polling and multi-run
+  loading, bounded evidence-preserving performance improvements if justified,
+  tests, documentation and local commits. Preserve the existing unpublished
+  rollup work and all other branches, stashes and worktrees; create no worktrees.
+- Harbor native aggregation remains authoritative through the existing approved
+  bridge. No new metric engine, persisted aggregate, projection table, resource,
+  native configuration alias or execution state is authorized.
+- No push, PR creation, publication, merge, deployment, credential transfer,
+  inference, paid compute, replacement submission or run-control action.
+- Approval date uses the session date; the exact decision time was not recorded.
+
 
 ### Combined score rollup and loading — local implementation
 
@@ -845,6 +869,13 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-12 — Results browsing follow-up
+
+- Approved directly: local reasoning display, combined score/token browsing,
+  missing-cost item counts, evidence-preserving performance investigation,
+  validation, documentation and local commits. No remote mutation or release.
+
 
 ### 2026-09-11 — Active control release verified
 
