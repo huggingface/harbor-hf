@@ -9,7 +9,28 @@ default_branch: main
 
 ## Current authorization
 
-Status: completed
+Status: approved
+
+### Results browsing publication and deployment preparation
+
+Approved at: 2026-09-12T00:00:00Z
+
+- The user directly requested preparing a PR with the recent changes and getting
+  ready to deploy, following the proposed main-integration/publication scope.
+  Integrate current upstream main into the existing feature branch, resolve
+  integration conflicts without expanding behavior, revalidate, push the
+  reviewed branch and open a public PR against the canonical repository.
+- Main integration means merging main into the feature branch, not merging the
+  resulting PR into main. Preserve the existing local rollup work. Inspect CI
+  and prepare release steps/readiness evidence; report remaining gates.
+- No deployment, PR merge, image publication, force push, history rewrite, run
+  mutation, inference, paid compute, credential transfer or private accounting
+  publication. Live cutover needs separate explicit approval and idle checks.
+- The newly investigated HF-route inference-review message is not implemented
+  in this scope. No new inference approval behavior or credential grants.
+- Run privacy checks and inspect the complete diff and public metadata before
+  every public mutation. Further behavior changes require separate approval.
+- Approval date uses the session date; the exact decision time was not recorded.
 
 ### Results browsing follow-up — local implementation
 
@@ -901,6 +922,15 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-12 — Results browsing publication request
+
+- Pending clarification/approval: integrate main into the feature branch,
+  revalidate, push and open a PR; no PR merge, deployment or run execution.
+- Subsequently approved directly: prepare the recent changes as a PR and get
+  ready to deploy. Main integration, branch publication, PR and read-only
+  deployment preparation are approved; actual PR merge/cutover remains gated.
+
 
 ### 2026-09-12 — Results browsing follow-up
 
