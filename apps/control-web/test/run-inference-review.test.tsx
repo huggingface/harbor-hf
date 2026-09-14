@@ -6,7 +6,8 @@ import * as api from "../src/api";
 import { ControlStateProvider } from "../src/control-state";
 import { RunInferenceAccess } from "../src/run-inference-review";
 const runId = `run-${"a".repeat(24)}`;
-const review: api.RunInferenceReview = {
+const review: Extract<api.RunInferenceReview, { binding: "named" }> = {
+  binding: "named",
   schema_version: "v1",
   run_id: runId,
   approval_required: true,
@@ -161,4 +162,26 @@ it.each([
   const { preview } = mount(role, mode);
   expect(previewButton()).toBeDisabled();
   expect(preview).not.toHaveBeenCalled();
+});
+
+it("explains no named binding without claiming presence or offering approval", async () => {
+  const { preview, approve } = mount();
+  preview.mockResolvedValue({
+    schema_version: "v1",
+    run_id: runId,
+    binding: "none",
+    approval_required: false,
+  });
+  fireEvent.click(previewButton());
+  await screen.findByText(/No named inference binding or approval is required/);
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Credential presence and authentication were not checked",
+  );
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "all normal admission checks still apply",
+  );
+  expect(
+    screen.queryByRole("button", { name: /Approve this image/ }),
+  ).not.toBeInTheDocument();
+  expect(approve).not.toHaveBeenCalled();
 });

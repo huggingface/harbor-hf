@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RunRecord } from "../src/api";
-import { runAgentIdentities, runIdentity } from "../src/run-identity";
+import {
+  recordedReasoningIntent,
+  runAgentIdentities,
+  runIdentity,
+} from "../src/run-identity";
 
 const identity = (agents: unknown) =>
   runIdentity({ harbor_job_config: { agents } } as RunRecord);
@@ -151,5 +155,46 @@ describe("Workbench recorded provider", () => {
     expect(runIdentity(record).providerSource).toBe(
       "Provider suffix in native model configuration",
     );
+  });
+});
+
+describe("recorded reasoning intent display", () => {
+  it.each([
+    ["off", "off"],
+    ["", "Unset (empty text)"],
+    [undefined, "Unavailable"],
+    ["  custom value  ", "  custom value  "],
+  ])("keeps %j separate from missing or conflicting kwargs", (intent, expected) => {
+    for (const kwargs of [{}, { reasoning_effort: "high", thinking: true }]) {
+      const record = {
+        workbench_recipe: { name: "example-recipe" },
+        submission: { model: { reasoning_effort: intent } },
+        harbor_job_config: {
+          agents: [{ model_name: "route/model?reasoning=max&temperature=0", kwargs }],
+        },
+      } as RunRecord;
+      const before = structuredClone(record);
+      expect(recordedReasoningIntent(record)).toEqual({
+        label: "Recorded reasoning intent (submission metadata)",
+        value: expected,
+        description:
+          "Recorded intent is not native kwargs or verified effective provider configuration.",
+      });
+      expect(runIdentity(record).reasoning).toBe(
+        "reasoning_effort" in kwargs
+          ? "thinking=true, reasoning_effort=high"
+          : "Not recorded in native kwargs",
+      );
+      expect(runIdentity(record).model).toBe("route/model?reasoning=max&temperature=0");
+      expect(record).toEqual(before);
+    }
+  });
+
+  it("does not infer missing submission intent from native kwargs", () => {
+    const record = {
+      harbor_job_config: { agents: [{ kwargs: { reasoning_effort: "high" } }] },
+    } as RunRecord;
+    expect(recordedReasoningIntent(record).value).toBe("Unavailable");
+    expect(runIdentity(record).reasoning).toBe("reasoning_effort=high");
   });
 });

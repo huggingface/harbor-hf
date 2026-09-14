@@ -821,6 +821,7 @@ it("reviews real compiled inference scope for a new image before normal replacem
   );
   await expect(child()).rejects.toThrow("not reviewed");
   const reviewed = await registry.reviewRun(source.run_id, "operator", revision);
+  if (reviewed.binding !== "named") throw new Error("Expected named review");
   await registry.approve(
     ref,
     {
@@ -836,4 +837,83 @@ it("reviews real compiled inference scope for a new image before normal replacem
   expect(replacement.run.workbench_recipe).toEqual(source.workbench_recipe);
   expect((await child()).created).toBe(false);
   expect(start).not.toHaveBeenCalled();
+});
+
+it("shares exact fresh trial reads and listings across cost reconciliation and native assembly only within a request", async () => {
+  const replacement = (await child()).run;
+  await artifacts(replacement, [trial(third)]);
+  await receipt(source, first, 1);
+  const retained = "44444444-4444-4444-8444-444444444444";
+  await receipt(source, retained, null);
+  const read = vi.spyOn(store, "read");
+  const list = vi.spyOn(store, "listDirectory");
+  const complete = vi.fn(async () => {});
+  const views = new Replacements(store, projection, native, complete);
+  for (let request = 0; request < 2; request++) {
+    read.mockClear();
+    list.mockClear();
+    const view = await views.view(source.run_id);
+    expect(view.assembly.availability).toBe("available");
+    expect(view.incurred).toMatchObject({ total_attempts: 4, unknown_attempts: 1 });
+    const trialPath = `runs/${source.run_id}/job/task-${first}/result.json`;
+    expect(read.mock.calls.filter(([key]) => key === trialPath)).toEqual([
+      [trialPath, { fresh: true }],
+    ]);
+    const keys = list.mock.calls.map((args) => JSON.stringify(args));
+    expect(new Set(keys).size).toBe(keys.length);
+  }
+  expect(complete).toHaveBeenCalledTimes(4);
+  expect(native.replacementAggregate).toHaveBeenCalledTimes(1);
+  await putJson(
+    store,
+    `runs/${replacement.run_id}/job/task-${third}/result.json`,
+    trial(third, 3),
+  );
+  expect((await views.view(source.run_id)).incurred?.cost_usd).toBe(5);
+  expect(native.replacementAggregate).toHaveBeenCalledTimes(2);
+  await rm(
+    join(store.root, `runs/${replacement.run_id}/job/task-${third}/result.json`),
+  );
+  expect((await views.view(source.run_id)).assembly.availability).not.toBe("available");
+});
+
+it("coalesces in-flight evidence, isolates consumers, and retains failures only for that inspection", async () => {
+  const read = vi.spyOn(store, "read");
+  const reader = new ReplacementEvidence(store);
+  const key = `runs/${source.run_id}/job/lock.json`;
+  const [a, b] = await Promise.all([reader.read(key), reader.read(key)]);
+  a.changed = true;
+  expect(b.changed).toBeUndefined();
+  expect((await reader.read(key)).changed).toBeUndefined();
+  expect(read).toHaveBeenCalledTimes(1);
+  const missing = `runs/${source.run_id}/missing.json`;
+  await expect(reader.read(missing)).rejects.toThrow();
+  await putJson(store, missing, {});
+  await expect(reader.read(missing)).rejects.toThrow();
+  await expect(new ReplacementEvidence(store).read(missing)).resolves.toEqual({});
+});
+
+it("bounds nested evidence I/O across reads and listings and releases slots on rejection", async () => {
+  let active = 0;
+  let peak = 0;
+  const read = store.read.bind(store);
+  vi.spyOn(store, "read").mockImplementation(async (key) => {
+    active++;
+    peak = Math.max(peak, active);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return await read(key);
+    } finally {
+      active--;
+    }
+  });
+  const reader = new ReplacementEvidence(store);
+  const results = await Promise.allSettled(
+    Array.from({ length: 24 }, (_, i) =>
+      reader.read(`runs/${source.run_id}/missing-${i}.json`),
+    ),
+  );
+  expect(results.every((result) => result.status === "rejected")).toBe(true);
+  expect(peak).toBe(8);
+  await expect(reader.read(`runs/${source.run_id}/job/lock.json`)).resolves.toEqual({});
 });

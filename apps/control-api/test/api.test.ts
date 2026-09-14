@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { validateRunRecord } from "@harbor-hf/contracts";
 import { HARBOR_REVISION } from "../src/harbor-revision.js";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import type { components } from "../../control-web/src/generated/api.js";
@@ -2130,6 +2131,7 @@ it("run review uses server-recorded compiled input and saves through the existin
   const result = await post();
   expect(result.statusCode).toBe(200);
   const review = result.json<components["schemas"]["RunInferenceReview"]>();
+  if (review.binding !== "named") throw new Error("Expected named review");
   expect(review.grant).toEqual({ ...prior.grant, worker_image: currentImage });
   expect(review.approval_required).toBe(true);
   const doc = JSON.parse(await readFile("docs/control-api-v1.openapi.json", "utf8"));
@@ -2154,5 +2156,41 @@ it("run review uses server-recorded compiled input and saves through the existin
     ).statusCode,
   ).toBe(200);
   expect((await post()).json().approval_required).toBe(false);
+  const stored = validateRunRecord(
+    JSON.parse(
+      new TextDecoder().decode(await runtime.store.read(`runs/${id}/run.json`)),
+    ),
+  );
+  for (const env of [
+    {
+      OPENAI_API_KEY: "${HF_INFERENCE_TOKEN}",
+      OPENAI_BASE_URL: "https://router.huggingface.co/v1",
+    },
+    { HF_TOKEN: "${HF_INFERENCE_TOKEN}" },
+    {},
+  ]) {
+    await putJson(runtime.store, `runs/${id}/run.json`, {
+      ...stored,
+      harbor_job_config: { agents: [{ env }] },
+    });
+    const write = vi.spyOn(runtime.store, "put");
+    const result = await post();
+    expect(result.statusCode).toBe(200);
+    expect(result.headers["cache-control"]).toBe("no-store");
+    expect(result.json()).toEqual({
+      schema_version: "v1",
+      run_id: id,
+      binding: "none",
+      approval_required: false,
+    });
+    const validate = ajv.compile({
+      $ref: "api#/components/schemas/RunInferenceReview",
+    });
+    expect(validate(result.json())).toBe(true);
+    expect(validate({ ...result.json(), grant: prior.grant })).toBe(false);
+    expect(validate({ ...result.json(), approval_required: true })).toBe(false);
+    expect(write).not.toHaveBeenCalled();
+    write.mockRestore();
+  }
   await app.close();
 });

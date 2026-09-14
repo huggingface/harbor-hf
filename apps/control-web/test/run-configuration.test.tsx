@@ -64,3 +64,40 @@ describe("stored agent configuration display", () => {
     expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
   });
 });
+
+describe("reasoning provenance", () => {
+  it.each([
+    ["off", "off"],
+    ["", "Unset (empty text)"],
+    [undefined, "Unavailable"],
+  ])(
+    "does not present recorded %j as effective native configuration",
+    (intent, expected) => {
+      const record = {
+        workbench_recipe: { name: "example-recipe" },
+        submission: { model: { reasoning_effort: intent } },
+        harbor_job_config: {
+          agents: [
+            {
+              model_name: "route/model?reasoning=max&temperature=0",
+              kwargs: { reasoning_effort: "high" },
+            },
+          ],
+        },
+      } as RunRecord;
+      const before = structuredClone(record);
+      const { container } = render(<RunConfiguration record={record} />);
+      expect(container.querySelector("dd")?.textContent).toBe(expected);
+      expect(screen.getByText("reasoning_effort=high")).toBeInTheDocument();
+      expect(
+        screen.getByText("route/model?reasoning=max&temperature=0"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Recorded intent is not native kwargs or verified effective provider configuration.",
+        ),
+      ).toBeInTheDocument();
+      expect(record).toEqual(before);
+    },
+  );
+});

@@ -352,7 +352,7 @@ describe("restored control console", () => {
     async (path) => {
       renderAt(path);
       expect(
-        await screen.findByRole("columnheader", { name: "Progress" }),
+        await screen.findByRole("columnheader", { name: "Original progress" }),
       ).toBeVisible();
       expect(screen.getByText("1 / 1")).toBeVisible();
       expect(

@@ -1,3 +1,4 @@
+import { noReplacements } from "./replacement-fixture";
 import { readFileSync } from "node:fs";
 import type { BenchmarkPresetV1 } from "@harbor-hf/contracts";
 import { expect, type Page, type Route, test } from "@playwright/test";
@@ -194,6 +195,8 @@ async function mockControl(page: Page, options: MockOptions = {}) {
     const url = new URL(request.url());
     const path = url.pathname;
     const method = request.method();
+    if (method === "GET" && path === `/api/v1/runs/${runId}/replacements`)
+      return json(route, noReplacements(runId));
     if (path === "/api/v1/session")
       return json(
         route,
@@ -1792,7 +1795,7 @@ test("pricing is cache-inclusive, hypothetical, retained and GET-only", async ({
   expect(writes).toEqual([]);
 });
 
-test("list sorts raw scores and tokens rather than rounded labels", async ({
+test("list keeps native result unsortable and exposes exact scores and tokens", async ({
   page,
 }, testInfo) => {
   await mockControl(page);
@@ -1829,24 +1832,40 @@ test("list sorts raw scores and tokens rather than rounded labels", async ({
       .evaluateAll((links) =>
         links.map((link) => link.getAttribute("href")?.replace("/runs/", "")),
       );
-  for (const column of ["Score", "Input incl. cache (M)"]) {
-    const header = page.getByRole("columnheader", { name: column, exact: true });
+  const header = page.getByRole("columnheader", {
+    name: "Native result · score / tokens / cost",
+    exact: true,
+  });
+  await expect(header).toBeVisible();
+  const before = await names();
+  for (let click = 0; click < 2; click += 1) {
     await header.getByRole("button").click();
-    const first = await names();
-    await header.getByRole("button").click();
-    const second = await names();
-    expect(first.indexOf("synthetic-low") < first.indexOf("synthetic-high")).not.toBe(
-      second.indexOf("synthetic-low") < second.indexOf("synthetic-high"),
-    );
+    expect(await names()).toEqual(before);
   }
-  await expect(page.getByLabel("Score: 0", { exact: true })).toHaveText("0.000");
-  await expect(page.getByLabel("Score: unavailable", { exact: true })).toHaveText("-");
-  await expect(page.getByLabel("Input tokens: 0", { exact: true })).toHaveText(
-    "0.000M",
+  await expect(page.getByLabel("Score: 0.51681", { exact: true })).toHaveText(
+    "Score · mean: 0.517",
+  );
+  await expect(page.getByLabel("Score: 0.51689", { exact: true })).toHaveText(
+    "Score · mean: 0.517",
   );
   await expect(
-    page.getByLabel("Input tokens: unavailable", { exact: true }),
-  ).toHaveText("-");
+    page.getByLabel("Input incl. cache tokens: 20484101", { exact: true }),
+  ).toHaveText("Input incl. cache: 20.484M");
+  await expect(
+    page.getByLabel("Input incl. cache tokens: 20484199", { exact: true }),
+  ).toHaveText("Input incl. cache: 20.484M");
+  await expect(page.getByLabel("Score: 0", { exact: true })).toHaveText(
+    "Score · mean: 0.000",
+  );
+  await expect(page.getByLabel("Score: unavailable", { exact: true })).toHaveText(
+    "Score: -",
+  );
+  await expect(
+    page.getByLabel("Input incl. cache tokens: 0", { exact: true }),
+  ).toHaveText("Input incl. cache: 0.000M");
+  await expect(
+    page.getByLabel("Input incl. cache tokens: unavailable", { exact: true }),
+  ).toHaveText("Input incl. cache: -");
   await page.screenshot({
     path: testInfo.outputPath("synthetic-list-desktop.png"),
     fullPage: true,
@@ -2732,238 +2751,308 @@ test("Workbench recorded provider appears in Runs and detail without changing th
   expect(writes).toEqual([]);
 });
 
-test("operator reviews exact infrastructure failures, creates related run and inspects native combined results", async ({
-  page,
-}) => {
-  await mockControl(page);
-  const uuid = "00000000-0000-4000-8000-000000000001";
-  const relatedId = "run-abcdef0123456789abcdef01";
-  const fingerprint = "a".repeat(64);
-  let created = false;
-  let inferenceApproved = false;
-  const inferenceReview = {
-    schema_version: "v1",
-    run_id: runId,
-    revision: 2,
-    review_id: "d".repeat(64),
-    approval_required: true,
-    expires_at: "2099-01-01T00:00:00Z",
-    ref: "INFERENCE_API_KEY_EXAMPLE",
-    source_env: "MY_SECRET_KEY",
-    label: "Example",
-    presence: "configured",
-    grant: {
-      operator_subjects: ["test-operator"],
-      worker_image: `example.invalid/worker@sha256:${"b".repeat(64)}`,
-      agent_import_path: "harbor_hf_agents.command.agent:CommandAgent",
-      recipe_digest: "c".repeat(64),
-      destination_env: ["EXAMPLE_API_KEY"],
-      route_api: "native",
-      base_url: null,
-      allowed_hosts: [],
-      allowed_models: ["example:native"],
-    },
-  };
-  await page.route(`**/api/v1/runs/${runId}/inference-review`, (route) => {
-    expect(route.request().postDataJSON()).toEqual({});
-    return json(route, { ...inferenceReview, approval_required: !inferenceApproved });
-  });
-  await page.route(
-    "**/api/v1/inference-bindings/INFERENCE_API_KEY_EXAMPLE/approve",
-    (route) => {
-      expect(route.request().postDataJSON()).toEqual({
-        expected_revision: 2,
-        review_id: inferenceReview.review_id,
-        reviewed_confirmation: true,
-        reason: "Reviewed existing run inference scope for current worker image",
-      });
-      inferenceApproved = true;
-      return json(route, { schema_version: "v1", revision: 3, bindings: [] });
-    },
-  );
-  let replacementReads = 0;
-  const posts: Array<{ body: unknown; key: string | undefined }> = [];
-  await page.route(`**/api/v1/runs/${runId}`, (route) =>
-    json(route, {
-      ...run,
-      record: { ...record, workbench_recipe: { name: "recorded-recipe" } },
-      status: "finished",
-      result: { ...run.result, finished_at: "2026-01-01T01:00:00Z" },
-    }),
-  );
-  await page.route(`**/api/v1/runs/${runId}/trials`, (route) =>
-    json(route, {
-      trials: [
-        {
-          ...trialSummary,
-          status: "error",
-          result: {
-            id: uuid,
-            exception_info: { exception_type: "SyntheticEnvironmentError" },
-            config: {
-              agent: {
-                name: "synthetic-agent",
-                model_name: "synthetic/model",
-                import_path: null,
-              },
-            },
-            agent_info: { version: "1" },
-          },
-        },
-      ],
-    }),
-  );
-  await page.route(`**/api/v1/runs/${runId}/replacements/validate`, (route) => {
-    expect(route.request().postDataJSON()).toEqual({
-      trial_ids: [uuid],
-      cost_ceiling_usd: 7,
+for (const binding of ["named", "none"] as const) {
+  test(`operator reviews ${binding} inference for exact infrastructure failures, creates related run and inspects native combined results`, async ({
+    page,
+  }) => {
+    await mockControl(page);
+    const uuid = "00000000-0000-4000-8000-000000000001";
+    const relatedId = "run-abcdef0123456789abcdef01";
+    const fingerprint = "a".repeat(64);
+    let created = false;
+    let inferenceApproved = false;
+    const approvalWrites: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() !== "GET" && request.url().includes("/inference-bindings"))
+        approvalWrites.push(request.url());
     });
-    if (!inferenceApproved)
+    const inferenceReview = {
+      binding: "named",
+      schema_version: "v1",
+      run_id: runId,
+      revision: 2,
+      review_id: "d".repeat(64),
+      approval_required: true,
+      expires_at: "2099-01-01T00:00:00Z",
+      ref: "INFERENCE_API_KEY_EXAMPLE",
+      source_env: "MY_SECRET_KEY",
+      label: "Example",
+      presence: "configured",
+      grant: {
+        operator_subjects: ["test-operator"],
+        worker_image: `example.invalid/worker@sha256:${"b".repeat(64)}`,
+        agent_import_path: "harbor_hf_agents.command.agent:CommandAgent",
+        recipe_digest: "c".repeat(64),
+        destination_env: ["EXAMPLE_API_KEY"],
+        route_api: "native",
+        base_url: null,
+        allowed_hosts: [],
+        allowed_models: ["example:native"],
+      },
+    };
+    await page.route(`**/api/v1/runs/${runId}/inference-review`, (route) => {
+      expect(route.request().postDataJSON()).toEqual({});
       return json(
         route,
-        {
-          error: {
-            code: "inference_binding_denied",
-            message:
-              "Inference binding is unavailable or not reviewed for this execution",
-          },
-        },
-        403,
-      );
-    return json(route, {
-      harbor_revision: "b".repeat(40),
-      tasks: 1,
-      agents: 1,
-      trials: 1,
-      warnings: ["Review synthetic exception evidence"],
-      not_performed: ["No inference performed"],
-      effective_config: { n_attempts: 1 },
-      fingerprint,
-      credentials_available: true,
-    });
-  });
-  await page.route(`**/api/v1/runs/${runId}/replacements`, (route) => {
-    if (route.request().method() === "POST") {
-      posts.push({
-        body: route.request().postDataJSON(),
-        key: route.request().headers()["idempotency-key"],
-      });
-      created = true;
-      return json(route, { created: true, run: { ...record, run_id: relatedId } }, 201);
-    }
-    replacementReads++;
-    return json(route, {
-      run_id: runId,
-      operator_selection: null,
-      children: created
-        ? [
-            {
-              run_id: relatedId,
-              status: "finished",
-              operator_selection: {
-                original_run_id: runId,
-                trial_ids: [uuid],
-                source_fingerprint: `sha256:${fingerprint}`,
-              },
-            },
-          ]
-        : [],
-      assembly: {
-        availability: created ? "available" : "none",
-        result: created
+        binding === "none"
           ? {
-              ...run.result,
-              stats: {
-                ...run.result.stats,
-                evals: {
-                  synthetic: { metrics: [{ mean: 0.5 }], reward_stats: { reward: {} } },
+              schema_version: "v1",
+              run_id: runId,
+              binding: "none",
+              approval_required: false,
+            }
+          : { ...inferenceReview, approval_required: !inferenceApproved },
+      );
+    });
+    await page.route(
+      "**/api/v1/inference-bindings/INFERENCE_API_KEY_EXAMPLE/approve",
+      (route) => {
+        expect(route.request().postDataJSON()).toEqual({
+          expected_revision: 2,
+          review_id: inferenceReview.review_id,
+          reviewed_confirmation: true,
+          reason: "Reviewed existing run inference scope for current worker image",
+        });
+        inferenceApproved = true;
+        return json(route, { schema_version: "v1", revision: 3, bindings: [] });
+      },
+    );
+    let replacementReads = 0;
+    const posts: Array<{ body: unknown; key: string | undefined }> = [];
+    await page.route(`**/api/v1/runs/${runId}`, (route) =>
+      json(route, {
+        ...run,
+        record: {
+          ...record,
+          workbench_recipe: { name: "recorded-recipe" },
+          ...(binding === "none"
+            ? {
+                harbor_job_config: {
+                  agents: [
+                    {
+                      model_name: "synthetic/model",
+                      env: {
+                        OPENAI_API_KEY: "${HF_INFERENCE_TOKEN}",
+                        OPENAI_BASE_URL: "https://router.huggingface.co/v1",
+                      },
+                    },
+                  ],
+                },
+              }
+            : {}),
+        },
+        status: "finished",
+        result: { ...run.result, finished_at: "2026-01-01T01:00:00Z" },
+      }),
+    );
+    await page.route(`**/api/v1/runs/${runId}/trials`, (route) =>
+      json(route, {
+        trials: [
+          {
+            ...trialSummary,
+            status: "error",
+            result: {
+              id: uuid,
+              exception_info: { exception_type: "SyntheticEnvironmentError" },
+              config: {
+                agent: {
+                  name: "synthetic-agent",
+                  model_name: "synthetic/model",
+                  import_path: null,
                 },
               },
-              trial_results: [{ id: uuid, source: "synthetic-source" }],
-            }
-          : null,
-      },
-      incurred: {
-        cost_usd: 0.2,
-        reported_attempts: 1,
-        unknown_attempts: 1,
-        total_attempts: 2,
-      },
-      selected_cost_usd: created ? 0.12 : null,
+              agent_info: { version: "1" },
+            },
+          },
+        ],
+      }),
+    );
+    await page.route(`**/api/v1/runs/${runId}/replacements/validate`, (route) => {
+      expect(route.request().postDataJSON()).toEqual({
+        trial_ids: [uuid],
+        cost_ceiling_usd: 7,
+      });
+      if (binding === "named" && !inferenceApproved)
+        return json(
+          route,
+          {
+            error: {
+              code: "inference_binding_denied",
+              message:
+                "Inference binding is unavailable or not reviewed for this execution",
+            },
+          },
+          403,
+        );
+      return json(route, {
+        harbor_revision: "b".repeat(40),
+        tasks: 1,
+        agents: 1,
+        trials: 1,
+        warnings: ["Review synthetic exception evidence"],
+        not_performed: ["No inference performed"],
+        effective_config: { n_attempts: 1 },
+        fingerprint,
+        credentials_available: true,
+      });
     });
+    await page.route(`**/api/v1/runs/${runId}/replacements`, (route) => {
+      if (route.request().method() === "POST") {
+        posts.push({
+          body: route.request().postDataJSON(),
+          key: route.request().headers()["idempotency-key"],
+        });
+        created = true;
+        return json(
+          route,
+          { created: true, run: { ...record, run_id: relatedId } },
+          201,
+        );
+      }
+      replacementReads++;
+      return json(route, {
+        run_id: runId,
+        operator_selection: null,
+        children: created
+          ? [
+              {
+                run_id: relatedId,
+                status: "finished",
+                operator_selection: {
+                  original_run_id: runId,
+                  trial_ids: [uuid],
+                  source_fingerprint: `sha256:${fingerprint}`,
+                },
+              },
+            ]
+          : [],
+        assembly: {
+          availability: created ? "available" : "none",
+          result: created
+            ? {
+                ...run.result,
+                stats: {
+                  ...run.result.stats,
+                  evals: {
+                    synthetic: {
+                      metrics: [{ mean: 0.5 }],
+                      reward_stats: { reward: {} },
+                    },
+                  },
+                },
+                trial_results: [{ id: uuid, source: "synthetic-source" }],
+              }
+            : null,
+        },
+        incurred: {
+          cost_usd: 0.2,
+          reported_attempts: 1,
+          unknown_attempts: 1,
+          total_attempts: 2,
+        },
+        selected_cost_usd: created ? 0.12 : null,
+      });
+    });
+    await page.goto(`/runs/${runId}`);
+    await expect(
+      page.getByRole("heading", { name: "Original execution", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("No replacement runs. Original execution only."),
+    ).toBeVisible();
+    expect(replacementReads).toBe(1);
+    await page.getByRole("button", { name: "Replace infrastructure failures" }).click();
+    await expect(page.getByLabel(uuid, { exact: true })).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "Review replacements" }),
+    ).toBeDisabled();
+    await page.getByLabel(uuid, { exact: true }).check();
+    await page.getByLabel("Replacement cost ceiling (USD)").fill("7");
+    await page.getByLabel("I reviewed these as infrastructure failures").check();
+    if (binding === "named") {
+      await page.getByRole("button", { name: "Review replacements" }).click();
+      await expect(page.getByRole("alert")).toContainText(
+        "recorded recipe is preserved",
+      );
+    }
+    await page.getByRole("button", { name: "Replacements", exact: true }).click();
+    await expect(
+      page.getByText(/Inference approval and budget review do not create a run/),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Review inference access for this run" })
+      .click();
+    if (binding === "named") {
+      await expect(page.getByText(/Current worker image:/)).toContainText(
+        inferenceReview.grant.worker_image,
+      );
+      expect(inferenceApproved).toBe(false);
+      expect(posts).toHaveLength(0);
+      await page
+        .getByRole("button", { name: "Approve this image for the existing scope" })
+        .click();
+      await expect(
+        page.getByText(
+          "Inference access approved. Review replacements next; nothing was launched.",
+        ),
+      ).toBeVisible();
+      expect(posts).toHaveLength(0);
+    } else {
+      await expect(
+        page.getByText(/No named inference binding or approval is required/),
+      ).toBeVisible();
+      await expect(
+        page.getByText(/all normal admission checks still apply/),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Approve this image for the existing scope" }),
+      ).toHaveCount(0);
+      expect(approvalWrites).toEqual([]);
+      expect(posts).toHaveLength(0);
+    }
+    await page.getByRole("button", { name: "Original", exact: true }).click();
+    await page.getByRole("button", { name: "Review replacements" }).click();
+    await expect(
+      page.getByText("No inference performed", { exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Confirm and create replacement run" })
+      .click();
+    await expect(
+      page
+        .getByRole("region", { name: "Related replacement runs" })
+        .getByRole("link", { name: relatedId }),
+    ).toBeVisible();
+    expect(approvalWrites).toHaveLength(binding === "none" ? 0 : 1);
+    expect(posts).toEqual([
+      {
+        body: { trial_ids: [uuid], cost_ceiling_usd: 7, fingerprint },
+        key: expect.any(String),
+      },
+    ]);
+    await expect(page).toHaveURL(new RegExp(`/runs/${runId}$`));
+    await page.getByRole("button", { name: "Close replacements" }).click();
+    await expect(page.getByText("Combined · available")).toBeVisible();
+    await expect(page.getByText("Score · reward mean: 0.500")).toBeVisible();
+    await expect(
+      page.getByText(/1 reported · 1 unknown-cost · 2 observed/),
+    ).toBeVisible();
+    await page
+      .getByText(
+        "Inspect combined native JobResult (stats, metrics and source trials)",
+        {
+          exact: true,
+        },
+      )
+      .click();
+    await expect(
+      page.getByRole("region", { name: "Combined native result" }).locator("pre"),
+    ).toContainText("synthetic-source");
+    await expect(
+      page.getByRole("heading", { name: "Original execution", exact: true }),
+    ).toBeVisible();
   });
-  await page.goto(`/runs/${runId}`);
-  await expect(
-    page.getByRole("heading", { name: "Original execution", exact: true }),
-  ).toBeVisible();
-  expect(replacementReads).toBe(0);
-  await page.getByRole("button", { name: "Replace infrastructure failures" }).click();
-  await expect(page.getByLabel(uuid, { exact: true })).toBeEnabled();
-  await expect(
-    page.getByRole("button", { name: "Review replacements" }),
-  ).toBeDisabled();
-  await page.getByLabel(uuid, { exact: true }).check();
-  await page.getByLabel("Replacement cost ceiling (USD)").fill("7");
-  await page.getByLabel("I reviewed these as infrastructure failures").check();
-  await page.getByRole("button", { name: "Review replacements" }).click();
-  await expect(page.getByRole("alert")).toContainText("recorded recipe is preserved");
-  await page.getByRole("button", { name: "Replacements", exact: true }).click();
-  await expect(
-    page.getByText(/Inference approval and budget review do not create a run/),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Review inference access for this run" })
-    .click();
-  await expect(page.getByText(/Current worker image:/)).toContainText(
-    inferenceReview.grant.worker_image,
-  );
-  expect(inferenceApproved).toBe(false);
-  expect(posts).toHaveLength(0);
-  await page
-    .getByRole("button", { name: "Approve this image for the existing scope" })
-    .click();
-  await expect(
-    page.getByText(
-      "Inference access approved. Review replacements next; nothing was launched.",
-    ),
-  ).toBeVisible();
-  expect(posts).toHaveLength(0);
-  await page.getByRole("button", { name: "Original", exact: true }).click();
-  await page.getByRole("button", { name: "Review replacements" }).click();
-  await expect(page.getByText("No inference performed", { exact: true })).toBeVisible();
-  await page
-    .getByRole("button", { name: "Confirm and create replacement run" })
-    .click();
-  await expect(
-    page
-      .getByRole("region", { name: "Related replacement runs" })
-      .getByRole("link", { name: relatedId }),
-  ).toBeVisible();
-  expect(posts).toEqual([
-    {
-      body: { trial_ids: [uuid], cost_ceiling_usd: 7, fingerprint },
-      key: expect.any(String),
-    },
-  ]);
-  await expect(page).toHaveURL(new RegExp(`/runs/${runId}$`));
-  await page.getByRole("button", { name: "Combined", exact: true }).click();
-  await expect(page.getByText("Combined · available")).toBeVisible();
-  await expect(page.getByText("Score · reward mean: 0.500")).toBeVisible();
-  await expect(
-    page.getByText(/1 reported · 1 unknown-cost · 2 observed/),
-  ).toBeVisible();
-  await page
-    .getByText("Inspect combined native JobResult (stats, metrics and source trials)", {
-      exact: true,
-    })
-    .click();
-  await expect(
-    page.getByRole("region", { name: "Combined native result" }).locator("pre"),
-  ).toContainText("synthetic-source");
-  await expect(
-    page.getByRole("heading", { name: "Original execution", exact: true }),
-  ).toBeVisible();
-});
+}
 
 test("parent failure pause explains explicit resume without starting work", async ({
   page,

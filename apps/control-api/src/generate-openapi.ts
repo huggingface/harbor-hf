@@ -152,18 +152,35 @@ const inferenceReviewSchema = schemas.inferenceReview as {
 const { recipe: _recipe, ...inferenceReviewProperties } =
   inferenceReviewSchema.properties;
 const runInferenceReviewSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    ...inferenceReviewSchema.required.filter((key) => key !== "recipe"),
-    "run_id",
-    "approval_required",
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["schema_version", "run_id", "binding", "approval_required"],
+      properties: {
+        schema_version: { type: "string", const: "v1" },
+        run_id: runParameter.schema,
+        binding: { type: "string", const: "none" },
+        approval_required: { type: "boolean", const: false },
+      },
+    },
+    {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        ...inferenceReviewSchema.required.filter((key) => key !== "recipe"),
+        "run_id",
+        "approval_required",
+        "binding",
+      ],
+      properties: {
+        ...inferenceReviewProperties,
+        binding: { type: "string", const: "named" },
+        run_id: runParameter.schema,
+        approval_required: { type: "boolean" },
+      },
+    },
   ],
-  properties: {
-    ...inferenceReviewProperties,
-    run_id: runParameter.schema,
-    approval_required: { type: "boolean" },
-  },
 };
 
 const embeddedRunRecord = embedSchema("RunRecord", schemas.runRecord);

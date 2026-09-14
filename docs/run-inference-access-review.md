@@ -12,6 +12,25 @@ replacements. It uses the immutable `run.json` native `harbor_job_config`, not a
 Workbench draft in browser local storage. A name-only `workbench_recipe` is display
 provenance, not enough to reconstruct a recipe; no reconstruction is attempted.
 
+After validating the recorded run identity, owner, Harbor revision and native
+configuration, the server calls `InferenceBindings.selected(config, actor, image)`.
+A validated `null` means **no named binding required**, not missing approval. This
+includes both documented built-in HF environment templates and generic no-key input
+accepted by that policy. The console explains this without offering an approve button.
+It does not identify a provider or infer authentication from model names or templates.
+
+The ephemeral v1 `RunInferenceReview` response is a discriminated union:
+`binding: "none"` contains only `schema_version`, `run_id`, and
+`approval_required: false`; `binding: "named"` carries the existing review fields.
+The none branch neither checks nor claims credential presence, writes registry
+policy, generates a review ID, nor retains an approval-cache entry. It is not
+admission: normal replacement review, credential availability, fingerprint, budget,
+explicit submission and execution gates still apply. In particular, default HF
+credential availability remains the normal admission check, not a named-key grant.
+A thrown policy error is never treated as a null result: it must pass the existing
+owned historical-scope scan or fail closed, including malformed routes and foreign
+named configurations.
+
 A replacement review can fail because the current worker image has no inference
 grant even though the original recipe was approved. The run-page review finds an
 unambiguous still-enabled, owned approval matching the exact compiled input through
@@ -22,8 +41,8 @@ retired by disable/re-enable), missing secrets, foreign owners, changed configur
 and ambiguous scope fail closed. Presence is not provider authentication; declared
 hosts are not a firewall guarantee.
 
-If the exact current-image policy is already valid, nothing is saved and no further
-credential approval is needed. Otherwise the UI displays the current immutable image
+For a named binding, if the exact current-image policy is already valid, nothing is
+saved and no further credential approval is needed. Otherwise the UI displays the current immutable image
 and complete existing scope for explicit confirmation. Approval is an existing
 registry policy grant: it applies wherever the exact scope matches, not exclusively
 to the source run. It is not blanket trust in future images or other actors. If the
@@ -69,7 +88,17 @@ Checked Harbor `dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e`:
   approval mechanism to duplicate.
 
 Harbor owns configuration and execution. Harbor-HF owns authenticated credential
-policy and the console. Existing `InferenceBindings.selected` already accepts
+policy and the console. Rechecked the pinned files and their path history for the
+built-in fix, including `f795feaa`. Also checked local `InferenceRegistry.runRecord`, `reviewRun`, `matches`,
+`retainReview`, `approve`, `InferenceBindings.selected`, `ControlService`'s
+`selectedInference`, `inspectReplacement`, and `submitReplacement`, and the
+inference-review route's empty request/no-store and shared auth/write defenses.
+`apps/control-api/src/generate-openapi.ts` owns the ephemeral
+`runInferenceReviewSchema`; its generated OpenAPI and browser types change together
+without a durable schema or compatibility reader. The new discriminator describes
+control policy review only, not a renamed native Harbor field.
+
+Existing `InferenceBindings.selected` already accepts
 compiled native input and remains the only grant matcher. The review never calls
 `compileAgentWorkbenchRecipe` on run input and does not add another digest algorithm
 or reverse compiler. API scope values are the existing registry grant fields;
@@ -78,3 +107,14 @@ This is control policy work, not a temporary missing-Harbor execution adapter.
 
 This document describes local implementation, not deployment, live grant approval,
 credential movement or paid-run authorization.
+
+## Built-in review regression validation
+
+Focused offline validation covers 252 unit/API tests and both named and built-in HF
+browser replacement flows. Changed runtime modules have 97.22% line and 90.90%
+branch coverage. Generation is reproducible and TypeScript checking passes. Tests
+verify both HF templates and no-key input, no presence calls or registry writes,
+no cached approval even past the review-cache bound, malformed-route denials,
+existing named ownership/ambiguity/revision/presence gates, and the normal explicit
+replacement flow without a built-in approval write. Full release gates and
+independent review remain separate; no remote inference was performed.

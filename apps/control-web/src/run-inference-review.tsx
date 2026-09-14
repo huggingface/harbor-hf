@@ -46,7 +46,11 @@ export function RunInferenceAccess({
       if (version !== generation.current) return;
       if (value.run_id !== runId) throw new Error("Run changed");
       setReview(value);
-      if (!value.approval_required)
+      if (value.binding === "none")
+        setMessage(
+          "No named inference binding or approval is required for this recorded configuration. Credential presence and authentication were not checked. Review replacements next; all normal admission checks still apply. Nothing was launched.",
+        );
+      else if (!value.approval_required)
         setMessage(
           "Inference access is already approved for this configuration and current worker image. Review replacements next; nothing was launched.",
         );
@@ -62,7 +66,7 @@ export function RunInferenceAccess({
     }
   }
   async function approve() {
-    if (!available || !review?.approval_required) return;
+    if (!available || review?.binding !== "named" || !review.approval_required) return;
     if (Date.now() >= Date.parse(review.expires_at)) {
       setReview(null);
       return;
@@ -104,10 +108,11 @@ export function RunInferenceAccess({
       </Button>
       <p>
         Uses the run’s recorded configuration, not an editable Workbench draft. Existing
-        valid approval is reused; a new worker image requires explicit confirmation.
+        named-binding approval is reused; a new worker image requires explicit
+        confirmation only for a named binding.
       </p>
       {message ? <p role="status">{message}</p> : null}
-      {review?.approval_required ? (
+      {review?.binding === "named" && review.approval_required ? (
         <div className="space-y-2 break-all">
           <h3 className="font-semibold">
             Approve existing inference scope for the current image

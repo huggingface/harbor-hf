@@ -10,6 +10,17 @@ function scalar(value: unknown, fallback: string): string {
       : fallback;
 }
 
+/** UI-only submission intent; never a fallback for native agent kwargs. */
+export function recordedReasoningIntent(record: RunRecord) {
+  const intent = record.submission?.model?.reasoning_effort;
+  return {
+    label: "Recorded reasoning intent (submission metadata)",
+    value: intent === "" ? "Unset (empty text)" : (intent ?? "Unavailable"),
+    description:
+      "Recorded intent is not native kwargs or verified effective provider configuration.",
+  };
+}
+
 /** Stored configuration, not proof of effective provider requests or defaults. */
 export function runAgentIdentities(record: RunRecord) {
   const agents = Array.isArray(record.harbor_job_config.agents)

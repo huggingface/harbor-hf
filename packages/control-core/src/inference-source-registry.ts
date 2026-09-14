@@ -32,10 +32,13 @@ export const INFERENCE_SOURCE_REGISTRY_KEY = "control/inference-bindings.json";
 const MAX_BYTES = 1024 * 1024;
 type Registry = InferenceSourceRegistryV1;
 type Entry = Registry["entries"][number];
-export type RunInferenceReview = Omit<InferenceReviewV1, "recipe"> & {
-  run_id: string;
-  approval_required: boolean;
-};
+export type RunInferenceReview =
+  | { schema_version: "v1"; run_id: string; binding: "none"; approval_required: false }
+  | (Omit<InferenceReviewV1, "recipe"> & {
+      run_id: string;
+      binding: "named";
+      approval_required: boolean;
+    });
 type Grant = InferenceBindingManifestV1["bindings"][number]["uses"][number];
 export class InferenceRegistryError extends Error {
   constructor(readonly status: 400 | 403 | 409 | 503 = 503) {
@@ -364,8 +367,20 @@ export class InferenceRegistry {
     harborRevision: string,
   ): Promise<RunInferenceReview> {
     return this.sequence(async () => {
-      const registry = await this.read();
       const run = await this.runRecord(id, actor, harborRevision);
+      const registry = await this.read();
+      try {
+        if (policy(registry).selected(run.config, actor, this.image) === null)
+          return {
+            schema_version: "v1",
+            run_id: id,
+            binding: "none",
+            approval_required: false,
+          };
+      } catch {
+        // Only a validated null means no named binding. A policy error must
+        // still pass the existing owned historical-scope scan below.
+      }
       const candidates = new Map<string, { entry: Entry; grant: Grant }>();
       for (const entry of registry.entries) {
         if (entry.registration.actor !== actor || !active(entry)) continue;
@@ -392,6 +407,7 @@ export class InferenceRegistry {
         /* A new image needs explicit approval, never automatic delivery. */
       }
       const response: RunInferenceReview = {
+        binding: "named",
         schema_version: "v1",
         revision: registry.revision,
         review_id: sha256(this.nonce()),

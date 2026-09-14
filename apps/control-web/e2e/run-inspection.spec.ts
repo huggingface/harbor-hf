@@ -1,3 +1,4 @@
+import { noReplacements } from "./replacement-fixture";
 import { expect, test } from "@playwright/test";
 
 for (const view of ["refresh", "pending-run", "pending-jobs"] as const) {
@@ -84,6 +85,7 @@ for (const view of ["refresh", "pending-run", "pending-jobs"] as const) {
           ],
         },
         [base]: run,
+        [`${base}/replacements`]: noReplacements(id),
         [`${base}/trials`]: { trials: [] },
         [`${base}/progress`]: {
           observed_at: started,

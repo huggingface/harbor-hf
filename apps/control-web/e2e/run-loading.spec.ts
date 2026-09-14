@@ -1,3 +1,4 @@
+import { noReplacements } from "./replacement-fixture";
 import { expect, test } from "@playwright/test";
 
 for (const width of [1440, 390]) {
@@ -74,6 +75,7 @@ for (const width of [1440, 390]) {
         },
         "/api/v1/jobs": { jobs: [] },
         [base]: run,
+        [`${base}/replacements`]: noReplacements(id),
         [`${base}/trials`]: { trials: [] },
         [`${base}/progress`]: {
           observed_at: "2026-01-01T00:00:00Z",

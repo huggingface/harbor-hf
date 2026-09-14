@@ -70,14 +70,14 @@ import { RunDiagnostics, RunDiagnosticsSummary } from "./run-diagnostics";
 import { RunPricingCorrections } from "./run-pricing-corrections";
 import { RunArchive } from "./run-archive";
 import { matchesRunFilters, readRunFilters, updateRunFilters } from "./run-filters";
-import { runIdentity } from "./run-identity";
-import { nativeScore } from "./run-summary";
+import { recordedReasoningIntent, runIdentity } from "./run-identity";
+import { BrowsingResult } from "./result-browsing";
 import {
-  CostValue,
-  RunSummaryCards,
-  ScoreValue,
-  TokenValue,
-} from "./run-summary-cards";
+  ResultBrowsingProvider,
+  descendantRelationships,
+  runsWithDirectChildren,
+} from "./result-browsing-query";
+import { RunSummaryCards } from "./run-summary-cards";
 import { RunWaffle } from "./runs-waffle";
 import {
   Badge,
@@ -503,7 +503,16 @@ export function OverviewPage() {
 }
 
 export function RunsPage() {
+  return (
+    <ResultBrowsingProvider>
+      <RunsBrowser />
+    </ResultBrowsingProvider>
+  );
+}
+
+function RunsBrowser() {
   const query = useRuns();
+  const client = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const { role, q, archive } = readRunFilters(searchParams);
   function setFilter(key: "q" | "role" | "archive", value: string) {
@@ -531,6 +540,11 @@ export function RunsPage() {
       ),
     [query.data, preferences, role, q, archive],
   );
+  const relationships = useMemo(
+    () => descendantRelationships(query.data ?? []),
+    [query.data],
+  );
+  const parents = useMemo(() => runsWithDirectChildren(query.data ?? []), [query.data]);
   const columns = useMemo<ColumnDef<ScenarioRun>[]>(
     () => [
       {
@@ -603,7 +617,7 @@ export function RunsPage() {
       },
       {
         id: "progress",
-        header: "Progress",
+        header: "Original progress",
         accessorFn: (run) => progress(run).completed,
         enableColumnFilter: false,
         cell: ({ row }) => {
@@ -612,29 +626,19 @@ export function RunsPage() {
         },
       },
       {
-        id: "score",
-        header: "Score",
-        accessorFn: (run) => nativeScore(run.result).value ?? undefined,
+        id: "result",
+        header: "Native result · score / tokens / cost",
         enableColumnFilter: false,
-        cell: ({ row }) => <ScoreValue result={row.original.result} />,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <BrowsingResult
+            run={row.original}
+            hasChildren={parents.has(row.original.record.run_id)}
+            knownChildren={parents.get(row.original.record.run_id)}
+            relationships={relationships.get(row.original.record.run_id)}
+          />
+        ),
       },
-      ...(
-        [
-          ["n_input_tokens", "Input incl. cache (M)", "Input"],
-          ["n_output_tokens", "Output (M)", "Output"],
-          ["n_cache_tokens", "Cache (M)", "Cache"],
-        ] as const
-      ).map(
-        ([key, label, tooltipLabel]): ColumnDef<ScenarioRun> => ({
-          id: key,
-          header: label,
-          accessorFn: (run) => stat(run, key) ?? undefined,
-          enableColumnFilter: false,
-          cell: ({ row }) => (
-            <TokenValue value={stat(row.original, key)} label={tooltipLabel} />
-          ),
-        }),
-      ),
       {
         id: "diagnostics",
         header: "Diagnostics",
@@ -644,19 +648,12 @@ export function RunsPage() {
         cell: ({ row }) => <RunDiagnosticsSummary run={row.original} />,
       },
       {
-        id: "cost",
-        header: "Reported cost",
-        accessorFn: (run) => stat(run, "cost_usd") ?? undefined,
-        enableColumnFilter: false,
-        cell: ({ row }) => <CostValue value={stat(row.original, "cost_usd")} />,
-      },
-      {
         id: "launch_estimate",
-        header: "Shared estimate",
+        header: "Original · shared estimate",
         enableColumnFilter: false,
         cell: ({ row }) => <LaunchEstimate run={row.original} />,
       },
-      scenarioCostColumn(),
+      { ...scenarioCostColumn(), header: "Original · scenario estimate" },
       {
         id: "created",
         header: "Created",
@@ -665,15 +662,24 @@ export function RunsPage() {
         cell: ({ row }) => formatDate(row.original.record.created_at),
       },
     ],
-    [],
+    [parents, relationships],
   );
   return (
     <>
       <PageHeader
         title="Runs"
-        description="Finished means execution ended, not that every trial passed. Agent Σ sums measured agent intervals in current trial results, not elapsed job time or lifetime retries. Coverage counts current results only."
+        description="Status, progress and diagnostics describe Original execution. Native result summaries use valid Combined evidence where descendants are known; replacement rows are subsets. Finished does not mean every trial passed. Shared and scenario estimates use Original usage, not Combined."
         action={
-          <Button variant="outline" onClick={() => void query.refetch()}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              void query.refetch({ cancelRefetch: false });
+              void client.refetchQueries(
+                { queryKey: ["replacements"], type: "active" },
+                { cancelRefetch: false },
+              );
+            }}
+          >
             <RotateCw size={14} aria-hidden="true" /> Refresh
           </Button>
         }
@@ -789,6 +795,14 @@ function RunActions({ run }: { run: RunView }) {
 }
 
 export function RunPage() {
+  return (
+    <ResultBrowsingProvider>
+      <RunDetail />
+    </ResultBrowsingProvider>
+  );
+}
+
+function RunDetail() {
   const { runId = "" } = useParams();
   const run = useRun(runId);
   const trials = useTrials(runId);
@@ -835,7 +849,10 @@ export function RunPage() {
         run={item}
         trials={trials.data ?? []}
       />
-      <h2 className="mt-6 font-semibold text-white">Original execution</h2>
+      <h2 className="mt-4 font-semibold text-white">
+        Original execution
+        {item.record.operator_selection ? " · replacement subset" : ""}
+      </h2>
       <RunSummaryCards run={item} />
       {item.state.desired_state === "paused" &&
         item.state.actor === "harbor-hf-parent-failed" && (
@@ -846,6 +863,10 @@ export function RunPage() {
         )}
       <RunWaffle run={item} />
       <RunPricingCorrections key={`pricing-${item.record.run_id}`} run={item} />
+      <p className="mt-4 text-sm text-slate-400">
+        Original execution · shared and browser what-if estimates use original native
+        usage, not Combined.
+      </p>
       <PricingPanel result={item.result} />
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <Card>
@@ -877,6 +898,12 @@ export function RunPage() {
               <span title={runIdentity(item.record).providerSource}>
                 {runIdentity(item.record).provider}
               </span>
+            </Field>
+            <Field label={recordedReasoningIntent(item.record).label}>
+              {recordedReasoningIntent(item.record).value}
+              <p className="text-xs text-slate-400">
+                {recordedReasoningIntent(item.record).description}
+              </p>
             </Field>
             <Field label="Configured reasoning kwargs">
               {runIdentity(item.record).reasoning}

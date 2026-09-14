@@ -73,6 +73,8 @@ function mount({
   role = "operator",
   mode = "enabled",
   current = run,
+  view = empty,
+  failure,
   trials = [
     trial(id),
     trial(secondId),
@@ -83,9 +85,12 @@ function mount({
   role?: "reader" | "operator";
   mode?: "enabled" | "disabled";
   current?: api.RunView;
+  view?: api.ReplacementView;
+  failure?: Error;
   trials?: api.TrialIdentity[];
 } = {}) {
-  const get = vi.spyOn(api, "getReplacements").mockResolvedValue(empty);
+  const get = vi.spyOn(api, "getReplacements").mockResolvedValue(view);
+  if (failure) get.mockRejectedValueOnce(failure);
   const validate = vi.spyOn(api, "validateReplacements").mockResolvedValue(validation);
   const submit = vi
     .spyOn(api, "submitReplacements")
@@ -126,9 +131,9 @@ async function review() {
   fireEvent.click(screen.getByRole("button", { name: "Review replacements" }));
   await screen.findByRole("region", { name: "Replacement budget review" });
 }
-it("loads lazily, selects native UUIDs regardless of reward and submits the reviewed body without navigation", async () => {
+it("loads the rollup immediately, selects native UUIDs regardless of reward and submits the reviewed body without navigation", async () => {
   const { get, validate, submit } = mount();
-  expect(get).not.toHaveBeenCalled();
+  expect(get).toHaveBeenCalledTimes(1);
   await open();
   expect(screen.getByLabelText(id)).not.toBeChecked();
   expect(
@@ -183,11 +188,10 @@ it("links a replacement parent even with its panel closed", () => {
     "href",
     `/runs/${runId}`,
   );
-  expect(get).not.toHaveBeenCalled();
+  expect(get).toHaveBeenCalledTimes(1);
 });
 it("disables already used UUIDs and select-all is explicit and only unused candidates", async () => {
-  const { get, validate } = mount();
-  get.mockResolvedValue({ ...empty, children: [child] });
+  const { validate } = mount({ view: { ...empty, children: [child] } });
   await open();
   expect(screen.getByLabelText(id)).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Select all unused candidates" }));
@@ -277,12 +281,11 @@ it("retains uncertain POST body and key through polling overlap and closing; onl
   expect(submit.mock.calls[1]).toEqual(initial);
 });
 it("retains query error notices and retry access, plus review failures", async () => {
-  const { get, validate, client } = mount();
-  get.mockRejectedValueOnce(new Error("unavailable"));
+  const { get, validate, client } = mount({ failure: new Error("unavailable") });
   await open();
-  expect(screen.getByRole("alert")).toHaveTextContent(
-    "Replacement evidence could not be refreshed",
-  );
+  expect(
+    screen.getByText(/Replacement evidence could not be refreshed/),
+  ).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Retry replacement evidence" }));
   await waitFor(() => expect(screen.getByLabelText(id)).toBeEnabled());
   select();
@@ -300,8 +303,7 @@ it("retains query error notices and retry access, plus review failures", async (
   ).toBeDisabled();
 });
 it("shows empty candidates and unknown child status; combined is separate", async () => {
-  const { get } = mount({ trials: [] });
-  get.mockResolvedValue({ ...empty, children: [{ ...child, status: null }] });
+  mount({ trials: [], view: { ...empty, children: [{ ...child, status: null }] } });
   await open();
   expect(
     screen.getByText("No errored native UUID candidates available."),
@@ -316,6 +318,7 @@ it("displays native mean and full source evidence, separating selected cost from
     stats: {
       n_completed_trials: 2,
       n_errored_trials: 1,
+      cost_usd: 2,
       evals: { synthetic: { metrics: [{ mean: 0.25 }], reward_stats: { reward: {} } } },
     },
     trial_results: [{ id, source: "synthetic-source" }],
@@ -412,4 +415,82 @@ it("shows native review with no warnings or credentials and deselects exact IDs"
   await review();
   expect(screen.getByText("None reported.")).toBeInTheDocument();
   expect(screen.getByText("Credentials available: no")).toBeInTheDocument();
+});
+
+it("shows corrected native results above the closed panel with a single shared query", async () => {
+  const result = { stats: { evals: { synthetic: { metrics: [{ mean: 0.125 }] } } } };
+  const { get } = mount({
+    view: {
+      ...empty,
+      children: [child],
+      assembly: { availability: "available", result },
+    },
+  });
+  await screen.findByText("Score · mean: 0.125");
+  expect(screen.getByText(/Original · Score:/)).toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "Download combined native JSON" }),
+  ).toHaveAttribute("download", "combined-job-result.json");
+  await open();
+  expect(get).toHaveBeenCalledTimes(1);
+});
+
+it.each(["pending", "unavailable"] as const)(
+  "shows explicit %s without an Original fallback",
+  async (availability) => {
+    mount({
+      view: { ...empty, children: [child], assembly: { availability, result: null } },
+    });
+    await screen.findByText(`Combined · ${availability}`);
+    expect(
+      screen.queryByRole("link", { name: "Download combined native JSON" }),
+    ).not.toBeInTheDocument();
+  },
+);
+
+it("removes a previously available Combined score on failed refresh and recovers through Retry", async () => {
+  const result = { stats: { evals: { synthetic: { metrics: [{ mean: 0.125 }] } } } };
+  const { get, client } = mount({
+    view: {
+      ...empty,
+      children: [child],
+      assembly: { availability: "available", result },
+    },
+  });
+  await screen.findByText("Score · mean: 0.125");
+  get.mockRejectedValueOnce(new Error("timed out"));
+  await act(async () => {
+    await client.refetchQueries({ queryKey: ["replacements", runId] });
+  });
+  await waitFor(() =>
+    expect(screen.queryByText("Score · mean: 0.125")).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole("alert")).toHaveTextContent("timed out");
+  fireEvent.click(screen.getByRole("button", { name: "Retry combined rollup" }));
+  await screen.findByText("Score · mean: 0.125");
+});
+
+it("expires saved Combined evidence without renewing its age during a hanging refresh", async () => {
+  const result = { stats: { evals: { synthetic: { metrics: [{ mean: 0.125 }] } } } };
+  const { client, get } = mount({
+    view: {
+      ...empty,
+      children: [child],
+      assembly: { availability: "available", result },
+    },
+  });
+  await screen.findByText("Score · mean: 0.125");
+  get.mockImplementation(() => new Promise(() => {}));
+  await act(async () => {
+    void client.refetchQueries({ queryKey: ["replacements", runId] });
+    client.setQueryData(
+      ["replacements", runId],
+      client.getQueryData(["replacements", runId]),
+      { updatedAt: Date.now() - 61_000 },
+    );
+  });
+  await waitFor(() =>
+    expect(screen.queryByText("Score · mean: 0.125")).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole("alert")).toHaveTextContent("saved evidence has expired");
 });

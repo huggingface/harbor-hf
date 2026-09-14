@@ -1,3 +1,4 @@
+import { noReplacements } from "./replacement-fixture";
 import { expect, test } from "@playwright/test";
 
 const runs = [
@@ -77,6 +78,7 @@ test("native agent timeout is separate from infrastructure in summary and diagno
       "/api/v1/runs": { runs },
       "/api/v1/jobs": { jobs: [] },
       [base]: runs[0],
+      [`${base}/replacements`]: noReplacements(runs[0]!.record.run_id),
       [`${base}/trials`]: { trials: [] },
       [`${base}/progress`]: {
         observed_at: "2026-01-01T00:00:00Z",

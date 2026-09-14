@@ -11,6 +11,243 @@ default_branch: main
 
 Status: approved
 
+### Built-in inference review fix and exact-green-head PR merge
+
+Approved at: 2026-09-12T00:00:00Z
+
+- The user explicitly requested fixing the misleading built-in HF-route
+  inference-review message in the existing results-browsing PR, making it merge
+  ready, and merging once CI passes. This extends the earlier publication scope
+  and supersedes its exclusion of this narrow fix and PR merge.
+- Implement native-recorded inference-review presentation using the existing
+  authoritative binding policy. Built-in inference must not be forced through
+  a named-key approval. Preserve all named-key ownership, scope, presence,
+  revision, image, CSRF and write-mode gates. Do not grant credentials or infer
+  provider authentication from configuration or presence.
+- Authorized: local changes, generated API contracts if necessary, tests,
+  documentation, independent review, commits, branch push, PR updates, CI
+  inspection and squash merge of this PR only at the exact reviewed green head.
+  Resolve CI regressions without weakening checks or expanding functionality.
+- No deployment, image publication, new resource, run mutation, live inference,
+  credential movement or grant, paid compute, force push or history rewrite.
+  Stop for changed-head/revision conflicts or unexpected scope expansion.
+- Keep public metadata free of operator-specific evidence and identifiers;
+  inspect the complete diff and run privacy checks before each public mutation.
+- Approval date uses the session date; exact decision time was not recorded.
+
+### Results browsing publication and deployment preparation
+
+Approved at: 2026-09-12T00:00:00Z
+
+- The user directly requested preparing a PR with the recent changes and getting
+  ready to deploy, following the proposed main-integration/publication scope.
+  Integrate current upstream main into the existing feature branch, resolve
+  integration conflicts without expanding behavior, revalidate, push the
+  reviewed branch and open a public PR against the canonical repository.
+- Main integration means merging main into the feature branch, not merging the
+  resulting PR into main. Preserve the existing local rollup work. Inspect CI
+  and prepare release steps/readiness evidence; report remaining gates.
+- No deployment, PR merge, image publication, force push, history rewrite, run
+  mutation, inference, paid compute, credential transfer or private accounting
+  publication. Live cutover needs separate explicit approval and idle checks.
+- The newly investigated HF-route inference-review message is not implemented
+  in this scope. No new inference approval behavior or credential grants.
+- Run privacy checks and inspect the complete diff and public metadata before
+  every public mutation. Further behavior changes require separate approval.
+- Approval date uses the session date; the exact decision time was not recorded.
+
+#### CI follow-through — 2026-09-12
+
+- The user requested walking the failed PR CI through. Within the current
+  publication/revalidation scope, repair the omitted browser-test API fixture,
+  strengthen navigation readiness/error assertions, validate and push the narrow
+  regression fix. No production behavior expansion, retry/timeout weakening,
+  deployment or benchmark execution is included.
+- Read-only reproduction established that the navigation fixture returned an
+  invalid empty object for the newly automatic replacements read. Waiting for
+  detail rendering exposes an undefined-length browser error before Back;
+  fast local navigation could previously outrun it. Hosted CI artifacts were
+  unavailable; the reproduction used a private local copy of the test.
+- Reused the existing typed no-replacements fixture and waited for detail
+  rendering before Back. Added empty browser-error assertions; navigation and
+  no-write assertions remain intact. No production code, timeouts or retries
+  changed. Independent narrow review: GO, no blockers.
+- Local validation: 20 repeated navigation checks with two workers, all 76
+  browser tests with two workers, 1,632 unit tests, formatting, lint, types,
+  build, generated checks and dependency audit pass. Push the reviewed fix and
+  inspect hosted CI at that exact head; earlier failure is not waived.
+
+### Results browsing follow-up — local implementation
+
+Approved at: 2026-09-12T00:00:00Z
+
+- The user directly approved the proposed local follow-up and clarified that
+  browsing should show valid post-replacement combined scores and token counts,
+  and cost displays should state how many items lack cost data.
+- Implement clear recorded reasoning intent versus native kwargs on run detail;
+  use the existing native combined-result path for Runs browsing; preserve
+  explicit pending, unavailable, failed-replacement and stale-evidence states.
+  Preserve original evidence and distinguish selected-cohort from all-incurred
+  cost. Unknown coverage must remain unknown, not zero.
+- Scope includes local implementation, offline profiling of polling and multi-run
+  loading, bounded evidence-preserving performance improvements if justified,
+  tests, documentation and local commits. Preserve the existing unpublished
+  rollup work and all other branches, stashes and worktrees; create no worktrees.
+- Harbor native aggregation remains authoritative through the existing approved
+  bridge. No new metric engine, persisted aggregate, projection table, resource,
+  native configuration alias or execution state is authorized.
+- No push, PR creation, publication, merge, deployment, credential transfer,
+  inference, paid compute, replacement submission or run-control action.
+- Approval date uses the session date; the exact decision time was not recorded.
+
+#### Completion — 2026-09-12
+
+- Implemented locally after the committed approval. Runs now show valid native
+  Combined scores, tokens and selected reported costs together, with explicit
+  Original/subset, pending, unavailable and expired-evidence presentation.
+  Native costs show missing trial-result counts when evidence is present;
+  historical summaries without trial evidence explicitly show unknown coverage.
+  All-incurred coverage remains separate. No alternative metric was calculated.
+- Recorded reasoning intent is visible beside native kwargs on run detail;
+  neither metadata nor a model query is claimed as effective provider reasoning.
+- Only rendered parent rows inspect combined evidence. Shared 30-second browser
+  queries, a two-request concurrency bound and started-request coalescing avoid
+  duplicate inspections. No backend source cache was added. Relationship changes
+  fence ancestors, including hidden descendants. Original execution status and
+  Original shared/scenario estimates remain labeled separately.
+- Native fields/APIs and relevant Harbor history were checked. No durable field,
+  schema, API, projection table, resource, provider rule or execution behavior
+  changed. See `docs/2026-09-12-results-browsing-ui.md` for evidence and limits.
+- Independent review identified two medium freshness/deduplication issues; both
+  were fixed and re-reviewed with GO and no blocking finding. Final Node checks
+  pass: formatting, lint, types, 1,632 unit tests, build, generated contracts,
+  audit and 76 browser tests. Changed modules have 100% line/function coverage,
+  98.18% branches and 98.83% statements across 92 focused tests.
+- Root Ruff/format/ty, 102 tests at 89.10% coverage and audit pass. Agent
+  Ruff/format/ty and 598 tests pass. Both Dockerfiles build for linux/amd64;
+  Slophammer baseline/DRY and privacy checks pass. Initial automatic browser
+  server startup stalled and was stopped; all browser tests passed on an
+  isolated explicitly started local server with unchanged layout assertions.
+- No publication, deployment, worktree, paid execution, credential movement or
+  run mutation. Ready for separate release approval; no earlier release scope
+  is renewed. These are offline results, not a hosted performance guarantee.
+
+
+### Combined score rollup and loading — local implementation
+
+Status: completed
+
+Approved at: 2026-09-12T16:51:25Z
+
+- The user directly approved local implementation: “yes -- the rollup view
+  should show the \"corrected\" score if possible”. Improve slow combined-view
+  loading and show prominent Original versus Combined native scores, with
+  explicit pending and unavailable states rather than persistent Refreshing.
+- Scope is local implementation, offline profiling, tests, documentation and
+  commits in the primary checkout. Preserve branches, stashes and existing
+  worktrees; create no worktrees. Commit this additive authorization first.
+- Harbor's pinned native `JobPlan.aggregate` remains score authority through
+  the already approved replacement bridge. Preserve failed replacements,
+  provenance, native execution counts and reported costs. No manual metric
+  engine, persisted aggregate, projection table or new resource is authorized.
+- Read-only diagnostics may use existing private evidence and configured SDK
+  authentication in place. Never publish operator identifiers, raw private
+  responses, signed URLs or authentication material. No credential movement.
+- No publication, push, pull request, merge, deployment, execution, run control,
+  inference approval, paid compute or remote mutation is authorized. Stop at
+  local commits for independent review and separate release approval. Earlier
+  release scopes are not renewed. Report unresolved integrity or performance
+  blockers rather than weakening validation or claiming an unverified score.
+
+#### Local investigation — implementation held
+
+- Fresh main matched the requested base. The authorization was committed before
+  implementation; only the primary checkout is used. No behavior patch has been
+  made. This scope remains approved and incomplete, not release-ready.
+- A disposable offline diagnostic exercised the actual `Replacements.view` and
+  `ReplacementEvidence` with filesystem-backed synthetic evidence: 445 original
+  and five replacement trial artifacts. A storage wrapper added 10 ms latency
+  per read/list operation and counted operations. Native aggregation and source
+  completion were stand-ins, so this measures evidence loading only; it neither
+  validates native provenance nor establishes any benchmark score.
+- Cold: 2,846 ms, 910 reads, 907 directory listings. Warm: 2,810 ms, the same
+  reads and listings. The aggregate stand-in was called only once across both
+  requests. Peak concurrent storage operations was 13 because the eight-worker
+  evidence pools are nested, not a global eight-operation limit. These are
+  synthetic local timings, not measurements of the hosted service.
+- `packages/control-core/src/replacements.ts` reads incurred trial costs before
+  independently loading assembly evidence; it consults the aggregate cache only
+  after that evidence is loaded. `replacement-evidence.ts` requests fresh bytes.
+  The warm aggregate cache therefore does not eliminate these storage operations.
+- `apps/control-api/src/trial-progress-reader.ts` is not a drop-in native evidence
+  cache: it projects trial results and retains completed observations under a
+  separate reconciliation window (default five minutes). Its exposed snapshot
+  does not provide the original complete native evidence required by the bridge.
+  `packages/hf-adapters/src/bucket-store.ts` serializes writes, not reads; its
+  download path has no explicit timeout signal, unlike directory listing.
+- Inspected pinned Harbor `src/harbor/job_plan.py` native `aggregate` and
+  `aggregate_stats`, their references to native trial results, and relevant
+  planning/result history including the JobPlan extraction. The existing bridge
+  in `packages/harbor-hf-agents/src/harbor_hf_agents/replacements.py` delegates
+  metrics to Harbor. No new general Harbor capability has been shown necessary.
+- The RunPage summary and Runs table currently use original native results;
+  replacement querying starts inside the opened replacement panel. The existing
+  scalar parser deliberately requires exactly one evaluation and one mean metric.
+  No UI changes were made, and no alternate score or favorable fallback was added.
+- Held before a speculative cache redesign: a safe optimization must preserve
+  complete native bytes, fresh relationship discovery, provider-identity fencing,
+  failure invalidation and bounded total in-flight work without borrowing weaker
+  display freshness. Cold-loading improvement is still unproven. No actual native
+  Combined score was obtained. The full contract review, implementation, regression
+  matrix, validation gates and independent review remain outstanding.
+- Only authorization, read-only source inspection and disposable offline profiling
+  occurred. No live diagnostic request, remote run control, inference, credential
+  movement, resource creation, publication or deployment occurred. Privacy and diff
+  checks cover the local documentation commits; historical full test results are
+  not claimed as fresh validation for this scope.
+
+#### Local implementation completion — 2026-09-12
+
+- Completed the approved local implementation in the primary checkout, following
+  the committed authorization. Ready for independent review, not publication or
+  deployment. The earlier profiling hold remains historical evidence, superseded
+  by this implementation and its fresh validation.
+- Original versus Combined native scores now appear above the collapsed operator
+  panel through one shared query. Loading, pending, unavailable, failed refresh,
+  expired saved evidence and explicit Retry are visible. A bounded browser request
+  reports timeout rather than remaining indefinitely in Refreshing. Full native
+  JSON remains inspectable/downloadable; arbitrary metrics are not averaged.
+- One request-scoped native evidence reader now coalesces exact fresh reads and
+  shallow listings for incurred costs and assembly. Nested storage I/O is capped
+  at eight. Every new request rediscovers relationships and reads fresh evidence;
+  completion checks and the existing aggregate cache remain intact. All retained
+  receipts, unknown costs and failed replacements preserve existing semantics.
+- The same offline synthetic profile improved from about 2.85 seconds to 1.43
+  seconds: 910 to 458 reads, 907 to 455 listings, peak concurrency 13 to eight.
+  This is not a hosted latency guarantee or a verified private Combined score.
+  Warm requests still read native evidence, and this patch does not claim one
+  recursive metadata listing per run or cancellation of server inspection when
+  the browser times out.
+- Pinned Harbor aggregation, native result fields and relevant planning history
+  were checked; the ownership and unchanged-schema comparison is documented in
+  `docs/2026-09-11-replacement-backend.md`. No native behavior, persisted field,
+  alternate cost/result format, provider rule, resource or API schema was added.
+- Validation passed: root Ruff/format/ty, 102 tests at 89.10% and dependency audit;
+  agent Ruff/format/ty and 598 tests at 87.33% (coverage used an ephemeral
+  pytest-cov dependency, not a manifest or lockfile change). Node 22.22.0 format,
+  lint, types, 1,585 unit tests, build, generated checks and dependency audit pass.
+  Changed rollup/evidence module coverage is 98.12% lines and 92.53% branches.
+  All 76 browser tests pass. Both Dockerfiles build locally for linux/amd64.
+  Slophammer baseline and DRY pass with zero findings. No threshold was weakened.
+- Initial test failures were corrected: immediate querying required existing
+  browser fixtures to supply the normal no-replacements response; query-state
+  tests await rendering and restore mocks. The first browser server startup
+  stalled and was stopped; the full suite passed against an isolated local web
+  server. The optional coverage plugin was supplied only for the coverage check.
+- No worktree, remote mutation, publication, merge, deployment, run control,
+  inference, paid compute, credential movement or live private-source diagnostic
+  occurred. Independent review and separate release authorization remain required.
+
 ### Replacement evidence and parent failure containment
 
 Status: approved
@@ -730,6 +967,31 @@ No project-scope amendment remains pending. Operational gates still apply:
 - Keep the approved GLM-5.3-Flash Together plus Pi replacement inside its USD 18 immutable ceiling and the rollout plan's 16-Job physical concurrency limit. Do not resume the invalidated first Run.
 
 ## Approval history
+
+### 2026-09-12 — Built-in inference review and merge amendment
+
+- Approved directly: fix the misleading built-in inference-review message in
+  the existing PR, validate and review it, push updates, and merge the exact
+  reviewed head only after CI passes. No deployment or live credential action.
+
+
+### 2026-09-12 — Results browsing publication request
+
+- Pending clarification/approval: integrate main into the feature branch,
+  revalidate, push and open a PR; no PR merge, deployment or run execution.
+- Subsequently approved directly: prepare the recent changes as a PR and get
+  ready to deploy. Main integration, branch publication, PR and read-only
+  deployment preparation are approved; actual PR merge/cutover remains gated.
+
+
+### 2026-09-12 — Results browsing follow-up
+
+- Approved directly: local reasoning display, combined score/token browsing,
+  missing-cost item counts, evidence-preserving performance investigation,
+  validation, documentation and local commits. No remote mutation or release.
+- Completed locally with independent review, full validation and documented
+  evidence/freshness limits. No release, run mutation or paid work performed.
+
 
 ### 2026-09-11 — Active control release verified
 
@@ -2636,3 +2898,21 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 
 - Local implementation completion and disclosed validation gaps are recorded
   above. Publication and deployment have not started; independent review is next.
+
+### 2026-09-12 — Built-in inference review validation and merge readiness
+
+- Implemented the approved narrow fix using `InferenceBindings.selected`: only
+  its explicit no-binding result returns the ephemeral `binding: none` review.
+  No approval, grant, credential-presence claim or authentication test is added.
+  Named-binding gates and normal replacement submission remain unchanged.
+- Independent security review: GO, no blockers; 168 focused tests independently
+  passed. Implementation coverage: 97.22% lines and 90.90% branches across the
+  changed review runtime. Native ownership and generated contract comparisons
+  found no duplicate Harbor configuration or durable field.
+- Full local checks pass: 1,641 Node unit tests, 77 browser tests, formatting,
+  lint, types, build, generated reproducibility and dependency audit. Root
+  checks pass with 102 tests and 89.10% coverage; agent checks pass with 598
+  tests. Both Dockerfiles build for linux/amd64. Slophammer and privacy pass.
+- Publish the reviewed fix and updated PR scope, then wait for hosted CI on the
+  exact latest head before the authorized squash merge. Merge remains pending
+  at this entry; deployment and image publication remain unauthorized.

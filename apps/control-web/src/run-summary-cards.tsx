@@ -1,5 +1,6 @@
 import { configuredTimeouts, RunStatusTiming } from "./agent-timing";
 import type { RunView } from "./api";
+import { costCoverageLabel } from "./native-cost-coverage";
 import { RunInferenceCost } from "./run-inference-cost";
 import { ExactValue } from "./summary-values";
 export { CostValue, ExactValue } from "./summary-values";
@@ -95,6 +96,7 @@ export function RunSummaryCards({ run }: { run: RunView }) {
       </Card>
       <Card>
         <RunInferenceCost run={run} />
+        <p className="text-xs text-slate-400">{costCoverageLabel(run.result)}</p>
       </Card>
     </section>
   );

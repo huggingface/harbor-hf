@@ -2649,6 +2649,14 @@ export interface components {
         RunInferenceReview: {
             /** @constant */
             schema_version: "v1";
+            run_id: string;
+            /** @constant */
+            binding: "none";
+            /** @constant */
+            approval_required: false;
+        } | {
+            /** @constant */
+            schema_version: "v1";
             revision: number;
             review_id: string;
             /** Format: date-time */
@@ -2670,6 +2678,8 @@ export interface components {
                 allowed_hosts: string[];
                 allowed_models: string[];
             };
+            /** @constant */
+            binding: "named";
             run_id: string;
             approval_required: boolean;
         };
