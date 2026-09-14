@@ -9,7 +9,7 @@ default_branch: main
 
 ## Current authorization
 
-Status: approved
+Status: completed
 
 ### Built-in inference review fix and exact-green-head PR merge
 
@@ -2916,3 +2916,16 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 - Publish the reviewed fix and updated PR scope, then wait for hosted CI on the
   exact latest head before the authorized squash merge. Merge remains pending
   at this entry; deployment and image publication remain unauthorized.
+
+### 2026-09-12 — Results browsing and inference review merge completed
+
+- PR #224 was squash merged after successful hosted CI on exact independently
+  reviewed head `439ad51bf1099624e675f2da9f32625a37ed1c2e`.
+- Verified merged commit `1499be727f999faef6a10babf1465749d81be15e` has the
+  identical tree to that reviewed head and the PR is merged/closed.
+- The approved implementation/publication/merge scope is completed. This
+  completion record is local; no additional feature publication is required.
+  Branches and worktrees were preserved. No deployment, image publication,
+  credential transfer, grant, run mutation, inference or paid compute occurred.
+- Any deployment requires new explicit authorization and fresh release gates;
+  earlier private deployment preparation is not current-head readiness proof.
