@@ -25,7 +25,7 @@ vi.mock("../src/huggingface-models.js", () => ({
   lookupHuggingFaceModelProviders: vi.fn(async () => ["provider"]),
 }));
 const roots: string[] = [];
-const revision = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
+const revision = "fcf27e5502e30436b067ef2d655368e86cc42cf9";
 const input = {
   datasets: [{ name: "example/dataset", ref: `sha256:${"a".repeat(64)}` }],
   agents: [

@@ -5,7 +5,7 @@ description = "Harbor parent runner and temporary ATIF converters for Harbor-HF.
 requires-python = ">=3.12"
 dependencies = [
   "huggingface-hub==1.28.0+terminal.f1c01f0",
-  "harbor[hf-sandbox] @ git+https://github.com/harbor-framework/harbor.git@dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e",
+  "harbor[hf-sandbox] @ git+https://github.com/osolmaz/harbor.git@fcf27e5502e30436b067ef2d655368e86cc42cf9",
 ]
 
 [project.scripts]

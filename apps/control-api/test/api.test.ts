@@ -1140,7 +1140,7 @@ describe("configurable launch", () => {
     ],
   };
   const validation = {
-    harbor_revision: "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e",
+    harbor_revision: "fcf27e5502e30436b067ef2d655368e86cc42cf9",
     tasks: 3,
     agents: 2,
     trials: 6,

@@ -6,7 +6,7 @@ from importlib.metadata import distribution
 
 from harbor.models.job.config import JobConfig
 
-PIN = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e"
+PIN = "fcf27e5502e30436b067ef2d655368e86cc42cf9"
 
 
 def test_public_config_preserves_native_model_and_unresolved_reference(monkeypatch):

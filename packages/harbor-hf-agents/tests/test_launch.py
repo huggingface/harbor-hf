@@ -422,14 +422,20 @@ async def test_native_resolution_rejects_missing_sources() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("empty_agents", [True, False])
-async def test_diagnostic_jobs_require_scored_trials(empty_agents: bool) -> None:
+async def test_diagnostic_jobs_require_scored_trials() -> None:
     job = config()
-    if empty_agents:
-        job.agents = []
-    else:
-        job.n_attempts = 0
+    job.agents = []
     with pytest.raises(ValueError, match="at least one agent and attempt"):
+        await launch.inspect(job.model_dump(mode="json"), ROOT, [])
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_jobs_reject_a_zero_attempt_config() -> None:
+    # Harbor now rejects a nonpositive attempt count while it builds the config,
+    # so the hosted diagnostic check never observes it.
+    job = config()
+    job.n_attempts = 0
+    with pytest.raises(ValueError, match="n_attempts"):
         await launch.inspect(job.model_dump(mode="json"), ROOT, [])
 
 

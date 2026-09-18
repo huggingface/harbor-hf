@@ -15,7 +15,7 @@ afterEach(async () => {
   );
 });
 const id = `run-${"a".repeat(24)}`;
-const revision = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e";
+const revision = "fcf27e5502e30436b067ef2d655368e86cc42cf9";
 const currentImage = image.replace(/a{64}$/, "b".repeat(64));
 async function setup() {
   const root = await mkdtemp(join(tmpdir(), "run-inference-"));
