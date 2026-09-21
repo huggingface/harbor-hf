@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import type { AgentPresetV1 } from "@harbor-hf/contracts";
 import {
   InferenceRegistry,
   INFERENCE_SOURCE_REGISTRY_KEY as key,
@@ -16,20 +17,32 @@ afterEach(async () => {
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
 });
-async function setup() {
+async function setup(
+  preset?: (agent: string, version: string) => AgentPresetV1 | null,
+) {
   const root = await mkdtemp(join(tmpdir(), "inference-registry-"));
   roots.push(root);
   const store = new FilesystemObjectStore(root);
   const present = vi.fn(() => false);
   let now = new Date("2026-09-10T00:00:00Z");
-  const create = () =>
-    new InferenceRegistry(store, image, present, () => now, randomUUID);
+  const create = (resolver = preset) =>
+    new InferenceRegistry(store, image, present, () => now, randomUUID, resolver);
+  const presetReview = (extra: Record<string, unknown> = {}) => ({
+    expected_revision: 1,
+    preset: { agent: presetFixture.agent, version: presetFixture.version },
+    model_name: "example/model",
+    base_url: "https://example-endpoint.invalid/v1",
+    allowed_hosts: ["example-endpoint.invalid"],
+    route_api: "chat-completions",
+    ...extra,
+  });
   const registry = create();
   return {
     store,
     registry,
     present,
     create,
+    presetReview,
     time: (value: Date) => {
       now = value;
     },
@@ -41,6 +54,21 @@ const registration = {
   label: "Example inference",
   reason: "Register inference source",
 };
+const presetFixture = {
+  schema_version: "v1",
+  agent: "pi",
+  version: "0.84.4",
+  harbor_agent: {
+    import_path: "harbor_hf_agents.pi.agent:PiAgent",
+    kwargs: { version: "0.84.4" },
+  },
+  reasoning_option: null,
+  reasoning_values: ["default"],
+  endpoint_api: {
+    option: "model_api",
+    api: { "chat-completions": "openai-completions" },
+  },
+} satisfies AgentPresetV1;
 async function registered(registry: InferenceRegistry) {
   const response = await registry.register(registration, actor);
   const ref = response.bindings[0]!.ref;
@@ -411,3 +439,82 @@ it.each(["chat-completions", "responses"] as const)(
     await expect(create().policy()).rejects.toThrow("unavailable");
   },
 );
+
+it("reviews and approves a native preset identity as the grant subject", async () => {
+  const { registry, create, presetReview } = await setup((agent, version) =>
+    agent === presetFixture.agent && version === presetFixture.version
+      ? presetFixture
+      : null,
+  );
+  const response = await registry.register(registration, actor);
+  const ref = response.bindings[0]!.ref;
+  const review = await registry.review(ref, presetReview(), actor);
+  expect(review.preset).toEqual({
+    agent: presetFixture.agent,
+    version: presetFixture.version,
+  });
+  expect(review.recipe).toBeUndefined();
+  expect(review.grant).toEqual({
+    operator_subjects: [actor],
+    worker_image: image,
+    agent_import_path: presetFixture.harbor_agent.import_path,
+    agent_version: presetFixture.version,
+    destination_env: ["OPENAI_API_KEY"],
+    route_api: "chat-completions",
+    base_url: "https://example-endpoint.invalid/v1",
+    allowed_hosts: ["example-endpoint.invalid"],
+    allowed_models: ["example/model"],
+  });
+  await registry.approve(
+    ref,
+    {
+      expected_revision: 1,
+      review_id: review.review_id,
+      reviewed_confirmation: true,
+      reason: "Reviewed exact configuration",
+    },
+    actor,
+  );
+  const policy = await create().policy();
+  expect(
+    policy.presetConnection(
+      {
+        import_path: presetFixture.harbor_agent.import_path,
+        version: presetFixture.version,
+      },
+      "example/model",
+      actor,
+      image,
+    ),
+  ).toMatchObject({ ref, base_url: "https://example-endpoint.invalid/v1" });
+});
+
+it("rejects preset reviews that name no resolvable or no reviewable endpoint", async () => {
+  const { registry, presetReview } = await setup(() => presetFixture);
+  const response = await registry.register(registration, actor);
+  const ref = response.bindings[0]!.ref;
+  await expect(
+    registry.review(
+      ref,
+      presetReview({ preset: { agent: "other", version: "1" } }),
+      actor,
+    ),
+  ).rejects.toThrow();
+  await expect(
+    registry.review(ref, presetReview({ route_api: "responses" }), actor),
+  ).rejects.toThrow();
+  await expect(
+    registry.review(ref, presetReview({ base_url: null, allowed_hosts: [] }), actor),
+  ).rejects.toThrow();
+  await expect(
+    registry.review(ref, presetReview({ allowed_hosts: ["other.invalid"] }), actor),
+  ).rejects.toThrow();
+  await expect(
+    registry.review(ref, presetReview({ expected_revision: 9 }), actor),
+  ).rejects.toThrow();
+  const withoutPreset = await setup();
+  const plain = await withoutPreset.registry.register(registration, actor);
+  await expect(
+    withoutPreset.registry.review(plain.bindings[0]!.ref, presetReview(), actor),
+  ).rejects.toThrow();
+});

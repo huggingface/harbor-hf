@@ -29,7 +29,8 @@ path entirely.
 ## Harbor-first evidence
 
 Checked at the pinned revision in `packages/harbor-hf-agents/pyproject.toml`,
-`osolmaz/harbor@fcf27e5502e30436b067ef2d655368e86cc42cf9`:
+`harbor-framework/harbor@dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e` (the
+repository URL redirects from `osolmaz/harbor`):
 
 - `src/harbor/agents/model_connection.py`: `ResolvedModelConnection` carries
   `api_key`, `base_url`, `configured_base_url` and `env`; `resolve_model_connection`

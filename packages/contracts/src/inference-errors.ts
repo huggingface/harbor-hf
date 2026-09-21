@@ -4,6 +4,7 @@ export class InferenceBindingDenied extends Error {
     message:
       | "Inference credential presence is unavailable"
       | "Selected inference credential is missing"
+      | "The agent preset cannot use a reviewed endpoint connection"
       | "Inference binding is unavailable or not reviewed for this execution" = "Inference binding is unavailable or not reviewed for this execution",
   ) {
     super(message);

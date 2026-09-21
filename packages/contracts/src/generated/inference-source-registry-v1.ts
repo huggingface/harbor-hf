@@ -39,7 +39,14 @@ grant: {
 operator_subjects: string[]
 worker_image: string
 agent_import_path: string
-recipe_digest: string
+/**
+ * Reviewed Workbench recipe identity
+ */
+recipe_digest?: string
+/**
+ * Reviewed native agent preset version
+ */
+agent_version?: string
 /**
  * @maxItems 64
  */

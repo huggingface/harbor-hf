@@ -105,7 +105,6 @@
                       "operator_subjects",
                       "worker_image",
                       "agent_import_path",
-                      "recipe_digest",
                       "destination_env",
                       "route_api",
                       "base_url",
@@ -134,7 +133,14 @@
                       },
                       "recipe_digest": {
                         "type": "string",
-                        "pattern": "^[0-9a-f]{64}$"
+                        "pattern": "^[0-9a-f]{64}$",
+                        "description": "Reviewed Workbench recipe identity"
+                      },
+                      "agent_version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "description": "Reviewed native agent preset version"
                       },
                       "destination_env": {
                         "type": "array",
@@ -258,7 +264,6 @@
         "additionalProperties": false,
         "required": [
           "expected_revision",
-          "recipe",
           "model_name",
           "base_url",
           "allowed_hosts"
@@ -271,6 +276,34 @@
           },
           "recipe": {
             "$ref": "#/components/schemas/WorkbenchRecipe"
+          },
+          "preset": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agent",
+              "version"
+            ],
+            "properties": {
+              "agent": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "description": "Native agent preset selected from the preset catalog"
+          },
+          "route_api": {
+            "enum": [
+              "chat-completions",
+              "responses",
+              "native"
+            ],
+            "description": "Wire API the reviewed endpoint speaks for this preset subject"
           },
           "model_name": {
             "type": "string",
@@ -366,7 +399,6 @@
           "source_env",
           "label",
           "presence",
-          "recipe",
           "grant"
         ],
         "properties": {
@@ -433,6 +465,26 @@
           "recipe": {
             "$ref": "#/components/schemas/WorkbenchRecipe"
           },
+          "preset": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agent",
+              "version"
+            ],
+            "properties": {
+              "agent": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "description": "Native agent preset selected from the preset catalog"
+          },
           "grant": {
             "type": "object",
             "additionalProperties": false,
@@ -440,7 +492,6 @@
               "operator_subjects",
               "worker_image",
               "agent_import_path",
-              "recipe_digest",
               "destination_env",
               "route_api",
               "base_url",
@@ -469,7 +520,14 @@
               },
               "recipe_digest": {
                 "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "Reviewed Workbench recipe identity"
+              },
+              "agent_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "description": "Reviewed native agent preset version"
               },
               "destination_env": {
                 "type": "array",
@@ -627,6 +685,26 @@
                   "missing"
                 ]
               },
+              "preset": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "agent",
+                  "version"
+                ],
+                "properties": {
+                  "agent": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  }
+                },
+                "description": "Native agent preset selected from the preset catalog"
+              },
               "grant": {
                 "type": "object",
                 "additionalProperties": false,
@@ -634,7 +712,6 @@
                   "operator_subjects",
                   "worker_image",
                   "agent_import_path",
-                  "recipe_digest",
                   "destination_env",
                   "route_api",
                   "base_url",
@@ -663,7 +740,14 @@
                   },
                   "recipe_digest": {
                     "type": "string",
-                    "pattern": "^[0-9a-f]{64}$"
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "Reviewed Workbench recipe identity"
+                  },
+                  "agent_version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160,
+                    "description": "Reviewed native agent preset version"
                   },
                   "destination_env": {
                     "type": "array",

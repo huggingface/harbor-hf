@@ -11,7 +11,18 @@ credential_ref?: string
 
 export interface InferenceReviewRequestV1 {
 expected_revision: number
-recipe: AgentWorkbenchRecipeV1
+recipe?: AgentWorkbenchRecipeV1
+/**
+ * Native agent preset selected from the preset catalog
+ */
+preset?: {
+agent: string
+version: string
+}
+/**
+ * Wire API the reviewed endpoint speaks for this preset subject
+ */
+route_api?: ("chat-completions" | "responses" | "native")
 model_name: string
 base_url: (string | null)
 /**

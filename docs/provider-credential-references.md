@@ -41,6 +41,26 @@ introduced. The adapter rechecks the exact grant at dispatch and restart; missin
 or disabled selected credentials deny admission without legacy HF fallback.
 Already running workers are not remotely revoked by disabling a reference.
 
+## Native agent preset connections
+
+A native agent preset can use the same reviewed connection. The subject of the
+grant is then the preset identity, the agent slug plus its version, instead of a
+Workbench recipe digest. The grant holds the exact base URL, the declared hosts,
+the route API, the single model and the fixed key destination `OPENAI_API_KEY`.
+The preset declares only which adapter option selects a wire API style, so a
+preset edit cannot redirect a reviewed credential. `pi` declares
+`model_api: openai-completions` for `chat-completions` and
+`model_api: openai-responses` for `responses`.
+
+The run record for such a connection is the ordinary `openai/<model>` route with
+the reviewed base URL and an opaque key reference. Admission and restart rebuild
+that record from the preset and the grant, then recheck it against the approved
+grant. A model outside the grant, another preset version, another worker image,
+another operator, a changed base URL or a changed host list is denied. Ambiguous
+subjects with more than one reviewed grant are denied. No preset route field, no
+connection record and no submission-supplied URL is added; a submission still
+cannot name a base URL.
+
 ## Deployment caveat
 
 This local implementation does not authorize deployment, credential movement or
@@ -97,3 +117,9 @@ an explicit non-null reviewed base URL and a `model_base_url` run binding.
 Only `native` permits key-only/null-URL connections. Admission and restart check
 the same constraints; an ambient URL is never an approved substitute. Legacy HF
 recipes and the separate control-token deployment hold are unchanged.
+
+A preset-subject grant is the same kind of reviewed binding: it always needs a
+non-null base URL, its hosts, one route API and one model, and it fixes the key
+destination. A preset grant without a base URL or with another destination is
+rejected; a preset that declares no wire API style for the reviewed route is
+denied at review and at submission.

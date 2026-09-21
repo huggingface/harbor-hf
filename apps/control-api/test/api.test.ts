@@ -2194,3 +2194,121 @@ it("run review uses server-recorded compiled input and saves through the existin
   }
   await app.close();
 });
+
+it("reviews and approves a native preset subject through the generated API", async () => {
+  const image = `example.invalid/worker@sha256:${"a".repeat(64)}`;
+  const { runtime, app } = await setup("enabled", false, image);
+  vi.spyOn(runtime.auth, "role").mockResolvedValue("operator");
+  vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+    subject: "fixture-subject",
+    username: "fixture-user",
+    role: "operator",
+    transport: "development",
+  });
+  const session = runtime.auth.store.createSession(
+    "fixture-subject",
+    "fixture-user",
+    3600,
+  );
+  const cookies = { hhf_session: session.id };
+  const headers = { "x-csrf-token": session.csrf };
+  const url = "/api/v1/inference-bindings";
+  expect(
+    Object.keys(runtime.presets.agent("pi", "0.84.4")).includes("endpoint_api"),
+  ).toBe(true);
+  const saved = await app.inject({
+    method: "POST",
+    url,
+    payload: {
+      expected_revision: 0,
+      source_env: "MY_SECRET_KEY",
+      label: "Example endpoint",
+      reason: "Register inference source",
+    },
+    cookies,
+    headers,
+  });
+  expect(saved.statusCode).toBe(200);
+  const ref = saved.json<components["schemas"]["InferenceBindings"]>().bindings[0]!.ref;
+  const reviewUrl = `${url}/${ref}/review`;
+  const body: components["schemas"]["InferenceReviewRequest"] = {
+    expected_revision: 1,
+    preset: { agent: "pi", version: "0.84.4" },
+    model_name: "example/model",
+    base_url: "https://example-endpoint.invalid/v1",
+    allowed_hosts: ["example-endpoint.invalid"],
+    route_api: "chat-completions",
+  };
+  for (const extra of [
+    { recipe: workbenchRecipe },
+    { preset: { agent: "pi", version: "9.9.9" } },
+    { route_api: "native" },
+    { base_url: null, allowed_hosts: [] },
+  ])
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: reviewUrl,
+          payload: { ...body, ...extra },
+          cookies,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(400);
+  const reviewed = await app.inject({
+    method: "POST",
+    url: reviewUrl,
+    payload: body,
+    cookies,
+    headers,
+  });
+  expect(reviewed.statusCode).toBe(200);
+  const review = reviewed.json<components["schemas"]["InferenceReview"]>();
+  expect(review.preset).toEqual({ agent: "pi", version: "0.84.4" });
+  expect(review.recipe).toBeUndefined();
+  expect(review.grant).toEqual({
+    operator_subjects: ["fixture-subject"],
+    worker_image: image,
+    agent_import_path: "harbor_hf_agents.pi.agent:PiAgent",
+    agent_version: "0.84.4",
+    destination_env: ["OPENAI_API_KEY"],
+    route_api: "chat-completions",
+    base_url: "https://example-endpoint.invalid/v1",
+    allowed_hosts: ["example-endpoint.invalid"],
+    allowed_models: ["example/model"],
+  });
+  const doc = JSON.parse(await readFile("docs/control-api-v1.openapi.json", "utf8"));
+  const schema = new Ajv2020({ strict: false });
+  schema.addFormat("date-time", () => true);
+  schema.addSchema(doc, "api");
+  expect(
+    schema.compile({ $ref: "api#/components/schemas/InferenceReview" })(review),
+  ).toBe(true);
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: `${url}/${ref}/approve`,
+        payload: {
+          expected_revision: 1,
+          review_id: review.review_id,
+          reviewed_confirmation: true,
+          reason: "Reviewed exact endpoint connection",
+        },
+        cookies,
+        headers,
+      })
+    ).statusCode,
+  ).toBe(200);
+  const policy = await runtime.inference.policy();
+  expect(
+    policy.presetConnection(
+      { import_path: "harbor_hf_agents.pi.agent:PiAgent", version: "0.84.4" },
+      "example/model",
+      "fixture-subject",
+      image,
+    ),
+  ).toMatchObject({ ref, base_url: "https://example-endpoint.invalid/v1" });
+  await app.close();
+});

@@ -18,7 +18,14 @@ ref: string
 source_env: string
 label: string
 presence: ("configured" | "missing")
-recipe: AgentWorkbenchRecipeV1
+recipe?: AgentWorkbenchRecipeV1
+/**
+ * Native agent preset selected from the preset catalog
+ */
+preset?: {
+agent: string
+version: string
+}
 grant: {
 /**
  * @maxItems 64
@@ -26,7 +33,14 @@ grant: {
 operator_subjects: string[]
 worker_image: string
 agent_import_path: string
-recipe_digest: string
+/**
+ * Reviewed Workbench recipe identity
+ */
+recipe_digest?: string
+/**
+ * Reviewed native agent preset version
+ */
+agent_version?: string
 /**
  * @maxItems 64
  */

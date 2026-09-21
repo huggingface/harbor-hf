@@ -116,6 +116,14 @@ export async function createRuntime(
     (source) => Boolean(selectedSource(source)),
     () => new Date(),
     randomUUID,
+    // Reviewed preset subjects resolve through the same catalog the run flow builds from.
+    (agent, version) => {
+      try {
+        return presets.agent(agent, version);
+      } catch {
+        return null;
+      }
+    },
   );
   const admittedPolicy = () => inference.policy();
   const launch = new NativeLaunch(config);

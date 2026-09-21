@@ -2579,7 +2579,10 @@ export interface components {
                     operator_subjects: string[];
                     worker_image: string;
                     agent_import_path: string;
-                    recipe_digest: string;
+                    /** @description Reviewed Workbench recipe identity */
+                    recipe_digest?: string;
+                    /** @description Reviewed native agent preset version */
+                    agent_version?: string;
                     destination_env: string[];
                     /** @enum {unknown} */
                     route_api: "chat-completions" | "responses" | "native";
@@ -2600,7 +2603,17 @@ export interface components {
         /** Inference Review Request V1 */
         InferenceReviewRequest: {
             expected_revision: number;
-            recipe: components["schemas"]["WorkbenchRecipe"];
+            recipe?: components["schemas"]["WorkbenchRecipe"];
+            /** @description Native agent preset selected from the preset catalog */
+            preset?: {
+                agent: string;
+                version: string;
+            };
+            /**
+             * @description Wire API the reviewed endpoint speaks for this preset subject
+             * @enum {unknown}
+             */
+            route_api?: "chat-completions" | "responses" | "native";
             model_name: string;
             base_url: string | null;
             allowed_hosts: string[];
@@ -2632,12 +2645,20 @@ export interface components {
             label: string;
             /** @enum {unknown} */
             presence: "configured" | "missing";
-            recipe: components["schemas"]["WorkbenchRecipe"];
+            recipe?: components["schemas"]["WorkbenchRecipe"];
+            /** @description Native agent preset selected from the preset catalog */
+            preset?: {
+                agent: string;
+                version: string;
+            };
             grant: {
                 operator_subjects: string[];
                 worker_image: string;
                 agent_import_path: string;
-                recipe_digest: string;
+                /** @description Reviewed Workbench recipe identity */
+                recipe_digest?: string;
+                /** @description Reviewed native agent preset version */
+                agent_version?: string;
                 destination_env: string[];
                 /** @enum {unknown} */
                 route_api: "chat-completions" | "responses" | "native";
@@ -2666,11 +2687,19 @@ export interface components {
             label: string;
             /** @enum {unknown} */
             presence: "configured" | "missing";
+            /** @description Native agent preset selected from the preset catalog */
+            preset?: {
+                agent: string;
+                version: string;
+            };
             grant: {
                 operator_subjects: string[];
                 worker_image: string;
                 agent_import_path: string;
-                recipe_digest: string;
+                /** @description Reviewed Workbench recipe identity */
+                recipe_digest?: string;
+                /** @description Reviewed native agent preset version */
+                agent_version?: string;
                 destination_env: string[];
                 /** @enum {unknown} */
                 route_api: "chat-completions" | "responses" | "native";

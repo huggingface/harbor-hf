@@ -12,6 +12,7 @@ import {
   InferenceBindingDenied,
   InferenceBindings,
   inferencePresence,
+  type PresetEndpointConnection,
 } from "./inference-bindings.js";
 import type { AgentWorkbenchRecipeV1, HarborJobConfigV1 } from "@harbor-hf/contracts";
 import { correctPricing } from "./pricing-corrections.js";
@@ -32,6 +33,7 @@ import {
   directSubmission,
   type HarborAgentFragment,
   prepareDirectJobConfig,
+  presetImportPath,
   type PresetCatalog,
   type PresetSubmission,
 } from "./presets.js";
@@ -231,7 +233,13 @@ export class ControlService {
     if (containsCredentialMaterial(input))
       throw new Error("preset submission contains credential material");
     const id = runId(idempotencyKey);
-    const jobConfig = this.presets.buildJobConfig(id, input, this.options.mountRoot);
+    const endpoint = await this.presetEndpoint(input, actor);
+    const jobConfig = this.presets.buildJobConfig(
+      id,
+      input,
+      this.options.mountRoot,
+      endpoint,
+    );
     const record = validateRunRecord({
       schema_version: "v1",
       run_id: id,
@@ -248,6 +256,30 @@ export class ControlService {
       harbor_job_config: jobConfig,
     });
     return this.persistSubmission(record);
+  }
+
+  /** A reviewed endpoint connection replaces the default router route for this preset. The
+   *  grant owns the base URL, the admitted hosts and the key destination, so no submission
+   *  carries a model route and no preset edit can redirect a reviewed credential. */
+  private async presetEndpoint(
+    input: PresetSubmission,
+    actor: string,
+  ): Promise<PresetEndpointConnection | null> {
+    const execution = this.options.inference;
+    if (!execution) return null;
+    const preset = this.presets.agent(input.harness.agent, input.harness.version);
+    const importPath = presetImportPath(preset);
+    if (!importPath) return null;
+    const connection = (await execution.policy()).presetConnection(
+      { import_path: importPath, version: preset.version },
+      input.model.id,
+      actor,
+      execution.image,
+    );
+    if (!connection) return null;
+    if (!inferencePresence(execution.present, connection.source))
+      throw new InferenceBindingDenied();
+    return connection;
   }
 
   private replacementNative(): ReplacementNativePort {

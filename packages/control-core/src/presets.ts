@@ -23,6 +23,8 @@ import {
   isReasoningIntent,
 } from "@harbor-hf/contracts/credentials";
 export { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
+import { InferenceBindingDenied } from "@harbor-hf/contracts";
+import type { PresetEndpointConnection } from "./inference-bindings.js";
 
 export interface PresetSubmission {
   benchmark: { name: string; preset: string };
@@ -72,6 +74,55 @@ async function jsonFiles<T>(
       validator(JSON.parse(await readFile(join(directory, file), "utf8")) as unknown),
     ),
   );
+}
+
+/** Reviewed implementation identity of a preset, or null when it is not a plugin preset. */
+export function presetImportPath(preset: AgentPresetV1): string | null {
+  const value = (preset.harbor_agent as { import_path?: unknown }).import_path;
+  return typeof value === "string" && value ? value : null;
+}
+
+/** Agent record for a native preset run on a reviewed endpoint connection. The grant owns the
+ *  base URL, the admitted hosts and the key destination; the preset owns only the wire API
+ *  style, so a preset edit cannot redirect a reviewed credential. */
+export function presetEndpointAgent(
+  base: Record<string, unknown> | undefined,
+  preset: AgentPresetV1,
+  modelId: string,
+  connection: PresetEndpointConnection,
+  reasoningEffort: string,
+): Record<string, unknown> {
+  const declared = preset.endpoint_api;
+  const api = declared?.api[connection.route_api];
+  if (!declared || !api)
+    throw new InferenceBindingDenied(
+      "The agent preset cannot use a reviewed endpoint connection",
+    );
+  const fragment = clone(preset.harbor_agent) as HarborAgentFragment;
+  const kwargs = { ...(fragment.kwargs ?? {}) };
+  // The reviewed subject is the versioned identity admission rechecks at every start.
+  if (typeof kwargs.version !== "string" || kwargs.version.length === 0)
+    throw new InferenceBindingDenied(
+      "The agent preset cannot use a reviewed endpoint connection",
+    );
+  if (preset.reasoning_option !== null && reasoningEffort !== "default")
+    kwargs[preset.reasoning_option] = reasoningEffort;
+  kwargs[declared.option] = api;
+  return {
+    ...base,
+    ...(fragment.name ? { name: fragment.name } : {}),
+    ...(fragment.import_path ? { import_path: fragment.import_path } : {}),
+    ...(fragment.override_setup_timeout_sec
+      ? { override_setup_timeout_sec: fragment.override_setup_timeout_sec }
+      : {}),
+    model_name: `openai/${modelId}`,
+    env: {
+      OPENAI_BASE_URL: connection.base_url,
+      OPENAI_API_KEY: `\${${connection.ref}}`,
+    },
+    extra_allowed_hosts: [...connection.allowed_hosts],
+    kwargs,
+  };
 }
 
 export class PresetCatalog {
@@ -137,6 +188,7 @@ export class PresetCatalog {
     runId: string,
     submission: PresetSubmission,
     mountRoot: string,
+    endpoint: PresetEndpointConnection | null = null,
   ): HarborJobConfigV1 {
     const job = this.benchmarkJob(submission);
     const agent = this.agent(submission.harness.agent, submission.harness.version);
@@ -152,22 +204,31 @@ export class PresetCatalog {
       kwargs[agent.reasoning_option] = submission.model.reasoning_effort;
 
     const usesNativeHuggingFace = agent.agent === "pi";
-    const harborAgent: Record<string, unknown> = {
-      ...job.agents?.[0],
-      ...(fragment.name ? { name: fragment.name } : {}),
-      ...(fragment.import_path ? { import_path: fragment.import_path } : {}),
-      ...(fragment.override_setup_timeout_sec
-        ? { override_setup_timeout_sec: fragment.override_setup_timeout_sec }
-        : {}),
-      model_name: `${usesNativeHuggingFace ? "huggingface" : "openai"}/${submission.model.id}:${submission.model.provider}`,
-      env: usesNativeHuggingFace
-        ? { HF_TOKEN: INFERENCE_TOKEN_TEMPLATE }
-        : {
-            OPENAI_BASE_URL: ROUTER_URL,
-            OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
-          },
-      kwargs,
-    };
+    const harborAgent: Record<string, unknown> =
+      endpoint === null
+        ? {
+            ...job.agents?.[0],
+            ...(fragment.name ? { name: fragment.name } : {}),
+            ...(fragment.import_path ? { import_path: fragment.import_path } : {}),
+            ...(fragment.override_setup_timeout_sec
+              ? { override_setup_timeout_sec: fragment.override_setup_timeout_sec }
+              : {}),
+            model_name: `${usesNativeHuggingFace ? "huggingface" : "openai"}/${submission.model.id}:${submission.model.provider}`,
+            env: usesNativeHuggingFace
+              ? { HF_TOKEN: INFERENCE_TOKEN_TEMPLATE }
+              : {
+                  OPENAI_BASE_URL: ROUTER_URL,
+                  OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
+                },
+            kwargs,
+          }
+        : presetEndpointAgent(
+            job.agents?.[0],
+            agent,
+            submission.model.id,
+            endpoint,
+            submission.model.reasoning_effort,
+          );
     const config = {
       ...job,
       job_name: "job",

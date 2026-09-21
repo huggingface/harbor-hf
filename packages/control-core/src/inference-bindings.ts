@@ -49,6 +49,43 @@ export function inferenceRecipeDigest(agent: Record<string, unknown>): string {
   );
 }
 
+/** Destination env name of a reviewed preset connection. Harbor reads the declared
+ *  base URL and key from this environment, so the preset names no route of its own. */
+export const PRESET_KEY_DESTINATION = "OPENAI_API_KEY";
+
+/** Native preset identity as it appears in a built JobConfig agent record. */
+export function presetSubject(
+  agent: Record<string, unknown>,
+): { import_path: string; version: string } | null {
+  const importPath = agent.import_path;
+  const kwargs = agent.kwargs;
+  const version =
+    kwargs && typeof kwargs === "object" && !Array.isArray(kwargs)
+      ? (kwargs as Record<string, unknown>).version
+      : undefined;
+  if (typeof importPath !== "string" || !importPath) return null;
+  if (typeof version !== "string" || !version) return null;
+  return { import_path: importPath, version };
+}
+
+const PRESET_ROUTE = "openai/";
+
+/** Model identity of a reviewed preset record: the route prefix is transport, not identity. */
+export function presetModelId(modelName: unknown): string | null {
+  if (typeof modelName !== "string" || !modelName.startsWith(PRESET_ROUTE)) return null;
+  const modelId = modelName.slice(PRESET_ROUTE.length);
+  return modelId ? modelId : null;
+}
+
+/** One reviewed endpoint connection selected for a native preset identity. */
+export interface PresetEndpointConnection {
+  ref: string;
+  source: string;
+  base_url: string;
+  allowed_hosts: string[];
+  route_api: "chat-completions" | "responses" | "native";
+}
+
 export function workbenchCredentialRef(recipe: AgentWorkbenchRecipeV1): string | null {
   const keys = recipe.environment.filter((entry) => entry.source === "model_api_key");
   const refs = new Set(keys.map((entry) => entry.credential_ref ?? null));
@@ -78,6 +115,18 @@ export class InferenceBindings {
         for (const grant of binding.uses) {
           const { destination_env: _destinations, ...metadata } = grant;
           this.assertPublicStrings(metadata);
+          const usesPreset = grant.agent_version !== undefined;
+          if (usesPreset === (grant.recipe_digest !== undefined)) throw denied();
+          if (usesPreset) {
+            // A preset subject names one reviewed endpoint, and Harbor reads the
+            // declared base URL and key, so the key destination is fixed.
+            if (grant.base_url === null) throw denied();
+            if (
+              canonicalJson(grant.destination_env) !==
+              canonicalJson([PRESET_KEY_DESTINATION])
+            )
+              throw denied();
+          }
           if (grant.route_api !== "native" && grant.base_url === null) throw denied();
           if (grant.base_url !== null) {
             const url = new URL(grant.base_url);
@@ -253,6 +302,72 @@ export class InferenceBindings {
     };
   }
 
+  /** Reviewed endpoint connection for one native preset identity, or null for the default
+   *  router route. An ambiguous subject is a conflict this submission flow must not invent. */
+  presetConnection(
+    identity: { import_path: string; version: string },
+    modelId: string,
+    actor: string,
+    image: string,
+  ): PresetEndpointConnection | null {
+    const matches: PresetEndpointConnection[] = [];
+    for (const binding of this.#manifest.bindings) {
+      if (!binding.enabled) continue;
+      for (const use of binding.uses) {
+        if (!this.presetMatches(use, identity, modelId, actor, image)) continue;
+        if (use.base_url === null) continue;
+        matches.push({
+          ref: binding.ref,
+          source: binding.source_env,
+          base_url: use.base_url,
+          allowed_hosts: [...use.allowed_hosts],
+          route_api: use.route_api,
+        });
+      }
+    }
+    if (matches.length > 1) throw denied();
+    return matches[0] ?? null;
+  }
+
+  private presetMatches(
+    use: Grant,
+    identity: { import_path: string; version: string },
+    modelId: string,
+    actor: string,
+    image: string,
+  ): boolean {
+    return (
+      use.agent_version === identity.version &&
+      use.agent_import_path === identity.import_path &&
+      use.operator_subjects.includes(actor) &&
+      use.worker_image === image &&
+      use.allowed_models.includes(modelId)
+    );
+  }
+
+  private reviewedPreset(
+    ref: string,
+    actor: string,
+    image: string,
+    agent: Record<string, unknown>,
+    subject: { import_path: string; version: string },
+  ): { binding: Binding; grant: Grant } {
+    const binding = this.#manifest.bindings.find(
+      (entry) => entry.ref === ref && entry.enabled,
+    );
+    const modelId = presetModelId(agent.model_name);
+    const matches =
+      modelId === null
+        ? undefined
+        : binding?.uses.filter((use) =>
+            this.presetMatches(use, subject, modelId, actor, image),
+          );
+    const grant = matches?.[0];
+    if (!binding || !grant || matches?.length !== 1) throw denied();
+    this.assertPublicStrings(agent, grant.destination_env);
+    return { binding, grant };
+  }
+
   /** Recheck immutable native input against current grants at submit and every start/restart. */
   selected(
     config: HarborJobConfigV1,
@@ -292,7 +407,10 @@ export class InferenceBindings {
     const env = agent.env ?? {};
     const ref = template.exec(env.OPENAI_API_KEY ?? "")?.[1];
     if (!ref) throw denied();
-    const { binding, grant } = this.reviewed(ref, actor, image, agent);
+    const subject = presetSubject(agent);
+    const { binding, grant } = subject
+      ? this.reviewedPreset(ref, actor, image, agent, subject)
+      : this.reviewed(ref, actor, image, agent);
     const expected = {
       OPENAI_API_KEY: `\${${ref}}`,
       ...(grant.base_url === null ? {} : { OPENAI_BASE_URL: grant.base_url }),

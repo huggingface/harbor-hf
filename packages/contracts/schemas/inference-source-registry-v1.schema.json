@@ -157,7 +157,6 @@
                         "operator_subjects",
                         "worker_image",
                         "agent_import_path",
-                        "recipe_digest",
                         "destination_env",
                         "route_api",
                         "base_url",
@@ -186,7 +185,14 @@
                         },
                         "recipe_digest": {
                           "type": "string",
-                          "pattern": "^[0-9a-f]{64}$"
+                          "pattern": "^[0-9a-f]{64}$",
+                          "description": "Reviewed Workbench recipe identity"
+                        },
+                        "agent_version": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 160,
+                          "description": "Reviewed native agent preset version"
                         },
                         "destination_env": {
                           "type": "array",
