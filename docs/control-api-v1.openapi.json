@@ -106,7 +106,6 @@
                       "worker_image",
                       "agent_import_path",
                       "destination_env",
-                      "route_api",
                       "base_url",
                       "allowed_hosts",
                       "allowed_models"
@@ -185,6 +184,11 @@
                           "minLength": 1,
                           "maxLength": 4096
                         }
+                      },
+                      "model_api": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                        "description": "Native Harbor agent argument value that selects the wire API style"
                       }
                     }
                   }
@@ -297,14 +301,6 @@
             },
             "description": "Native agent preset selected from the preset catalog"
           },
-          "route_api": {
-            "enum": [
-              "chat-completions",
-              "responses",
-              "native"
-            ],
-            "description": "Wire API the reviewed endpoint speaks for this preset subject"
-          },
           "model_name": {
             "type": "string",
             "minLength": 1,
@@ -326,6 +322,11 @@
               "maxLength": 253
             },
             "uniqueItems": true
+          },
+          "model_api": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "description": "Wire API the reviewed endpoint speaks for this preset subject"
           }
         }
       },
@@ -493,7 +494,6 @@
               "worker_image",
               "agent_import_path",
               "destination_env",
-              "route_api",
               "base_url",
               "allowed_hosts",
               "allowed_models"
@@ -572,6 +572,11 @@
                   "minLength": 1,
                   "maxLength": 4096
                 }
+              },
+              "model_api": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                "description": "Native Harbor agent argument value that selects the wire API style"
               }
             }
           }
@@ -713,7 +718,6 @@
                   "worker_image",
                   "agent_import_path",
                   "destination_env",
-                  "route_api",
                   "base_url",
                   "allowed_hosts",
                   "allowed_models"
@@ -792,6 +796,11 @@
                       "minLength": 1,
                       "maxLength": 4096
                     }
+                  },
+                  "model_api": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                    "description": "Native Harbor agent argument value that selects the wire API style"
                   }
                 }
               },
@@ -883,7 +892,6 @@
                 "additionalProperties": false,
                 "required": [
                   "id",
-                  "provider",
                   "reasoning_effort"
                 ],
                 "properties": {
@@ -895,12 +903,23 @@
                   "provider": {
                     "$ref": "#/components/schemas/RunRecord_slug"
                   },
+                  "connection": {
+                    "type": "string",
+                    "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$",
+                    "description": "Reviewed endpoint connection this submission selected"
+                  },
+                  "model_api": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                    "description": "Native Harbor agent argument value that selects the wire API style"
+                  },
                   "reasoning_effort": {
                     "type": "string",
                     "maxLength": 160,
                     "pattern": "^[^\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]*$"
                   }
-                }
+                },
+                "description": "A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style. The submission flow enforces that rule."
               },
               "harness": {
                 "type": "object",
@@ -1876,7 +1895,6 @@
             "additionalProperties": false,
             "required": [
               "id",
-              "provider",
               "reasoning_effort"
             ],
             "properties": {
@@ -1884,12 +1902,39 @@
                 "type": "string"
               },
               "provider": {
-                "type": "string"
+                "type": "string",
+                "description": "Hub provider for the router route. Omitted when the submission names a reviewed endpoint connection."
+              },
+              "connection": {
+                "type": "string",
+                "description": "Reviewed endpoint connection named explicitly by the submission. Omitted for the router route."
+              },
+              "model_api": {
+                "type": "string",
+                "description": "Native Harbor agent argument value that selects the wire API style at the reviewed endpoint connection."
               },
               "reasoning_effort": {
                 "type": "string"
               }
-            }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "provider"
+                ],
+                "not": {
+                  "required": [
+                    "model_api"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "connection",
+                  "model_api"
+                ]
+              }
+            ]
           },
           "harness": {
             "type": "object",

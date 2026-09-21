@@ -32,7 +32,7 @@ async function setup(preset?: PresetSource) {
     model_name: "example/model",
     base_url: "https://example-endpoint.invalid/v1",
     allowed_hosts: ["example-endpoint.invalid"],
-    route_api: "chat-completions",
+    model_api: "openai-completions",
     ...extra,
   });
   const registry = create();
@@ -63,22 +63,13 @@ const presetFixture = {
   },
   reasoning_option: null,
   reasoning_values: ["default"],
-  endpoint_api: {
-    option: "model_api",
-    api: { "chat-completions": "openai-completions" },
-  },
 } satisfies AgentPresetV1;
-/** The preset catalog the registry reads: a review names a slug, a record an import path. */
+/** The preset catalog the registry reads: a review names a slug and the grant stores
+ *  the import path that the built record carries. */
 function presetSource(resolvable = true): PresetSource {
   return {
     bySlug: (agent, version) =>
       resolvable && agent === presetFixture.agent && version === presetFixture.version
-        ? presetFixture
-        : null,
-    byImportPath: (importPath, version) =>
-      resolvable &&
-      importPath === presetFixture.harbor_agent.import_path &&
-      version === presetFixture.version
         ? presetFixture
         : null,
   };
@@ -470,7 +461,7 @@ it("reviews and approves a native preset identity as the grant subject", async (
     agent_import_path: presetFixture.harbor_agent.import_path,
     agent_version: presetFixture.version,
     destination_env: ["OPENAI_API_KEY"],
-    route_api: "chat-completions",
+    model_api: "openai-completions",
     base_url: "https://example-endpoint.invalid/v1",
     allowed_hosts: ["example-endpoint.invalid"],
     allowed_models: ["example/model"],
@@ -488,6 +479,7 @@ it("reviews and approves a native preset identity as the grant subject", async (
   const policy = await create().policy();
   expect(
     policy.presetConnection(
+      ref,
       {
         import_path: presetFixture.harbor_agent.import_path,
         version: presetFixture.version,
@@ -495,8 +487,22 @@ it("reviews and approves a native preset identity as the grant subject", async (
       "example/model",
       actor,
       image,
+      "openai-completions",
     ),
   ).toMatchObject({ ref, base_url: "https://example-endpoint.invalid/v1" });
+  expect(
+    policy.presetConnection(
+      ref,
+      {
+        import_path: presetFixture.harbor_agent.import_path,
+        version: presetFixture.version,
+      },
+      "example/model",
+      actor,
+      image,
+      "openai-responses",
+    ),
+  ).toBeNull();
 });
 
 it("rejects preset reviews that name no resolvable or no reviewable endpoint", async () => {
@@ -511,7 +517,7 @@ it("rejects preset reviews that name no resolvable or no reviewable endpoint", a
     ),
   ).rejects.toThrow();
   await expect(
-    registry.review(ref, presetReview({ route_api: "responses" }), actor),
+    registry.review(ref, presetReview({ model_api: undefined }), actor),
   ).rejects.toThrow();
   await expect(
     registry.review(ref, presetReview({ base_url: null, allowed_hosts: [] }), actor),

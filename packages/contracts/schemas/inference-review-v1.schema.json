@@ -98,7 +98,6 @@
         "worker_image",
         "agent_import_path",
         "destination_env",
-        "route_api",
         "base_url",
         "allowed_hosts",
         "allowed_models"
@@ -170,6 +169,11 @@
             "minLength": 1,
             "maxLength": 4096
           }
+        },
+        "model_api": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+          "description": "Native Harbor agent argument value that selects the wire API style"
         }
       }
     }

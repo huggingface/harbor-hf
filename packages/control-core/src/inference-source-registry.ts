@@ -24,7 +24,6 @@ import {
   PRESET_KEY_DESTINATION,
   inferenceRecipeDigest,
   workbenchCredentialRef,
-  type PresetDeclarations,
 } from "./inference-bindings.js";
 import { presetEndpointAgent, presetImportPath } from "./presets.js";
 import {
@@ -83,20 +82,17 @@ function grants(entry: Entry): Grant[] {
       unique.set(sha256(canonicalJson(event.grant)), event.grant);
   return [...unique.values()];
 }
-function policy(value: Registry, presets?: PresetDeclarations): InferenceBindings {
-  return new InferenceBindings(
-    {
-      schema_version: "v1",
-      bindings: value.entries.map((entry) => ({
-        ref: entry.ref,
-        source_env: entry.source_env,
-        label: entry.label,
-        enabled: active(entry),
-        uses: grants(entry),
-      })),
-    },
-    presets,
-  );
+function policy(value: Registry): InferenceBindings {
+  return new InferenceBindings({
+    schema_version: "v1",
+    bindings: value.entries.map((entry) => ({
+      ref: entry.ref,
+      source_env: entry.source_env,
+      label: entry.label,
+      enabled: active(entry),
+      uses: grants(entry),
+    })),
+  });
 }
 function validate(value: unknown): Registry {
   const registry = validateInferenceSourceRegistry(value);
@@ -163,9 +159,9 @@ function validate(value: unknown): Registry {
   return registry;
 }
 
-/** The preset catalog as this service uses it: a review names a slug, a built record
- *  carries the reviewed import path. Both resolve in the same owner, the preset file. */
-export interface PresetSource extends PresetDeclarations {
+/** The preset catalog as this service uses it: a review names a slug, and the reviewed
+ *  grant stores the import path that the built record carries. */
+export interface PresetSource {
   bySlug(agent: string, version: string): AgentPresetV1 | null;
 }
 
@@ -242,7 +238,7 @@ export class InferenceRegistry {
     }
   }
   async policy(): Promise<InferenceBindings> {
-    return policy(await this.read(), this.preset);
+    return policy(await this.read());
   }
   private audit(registry: Registry, actor: string, reason: string) {
     if (containsCredentialMaterial(reason)) throw new InferenceRegistryError(400);
@@ -385,9 +381,7 @@ export class InferenceRegistry {
       const run = await this.runRecord(id, actor, harborRevision);
       const registry = await this.read();
       try {
-        if (
-          policy(registry, this.preset).selected(run.config, actor, this.image) === null
-        )
+        if (policy(registry).selected(run.config, actor, this.image) === null)
           return {
             schema_version: "v1",
             run_id: id,
@@ -419,11 +413,7 @@ export class InferenceRegistry {
         throw new InferenceRegistryError(403);
       let approval_required = true;
       try {
-        approval_required = !policy(registry, this.preset).selected(
-          run.config,
-          actor,
-          this.image,
-        );
+        approval_required = !policy(registry).selected(run.config, actor, this.image);
       } catch {
         /* A new image needs explicit approval, never automatic delivery. */
       }
@@ -459,21 +449,18 @@ export class InferenceRegistry {
   ): boolean {
     try {
       return (
-        new InferenceBindings(
-          {
-            schema_version: "v1",
-            bindings: [
-              {
-                ref: entry.ref,
-                source_env: entry.source_env,
-                label: entry.label,
-                enabled: true,
-                uses: [grant],
-              },
-            ],
-          },
-          this.preset,
-        ).selected(config, actor, grant.worker_image)?.ref === entry.ref
+        new InferenceBindings({
+          schema_version: "v1",
+          bindings: [
+            {
+              ref: entry.ref,
+              source_env: entry.source_env,
+              label: entry.label,
+              enabled: true,
+              uses: [grant],
+            },
+          ],
+        }).selected(config, actor, grant.worker_image)?.ref === entry.ref
       );
     } catch {
       return false;
@@ -572,7 +559,7 @@ export class InferenceRegistry {
       !active(entry) ||
       preset.version !== input.preset?.version ||
       input.base_url === null ||
-      input.route_api === undefined
+      input.model_api === undefined
     )
       throw new InferenceRegistryError(400);
     let agent: Record<string, unknown>;
@@ -586,8 +573,9 @@ export class InferenceRegistry {
           source: entry.source_env,
           base_url: input.base_url,
           allowed_hosts: [...input.allowed_hosts],
-          route_api: input.route_api,
+          model_api: input.model_api,
         },
+        input.model_api,
         "default",
       );
     } catch {
@@ -599,29 +587,26 @@ export class InferenceRegistry {
       agent_import_path: importPath,
       agent_version: preset.version,
       destination_env: [PRESET_KEY_DESTINATION],
-      route_api: input.route_api,
+      model_api: input.model_api,
       base_url: input.base_url,
       allowed_hosts: [...input.allowed_hosts],
       allowed_models: [input.model_name],
     };
-    const check = policy(registry, this.preset);
+    const check = policy(registry);
     check.assertPublicStrings(agent, [PRESET_KEY_DESTINATION]);
     // The reviewed grant must admit exactly the record the run flow will build.
-    new InferenceBindings(
-      {
-        schema_version: "v1",
-        bindings: [
-          {
-            ref,
-            source_env: entry.source_env,
-            label: entry.label,
-            enabled: true,
-            uses: [grant],
-          },
-        ],
-      },
-      this.preset,
-    ).selected(validateHarborJobConfig({ agents: [agent] }), actor, this.image);
+    new InferenceBindings({
+      schema_version: "v1",
+      bindings: [
+        {
+          ref,
+          source_env: entry.source_env,
+          label: entry.label,
+          enabled: true,
+          uses: [grant],
+        },
+      ],
+    }).selected(validateHarborJobConfig({ agents: [agent] }), actor, this.image);
     const response = validateInferenceReview({
       schema_version: "v1",
       revision: registry.revision,

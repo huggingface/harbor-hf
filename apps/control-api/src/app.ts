@@ -63,6 +63,20 @@ const providerSchema = z
     "provider must use lowercase letters, numbers, and hyphens",
   );
 
+const connectionSchema = z
+  .string()
+  .regex(
+    /^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$/,
+    "connection must name a reviewed inference binding reference",
+  );
+
+const modelApiSchema = z
+  .string()
+  .regex(
+    /^[a-z0-9][a-z0-9._-]{0,63}$/,
+    "model_api must be a native Harbor agent argument value",
+  );
+
 const submissionSchema = z
   .object({
     benchmark: z
@@ -71,10 +85,19 @@ const submissionSchema = z
     model: z
       .object({
         id: z.string().min(1).max(320),
-        provider: providerSchema,
+        provider: providerSchema.optional(),
+        connection: connectionSchema.optional(),
+        model_api: modelApiSchema.optional(),
         reasoning_effort: z.string().min(1).max(40),
       })
-      .strict(),
+      .strict()
+      .refine(
+        (model) =>
+          model.connection === undefined
+            ? model.provider !== undefined && model.model_api === undefined
+            : model.provider === undefined && model.model_api !== undefined,
+        "a submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style",
+      ),
     harness: z
       .object({ agent: z.string().min(1), version: z.string().min(1) })
       .strict(),

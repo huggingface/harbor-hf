@@ -232,6 +232,17 @@ export class ControlService {
     positiveCeiling(input.cost_ceiling_usd);
     if (containsCredentialMaterial(input))
       throw new Error("preset submission contains credential material");
+    const route = input.model;
+    // A submission names exactly one route: a Hub provider, or a reviewed endpoint
+    // connection with its native wire API style. Accepting both would let a reviewed
+    // credential decide where an otherwise identical submission runs.
+    if (
+      (route.connection === undefined) !== (route.model_api === undefined) ||
+      (route.connection !== undefined && route.provider !== undefined)
+    )
+      throw new InferenceBindingDenied(
+        "The agent preset cannot use a reviewed endpoint connection",
+      );
     const id = runId(idempotencyKey);
     const endpoint = await this.presetEndpoint(input, actor);
     const jobConfig = this.presets.buildJobConfig(
@@ -258,25 +269,40 @@ export class ControlService {
     return this.persistSubmission(record);
   }
 
-  /** A reviewed endpoint connection replaces the default router route for this preset. The
-   *  grant owns the base URL, the admitted hosts and the key destination, so no submission
-   *  carries a model route and no preset edit can redirect a reviewed credential. */
+  /** A reviewed endpoint connection is used only when the submission names one. The grant
+   *  owns the base URL, the admitted hosts, the key destination and the approved wire API
+   *  style, so a credential never selects a route on its own. A named connection that does
+   *  not resolve is denied rather than quietly sent to the router. */
   private async presetEndpoint(
     input: PresetSubmission,
     actor: string,
   ): Promise<PresetEndpointConnection | null> {
+    const ref = input.model.connection;
+    if (!ref) return null;
+    const modelApi = input.model.model_api;
     const execution = this.options.inference;
-    if (!execution) return null;
+    if (!execution || !modelApi)
+      throw new InferenceBindingDenied(
+        "The agent preset cannot use a reviewed endpoint connection",
+      );
     const preset = this.presets.agent(input.harness.agent, input.harness.version);
     const importPath = presetImportPath(preset);
-    if (!importPath) return null;
+    if (!importPath)
+      throw new InferenceBindingDenied(
+        "The agent preset cannot use a reviewed endpoint connection",
+      );
     const connection = (await execution.policy()).presetConnection(
+      ref,
       { import_path: importPath, version: preset.version },
       input.model.id,
       actor,
       execution.image,
+      modelApi,
     );
-    if (!connection) return null;
+    if (!connection)
+      throw new InferenceBindingDenied(
+        "The agent preset cannot use a reviewed endpoint connection",
+      );
     if (!inferencePresence(execution.present, connection.source))
       throw new InferenceBindingDenied();
     return connection;

@@ -394,8 +394,8 @@ export function ManageSecrets({
                 {" · "}presence: {currentReview.presence} (not authentication)
               </p>
               <p>
-                Model: {currentReview.grant.allowed_models.join(", ")} · Route:{" "}
-                {currentReview.grant.route_api}
+                Model: {currentReview.grant.allowed_models.join(", ")} · Wire API:{" "}
+                {currentReview.grant.route_api ?? currentReview.grant.model_api}
               </p>
               <p>Worker image: {currentReview.grant.worker_image}</p>
               <p>Agent: {currentReview.grant.agent_import_path}</p>

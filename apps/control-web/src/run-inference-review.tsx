@@ -134,8 +134,8 @@ export function RunInferenceAccess({
             {review.grant.recipe_digest}
           </p>
           <p>
-            Model: {review.grant.allowed_models.join(", ")} · Route:{" "}
-            {review.grant.route_api}
+            Model: {review.grant.allowed_models.join(", ")} · Wire API:{" "}
+            {review.grant.route_api ?? review.grant.model_api}
           </p>
           <p>
             Base URL: {review.grant.base_url ?? "none"} · Declared hosts:{" "}

@@ -28,7 +28,16 @@ import type { PresetEndpointConnection } from "./inference-bindings.js";
 
 export interface PresetSubmission {
   benchmark: { name: string; preset: string };
-  model: { id: string; provider: string; reasoning_effort: string };
+  /** A router route names the Hub provider. A reviewed endpoint connection names the
+   *  connection and the native wire API style instead, so one submission never carries
+   *  both and a credential never changes where the run goes. */
+  model: {
+    id: string;
+    provider?: string | undefined;
+    connection?: string | undefined;
+    model_api?: string | undefined;
+    reasoning_effort: string;
+  };
   harness: { agent: string; version: string };
   n_concurrent_trials?: number | undefined;
   cost_ceiling_usd: number;
@@ -82,22 +91,18 @@ export function presetImportPath(preset: AgentPresetV1): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
-/** Agent record for a native preset run on a reviewed endpoint connection. The grant owns the
- *  base URL, the admitted hosts and the key destination; the preset owns only the wire API
- *  style, so a preset edit cannot redirect a reviewed credential. */
+/** Agent record for a native preset run on a reviewed endpoint connection the submission
+ *  named. The grant owns the base URL, the admitted hosts and the key destination; the
+ *  submission names the native wire API style, and admission requires the two to agree. */
 export function presetEndpointAgent(
   base: Record<string, unknown> | undefined,
   preset: AgentPresetV1,
   modelId: string,
   connection: PresetEndpointConnection,
+  modelApi: string,
   reasoningEffort: string,
 ): Record<string, unknown> {
-  const declared = preset.endpoint_api;
-  const api = declared?.api[connection.route_api];
-  if (!declared || !api)
-    throw new InferenceBindingDenied(
-      "The agent preset cannot use a reviewed endpoint connection",
-    );
+  if (!modelApi) throw new InferenceBindingDenied();
   const fragment = clone(preset.harbor_agent) as HarborAgentFragment;
   const kwargs = { ...(fragment.kwargs ?? {}) };
   // The reviewed subject is the versioned identity admission rechecks at every start.
@@ -107,7 +112,7 @@ export function presetEndpointAgent(
     );
   if (preset.reasoning_option !== null && reasoningEffort !== "default")
     kwargs[preset.reasoning_option] = reasoningEffort;
-  kwargs[declared.option] = api;
+  kwargs.model_api = modelApi;
   return {
     ...base,
     ...(fragment.name ? { name: fragment.name } : {}),
@@ -170,16 +175,6 @@ export class PresetCatalog {
     return clone(found);
   }
 
-  /** Preset a built agent record names, resolved from its reviewed import path and
-   *  version. Null means this catalog holds no such revision. */
-  agentByImportPath(importPath: string, version: string): AgentPresetV1 | null {
-    return (
-      this.agents.find(
-        (item) => presetImportPath(item) === importPath && item.version === version,
-      ) ?? null
-    );
-  }
-
   leaderboardEligible(name: string, preset: string): boolean {
     return this.benchmark(name, preset).leaderboard_eligible;
   }
@@ -214,6 +209,10 @@ export class PresetCatalog {
       kwargs[agent.reasoning_option] = submission.model.reasoning_effort;
 
     const usesNativeHuggingFace = agent.agent === "pi";
+    if (endpoint === null && !submission.model.provider)
+      throw new InferenceBindingDenied(
+        "The agent preset cannot use a reviewed endpoint connection",
+      );
     const harborAgent: Record<string, unknown> =
       endpoint === null
         ? {
@@ -237,6 +236,7 @@ export class PresetCatalog {
             agent,
             submission.model.id,
             endpoint,
+            submission.model.model_api ?? "",
             submission.model.reasoning_effort,
           );
     const config = {

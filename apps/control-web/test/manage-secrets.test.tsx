@@ -130,7 +130,9 @@ it("displays a read-only exact scope, then saves with one explicit consent actio
   expect(screen.getByText(/Worker image:/)).toHaveTextContent(
     review.grant.worker_image,
   );
-  expect(screen.getByText(/Model: example:model · Route: native/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/Model: example:model · Wire API: native/),
+  ).toBeInTheDocument();
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("Binding needs saving.");
   const reason = screen.getByText(/^Save binding: use/).textContent;

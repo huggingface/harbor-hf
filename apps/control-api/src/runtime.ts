@@ -117,7 +117,7 @@ export async function createRuntime(
     () => new Date(),
     randomUUID,
     // Reviewed preset subjects resolve through the same catalog the run flow builds from:
-    // a review names a slug, and a built record carries the reviewed import path.
+    // a review names a slug, and the grant stores the import path the record carries.
     {
       bySlug: (agent, version) => {
         try {
@@ -126,8 +126,6 @@ export async function createRuntime(
           return null;
         }
       },
-      byImportPath: (importPath, version) =>
-        presets.agentByImportPath(importPath, version),
     },
   );
   const admittedPolicy = () => inference.policy();

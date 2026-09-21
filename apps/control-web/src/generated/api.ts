@@ -2585,10 +2585,12 @@ export interface components {
                     agent_version?: string;
                     destination_env: string[];
                     /** @enum {unknown} */
-                    route_api: "chat-completions" | "responses" | "native";
+                    route_api?: "chat-completions" | "responses" | "native";
                     base_url: string | null;
                     allowed_hosts: string[];
                     allowed_models: string[];
+                    /** @description Native Harbor agent argument value that selects the wire API style */
+                    model_api?: string;
                 }[];
             }[];
             revision: number;
@@ -2609,14 +2611,11 @@ export interface components {
                 agent: string;
                 version: string;
             };
-            /**
-             * @description Wire API the reviewed endpoint speaks for this preset subject
-             * @enum {unknown}
-             */
-            route_api?: "chat-completions" | "responses" | "native";
             model_name: string;
             base_url: string | null;
             allowed_hosts: string[];
+            /** @description Wire API the reviewed endpoint speaks for this preset subject */
+            model_api?: string;
         };
         /** Inference Approval Request V1 */
         InferenceApprovalRequest: {
@@ -2661,10 +2660,12 @@ export interface components {
                 agent_version?: string;
                 destination_env: string[];
                 /** @enum {unknown} */
-                route_api: "chat-completions" | "responses" | "native";
+                route_api?: "chat-completions" | "responses" | "native";
                 base_url: string | null;
                 allowed_hosts: string[];
                 allowed_models: string[];
+                /** @description Native Harbor agent argument value that selects the wire API style */
+                model_api?: string;
             };
         };
         RunInferenceReview: {
@@ -2702,10 +2703,12 @@ export interface components {
                 agent_version?: string;
                 destination_env: string[];
                 /** @enum {unknown} */
-                route_api: "chat-completions" | "responses" | "native";
+                route_api?: "chat-completions" | "responses" | "native";
                 base_url: string | null;
                 allowed_hosts: string[];
                 allowed_models: string[];
+                /** @description Native Harbor agent argument value that selects the wire API style */
+                model_api?: string;
             };
             /** @constant */
             binding: "named";
@@ -2729,9 +2732,14 @@ export interface components {
                     name: components["schemas"]["RunRecord_slug"];
                     preset: components["schemas"]["RunRecord_slug"];
                 };
+                /** @description A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style. The submission flow enforces that rule. */
                 model?: {
                     id: string;
-                    provider: components["schemas"]["RunRecord_slug"];
+                    provider?: components["schemas"]["RunRecord_slug"];
+                    /** @description Reviewed endpoint connection this submission selected */
+                    connection?: string;
+                    /** @description Native Harbor agent argument value that selects the wire API style */
+                    model_api?: string;
                     reasoning_effort: string;
                 };
                 harness?: {
@@ -2950,9 +2958,14 @@ export interface components {
             };
             model: {
                 id: string;
-                provider: string;
+                /** @description Hub provider for the router route. Omitted when the submission names a reviewed endpoint connection. */
+                provider?: string;
+                /** @description Reviewed endpoint connection named explicitly by the submission. Omitted for the router route. */
+                connection?: string;
+                /** @description Native Harbor agent argument value that selects the wire API style at the reviewed endpoint connection. */
+                model_api?: string;
                 reasoning_effort: string;
-            };
+            } & (unknown | unknown);
             harness: {
                 agent: string;
                 version: string;

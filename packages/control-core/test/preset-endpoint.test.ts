@@ -20,11 +20,22 @@ const modelId = "example/model";
 const baseUrl = "https://example-endpoint.invalid/v1";
 const ref = "INFERENCE_API_KEY_EXAMPLE";
 const source = "EXAMPLE_ROUTE_KEY";
-const submission = {
+const modelApi = "openai-completions";
+const routerSubmission = {
   benchmark: { name: "terminal-bench-2-1", preset: "all-tasks-1-trial-qemu-fixed" },
   model: { id: modelId, provider: "endpoint", reasoning_effort: "medium" },
   harness: { agent: "pi", version: "0.84.4" },
   cost_ceiling_usd: 1,
+};
+/** The same run with the reviewed connection named instead of a Hub provider. */
+const endpointSubmission = {
+  ...routerSubmission,
+  model: {
+    id: modelId,
+    connection: ref,
+    model_api: modelApi,
+    reasoning_effort: "medium",
+  },
 };
 function grantOf(overrides: Record<string, unknown> = {}) {
   return {
@@ -33,35 +44,42 @@ function grantOf(overrides: Record<string, unknown> = {}) {
     agent_import_path: identity.import_path,
     agent_version: identity.version,
     destination_env: ["OPENAI_API_KEY"],
-    route_api: "chat-completions",
+    model_api: modelApi,
     base_url: baseUrl,
     allowed_hosts: ["example-endpoint.invalid"],
     allowed_models: [modelId],
     ...overrides,
   };
 }
-function policyOf(uses: Record<string, unknown>[]) {
-  return new InferenceBindings(
-    {
-      schema_version: "v1",
-      bindings: [
-        { ref, source_env: source, label: "Example route", enabled: true, uses },
-      ],
-    },
-    declarations,
-  );
+function recipeGrant() {
+  return {
+    operator_subjects: [actor],
+    worker_image: image,
+    agent_import_path: "recipes.agent:Agent",
+    recipe_digest: "c".repeat(64),
+    destination_env: ["EXAMPLE_ROUTE_KEY"],
+    route_api: "chat-completions",
+    base_url: baseUrl,
+    allowed_hosts: ["example-endpoint.invalid"],
+    allowed_models: [modelId],
+  };
 }
-/** The catalog answers the import path and version a built record carries. */
-const declarations = {
-  byImportPath: (importPath: string, version: string) =>
-    catalog.agentByImportPath(importPath, version),
-};
-function connection() {
+function policyOf(uses: Record<string, unknown>[]) {
+  return new InferenceBindings({
+    schema_version: "v1",
+    bindings: [
+      { ref, source_env: source, label: "Example route", enabled: true, uses },
+    ],
+  });
+}
+function connection(overrides: Record<string, unknown> = {}) {
   return {
     ref,
     source,
     base_url: baseUrl,
     allowed_hosts: ["example-endpoint.invalid"],
+    model_api: modelApi,
+    ...overrides,
   };
 }
 function presetAgent(reasoning = "default") {
@@ -69,7 +87,8 @@ function presetAgent(reasoning = "default") {
     undefined,
     catalog.agent("pi", "0.84.4"),
     modelId,
-    { ...connection(), route_api: "chat-completions" },
+    connection(),
+    modelApi,
     reasoning,
   );
 }
@@ -80,41 +99,81 @@ function admit(agent: Record<string, unknown>, uses = [grantOf()]) {
     image,
   );
 }
+function select(policy: InferenceBindings, named = ref, api = modelApi) {
+  return policy.presetConnection(named, identity, modelId, actor, image, api);
+}
 
 describe("reviewed endpoint connections for native presets", () => {
-  it("selects the reviewed connection only for the exact preset subject", () => {
+  it("resolves only the reviewed connection the submission names", () => {
     const policy = policyOf([grantOf()]);
-    const selected = policy.presetConnection(identity, modelId, actor, image);
-    expect(selected).toMatchObject({ ref, source, base_url: baseUrl });
-    expect(selected?.route_api).toBe("chat-completions");
-    expect(policy.presetConnection(identity, "example/other", actor, image)).toBeNull();
+    const selected = select(policy);
+    expect(selected).toMatchObject({
+      ref,
+      source,
+      base_url: baseUrl,
+      model_api: modelApi,
+    });
+    // A grant never selects a route on its own: the name, the native wire API style,
+    // the model, the actor, the image and the preset version must all agree.
+    expect(select(policy, "INFERENCE_API_KEY_OTHER")).toBeNull();
+    expect(select(policy, ref, "openai-responses")).toBeNull();
     expect(
-      policy.presetConnection({ ...identity, version: "0.0.1" }, modelId, actor, image),
-    ).toBeNull();
-    expect(
-      policy.presetConnection(identity, modelId, "other-operator", image),
+      policy.presetConnection(ref, identity, "example/other", actor, image, modelApi),
     ).toBeNull();
     expect(
       policy.presetConnection(
+        ref,
+        { ...identity, version: "0.0.1" },
+        modelId,
+        actor,
+        image,
+        modelApi,
+      ),
+    ).toBeNull();
+    expect(
+      policy.presetConnection(
+        ref,
+        identity,
+        modelId,
+        "other-operator",
+        image,
+        modelApi,
+      ),
+    ).toBeNull();
+    expect(
+      policy.presetConnection(
+        ref,
         identity,
         modelId,
         actor,
         "example.invalid/other@sha256:0",
+        modelApi,
       ),
     ).toBeNull();
+    expect(select(policyOf([recipeGrant()]))).toBeNull();
     expect(
-      policyOf([
-        grantOf({ agent_version: undefined, recipe_digest: "a".repeat(64) }),
-      ]).presetConnection(identity, modelId, actor, image),
+      new InferenceBindings({
+        schema_version: "v1",
+        bindings: [
+          {
+            ref,
+            source_env: source,
+            label: "Disabled route",
+            enabled: false,
+            uses: [grantOf()],
+          },
+        ],
+      }).presetConnection(ref, identity, modelId, actor, image, modelApi),
     ).toBeNull();
   });
 
-  it("builds the reviewed record and admits it through the same check", () => {
+  it("builds the native record the connection declares and admits it", () => {
     const built = presetEndpointAgent(
       undefined,
       catalog.agent("pi", "0.84.4"),
       modelId,
-      { ...connection(), route_api: "responses" },
+      connection({ model_api: "openai-responses" }),
+      "openai-responses",
       "high",
     );
     expect(built.model_name).toBe(`openai/${modelId}`);
@@ -133,14 +192,14 @@ describe("reviewed endpoint connections for native presets", () => {
     expect(agent.kwargs).toEqual({
       version: "0.84.4",
       thinking: "medium",
-      model_api: "openai-completions",
+      model_api: modelApi,
     });
     expect(admit(agent)?.ref).toBe(ref);
     expect(admit(agent)?.source).toBe(source);
   });
 
-  it("keeps the default router record for the same preset without a connection", () => {
-    const router = catalog.buildJobConfig("run-1", submission, "/data");
+  it("keeps the router record when the submission names no connection", () => {
+    const router = catalog.buildJobConfig("run-1", routerSubmission, "/data");
     expect(router.agents?.[0]?.model_name).toBe("huggingface/example/model:endpoint");
     expect(router.agents?.[0]?.env).toEqual({ HF_TOKEN: "${HF_INFERENCE_TOKEN}" });
     expect(router.agents?.[0]?.kwargs).toEqual({
@@ -150,11 +209,13 @@ describe("reviewed endpoint connections for native presets", () => {
     expect(policyOf([grantOf()]).selected(router, actor, image)).toBeNull();
   });
 
-  it("builds the endpoint record through the catalog and admits it", () => {
-    const endpoint = catalog.buildJobConfig("run-2", submission, "/data", {
-      ...connection(),
-      route_api: "chat-completions",
-    });
+  it("builds the endpoint record the submission named and admits it", () => {
+    const endpoint = catalog.buildJobConfig(
+      "run-2",
+      endpointSubmission,
+      "/data",
+      connection(),
+    );
     const agent = endpoint.agents?.[0];
     expect(agent?.model_name).toBe(`openai/${modelId}`);
     expect(agent?.env).toEqual({
@@ -172,7 +233,7 @@ describe("reviewed endpoint connections for native presets", () => {
   it("denies a record whose reviewed wire API style changed after the build", () => {
     const agent = presetAgent();
     expect(admit(agent)?.ref).toBe(ref);
-    // The grant reviewed chat-completions, so the responses value is not admitted.
+    // The grant reviewed openai-completions, so another native value is not admitted.
     expect(() =>
       admit({
         ...agent,
@@ -191,38 +252,9 @@ describe("reviewed endpoint connections for native presets", () => {
         kwargs: { version: "0.84.4", thinking: "medium" },
       }),
     ).toThrow("not reviewed");
-    // A route the preset does not declare, and a preset this policy cannot resolve,
-    // are denied rather than admitted without a declaration.
-    const responses = presetEndpointAgent(
-      undefined,
-      catalog.agent("pi", "0.84.4"),
-      modelId,
-      { ...connection(), route_api: "responses" },
-      "medium",
-    );
-    expect(admit(responses, [grantOf({ route_api: "responses" })])?.ref).toBe(ref);
-    expect(() => admit(responses)).toThrow("not reviewed");
-    expect(() => admit(responses, [grantOf({ route_api: "native" })])).toThrow(
+    expect(() => admit(agent, [grantOf({ model_api: "openai-responses" })])).toThrow(
       "not reviewed",
     );
-    const unresolved = new InferenceBindings(
-      {
-        schema_version: "v1",
-        bindings: [
-          {
-            ref,
-            source_env: source,
-            label: "Example route",
-            enabled: true,
-            uses: [grantOf()],
-          },
-        ],
-      },
-      { byImportPath: () => null },
-    );
-    expect(() =>
-      unresolved.selected(validateHarborJobConfig({ agents: [agent] }), actor, image),
-    ).toThrow("not reviewed");
   });
 
   it("denies a record whose environment, hosts or model differ from the grant", () => {
@@ -290,19 +322,21 @@ describe("reviewed endpoint connections for native presets", () => {
     ).toThrow("not reviewed");
   });
 
-  it("denies a submission whose preset subject is ambiguous", () => {
+  it("resolves exactly one connection when two reviewed uses share a subject", () => {
+    const altRef = "INFERENCE_API_KEY_ALT";
+    const altApi = "openai-responses";
     const policy = new InferenceBindings({
       schema_version: "v1",
       bindings: [
         { ref, source_env: source, label: "First", enabled: true, uses: [grantOf()] },
         {
-          ref: "INFERENCE_API_KEY_ALT",
+          ref: altRef,
           source_env: "ALT_ROUTE_KEY",
           label: "Second",
           enabled: true,
           uses: [
             grantOf({
-              route_api: "responses",
+              model_api: altApi,
               base_url: "https://alt-endpoint.invalid/v1",
               allowed_hosts: ["alt-endpoint.invalid"],
             }),
@@ -310,19 +344,39 @@ describe("reviewed endpoint connections for native presets", () => {
         },
       ],
     });
-    expect(() => policy.presetConnection(identity, modelId, actor, image)).toThrow(
-      "not reviewed",
+    expect(select(policy)?.base_url).toBe(baseUrl);
+    expect(select(policy, altRef, altApi)?.base_url).toBe(
+      "https://alt-endpoint.invalid/v1",
     );
+    // Two uses in one binding that both match the named configuration are a conflict
+    // this submission flow must not resolve by itself.
+    const duplicated = new InferenceBindings({
+      schema_version: "v1",
+      bindings: [
+        {
+          ref,
+          source_env: source,
+          label: "Duplicated",
+          enabled: true,
+          uses: [grantOf(), grantOf({ allowed_models: [modelId, "example/other"] })],
+        },
+      ],
+    });
+    expect(select(duplicated)).toBeNull();
   });
 
-  it("rejects a grant that names two subject kinds, none, or a preset without a route", () => {
+  it("rejects a grant that names two subject kinds, none, or the wrong wire API field", () => {
     const cases: Record<string, unknown>[] = [
       grantOf({ recipe_digest: "b".repeat(64) }),
       grantOf({ agent_version: undefined }),
+      grantOf({ model_api: undefined }),
+      grantOf({ route_api: "chat-completions" }),
       grantOf({ base_url: null }),
       grantOf({ destination_env: ["MODEL_KEY"] }),
       grantOf({ destination_env: [] }),
       grantOf({ agent_version: "" }),
+      { ...recipeGrant(), model_api: modelApi },
+      { ...recipeGrant(), route_api: undefined },
     ];
     for (const use of cases)
       expect(() => policyOf([use])).toThrow("Invalid inference binding manifest");
@@ -361,23 +415,7 @@ describe("reviewed endpoint connections for native presets", () => {
     expect(agent.env).toBeDefined();
   });
 
-  it("refuses a preset that declares no endpoint API style or version identity", () => {
-    const preset = {
-      ...catalog.agent("pi", "0.84.4"),
-      endpoint_api: undefined,
-    };
-    expect(() =>
-      presetEndpointAgent(
-        undefined,
-        preset,
-        modelId,
-        {
-          ...connection(),
-          route_api: "chat-completions",
-        },
-        "default",
-      ),
-    ).toThrow("cannot use a reviewed endpoint connection");
+  it("refuses a preset without a version identity or a native wire API value", () => {
     expect(() =>
       presetEndpointAgent(
         undefined,
@@ -386,7 +424,8 @@ describe("reviewed endpoint connections for native presets", () => {
           harbor_agent: { import_path: identity.import_path, kwargs: {} },
         },
         modelId,
-        { ...connection(), route_api: "chat-completions" },
+        connection(),
+        modelApi,
         "default",
       ),
     ).toThrow("cannot use a reviewed endpoint connection");
@@ -395,12 +434,10 @@ describe("reviewed endpoint connections for native presets", () => {
         undefined,
         catalog.agent("pi", "0.84.4"),
         modelId,
-        {
-          ...connection(),
-          route_api: "native",
-        },
+        connection({ model_api: "" }),
+        "",
         "default",
       ),
-    ).toThrow("cannot use a reviewed endpoint connection");
+    ).toThrow();
   });
 });

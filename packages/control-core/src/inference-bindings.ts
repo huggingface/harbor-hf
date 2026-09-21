@@ -4,7 +4,6 @@ import {
   canonicalJson,
   sha256,
   validateInferenceBindingManifest,
-  type AgentPresetV1,
   type AgentWorkbenchRecipeV1,
   type HarborJobConfigV1,
   type InferenceBindingManifestV1,
@@ -78,20 +77,15 @@ export function presetModelId(modelName: unknown): string | null {
   return modelId ? modelId : null;
 }
 
-/** One reviewed endpoint connection selected for a native preset identity. */
+/** One reviewed endpoint connection a submission selected for a native preset identity.
+ *  The grant owns the base URL, the admitted hosts, the key destination and the native
+ *  wire API style; the submission names the connection and the same wire API style. */
 export interface PresetEndpointConnection {
   ref: string;
   source: string;
   base_url: string;
   allowed_hosts: string[];
-  route_api: "chat-completions" | "responses" | "native";
-}
-
-/** Preset declarations admission resolves from the import path and version a built
- *  record carries. The preset file stays the sole owner of the adapter option that
- *  selects a wire API style; admission compares the record with it. */
-export interface PresetDeclarations {
-  byImportPath(importPath: string, version: string): AgentPresetV1 | null;
+  model_api: string;
 }
 
 export function workbenchCredentialRef(recipe: AgentWorkbenchRecipeV1): string | null {
@@ -104,13 +98,8 @@ export function workbenchCredentialRef(recipe: AgentWorkbenchRecipeV1): string |
 /** Private immutable deployment policy. No environment access, provider probes or persistence. */
 export class InferenceBindings {
   readonly #manifest: InferenceBindingManifestV1;
-  readonly #presets: PresetDeclarations | undefined;
 
-  constructor(
-    value: unknown = { schema_version: "v1", bindings: [] },
-    presets?: PresetDeclarations,
-  ) {
-    this.#presets = presets;
+  constructor(value: unknown = { schema_version: "v1", bindings: [] }) {
     try {
       this.#manifest = structuredClone(validateInferenceBindingManifest(value));
       const refs = new Set<string>();
@@ -132,15 +121,24 @@ export class InferenceBindings {
           if (usesPreset === (grant.recipe_digest !== undefined)) throw denied();
           if (usesPreset) {
             // A preset subject names one reviewed endpoint, and Harbor reads the
-            // declared base URL and key, so the key destination is fixed.
+            // declared base URL and key, so the key destination is fixed. The wire API
+            // style is the native agent argument, which a recipe subject does not use.
             if (grant.base_url === null) throw denied();
+            if (grant.model_api === undefined || grant.route_api !== undefined)
+              throw denied();
             if (
               canonicalJson(grant.destination_env) !==
               canonicalJson([PRESET_KEY_DESTINATION])
             )
               throw denied();
-          }
-          if (grant.route_api !== "native" && grant.base_url === null) throw denied();
+          } else if (grant.route_api === undefined || grant.model_api !== undefined)
+            throw denied();
+          if (
+            grant.route_api !== undefined &&
+            grant.route_api !== "native" &&
+            grant.base_url === null
+          )
+            throw denied();
           if (grant.base_url !== null) {
             const url = new URL(grant.base_url);
             if (
@@ -315,31 +313,36 @@ export class InferenceBindings {
     };
   }
 
-  /** Reviewed endpoint connection for one native preset identity, or null for the default
-   *  router route. An ambiguous subject is a conflict this submission flow must not invent. */
+  /** One reviewed endpoint connection named explicitly by a submission, or null when the
+   *  submission selects none. This never matches on its own: an unknown, disabled or
+   *  mismatched reference returns null, and the submission flow denies the run instead of
+   *  silently sending it to the router. */
   presetConnection(
+    ref: string,
     identity: { import_path: string; version: string },
     modelId: string,
     actor: string,
     image: string,
+    modelApi: string,
   ): PresetEndpointConnection | null {
-    const matches: PresetEndpointConnection[] = [];
-    for (const binding of this.#manifest.bindings) {
-      if (!binding.enabled) continue;
-      for (const use of binding.uses) {
-        if (!this.presetMatches(use, identity, modelId, actor, image)) continue;
-        if (use.base_url === null) continue;
-        matches.push({
-          ref: binding.ref,
-          source: binding.source_env,
-          base_url: use.base_url,
-          allowed_hosts: [...use.allowed_hosts],
-          route_api: use.route_api,
-        });
-      }
-    }
-    if (matches.length > 1) throw denied();
-    return matches[0] ?? null;
+    const binding = this.#manifest.bindings.find(
+      (entry) => entry.ref === ref && entry.enabled,
+    );
+    if (!binding) return null;
+    const matches = binding.uses.filter(
+      (use) =>
+        use.base_url !== null &&
+        use.model_api === modelApi &&
+        this.presetMatches(use, identity, modelId, actor, image),
+    );
+    if (matches.length !== 1) return null;
+    return {
+      ref: binding.ref,
+      source: binding.source_env,
+      base_url: matches[0]!.base_url!,
+      allowed_hosts: [...matches[0]!.allowed_hosts],
+      model_api: modelApi,
+    };
   }
 
   private presetMatches(
@@ -358,27 +361,6 @@ export class InferenceBindings {
     );
   }
 
-  /** The preset owns the adapter option that selects a wire API style and the grant owns
-   *  the reviewed route, so the built record must still agree with the declaration for
-   *  that route. A record whose option value changed after the build is denied, and an
-   *  unresolvable preset or an undeclared route is denied rather than trusted. */
-  private assertPresetRoute(
-    agent: Record<string, unknown>,
-    subject: { import_path: string; version: string },
-    grant: Grant,
-  ): void {
-    const declared = this.#presets?.byImportPath(
-      subject.import_path,
-      subject.version,
-    )?.endpoint_api;
-    const expected = declared?.api[grant.route_api];
-    const kwargs = agent.kwargs;
-    if (!declared || !expected) throw denied();
-    if (!kwargs || typeof kwargs !== "object" || Array.isArray(kwargs)) throw denied();
-    if ((kwargs as Record<string, unknown>)[declared.option] !== expected)
-      throw denied();
-  }
-
   private reviewedPreset(
     ref: string,
     actor: string,
@@ -390,15 +372,23 @@ export class InferenceBindings {
       (entry) => entry.ref === ref && entry.enabled,
     );
     const modelId = presetModelId(agent.model_name);
+    const kwargs = agent.kwargs;
+    // The record must still name exactly the native wire API style the grant approved,
+    // so a persisted record whose agent argument changed after the build is denied.
+    const modelApi =
+      kwargs && typeof kwargs === "object" && !Array.isArray(kwargs)
+        ? (kwargs as Record<string, unknown>).model_api
+        : undefined;
     const matches =
       modelId === null
         ? undefined
-        : binding?.uses.filter((use) =>
-            this.presetMatches(use, subject, modelId, actor, image),
+        : binding?.uses.filter(
+            (use) =>
+              use.model_api === modelApi &&
+              this.presetMatches(use, subject, modelId, actor, image),
           );
     const grant = matches?.[0];
     if (!binding || !grant || matches?.length !== 1) throw denied();
-    this.assertPresetRoute(agent, subject, grant);
     this.assertPublicStrings(agent, grant.destination_env);
     return { binding, grant };
   }

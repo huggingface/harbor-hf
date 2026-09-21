@@ -123,7 +123,9 @@ export function leaderboard(
       agent: record.submission.harness.agent,
       agent_version: record.submission.harness.version,
       model: record.submission.model.id,
-      provider: record.submission.model.provider,
+      // A reviewed endpoint connection names no Hub provider, and the native route that
+      // carries it already uses this label in `directSubmission`.
+      provider: record.submission.model.provider ?? "custom",
       reasoning_effort: record.submission.model.reasoning_effort,
       n_attempts: nAttempts,
     };

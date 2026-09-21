@@ -36,10 +36,11 @@ repository URL redirects from `osolmaz/harbor`):
   `api_key`, `base_url`, `configured_base_url` and `env`; `resolve_model_connection`
   reads the base URL from the spec's declared environment names and returns
   `configured_base_url`.
-- `src/harbor/agents/installed/pi.py`: `_build_custom_models_json` uses
-  `access.configured_base_url`, requires the `model_api` agent argument for a
-  custom endpoint, and requires an API-key environment reference. Pi then writes
-  its own `models.json` with that base URL and key reference.
+- `src/harbor/agents/installed/pi.py`: `PiOptions.model_api` is the native agent
+  argument; `_build_custom_models_json` uses `access.configured_base_url`,
+  requires `model_api` for a custom endpoint, and requires an API-key environment
+  reference. Pi then writes its own `models.json` with that base URL, key
+  reference and `model_api` value.
 - `packages/harbor-hf-agents/src/harbor_hf_agents/pi/agent.py`: the harbor-hf
   override pins the router only for `huggingface/` model names; the base class
   path already supports a resolved custom endpoint.
@@ -63,28 +64,35 @@ The change therefore touches only the review object and the value source:
    either a Workbench recipe (`import_path` plus recipe digest, unchanged) or a
    native preset identity (agent slug plus version, resolved through the preset
    catalog). Every other grant field keeps its current meaning and validation:
-   `operator_subjects`, `worker_image@sha256`, `destination_env`, `route_api`,
-   `base_url`, `allowed_hosts`, `allowed_models`.
-2. Source the connection from the approved grant for preset runs. The service
-   writes `OPENAI_BASE_URL` and `OPENAI_API_KEY` from the matched grant instead of
-   from the `ROUTER_URL` constant. A preset does not carry the model route, so a
-   preset edit cannot redirect a credential.
-3. Keep the equality rule. The compiled agent environment must equal
-   `{OPENAI_API_KEY: "${ref}", OPENAI_BASE_URL: grant.base_url}` and
-   `extra_allowed_hosts` must equal `grant.allowed_hosts`, exactly as the
-   existing reviewed-credential path already requires.
-4. Admission and restart use the same check. A preset run whose model is not in
-   `allowed_models`, whose actor, worker image or agent identity has no granted
-   subject, whose host and base URL do not match the grant, or whose declared
-   wire API style for the granted `route_api` no longer matches the built record
-   is denied. The preset file stays the sole owner of the adapter option that
-   selects a wire API style, so admission resolves the preset from the reviewed
-   import path and version and compares the declaration with the record instead
-   of trusting the record's value.
+   `operator_subjects`, `worker_image@sha256`, `destination_env`, `base_url`,
+   `allowed_hosts`, `allowed_models`. The wire API field follows the subject: a
+   recipe subject keeps the recipe `route_api` vocabulary, and a preset subject
+   carries the native Harbor agent argument value in `model_api`. Each subject
+   kind rejects the other kind's wire API field.
+2. A submission selects the connection explicitly, and the grant is checked
+   against that exact configuration. `model.connection` names the reviewed
+   reference and `model.model_api` names the native Harbor wire API value; the two
+   replace the Hub provider for that run. No grant matches on its own: a
+   submission that names no connection uses the router exactly as today, and a
+   named connection the registry does not hold for this preset identity, model,
+   actor, worker image and wire API value is denied. A reviewed credential never
+   changes where an otherwise identical submission runs.
+3. Source the connection from the approved grant. The service writes
+   `OPENAI_BASE_URL` and `OPENAI_API_KEY` from the matched grant instead of from
+   the `ROUTER_URL` constant, and writes the submission's `model_api` value into
+   the native agent argument.
+4. Keep the equality rule. The compiled agent environment must equal
+   `{OPENAI_API_KEY: "${ref}", OPENAI_BASE_URL: grant.base_url}`,
+   `extra_allowed_hosts` must equal `grant.allowed_hosts`, and `kwargs.model_api`
+   must equal `grant.model_api`, exactly as the existing reviewed-credential path
+   already requires. A preset run whose model is not in `allowed_models`, whose
+   actor, worker image or agent identity has no granted subject, or whose base
+   URL, host list or wire API value no longer matches the built record is denied.
 5. Registry registration accepts a preset subject. Operators select it from the
-   preset catalog instead of quoting a recipe digest. The registry remains the
-   only write authority, with `expected_revision`, and the existing
-   invalidation rules apply unchanged.
+   preset catalog instead of quoting a recipe digest, and they name the native
+   wire API value the endpoint speaks. The registry remains the only write
+   authority, with `expected_revision`, and the existing invalidation rules apply
+   unchanged.
 6. Keep `inference-bindings-v1` in place. The contract changes in place; no
    `v2`, no alias, no dual reader.
 
@@ -101,18 +109,26 @@ The change therefore touches only the review object and the value source:
   separate, explicitly approved step.
 - No raw base URL field is added to presets, and no base URL is accepted from a
   run submission. Either would bypass the review object.
+- The wire API value is Harbor's own agent argument. The change adds no alias,
+  no translation table and no preset field for it; a preset only declares its
+  native agent record.
 - Pricing and context metadata for a custom endpoint continue to come from Hub
   model metadata for the model id named by the submission.
 
 ## Verification
 
 - Unit tests for admission with each subject kind: a preset subject passes when
-  actor, image, model, host and base URL match; a recipe subject behaves as
-  today.
-- Unit tests for denial: unknown model, mismatched host, mismatched base URL,
-  a changed wire API style for the granted route, an unresolvable preset, a route
-  the preset does not declare, missing grant, and an HF-token environment with a
-  non-router URL.
+  actor, image, model, host, base URL and native wire API value match; a recipe
+  subject behaves as today.
+- Unit tests for the submission rule: a Hub provider with a connection, a
+  connection without a wire API value, and a wire API value without a connection
+  are refused; a submission that names no connection keeps the router record; a
+  connection the registry does not hold is denied without falling back to the
+  router.
+- Unit tests for denial: unknown model, mismatched host, mismatched base URL, a
+  changed wire API value in the built record, a preset grant that carries
+  `route_api`, a recipe grant that carries `model_api`, a disabled binding,
+  missing grant, and an HF-token environment with a non-router URL.
 - Existing control, Workbench and inference tests stay green.
 - Generated contracts, OpenAPI and browser clients regenerate byte-stable.
 - Repository checks, run from the worktree: `npm run format:check`,

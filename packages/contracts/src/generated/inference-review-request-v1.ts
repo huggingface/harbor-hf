@@ -19,16 +19,16 @@ preset?: {
 agent: string
 version: string
 }
-/**
- * Wire API the reviewed endpoint speaks for this preset subject
- */
-route_api?: ("chat-completions" | "responses" | "native")
 model_name: string
 base_url: (string | null)
 /**
  * @maxItems 64
  */
 allowed_hosts: string[]
+/**
+ * Wire API the reviewed endpoint speaks for this preset subject
+ */
+model_api?: string
 }
 export interface AgentWorkbenchRecipeV1 {
 schema_version: "v1"

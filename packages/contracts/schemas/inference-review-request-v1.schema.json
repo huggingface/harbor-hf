@@ -31,10 +31,6 @@
       },
       "description": "Native agent preset selected from the preset catalog"
     },
-    "route_api": {
-      "enum": ["chat-completions", "responses", "native"],
-      "description": "Wire API the reviewed endpoint speaks for this preset subject"
-    },
     "model_name": {
       "type": "string",
       "minLength": 1,
@@ -53,6 +49,11 @@
         "maxLength": 253
       },
       "uniqueItems": true
+    },
+    "model_api": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "description": "Wire API the reviewed endpoint speaks for this preset subject"
     }
   }
 }

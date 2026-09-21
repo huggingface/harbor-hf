@@ -274,12 +274,30 @@ const document = {
           model: {
             type: "object",
             additionalProperties: false,
-            required: ["id", "provider", "reasoning_effort"],
+            required: ["id", "reasoning_effort"],
             properties: {
               id: { type: "string" },
-              provider: { type: "string" },
+              provider: {
+                type: "string",
+                description:
+                  "Hub provider for the router route. Omitted when the submission names a reviewed endpoint connection.",
+              },
+              connection: {
+                type: "string",
+                description:
+                  "Reviewed endpoint connection named explicitly by the submission. Omitted for the router route.",
+              },
+              model_api: {
+                type: "string",
+                description:
+                  "Native Harbor agent argument value that selects the wire API style at the reviewed endpoint connection.",
+              },
               reasoning_effort: { type: "string" },
             },
+            oneOf: [
+              { required: ["provider"], not: { required: ["model_api"] } },
+              { required: ["connection", "model_api"] },
+            ],
           },
           harness: {
             type: "object",

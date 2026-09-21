@@ -43,30 +43,6 @@
         { "type": "null" }
       ]
     },
-    "endpoint_api": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["option", "api"],
-      "description": "How this preset consumes a reviewed endpoint connection",
-      "properties": {
-        "option": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_]{0,39}$",
-          "description": "Adapter option that selects the wire API style"
-        },
-        "api": {
-          "type": "object",
-          "additionalProperties": false,
-          "minProperties": 1,
-          "properties": {
-            "chat-completions": { "type": "string", "minLength": 1, "maxLength": 80 },
-            "responses": { "type": "string", "minLength": 1, "maxLength": 80 },
-            "native": { "type": "string", "minLength": 1, "maxLength": 80 }
-          },
-          "description": "Reviewed wire API to adapter option value"
-        }
-      }
-    },
     "reasoning_values": {
       "type": "array",
       "minItems": 1,

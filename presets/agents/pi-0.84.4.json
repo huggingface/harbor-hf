@@ -7,12 +7,5 @@
     "kwargs": { "version": "0.84.4" }
   },
   "reasoning_option": "thinking",
-  "reasoning_values": ["off", "minimal", "low", "medium", "high", "xhigh"],
-  "endpoint_api": {
-    "option": "model_api",
-    "api": {
-      "chat-completions": "openai-completions",
-      "responses": "openai-responses"
-    }
-  }
+  "reasoning_values": ["off", "minimal", "low", "medium", "high", "xhigh"]
 }
