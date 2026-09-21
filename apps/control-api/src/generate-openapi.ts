@@ -284,20 +284,18 @@ const document = {
               },
               connection: {
                 type: "string",
+                pattern: "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$",
                 description:
                   "Reviewed endpoint connection named explicitly by the submission. Omitted for the router route.",
               },
               model_api: {
                 type: "string",
+                pattern: "^[a-z0-9][a-z0-9._-]{0,63}$",
                 description:
                   "Native Harbor agent argument value that selects the wire API style at the reviewed endpoint connection.",
               },
               reasoning_effort: { type: "string" },
             },
-            oneOf: [
-              { required: ["provider"], not: { required: ["model_api"] } },
-              { required: ["connection", "model_api"] },
-            ],
           },
           harness: {
             type: "object",
@@ -318,6 +316,28 @@ const document = {
           },
           role: { type: "string", enum: ["final", "diagnostic"], default: "final" },
         },
+        allOf: [
+          {
+            if: { properties: { model: { required: ["connection"] } } },
+            // biome-ignore lint/suspicious/noThenProperty: JSON Schema conditional keyword.
+            then: {
+              properties: {
+                model: {
+                  required: ["model_api"],
+                  not: { required: ["provider"] },
+                },
+              },
+            },
+            else: {
+              properties: {
+                model: {
+                  required: ["provider"],
+                  not: { required: ["model_api"] },
+                },
+              },
+            },
+          },
+        ],
       },
       ...embedSchema("WorkbenchRecipe", schemas.agentWorkbenchRecipe),
       WorkbenchSubmission: {

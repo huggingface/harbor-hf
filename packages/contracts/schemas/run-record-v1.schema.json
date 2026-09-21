@@ -85,7 +85,7 @@
               "pattern": "^[^\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]*$"
             }
           },
-          "description": "A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style. The submission flow enforces that rule."
+          "description": "A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style."
         },
         "harness": {
           "type": "object",
@@ -127,6 +127,36 @@
           },
           "else": {
             "required": ["cost_ceiling_usd"]
+          }
+        },
+        {
+          "if": {
+            "required": ["model"],
+            "properties": {
+              "model": {
+                "required": ["connection"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "model": {
+                "required": ["model_api"],
+                "not": {
+                  "required": ["provider"]
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "model": {
+                "required": ["provider"],
+                "not": {
+                  "required": ["model_api"]
+                }
+              }
+            }
           }
         }
       ]

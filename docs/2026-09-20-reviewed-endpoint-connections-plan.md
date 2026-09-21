@@ -125,6 +125,9 @@ The change therefore touches only the review object and the value source:
   are refused; a submission that names no connection keeps the router record; a
   connection the registry does not hold is denied without falling back to the
   router.
+- One regression test validates the same route combinations against the published
+  request schema, the stored submission schema and the contract validator, so a
+  mixed route fails in every published schema and the three can never drift.
 - Unit tests for denial: unknown model, mismatched host, mismatched base URL, a
   changed wire API value in the built record, a preset grant that carries
   `route_api`, a recipe grant that carries `model_api`, a disabled binding,

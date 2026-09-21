@@ -2732,7 +2732,7 @@ export interface components {
                     name: components["schemas"]["RunRecord_slug"];
                     preset: components["schemas"]["RunRecord_slug"];
                 };
-                /** @description A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style. The submission flow enforces that rule. */
+                /** @description A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style. */
                 model?: {
                     id: string;
                     provider?: components["schemas"]["RunRecord_slug"];
@@ -2750,7 +2750,7 @@ export interface components {
                 cost_ceiling_usd?: number;
                 /** @description Legacy per-trial ceiling retained only so immutable existing runs remain readable. */
                 cost_ceiling_usd_per_trial?: number;
-            } & unknown;
+            } & (unknown & unknown);
             /** @description Immutable Workbench display provenance. Recipe revision is submission.harness.version; execution remains in harbor_job_config. */
             workbench_recipe?: {
                 name: string;
@@ -2965,7 +2965,7 @@ export interface components {
                 /** @description Native Harbor agent argument value that selects the wire API style at the reviewed endpoint connection. */
                 model_api?: string;
                 reasoning_effort: string;
-            } & (unknown | unknown);
+            };
             harness: {
                 agent: string;
                 version: string;
@@ -2979,7 +2979,7 @@ export interface components {
              * @enum {string}
              */
             role: "final" | "diagnostic";
-        };
+        } & unknown;
         /** Agent Workbench recipe v1 */
         WorkbenchRecipe: {
             /** @constant */

@@ -15,7 +15,7 @@ name: RunRecordSlug
 preset: RunRecordSlug
 }
 /**
- * A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style. The submission flow enforces that rule.
+ * A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style.
  */
 model?: {
 id: string

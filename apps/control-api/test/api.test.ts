@@ -1830,6 +1830,72 @@ it("registers and separately approves actor-bound reviewed recipes through close
   await app.close();
 });
 
+it("rejects a model selection that mixes two routes in every published schema", async () => {
+  const document = JSON.parse(
+    await readFile("docs/control-api-v1.openapi.json", "utf8"),
+  );
+  const ajv = new Ajv2020({ strict: false });
+  ajv.addFormat("date-time", () => true);
+  ajv.addSchema(document, "api");
+  const request = ajv.compile({
+    $ref: "api#/components/schemas/PresetSubmission",
+  });
+  const stored = ajv.compile({
+    $ref: "api#/components/schemas/RunRecord/properties/submission",
+  });
+  const connection = {
+    id: "example/model",
+    connection: "INFERENCE_API_KEY_EXAMPLE",
+    model_api: "openai-completions",
+    reasoning_effort: "off",
+  };
+  // The service rejects a mixed route, so every published schema must reject it
+  // too: a Hub provider forbids the connection and its wire API style, and the
+  // connection with its wire API style forbids the provider.
+  const cases: [Record<string, string>, boolean][] = [
+    [submission.model, true],
+    [connection, true],
+    [{ ...connection, provider: "together" }, false],
+    [
+      {
+        id: connection.id,
+        provider: "together",
+        model_api: connection.model_api,
+        reasoning_effort: "off",
+      },
+      false,
+    ],
+    [
+      { id: connection.id, connection: connection.connection, reasoning_effort: "off" },
+      false,
+    ],
+    [
+      { id: connection.id, model_api: connection.model_api, reasoning_effort: "off" },
+      false,
+    ],
+    [{ id: connection.id, reasoning_effort: "off" }, false],
+  ];
+  const record = (model: Record<string, string>) => ({
+    schema_version: "v1",
+    run_id: `run-${"a".repeat(24)}`,
+    created_at: "2026-01-01T00:00:00.000Z",
+    submitted_by: "fixture-subject",
+    role: "final",
+    harbor_revision: "b".repeat(40),
+    submission: { ...submission, model },
+    harbor_job_config: {},
+  });
+  for (const [model, expected] of cases) {
+    const label = JSON.stringify(model);
+    // The request body, the stored submission and the contract validator agree.
+    expect(request({ ...submission, model }), label).toBe(expected);
+    expect(stored({ ...submission, model }), label).toBe(expected);
+    const validate = () => validateRunRecord(record(model));
+    if (expected) expect(validate, label).not.toThrow();
+    else expect(validate, label).toThrow();
+  }
+});
+
 it("does not log submitted secret names, values or malformed reference paths", async () => {
   const lines: string[] = [];
   vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
