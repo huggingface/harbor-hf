@@ -65,9 +65,7 @@
                 "operator_subjects",
                 "worker_image",
                 "agent_import_path",
-                "recipe_digest",
                 "destination_env",
-                "route_api",
                 "base_url",
                 "allowed_hosts",
                 "allowed_models"
@@ -94,7 +92,14 @@
                 },
                 "recipe_digest": {
                   "type": "string",
-                  "pattern": "^[0-9a-f]{64}$"
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "Reviewed Workbench recipe identity"
+                },
+                "agent_version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "description": "Reviewed native agent preset version"
                 },
                 "destination_env": {
                   "type": "array",
@@ -132,6 +137,11 @@
                     "minLength": 1,
                     "maxLength": 4096
                   }
+                },
+                "model_api": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                  "description": "Native Harbor agent argument value that selects the wire API style"
                 }
               },
               "not": {

@@ -11,13 +11,24 @@ credential_ref?: string
 
 export interface InferenceReviewRequestV1 {
 expected_revision: number
-recipe: AgentWorkbenchRecipeV1
+recipe?: AgentWorkbenchRecipeV1
+/**
+ * Native agent preset selected from the preset catalog
+ */
+preset?: {
+agent: string
+version: string
+}
 model_name: string
 base_url: (string | null)
 /**
  * @maxItems 64
  */
 allowed_hosts: string[]
+/**
+ * Wire API the reviewed endpoint speaks for this preset subject
+ */
+model_api?: string
 }
 export interface AgentWorkbenchRecipeV1 {
 schema_version: "v1"

@@ -34,6 +34,7 @@ async function setup(
   writeMode: "disabled" | "enabled" = "enabled",
   logging = false,
   parentImage: string | null = null,
+  sources: (source: string) => string | undefined = () => undefined,
 ): Promise<{
   runtime: Runtime;
   app: Awaited<ReturnType<typeof buildApp>>;
@@ -72,7 +73,7 @@ async function setup(
     workbench_image: "python:3.12-slim",
     bootstrap_operator_subjects: [],
   };
-  const runtime = await createRuntime(config, () => undefined);
+  const runtime = await createRuntime(config, sources);
   runtime.config.write_mode = writeMode;
   runtimes.push(runtime);
   const app = await buildApp(runtime);
@@ -1829,6 +1830,72 @@ it("registers and separately approves actor-bound reviewed recipes through close
   await app.close();
 });
 
+it("rejects a model selection that mixes two routes in every published schema", async () => {
+  const document = JSON.parse(
+    await readFile("docs/control-api-v1.openapi.json", "utf8"),
+  );
+  const ajv = new Ajv2020({ strict: false });
+  ajv.addFormat("date-time", () => true);
+  ajv.addSchema(document, "api");
+  const request = ajv.compile({
+    $ref: "api#/components/schemas/PresetSubmission",
+  });
+  const stored = ajv.compile({
+    $ref: "api#/components/schemas/RunRecord/properties/submission",
+  });
+  const connection = {
+    id: "example/model",
+    connection: "INFERENCE_API_KEY_EXAMPLE",
+    model_api: "openai-completions",
+    reasoning_effort: "off",
+  };
+  // The service rejects a mixed route, so every published schema must reject it
+  // too: a Hub provider forbids the connection and its wire API style, and the
+  // connection with its wire API style forbids the provider.
+  const cases: [Record<string, string>, boolean][] = [
+    [submission.model, true],
+    [connection, true],
+    [{ ...connection, provider: "together" }, false],
+    [
+      {
+        id: connection.id,
+        provider: "together",
+        model_api: connection.model_api,
+        reasoning_effort: "off",
+      },
+      false,
+    ],
+    [
+      { id: connection.id, connection: connection.connection, reasoning_effort: "off" },
+      false,
+    ],
+    [
+      { id: connection.id, model_api: connection.model_api, reasoning_effort: "off" },
+      false,
+    ],
+    [{ id: connection.id, reasoning_effort: "off" }, false],
+  ];
+  const record = (model: Record<string, string>) => ({
+    schema_version: "v1",
+    run_id: `run-${"a".repeat(24)}`,
+    created_at: "2026-01-01T00:00:00.000Z",
+    submitted_by: "fixture-subject",
+    role: "final",
+    harbor_revision: "b".repeat(40),
+    submission: { ...submission, model },
+    harbor_job_config: {},
+  });
+  for (const [model, expected] of cases) {
+    const label = JSON.stringify(model);
+    // The request body, the stored submission and the contract validator agree.
+    expect(request({ ...submission, model }), label).toBe(expected);
+    expect(stored({ ...submission, model }), label).toBe(expected);
+    const validate = () => validateRunRecord(record(model));
+    if (expected) expect(validate, label).not.toThrow();
+    else expect(validate, label).toThrow();
+  }
+});
+
 it("does not log submitted secret names, values or malformed reference paths", async () => {
   const lines: string[] = [];
   vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
@@ -2192,5 +2259,200 @@ it("run review uses server-recorded compiled input and saves through the existin
     expect(write).not.toHaveBeenCalled();
     write.mockRestore();
   }
+  await app.close();
+});
+
+it("reviews and approves a native preset subject through the generated API", async () => {
+  const image = `example.invalid/worker@sha256:${"a".repeat(64)}`;
+  const { runtime, app } = await setup("enabled", false, image, (source) =>
+    source === "MY_SECRET_KEY" ? "synthetic-route-key" : undefined,
+  );
+  vi.spyOn(runtime.auth, "role").mockResolvedValue("operator");
+  vi.spyOn(runtime.auth, "developmentActor").mockReturnValue({
+    subject: "fixture-subject",
+    username: "fixture-user",
+    role: "operator",
+    transport: "development",
+  });
+  const session = runtime.auth.store.createSession(
+    "fixture-subject",
+    "fixture-user",
+    3600,
+  );
+  const cookies = { hhf_session: session.id };
+  const headers = { "x-csrf-token": session.csrf };
+  const url = "/api/v1/inference-bindings";
+  expect(
+    Object.keys(runtime.presets.agent("pi", "0.84.4")).includes("endpoint_api"),
+  ).toBe(false);
+  const saved = await app.inject({
+    method: "POST",
+    url,
+    payload: {
+      expected_revision: 0,
+      source_env: "MY_SECRET_KEY",
+      label: "Example endpoint",
+      reason: "Register inference source",
+    },
+    cookies,
+    headers,
+  });
+  expect(saved.statusCode).toBe(200);
+  const ref = saved.json<components["schemas"]["InferenceBindings"]>().bindings[0]!.ref;
+  const reviewUrl = `${url}/${ref}/review`;
+  const body: components["schemas"]["InferenceReviewRequest"] = {
+    expected_revision: 1,
+    preset: { agent: "pi", version: "0.84.4" },
+    model_name: "example/model",
+    base_url: "https://example-endpoint.invalid/v1",
+    allowed_hosts: ["example-endpoint.invalid"],
+    model_api: "openai-completions",
+  };
+  for (const extra of [
+    { recipe: workbenchRecipe },
+    { preset: { agent: "pi", version: "9.9.9" } },
+    { model_api: "OpenAI Completions" },
+    { model_api: undefined },
+    { base_url: null, allowed_hosts: [] },
+  ])
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: reviewUrl,
+          payload: { ...body, ...extra },
+          cookies,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(400);
+  const reviewed = await app.inject({
+    method: "POST",
+    url: reviewUrl,
+    payload: body,
+    cookies,
+    headers,
+  });
+  expect(reviewed.statusCode).toBe(200);
+  const review = reviewed.json<components["schemas"]["InferenceReview"]>();
+  expect(review.preset).toEqual({ agent: "pi", version: "0.84.4" });
+  expect(review.recipe).toBeUndefined();
+  expect(review.grant).toEqual({
+    operator_subjects: ["fixture-subject"],
+    worker_image: image,
+    agent_import_path: "harbor_hf_agents.pi.agent:PiAgent",
+    agent_version: "0.84.4",
+    destination_env: ["OPENAI_API_KEY"],
+    model_api: "openai-completions",
+    base_url: "https://example-endpoint.invalid/v1",
+    allowed_hosts: ["example-endpoint.invalid"],
+    allowed_models: ["example/model"],
+  });
+  const doc = JSON.parse(await readFile("docs/control-api-v1.openapi.json", "utf8"));
+  const schema = new Ajv2020({ strict: false });
+  schema.addFormat("date-time", () => true);
+  schema.addSchema(doc, "api");
+  expect(
+    schema.compile({ $ref: "api#/components/schemas/InferenceReview" })(review),
+  ).toBe(true);
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: `${url}/${ref}/approve`,
+        payload: {
+          expected_revision: 1,
+          review_id: review.review_id,
+          reviewed_confirmation: true,
+          reason: "Reviewed exact endpoint connection",
+        },
+        cookies,
+        headers,
+      })
+    ).statusCode,
+  ).toBe(200);
+  const policy = await runtime.inference.policy();
+  expect(
+    policy.presetConnection(
+      ref,
+      { import_path: "harbor_hf_agents.pi.agent:PiAgent", version: "0.84.4" },
+      "example/model",
+      "fixture-subject",
+      image,
+      "openai-completions",
+    ),
+  ).toMatchObject({ ref, base_url: "https://example-endpoint.invalid/v1" });
+  // A preset submission that mixes a Hub provider with the reviewed connection, or
+  // that names one without the native wire API value, is refused before any run starts.
+  const route = (model: Record<string, unknown>, key: string) =>
+    app.inject({
+      method: "POST",
+      url: "/api/v1/runs",
+      payload: {
+        benchmark: { name: "terminal-bench-2-1", preset: "one-task-1-trial" },
+        model,
+        harness: { agent: "pi", version: "0.84.4" },
+        cost_ceiling_usd: 0.25,
+      },
+      cookies,
+      headers: { ...headers, "idempotency-key": key },
+    });
+  for (const [index, model] of [
+    {
+      id: "example/model",
+      provider: "novita",
+      connection: ref,
+      model_api: "openai-completions",
+      reasoning_effort: "off",
+    },
+    { id: "example/model", connection: ref, reasoning_effort: "off" },
+    {
+      id: "example/model",
+      model_api: "openai-completions",
+      reasoning_effort: "off",
+    },
+  ].entries())
+    expect((await route(model, `mixed-route-${index}`)).statusCode).toBe(400);
+  // The named connection is the only reviewed route a submission can reach.
+  const submitted = await route(
+    {
+      id: "example/model",
+      connection: ref,
+      model_api: "openai-completions",
+      reasoning_effort: "off",
+    },
+    "reviewed-connection",
+  );
+  expect(submitted.statusCode).toBe(201);
+  const record = runtime.projection.run(submitted.json().run.run_id)?.record;
+  expect(record?.submission.model).toEqual({
+    id: "example/model",
+    connection: ref,
+    model_api: "openai-completions",
+    reasoning_effort: "off",
+  });
+  const agent = record?.harbor_job_config.agents?.[0] as
+    | { model_name?: string; kwargs?: Record<string, unknown> }
+    | undefined;
+  expect(agent?.model_name).toBe("openai/example/model");
+  expect(agent?.kwargs).toMatchObject({ model_api: "openai-completions" });
+  // The recorded native configuration is admitted by the same check a run start uses.
+  expect(
+    (await runtime.inference.policy()).selected(
+      record!.harbor_job_config,
+      "fixture-subject",
+      image,
+    )?.ref,
+  ).toBe(ref);
+  const unrouted = await route(
+    {
+      id: "example/model",
+      connection: "INFERENCE_API_KEY_UNKNOWN",
+      model_api: "openai-completions",
+      reasoning_effort: "off",
+    },
+    "unknown-connection",
+  );
+  expect(unrouted.statusCode).toBe(403);
   await app.close();
 });

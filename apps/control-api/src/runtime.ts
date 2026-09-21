@@ -116,6 +116,17 @@ export async function createRuntime(
     (source) => Boolean(selectedSource(source)),
     () => new Date(),
     randomUUID,
+    // Reviewed preset subjects resolve through the same catalog the run flow builds from:
+    // a review names a slug, and the grant stores the import path the record carries.
+    {
+      bySlug: (agent, version) => {
+        try {
+          return presets.agent(agent, version);
+        } catch {
+          return null;
+        }
+      },
+    },
   );
   const admittedPolicy = () => inference.policy();
   const launch = new NativeLaunch(config);

@@ -11,6 +11,8 @@ import {
   validateInferenceReviewRequest,
   validateInferenceApprovalRequest,
   validateInferenceReview,
+  type AgentPresetV1,
+  type InferenceReviewRequestV1,
   type InferenceSourceRegistryV1,
   type InferenceBindingManifestV1,
   type InferenceReviewV1,
@@ -19,9 +21,11 @@ import {
 import { containsCredentialMaterial } from "@harbor-hf/contracts/credentials";
 import {
   InferenceBindings,
+  PRESET_KEY_DESTINATION,
   inferenceRecipeDigest,
   workbenchCredentialRef,
 } from "./inference-bindings.js";
+import { presetEndpointAgent, presetImportPath } from "./presets.js";
 import {
   compileAgentWorkbenchRecipe,
   isReservedWorkbenchEnvironment,
@@ -155,6 +159,12 @@ function validate(value: unknown): Registry {
   return registry;
 }
 
+/** The preset catalog as this service uses it: a review names a slug, and the reviewed
+ *  grant stores the import path that the built record carries. */
+export interface PresetSource {
+  bySlug(agent: string, version: string): AgentPresetV1 | null;
+}
+
 /** Exclusive single-runtime authority, never a cache of grants.
  * Queue/revision/readback checks are not distributed CAS; overlapping controllers
  * are unsupported. Stop the old write authority before starting its replacement.
@@ -178,6 +188,7 @@ export class InferenceRegistry {
     private readonly present: (name: string) => boolean,
     private readonly now: () => Date,
     private readonly nonce: () => string,
+    private readonly preset: PresetSource | undefined,
   ) {}
 
   sequence<T>(operation: () => Promise<T>): Promise<T> {
@@ -464,6 +475,10 @@ export class InferenceRegistry {
       const entry = this.owned(registry, ref, actor);
       if (containsCredentialMaterial(input.model_name))
         throw new InferenceRegistryError(400);
+      // A review names exactly one subject: a Workbench recipe or a native preset.
+      if ((input.recipe === undefined) === (input.preset === undefined))
+        throw new InferenceRegistryError(400);
+      if (input.preset) return this.reviewPreset(ref, input, entry, actor, registry);
       const preview = compileAgentWorkbenchRecipe(input.recipe);
       if (!active(entry) || workbenchCredentialRef(preview.recipe) !== ref)
         throw new InferenceRegistryError(400);
@@ -525,6 +540,89 @@ export class InferenceRegistry {
       return response;
     });
   }
+  /** Register a reviewed endpoint connection for a native preset identity. The grant stores
+   *  the resolved identity, and admission rechecks it against the built record at every start. */
+  private reviewPreset(
+    ref: string,
+    input: InferenceReviewRequestV1,
+    entry: Entry,
+    actor: string,
+    registry: Registry,
+  ): InferenceReviewV1 {
+    const preset = input.preset
+      ? (this.preset?.bySlug(input.preset.agent, input.preset.version) ?? null)
+      : null;
+    const importPath = preset ? presetImportPath(preset) : null;
+    if (
+      !preset ||
+      !importPath ||
+      !active(entry) ||
+      preset.version !== input.preset?.version ||
+      input.base_url === null ||
+      input.model_api === undefined
+    )
+      throw new InferenceRegistryError(400);
+    let agent: Record<string, unknown>;
+    try {
+      agent = presetEndpointAgent(
+        undefined,
+        preset,
+        input.model_name,
+        {
+          ref,
+          source: entry.source_env,
+          base_url: input.base_url,
+          allowed_hosts: [...input.allowed_hosts],
+          model_api: input.model_api,
+        },
+        input.model_api,
+        "default",
+      );
+    } catch {
+      throw new InferenceRegistryError(400);
+    }
+    const grant: Grant = {
+      operator_subjects: [actor],
+      worker_image: this.image,
+      agent_import_path: importPath,
+      agent_version: preset.version,
+      destination_env: [PRESET_KEY_DESTINATION],
+      model_api: input.model_api,
+      base_url: input.base_url,
+      allowed_hosts: [...input.allowed_hosts],
+      allowed_models: [input.model_name],
+    };
+    const check = policy(registry);
+    check.assertPublicStrings(agent, [PRESET_KEY_DESTINATION]);
+    // The reviewed grant must admit exactly the record the run flow will build.
+    new InferenceBindings({
+      schema_version: "v1",
+      bindings: [
+        {
+          ref,
+          source_env: entry.source_env,
+          label: entry.label,
+          enabled: true,
+          uses: [grant],
+        },
+      ],
+    }).selected(validateHarborJobConfig({ agents: [agent] }), actor, this.image);
+    const response = validateInferenceReview({
+      schema_version: "v1",
+      revision: registry.revision,
+      review_id: sha256(this.nonce()),
+      expires_at: new Date(this.now().getTime() + 15 * 60 * 1000).toISOString(),
+      ref,
+      source_env: entry.source_env,
+      label: entry.label,
+      presence: this.presence(entry.source_env),
+      preset: input.preset,
+      grant,
+    });
+    this.retainReview(response.review_id, { actor, response });
+    return response;
+  }
+
   approve(ref: string, body: unknown, actor: string): Promise<InferenceBindingsV1> {
     const input = validateInferenceApprovalRequest(body);
     return this.sequence(async () => {

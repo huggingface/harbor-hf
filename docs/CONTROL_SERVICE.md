@@ -640,7 +640,13 @@ never accepts or stores key values. Explicit environment bindings deliver only t
 selected credential to reviewed execution. See [Provider credential references](provider-credential-references.md)
 for the operator-only register/select/review/approve flow after separately approved
 deployment. Workbench Manage secrets edits name-only references in the canonical
-Bucket registry; the server derives exact recipe/model/image grants. No manifest
+Bucket registry; the server derives exact recipe/model/image grants. A native agent
+preset can hold the same reviewed connection: the grant subject is then the preset
+slug plus its version, and a submission that names that connection and its native
+wire API style derives the exact `openai/<model>` record from the grant. A
+submission still cannot name a base URL. No
+preset route field, connection record, second registry or second authority is
+added. No manifest
 path or offline hash workflow remains. Revision conflicts and uncertain saves
 require refresh and review, never automatic retries. Standalone setup success is
 not approval.

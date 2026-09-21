@@ -15,12 +15,29 @@
     "harbor_job_config"
   ],
   "properties": {
-    "schema_version": { "const": "v1" },
-    "run_id": { "type": "string", "pattern": "^run-[0-9a-f]{24}$" },
-    "created_at": { "type": "string", "format": "date-time" },
-    "submitted_by": { "type": "string", "minLength": 1, "maxLength": 320 },
-    "role": { "enum": ["final", "diagnostic"] },
-    "harbor_revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "schema_version": {
+      "const": "v1"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[0-9a-f]{24}$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "submitted_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 320
+    },
+    "role": {
+      "enum": ["final", "diagnostic"]
+    },
+    "harbor_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
     "submission": {
       "type": "object",
       "additionalProperties": false,
@@ -31,31 +48,58 @@
           "additionalProperties": false,
           "required": ["name", "preset"],
           "properties": {
-            "name": { "$ref": "#/$defs/slug" },
-            "preset": { "$ref": "#/$defs/slug" }
+            "name": {
+              "$ref": "#/$defs/slug"
+            },
+            "preset": {
+              "$ref": "#/$defs/slug"
+            }
           }
         },
         "model": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["id", "provider", "reasoning_effort"],
+          "required": ["id", "reasoning_effort"],
           "properties": {
-            "id": { "type": "string", "minLength": 1, "maxLength": 320 },
-            "provider": { "$ref": "#/$defs/slug" },
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 320
+            },
+            "provider": {
+              "$ref": "#/$defs/slug"
+            },
+            "connection": {
+              "type": "string",
+              "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$",
+              "description": "Reviewed endpoint connection this submission selected"
+            },
+            "model_api": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+              "description": "Native Harbor agent argument value that selects the wire API style"
+            },
             "reasoning_effort": {
               "type": "string",
               "maxLength": 160,
               "pattern": "^[^\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]*$"
             }
-          }
+          },
+          "description": "A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style."
         },
         "harness": {
           "type": "object",
           "additionalProperties": false,
           "required": ["agent", "version"],
           "properties": {
-            "agent": { "$ref": "#/$defs/slug" },
-            "version": { "type": "string", "minLength": 1, "maxLength": 160 }
+            "agent": {
+              "$ref": "#/$defs/slug"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            }
           }
         },
         "cost_ceiling_usd": {
@@ -73,9 +117,47 @@
       },
       "allOf": [
         {
-          "if": { "required": ["cost_ceiling_usd_per_trial"] },
-          "then": { "not": { "required": ["cost_ceiling_usd"] } },
-          "else": { "required": ["cost_ceiling_usd"] }
+          "if": {
+            "required": ["cost_ceiling_usd_per_trial"]
+          },
+          "then": {
+            "not": {
+              "required": ["cost_ceiling_usd"]
+            }
+          },
+          "else": {
+            "required": ["cost_ceiling_usd"]
+          }
+        },
+        {
+          "if": {
+            "required": ["model"],
+            "properties": {
+              "model": {
+                "required": ["connection"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "model": {
+                "required": ["model_api"],
+                "not": {
+                  "required": ["provider"]
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "model": {
+                "required": ["provider"],
+                "not": {
+                  "required": ["model_api"]
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -93,8 +175,12 @@
         }
       }
     },
-    "pricing": { "$ref": "launch-pricing-v1.schema.json" },
-    "harbor_job_config": { "type": "object" },
+    "pricing": {
+      "$ref": "launch-pricing-v1.schema.json"
+    },
+    "harbor_job_config": {
+      "type": "object"
+    },
     "operator_selection": {
       "type": "object",
       "additionalProperties": false,
@@ -123,8 +209,20 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "role": { "const": "final" } } },
-      "then": { "properties": { "submission": { "required": ["model", "harness"] } } }
+      "if": {
+        "properties": {
+          "role": {
+            "const": "final"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "submission": {
+            "required": ["model", "harness"]
+          }
+        }
+      }
     }
   ],
   "$defs": {

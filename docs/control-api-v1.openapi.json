@@ -105,9 +105,7 @@
                       "operator_subjects",
                       "worker_image",
                       "agent_import_path",
-                      "recipe_digest",
                       "destination_env",
-                      "route_api",
                       "base_url",
                       "allowed_hosts",
                       "allowed_models"
@@ -134,7 +132,14 @@
                       },
                       "recipe_digest": {
                         "type": "string",
-                        "pattern": "^[0-9a-f]{64}$"
+                        "pattern": "^[0-9a-f]{64}$",
+                        "description": "Reviewed Workbench recipe identity"
+                      },
+                      "agent_version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160,
+                        "description": "Reviewed native agent preset version"
                       },
                       "destination_env": {
                         "type": "array",
@@ -179,6 +184,11 @@
                           "minLength": 1,
                           "maxLength": 4096
                         }
+                      },
+                      "model_api": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                        "description": "Native Harbor agent argument value that selects the wire API style"
                       }
                     }
                   }
@@ -258,7 +268,6 @@
         "additionalProperties": false,
         "required": [
           "expected_revision",
-          "recipe",
           "model_name",
           "base_url",
           "allowed_hosts"
@@ -271,6 +280,26 @@
           },
           "recipe": {
             "$ref": "#/components/schemas/WorkbenchRecipe"
+          },
+          "preset": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agent",
+              "version"
+            ],
+            "properties": {
+              "agent": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "description": "Native agent preset selected from the preset catalog"
           },
           "model_name": {
             "type": "string",
@@ -293,6 +322,11 @@
               "maxLength": 253
             },
             "uniqueItems": true
+          },
+          "model_api": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "description": "Wire API the reviewed endpoint speaks for this preset subject"
           }
         }
       },
@@ -366,7 +400,6 @@
           "source_env",
           "label",
           "presence",
-          "recipe",
           "grant"
         ],
         "properties": {
@@ -433,6 +466,26 @@
           "recipe": {
             "$ref": "#/components/schemas/WorkbenchRecipe"
           },
+          "preset": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agent",
+              "version"
+            ],
+            "properties": {
+              "agent": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            },
+            "description": "Native agent preset selected from the preset catalog"
+          },
           "grant": {
             "type": "object",
             "additionalProperties": false,
@@ -440,9 +493,7 @@
               "operator_subjects",
               "worker_image",
               "agent_import_path",
-              "recipe_digest",
               "destination_env",
-              "route_api",
               "base_url",
               "allowed_hosts",
               "allowed_models"
@@ -469,7 +520,14 @@
               },
               "recipe_digest": {
                 "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "Reviewed Workbench recipe identity"
+              },
+              "agent_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "description": "Reviewed native agent preset version"
               },
               "destination_env": {
                 "type": "array",
@@ -514,6 +572,11 @@
                   "minLength": 1,
                   "maxLength": 4096
                 }
+              },
+              "model_api": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                "description": "Native Harbor agent argument value that selects the wire API style"
               }
             }
           }
@@ -627,6 +690,26 @@
                   "missing"
                 ]
               },
+              "preset": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "agent",
+                  "version"
+                ],
+                "properties": {
+                  "agent": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  }
+                },
+                "description": "Native agent preset selected from the preset catalog"
+              },
               "grant": {
                 "type": "object",
                 "additionalProperties": false,
@@ -634,9 +717,7 @@
                   "operator_subjects",
                   "worker_image",
                   "agent_import_path",
-                  "recipe_digest",
                   "destination_env",
-                  "route_api",
                   "base_url",
                   "allowed_hosts",
                   "allowed_models"
@@ -663,7 +744,14 @@
                   },
                   "recipe_digest": {
                     "type": "string",
-                    "pattern": "^[0-9a-f]{64}$"
+                    "pattern": "^[0-9a-f]{64}$",
+                    "description": "Reviewed Workbench recipe identity"
+                  },
+                  "agent_version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160,
+                    "description": "Reviewed native agent preset version"
                   },
                   "destination_env": {
                     "type": "array",
@@ -708,6 +796,11 @@
                       "minLength": 1,
                       "maxLength": 4096
                     }
+                  },
+                  "model_api": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                    "description": "Native Harbor agent argument value that selects the wire API style"
                   }
                 }
               },
@@ -799,7 +892,6 @@
                 "additionalProperties": false,
                 "required": [
                   "id",
-                  "provider",
                   "reasoning_effort"
                 ],
                 "properties": {
@@ -811,12 +903,23 @@
                   "provider": {
                     "$ref": "#/components/schemas/RunRecord_slug"
                   },
+                  "connection": {
+                    "type": "string",
+                    "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$",
+                    "description": "Reviewed endpoint connection this submission selected"
+                  },
+                  "model_api": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                    "description": "Native Harbor agent argument value that selects the wire API style"
+                  },
                   "reasoning_effort": {
                     "type": "string",
                     "maxLength": 160,
                     "pattern": "^[^\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]*$"
                   }
-                }
+                },
+                "description": "A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style."
               },
               "harness": {
                 "type": "object",
@@ -867,6 +970,48 @@
                   "required": [
                     "cost_ceiling_usd"
                   ]
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "model"
+                  ],
+                  "properties": {
+                    "model": {
+                      "required": [
+                        "connection"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "model": {
+                      "required": [
+                        "model_api"
+                      ],
+                      "not": {
+                        "required": [
+                          "provider"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "model": {
+                      "required": [
+                        "provider"
+                      ],
+                      "not": {
+                        "required": [
+                          "model_api"
+                        ]
+                      }
+                    }
+                  }
                 }
               }
             ]
@@ -1792,7 +1937,6 @@
             "additionalProperties": false,
             "required": [
               "id",
-              "provider",
               "reasoning_effort"
             ],
             "properties": {
@@ -1800,7 +1944,18 @@
                 "type": "string"
               },
               "provider": {
-                "type": "string"
+                "type": "string",
+                "description": "Hub provider for the router route. Omitted when the submission names a reviewed endpoint connection."
+              },
+              "connection": {
+                "type": "string",
+                "pattern": "^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$",
+                "description": "Reviewed endpoint connection named explicitly by the submission. Omitted for the router route."
+              },
+              "model_api": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+                "description": "Native Harbor agent argument value that selects the wire API style at the reviewed endpoint connection."
               },
               "reasoning_effort": {
                 "type": "string"
@@ -1843,7 +1998,48 @@
             ],
             "default": "final"
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "model": {
+                  "required": [
+                    "connection"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "model": {
+                  "required": [
+                    "model_api"
+                  ],
+                  "not": {
+                    "required": [
+                      "provider"
+                    ]
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "model": {
+                  "required": [
+                    "provider"
+                  ],
+                  "not": {
+                    "required": [
+                      "model_api"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
       },
       "WorkbenchRecipe": {
         "title": "Agent Workbench recipe v1",
