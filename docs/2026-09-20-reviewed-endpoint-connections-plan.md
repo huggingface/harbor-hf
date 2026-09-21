@@ -107,8 +107,9 @@ The change therefore touches only the review object and the value source:
   missing grant, and an HF-token environment with a non-router URL.
 - Existing control, Workbench and inference tests stay green.
 - Generated contracts, OpenAPI and browser clients regenerate byte-stable.
-- Repository checks: the normal formatted, lint, type, unit, build and
-  generated-diff commands for this repository.
+- Repository checks, run from the worktree: `npm run format:check`,
+  `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`,
+  `npm run check:generated`, and `npm run test:e2e`.
 - Documentation updated: `docs/provider-credential-references.md` and
   `docs/CONTROL_SERVICE.md`.
 
