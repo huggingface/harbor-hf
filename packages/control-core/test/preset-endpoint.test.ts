@@ -41,13 +41,21 @@ function grantOf(overrides: Record<string, unknown> = {}) {
   };
 }
 function policyOf(uses: Record<string, unknown>[]) {
-  return new InferenceBindings({
-    schema_version: "v1",
-    bindings: [
-      { ref, source_env: source, label: "Example route", enabled: true, uses },
-    ],
-  });
+  return new InferenceBindings(
+    {
+      schema_version: "v1",
+      bindings: [
+        { ref, source_env: source, label: "Example route", enabled: true, uses },
+      ],
+    },
+    declarations,
+  );
 }
+/** The catalog answers the import path and version a built record carries. */
+const declarations = {
+  byImportPath: (importPath: string, version: string) =>
+    catalog.agentByImportPath(importPath, version),
+};
 function connection() {
   return {
     ref,
@@ -159,6 +167,62 @@ describe("reviewed endpoint connections for native presets", () => {
     expect(presetModelId(agent?.model_name)).toBe(modelId);
     expect(presetModelId("huggingface/example/model:provider")).toBeNull();
     expect(presetSubject({ import_path: identity.import_path })).toBeNull();
+  });
+
+  it("denies a record whose reviewed wire API style changed after the build", () => {
+    const agent = presetAgent();
+    expect(admit(agent)?.ref).toBe(ref);
+    // The grant reviewed chat-completions, so the responses value is not admitted.
+    expect(() =>
+      admit({
+        ...agent,
+        kwargs: { ...(agent.kwargs as object), model_api: "openai-responses" },
+      }),
+    ).toThrow("not reviewed");
+    expect(() =>
+      admit({
+        ...agent,
+        kwargs: { ...(agent.kwargs as object), model_api: "openai-completions-2" },
+      }),
+    ).toThrow("not reviewed");
+    expect(() =>
+      admit({
+        ...agent,
+        kwargs: { version: "0.84.4", thinking: "medium" },
+      }),
+    ).toThrow("not reviewed");
+    // A route the preset does not declare, and a preset this policy cannot resolve,
+    // are denied rather than admitted without a declaration.
+    const responses = presetEndpointAgent(
+      undefined,
+      catalog.agent("pi", "0.84.4"),
+      modelId,
+      { ...connection(), route_api: "responses" },
+      "medium",
+    );
+    expect(admit(responses, [grantOf({ route_api: "responses" })])?.ref).toBe(ref);
+    expect(() => admit(responses)).toThrow("not reviewed");
+    expect(() => admit(responses, [grantOf({ route_api: "native" })])).toThrow(
+      "not reviewed",
+    );
+    const unresolved = new InferenceBindings(
+      {
+        schema_version: "v1",
+        bindings: [
+          {
+            ref,
+            source_env: source,
+            label: "Example route",
+            enabled: true,
+            uses: [grantOf()],
+          },
+        ],
+      },
+      { byImportPath: () => null },
+    );
+    expect(() =>
+      unresolved.selected(validateHarborJobConfig({ agents: [agent] }), actor, image),
+    ).toThrow("not reviewed");
   });
 
   it("denies a record whose environment, hosts or model differ from the grant", () => {

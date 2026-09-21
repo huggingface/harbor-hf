@@ -56,10 +56,14 @@ The run record for such a connection is the ordinary `openai/<model>` route with
 the reviewed base URL and an opaque key reference. Admission and restart rebuild
 that record from the preset and the grant, then recheck it against the approved
 grant. A model outside the grant, another preset version, another worker image,
-another operator, a changed base URL or a changed host list is denied. Ambiguous
-subjects with more than one reviewed grant are denied. No preset route field, no
-connection record and no submission-supplied URL is added; a submission still
-cannot name a base URL.
+another operator, a changed base URL or a changed host list is denied. Because the
+preset file owns the adapter option that selects a wire API style, admission also
+resolves the preset from the reviewed import path and version and compares the
+declaration with the record, so a wire API style changed after the build is
+denied, and a route the preset does not declare is denied. Ambiguous subjects with
+more than one reviewed grant are denied. No preset route field, no connection
+record and no submission-supplied URL is added; a submission still cannot name a
+base URL.
 
 ## Deployment caveat
 

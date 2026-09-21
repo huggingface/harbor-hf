@@ -75,7 +75,12 @@ The change therefore touches only the review object and the value source:
    existing reviewed-credential path already requires.
 4. Admission and restart use the same check. A preset run whose model is not in
    `allowed_models`, whose actor, worker image or agent identity has no granted
-   subject, or whose host and base URL do not match the grant is denied.
+   subject, whose host and base URL do not match the grant, or whose declared
+   wire API style for the granted `route_api` no longer matches the built record
+   is denied. The preset file stays the sole owner of the adapter option that
+   selects a wire API style, so admission resolves the preset from the reviewed
+   import path and version and compares the declaration with the record instead
+   of trusting the record's value.
 5. Registry registration accepts a preset subject. Operators select it from the
    preset catalog instead of quoting a recipe digest. The registry remains the
    only write authority, with `expected_revision`, and the existing
@@ -105,7 +110,9 @@ The change therefore touches only the review object and the value source:
   actor, image, model, host and base URL match; a recipe subject behaves as
   today.
 - Unit tests for denial: unknown model, mismatched host, mismatched base URL,
-  missing grant, and an HF-token environment with a non-router URL.
+  a changed wire API style for the granted route, an unresolvable preset, a route
+  the preset does not declare, missing grant, and an HF-token environment with a
+  non-router URL.
 - Existing control, Workbench and inference tests stay green.
 - Generated contracts, OpenAPI and browser clients regenerate byte-stable.
 - Repository checks, run from the worktree: `npm run format:check`,

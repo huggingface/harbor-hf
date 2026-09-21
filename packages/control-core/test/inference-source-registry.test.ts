@@ -7,6 +7,7 @@ import type { AgentPresetV1 } from "@harbor-hf/contracts";
 import {
   InferenceRegistry,
   INFERENCE_SOURCE_REGISTRY_KEY as key,
+  type PresetSource,
 } from "../src/inference-source-registry.js";
 import { FilesystemObjectStore } from "../src/store.js";
 import { actor, image, fixture } from "./inference-fixture.js";
@@ -17,9 +18,7 @@ afterEach(async () => {
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
 });
-async function setup(
-  preset?: (agent: string, version: string) => AgentPresetV1 | null,
-) {
+async function setup(preset?: PresetSource) {
   const root = await mkdtemp(join(tmpdir(), "inference-registry-"));
   roots.push(root);
   const store = new FilesystemObjectStore(root);
@@ -69,6 +68,21 @@ const presetFixture = {
     api: { "chat-completions": "openai-completions" },
   },
 } satisfies AgentPresetV1;
+/** The preset catalog the registry reads: a review names a slug, a record an import path. */
+function presetSource(resolvable = true): PresetSource {
+  return {
+    bySlug: (agent, version) =>
+      resolvable && agent === presetFixture.agent && version === presetFixture.version
+        ? presetFixture
+        : null,
+    byImportPath: (importPath, version) =>
+      resolvable &&
+      importPath === presetFixture.harbor_agent.import_path &&
+      version === presetFixture.version
+        ? presetFixture
+        : null,
+  };
+}
 async function registered(registry: InferenceRegistry) {
   const response = await registry.register(registration, actor);
   const ref = response.bindings[0]!.ref;
@@ -441,11 +455,7 @@ it.each(["chat-completions", "responses"] as const)(
 );
 
 it("reviews and approves a native preset identity as the grant subject", async () => {
-  const { registry, create, presetReview } = await setup((agent, version) =>
-    agent === presetFixture.agent && version === presetFixture.version
-      ? presetFixture
-      : null,
-  );
+  const { registry, create, presetReview } = await setup(presetSource());
   const response = await registry.register(registration, actor);
   const ref = response.bindings[0]!.ref;
   const review = await registry.review(ref, presetReview(), actor);
@@ -490,7 +500,7 @@ it("reviews and approves a native preset identity as the grant subject", async (
 });
 
 it("rejects preset reviews that name no resolvable or no reviewable endpoint", async () => {
-  const { registry, presetReview } = await setup(() => presetFixture);
+  const { registry, presetReview } = await setup(presetSource());
   const response = await registry.register(registration, actor);
   const ref = response.bindings[0]!.ref;
   await expect(

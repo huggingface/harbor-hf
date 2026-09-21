@@ -24,6 +24,7 @@ import {
   PRESET_KEY_DESTINATION,
   inferenceRecipeDigest,
   workbenchCredentialRef,
+  type PresetDeclarations,
 } from "./inference-bindings.js";
 import { presetEndpointAgent, presetImportPath } from "./presets.js";
 import {
@@ -82,17 +83,20 @@ function grants(entry: Entry): Grant[] {
       unique.set(sha256(canonicalJson(event.grant)), event.grant);
   return [...unique.values()];
 }
-function policy(value: Registry): InferenceBindings {
-  return new InferenceBindings({
-    schema_version: "v1",
-    bindings: value.entries.map((entry) => ({
-      ref: entry.ref,
-      source_env: entry.source_env,
-      label: entry.label,
-      enabled: active(entry),
-      uses: grants(entry),
-    })),
-  });
+function policy(value: Registry, presets?: PresetDeclarations): InferenceBindings {
+  return new InferenceBindings(
+    {
+      schema_version: "v1",
+      bindings: value.entries.map((entry) => ({
+        ref: entry.ref,
+        source_env: entry.source_env,
+        label: entry.label,
+        enabled: active(entry),
+        uses: grants(entry),
+      })),
+    },
+    presets,
+  );
 }
 function validate(value: unknown): Registry {
   const registry = validateInferenceSourceRegistry(value);
@@ -159,6 +163,12 @@ function validate(value: unknown): Registry {
   return registry;
 }
 
+/** The preset catalog as this service uses it: a review names a slug, a built record
+ *  carries the reviewed import path. Both resolve in the same owner, the preset file. */
+export interface PresetSource extends PresetDeclarations {
+  bySlug(agent: string, version: string): AgentPresetV1 | null;
+}
+
 /** Exclusive single-runtime authority, never a cache of grants.
  * Queue/revision/readback checks are not distributed CAS; overlapping controllers
  * are unsupported. Stop the old write authority before starting its replacement.
@@ -182,9 +192,7 @@ export class InferenceRegistry {
     private readonly present: (name: string) => boolean,
     private readonly now: () => Date,
     private readonly nonce: () => string,
-    private readonly preset:
-      | ((agent: string, version: string) => AgentPresetV1 | null)
-      | undefined,
+    private readonly preset: PresetSource | undefined,
   ) {}
 
   sequence<T>(operation: () => Promise<T>): Promise<T> {
@@ -234,7 +242,7 @@ export class InferenceRegistry {
     }
   }
   async policy(): Promise<InferenceBindings> {
-    return policy(await this.read());
+    return policy(await this.read(), this.preset);
   }
   private audit(registry: Registry, actor: string, reason: string) {
     if (containsCredentialMaterial(reason)) throw new InferenceRegistryError(400);
@@ -377,7 +385,9 @@ export class InferenceRegistry {
       const run = await this.runRecord(id, actor, harborRevision);
       const registry = await this.read();
       try {
-        if (policy(registry).selected(run.config, actor, this.image) === null)
+        if (
+          policy(registry, this.preset).selected(run.config, actor, this.image) === null
+        )
           return {
             schema_version: "v1",
             run_id: id,
@@ -409,7 +419,11 @@ export class InferenceRegistry {
         throw new InferenceRegistryError(403);
       let approval_required = true;
       try {
-        approval_required = !policy(registry).selected(run.config, actor, this.image);
+        approval_required = !policy(registry, this.preset).selected(
+          run.config,
+          actor,
+          this.image,
+        );
       } catch {
         /* A new image needs explicit approval, never automatic delivery. */
       }
@@ -445,18 +459,21 @@ export class InferenceRegistry {
   ): boolean {
     try {
       return (
-        new InferenceBindings({
-          schema_version: "v1",
-          bindings: [
-            {
-              ref: entry.ref,
-              source_env: entry.source_env,
-              label: entry.label,
-              enabled: true,
-              uses: [grant],
-            },
-          ],
-        }).selected(config, actor, grant.worker_image)?.ref === entry.ref
+        new InferenceBindings(
+          {
+            schema_version: "v1",
+            bindings: [
+              {
+                ref: entry.ref,
+                source_env: entry.source_env,
+                label: entry.label,
+                enabled: true,
+                uses: [grant],
+              },
+            ],
+          },
+          this.preset,
+        ).selected(config, actor, grant.worker_image)?.ref === entry.ref
       );
     } catch {
       return false;
@@ -546,7 +563,7 @@ export class InferenceRegistry {
     registry: Registry,
   ): InferenceReviewV1 {
     const preset = input.preset
-      ? (this.preset?.(input.preset.agent, input.preset.version) ?? null)
+      ? (this.preset?.bySlug(input.preset.agent, input.preset.version) ?? null)
       : null;
     const importPath = preset ? presetImportPath(preset) : null;
     if (
@@ -587,21 +604,24 @@ export class InferenceRegistry {
       allowed_hosts: [...input.allowed_hosts],
       allowed_models: [input.model_name],
     };
-    const check = policy(registry);
+    const check = policy(registry, this.preset);
     check.assertPublicStrings(agent, [PRESET_KEY_DESTINATION]);
     // The reviewed grant must admit exactly the record the run flow will build.
-    new InferenceBindings({
-      schema_version: "v1",
-      bindings: [
-        {
-          ref,
-          source_env: entry.source_env,
-          label: entry.label,
-          enabled: true,
-          uses: [grant],
-        },
-      ],
-    }).selected(validateHarborJobConfig({ agents: [agent] }), actor, this.image);
+    new InferenceBindings(
+      {
+        schema_version: "v1",
+        bindings: [
+          {
+            ref,
+            source_env: entry.source_env,
+            label: entry.label,
+            enabled: true,
+            uses: [grant],
+          },
+        ],
+      },
+      this.preset,
+    ).selected(validateHarborJobConfig({ agents: [agent] }), actor, this.image);
     const response = validateInferenceReview({
       schema_version: "v1",
       revision: registry.revision,

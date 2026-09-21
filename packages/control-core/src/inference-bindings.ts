@@ -4,6 +4,7 @@ import {
   canonicalJson,
   sha256,
   validateInferenceBindingManifest,
+  type AgentPresetV1,
   type AgentWorkbenchRecipeV1,
   type HarborJobConfigV1,
   type InferenceBindingManifestV1,
@@ -86,6 +87,13 @@ export interface PresetEndpointConnection {
   route_api: "chat-completions" | "responses" | "native";
 }
 
+/** Preset declarations admission resolves from the import path and version a built
+ *  record carries. The preset file stays the sole owner of the adapter option that
+ *  selects a wire API style; admission compares the record with it. */
+export interface PresetDeclarations {
+  byImportPath(importPath: string, version: string): AgentPresetV1 | null;
+}
+
 export function workbenchCredentialRef(recipe: AgentWorkbenchRecipeV1): string | null {
   const keys = recipe.environment.filter((entry) => entry.source === "model_api_key");
   const refs = new Set(keys.map((entry) => entry.credential_ref ?? null));
@@ -96,8 +104,13 @@ export function workbenchCredentialRef(recipe: AgentWorkbenchRecipeV1): string |
 /** Private immutable deployment policy. No environment access, provider probes or persistence. */
 export class InferenceBindings {
   readonly #manifest: InferenceBindingManifestV1;
+  readonly #presets: PresetDeclarations | undefined;
 
-  constructor(value: unknown = { schema_version: "v1", bindings: [] }) {
+  constructor(
+    value: unknown = { schema_version: "v1", bindings: [] },
+    presets?: PresetDeclarations,
+  ) {
+    this.#presets = presets;
     try {
       this.#manifest = structuredClone(validateInferenceBindingManifest(value));
       const refs = new Set<string>();
@@ -345,6 +358,27 @@ export class InferenceBindings {
     );
   }
 
+  /** The preset owns the adapter option that selects a wire API style and the grant owns
+   *  the reviewed route, so the built record must still agree with the declaration for
+   *  that route. A record whose option value changed after the build is denied, and an
+   *  unresolvable preset or an undeclared route is denied rather than trusted. */
+  private assertPresetRoute(
+    agent: Record<string, unknown>,
+    subject: { import_path: string; version: string },
+    grant: Grant,
+  ): void {
+    const declared = this.#presets?.byImportPath(
+      subject.import_path,
+      subject.version,
+    )?.endpoint_api;
+    const expected = declared?.api[grant.route_api];
+    const kwargs = agent.kwargs;
+    if (!declared || !expected) throw denied();
+    if (!kwargs || typeof kwargs !== "object" || Array.isArray(kwargs)) throw denied();
+    if ((kwargs as Record<string, unknown>)[declared.option] !== expected)
+      throw denied();
+  }
+
   private reviewedPreset(
     ref: string,
     actor: string,
@@ -364,6 +398,7 @@ export class InferenceBindings {
           );
     const grant = matches?.[0];
     if (!binding || !grant || matches?.length !== 1) throw denied();
+    this.assertPresetRoute(agent, subject, grant);
     this.assertPublicStrings(agent, grant.destination_env);
     return { binding, grant };
   }

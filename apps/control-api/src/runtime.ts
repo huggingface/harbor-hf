@@ -116,13 +116,18 @@ export async function createRuntime(
     (source) => Boolean(selectedSource(source)),
     () => new Date(),
     randomUUID,
-    // Reviewed preset subjects resolve through the same catalog the run flow builds from.
-    (agent, version) => {
-      try {
-        return presets.agent(agent, version);
-      } catch {
-        return null;
-      }
+    // Reviewed preset subjects resolve through the same catalog the run flow builds from:
+    // a review names a slug, and a built record carries the reviewed import path.
+    {
+      bySlug: (agent, version) => {
+        try {
+          return presets.agent(agent, version);
+        } catch {
+          return null;
+        }
+      },
+      byImportPath: (importPath, version) =>
+        presets.agentByImportPath(importPath, version),
     },
   );
   const admittedPolicy = () => inference.policy();

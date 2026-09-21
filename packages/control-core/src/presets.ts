@@ -170,6 +170,16 @@ export class PresetCatalog {
     return clone(found);
   }
 
+  /** Preset a built agent record names, resolved from its reviewed import path and
+   *  version. Null means this catalog holds no such revision. */
+  agentByImportPath(importPath: string, version: string): AgentPresetV1 | null {
+    return (
+      this.agents.find(
+        (item) => presetImportPath(item) === importPath && item.version === version,
+      ) ?? null
+    );
+  }
+
   leaderboardEligible(name: string, preset: string): boolean {
     return this.benchmark(name, preset).leaderboard_eligible;
   }
