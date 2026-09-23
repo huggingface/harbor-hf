@@ -11,6 +11,22 @@ default_branch: main
 
 Status: approved
 
+### Combined-result responsiveness — deployment approval, held
+
+Approved at: 2026-09-23T16:35:49Z
+
+- The user directly requested deploying the local responsiveness fix in
+  `0cf2eae` to the existing control Space. The timestamp records approval capture.
+- Deployment remains held on the documented global coverage gate. This request
+  does not waive validation, permit lowering thresholds, or authorize reverting
+  unrelated changes already present in the live service or current main.
+- Preserve the existing Bucket, hardware, secrets and immutable worker images.
+  No new resources, credential transfers, inference, paid tests or run mutations
+  are authorized. Require fresh idle inventory before any cutover.
+- PR publication and merge, wider coverage remediation and integration of newer
+  main changes have not yet been explicitly approved for this release. Prepare
+  one consolidated amendment before those actions; no remote mutation yet.
+
 ### Combined-result responsiveness — local implementation
 
 Approved at: 2026-09-23T16:22:04Z
@@ -3029,3 +3045,12 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
   blocker. No publication, deployment, run mutation, paid work, new resource or
   credential transfer occurred. See the responsiveness document for measurements
   and exact validation evidence. Earlier release approvals remain completed.
+
+### 2026-09-23 — Deployment requested; release preparation amendment pending
+
+- User directly approved deployment of the responsiveness fix. Recorded above;
+  the existing coverage hold remains and no external mutation occurred.
+- Pending additional scope: integrate current main without removing newer work,
+  remediate the existing global coverage deficit without weakening thresholds,
+  publish a reviewed PR and merge its exact green head before the approved idle
+  cutover. No new resources, paid tests or credential transfers are proposed.
