@@ -715,7 +715,9 @@ it("loads a large native result cohort with bounded fresh JSON reads only", asyn
       active--;
     }
   });
+  const list = vi.spyOn(store, "listDirectory");
   const bundle = await new ReplacementEvidence(store).bundle(source.run_id);
+  expect(list.mock.calls).toEqual([[`runs/${source.run_id}/job/`, []]]);
   expect(bundle.trials).toHaveLength(445);
   expect(maximum).toBeLessThanOrEqual(8);
   expect(observed).toHaveLength(449);
@@ -916,4 +918,124 @@ it("bounds nested evidence I/O across reads and listings and releases slots on r
   expect(results.every((result) => result.status === "rejected")).toBe(true);
   expect(peak).toBe(8);
   await expect(reader.read(`runs/${source.run_id}/job/lock.json`)).resolves.toEqual({});
+});
+
+it("lists job roots only and shares one inspection across overlapping view requests", async () => {
+  const replacement = (await child()).run;
+  await artifacts(replacement, [trial(third)]);
+  const read = vi.spyOn(store, "read");
+  const list = vi.spyOn(store, "listDirectory");
+  const complete = vi.fn(async () => {});
+  const views = new Replacements(store, projection, native, complete);
+  const [a, b, c] = await Promise.all(
+    Array.from({ length: 3 }, () => views.view(source.run_id)),
+  );
+  expect(a!.assembly.availability).toBe("available");
+  expect(b).toEqual(a);
+  expect(c).toEqual(a);
+  expect(complete).toHaveBeenCalledTimes(2);
+  expect(list.mock.calls).toHaveLength(7);
+  expect(list.mock.calls.every(([key]) => !key.includes("/task-"))).toBe(true);
+  const path = `runs/${source.run_id}/job/task-${first}/result.json`;
+  expect(read.mock.calls.filter(([key]) => key === path)).toHaveLength(1);
+  a!.children.length = 0;
+  a!.assembly.result!.changed = true;
+  expect(b!.children).toHaveLength(1);
+  expect(b!.assembly.result!.changed).toBeUndefined();
+  await views.view(source.run_id);
+  expect(read.mock.calls.filter(([key]) => key === path)).toHaveLength(2);
+  expect(complete).toHaveBeenCalledTimes(4);
+});
+
+it("does not retain rejected inspections or share inspections across different run IDs", async () => {
+  const views = new Replacements(store, projection, native, async () => {});
+  const list = vi.spyOn(store, "listDirectory");
+  list.mockRejectedValue(new Error("temporary listing failure"));
+  const failed = await Promise.allSettled([
+    views.view(source.run_id),
+    views.view(source.run_id),
+  ]);
+  expect(failed.map((value) => value.status)).toEqual(["rejected", "rejected"]);
+  expect(list).toHaveBeenCalledTimes(2);
+  list.mockRestore();
+  await expect(views.view(runId("absent"))).rejects.toThrow("not found");
+  const [valid, absent] = await Promise.allSettled([
+    views.view(source.run_id),
+    views.view(runId("absent")),
+  ]);
+  expect(valid.status).toBe("fulfilled");
+  expect(absent.status).toBe("rejected");
+  expect((await views.view(source.run_id)).assembly.availability).toBe("none");
+});
+
+it("direct trial reads distinguish absent artifacts from storage and malformed-data failures", async () => {
+  const directory = `runs/${source.run_id}/job/task-${first}/`;
+  const path = `${directory}result.json`;
+  await rm(join(store.root, path));
+  const reader = new ReplacementEvidence(store);
+  expect(await reader.trialResult(directory)).toBeNull();
+  await expect(reader.bundle(source.run_id)).rejects.toThrow("unfinished");
+  const views = new Replacements(store, projection, native, async () => {});
+  expect((await views.view(source.run_id)).incurred?.total_attempts).toBe(1);
+  await artifacts(source);
+  expect(await new ReplacementEvidence(store).trialResult(directory)).toEqual(
+    trial(first),
+  );
+  const read = store.read.bind(store);
+  vi.spyOn(store, "read").mockImplementation(async (key) => {
+    if (key === path) throw Object.assign(new Error("denied"), { code: "EACCES" });
+    return read(key);
+  });
+  await expect(new ReplacementEvidence(store).trialResult(directory)).rejects.toThrow(
+    "denied",
+  );
+  expect((await views.view(source.run_id)).incurred).toBeNull();
+  vi.mocked(store.read).mockRestore();
+  await store.put(path, new TextEncoder().encode("{invalid"));
+  await expect(new ReplacementEvidence(store).trialResult(directory)).rejects.toThrow();
+  expect((await views.view(source.run_id)).incurred).toBeNull();
+});
+
+it("rediscovers descendants before sharing an in-flight inspection of an older graph", async () => {
+  const replacement = (await child()).run;
+  await artifacts(replacement, [trial(third)]);
+  let release = () => {};
+  let signal = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise<void>((resolve) => {
+    signal = resolve;
+  });
+  const complete = vi
+    .fn(async () => {})
+    .mockImplementationOnce(async () => {
+      signal();
+      await held;
+    });
+  const views = new Replacements(store, projection, native, complete);
+  const older = views.view(source.run_id);
+  await entered;
+  try {
+    const descendant: RunRecordV1 = {
+      ...replacement,
+      run_id: runId("new-descendant"),
+      operator_selection: {
+        ...replacement.operator_selection!,
+        original_run_id: replacement.run_id,
+        trial_ids: [third],
+      },
+    };
+    await putJson(store, `runs/${descendant.run_id}/run.json`, descendant);
+    await artifacts(descendant, [trial("44444444-4444-4444-8444-444444444444")]);
+    const fresh = await views.view(source.run_id);
+    expect(fresh.assembly.availability).toBe("available");
+    expect(
+      vi.mocked(native.replacementAggregate).mock.lastCall?.[0].parts[0]?.parts[0]
+        ?.evidence.record.run_id,
+    ).toBe(descendant.run_id);
+  } finally {
+    release();
+    await older;
+  }
 });

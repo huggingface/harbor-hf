@@ -19,6 +19,7 @@
     "resolveJsonModule": true,
     "rootDir": "src",
     "skipLibCheck": true,
+    "sourceMap": true,
     "strict": true,
     "target": "ES2023",
     "useUnknownInCatchVariables": true,

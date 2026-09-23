@@ -11,6 +11,80 @@ default_branch: main
 
 Status: approved
 
+### Combined-result responsiveness — release follow-through
+
+Approved at: 2026-09-23T16:43:54Z
+
+- The user explicitly confirmed the consolidated release plan: integrate current
+  main, prepare and publish a reviewed PR, merge its exact green head, and deploy
+  to the existing control Space only after fresh idle checks. This supersedes
+  the earlier exclusion of publication, merge and main integration for this fix.
+- The user requested deferring the coverage requirement. The governing requirement
+  remains in force; do not lower thresholds, narrow coverage scope or waive a
+  failing gate. Reassess the integrated baseline and address test coverage within
+  release preparation, reporting any unresolved blocker before deployment.
+- Retain existing Bucket, hardware, settings, secrets and immutable worker images
+  when their inputs are unchanged. Disable writes during cutover, verify exact
+  provenance and authenticated readiness, then restore writes after validation.
+  Stop for changed worker inputs, revision conflicts or active execution.
+- No new resources, credential transfers, inference, paid tests, run mutations,
+  force pushes or history rewrites. Use the primary checkout and preserve other
+  branches, stashes and worktrees. No wider product behavior changes are included.
+- Run privacy checks and inspect full diffs and metadata before public mutations.
+  Record validation and release evidence without operator-specific identifiers.
+
+### Combined-result responsiveness — deployment approval, held
+
+Approved at: 2026-09-23T16:35:49Z
+
+- The user directly requested deploying the local responsiveness fix in
+  `0cf2eae` to the existing control Space. The timestamp records approval capture.
+- Deployment remains held on the documented global coverage gate. This request
+  does not waive validation, permit lowering thresholds, or authorize reverting
+  unrelated changes already present in the live service or current main.
+- Preserve the existing Bucket, hardware, secrets and immutable worker images.
+  No new resources, credential transfers, inference, paid tests or run mutations
+  are authorized. Require fresh idle inventory before any cutover.
+- PR publication and merge, wider coverage remediation and integration of newer
+  main changes have not yet been explicitly approved for this release. Prepare
+  one consolidated amendment before those actions; no remote mutation yet.
+
+### Combined-result responsiveness — local implementation
+
+Approved at: 2026-09-23T16:22:04Z
+
+- The user directly approved investigating and implementing a local fix with
+  tests after a read-only combined-result request exceeded the deployed browser
+  timeout. The timestamp records approval capture.
+- Scope: read-only diagnostics, offline profiling, Harbor-native API and history
+  review, local responsiveness improvements, regression tests, documentation and
+  local commits. Preserve native aggregate authority, source identity validation,
+  replacement selection, truthful freshness and unknown-cost semantics.
+- No push, PR, merge, deployment, image publication, resource creation, run
+  mutation, inference, paid compute or credential transfer. Deployment requires
+  separate approval. Preserve existing work and do not create worktrees.
+- Keep live diagnostic evidence and operator identifiers outside public files;
+  use synthetic fixtures. This approval does not reopen prior release scopes.
+
+### Results browsing deployment approval
+
+Approved at: 2026-09-12T00:00:00Z
+
+- The user explicitly confirmed the proposed consolidated deployment plan.
+  Approved cutover scope: deploy exact merged
+  revision `1499be727f999faef6a10babf1465749d81be15e` to the existing private
+  control Space, retaining its Bucket, hardware, settings and secrets.
+- Reuse existing verified immutable parent and Workbench image digests only if
+  their package, lockfile and Dockerfile inputs are unchanged. Otherwise stop
+  for separate image-publication approval.
+- Require fresh idle inventory before cutover; do not interrupt or cancel active
+  runs or setup Jobs. Temporarily disable writes, rebuild the control Space,
+  verify provenance and authenticated readiness, then restore writes only after
+  validation. No new resources, credential transfers, inference or paid tests.
+- The user reports no active runs; verify fresh inventory rather than treating
+  that observation as enduring cutover evidence. This approval does not reopen
+  the completed implementation/merge scope. Exact approval time not recorded.
+
 ### Built-in inference review fix and exact-green-head PR merge
 
 Approved at: 2026-09-12T00:00:00Z
@@ -2916,3 +2990,112 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 - Publish the reviewed fix and updated PR scope, then wait for hosted CI on the
   exact latest head before the authorized squash merge. Merge remains pending
   at this entry; deployment and image publication remain unauthorized.
+
+### 2026-09-12 — Results browsing and inference review merge completed
+
+- PR #224 was squash merged after successful hosted CI on exact independently
+  reviewed head `439ad51bf1099624e675f2da9f32625a37ed1c2e`.
+- Verified merged commit `1499be727f999faef6a10babf1465749d81be15e` has the
+  identical tree to that reviewed head and the PR is merged/closed.
+- The approved implementation/publication/merge scope is completed. This
+  completion record is local; no additional feature publication is required.
+  Branches and worktrees were preserved. No deployment, image publication,
+  credential transfer, grant, run mutation, inference or paid compute occurred.
+- Any deployment requires new explicit authorization and fresh release gates;
+  earlier private deployment preparation is not current-head readiness proof.
+
+### 2026-09-12 — Results browsing deployment scope pending
+
+- User requested deployment after the approved merge completed. The consolidated
+  existing-Space cutover scope above is pending explicit confirmation, including
+  a temporary write outage and verified immutable-image reuse. No external
+  mutation or deployment has started.
+
+### 2026-09-12 — Results browsing deployment approved
+
+- The user explicitly confirmed the consolidated existing-Space cutover plan
+  above. Record and commit approval before deployment work. No active-execution
+  exception, worker-image publication or credential transfer is included.
+
+### 2026-09-12 — Results browsing deployment completed
+
+- Deployed exact merged revision
+  `1499be727f999faef6a10babf1465749d81be15e` to the existing private control
+  Space. Successful CI, exact bundle contents, repository/runtime provenance,
+  Harbor pin and immutable worker-image provenance were verified. Worker inputs
+  were unchanged; both existing image references were retained.
+- Fresh provider inventory was terminal before and after cutover. Existing
+  paused runs remained paused. Writes were disabled during rebuilding and
+  restored only after authenticated liveness/readiness, session, presets,
+  projection, policy, run records and console-asset checks passed. Stable
+  enabled-mode verification also passed with no runtime errors.
+- Historical setup recovery briefly reports queued while replaying a terminal
+  Job's saved events and regenerates its observational completion timestamp.
+  Held upload, inspected the native service recovery path, and independently
+  reviewed bounded read-only recovery verification. Setup identity, outcome,
+  artifacts and exact terminal provider inventory remained unchanged; no setup
+  or benchmark execution occurred. No service behavior was changed for this.
+- Space privacy, hardware, Bucket, secrets, images and unrelated settings were
+  preserved. No credential transfer, inference grant, new resource, worker-image
+  publication, benchmark mutation or paid test was performed. Private evidence
+  remains outside the public repository; this completion record is local.
+
+### 2026-09-23 — Combined-result responsiveness approval
+
+- User approved local investigation, implementation and tests for combined-result
+  responsiveness. No deployment or external mutation is included; see the current
+  authorization for exact scope and limits.
+
+### 2026-09-23 — Local responsiveness implementation; validation hold
+
+- Removed per-trial listing round trips while preserving fresh native evidence,
+  missing-result semantics and the existing eight-operation reader bound.
+  Overlapping read-only views share inspection only after every caller freshly
+  discovers the same record graph; new descendants fence older work.
+- Offline synthetic 445-plus-four-trial evidence loading improved from 1,390 ms
+  to 716 ms, with 454 listings reduced to five. Four overlapping requests reduced
+  reads/listings from 1,828/1,816 to 463/eight. This is not hosted latency evidence.
+- Required Node checks, 1,645 unit tests, 77 browser tests, root Python checks,
+  102 tests at 89.10%, agent checks and 598 tests, both linux/amd64 Docker builds,
+  Slophammer and privacy checks pass. Changed modules exceed 97% line and 92%
+  branch coverage. No durable schema, API/UI value or native aggregation changed.
+- An additional full-repository coverage run fails the configured global 85%
+  threshold. A clean implementation/test baseline reproduces the shortfall
+  (83.39% lines, 77.31% branches); patched coverage is 83.40%/77.32%. Keep this
+  validation hold explicit; thresholds and coverage scope were not weakened.
+- Local implementation is available for review; global coverage remains a release
+  blocker. No publication, deployment, run mutation, paid work, new resource or
+  credential transfer occurred. See the responsiveness document for measurements
+  and exact validation evidence. Earlier release approvals remain completed.
+
+### 2026-09-23 — Deployment requested; release preparation amendment pending
+
+- User directly approved deployment of the responsiveness fix. Recorded above;
+  the existing coverage hold remains and no external mutation occurred.
+- Pending additional scope: integrate current main without removing newer work,
+  remediate the existing global coverage deficit without weakening thresholds,
+  publish a reviewed PR and merge its exact green head before the approved idle
+  cutover. No new resources, paid tests or credential transfers are proposed.
+
+### 2026-09-23 — Release follow-through approved
+
+- User confirmed the consolidated release plan. Publication, exact-green-head
+  merge and idle cutover are approved within the current release scope above.
+  The requested future coverage-rule change is not applied by this authorization.
+
+### 2026-09-23 — Responsiveness release preparation
+
+- Integrated current main; retained newer reviewed endpoint-connection and CI
+  changes. Resolved squash-history conflicts without changing the responsiveness
+  patch or losing existing authorization history.
+- Resolved the coverage hold without waiver: TypeScript source maps prevent
+  counting compiled workspace exports as separate untested implementations.
+  Added source-map, source-location and browser-pricing schema boundary tests.
+  No coverage source exclusion, threshold reduction or product expansion.
+- Full Node coverage passes at 91% lines, 85.08% branches, 88.31% functions and
+  89.31% statements with 1,667 tests. All 77 browser tests pass; fresh release
+  validation and exact-head CI remain required before merge and cutover.
+- Read-only inventory found no active owned provider Jobs and no active runs;
+  paused runs remain paused. Refresh this inventory at cutover. The live release
+  still matches the previously verified source; immutable worker references remain
+  configured. No remote mutation, inference or paid test occurred in preparation.

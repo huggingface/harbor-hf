@@ -161,6 +161,15 @@ export class ReplacementEvidence {
       return record;
     });
   }
+  /** The native result path is known; do not list every trial's artifacts first. */
+  async trialResult(directory: string): Promise<Record<string, unknown> | null> {
+    try {
+      return await this.read(`${directory}result.json`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
   async bundle(id: string): Promise<SourceBundle> {
     if (!/^run-[0-9a-f]{24}$/.test(id))
       throw new ReplacementError(409, "Invalid source identity");
@@ -178,11 +187,9 @@ export class ReplacementEvidence {
       throw new ReplacementError(409, "Missing native evidence");
     const listing = await this.directory(job, []);
     const results = await evidenceMap(listing.directories, async (directory) => {
-      const files = await this.directory(directory, ["result.json"]);
-      const entry = files.files.find((file) => file.key === `${directory}result.json`);
-      if (!entry)
+      const trial = await this.trialResult(directory);
+      if (!trial)
         throw new ReplacementError(409, "Source has unfinished native trial artifacts");
-      const trial = await this.read(entry.key);
       if (`${job}${String(trial.trial_name)}/` !== directory)
         throw new ReplacementError(409, "Native trial artifact identity mismatch");
       return trial;
