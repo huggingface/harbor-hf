@@ -103,3 +103,27 @@ and fresh-state tests remain in place.
 
 Local implementation is available for review, but the global coverage gate
 remains unresolved. No release readiness or hosted improvement is claimed.
+
+## Release follow-through: coverage hold resolved
+
+Integrated current main without dropping the reviewed endpoint-connection or CI
+changes. The historical coverage hold above is resolved, not waived. The report
+had counted workspace TypeScript and its compiled JavaScript as separate files:
+API tests import compiled workspace exports while unit tests import their source.
+Enabling TypeScript source maps maps both executions to their original source.
+No source is excluded and no coverage threshold or test scope is reduced.
+
+Added regression tests for emitted relative source maps, read-only Git source
+location failures, and the existing generated browser pricing schema's closed
+objects, required fields, nullable rate boundaries and malformed stored data.
+These are build/test corrections, not new Harbor behavior or API/schema fields.
+The first control-image build exposed an installer test placed outside its normal
+`test/` directory; moved it into that existing directory rather than altering the
+production build exclusions or adding test dependencies to the image.
+
+Validation after integration: 1,667 Node tests, full-repository coverage at 91%
+lines, 85.08% branches, 88.31% functions and 89.31% statements; all 77 browser tests
+pass. Configured format, lint, types, build, generated checks, dependency audit,
+Python checks, Slophammer and both Docker builds are required before publication.
+Parent worker inputs remain unchanged. The TypeScript build setting is
+control-only; no parent image publication is needed.

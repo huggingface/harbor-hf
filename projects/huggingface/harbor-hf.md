@@ -3082,3 +3082,20 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 - User confirmed the consolidated release plan. Publication, exact-green-head
   merge and idle cutover are approved within the current release scope above.
   The requested future coverage-rule change is not applied by this authorization.
+
+### 2026-09-23 — Responsiveness release preparation
+
+- Integrated current main; retained newer reviewed endpoint-connection and CI
+  changes. Resolved squash-history conflicts without changing the responsiveness
+  patch or losing existing authorization history.
+- Resolved the coverage hold without waiver: TypeScript source maps prevent
+  counting compiled workspace exports as separate untested implementations.
+  Added source-map, source-location and browser-pricing schema boundary tests.
+  No coverage source exclusion, threshold reduction or product expansion.
+- Full Node coverage passes at 91% lines, 85.08% branches, 88.31% functions and
+  89.31% statements with 1,667 tests. All 77 browser tests pass; fresh release
+  validation and exact-head CI remain required before merge and cutover.
+- Read-only inventory found no active owned provider Jobs and no active runs;
+  paused runs remain paused. Refresh this inventory at cutover. The live release
+  still matches the previously verified source; immutable worker references remain
+  configured. No remote mutation, inference or paid test occurred in preparation.
