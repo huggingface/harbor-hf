@@ -50,6 +50,7 @@ export class Replacements {
     { key: string; result: Record<string, unknown>; bytes: number }
   >();
   private cacheBytes = 0;
+  private readonly inspecting = new Map<string, Promise<ReplacementView>>();
   constructor(
     private readonly store: ObjectStore,
     private readonly projection: Projection,
@@ -137,9 +138,8 @@ export class Replacements {
         const { directories } = await reader.directory(job, []);
         return (
           await evidenceMap(directories, async (directory) => {
-            const { files } = await reader.directory(directory, ["result.json"]);
-            const entry = files.find((file) => file.key === `${directory}result.json`);
-            return entry ? summarizeTrial(id, "", await reader.read(entry.key)) : null;
+            const trial = await reader.trialResult(directory);
+            return trial ? summarizeTrial(id, "", trial) : null;
           })
         ).filter((trial) => trial !== null);
       })
@@ -161,7 +161,26 @@ export class Replacements {
 
   async view(id: string): Promise<ReplacementView> {
     const reader = new ReplacementEvidence(this.store);
+    // Every caller rediscovers relationships before joining unfinished work.
+    // A newly added descendant must never join an older graph's inspection.
     const records = await reader.records();
+    const key = `${id}:${sha256(canonicalJson(records))}`;
+    let pending = this.inspecting.get(key);
+    if (!pending) {
+      pending = this.inspect(id, reader, records).finally(() =>
+        this.inspecting.delete(key),
+      );
+      this.inspecting.set(key, pending);
+    }
+    // Only in-flight work is shared; isolate responses and retain no failures.
+    return structuredClone(await pending);
+  }
+
+  private async inspect(
+    id: string,
+    reader: ReplacementEvidence,
+    records: RunRecordV1[],
+  ): Promise<ReplacementView> {
     const record = records.find((record) => record.run_id === id);
     if (!record) throw new ReplacementError(400, "Run was not found");
     const children = records

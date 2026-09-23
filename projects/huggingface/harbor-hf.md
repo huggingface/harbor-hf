@@ -3007,3 +3007,25 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
 - User approved local investigation, implementation and tests for combined-result
   responsiveness. No deployment or external mutation is included; see the current
   authorization for exact scope and limits.
+
+### 2026-09-23 — Local responsiveness implementation; validation hold
+
+- Removed per-trial listing round trips while preserving fresh native evidence,
+  missing-result semantics and the existing eight-operation reader bound.
+  Overlapping read-only views share inspection only after every caller freshly
+  discovers the same record graph; new descendants fence older work.
+- Offline synthetic 445-plus-four-trial evidence loading improved from 1,390 ms
+  to 716 ms, with 454 listings reduced to five. Four overlapping requests reduced
+  reads/listings from 1,828/1,816 to 463/eight. This is not hosted latency evidence.
+- Required Node checks, 1,645 unit tests, 77 browser tests, root Python checks,
+  102 tests at 89.10%, agent checks and 598 tests, both linux/amd64 Docker builds,
+  Slophammer and privacy checks pass. Changed modules exceed 97% line and 92%
+  branch coverage. No durable schema, API/UI value or native aggregation changed.
+- An additional full-repository coverage run fails the configured global 85%
+  threshold. A clean implementation/test baseline reproduces the shortfall
+  (83.39% lines, 77.31% branches); patched coverage is 83.40%/77.32%. Keep this
+  validation hold explicit; thresholds and coverage scope were not weakened.
+- Local implementation is available for review; global coverage remains a release
+  blocker. No publication, deployment, run mutation, paid work, new resource or
+  credential transfer occurred. See the responsiveness document for measurements
+  and exact validation evidence. Earlier release approvals remain completed.
