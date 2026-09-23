@@ -127,3 +127,19 @@ pass. Configured format, lint, types, build, generated checks, dependency audit,
 Python checks, Slophammer and both Docker builds are required before publication.
 Parent worker inputs remain unchanged. The TypeScript build setting is
 control-only; no parent image publication is needed.
+
+## Hosted release outcome
+
+PR #229 merged after exact-head CI; merged revision
+`66c9cbf0cf0f5a4d6869006e91208e48433502d7` was deployed with writes disabled during
+cutover and restored after provenance, readiness, data and idle-inventory checks.
+Runtime, assets and native aggregation verified successfully with unchanged
+resources and worker images. No benchmark execution was started or interrupted.
+
+**The live responsiveness problem remains unresolved.** Hosted inspections still
+exceeded the browser's existing deadline, even though they returned the expected
+native aggregate. The offline timing comparison must not be interpreted as a
+hosted improvement claim. Remaining transport/inspection costs need measured
+follow-up; this release did not add a timeout extension or speculative cache.
+Private run identifiers, results and detailed operational evidence are not
+published here.
