@@ -9,7 +9,24 @@ default_branch: main
 
 ## Current authorization
 
-Status: completed
+Status: approved
+
+### Combined-result responsiveness — local implementation
+
+Approved at: 2026-09-23T16:22:04Z
+
+- The user directly approved investigating and implementing a local fix with
+  tests after a read-only combined-result request exceeded the deployed browser
+  timeout. The timestamp records approval capture.
+- Scope: read-only diagnostics, offline profiling, Harbor-native API and history
+  review, local responsiveness improvements, regression tests, documentation and
+  local commits. Preserve native aggregate authority, source identity validation,
+  replacement selection, truthful freshness and unknown-cost semantics.
+- No push, PR, merge, deployment, image publication, resource creation, run
+  mutation, inference, paid compute or credential transfer. Deployment requires
+  separate approval. Preserve existing work and do not create worktrees.
+- Keep live diagnostic evidence and operator identifiers outside public files;
+  use synthetic fixtures. This approval does not reopen prior release scopes.
 
 ### Results browsing deployment approval
 
@@ -2984,3 +3001,9 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
   preserved. No credential transfer, inference grant, new resource, worker-image
   publication, benchmark mutation or paid test was performed. Private evidence
   remains outside the public repository; this completion record is local.
+
+### 2026-09-23 — Combined-result responsiveness approval
+
+- User approved local investigation, implementation and tests for combined-result
+  responsiveness. No deployment or external mutation is included; see the current
+  authorization for exact scope and limits.
