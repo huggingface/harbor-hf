@@ -11,6 +11,28 @@ default_branch: main
 
 Status: approved
 
+### Combined-result responsiveness — release follow-through
+
+Approved at: 2026-09-23T16:43:54Z
+
+- The user explicitly confirmed the consolidated release plan: integrate current
+  main, prepare and publish a reviewed PR, merge its exact green head, and deploy
+  to the existing control Space only after fresh idle checks. This supersedes
+  the earlier exclusion of publication, merge and main integration for this fix.
+- The user requested deferring the coverage requirement. The governing requirement
+  remains in force; do not lower thresholds, narrow coverage scope or waive a
+  failing gate. Reassess the integrated baseline and address test coverage within
+  release preparation, reporting any unresolved blocker before deployment.
+- Retain existing Bucket, hardware, settings, secrets and immutable worker images
+  when their inputs are unchanged. Disable writes during cutover, verify exact
+  provenance and authenticated readiness, then restore writes after validation.
+  Stop for changed worker inputs, revision conflicts or active execution.
+- No new resources, credential transfers, inference, paid tests, run mutations,
+  force pushes or history rewrites. Use the primary checkout and preserve other
+  branches, stashes and worktrees. No wider product behavior changes are included.
+- Run privacy checks and inspect full diffs and metadata before public mutations.
+  Record validation and release evidence without operator-specific identifiers.
+
 ### Combined-result responsiveness — deployment approval, held
 
 Approved at: 2026-09-23T16:35:49Z
@@ -3054,3 +3076,9 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
   remediate the existing global coverage deficit without weakening thresholds,
   publish a reviewed PR and merge its exact green head before the approved idle
   cutover. No new resources, paid tests or credential transfers are proposed.
+
+### 2026-09-23 — Release follow-through approved
+
+- User confirmed the consolidated release plan. Publication, exact-green-head
+  merge and idle cutover are approved within the current release scope above.
+  The requested future coverage-rule change is not applied by this authorization.
