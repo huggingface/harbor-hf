@@ -14,9 +14,20 @@ benchmark: {
 name: RunRecordSlug
 preset: RunRecordSlug
 }
+/**
+ * A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style.
+ */
 model?: {
 id: string
-provider: RunRecordSlug
+provider?: RunRecordSlug
+/**
+ * Reviewed endpoint connection this submission selected
+ */
+connection?: string
+/**
+ * Native Harbor agent argument value that selects the wire API style
+ */
+model_api?: string
 reasoning_effort: string
 }
 harness?: {

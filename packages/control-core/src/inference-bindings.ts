@@ -49,6 +49,45 @@ export function inferenceRecipeDigest(agent: Record<string, unknown>): string {
   );
 }
 
+/** Destination env name of a reviewed preset connection. Harbor reads the declared
+ *  base URL and key from this environment, so the preset names no route of its own. */
+export const PRESET_KEY_DESTINATION = "OPENAI_API_KEY";
+
+/** Native preset identity as it appears in a built JobConfig agent record. */
+export function presetSubject(
+  agent: Record<string, unknown>,
+): { import_path: string; version: string } | null {
+  const importPath = agent.import_path;
+  const kwargs = agent.kwargs;
+  const version =
+    kwargs && typeof kwargs === "object" && !Array.isArray(kwargs)
+      ? (kwargs as Record<string, unknown>).version
+      : undefined;
+  if (typeof importPath !== "string" || !importPath) return null;
+  if (typeof version !== "string" || !version) return null;
+  return { import_path: importPath, version };
+}
+
+const PRESET_ROUTE = "openai/";
+
+/** Model identity of a reviewed preset record: the route prefix is transport, not identity. */
+export function presetModelId(modelName: unknown): string | null {
+  if (typeof modelName !== "string" || !modelName.startsWith(PRESET_ROUTE)) return null;
+  const modelId = modelName.slice(PRESET_ROUTE.length);
+  return modelId ? modelId : null;
+}
+
+/** One reviewed endpoint connection a submission selected for a native preset identity.
+ *  The grant owns the base URL, the admitted hosts, the key destination and the native
+ *  wire API style; the submission names the connection and the same wire API style. */
+export interface PresetEndpointConnection {
+  ref: string;
+  source: string;
+  base_url: string;
+  allowed_hosts: string[];
+  model_api: string;
+}
+
 export function workbenchCredentialRef(recipe: AgentWorkbenchRecipeV1): string | null {
   const keys = recipe.environment.filter((entry) => entry.source === "model_api_key");
   const refs = new Set(keys.map((entry) => entry.credential_ref ?? null));
@@ -78,7 +117,28 @@ export class InferenceBindings {
         for (const grant of binding.uses) {
           const { destination_env: _destinations, ...metadata } = grant;
           this.assertPublicStrings(metadata);
-          if (grant.route_api !== "native" && grant.base_url === null) throw denied();
+          const usesPreset = grant.agent_version !== undefined;
+          if (usesPreset === (grant.recipe_digest !== undefined)) throw denied();
+          if (usesPreset) {
+            // A preset subject names one reviewed endpoint, and Harbor reads the
+            // declared base URL and key, so the key destination is fixed. The wire API
+            // style is the native agent argument, which a recipe subject does not use.
+            if (grant.base_url === null) throw denied();
+            if (grant.model_api === undefined || grant.route_api !== undefined)
+              throw denied();
+            if (
+              canonicalJson(grant.destination_env) !==
+              canonicalJson([PRESET_KEY_DESTINATION])
+            )
+              throw denied();
+          } else if (grant.route_api === undefined || grant.model_api !== undefined)
+            throw denied();
+          if (
+            grant.route_api !== undefined &&
+            grant.route_api !== "native" &&
+            grant.base_url === null
+          )
+            throw denied();
           if (grant.base_url !== null) {
             const url = new URL(grant.base_url);
             if (
@@ -253,6 +313,86 @@ export class InferenceBindings {
     };
   }
 
+  /** One reviewed endpoint connection named explicitly by a submission, or null when the
+   *  submission selects none. This never matches on its own: an unknown, disabled or
+   *  mismatched reference returns null, and the submission flow denies the run instead of
+   *  silently sending it to the router. */
+  presetConnection(
+    ref: string,
+    identity: { import_path: string; version: string },
+    modelId: string,
+    actor: string,
+    image: string,
+    modelApi: string,
+  ): PresetEndpointConnection | null {
+    const binding = this.#manifest.bindings.find(
+      (entry) => entry.ref === ref && entry.enabled,
+    );
+    if (!binding) return null;
+    const matches = binding.uses.filter(
+      (use) =>
+        use.base_url !== null &&
+        use.model_api === modelApi &&
+        this.presetMatches(use, identity, modelId, actor, image),
+    );
+    if (matches.length !== 1) return null;
+    return {
+      ref: binding.ref,
+      source: binding.source_env,
+      base_url: matches[0]!.base_url!,
+      allowed_hosts: [...matches[0]!.allowed_hosts],
+      model_api: modelApi,
+    };
+  }
+
+  private presetMatches(
+    use: Grant,
+    identity: { import_path: string; version: string },
+    modelId: string,
+    actor: string,
+    image: string,
+  ): boolean {
+    return (
+      use.agent_version === identity.version &&
+      use.agent_import_path === identity.import_path &&
+      use.operator_subjects.includes(actor) &&
+      use.worker_image === image &&
+      use.allowed_models.includes(modelId)
+    );
+  }
+
+  private reviewedPreset(
+    ref: string,
+    actor: string,
+    image: string,
+    agent: Record<string, unknown>,
+    subject: { import_path: string; version: string },
+  ): { binding: Binding; grant: Grant } {
+    const binding = this.#manifest.bindings.find(
+      (entry) => entry.ref === ref && entry.enabled,
+    );
+    const modelId = presetModelId(agent.model_name);
+    const kwargs = agent.kwargs;
+    // The record must still name exactly the native wire API style the grant approved,
+    // so a persisted record whose agent argument changed after the build is denied.
+    const modelApi =
+      kwargs && typeof kwargs === "object" && !Array.isArray(kwargs)
+        ? (kwargs as Record<string, unknown>).model_api
+        : undefined;
+    const matches =
+      modelId === null
+        ? undefined
+        : binding?.uses.filter(
+            (use) =>
+              use.model_api === modelApi &&
+              this.presetMatches(use, subject, modelId, actor, image),
+          );
+    const grant = matches?.[0];
+    if (!binding || !grant || matches?.length !== 1) throw denied();
+    this.assertPublicStrings(agent, grant.destination_env);
+    return { binding, grant };
+  }
+
   /** Recheck immutable native input against current grants at submit and every start/restart. */
   selected(
     config: HarborJobConfigV1,
@@ -292,7 +432,10 @@ export class InferenceBindings {
     const env = agent.env ?? {};
     const ref = template.exec(env.OPENAI_API_KEY ?? "")?.[1];
     if (!ref) throw denied();
-    const { binding, grant } = this.reviewed(ref, actor, image, agent);
+    const subject = presetSubject(agent);
+    const { binding, grant } = subject
+      ? this.reviewedPreset(ref, actor, image, agent, subject)
+      : this.reviewed(ref, actor, image, agent);
     const expected = {
       OPENAI_API_KEY: `\${${ref}}`,
       ...(grant.base_url === null ? {} : { OPENAI_BASE_URL: grant.base_url }),

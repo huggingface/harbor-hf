@@ -12,6 +12,7 @@ import {
   InferenceBindingDenied,
   InferenceBindings,
   inferencePresence,
+  type PresetEndpointConnection,
 } from "./inference-bindings.js";
 import type { AgentWorkbenchRecipeV1, HarborJobConfigV1 } from "@harbor-hf/contracts";
 import { correctPricing } from "./pricing-corrections.js";
@@ -32,6 +33,7 @@ import {
   directSubmission,
   type HarborAgentFragment,
   prepareDirectJobConfig,
+  presetImportPath,
   type PresetCatalog,
   type PresetSubmission,
 } from "./presets.js";
@@ -230,8 +232,25 @@ export class ControlService {
     positiveCeiling(input.cost_ceiling_usd);
     if (containsCredentialMaterial(input))
       throw new Error("preset submission contains credential material");
+    const route = input.model;
+    // A submission names exactly one route: a Hub provider, or a reviewed endpoint
+    // connection with its native wire API style. Accepting both would let a reviewed
+    // credential decide where an otherwise identical submission runs.
+    if (
+      (route.connection === undefined) !== (route.model_api === undefined) ||
+      (route.connection !== undefined && route.provider !== undefined)
+    )
+      throw new InferenceBindingDenied(
+        "The agent preset cannot use a reviewed endpoint connection",
+      );
     const id = runId(idempotencyKey);
-    const jobConfig = this.presets.buildJobConfig(id, input, this.options.mountRoot);
+    const endpoint = await this.presetEndpoint(input, actor);
+    const jobConfig = this.presets.buildJobConfig(
+      id,
+      input,
+      this.options.mountRoot,
+      endpoint,
+    );
     const record = validateRunRecord({
       schema_version: "v1",
       run_id: id,
@@ -248,6 +267,45 @@ export class ControlService {
       harbor_job_config: jobConfig,
     });
     return this.persistSubmission(record);
+  }
+
+  /** A reviewed endpoint connection is used only when the submission names one. The grant
+   *  owns the base URL, the admitted hosts, the key destination and the approved wire API
+   *  style, so a credential never selects a route on its own. A named connection that does
+   *  not resolve is denied rather than quietly sent to the router. */
+  private async presetEndpoint(
+    input: PresetSubmission,
+    actor: string,
+  ): Promise<PresetEndpointConnection | null> {
+    const ref = input.model.connection;
+    if (!ref) return null;
+    const modelApi = input.model.model_api;
+    const execution = this.options.inference;
+    if (!execution || !modelApi)
+      throw new InferenceBindingDenied(
+        "The agent preset cannot use a reviewed endpoint connection",
+      );
+    const preset = this.presets.agent(input.harness.agent, input.harness.version);
+    const importPath = presetImportPath(preset);
+    if (!importPath)
+      throw new InferenceBindingDenied(
+        "The agent preset cannot use a reviewed endpoint connection",
+      );
+    const connection = (await execution.policy()).presetConnection(
+      ref,
+      { import_path: importPath, version: preset.version },
+      input.model.id,
+      actor,
+      execution.image,
+      modelApi,
+    );
+    if (!connection)
+      throw new InferenceBindingDenied(
+        "The agent preset cannot use a reviewed endpoint connection",
+      );
+    if (!inferencePresence(execution.present, connection.source))
+      throw new InferenceBindingDenied();
+    return connection;
   }
 
   private replacementNative(): ReplacementNativePort {

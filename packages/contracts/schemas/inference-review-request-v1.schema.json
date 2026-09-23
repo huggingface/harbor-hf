@@ -4,13 +4,7 @@
   "title": "Inference Review Request V1",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "expected_revision",
-    "recipe",
-    "model_name",
-    "base_url",
-    "allowed_hosts"
-  ],
+  "required": ["expected_revision", "model_name", "base_url", "allowed_hosts"],
   "properties": {
     "expected_revision": {
       "type": "integer",
@@ -19,6 +13,23 @@
     },
     "recipe": {
       "$ref": "agent-workbench-v1.schema.json"
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "version"],
+      "properties": {
+        "agent": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "description": "Native agent preset selected from the preset catalog"
     },
     "model_name": {
       "type": "string",
@@ -38,6 +49,11 @@
         "maxLength": 253
       },
       "uniqueItems": true
+    },
+    "model_api": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "description": "Wire API the reviewed endpoint speaks for this preset subject"
     }
   }
 }

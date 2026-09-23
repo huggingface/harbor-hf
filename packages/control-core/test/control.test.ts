@@ -520,6 +520,40 @@ describe("run submission", () => {
         "test-subject",
       ),
     ).rejects.toThrow("reasoning effort");
+    // One submission names exactly one route: a Hub provider, or a reviewed endpoint
+    // connection with its native wire API style. A reviewed credential never decides it.
+    for (const [key, model] of [
+      [
+        "route-connection-without-api",
+        {
+          id: "example/model",
+          connection: "INFERENCE_API_KEY_EXAMPLE",
+          reasoning_effort: "off",
+        },
+      ],
+      [
+        "route-api-without-connection",
+        {
+          id: "example/model",
+          model_api: "openai-completions",
+          reasoning_effort: "off",
+        },
+      ],
+      [
+        "route-provider-with-connection",
+        {
+          id: "example/model",
+          provider: "together",
+          connection: "INFERENCE_API_KEY_EXAMPLE",
+          model_api: "openai-completions",
+          reasoning_effort: "off",
+        },
+      ],
+    ] as const) {
+      await expect(
+        service.submitPreset({ ...input, model }, key, "test-subject"),
+      ).rejects.toThrow("cannot use a reviewed endpoint connection");
+    }
     for (const [key, modelId] of [
       ["preset-credential-token", `hf_${"x".repeat(24)}`],
       ["preset-credential-url", "https://user:password@example.test/model"],

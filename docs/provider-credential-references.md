@@ -41,6 +41,37 @@ introduced. The adapter rechecks the exact grant at dispatch and restart; missin
 or disabled selected credentials deny admission without legacy HF fallback.
 Already running workers are not remotely revoked by disabling a reference.
 
+## Native agent preset connections
+
+A native agent preset can use the same reviewed connection. The subject of the
+grant is then the preset identity, the agent slug plus its version, instead of a
+Workbench recipe digest. The grant holds the exact base URL, the declared hosts,
+the native wire API style, the single model and the fixed key destination
+`OPENAI_API_KEY`.
+
+A run submission selects that connection explicitly. It names the reviewed
+reference and the native wire API style in `model.connection` and
+`model.model_api`, and it names no Hub provider. A submission that names both a
+provider and a connection, a connection without a wire API style, or a wire API
+style without a connection is refused before any run record is written. A
+submission that names no connection keeps the ordinary router route, so approving
+a credential never changes where an otherwise identical submission runs.
+
+`model_api` is Harbor's own agent argument: at a custom endpoint Harbor requires
+it and `pi` writes it into its `models.json` `api` value. The grant stores the
+value it reviewed, and admission requires the built record to carry exactly that
+value, so a record whose wire API style changed after the build is denied. Only
+the submission names the connection and its wire API style; no preset field, no
+alias table and no submission-supplied URL is added.
+
+The run record for such a connection is the ordinary `openai/<model>` route with
+the reviewed base URL and an opaque key reference. Admission and restart recheck
+that record against the approved grant. A model outside the grant, another preset
+version, another worker image, another operator, a changed base URL, a changed
+host list or a changed wire API style is denied. A connection the submission
+names but the registry does not hold for this exact subject is denied as well,
+and the run never falls back to the router.
+
 ## Deployment caveat
 
 This local implementation does not authorize deployment, credential movement or
@@ -97,3 +128,10 @@ an explicit non-null reviewed base URL and a `model_base_url` run binding.
 Only `native` permits key-only/null-URL connections. Admission and restart check
 the same constraints; an ambient URL is never an approved substitute. Legacy HF
 recipes and the separate control-token deployment hold are unchanged.
+
+A preset-subject grant is the same kind of reviewed binding: it always needs a
+non-null base URL, its hosts, one native wire API style and one model, and it
+fixes the key destination. A preset grant without a base URL or with another
+destination is rejected. The wire API field follows the subject: a preset grant
+that carries the recipe `route_api` vocabulary is rejected, and a recipe grant
+that carries the native `model_api` value is rejected.

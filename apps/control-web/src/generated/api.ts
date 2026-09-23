@@ -2579,13 +2579,18 @@ export interface components {
                     operator_subjects: string[];
                     worker_image: string;
                     agent_import_path: string;
-                    recipe_digest: string;
+                    /** @description Reviewed Workbench recipe identity */
+                    recipe_digest?: string;
+                    /** @description Reviewed native agent preset version */
+                    agent_version?: string;
                     destination_env: string[];
                     /** @enum {unknown} */
-                    route_api: "chat-completions" | "responses" | "native";
+                    route_api?: "chat-completions" | "responses" | "native";
                     base_url: string | null;
                     allowed_hosts: string[];
                     allowed_models: string[];
+                    /** @description Native Harbor agent argument value that selects the wire API style */
+                    model_api?: string;
                 }[];
             }[];
             revision: number;
@@ -2600,10 +2605,17 @@ export interface components {
         /** Inference Review Request V1 */
         InferenceReviewRequest: {
             expected_revision: number;
-            recipe: components["schemas"]["WorkbenchRecipe"];
+            recipe?: components["schemas"]["WorkbenchRecipe"];
+            /** @description Native agent preset selected from the preset catalog */
+            preset?: {
+                agent: string;
+                version: string;
+            };
             model_name: string;
             base_url: string | null;
             allowed_hosts: string[];
+            /** @description Wire API the reviewed endpoint speaks for this preset subject */
+            model_api?: string;
         };
         /** Inference Approval Request V1 */
         InferenceApprovalRequest: {
@@ -2632,18 +2644,28 @@ export interface components {
             label: string;
             /** @enum {unknown} */
             presence: "configured" | "missing";
-            recipe: components["schemas"]["WorkbenchRecipe"];
+            recipe?: components["schemas"]["WorkbenchRecipe"];
+            /** @description Native agent preset selected from the preset catalog */
+            preset?: {
+                agent: string;
+                version: string;
+            };
             grant: {
                 operator_subjects: string[];
                 worker_image: string;
                 agent_import_path: string;
-                recipe_digest: string;
+                /** @description Reviewed Workbench recipe identity */
+                recipe_digest?: string;
+                /** @description Reviewed native agent preset version */
+                agent_version?: string;
                 destination_env: string[];
                 /** @enum {unknown} */
-                route_api: "chat-completions" | "responses" | "native";
+                route_api?: "chat-completions" | "responses" | "native";
                 base_url: string | null;
                 allowed_hosts: string[];
                 allowed_models: string[];
+                /** @description Native Harbor agent argument value that selects the wire API style */
+                model_api?: string;
             };
         };
         RunInferenceReview: {
@@ -2666,17 +2688,27 @@ export interface components {
             label: string;
             /** @enum {unknown} */
             presence: "configured" | "missing";
+            /** @description Native agent preset selected from the preset catalog */
+            preset?: {
+                agent: string;
+                version: string;
+            };
             grant: {
                 operator_subjects: string[];
                 worker_image: string;
                 agent_import_path: string;
-                recipe_digest: string;
+                /** @description Reviewed Workbench recipe identity */
+                recipe_digest?: string;
+                /** @description Reviewed native agent preset version */
+                agent_version?: string;
                 destination_env: string[];
                 /** @enum {unknown} */
-                route_api: "chat-completions" | "responses" | "native";
+                route_api?: "chat-completions" | "responses" | "native";
                 base_url: string | null;
                 allowed_hosts: string[];
                 allowed_models: string[];
+                /** @description Native Harbor agent argument value that selects the wire API style */
+                model_api?: string;
             };
             /** @constant */
             binding: "named";
@@ -2700,9 +2732,14 @@ export interface components {
                     name: components["schemas"]["RunRecord_slug"];
                     preset: components["schemas"]["RunRecord_slug"];
                 };
+                /** @description A submission selects exactly one route: a Hub provider, or a reviewed endpoint connection with its native wire API style. */
                 model?: {
                     id: string;
-                    provider: components["schemas"]["RunRecord_slug"];
+                    provider?: components["schemas"]["RunRecord_slug"];
+                    /** @description Reviewed endpoint connection this submission selected */
+                    connection?: string;
+                    /** @description Native Harbor agent argument value that selects the wire API style */
+                    model_api?: string;
                     reasoning_effort: string;
                 };
                 harness?: {
@@ -2713,7 +2750,7 @@ export interface components {
                 cost_ceiling_usd?: number;
                 /** @description Legacy per-trial ceiling retained only so immutable existing runs remain readable. */
                 cost_ceiling_usd_per_trial?: number;
-            } & unknown;
+            } & (unknown & unknown);
             /** @description Immutable Workbench display provenance. Recipe revision is submission.harness.version; execution remains in harbor_job_config. */
             workbench_recipe?: {
                 name: string;
@@ -2921,7 +2958,12 @@ export interface components {
             };
             model: {
                 id: string;
-                provider: string;
+                /** @description Hub provider for the router route. Omitted when the submission names a reviewed endpoint connection. */
+                provider?: string;
+                /** @description Reviewed endpoint connection named explicitly by the submission. Omitted for the router route. */
+                connection?: string;
+                /** @description Native Harbor agent argument value that selects the wire API style at the reviewed endpoint connection. */
+                model_api?: string;
                 reasoning_effort: string;
             };
             harness: {
@@ -2937,7 +2979,7 @@ export interface components {
              * @enum {string}
              */
             role: "final" | "diagnostic";
-        };
+        } & unknown;
         /** Agent Workbench recipe v1 */
         WorkbenchRecipe: {
             /** @constant */

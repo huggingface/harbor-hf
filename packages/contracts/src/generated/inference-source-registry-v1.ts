@@ -39,12 +39,19 @@ grant: {
 operator_subjects: string[]
 worker_image: string
 agent_import_path: string
-recipe_digest: string
+/**
+ * Reviewed Workbench recipe identity
+ */
+recipe_digest?: string
+/**
+ * Reviewed native agent preset version
+ */
+agent_version?: string
 /**
  * @maxItems 64
  */
 destination_env: string[]
-route_api: ("chat-completions" | "responses" | "native")
+route_api?: ("chat-completions" | "responses" | "native")
 base_url: (string | null)
 /**
  * @maxItems 64
@@ -55,6 +62,10 @@ allowed_hosts: string[]
  * @maxItems 64
  */
 allowed_models: [string, ...(string)[]]
+/**
+ * Native Harbor agent argument value that selects the wire API style
+ */
+model_api?: string
 }
 })[]
 }[]
