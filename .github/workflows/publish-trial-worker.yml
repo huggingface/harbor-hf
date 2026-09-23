@@ -30,4 +30,6 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           provenance: false
-      - run: echo "Published $IMAGE_NAME@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+      - run: echo "Published $IMAGE_NAME@${STEPS_BUILD_OUTPUTS_DIGEST}" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          STEPS_BUILD_OUTPUTS_DIGEST: ${{ steps.build.outputs.digest }}
