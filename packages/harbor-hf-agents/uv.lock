@@ -686,14 +686,15 @@ wheels = [
 
 [[package]]
 name = "harbor"
-version = "0.22.0"
-source = { git = "https://github.com/harbor-framework/harbor.git?rev=dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e#dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e" }
+version = "0.23.0"
+source = { git = "https://github.com/harbor-framework/harbor.git?rev=fcf27e5502e30436b067ef2d655368e86cc42cf9#fcf27e5502e30436b067ef2d655368e86cc42cf9" }
 dependencies = [
     { name = "dirhash" },
     { name = "fastapi" },
     { name = "filelock" },
     { name = "httpx" },
     { name = "jinja2" },
+    { name = "jsonschema" },
     { name = "litellm" },
     { name = "packaging" },
     { name = "pathspec" },
@@ -736,7 +737,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "harbor", extras = ["hf-sandbox"], git = "https://github.com/harbor-framework/harbor.git?rev=dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e" },
+    { name = "harbor", extras = ["hf-sandbox"], git = "https://github.com/harbor-framework/harbor.git?rev=fcf27e5502e30436b067ef2d655368e86cc42cf9" },
     { name = "huggingface-hub", path = "sdk-backport/dist/huggingface_hub-1.28.0+terminal.f1c01f0-py3-none-any.whl" },
 ]
 
