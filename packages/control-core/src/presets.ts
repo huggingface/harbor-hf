@@ -153,8 +153,11 @@ export class PresetCatalog {
       const key = `${item.agent}\u0000${item.version}`;
       if (agentKeys.has(key)) throw new Error("duplicate agent preset");
       agentKeys.add(key);
-      if (item.reasoning_option === null && item.reasoning_values.join() !== "default")
-        throw new Error("agent without a reasoning option must use only default");
+      // A null option means the preset forwards no reasoning choice. Declaring one
+      // value is still meaningful: the reviewed harness artifact pins that value
+      // itself, and a submission must name it.
+      if (item.reasoning_option === null && item.reasoning_values.length > 1)
+        throw new Error("agent without a reasoning option must not offer a choice");
     }
     return new PresetCatalog(benchmarks, agents);
   }
