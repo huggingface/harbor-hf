@@ -225,13 +225,18 @@ export class PresetCatalog {
             ...(fragment.override_setup_timeout_sec
               ? { override_setup_timeout_sec: fragment.override_setup_timeout_sec }
               : {}),
+            ...(fragment.extra_allowed_hosts
+              ? { extra_allowed_hosts: clone(fragment.extra_allowed_hosts) }
+              : {}),
             model_name: `${usesNativeHuggingFace ? "huggingface" : "openai"}/${submission.model.id}:${submission.model.provider}`,
-            env: usesNativeHuggingFace
-              ? { HF_TOKEN: INFERENCE_TOKEN_TEMPLATE }
-              : {
-                  OPENAI_BASE_URL: ROUTER_URL,
-                  OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
-                },
+            env: fragment.env
+              ? clone(fragment.env)
+              : usesNativeHuggingFace
+                ? { HF_TOKEN: INFERENCE_TOKEN_TEMPLATE }
+                : {
+                    OPENAI_BASE_URL: ROUTER_URL,
+                    OPENAI_API_KEY: INFERENCE_TOKEN_TEMPLATE,
+                  },
             kwargs,
           }
         : presetEndpointAgent(
