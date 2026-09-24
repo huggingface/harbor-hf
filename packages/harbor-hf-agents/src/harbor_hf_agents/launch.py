@@ -32,7 +32,7 @@ from harbor.registry.client.git_repo import resolve_repo_source
 from harbor.registry.client.package import PackageDatasetClient
 from pydantic import ValidationError
 
-REVISION = "dcd0a7ac74b7bd417780d9cb27cd819c7ec82e4e"
+REVISION = "fcf27e5502e30436b067ef2d655368e86cc42cf9"
 COMMIT = re.compile(r"[0-9a-f]{40}")
 CONTENT = re.compile(r"sha256:[0-9a-f]{64}")
 HF_DATASET_GIT_PATH = re.compile(
@@ -310,9 +310,9 @@ async def inspect(
     config_value: object, root: Path, approved: list[object]
 ) -> dict[str, object]:
     config = JobConfig.model_validate(config_value)
-    # Harbor permits an empty agent list and nonpositive attempts. Hosted
-    # diagnostic submissions need at least one scored trial. Harbor already
-    # validates concurrency and retry minima; do not repeat those rules here.
+    # Harbor permits an empty agent list and rejects a nonpositive attempt count
+    # while it builds the config. Hosted diagnostic submissions need at least one
+    # scored trial, so the empty-agent check stays here.
     if not config.agents or config.n_attempts < 1:
         raise ValueError("Diagnostic jobs require at least one agent and attempt")
     private_datasets = check_sources(config)
