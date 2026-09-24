@@ -161,6 +161,39 @@ describe("contracts", () => {
         reasoning_values: ["off", "high"],
       }),
     ).toMatchObject({ agent: "pi" });
+    // A preset may declare the native environment and hosts its reviewed agent needs.
+    expect(
+      validateAgentPreset({
+        schema_version: "v1",
+        agent: "codex",
+        version: "0.147.0",
+        harbor_agent: {
+          import_path: "harbor_hf_agents.command_agent.agent:CommandAgent",
+          env: { OPENAI_BASE_URL: "https://endpoint.invalid/v1" },
+          extra_allowed_hosts: ["endpoint.invalid"],
+        },
+        reasoning_option: null,
+        reasoning_values: ["high"],
+      }),
+    ).toMatchObject({ agent: "codex" });
+    const invalid = (harbor_agent: object) => () =>
+      validateAgentPreset({
+        schema_version: "v1",
+        agent: "codex",
+        version: "0.147.0",
+        harbor_agent,
+        reasoning_option: null,
+        reasoning_values: ["high"],
+      });
+    expect(invalid({ name: "codex", env: { lower_case: "value" } })).toThrow(
+      ContractValidationError,
+    );
+    expect(invalid({ name: "codex", env: { OPENAI_API_KEY: 7 } })).toThrow(
+      ContractValidationError,
+    );
+    expect(invalid({ name: "codex", extra_allowed_hosts: "endpoint.invalid" })).toThrow(
+      ContractValidationError,
+    );
   });
 
   it("validates durable attempt cost receipts", () => {

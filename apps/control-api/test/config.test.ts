@@ -57,6 +57,31 @@ describe("control API configuration", () => {
     expect(config.parent_timeout_seconds).toBe(3_600);
   });
 
+  it("loads pinned preset sources and refuses a loose configuration", () => {
+    const source = {
+      repository: "example/preset-source",
+      kind: "dataset",
+      revision: "a".repeat(40),
+      path: "presets",
+    };
+    expect(loadConfig(environment).preset_sources).toEqual([]);
+    expect(
+      loadConfig({
+        ...environment,
+        HARBOR_HF_PRESET_SOURCES: JSON.stringify([source]),
+      }).preset_sources,
+    ).toEqual([source]);
+    expect(() =>
+      loadConfig({
+        ...environment,
+        HARBOR_HF_PRESET_SOURCES: JSON.stringify([{ ...source, revision: "main" }]),
+      }),
+    ).toThrow("exact 40-character commit");
+    expect(() =>
+      loadConfig({ ...environment, HARBOR_HF_PRESET_SOURCES: "not json" }),
+    ).toThrow();
+  });
+
   it("rejects development authentication in production", () => {
     expect(() =>
       loadConfig({

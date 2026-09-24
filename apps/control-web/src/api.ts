@@ -21,9 +21,21 @@ export interface AgentPreset {
   reasoning_values: string[];
 }
 
+export interface PresetSourceProvenance {
+  repository: string;
+  kind: "dataset" | "model";
+  revision: string;
+  path: string;
+  digest: string;
+  agents: { agent: string; version: string }[];
+  benchmarks: { benchmark: string; preset: string }[];
+}
+
 export interface PresetsResponse {
   benchmarks: BenchmarkPreset[];
   agents: AgentPreset[];
+  /** Pinned external sources that added presets to the baked catalog. */
+  sources: PresetSourceProvenance[];
 }
 
 export interface ModelProvidersResponse {

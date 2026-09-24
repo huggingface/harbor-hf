@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { parsePresetSources, type PresetSourceV1 } from "@harbor-hf/control-core";
 import type { ParentHardware } from "@harbor-hf/hf-adapters";
 import { z } from "zod";
 
@@ -12,6 +13,7 @@ const schema = z.object({
   HARBOR_HF_PROJECTION_PATH: z.string().min(1).default("/tmp/harbor-hf/control.sqlite"),
   HARBOR_HF_AUTH_PATH: z.string().min(1).default("/tmp/harbor-hf/auth.sqlite"),
   HARBOR_HF_PRESETS_ROOT: z.string().min(1).default("./presets"),
+  HARBOR_HF_PRESET_SOURCES: z.string().default("[]"),
   HARBOR_HF_LAUNCH_PYTHON: z.string().min(1).optional(),
   HARBOR_HF_APPROVED_AGENT_SOURCES: z.string().default("[]"),
   HARBOR_HF_MAX_ACTIVE_JOBS: z.coerce.number().int().min(1).max(1024).default(16),
@@ -73,6 +75,11 @@ export interface AppConfig {
   projection_path: string;
   auth_path: string;
   presets_root: string;
+  /**
+   * Reviewed external preset sources, pinned by commit. The baked catalog holds the
+   * presets for very popular benchmarks; anything else comes from a source.
+   */
+  preset_sources: PresetSourceV1[];
   launch_python?: string;
   approved_agent_sources?: Record<string, unknown>[];
   max_active_jobs: number;
@@ -186,6 +193,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     projection_path: resolve(parsed.HARBOR_HF_PROJECTION_PATH),
     auth_path: resolve(parsed.HARBOR_HF_AUTH_PATH),
     presets_root: resolve(parsed.HARBOR_HF_PRESETS_ROOT),
+    preset_sources: parsePresetSources(JSON.parse(parsed.HARBOR_HF_PRESET_SOURCES)),
     ...(parsed.HARBOR_HF_LAUNCH_PYTHON
       ? { launch_python: parsed.HARBOR_HF_LAUNCH_PYTHON }
       : {}),

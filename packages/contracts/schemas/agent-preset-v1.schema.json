@@ -26,6 +26,19 @@
           "pattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$"
         },
         "kwargs": { "type": "object" },
+        "extra_allowed_hosts": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 253 }
+        },
+        "env": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
         "override_setup_timeout_sec": {
           "type": "integer",
           "minimum": 1,

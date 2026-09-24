@@ -490,6 +490,8 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.get("/api/v1/presets", async () => ({
     benchmarks: runtime.presets.benchmarks,
     agents: runtime.presets.agents,
+    // The baked catalog holds popular benchmarks; these pinned sources add the rest.
+    sources: runtime.preset_sources,
   }));
 
   app.get("/api/v1/agents", async () => runtime.launch.catalog());

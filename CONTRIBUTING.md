@@ -14,7 +14,8 @@ Use placeholders such as `<namespace>`, `<control-space>`,
 `<artifact-bucket>`, and `<service-token>`. Public availability elsewhere does
 not grant permission to repeat an identifier here. Publishing an
 operator-specific identifier requires explicit approval for that exact value
-and exact public destination.
+and exact public destination. A preset in `presets/` follows the same rule and
+must not name a credential alias; see [preset sources](docs/preset-sources.md).
 
 Before publishing, inspect the complete diff and public metadata. Stop and
 redact operator-specific information first. If anything is published

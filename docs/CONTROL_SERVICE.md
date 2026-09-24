@@ -153,7 +153,8 @@ The service reads these Space variables:
 | `HARBOR_HF_BUCKET_ID` | yes | none | private Bucket ID |
 | `HARBOR_HF_STORE_MODE` | no | `bucket` | use `filesystem` in tests |
 | `HARBOR_HF_BUCKET_ROOT` | no | `/data` | local filesystem store root |
-| `HARBOR_HF_PRESETS_ROOT` | no | `./presets` | reviewed presets |
+| `HARBOR_HF_PRESETS_ROOT` | no | `./presets` | reviewed presets for very popular benchmarks |
+| `HARBOR_HF_PRESET_SOURCES` | no | `[]` | pinned external preset sources as JSON; see [preset sources](preset-sources.md) |
 | `HARBOR_HF_LAUNCH_PYTHON` | no | worker package `.venv/bin/python`; `/opt/harbor-launch/bin/python` in the control image | pinned native launch inspector |
 | `HARBOR_HF_APPROVED_AGENT_SOURCES` | no | `[]` | reviewed native ACP source objects as JSON; never credentials |
 | `HARBOR_HF_WRITE_MODE` | no | `disabled` | permit Job lifecycle changes |
@@ -173,7 +174,9 @@ The service reads these Space variables:
 | `HARBOR_HF_OPERATOR_ORG_SUBJECT` | no | empty | stable HF organization subject whose members are operators |
 
 Write mode fails startup unless both secrets and an image reference ending in
-`@sha256:<64 lowercase hex characters>` are present.
+`@sha256:<64 lowercase hex characters>` are present. A configured preset source
+fails startup when it cannot be read, resolved or verified, so the service never
+serves a partial catalog.
 
 Hugging Face supplies the OAuth client values to the Space. OAuth mode requires
 `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, and `OPENID_PROVIDER_URL`. The service
