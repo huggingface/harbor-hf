@@ -16,7 +16,7 @@ import { useControlState } from "./control-state";
 import { formatMoneyUsd } from "./lib";
 import { useRunClock } from "./queries";
 import { useReplacementResult } from "./result-browsing-query";
-import { NativeResultSummary } from "./result-browsing";
+import { NativeResultSummary, ReplacementEvidenceLabel } from "./result-browsing";
 import { costCoverageLabel } from "./native-cost-coverage";
 import { nativeScore, resultStat, roundedScore } from "./run-summary";
 import { Button, Card } from "./ui";
@@ -48,7 +48,7 @@ export function RunReplacements({
         Original · {originalScore.label}: {roundedScore(originalScore.value)}
       </p>
       <div aria-live="polite">
-        {query.isFetching ? <p>Loading fresh combined evidence…</p> : null}
+        {query.isFetching ? <p>Loading projected combined results…</p> : null}
         {query.error || (query.data && expired) ? (
           <p role="alert">
             Combined unavailable: {query.error?.message ?? "saved evidence has expired"}
@@ -66,7 +66,10 @@ export function RunReplacements({
           </Button>
         ) : null}
         {current && query.isFetching ? (
-          <p>Showing the last completed evidence check while refreshing.</p>
+          <p>Showing the last response while refreshing the projection view.</p>
+        ) : null}
+        {current?.children.length ? (
+          <ReplacementEvidenceLabel observedAt={current.observed_at} />
         ) : null}
         {current?.children.length ? <CombinedReplacementView view={current} /> : null}
         {current && !current.children.length ? (

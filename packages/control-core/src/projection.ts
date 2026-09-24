@@ -21,7 +21,7 @@ import {
 import { launchEstimate } from "@harbor-hf/contracts/pricing";
 import Database from "better-sqlite3";
 import { isLiveJob, type JobObservation } from "./jobs.js";
-import { type ObjectStore, readJson } from "./store.js";
+import { type ObjectEntry, type ObjectStore, readJson } from "./store.js";
 
 export type RunStatus =
   | "queued"
@@ -208,6 +208,19 @@ export function authoritativeAttemptCosts(
 export class Projection {
   private observations: readonly JobObservation[] = [];
   private observationsAt: string | null = null;
+  // Metadata from the same rebuild as the trial rows, not another artifact store.
+  private resultObjects: readonly ObjectEntry[] = [];
+  private readonly attemptReceipts = new Map<string, readonly AttemptCostV1[]>();
+
+  replacementReceipts(runId: string): readonly AttemptCostV1[] {
+    return structuredClone(this.attemptReceipts.get(runId) ?? []);
+  }
+
+  replacementObjects(runId: string): readonly ObjectEntry[] {
+    return structuredClone(
+      this.resultObjects.filter((entry) => entry.key.startsWith(`runs/${runId}/`)),
+    );
+  }
   private presentationGeneration = 0;
   private readonly presentationMutations = new Map<string, number>();
 
@@ -277,6 +290,20 @@ export class Projection {
     jobs: readonly JobObservation[],
     runIdScope?: string,
   ): Promise<void> {
+    try {
+      await this.readAndCommit(store, jobs, runIdScope);
+    } catch (error) {
+      // Retained rows are not a successful observation after a failed refresh.
+      this.observationsAt = null;
+      throw error;
+    }
+  }
+
+  private async readAndCommit(
+    store: ObjectStore,
+    jobs: readonly JobObservation[],
+    runIdScope?: string,
+  ): Promise<void> {
     if (runIdScope !== undefined && !/^run-[0-9a-f]{24}$/.test(runIdScope))
       throw new Error("invalid projection run scope");
     // Capture before any reads, including the asynchronous listing. This orders
@@ -297,6 +324,7 @@ export class Projection {
     const rows: Array<{
       view: RunView;
       trials: TrialSummary[];
+      receipts: AttemptCostV1[];
     }> = [];
     for (const runId of runIds) {
       const stateKey = `runs/${runId}/state.json`;
@@ -375,6 +403,7 @@ export class Projection {
           result,
         },
         trials,
+        receipts,
       });
     }
 
@@ -478,6 +507,23 @@ export class Projection {
           JSON.stringify(job),
         );
     })();
+    // Retain existing validated cost receipts and only config/lock identities.
+    // No second read, persisted aggregate, trajectory inventory or new column.
+    if (runIdScope) this.attemptReceipts.delete(runIdScope);
+    else this.attemptReceipts.clear();
+    for (const { view, receipts } of rows)
+      this.attemptReceipts.set(view.record.run_id, receipts);
+    const resultObjects = entries.filter((entry) =>
+      /^runs\/run-[0-9a-f]{24}\/job\/(?:config|lock)\.json$/.test(entry.key),
+    );
+    this.resultObjects = runIdScope
+      ? [
+          ...this.resultObjects.filter(
+            (entry) => !entry.key.startsWith(`runs/${runIdScope}/`),
+          ),
+          ...resultObjects,
+        ]
+      : resultObjects;
     // Advance only after a successful synchronous transaction. Even an unchanged
     // validated snapshot fences older overlapping reads (valid or failed).
     for (const { view } of rows) this.notePresentationMutation(view.record.run_id);

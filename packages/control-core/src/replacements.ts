@@ -1,24 +1,13 @@
+import { canonicalJson, type RunRecordV1 } from "@harbor-hf/contracts";
+import type { Projection, RunStatus } from "./projection.js";
 import {
-  canonicalJson,
-  sha256,
-  validateAttemptCost,
-  type RunRecordV1,
-} from "@harbor-hf/contracts";
-import {
-  authoritativeAttemptCosts,
-  summarizeTrial,
-  type Projection,
-  type RunStatus,
-} from "./projection.js";
-import {
-  ReplacementEvidence,
   ReplacementError,
-  evidenceMap,
   nativeObject,
   type ReplacementNativePort,
   type ReplacementPart,
   type SourceBundle,
 } from "./replacement-evidence.js";
+import { ReplacementObservation } from "./replacement-observation.js";
 import type { ObjectStore } from "./store.js";
 
 export interface ReportedAttemptCostCoverage {
@@ -29,6 +18,8 @@ export interface ReportedAttemptCostCoverage {
 }
 export interface ReplacementView {
   run_id: string;
+  /** Last full projection observation, not a new execution safety check. */
+  observed_at: string | null;
   operator_selection: NonNullable<RunRecordV1["operator_selection"]> | null;
   children: Array<{
     run_id: string;
@@ -43,11 +34,11 @@ export interface ReplacementView {
   selected_cost_usd: number | null;
 }
 
-/** View-only native assembly. Never written to RunView, SQLite or job artifacts. */
+/** Native display observations only. Never used to authorize execution. */
 export class Replacements {
   private readonly cache = new Map<
     string,
-    { key: string; result: Record<string, unknown>; bytes: number }
+    { key: string; view: ReplacementView; bytes: number }
   >();
   private cacheBytes = 0;
   private readonly inspecting = new Map<string, Promise<ReplacementView>>();
@@ -55,16 +46,15 @@ export class Replacements {
     private readonly store: ObjectStore,
     private readonly projection: Projection,
     private readonly native: ReplacementNativePort,
-    private readonly complete: (source: SourceBundle) => Promise<void>,
   ) {}
 
-  private remember(id: string, key: string, result: Record<string, unknown>): void {
+  private remember(id: string, key: string, view: ReplacementView): void {
     const previous = this.cache.get(id);
     if (previous) {
       this.cacheBytes -= previous.bytes;
       this.cache.delete(id);
     }
-    const bytes = Buffer.byteLength(canonicalJson(result));
+    const bytes = Buffer.byteLength(canonicalJson(view));
     if (bytes > 32 * 1024 * 1024) return;
     while (this.cache.size >= 8 || this.cacheBytes + bytes > 32 * 1024 * 1024) {
       const first = this.cache.entries().next().value;
@@ -72,172 +62,104 @@ export class Replacements {
       this.cacheBytes -= first[1].bytes;
       this.cache.delete(first[0]);
     }
-    this.cache.set(id, { key, result: structuredClone(result), bytes });
+    this.cache.set(id, { key, view: structuredClone(view), bytes });
     this.cacheBytes += bytes;
   }
 
   private async tree(
     source: SourceBundle,
-    records: RunRecordV1[],
-    reader: ReplacementEvidence,
-    seen: Set<string>,
+    observation: ReplacementObservation,
   ): Promise<ReplacementPart[]> {
-    if (seen.has(source.record.run_id))
-      throw new ReplacementError(409, "Cyclic replacement tree");
-    seen.add(source.record.run_id);
-    await this.complete(source);
     const parts: ReplacementPart[] = [];
-    for (const record of records.filter(
-      (record) => record.operator_selection?.original_run_id === source.record.run_id,
-    )) {
-      const evidence = await reader.bundle(record.run_id);
-      parts.push({ evidence, parts: await this.tree(evidence, records, reader, seen) });
+    for (const child of observation.children(source.record.run_id)) {
+      const evidence = await observation.bundle(child.record.run_id);
+      parts.push({ evidence, parts: await this.tree(evidence, observation) });
     }
     return parts;
   }
 
-  private descendants(
-    id: string,
-    records: RunRecordV1[],
-    seen = new Set<string>(),
-  ): string[] {
-    if (seen.has(id)) throw new ReplacementError(409, "Cyclic replacement tree");
-    seen.add(id);
-    return [
-      id,
-      ...records
-        .filter((record) => record.operator_selection?.original_run_id === id)
-        .flatMap((record) => this.descendants(record.run_id, records, seen)),
-    ];
-  }
-
-  private async incurred(
-    ids: string[],
-    reader: ReplacementEvidence,
-  ): Promise<ReportedAttemptCostCoverage> {
-    const receipts = (
-      await evidenceMap(ids, async (id) => {
-        const prefix = `runs/${id}/attempt-costs/`;
-        const { files } = await reader.directory(prefix);
-        return evidenceMap(
-          files.filter((file) => file.key.endsWith(".json")),
-          async (file) => {
-            const receipt = validateAttemptCost(await reader.read(file.key));
-            if (file.key !== `${prefix}${receipt.attempt_id}.json`)
-              throw new Error("Receipt identity mismatch");
-            return receipt;
-          },
-        );
-      })
-    ).flat();
-    if (new Set(receipts.map((receipt) => receipt.attempt_id)).size !== receipts.length)
-      throw new Error("Duplicate native receipt identity");
-    const trials = (
-      await evidenceMap(ids, async (id) => {
-        const job = `runs/${id}/job/`;
-        const { directories } = await reader.directory(job, []);
-        return (
-          await evidenceMap(directories, async (directory) => {
-            const trial = await reader.trialResult(directory);
-            return trial ? summarizeTrial(id, "", trial) : null;
-          })
-        ).filter((trial) => trial !== null);
-      })
-    ).flat();
-    const trialIds = trials.flatMap((trial) =>
-      typeof trial.result.id === "string" ? [trial.result.id] : [],
-    );
-    if (new Set(trialIds).size !== trialIds.length)
-      throw new Error("Duplicate native trial identity");
-    const costs = authoritativeAttemptCosts(receipts, trials);
-    const reported = costs.filter((cost): cost is number => cost !== null);
-    return {
-      cost_usd: reported.length ? reported.reduce((a, b) => a + b, 0) : null,
-      reported_attempts: reported.length,
-      unknown_attempts: costs.length - reported.length,
-      total_attempts: costs.length,
-    };
-  }
-
   async view(id: string): Promise<ReplacementView> {
-    const reader = new ReplacementEvidence(this.store);
-    // Every caller rediscovers relationships before joining unfinished work.
-    // A newly added descendant must never join an older graph's inspection.
-    const records = await reader.records();
-    const key = `${id}:${sha256(canonicalJson(records))}`;
+    const observation = new ReplacementObservation(this.store, this.projection, id);
+    if (observation.observed_at === null) return this.inspect(observation);
+    const cached = this.cache.get(id);
+    if (cached?.key === observation.key)
+      return { ...structuredClone(cached.view), observed_at: observation.observed_at };
+    const key = `${id}:${observation.key}`;
     let pending = this.inspecting.get(key);
     if (!pending) {
-      pending = this.inspect(id, reader, records).finally(() =>
-        this.inspecting.delete(key),
-      );
+      pending = this.inspect(observation).finally(() => this.inspecting.delete(key));
       this.inspecting.set(key, pending);
     }
-    // Only in-flight work is shared; isolate responses and retain no failures.
-    return structuredClone(await pending);
+    const view = await pending;
+    const latest = new ReplacementObservation(this.store, this.projection, id);
+    if (latest.key !== observation.key || latest.observed_at === null)
+      throw new ReplacementError(
+        409,
+        "Projected evidence changed during inspection; retry",
+      );
+    if (
+      view.incurred !== null &&
+      (view.assembly.availability === "available" ||
+        view.assembly.availability === "none")
+    )
+      this.remember(id, observation.key, view);
+    return { ...structuredClone(view), observed_at: latest.observed_at };
   }
 
-  private async inspect(
-    id: string,
-    reader: ReplacementEvidence,
-    records: RunRecordV1[],
-  ): Promise<ReplacementView> {
-    const record = records.find((record) => record.run_id === id);
-    if (!record) throw new ReplacementError(400, "Run was not found");
-    const children = records
-      .filter((record) => record.operator_selection?.original_run_id === id)
-      .map((record) => ({
-        run_id: record.run_id,
-        status: this.projection.run(record.run_id)?.status ?? null,
-        operator_selection: record.operator_selection!,
-      }));
+  private async inspect(observation: ReplacementObservation): Promise<ReplacementView> {
+    const { id, observed_at } = observation;
+    const source = observation.source(id);
+    const children = observation.children(id).map(({ record, status }) => ({
+      run_id: record.run_id,
+      status,
+      operator_selection: record.operator_selection!,
+    }));
     const view: ReplacementView = {
       run_id: id,
-      operator_selection: record.operator_selection ?? null,
+      observed_at,
+      operator_selection: source.record.operator_selection ?? null,
       children,
-      assembly: { availability: children.length ? "pending" : "none", result: null },
+      assembly: {
+        availability: children.length ? "unavailable" : "none",
+        result: null,
+      },
       incurred: null,
       selected_cost_usd: null,
     };
+    // Reopened SQLite alone is not an observed source; wait for the normal rebuild.
+    if (observed_at === null) return view;
     try {
-      view.incurred = await this.incurred(this.descendants(id, records), reader);
+      view.incurred = observation.incurred();
     } catch {
-      /* Unknown coverage, never zero. */
+      /* Unknown coverage, never zero; do not cache a failed cost inspection. */
     }
     if (!children.length) return view;
-    let nativeReady = false;
+    const statuses = observation.descendants.map((id) => observation.source(id).status);
+    if (observation.live || statuses.some((status) => status !== "finished")) {
+      if (
+        observation.live ||
+        statuses.some((status) => ["queued", "running", "paused"].includes(status))
+      )
+        view.assembly.availability = "pending";
+      return view;
+    }
     try {
-      const original = await reader.bundle(id);
-      const original_ancestors = await reader.ancestors(original);
-      const parts = await this.tree(original, records, reader, new Set());
-      nativeReady = true;
-      const key = sha256(canonicalJson(reader.identities.sort()));
-      const cached = this.cache.get(id);
-      const result =
-        cached?.key === key
-          ? structuredClone(cached.result)
-          : (
-              await this.native.replacementAggregate({
-                original,
-                original_ancestors,
-                parts,
-              })
-            ).result;
-      this.remember(id, key, result);
+      const original = await observation.bundle(id);
+      const original_ancestors: SourceBundle[] = [];
+      for (const ancestor of observation.ancestors)
+        original_ancestors.push(await observation.bundle(ancestor));
+      const parts = await this.tree(original, observation);
+      const { result } = await this.native.replacementAggregate({
+        original,
+        original_ancestors,
+        parts,
+      });
       view.assembly = { availability: "available", result };
       const cost = nativeObject(result.stats).cost_usd;
       view.selected_cost_usd =
         typeof cost === "number" && Number.isFinite(cost) ? cost : null;
     } catch {
-      const pending =
-        !nativeReady &&
-        this.descendants(id, records).some((run) => {
-          const status = this.projection.run(run)?.status;
-          return status === "queued" || status === "running" || status === "paused";
-        });
-      view.assembly = {
-        availability: pending ? "pending" : "unavailable",
-        result: null,
-      };
+      view.assembly = { availability: "unavailable", result: null };
     }
     return view;
   }

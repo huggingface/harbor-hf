@@ -375,7 +375,12 @@ execution and retries. Its public `JobPlan.aggregate` supplies assembled results
 The approved revision-scoped bridge checks cross-run provenance and one-for-one
 coverage; it does not calculate metrics or rewrite identities. A bounded memory
 cache holds derived assembly views, with no additional SQLite table or Bucket
-result format. Selected-cohort cost and all-incurred reported attempt cost are
+result format. Read-only browsing reuses complete projected native results and
+validated cost receipts, exposes the full projection observation time, and avoids
+provider inventory or repeated trial downloads. Cold config/lock reads are fenced
+by their projected provider identities; execution checks remain fresh and separate.
+See [local-evidence browsing](local-evidence-result-browsing.md).
+Selected-cohort cost and all-incurred reported attempt cost are
 distinct views of existing native evidence.
 
 The console distinguishes Original, Replacements and Combined. Leaderboard

@@ -41,6 +41,7 @@ let service: ControlService;
 let presets: PresetCatalog;
 let source: RunRecordV1;
 let jobs: JobObservation[];
+let listJobs: () => Promise<JobObservation[]>;
 let native: ReplacementNativePort;
 
 function trial(id: string, cost: number | null = 1) {
@@ -121,12 +122,13 @@ beforeEach(async () => {
     })),
     replacementAggregate: vi.fn(async ({ original }) => ({ result: original.result })),
   };
+  listJobs = vi.fn(async () => jobs);
   service = new ControlService(
     store,
     projection,
     presets,
     {
-      list: async () => jobs,
+      list: listJobs,
       inspect: async (id) => {
         const found = jobs.find((job) => job.id === id);
         if (!found) throw new Error("Unknown parent");
@@ -367,7 +369,8 @@ describe("ephemeral native assembly", () => {
       "pending",
     );
     await artifacts(replacement, [trial(third)]);
-    // A stale queued projection must not relabel rejected complete native evidence as pending.
+    await service.refresh();
+    // A refreshed complete projection still requires native provenance validation.
     vi.mocked(native.replacementAggregate).mockRejectedValue(
       new Error("Native provenance rejected"),
     );
@@ -386,11 +389,13 @@ describe("ephemeral native assembly", () => {
     await service.replacements(source.run_id);
     expect(native.replacementAggregate).toHaveBeenCalledTimes(1);
     await putJson(store, `runs/${replacement.run_id}/job/lock.json`, { updated: true });
+    await service.refresh();
     await service.replacements(source.run_id);
     expect(native.replacementAggregate).toHaveBeenCalledTimes(2);
-    const rebuilt = new Replacements(store, projection, native, async () => {});
+    const rebuilt = new Replacements(store, projection, native);
     expect((await rebuilt.view(source.run_id)).children).toEqual(view.children);
     await rm(join(store.root, `runs/${replacement.run_id}/job/lock.json`));
+    await service.refresh();
     expect((await service.replacements(source.run_id)).assembly.availability).toBe(
       "unavailable",
     );
@@ -448,6 +453,7 @@ describe("ephemeral native assembly", () => {
   });
   it("reports unknown coverage on inconsistent receipts rather than a zero charge", async () => {
     await receipt(source, first, 99);
+    await expect(service.refresh()).rejects.toThrow();
     expect((await service.replacements(source.run_id)).incurred).toBeNull();
   });
   it("rejects missing membership, mismatched paths, cycles and foreign records", async () => {
@@ -538,7 +544,8 @@ describe("bounded evidence and failure coverage", () => {
   it("bounds the assembly cache by bytes and does not cache oversized output", async () => {
     const replacement = (await child()).run;
     await artifacts(replacement, [trial(third)]);
-    const view = new Replacements(store, projection, native, async () => {});
+    await service.refresh();
+    const view = new Replacements(store, projection, native);
     vi.mocked(native.replacementAggregate).mockResolvedValue({
       result: {
         stats: { cost_usd: null },
@@ -566,6 +573,17 @@ describe("bounded evidence and failure coverage", () => {
       await putJson(store, `runs/${part.run_id}/run.json`, part);
       await artifacts(record);
       await artifacts(part, [trial(third)]);
+      await putJson(
+        store,
+        `runs/${record.run_id}/state.json`,
+        projection.run(source.run_id)!.state,
+      );
+      await putJson(
+        store,
+        `runs/${part.run_id}/state.json`,
+        projection.run(replacement.run_id)!.state,
+      );
+      await service.refresh();
       expect((await view.view(record.run_id)).assembly.availability).toBe("available");
     }
     await view.view(runId("cache-root-0"));
@@ -575,6 +593,7 @@ describe("bounded evidence and failure coverage", () => {
     const replacement = (await child()).run;
     await receipt(source, first, 1);
     await receipt(replacement, first, 1);
+    await service.refresh();
     expect((await service.replacements(source.run_id)).incurred).toBeNull();
     const cyclic = {
       ...source,
@@ -585,6 +604,7 @@ describe("bounded evidence and failure coverage", () => {
       },
     };
     await putJson(store, `runs/${source.run_id}/run.json`, cyclic);
+    await service.refresh();
     await expect(service.replacements(source.run_id)).rejects.toThrow("Cyclic");
   });
 });
@@ -683,6 +703,7 @@ describe("incurred identity integrity", () => {
   it("does not count a reused native trial ID twice across runs", async () => {
     const replacement = (await child()).run;
     await artifacts(replacement, [trial(first)]);
+    await service.refresh();
     expect((await service.replacements(source.run_id)).incurred).toBeNull();
   });
 });
@@ -841,42 +862,40 @@ it("reviews real compiled inference scope for a new image before normal replacem
   expect(start).not.toHaveBeenCalled();
 });
 
-it("shares exact fresh trial reads and listings across cost reconciliation and native assembly only within a request", async () => {
+it("uses the real service display path without provider calls or trial downloads and warms without Bucket I/O", async () => {
   const replacement = (await child()).run;
   await artifacts(replacement, [trial(third)]);
   await receipt(source, first, 1);
-  const retained = "44444444-4444-4444-8444-444444444444";
-  await receipt(source, retained, null);
+  await receipt(source, "44444444-4444-4444-8444-444444444444", null);
+  await service.refresh();
+  vi.mocked(listJobs)
+    .mockClear()
+    .mockRejectedValue(new Error("Display must not fetch Jobs"));
   const read = vi.spyOn(store, "read");
   const list = vi.spyOn(store, "listDirectory");
-  const complete = vi.fn(async () => {});
-  const views = new Replacements(store, projection, native, complete);
-  for (let request = 0; request < 2; request++) {
-    read.mockClear();
-    list.mockClear();
-    const view = await views.view(source.run_id);
-    expect(view.assembly.availability).toBe("available");
-    expect(view.incurred).toMatchObject({ total_attempts: 4, unknown_attempts: 1 });
-    const trialPath = `runs/${source.run_id}/job/task-${first}/result.json`;
-    expect(read.mock.calls.filter(([key]) => key === trialPath)).toEqual([
-      [trialPath, { fresh: true }],
-    ]);
-    const keys = list.mock.calls.map((args) => JSON.stringify(args));
-    expect(new Set(keys).size).toBe(keys.length);
-  }
-  expect(complete).toHaveBeenCalledTimes(4);
+  const view = await service.replacements(source.run_id);
+  expect(view.assembly.availability).toBe("available");
+  expect(view.incurred).toMatchObject({ total_attempts: 4, unknown_attempts: 1 });
+  expect(read.mock.calls.every(([key]) => /\/(config|lock)\.json$/.test(key))).toBe(
+    true,
+  );
+  expect(list.mock.calls.every(([key]) => !key.includes("/task-"))).toBe(true);
+  read.mockClear();
+  list.mockClear();
+  expect(await service.replacements(source.run_id)).toEqual(view);
+  expect(read).not.toHaveBeenCalled();
+  expect(list).not.toHaveBeenCalled();
   expect(native.replacementAggregate).toHaveBeenCalledTimes(1);
+  expect(listJobs).not.toHaveBeenCalled();
+  vi.mocked(listJobs).mockImplementation(async () => jobs);
   await putJson(
     store,
     `runs/${replacement.run_id}/job/task-${third}/result.json`,
     trial(third, 3),
   );
-  expect((await views.view(source.run_id)).incurred?.cost_usd).toBe(5);
+  await service.refresh();
+  expect((await service.replacements(source.run_id)).incurred?.cost_usd).toBe(5);
   expect(native.replacementAggregate).toHaveBeenCalledTimes(2);
-  await rm(
-    join(store.root, `runs/${replacement.run_id}/job/task-${third}/result.json`),
-  );
-  expect((await views.view(source.run_id)).assembly.availability).not.toBe("available");
 });
 
 it("coalesces in-flight evidence, isolates consumers, and retains failures only for that inspection", async () => {
@@ -923,49 +942,54 @@ it("bounds nested evidence I/O across reads and listings and releases slots on r
 it("lists job roots only and shares one inspection across overlapping view requests", async () => {
   const replacement = (await child()).run;
   await artifacts(replacement, [trial(third)]);
+  await service.refresh();
   const read = vi.spyOn(store, "read");
   const list = vi.spyOn(store, "listDirectory");
-  const complete = vi.fn(async () => {});
-  const views = new Replacements(store, projection, native, complete);
+  const views = new Replacements(store, projection, native);
   const [a, b, c] = await Promise.all(
     Array.from({ length: 3 }, () => views.view(source.run_id)),
   );
   expect(a!.assembly.availability).toBe("available");
   expect(b).toEqual(a);
   expect(c).toEqual(a);
-  expect(complete).toHaveBeenCalledTimes(2);
-  expect(list.mock.calls).toHaveLength(7);
+
+  expect(list.mock.calls).toHaveLength(2);
   expect(list.mock.calls.every(([key]) => !key.includes("/task-"))).toBe(true);
   const path = `runs/${source.run_id}/job/task-${first}/result.json`;
-  expect(read.mock.calls.filter(([key]) => key === path)).toHaveLength(1);
+  expect(read.mock.calls.filter(([key]) => key === path)).toHaveLength(0);
   a!.children.length = 0;
   a!.assembly.result!.changed = true;
   expect(b!.children).toHaveLength(1);
   expect(b!.assembly.result!.changed).toBeUndefined();
   await views.view(source.run_id);
-  expect(read.mock.calls.filter(([key]) => key === path)).toHaveLength(2);
-  expect(complete).toHaveBeenCalledTimes(4);
+  expect(read.mock.calls.filter(([key]) => key === path)).toHaveLength(0);
 });
 
-it("does not retain rejected inspections or share inspections across different run IDs", async () => {
-  const views = new Replacements(store, projection, native, async () => {});
-  const list = vi.spyOn(store, "listDirectory");
-  list.mockRejectedValue(new Error("temporary listing failure"));
-  const failed = await Promise.allSettled([
+it("does not retain failed metadata inspections or share inspections across different run IDs", async () => {
+  const replacement = (await child()).run;
+  await artifacts(replacement, [trial(third)]);
+  await service.refresh();
+  const views = new Replacements(store, projection, native);
+  const list = vi
+    .spyOn(store, "listDirectory")
+    .mockRejectedValue(new Error("temporary listing failure"));
+  const failed = await Promise.all([
     views.view(source.run_id),
     views.view(source.run_id),
   ]);
-  expect(failed.map((value) => value.status)).toEqual(["rejected", "rejected"]);
-  expect(list).toHaveBeenCalledTimes(2);
+  expect(failed.map((value) => value.assembly.availability)).toEqual([
+    "unavailable",
+    "unavailable",
+  ]);
+  expect(list).toHaveBeenCalledTimes(1);
   list.mockRestore();
-  await expect(views.view(runId("absent"))).rejects.toThrow("not found");
   const [valid, absent] = await Promise.allSettled([
     views.view(source.run_id),
     views.view(runId("absent")),
   ]);
   expect(valid.status).toBe("fulfilled");
   expect(absent.status).toBe("rejected");
-  expect((await views.view(source.run_id)).assembly.availability).toBe("none");
+  expect((await views.view(source.run_id)).assembly.availability).toBe("available");
 });
 
 it("direct trial reads distinguish absent artifacts from storage and malformed-data failures", async () => {
@@ -975,7 +999,8 @@ it("direct trial reads distinguish absent artifacts from storage and malformed-d
   const reader = new ReplacementEvidence(store);
   expect(await reader.trialResult(directory)).toBeNull();
   await expect(reader.bundle(source.run_id)).rejects.toThrow("unfinished");
-  const views = new Replacements(store, projection, native, async () => {});
+  await service.refresh();
+  const views = new Replacements(store, projection, native);
   expect((await views.view(source.run_id)).incurred?.total_attempts).toBe(1);
   await artifacts(source);
   expect(await new ReplacementEvidence(store).trialResult(directory)).toEqual(
@@ -989,10 +1014,12 @@ it("direct trial reads distinguish absent artifacts from storage and malformed-d
   await expect(new ReplacementEvidence(store).trialResult(directory)).rejects.toThrow(
     "denied",
   );
+  await expect(service.refresh()).rejects.toThrow();
   expect((await views.view(source.run_id)).incurred).toBeNull();
   vi.mocked(store.read).mockRestore();
   await store.put(path, new TextEncoder().encode("{invalid"));
   await expect(new ReplacementEvidence(store).trialResult(directory)).rejects.toThrow();
+  await expect(service.refresh()).rejects.toThrow();
   expect((await views.view(source.run_id)).incurred).toBeNull();
 });
 
@@ -1007,13 +1034,15 @@ it("rediscovers descendants before sharing an in-flight inspection of an older g
   const entered = new Promise<void>((resolve) => {
     signal = resolve;
   });
-  const complete = vi
-    .fn(async () => {})
-    .mockImplementationOnce(async () => {
+  await service.refresh();
+  vi.mocked(native.replacementAggregate).mockImplementationOnce(
+    async ({ original }) => {
       signal();
       await held;
-    });
-  const views = new Replacements(store, projection, native, complete);
+      return { result: original.result };
+    },
+  );
+  const views = new Replacements(store, projection, native);
   const older = views.view(source.run_id);
   await entered;
   try {
@@ -1028,6 +1057,12 @@ it("rediscovers descendants before sharing an in-flight inspection of an older g
     };
     await putJson(store, `runs/${descendant.run_id}/run.json`, descendant);
     await artifacts(descendant, [trial("44444444-4444-4444-8444-444444444444")]);
+    await putJson(
+      store,
+      `runs/${descendant.run_id}/state.json`,
+      projection.run(replacement.run_id)!.state,
+    );
+    await service.refresh();
     const fresh = await views.view(source.run_id);
     expect(fresh.assembly.availability).toBe("available");
     expect(
@@ -1036,6 +1071,265 @@ it("rediscovers descendants before sharing an in-flight inspection of an older g
     ).toBe(descendant.run_id);
   } finally {
     release();
-    await older;
+    await expect(older).rejects.toThrow("changed during inspection");
   }
+});
+
+describe("projection observation display contract", () => {
+  async function completed() {
+    const replacement = (await child()).run;
+    await artifacts(replacement, [trial(third)]);
+    await service.refresh();
+    return replacement;
+  }
+  it("keeps full native bundles identical to the fresh mutation reader", async () => {
+    const replacement = await completed();
+    await service.replacements(source.run_id);
+    const input = vi.mocked(native.replacementAggregate).mock.lastCall![0];
+    expect(input.original).toEqual(
+      await new ReplacementEvidence(store).bundle(source.run_id),
+    );
+    expect(input.parts[0]!.evidence).toEqual(
+      await new ReplacementEvidence(store).bundle(replacement.run_id),
+    );
+  });
+  it("retains a content-stable aggregate across full rebuilds but does not renew the observation on HTTP reads", async () => {
+    await completed();
+    const before = await service.replacements(source.run_id);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const warm = await service.replacements(source.run_id);
+    expect(warm.observed_at).toBe(before.observed_at);
+    await service.refresh();
+    const after = await service.replacements(source.run_id);
+    expect(after.observed_at).not.toBe(before.observed_at);
+    expect(after.assembly).toEqual(before.assembly);
+    expect(native.replacementAggregate).toHaveBeenCalledTimes(1);
+  });
+  it("does not claim an observation after reopening SQLite until a full rebuild", async () => {
+    await completed();
+    await service.replacements(source.run_id);
+    projection.close();
+    projection = await Projection.open(join(root, "projection.sqlite"));
+    const views = new Replacements(store, projection, native);
+    expect(await views.view(source.run_id)).toMatchObject({
+      observed_at: null,
+      incurred: null,
+      assembly: { availability: "unavailable" },
+    });
+    await projection.rebuild(store, jobs);
+    expect((await views.view(source.run_id)).assembly.availability).toBe("available");
+  });
+  it("withholds a cached view after a failed refresh and recovers after a successful full rebuild", async () => {
+    await completed();
+    const before = await service.replacements(source.run_id);
+    const list = vi
+      .spyOn(store, "list")
+      .mockRejectedValueOnce(new Error("Unavailable"));
+    await expect(service.refresh()).rejects.toThrow("Unavailable");
+    expect(await service.replacements(source.run_id)).toMatchObject({
+      observed_at: null,
+      incurred: null,
+      assembly: { availability: "unavailable" },
+    });
+    list.mockRestore();
+    await service.refresh();
+    expect((await service.replacements(source.run_id)).assembly).toEqual(
+      before.assembly,
+    );
+  });
+  it("retains other source metadata on scoped rebuilds without advancing global observation age", async () => {
+    const replacement = await completed();
+    await receipt(source, first, 1);
+    await service.refresh();
+    const beforeReceipts = projection.replacementReceipts(source.run_id);
+    expect(beforeReceipts).toHaveLength(1);
+    const before = projection.replacementObjects(source.run_id);
+    const time = projection.jobObservations().observed_at;
+    await putJson(store, `runs/${replacement.run_id}/job/lock.json`, { changed: true });
+    await projection.rebuild(store, jobs, replacement.run_id);
+    expect(projection.replacementObjects(source.run_id)).toEqual(before);
+    expect(projection.replacementReceipts(source.run_id)).toEqual(beforeReceipts);
+    expect(projection.jobObservations().observed_at).toBe(time);
+    expect((await service.replacements(source.run_id)).assembly.availability).toBe(
+      "available",
+    );
+  });
+  it.each(["config.json", "lock.json"])(
+    "fences changed %s bytes against the projected provider identity",
+    async (file) => {
+      const replacement = await completed();
+      await putJson(store, `runs/${replacement.run_id}/job/${file}`, {
+        unexpected: "new bytes",
+      });
+      expect((await service.replacements(source.run_id)).assembly.availability).toBe(
+        "unavailable",
+      );
+      expect(native.replacementAggregate).not.toHaveBeenCalled();
+      await service.refresh();
+      expect((await service.replacements(source.run_id)).assembly.availability).toBe(
+        "available",
+      );
+    },
+  );
+  it("invalidates observed live Jobs while mutation checks still see newer provider Jobs immediately", async () => {
+    await completed();
+    expect((await service.replacements(source.run_id)).assembly.availability).toBe(
+      "available",
+    );
+    jobs.push({
+      id: "owned-trial",
+      run_id: source.run_id,
+      role: "trial",
+      stage: "running",
+      created_at: "2026-01-01T00:00:00Z",
+      started_at: null,
+      finished_at: null,
+    });
+    // Historical display is explicitly labeled; it never authorizes execution.
+    expect((await service.replacements(source.run_id)).assembly.availability).toBe(
+      "available",
+    );
+    await expect(
+      service.validateReplacement(
+        source.run_id,
+        { ...request, trial_ids: [second] },
+        "operator",
+      ),
+    ).rejects.toThrow("complete");
+    await service.refresh();
+    expect((await service.replacements(source.run_id)).assembly.availability).toBe(
+      "pending",
+    );
+  });
+  it("does not cache native provenance failures and invalidates observed receipts", async () => {
+    await completed();
+    await receipt(source, first, 1);
+    await service.refresh();
+    vi.mocked(native.replacementAggregate).mockRejectedValueOnce(
+      new Error("Native identity mismatch"),
+    );
+    expect((await service.replacements(source.run_id)).assembly.availability).toBe(
+      "unavailable",
+    );
+    expect((await service.replacements(source.run_id)).assembly.availability).toBe(
+      "available",
+    );
+    await receipt(source, first, 2);
+    const fresh = new Replacements(store, projection, native);
+    // New remote bytes are not a new observation; failed refresh invalidates it.
+    expect((await fresh.view(source.run_id)).incurred?.cost_usd).toBe(3);
+    await expect(service.refresh()).rejects.toThrow();
+    expect((await fresh.view(source.run_id)).incurred).toBeNull();
+    await receipt(source, first, 1);
+    await service.refresh();
+    expect((await fresh.view(source.run_id)).incurred?.cost_usd).toBe(3);
+  });
+  it("invalidates changed native result rows and passes deletion to Harbor without an original fallback", async () => {
+    const replacement = await completed();
+    await service.replacements(source.run_id);
+    await rm(
+      join(store.root, `runs/${replacement.run_id}/job/task-${third}/result.json`),
+    );
+    await service.refresh();
+    vi.mocked(native.replacementAggregate).mockImplementationOnce(async ({ parts }) => {
+      expect(parts[0]!.evidence.trials).toEqual([]);
+      throw new Error("Incomplete native membership");
+    });
+    expect((await service.replacements(source.run_id)).assembly).toEqual({
+      availability: "unavailable",
+      result: null,
+    });
+  });
+  it("requires a new full observation when a rebuild fails during native aggregation", async () => {
+    await completed();
+    vi.mocked(native.replacementAggregate).mockImplementationOnce(
+      async ({ original }) => {
+        const list = vi
+          .spyOn(store, "list")
+          .mockRejectedValueOnce(new Error("Unavailable"));
+        await expect(service.refresh()).rejects.toThrow("Unavailable");
+        list.mockRestore();
+        return { result: original.result };
+      },
+    );
+    await expect(service.replacements(source.run_id)).rejects.toThrow(
+      "changed during inspection",
+    );
+  });
+});
+
+it("keeps cold display I/O independent of native trial and receipt cohort size", async () => {
+  const trials = [
+    trial(first, 0.01),
+    ...Array.from({ length: 511 }, () => trial(randomUUID(), 0.01)),
+  ];
+  await rm(join(store.root, `runs/${source.run_id}/job/task-${second}`), {
+    recursive: true,
+  });
+  await artifacts(source, trials);
+  for (const item of trials) await receipt(source, item.id, 0.01);
+  const replacement = (await child()).run;
+  await artifacts(replacement, [trial(third)]);
+  await receipt(replacement, third, 1);
+  await service.refresh();
+  vi.mocked(listJobs)
+    .mockClear()
+    .mockRejectedValue(new Error("No provider I/O allowed"));
+  const read = vi.spyOn(store, "read");
+  const directory = vi.spyOn(store, "listDirectory");
+  const listing = vi.spyOn(store, "list");
+  const cold = await service.replacements(source.run_id);
+  expect(cold.assembly.availability).toBe("available");
+  expect(cold.incurred?.total_attempts).toBe(513);
+  expect(read).toHaveBeenCalledTimes(4);
+  expect(directory).toHaveBeenCalledTimes(2);
+  expect(listing).not.toHaveBeenCalled();
+  expect(listJobs).not.toHaveBeenCalled();
+  read.mockClear();
+  directory.mockClear();
+  const warm = await service.replacements(source.run_id);
+  expect(warm).toEqual(cold);
+  expect(read).not.toHaveBeenCalled();
+  expect(directory).not.toHaveBeenCalled();
+  expect(listing).not.toHaveBeenCalled();
+  expect(listJobs).not.toHaveBeenCalled();
+  expect(native.replacementAggregate).toHaveBeenCalledTimes(1);
+});
+
+it("passes projected ancestor bundles to Harbor when browsing a replaced subset", async () => {
+  const replacement = (await child()).run;
+  await artifacts(replacement, [trial(third)]);
+  const input = { ...request, trial_ids: [third] };
+  const reviewed = await service.validateReplacement(
+    replacement.run_id,
+    input,
+    "operator",
+  );
+  const descendant = (
+    await service.submitReplacement(
+      replacement.run_id,
+      { ...input, fingerprint: reviewed.fingerprint },
+      "nested-display",
+      "operator",
+    )
+  ).run;
+  await artifacts(descendant, [trial("44444444-4444-4444-8444-444444444444")]);
+  await service.refresh();
+  expect((await service.replacements(replacement.run_id)).assembly.availability).toBe(
+    "available",
+  );
+  expect(
+    vi.mocked(native.replacementAggregate).mock.lastCall![0].original_ancestors,
+  ).toEqual([await new ReplacementEvidence(store).bundle(source.run_id)]);
+});
+
+it("bounds complete projected evidence before calling the native bridge", async () => {
+  const row = projection.run(source.run_id)!;
+  vi.spyOn(projection, "listRuns").mockReturnValue([
+    { ...row, result: { padding: "x".repeat(33 * 1024 * 1024) } },
+  ]);
+  await expect(service.replacements(source.run_id)).rejects.toThrow(
+    "exceeds its bound",
+  );
+  expect(native.replacementAggregate).not.toHaveBeenCalled();
 });

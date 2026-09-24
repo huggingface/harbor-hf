@@ -41,6 +41,7 @@ const empty: api.ReplacementView = {
   run_id: runId,
   operator_selection: null,
   children: [],
+  observed_at: "2026-01-01T00:00:00Z",
   assembly: { availability: "none", result: null },
   incurred: null,
   selected_cost_usd: null,
@@ -327,6 +328,7 @@ it("displays native mean and full source evidence, separating selected cost from
     <CombinedReplacementView
       view={{
         ...empty,
+        observed_at: "2026-01-01T00:00:00Z",
         assembly: { availability: "available", result },
         incurred: {
           cost_usd: 4,
@@ -380,6 +382,7 @@ it("does not invent means for arbitrary metrics or equate null subtotal with zer
     <CombinedReplacementView
       view={{
         ...empty,
+        observed_at: "2026-01-01T00:00:00Z",
         assembly: {
           availability: "available",
           result: { stats: { evals: { synthetic: { metrics: [{ custom: 1 }] } } } },
@@ -423,6 +426,7 @@ it("shows corrected native results above the closed panel with a single shared q
     view: {
       ...empty,
       children: [child],
+      observed_at: "2026-01-01T00:00:00Z",
       assembly: { availability: "available", result },
     },
   });
@@ -454,6 +458,7 @@ it("removes a previously available Combined score on failed refresh and recovers
     view: {
       ...empty,
       children: [child],
+      observed_at: "2026-01-01T00:00:00Z",
       assembly: { availability: "available", result },
     },
   });
@@ -476,6 +481,7 @@ it("expires saved Combined evidence without renewing its age during a hanging re
     view: {
       ...empty,
       children: [child],
+      observed_at: "2026-01-01T00:00:00Z",
       assembly: { availability: "available", result },
     },
   });

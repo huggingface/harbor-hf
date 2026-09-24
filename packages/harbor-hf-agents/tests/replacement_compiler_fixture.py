@@ -222,7 +222,8 @@ assert.equal((await createJson(store, key, record)).created, true);
 assert.equal((await createJson(store, key, record)).created, false);
 const stored = validateRunRecord(await readJson(store, key));
 assert.deepEqual(stored, record);
-const view = {run_id: record.run_id, operator_selection: selection, children: [],
+const view = {run_id: record.run_id, observed_at: null,
+  operator_selection: selection, children: [],
   assembly: {availability: 'none', result: null},
   incurred: null, selected_cost_usd: null};
 replacementViewSchema.parse(view);

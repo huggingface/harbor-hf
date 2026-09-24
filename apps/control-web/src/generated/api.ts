@@ -138,6 +138,20 @@ export interface paths {
                     };
                 };
                 /** @description Request error */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Request error */
                 503: {
                     headers: {
                         [name: string]: unknown;
@@ -3072,6 +3086,8 @@ export interface components {
         };
         ReplacementView: {
             run_id: string;
+            /** @description Last full projection observation; not an execution safety check. */
+            observed_at: string | null;
             operator_selection: {
                 original_run_id: string;
                 trial_ids: string[];

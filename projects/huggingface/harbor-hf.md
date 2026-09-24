@@ -11,6 +11,28 @@ default_branch: main
 
 Status: approved
 
+### Local-evidence combined-result browsing — implementation and release
+
+Approved at: 2026-09-24T12:24:10Z
+
+- The user directly requested implementing local-evidence result browsing and
+  deploying it. The timestamp records the environment clock at approval capture.
+- Reuse the existing disposable projection's complete native trial results and
+  native aggregate cache for browsing. Establish completeness, freshness and
+  invalidation; keep fresh strict checks for execution/replacement submission.
+  Retain Harbor aggregation and expose unavailable/pending evidence truthfully.
+- Scope includes source/history review, local implementation, regression tests,
+  real-path read-only profiling, documentation, commits, current-main integration,
+  PR publication, exact-green-head merge and deployment to the existing private
+  control Space after fresh idle inventory and provenance/readiness checks.
+- No new resource, persisted aggregate, projection table, native metric engine,
+  credential transfer, inference, paid test, benchmark mutation or history rewrite.
+  Preserve existing hardware, Bucket, secrets and immutable worker images when
+  worker inputs are unchanged. Stop for changed worker inputs or active execution.
+- Keep coverage and safety gates. Preserve other work; use the primary checkout.
+  Disable writes for cutover and restore only after validation. Verify actual
+  hosted responsiveness, not just a synthetic benchmark. Keep run evidence private.
+
 ### Combined-result responsiveness — release follow-through
 
 Approved at: 2026-09-23T16:43:54Z
@@ -3099,3 +3121,35 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
   paused runs remain paused. Refresh this inventory at cutover. The live release
   still matches the previously verified source; immutable worker references remain
   configured. No remote mutation, inference or paid test occurred in preparation.
+
+### 2026-09-23 — Release deployed; live responsiveness remains unresolved
+
+- Published PR #229, verified exact reviewed head and green CI, and squash-merged
+  without bypassing checks. Merged revision
+  `66c9cbf0cf0f5a4d6869006e91208e48433502d7` also has successful hosted CI.
+- Deployed that exact merged revision to the existing private control Space after
+  fresh provider inventory covered both benchmark and Workbench ownership labels.
+  No owned Job was active. Existing paused runs remained paused.
+- Disabled writes before cutover, verified disabled-mode readiness and unchanged
+  run records/state, and uploaded the clean release bundle with an exact prior
+  Space commit guard. Verified release metadata and changed source bytes, Harbor
+  pin, authenticated readiness/session/presets, projection, console assets, build
+  logs and runtime logs. Restored writes only after these checks passed.
+- Stable enabled-mode verification passed with no structured runtime errors.
+  Space privacy, hardware, all unrelated variable values, Bucket and immutable
+  worker references are unchanged. No secret API, image publication, credential
+  transfer, inference, paid test, new resource or run-control action was used.
+- Crucially, hosted combined-result requests still exceeded the existing browser
+  deadline despite returning the same valid native result. Synthetic improvement
+  did not establish a hosted responsiveness fix. Do not mark that goal complete
+  or claim the browser issue is resolved. Detailed run evidence remains private.
+- A bounded read-only storage probe separated resolve and content requests;
+  conditional requests did not yield not-modified responses. No speculative
+  cache, alternate result, timeout extension or additional runtime patch was
+  deployed. Further bottleneck profiling and a reviewed follow-up are needed.
+
+### 2026-09-24 — Local-evidence browsing follow-up approved
+
+- Direct approval covers the local-evidence browsing change and its reviewed
+  release, within the exact current scope above. This follows the previous
+  deployment's unresolved hosted latency; no safety or coverage rule is waived.
