@@ -11,6 +11,28 @@ default_branch: main
 
 Status: approved
 
+### Local-evidence combined-result browsing — implementation and release
+
+Approved at: 2026-09-24T12:24:10Z
+
+- The user directly requested implementing local-evidence result browsing and
+  deploying it. The timestamp records the environment clock at approval capture.
+- Reuse the existing disposable projection's complete native trial results and
+  native aggregate cache for browsing. Establish completeness, freshness and
+  invalidation; keep fresh strict checks for execution/replacement submission.
+  Retain Harbor aggregation and expose unavailable/pending evidence truthfully.
+- Scope includes source/history review, local implementation, regression tests,
+  real-path read-only profiling, documentation, commits, current-main integration,
+  PR publication, exact-green-head merge and deployment to the existing private
+  control Space after fresh idle inventory and provenance/readiness checks.
+- No new resource, persisted aggregate, projection table, native metric engine,
+  credential transfer, inference, paid test, benchmark mutation or history rewrite.
+  Preserve existing hardware, Bucket, secrets and immutable worker images when
+  worker inputs are unchanged. Stop for changed worker inputs or active execution.
+- Keep coverage and safety gates. Preserve other work; use the primary checkout.
+  Disable writes for cutover and restore only after validation. Verify actual
+  hosted responsiveness, not just a synthetic benchmark. Keep run evidence private.
+
 ### Combined-result responsiveness — release follow-through
 
 Approved at: 2026-09-23T16:43:54Z
@@ -3125,3 +3147,9 @@ Approved at: 2026-09-11T17:20:40.872135+00:00
   conditional requests did not yield not-modified responses. No speculative
   cache, alternate result, timeout extension or additional runtime patch was
   deployed. Further bottleneck profiling and a reviewed follow-up are needed.
+
+### 2026-09-24 — Local-evidence browsing follow-up approved
+
+- Direct approval covers the local-evidence browsing change and its reviewed
+  release, within the exact current scope above. This follows the previous
+  deployment's unresolved hosted latency; no safety or coverage rule is waived.
