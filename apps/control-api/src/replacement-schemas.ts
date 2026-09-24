@@ -26,6 +26,10 @@ const selection = z.strictObject({
 });
 export const replacementViewSchema = z.strictObject({
   run_id: runId,
+  observed_at: z.iso
+    .datetime()
+    .nullable()
+    .describe("Last full projection observation; not an execution safety check."),
   operator_selection: selection.nullable(),
   children: z.array(
     z.strictObject({

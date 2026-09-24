@@ -181,7 +181,6 @@ export class ControlService {
       this.store,
       this.projection,
       this.replacementNative(),
-      (source) => this.completedSource(source),
     );
     return this.replacementViews.view(id);
   }

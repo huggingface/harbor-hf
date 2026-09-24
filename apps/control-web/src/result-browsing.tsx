@@ -11,6 +11,24 @@ import { millionTokens, nativeScore, resultStat, roundedScore } from "./run-summ
 import { CostValue, ExactValue } from "./summary-values";
 import { Button } from "./ui";
 
+export function ReplacementEvidenceLabel({
+  observedAt,
+}: {
+  observedAt: string | null;
+}) {
+  return (
+    <p className="text-xs text-slate-400">
+      Projection snapshot ·{" "}
+      {observedAt ? (
+        <time dateTime={observedAt}>{new Date(observedAt).toLocaleString()}</time>
+      ) : (
+        "not yet observed"
+      )}
+      . Not a live execution safety check.
+    </p>
+  );
+}
+
 export function NativeResultSummary({
   result,
   includeCost = true,
@@ -123,7 +141,7 @@ export function BrowsingResult({
         <NativeResultSummary result={run.result} />
       ) : (
         <>
-          {query.isFetching ? <p>Loading fresh combined evidence…</p> : null}
+          {query.isFetching ? <p>Loading projected combined results…</p> : null}
           {query.error || expired || missingChildren ? (
             <p role="alert">
               Combined unavailable:{" "}
@@ -136,7 +154,7 @@ export function BrowsingResult({
           ) : result ? (
             <>
               {query.isFetching ? (
-                <p>Showing the last completed evidence check while refreshing.</p>
+                <p>Showing the last response while refreshing the projection view.</p>
               ) : null}
               <NativeResultSummary result={result} />
             </>
@@ -157,6 +175,7 @@ export function BrowsingResult({
               Retry combined rollup
             </Button>
           ) : null}
+          {view ? <ReplacementEvidenceLabel observedAt={view.observed_at} /> : null}
           {view?.incurred ? (
             <p className="text-xs">
               All-incurred reported subtotal:{" "}

@@ -73,6 +73,7 @@ it("uses hidden archived descendant relationships but requests only rendered par
         },
       },
     ],
+    observed_at: "2026-01-01T00:00:00Z",
     assembly: {
       availability: "available",
       result: { stats: { evals: { sample: { metrics: [{ mean: 0.1 }] } } } },
@@ -177,6 +178,7 @@ it("fences an ancestor when a hidden child's new child is pending, and rechecks 
         },
       },
     ],
+    observed_at: "2026-01-01T00:00:00Z",
     assembly: {
       availability: "available",
       result: { stats: { evals: { sample: { metrics: [{ mean: 0.1 }] } } } },

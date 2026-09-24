@@ -690,9 +690,14 @@ loads these views on demand. Exceptions identify candidates, not an automatic
 infrastructure classification.
 
 Only optional `RunRecord.operator_selection` is durable. The bounded assembly
-cache is disposable and never feeds execution reconciliation. Source records and
-native config/lock/result evidence are rechecked; changed or missing evidence
-fails closed. Parent preflight independently validates the same provenance.
+cache is disposable and never feeds execution reconciliation. Read-only combined
+views reuse complete projected native evidence and label the full projection's
+`observed_at`; an HTTP response is not a new execution safety check. Only cold
+views fetch native config/lock files. Fresh source records, provider Jobs and native
+evidence are still required for replacement validation/submission. Changed or
+missing observed evidence fails closed. Parent preflight independently validates
+the same provenance. See [local-evidence browsing](local-evidence-result-browsing.md)
+for cache invalidation, unavailable observations and the unchanged native boundary.
 No source artifacts enter the new run's upload tree.
 
 Harbor runs the exact selected task multiplicity and aggregates the chosen

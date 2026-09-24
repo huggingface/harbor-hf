@@ -2926,6 +2926,7 @@ for (const binding of ["named", "none"] as const) {
               },
             ]
           : [],
+        observed_at: "2026-01-01T00:00:00Z",
         assembly: {
           availability: created ? "available" : "none",
           result: created

@@ -2534,6 +2534,19 @@
             "type": "string",
             "pattern": "^run-[0-9a-f]{24}$"
           },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last full projection observation; not an execution safety check."
+          },
           "operator_selection": {
             "anyOf": [
               {
@@ -2723,6 +2736,7 @@
         },
         "required": [
           "run_id",
+          "observed_at",
           "operator_selection",
           "children",
           "assembly",
@@ -3008,6 +3022,36 @@
             }
           },
           "400": {
+            "description": "Request error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
             "description": "Request error",
             "content": {
               "application/json": {

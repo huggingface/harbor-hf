@@ -467,6 +467,7 @@ const document = {
             },
           },
           "400": error,
+          "409": error,
           "503": error,
         },
       },

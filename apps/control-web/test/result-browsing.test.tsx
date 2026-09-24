@@ -13,7 +13,7 @@ import {
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import * as api from "../src/api";
-import { BrowsingResult } from "../src/result-browsing";
+import { BrowsingResult, ReplacementEvidenceLabel } from "../src/result-browsing";
 import {
   ResultBrowsingProvider,
   runsWithDirectChildren,
@@ -48,6 +48,7 @@ const view: api.ReplacementView = {
       },
     },
   ],
+  observed_at: "2026-01-01T00:00:00Z",
   assembly: { availability: "available", result: native(0.1) },
   selected_cost_usd: 999,
   incurred: {
@@ -112,6 +113,7 @@ it.each(["pending", "unavailable", "none"] as const)(
   async (availability) => {
     vi.spyOn(api, "getReplacements").mockResolvedValue({
       ...view,
+      observed_at: "2026-01-01T00:00:00Z",
       assembly: { availability, result: native(0.9) },
     });
     show();
@@ -172,7 +174,9 @@ it("shows fresh cached evidence during refresh, then expires it rather than rene
   await act(async () => {
     void value.refetchQueries({ queryKey: ["replacements"] });
   });
-  expect(await screen.findByText(/last completed evidence check/)).toBeVisible();
+  expect(
+    await screen.findByText(/last response while refreshing the projection view/),
+  ).toBeVisible();
   expect(screen.getByText("Score · mean: 0.100")).toBeVisible();
   await act(async () => {
     value.setQueryData(["replacements", run.record.run_id], view, {
@@ -303,4 +307,18 @@ it("expires saved evidence on the shared clock while a refresh is hung", async (
     await vi.advanceTimersByTimeAsync(1);
   });
   expect(screen.getByText("Score · mean: 0.100")).toBeVisible();
+});
+
+it("labels the projection observation without turning request time into evidence time", () => {
+  const { container, rerender } = render(
+    <ReplacementEvidenceLabel observedAt="2026-01-01T00:00:00Z" />,
+  );
+  expect(container.querySelector("time")).toHaveAttribute(
+    "datetime",
+    "2026-01-01T00:00:00Z",
+  );
+  expect(screen.getByText(/Not a live execution safety check/)).toBeVisible();
+  rerender(<ReplacementEvidenceLabel observedAt={null} />);
+  expect(screen.getByText(/not yet observed/)).toBeVisible();
+  expect(container.querySelector("time")).toBeNull();
 });
