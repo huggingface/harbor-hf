@@ -188,6 +188,21 @@ describe("materializePresetRoot", () => {
     ).rejects.toThrow("both provide demo.json");
   });
 
+  it("refuses the same source twice", async () => {
+    const bakedRoot = await directory();
+    await baked(bakedRoot);
+    const source = snapshot([
+      { path: "agents/extra.json", content: agentPreset("extra", "0.1.0") },
+    ]);
+    await expect(
+      materializePresetRoot({
+        bakedRoot,
+        snapshots: [source, source],
+        directory: await directory(),
+      }),
+    ).rejects.toThrow("is configured twice");
+  });
+
   it("refuses two owners of one preset identity under different file names", async () => {
     const bakedRoot = await directory();
     await baked(bakedRoot);

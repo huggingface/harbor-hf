@@ -199,21 +199,27 @@ export async function materializePresetRoot(options: {
     }
   }
 
-  const names = new Map<string, string>();
+  const names = new Map<string, CandidateFile>();
   for (const file of files) {
     const key = `${file.directory}\u0000${file.name}`;
     const previous = names.get(key);
-    if (previous !== undefined && previous !== file.owner)
-      throw new Error(`${file.owner} and ${previous} both provide ${file.name}`);
-    names.set(key, file.owner);
+    if (previous !== undefined && previous.owner === file.owner)
+      throw new Error(`${file.owner} is configured twice`);
+    if (previous !== undefined)
+      throw new Error(`${file.owner} and ${previous.owner} both provide ${file.name}`);
+    names.set(key, file);
   }
-  const identities = new Map<string, string>();
+  const identities = new Map<string, CandidateFile>();
   for (const file of files) {
     const identity = identify(file);
     const previous = identities.get(identity);
-    if (previous !== undefined && previous !== file.owner)
-      throw new Error(`${file.owner} and ${previous} both provide the same preset`);
-    identities.set(identity, file.owner);
+    if (previous !== undefined && previous.owner === file.owner)
+      throw new Error(`${file.owner} is configured twice`);
+    if (previous !== undefined)
+      throw new Error(
+        `${file.owner} and ${previous.owner} both provide the same preset`,
+      );
+    identities.set(identity, file);
   }
 
   const sources: PresetSourceProvenance[] = snapshots.map((snapshot) => {
