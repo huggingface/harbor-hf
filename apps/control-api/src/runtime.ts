@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { OperatorAcl } from "@harbor-hf/contracts";
 import {
   ControlService,
@@ -6,8 +9,13 @@ import {
   InferenceRegistry,
   prohibitedInferenceName,
   InferenceBindingDenied,
+  materializePresetRoot,
   type ObjectStore,
   PresetCatalog,
+  type PresetRoot,
+  type PresetSourceProvenance,
+  type PresetSourceSnapshot,
+  type PresetSourceV1,
   Projection,
   Reconciler,
 } from "@harbor-hf/control-core";
@@ -16,6 +24,7 @@ import {
   HuggingFaceJobs,
   HuggingFaceWorkbenchJobs,
   NoopJobs,
+  readPresetSource as readPinnedPresetSource,
   ReadOnlyHuggingFaceJobs,
 } from "@harbor-hf/hf-adapters";
 import { AuthenticationService, AuthStore } from "./auth.js";
@@ -33,6 +42,8 @@ export interface Runtime {
   auth: AuthenticationService;
   reconciler: Reconciler;
   presets: PresetCatalog;
+  /** The pinned external sources the catalog was built from. */
+  preset_sources: readonly PresetSourceProvenance[];
   workbench: WorkbenchRuntime;
   launch: LaunchPort;
   readonly ready: boolean;
@@ -57,6 +68,55 @@ export async function createRuntime(
   config: AppConfig,
   readSelectedSource: (source: string) => string | undefined = (source) =>
     readOwnInferenceSource(process.env, source),
+  readSource: (source: PresetSourceV1) => Promise<PresetSourceSnapshot> = (source) =>
+    readPinnedPresetSource(source, { accessToken: config.hf_token ?? undefined }),
+): Promise<Runtime> {
+  // External presets are read once, at startup, from their pinned commits. A source that
+  // cannot be read, resolved or verified stops the service before it can launch anything.
+  const presetRoot = await loadPresetRoot(config, readSource);
+  try {
+    return await composeRuntime(
+      presetRoot.directory === null
+        ? config
+        : { ...config, presets_root: presetRoot.root },
+      presetRoot,
+      readSelectedSource,
+    );
+  } catch (error) {
+    await discardPresetRoot(presetRoot);
+    throw error;
+  }
+}
+
+/** Read every configured source and merge it with the baked catalog. */
+async function loadPresetRoot(
+  config: AppConfig,
+  readSource: (source: PresetSourceV1) => Promise<PresetSourceSnapshot>,
+): Promise<PresetRoot> {
+  if (config.preset_sources.length === 0)
+    return { root: config.presets_root, directory: null, sources: [] };
+  const directory = await mkdtemp(join(tmpdir(), "harbor-hf-presets-"));
+  try {
+    return await materializePresetRoot({
+      bakedRoot: config.presets_root,
+      snapshots: await Promise.all(config.preset_sources.map(readSource)),
+      directory,
+    });
+  } catch (error) {
+    await discardPresetRoot({ root: directory, directory, sources: [] });
+    throw error;
+  }
+}
+
+/** The merged root is disposable: the pinned sources rebuild it at every startup. */
+async function discardPresetRoot(root: PresetRoot): Promise<void> {
+  if (root.directory) await rm(root.directory, { recursive: true, force: true });
+}
+
+async function composeRuntime(
+  config: AppConfig,
+  presetRoot: PresetRoot,
+  readSelectedSource: (source: string) => string | undefined,
 ): Promise<Runtime> {
   if (config.store_mode === "bucket" && !config.hf_token)
     throw new Error("Bucket mode requires the control credential");
@@ -193,6 +253,7 @@ export async function createRuntime(
     presets,
     workbench,
     launch,
+    preset_sources: presetRoot.sources,
     get ready() {
       return ready;
     },
@@ -212,6 +273,7 @@ export async function createRuntime(
       await workbench.close();
       authStore.close();
       projection.close();
+      await discardPresetRoot(presetRoot);
     },
   };
 }

@@ -55,6 +55,7 @@ async function setup(
     projection_path: join(root, "projection.sqlite"),
     auth_path: join(root, "auth.sqlite"),
     presets_root: resolve("presets"),
+    preset_sources: [],
     max_active_jobs: 16,
     parent_image: parentImage,
     parent_hardware: "cpu-basic",
