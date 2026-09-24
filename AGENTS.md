@@ -71,6 +71,19 @@
   adapter. Keep reviewed presets declarative and do not use them to claim pair-specific
   compatibility.
 
+## Presets
+
+- The catalog in `presets/` holds presets for very popular benchmarks only. Every other
+  benchmark, harness, model set, or personal campaign belongs in a pinned preset source, not
+  in this repository.
+- A preset source is a Hugging Face repository at an exact 40-character commit. An operator
+  names it in `HARBOR_HF_PRESET_SOURCES`; the service reads it at startup, merges it with the
+  baked catalog, and reports its provenance. See [preset sources](docs/preset-sources.md).
+- A preset in this repository MUST NOT name a credential or a credential alias. Use the fixed
+  inference template or a reviewed endpoint connection instead.
+- Do not add a second preset format, a per-benchmark branch, or a fallback for a missing
+  source. A source that cannot be read, resolved, or verified stops the service before launch.
+
 ## Storage and resources
 
 - The steady-state inventory is one private control Space and one private
