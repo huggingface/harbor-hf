@@ -1,0 +1,24 @@
+{
+  "schema_version": "v1",
+  "benchmark": "terminal-bench-4-0",
+  "preset": "one-task-1-trial",
+  "leaderboard_eligible": false,
+  "job": {
+    "datasets": [
+      {
+        "repo": "https://github.com/harbor-framework/terminal-bench.git@452bf305c6daa62fc59061d22133a7cbc7c1572e",
+        "path": "tasks",
+        "task_names": ["interleaved-vigenere"]
+      }
+    ],
+    "n_attempts": 1,
+    "n_concurrent_trials": 1,
+    "environment": {
+      "type": "hf-sandbox",
+      "kwargs": {
+        "flavor": "cpu-upgrade",
+        "job_timeout": "none"
+      }
+    }
+  }
+}

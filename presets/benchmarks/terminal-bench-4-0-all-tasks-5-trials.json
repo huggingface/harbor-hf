@@ -1,0 +1,23 @@
+{
+  "schema_version": "v1",
+  "benchmark": "terminal-bench-4-0",
+  "preset": "all-tasks-5-trials",
+  "leaderboard_eligible": true,
+  "job": {
+    "datasets": [
+      {
+        "repo": "https://github.com/harbor-framework/terminal-bench.git@452bf305c6daa62fc59061d22133a7cbc7c1572e",
+        "path": "tasks"
+      }
+    ],
+    "n_attempts": 5,
+    "n_concurrent_trials": 8,
+    "environment": {
+      "type": "hf-sandbox",
+      "kwargs": {
+        "flavor": "cpu-upgrade",
+        "job_timeout": "none"
+      }
+    }
+  }
+}
