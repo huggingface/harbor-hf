@@ -146,6 +146,62 @@ def test_supplies_provider_pin_to_pi_custom_model_config(tmp_path: Path) -> None
     }
 
 
+def test_custom_endpoint_declares_verified_reasoning(tmp_path: Path) -> None:
+    agent = PiAgent(
+        logs_dir=tmp_path,
+        model_api="openai-completions",
+        endpoint_model={
+            "reasoning": True,
+            "compat": {"supportsReasoningEffort": True},
+            "contextWindow": 1000000,
+            "maxTokens": 131072,
+        },
+    )
+    access = ResolvedModelConnection(
+        provider="openai",
+        api_key="test-only-placeholder",
+        configured_base_url="https://example.invalid/v1",
+        env={"OPENAI_API_KEY": "test-only-placeholder"},
+    )
+
+    config = agent._build_custom_models_json(access, "example-model")
+
+    assert config == {
+        "providers": {
+            "harbor-endpoint": {
+                "baseUrl": "https://example.invalid/v1",
+                "apiKey": "$OPENAI_API_KEY",
+                "api": "openai-completions",
+                "models": [
+                    {
+                        "id": "example-model",
+                        "reasoning": True,
+                        "compat": {"supportsReasoningEffort": True},
+                        "contextWindow": 1000000,
+                        "maxTokens": 131072,
+                    }
+                ],
+            }
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        {"id": "unreviewed-model", "reasoning": True},
+        {"reasoning": "true"},
+        {"reasoning": True, "compat": {"supportsReasoningEffort": "true"}},
+        {"reasoning": True, "contextWindow": -1},
+    ],
+)
+def test_rejects_invalid_endpoint_metadata(
+    tmp_path: Path, profile: dict[str, object]
+) -> None:
+    with pytest.raises(ValueError, match="endpoint_model"):
+        PiAgent(logs_dir=tmp_path, endpoint_model=profile)
+
+
 def test_converts_pi_events_to_atif(tmp_path: Path) -> None:
     path = tmp_path / "pi.txt"
     events = [

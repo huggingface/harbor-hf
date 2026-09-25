@@ -325,6 +325,34 @@ class PiAgent(Pi):
     capabilities = AgentCapabilities(atif=True, resume=True)
     _provider_model: dict[str, Any] | None = None
 
+    def __init__(
+        self,
+        *args: Any,  # noqa: ANN401 -- Harbor Pi uses a variadic constructor
+        endpoint_model: dict[str, Any] | None = None,
+        **kwargs: Any,  # noqa: ANN401 -- forward native agent options
+    ) -> None:
+        if endpoint_model is not None:
+            allowed = {"reasoning", "compat", "contextWindow", "maxTokens"}
+            if not isinstance(endpoint_model, dict) or set(endpoint_model) - allowed:
+                raise ValueError("endpoint_model contains unsupported fields")
+            if not isinstance(endpoint_model.get("reasoning"), bool):
+                raise ValueError("endpoint_model requires a reasoning boolean")
+            compat = endpoint_model.get("compat")
+            if compat is not None and (
+                not isinstance(compat, dict)
+                or set(compat) != {"supportsReasoningEffort"}
+                or not isinstance(compat["supportsReasoningEffort"], bool)
+            ):
+                raise ValueError("endpoint_model has invalid compatibility settings")
+            for field in ("contextWindow", "maxTokens"):
+                value = endpoint_model.get(field)
+                if value is not None and (
+                    isinstance(value, bool) or not isinstance(value, int) or value <= 0
+                ):
+                    raise ValueError(f"endpoint_model has invalid {field}")
+        self._endpoint_model = endpoint_model
+        super().__init__(*args, **kwargs)
+
     @override
     def _build_custom_models_json(
         self,
@@ -332,7 +360,14 @@ class PiAgent(Pi):
         model_id: str,
     ) -> dict[str, Any] | None:
         if self._provider_model is None:
-            return super()._build_custom_models_json(access, model_id)
+            config = super()._build_custom_models_json(access, model_id)
+            if self._endpoint_model is not None:
+                if config is None:
+                    raise ValueError("endpoint_model requires a configured endpoint")
+                config["providers"]["harbor-endpoint"]["models"][0].update(
+                    self._endpoint_model
+                )
+            return config
         api_key_env = self._api_key_env_name(access)
         if api_key_env is None:
             raise ValueError("Pi requires a Hugging Face token environment reference")
