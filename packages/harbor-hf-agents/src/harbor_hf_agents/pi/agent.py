@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast, override
@@ -13,7 +13,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from harbor.agents.capabilities import AgentCapabilities
-from harbor.agents.installed.pi import Pi
+from harbor.agents.installed.pi import Pi, PiOptions
 from harbor.agents.model_connection import ResolvedModelConnection
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
@@ -27,6 +27,7 @@ from harbor.models.trajectories import (
     Trajectory,
 )
 from harbor.utils.trajectory_utils import format_trajectory_json
+from pydantic import Field
 
 _HF_ROUTER_URL = "https://router.huggingface.co/v1"
 _PI_HF_CATALOG_URL = "https://pi.dev/api/models/providers/huggingface"
@@ -319,11 +320,50 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- event parser branches
     )
 
 
+def _validate_endpoint_model(endpoint_model: object) -> None:
+    if endpoint_model is None:
+        return
+    allowed = {"reasoning", "compat", "contextWindow", "maxTokens"}
+    if not isinstance(endpoint_model, dict) or set(endpoint_model) - allowed:
+        raise ValueError("endpoint_model contains unsupported fields")
+    if not isinstance(endpoint_model.get("reasoning"), bool):
+        raise ValueError("endpoint_model requires a reasoning boolean")
+    compat = endpoint_model.get("compat")
+    if compat is not None and (
+        not isinstance(compat, dict)
+        or set(compat) != {"supportsReasoningEffort"}
+        or not isinstance(compat.get("supportsReasoningEffort"), bool)
+    ):
+        raise ValueError("endpoint_model has invalid compatibility settings")
+    for field in ("contextWindow", "maxTokens"):
+        value = endpoint_model.get(field)
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+        ):
+            raise ValueError(f"endpoint_model has invalid {field}")
+
+
+class PiAgentOptions(PiOptions):
+    endpoint_model: dict[str, Any] | None = Field(
+        default=None, description="Reviewed custom endpoint model metadata."
+    )
+
+
 class PiAgent(Pi):
     """Use Harbor's Pi agent with priced provider pins and ATIF output."""
 
     capabilities = AgentCapabilities(atif=True, resume=True)
+    options_model = PiAgentOptions
+    options: PiAgentOptions
     _provider_model: dict[str, Any] | None = None
+
+    @classmethod
+    @override
+    def preflight(
+        cls, kwargs: dict[str, Any] | None = None, env: Mapping[str, str] | None = None
+    ) -> None:
+        super().preflight(kwargs, env)
+        _validate_endpoint_model((kwargs or {}).get("endpoint_model"))
 
     def __init__(
         self,
@@ -331,25 +371,7 @@ class PiAgent(Pi):
         endpoint_model: dict[str, Any] | None = None,
         **kwargs: Any,  # noqa: ANN401 -- forward native agent options
     ) -> None:
-        if endpoint_model is not None:
-            allowed = {"reasoning", "compat", "contextWindow", "maxTokens"}
-            if not isinstance(endpoint_model, dict) or set(endpoint_model) - allowed:
-                raise ValueError("endpoint_model contains unsupported fields")
-            if not isinstance(endpoint_model.get("reasoning"), bool):
-                raise ValueError("endpoint_model requires a reasoning boolean")
-            compat = endpoint_model.get("compat")
-            if compat is not None and (
-                not isinstance(compat, dict)
-                or set(compat) != {"supportsReasoningEffort"}
-                or not isinstance(compat["supportsReasoningEffort"], bool)
-            ):
-                raise ValueError("endpoint_model has invalid compatibility settings")
-            for field in ("contextWindow", "maxTokens"):
-                value = endpoint_model.get(field)
-                if value is not None and (
-                    isinstance(value, bool) or not isinstance(value, int) or value <= 0
-                ):
-                    raise ValueError(f"endpoint_model has invalid {field}")
+        _validate_endpoint_model(endpoint_model)
         self._endpoint_model = endpoint_model
         super().__init__(*args, **kwargs)
 

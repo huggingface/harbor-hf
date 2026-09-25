@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 
 import pytest
+from harbor.agents.factory import AgentFactory
 from harbor.agents.model_connection import ResolvedModelConnection
+from harbor.models.trial.config import AgentConfig
 
 from harbor_hf_agents.pi.agent import (
     PiAgent,
@@ -146,6 +148,24 @@ def test_supplies_provider_pin_to_pi_custom_model_config(tmp_path: Path) -> None
     }
 
 
+def test_custom_endpoint_passes_harbor_preflight() -> None:
+    AgentFactory.run_preflight(
+        AgentConfig(
+            import_path="harbor_hf_agents.pi.agent:PiAgent",
+            kwargs={
+                "thinking": "xhigh",
+                "model_api": "openai-completions",
+                "endpoint_model": {
+                    "reasoning": True,
+                    "compat": {"supportsReasoningEffort": True},
+                    "contextWindow": 1000000,
+                    "maxTokens": 16384,
+                },
+            },
+        )
+    )
+
+
 def test_custom_endpoint_declares_verified_reasoning(tmp_path: Path) -> None:
     agent = PiAgent(
         logs_dir=tmp_path,
@@ -200,6 +220,13 @@ def test_rejects_invalid_endpoint_metadata(
 ) -> None:
     with pytest.raises(ValueError, match="endpoint_model"):
         PiAgent(logs_dir=tmp_path, endpoint_model=profile)
+    with pytest.raises(ValueError, match="endpoint_model"):
+        AgentFactory.run_preflight(
+            AgentConfig(
+                import_path="harbor_hf_agents.pi.agent:PiAgent",
+                kwargs={"endpoint_model": profile},
+            )
+        )
 
 
 def test_converts_pi_events_to_atif(tmp_path: Path) -> None:
