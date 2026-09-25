@@ -109,33 +109,39 @@ export async function listJobPages(
   options: ReadOnlyHuggingFaceJobsOptions,
 ): Promise<readonly JobObservation[]> {
   const first = endpoint(options);
-  let url: URL | null = first;
-  const seen = new Set<string>();
   const values = new Map<string, JobObservation>();
-  while (url) {
-    if (seen.has(url.href) || seen.size >= 1000)
-      throw new Error("Jobs pagination loop or page limit");
-    seen.add(url.href);
-    const response = await read(options, url);
-    const page: unknown = await response.json();
-    if (!Array.isArray(page)) throw new Error("Invalid Jobs page");
-    for (const input of page) {
-      const job = observation(input);
-      if (job) {
-        const previous = values.get(job.id);
-        if (
-          previous &&
-          (previous.run_id !== job.run_id ||
-            previous.role !== job.role ||
-            previous.created_at !== job.created_at)
-        )
-          throw new Error("Conflicting Job in pagination");
-        // New Jobs can shift offset-based pages while this list is in flight.
-        // Keep the later observation when the same stable identity overlaps.
-        values.set(job.id, job);
+  // The account has many unrelated Jobs. Filter at the Hub before pagination;
+  // still collect both roles so late children and parent liveness remain visible.
+  for (const role of ["parent", "trial"] as const) {
+    const filtered = new URL(first);
+    filtered.searchParams.set("label", `harbor-hf-role=${role}`);
+    let url: URL | null = filtered;
+    const seen = new Set<string>();
+    while (url) {
+      if (seen.has(url.href) || seen.size >= 1000)
+        throw new Error("Jobs pagination loop or page limit");
+      seen.add(url.href);
+      const response = await read(options, url);
+      const page: unknown = await response.json();
+      if (!Array.isArray(page)) throw new Error("Invalid Jobs page");
+      for (const input of page) {
+        const job = observation(input);
+        if (job) {
+          if (job.role !== role) throw new Error("Jobs label filter was not applied");
+          const previous = values.get(job.id);
+          if (
+            previous &&
+            (previous.run_id !== job.run_id ||
+              previous.role !== job.role ||
+              previous.created_at !== job.created_at)
+          )
+            throw new Error("Conflicting Job in pagination");
+          // New Jobs can shift cursor pages. Keep the later stable observation.
+          values.set(job.id, job);
+        }
       }
+      url = nextPage(response.headers.get("link"), url, filtered);
     }
-    url = nextPage(response.headers.get("link"), url, first);
   }
   return [...values.values()];
 }

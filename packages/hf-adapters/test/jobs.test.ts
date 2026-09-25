@@ -79,13 +79,17 @@ describe("HuggingFaceJobs", () => {
             status: { stage: "STOPPED", failureCount: 0 },
           }),
         );
+      const role = new URL(String(_input)).searchParams.get("label");
       return new Response(
-        JSON.stringify([
-          apiJob(),
-          apiJob("trial"),
-          { ...apiJob(), id: "unlabelled", labels: null },
-          { ...apiJob(), id: "unrelated", labels: { other: "value" } },
-        ]),
+        JSON.stringify(
+          role === "harbor-hf-role=parent"
+            ? [
+                apiJob(),
+                { ...apiJob(), id: "unlabelled", labels: null },
+                { ...apiJob(), id: "unrelated", labels: { other: "value" } },
+              ]
+            : [apiJob("trial")],
+        ),
       );
     };
     const jobs = new HuggingFaceJobs({
@@ -98,19 +102,20 @@ describe("HuggingFaceJobs", () => {
     });
     expect(await jobs.list()).toHaveLength(2);
     await jobs.cancel("parent-job");
-    expect(methods).toEqual(["GET", "POST"]);
+    expect(methods).toEqual(["GET", "GET", "POST"]);
   });
 
   it("observes owned Jobs without allowing lifecycle changes", async () => {
     const jobs = new ReadOnlyHuggingFaceJobs({
       namespace: "example",
       accessToken: controlToken,
-      fetch: async () =>
+      fetch: async (input) =>
         new Response(
-          JSON.stringify([
-            apiJob(),
-            { ...apiJob(), id: "unrelated", labels: { other: "value" } },
-          ]),
+          JSON.stringify(
+            new URL(String(input)).searchParams.get("label") === "harbor-hf-role=parent"
+              ? [apiJob(), { ...apiJob(), id: "unrelated", labels: { other: "value" } }]
+              : [],
+          ),
         ),
     });
     expect(await jobs.list()).toHaveLength(1);
@@ -312,6 +317,7 @@ describe("paginated Job reads", () => {
   it("reads 100 children then the live parent, following relative and multi-rel Links", async () => {
     const transport = vi
       .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify([apiJob()])))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify(
@@ -327,17 +333,34 @@ describe("paginated Job reads", () => {
           },
         ),
       )
-      .mockResolvedValueOnce(new Response(JSON.stringify([apiJob()])));
+      .mockResolvedValueOnce(new Response("[]"));
     const values = await reader(transport).list();
     expect(values).toHaveLength(101);
-    expect(values.at(-1)?.role).toBe("parent");
+    expect(values[0]?.role).toBe("parent");
+    expect(values.at(-1)?.role).toBe("trial");
+    expect(transport.mock.calls[0]?.[0]).toBe(
+      "https://huggingface.co/api/jobs/example?label=harbor-hf-role%3Dparent",
+    );
     expect(transport.mock.calls[1]?.[0]).toBe(
+      "https://huggingface.co/api/jobs/example?label=harbor-hf-role%3Dtrial",
+    );
+    expect(transport.mock.calls[2]?.[0]).toBe(
       "https://huggingface.co/api/jobs/example?cursor=second",
     );
-    expect(transport.mock.calls[1]?.[1]).toMatchObject({
+    expect(transport.mock.calls[2]?.[1]).toMatchObject({
       redirect: "error",
       headers: { Authorization: `Bearer ${controlToken}` },
     });
+  });
+
+  it("rejects a Hub response that ignores the requested Job role", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify([apiJob("trial")])));
+    await expect(reader(transport).list()).rejects.toThrow(
+      "Jobs label filter was not applied",
+    );
+    expect(transport).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -374,7 +397,7 @@ describe("paginated Job reads", () => {
       const transport = vi
         .fn<typeof fetch>()
         .mockResolvedValueOnce(
-          new Response(JSON.stringify([apiJob("trial")]), {
+          new Response(JSON.stringify([apiJob()]), {
             headers: { link: "<?cursor=second>; rel=next" },
           }),
         )
@@ -394,7 +417,9 @@ describe("paginated Job reads", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(new Response("[]", { headers: { link } }));
     await expect(reader(transport).list()).rejects.toThrow();
-    expect(transport).toHaveBeenCalledTimes(1);
+    expect(transport).toHaveBeenCalledTimes(
+      link.startsWith("</api/jobs/example>") ? 2 : 1,
+    );
   });
 
   it("coalesces a stable Job repeated by moving pagination", async () => {
@@ -415,7 +440,8 @@ describe("paginated Job reads", () => {
             },
           ]),
         ),
-      );
+      )
+      .mockResolvedValueOnce(new Response("[]"));
 
     await expect(reader(transport).list()).resolves.toEqual([
       expect.objectContaining({
