@@ -323,7 +323,7 @@ def pi_jsonl_to_atif_trajectory(  # noqa: C901 -- event parser branches
 def _validate_endpoint_model(endpoint_model: object) -> None:
     if endpoint_model is None:
         return
-    allowed = {"reasoning", "compat", "contextWindow", "maxTokens"}
+    allowed = {"reasoning", "compat", "contextWindow", "maxTokens", "thinkingLevelMap"}
     if not isinstance(endpoint_model, dict) or set(endpoint_model) - allowed:
         raise ValueError("endpoint_model contains unsupported fields")
     if not isinstance(endpoint_model.get("reasoning"), bool):
@@ -331,10 +331,24 @@ def _validate_endpoint_model(endpoint_model: object) -> None:
     compat = endpoint_model.get("compat")
     if compat is not None and (
         not isinstance(compat, dict)
-        or set(compat) != {"supportsReasoningEffort"}
+        or not {"supportsReasoningEffort"} <= set(compat)
+        or set(compat) - {"supportsReasoningEffort", "thinkingTokenBudgetField"}
         or not isinstance(compat.get("supportsReasoningEffort"), bool)
+        or (
+            "thinkingTokenBudgetField" in compat
+            and compat.get("thinkingTokenBudgetField") != "reasoning_budget"
+        )
     ):
         raise ValueError("endpoint_model has invalid compatibility settings")
+    thinking_map = endpoint_model.get("thinkingLevelMap")
+    mapped_xhigh = thinking_map.get("xhigh") if isinstance(thinking_map, dict) else None
+    if thinking_map is not None and (
+        not isinstance(thinking_map, dict)
+        or set(thinking_map) != {"xhigh"}
+        or not isinstance(mapped_xhigh, str)
+        or not mapped_xhigh.strip()
+    ):
+        raise ValueError("endpoint_model has invalid thinking-level map")
     for field in ("contextWindow", "maxTokens"):
         value = endpoint_model.get(field)
         if value is not None and (

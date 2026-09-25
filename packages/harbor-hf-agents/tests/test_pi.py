@@ -157,9 +157,13 @@ def test_custom_endpoint_passes_harbor_preflight() -> None:
                 "model_api": "openai-completions",
                 "endpoint_model": {
                     "reasoning": True,
-                    "compat": {"supportsReasoningEffort": True},
+                    "compat": {
+                        "supportsReasoningEffort": True,
+                        "thinkingTokenBudgetField": "reasoning_budget",
+                    },
+                    "thinkingLevelMap": {"xhigh": "xhigh"},
                     "contextWindow": 1000000,
-                    "maxTokens": 16384,
+                    "maxTokens": 65536,
                 },
             },
         )
@@ -172,9 +176,13 @@ def test_custom_endpoint_declares_verified_reasoning(tmp_path: Path) -> None:
         model_api="openai-completions",
         endpoint_model={
             "reasoning": True,
-            "compat": {"supportsReasoningEffort": True},
+            "compat": {
+                "supportsReasoningEffort": True,
+                "thinkingTokenBudgetField": "reasoning_budget",
+            },
+            "thinkingLevelMap": {"xhigh": "xhigh"},
             "contextWindow": 1000000,
-            "maxTokens": 131072,
+            "maxTokens": 65536,
         },
     )
     access = ResolvedModelConnection(
@@ -196,9 +204,13 @@ def test_custom_endpoint_declares_verified_reasoning(tmp_path: Path) -> None:
                     {
                         "id": "example-model",
                         "reasoning": True,
-                        "compat": {"supportsReasoningEffort": True},
+                        "compat": {
+                            "supportsReasoningEffort": True,
+                            "thinkingTokenBudgetField": "reasoning_budget",
+                        },
+                        "thinkingLevelMap": {"xhigh": "xhigh"},
                         "contextWindow": 1000000,
-                        "maxTokens": 131072,
+                        "maxTokens": 65536,
                     }
                 ],
             }
@@ -213,6 +225,14 @@ def test_custom_endpoint_declares_verified_reasoning(tmp_path: Path) -> None:
         {"reasoning": "true"},
         {"reasoning": True, "compat": {"supportsReasoningEffort": "true"}},
         {"reasoning": True, "contextWindow": -1},
+        {"reasoning": True, "thinkingLevelMap": {"xhigh": None}},
+        {
+            "reasoning": True,
+            "compat": {
+                "supportsReasoningEffort": True,
+                "thinkingTokenBudgetField": "unreviewed_field",
+            },
+        },
     ],
 )
 def test_rejects_invalid_endpoint_metadata(
