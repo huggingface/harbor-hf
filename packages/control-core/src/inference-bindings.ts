@@ -203,6 +203,17 @@ export class InferenceBindings {
     return this.#manifest.bindings.map(({ ref, source_env }) => ({ ref, source_env }));
   }
 
+  /** Select an active source owned by this operator for a separately scoped verifier grant. */
+  reviewedSource(ref: string, actor: string): string | null {
+    const binding = this.#manifest.bindings.find(
+      (entry) =>
+        entry.ref === ref &&
+        entry.enabled &&
+        entry.uses.some((use) => use.operator_subjects.includes(actor)),
+    );
+    return binding?.source_env ?? null;
+  }
+
   assertSourceTransitionFrom(previous: InferenceBindings): void {
     for (const binding of this.sourceIdentities()) {
       const prior = previous

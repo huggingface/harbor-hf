@@ -141,6 +141,7 @@ async function composeRuntime(
             parentImage: config.parent_image ?? "",
             hardware: config.parent_hardware,
             timeoutSeconds: config.parent_timeout_seconds,
+            verifierGrants: config.verifier_grants ?? [],
           })
         : new ReadOnlyHuggingFaceJobs({
             namespace: config.namespace,

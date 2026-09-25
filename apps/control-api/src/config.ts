@@ -1,7 +1,34 @@
 import { resolve } from "node:path";
 import { parsePresetSources, type PresetSourceV1 } from "@harbor-hf/control-core";
-import type { ParentHardware } from "@harbor-hf/hf-adapters";
+import type { ParentHardware, ReviewedVerifierGrant } from "@harbor-hf/hf-adapters";
 import { z } from "zod";
+
+const verifierGrantSchema = z.strictObject({
+  ref: z.string().regex(/^INFERENCE_API_KEY_[A-Z0-9_]{1,48}$/),
+  worker_image: z.string().regex(/@sha256:[a-f0-9]{64}$/),
+  benchmark: z.strictObject({
+    name: z.string().min(1).max(120),
+    preset: z.string().min(1).max(120),
+  }),
+  dataset_repo: z
+    .string()
+    .regex(/^https:\/\/huggingface\.co\/datasets\/[A-Za-z0-9_./-]+\.git@[a-f0-9]{40}$/),
+  dataset_path: z.string().min(1).max(240),
+  model: z.string().regex(/^[A-Za-z0-9_./-]{1,160}$/),
+  base_url: z
+    .string()
+    .url()
+    .refine((value) => {
+      const url = new URL(value);
+      return (
+        url.protocol === "https:" &&
+        !url.username &&
+        !url.password &&
+        !url.search &&
+        !url.hash
+      );
+    }),
+});
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("production"),
@@ -14,6 +41,7 @@ const schema = z.object({
   HARBOR_HF_AUTH_PATH: z.string().min(1).default("/tmp/harbor-hf/auth.sqlite"),
   HARBOR_HF_PRESETS_ROOT: z.string().min(1).default("./presets"),
   HARBOR_HF_PRESET_SOURCES: z.string().default("[]"),
+  HARBOR_HF_VERIFIER_GRANTS: z.string().default("[]"),
   HARBOR_HF_LAUNCH_PYTHON: z.string().min(1).optional(),
   HARBOR_HF_APPROVED_AGENT_SOURCES: z.string().default("[]"),
   HARBOR_HF_MAX_ACTIVE_JOBS: z.coerce.number().int().min(1).max(1024).default(16),
@@ -80,6 +108,7 @@ export interface AppConfig {
    * presets for very popular benchmarks; anything else comes from a source.
    */
   preset_sources: PresetSourceV1[];
+  verifier_grants?: ReviewedVerifierGrant[];
   launch_python?: string;
   approved_agent_sources?: Record<string, unknown>[];
   max_active_jobs: number;
@@ -183,6 +212,16 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
       operator_org_subject: parsed.HARBOR_HF_OPERATOR_ORG_SUBJECT ?? null,
     };
   }
+  const verifierGrants = z
+    .array(verifierGrantSchema)
+    .max(8)
+    .parse(JSON.parse(parsed.HARBOR_HF_VERIFIER_GRANTS));
+  const subjects = new Set<string>();
+  for (const grant of verifierGrants) {
+    const subject = `${grant.benchmark.name}\u0000${grant.benchmark.preset}`;
+    if (subjects.has(subject)) throw new Error("duplicate verifier credential grant");
+    subjects.add(subject);
+  }
   return {
     node_env: parsed.NODE_ENV,
     port: parsed.PORT,
@@ -194,6 +233,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     auth_path: resolve(parsed.HARBOR_HF_AUTH_PATH),
     presets_root: resolve(parsed.HARBOR_HF_PRESETS_ROOT),
     preset_sources: parsePresetSources(JSON.parse(parsed.HARBOR_HF_PRESET_SOURCES)),
+    verifier_grants: verifierGrants,
     ...(parsed.HARBOR_HF_LAUNCH_PYTHON
       ? { launch_python: parsed.HARBOR_HF_LAUNCH_PYTHON }
       : {}),
