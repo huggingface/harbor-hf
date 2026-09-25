@@ -127,7 +127,7 @@ Do not create a resource per run. SQLite files and HF Jobs are temporary. The
 three-table projection rebuilds from run records, Harbor results, attempt cost
 receipts, and current Job observations.
 
-The Space has two secrets:
+The Space requires two core secrets. Reviewed agent and verifier connections can use additional, separately registered secrets:
 
 - `HF_TOKEN` is a purpose-scoped control credential with access to the Bucket,
   HF Jobs, and approved private Hugging Face Dataset Git repositories when they
@@ -155,6 +155,7 @@ The service reads these Space variables:
 | `HARBOR_HF_BUCKET_ROOT` | no | `/data` | local filesystem store root |
 | `HARBOR_HF_PRESETS_ROOT` | no | `./presets` | reviewed presets for very popular benchmarks |
 | `HARBOR_HF_PRESET_SOURCES` | no | `[]` | pinned external preset sources as JSON; see [preset sources](preset-sources.md) |
+| `HARBOR_HF_VERIFIER_GRANTS` | no | `[]` | reviewed, benchmark-scoped verifier credential grants as JSON; no secret values |
 | `HARBOR_HF_LAUNCH_PYTHON` | no | worker package `.venv/bin/python`; `/opt/harbor-launch/bin/python` in the control image | pinned native launch inspector |
 | `HARBOR_HF_APPROVED_AGENT_SOURCES` | no | `[]` | reviewed native ACP source objects as JSON; never credentials |
 | `HARBOR_HF_WRITE_MODE` | no | `disabled` | permit Job lifecycle changes |
@@ -206,6 +207,25 @@ The control token must not appear in the repository URL, process arguments, Git
 credential files, run configuration, Bucket objects, projections, browser
 responses, or logs. It must not enter trial agent environments or agent source
 installation. The separate inference credential path remains unchanged.
+
+### Verifier judge credential
+
+Some task verifiers need a different model and key from the agent. Set
+`HARBOR_HF_VERIFIER_GRANTS` only after reviewing the benchmark source and the
+registered credential reference. Each JSON object names `ref`, `worker_image`,
+`benchmark` (`name` and `preset`), `dataset_repo`, `dataset_path`, `model`, and
+`base_url`. Pin the Dataset Git URL to a full commit and the worker image to a
+SHA256 digest. Keep the source credential in the existing Space secret store;
+never put its value in this variable.
+
+At parent Job start, the service checks the exact benchmark, dataset, image,
+operator, and active credential reference again. It sends the selected key as
+an ephemeral `AGENT_JUDGE_API_KEY` Job secret. It sends the reviewed URL and
+model as `AGENT_JUDGE_API_URL` and `AGENT_JUDGE_MODEL`. Harbor then resolves
+the task's `${AGENT_JUDGE_API_KEY:-}` verifier environment entry from the
+parent Job environment. The run record and trial configuration contain no
+judge key. A different dataset or a verifier environment override blocks the
+credential. This grant does not replace the separate reviewed agent connection.
 
 Admission and repository inspection occur before model inference. A missing
 token, denied repository, missing commit, malformed source, or native Harbor

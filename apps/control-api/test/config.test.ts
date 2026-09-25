@@ -82,6 +82,47 @@ describe("control API configuration", () => {
     ).toThrow();
   });
 
+  it("loads only pinned, HTTPS verifier credential grants", () => {
+    const grant = {
+      ref: "INFERENCE_API_KEY_JUDGE",
+      worker_image: `example/parent@sha256:${"a".repeat(64)}`,
+      benchmark: { name: "example-benchmark", preset: "one-task" },
+      dataset_repo: `https://huggingface.co/datasets/example-org/tasks.git@${"b".repeat(40)}`,
+      dataset_path: "tasks",
+      model: "judge-model",
+      base_url: "https://judge.invalid/v1",
+    };
+    expect(loadConfig(environment).verifier_grants).toEqual([]);
+    expect(
+      loadConfig({
+        ...environment,
+        HARBOR_HF_VERIFIER_GRANTS: JSON.stringify([grant]),
+      }).verifier_grants,
+    ).toEqual([grant]);
+    expect(() =>
+      loadConfig({
+        ...environment,
+        HARBOR_HF_VERIFIER_GRANTS: JSON.stringify([grant, grant]),
+      }),
+    ).toThrow("duplicate verifier credential grant");
+    for (const bad of [
+      {
+        ...grant,
+        dataset_repo: "https://huggingface.co/datasets/example-org/tasks.git@main",
+      },
+      { ...grant, base_url: "http://judge.invalid/v1" },
+      { ...grant, base_url: "https://user:pass@judge.invalid/v1" },
+      { ...grant, ref: "HF_TOKEN" },
+      { ...grant, extra: "not reviewed" },
+    ])
+      expect(() =>
+        loadConfig({
+          ...environment,
+          HARBOR_HF_VERIFIER_GRANTS: JSON.stringify([bad]),
+        }),
+      ).toThrow();
+  });
+
   it("rejects development authentication in production", () => {
     expect(() =>
       loadConfig({
