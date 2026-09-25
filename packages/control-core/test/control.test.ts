@@ -1536,10 +1536,13 @@ describe("reconciliation", () => {
         namespace: "example",
         accessToken: "synthetic",
         fetch: async (input) => {
-          if (String(input).includes("cursor=second"))
+          const url = new URL(String(input));
+          if (url.searchParams.has("cursor"))
             return fails
               ? new Response("unavailable", { status: 503 })
-              : new Response(JSON.stringify([raw("parent", "existing-parent")]));
+              : new Response("[]");
+          if (url.searchParams.get("label") === "harbor-hf-role=parent")
+            return new Response(JSON.stringify([raw("parent", "existing-parent")]));
           return new Response(
             JSON.stringify(
               Array.from({ length: 100 }, (_, i) => raw("trial", `child-${i}`)),
