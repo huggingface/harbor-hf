@@ -57,20 +57,22 @@ style without a connection is refused before any run record is written. A
 submission that names no connection keeps the ordinary router route, so approving
 a credential never changes where an otherwise identical submission runs.
 
-`model_api` is Harbor's own agent argument: at a custom endpoint Harbor requires
-it and `pi` writes it into its `models.json` `api` value. The grant stores the
-value it reviewed, and admission requires the built record to carry exactly that
-value, so a record whose wire API style changed after the build is denied. Only
-the submission names the connection and its wire API style; no preset field, no
-alias table and no submission-supplied URL is added.
+For agents that accept Harbor's `model_api` option, the built record carries the
+approved value. For example, `pi` writes it into the `api` field of its
+`models.json`. Admission checks that value again at each start.
 
-The run record for such a connection is the ordinary `openai/<model>` route with
-the reviewed base URL and an opaque key reference. Admission and restart recheck
-that record against the approved grant. A model outside the grant, another preset
-version, another worker image, another operator, a changed base URL, a changed
-host list or a changed wire API style is denied. A connection the submission
-names but the registry does not hold for this exact subject is denied as well,
-and the run never falls back to the router.
+Harbor's ACP agent does not accept `model_api`. A reviewed ACP source configures
+its own client. The submission must still name the API style approved by the
+grant, but the built record does not add an unsupported ACP option. At each start,
+admission requires exactly one matching grant for the agent import path and
+version, model, operator, worker image and credential reference. It refuses an
+ambiguous grant or an ACP record with an injected `model_api` option. The
+separate source allowlist checks the pinned executable source.
+
+The run record uses `openai/<model>`, the reviewed base URL and an opaque key
+reference. Admission checks the URL and hosts again at each start. A connection
+without an approved grant for the exact subject is denied; the run cannot fall
+back to the router.
 
 ## Deployment caveat
 
