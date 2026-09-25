@@ -154,6 +154,20 @@ describe("run submission", () => {
     expect(projection.run(result.run.run_id)?.status).toBe("queued");
   });
 
+  it("updates only the submitted run projection", async () => {
+    const first = await submit("first-run");
+    const rebuild = vi.spyOn(projection, "rebuild");
+    const second = await submit("second-run");
+    expect(rebuild).toHaveBeenCalledExactlyOnceWith(
+      store,
+      expect.any(Array),
+      second.run.run_id,
+    );
+    expect(projection.run(first.run.run_id)?.status).toBe("queued");
+    expect(projection.run(second.run.run_id)?.status).toBe("queued");
+    rebuild.mockRestore();
+  });
+
   it("loads the nine-trial diagnostic preset unchanged through both launch paths", async () => {
     const benchmark = { name: "terminal-bench-2-1", preset: "three-tasks-3-trials" };
     const canary = presets.benchmark(benchmark.name, benchmark.preset);
