@@ -198,6 +198,68 @@ describe("reviewed endpoint connections for native presets", () => {
     expect(admit(agent)?.source).toBe(source);
   });
 
+  it("admits a pinned ACP source without adding an unsupported model_api option", () => {
+    const acpPath = "harbor.agents.installed.acp:AcpAgent";
+    const acpVersion = "1.2.3";
+    const sourceConfig = {
+      repo_url: "https://github.com/example/agent.git",
+      ref: "a".repeat(40),
+      source_dir: "agent",
+      manifest_path: "harbor-agent.json",
+    };
+    const preset = {
+      ...catalog.agent("pi", "0.84.4"),
+      harbor_agent: {
+        import_path: acpPath,
+        kwargs: { version: acpVersion, source: sourceConfig },
+      },
+      reasoning_option: null,
+    };
+    const grant = grantOf({ agent_import_path: acpPath, agent_version: acpVersion });
+    const policy = policyOf([grant]);
+    const subject = { import_path: acpPath, version: acpVersion };
+    expect(
+      policy.presetConnection(ref, subject, modelId, actor, image, modelApi),
+    ).toMatchObject(connection());
+    expect(
+      policy.presetConnection(ref, subject, modelId, actor, image, "openai-responses"),
+    ).toBeNull();
+    const agent = presetEndpointAgent(
+      undefined,
+      preset,
+      modelId,
+      connection(),
+      modelApi,
+      "default",
+    );
+    expect(agent.kwargs).toEqual({ version: acpVersion, source: sourceConfig });
+    expect(admit(agent, [grant])).toEqual({ ref, source });
+    expect(() => admit(agent, [grantOf({ ...grant, agent_version: "other" })])).toThrow(
+      "not reviewed",
+    );
+    expect(() =>
+      admit(
+        { ...agent, kwargs: { ...(agent.kwargs as object), model_api: modelApi } },
+        [grant],
+      ),
+    ).toThrow("not reviewed");
+    expect(() =>
+      admit(agent, [grant, grantOf({ ...grant, model_api: "openai-responses" })]),
+    ).toThrow("not reviewed");
+    expect(() =>
+      admit(
+        {
+          ...agent,
+          env: {
+            OPENAI_BASE_URL: "https://other.invalid/v1",
+            OPENAI_API_KEY: `\${${ref}}`,
+          },
+        },
+        [grant],
+      ),
+    ).toThrow("not reviewed");
+  });
+
   it("keeps the router record when the submission names no connection", () => {
     const router = catalog.buildJobConfig("run-1", routerSubmission, "/data");
     expect(router.agents?.[0]?.model_name).toBe("huggingface/example/model:endpoint");
