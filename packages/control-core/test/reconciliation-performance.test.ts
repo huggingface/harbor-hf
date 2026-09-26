@@ -323,6 +323,46 @@ it.each([4, 16, 64])(
   },
 );
 
+it("does not restart a parent when a finished native result appears after stale listings", async () => {
+  const id = await seed(0, "run");
+  const resultKey = `runs/${id}/job/result.json`;
+  await putJson(store, resultKey, { finished_at: now, n_total_trials: 1 });
+  const list = vi.mocked(store.list).getMockImplementation();
+  if (!list) throw new Error("missing list fixture");
+  let calls = 0;
+  vi.spyOn(store, "list").mockImplementation(async (prefix) => {
+    const entries = await list(prefix);
+    // The direct object is already readable, but both reconciliation listings
+    // started before its upload became visible in the Bucket listing.
+    return ++calls <= 2 ? entries.filter((entry) => entry.key !== resultKey) : entries;
+  });
+
+  await service.reconcile();
+
+  expect(port.startParent).not.toHaveBeenCalled();
+  expect(store.read).toHaveBeenCalledWith(resultKey, { fresh: true });
+  expect(projection.run(id)?.status).toBe("finished");
+});
+
+it("bypasses cached unfinished results before starting a replacement parent", async () => {
+  const id = await seed(0, "run");
+  const resultKey = `runs/${id}/job/result.json`;
+  await putJson(store, resultKey, { finished_at: now, n_total_trials: 1 });
+  const read = vi.mocked(store.read).getMockImplementation();
+  if (!read) throw new Error("missing read fixture");
+  vi.spyOn(store, "read").mockImplementation((key, options) =>
+    key === resultKey && !options?.fresh
+      ? Promise.resolve(new TextEncoder().encode(JSON.stringify({ finished_at: null })))
+      : read(key, options),
+  );
+
+  await service.reconcile();
+
+  expect(port.startParent).not.toHaveBeenCalled();
+  expect(store.read).toHaveBeenCalledWith(resultKey, { fresh: true });
+  expect(projection.run(id)?.status).toBe("queued");
+});
+
 it("does not skip terminal live Jobs present in the initial complete snapshot", async () => {
   const terminal = await seed(0);
   jobs.push(observation(terminal), observation(terminal, "child", "trial"));
