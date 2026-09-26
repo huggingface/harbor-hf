@@ -47,6 +47,12 @@
   owns the control Space and Bucket as well as HF Job lifecycle and cost stops.
   The disposable SQLite projection and web console also belong in Harbor-HF.
   Harbor-HF owns the leaderboard.
+- The web console MAY have its own viewer for runs, trials, and trajectories,
+  because it serves the Harbor-HF Space deployment. That viewer MUST follow
+  Harbor's viewer (`apps/viewer` and `src/harbor/viewer/server.py` in Harbor):
+  the same design, layout, page structure, and API shape. It MUST read Harbor's
+  trial files, such as `agent/trajectory.json`, as the only source. You MUST NOT
+  invent a separate layout or new data fields for the same views.
 - You MUST keep benchmark and model names as data. You MUST keep necessary
   harness-specific behavior in a Harbor agent plugin behind `import_path`.
 - If you cannot prove that Harbor lacks required general behavior, you MUST stop
