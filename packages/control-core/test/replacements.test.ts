@@ -684,6 +684,14 @@ describe("native leaderboard metric authority", () => {
       expect(view.assembly.result.trial_results).toBe(selected);
     }
   });
+  it("skips Bucket folders under runs/ that are not run identities", async () => {
+    await putJson(store, "runs/legacy-smoke/result.json", {});
+    const records = await new ReplacementEvidence(store).records();
+    expect(records.map((record) => record.run_id)).toContain(source.run_id);
+    expect(records.every((record) => /^run-[0-9a-f]{24}$/.test(record.run_id))).toBe(
+      true,
+    );
+  });
   it("withholds relationships from fresh records even before projection repair", async () => {
     const records = await new ReplacementEvidence(store).records();
     records.push({

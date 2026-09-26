@@ -154,7 +154,11 @@ export class ReplacementEvidence {
   }
   async records(): Promise<RunRecordV1[]> {
     const listing = await this.directory("runs/", []);
-    return evidenceMap(listing.directories, async (prefix) => {
+    // The Bucket can hold other folders under runs/; only run identities have records.
+    const runs = listing.directories.filter((prefix) =>
+      /^runs\/run-[0-9a-f]{24}\/$/.test(prefix),
+    );
+    return evidenceMap(runs, async (prefix) => {
       const record = validateRunRecord(await this.read(`${prefix}run.json`));
       if (prefix !== `runs/${record.run_id}/`)
         throw new ReplacementError(409, "Run record identity mismatch");
