@@ -6,8 +6,9 @@ pin: ``Trial._emit`` and ``Trial._scrub_jobs_dir`` are unchanged, ``trial/hooks.
 is unchanged so END is still the last trial event, and the new trial writes
 (``stream.json`` from ``_write_stream_handle`` and injected skills from
 ``_upload_injected_skills``) go into the trial directory or the trial environment
-only, like ``trial/sync_trajectory.py`` and ``trial/artifact_handler.py``. Replace this integration at the first reviewed pin with
-a supported post-sanitization hook or pre-END scrub.
+only, like ``trial/sync_trajectory.py`` and ``trial/artifact_handler.py``.
+Replace this integration at the first reviewed pin with a supported
+post-sanitization hook or pre-END scrub.
 
 Use one context around Job creation, execution, and final file uploads in an
 otherwise exclusive parent process. All trial tasks must finish before exit.
