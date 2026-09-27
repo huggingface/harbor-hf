@@ -136,9 +136,13 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
   );
 }
 
-async function readIfPresent(store: ObjectStore, key: string): Promise<unknown | null> {
+async function readIfPresent(
+  store: ObjectStore,
+  key: string,
+  options?: { fresh?: boolean },
+): Promise<unknown | null> {
   try {
-    return await readJson(store, key);
+    return await readJson(store, key, options);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
@@ -907,6 +911,17 @@ export class ControlService {
           latest &&
           Date.now() - Date.parse(latest.started_at) < this.options.restartDelayMs
         )
+          return;
+        // A completed native result can become readable after the projection's
+        // Bucket listings began. Do not start another parent from that stale view.
+        const nativeResult = asRecord(
+          await readIfPresent(
+            this.store,
+            `runs/${projected.record.run_id}/job/result.json`,
+            { fresh: true },
+          ),
+        );
+        if (typeof nativeResult?.finished_at === "string" && nativeResult.finished_at)
           return;
         let parent: JobObservation;
         try {
