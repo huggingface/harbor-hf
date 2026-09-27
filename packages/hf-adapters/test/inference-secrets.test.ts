@@ -109,6 +109,65 @@ describe("ephemeral selected inference delivery", () => {
   });
 });
 
+it("delivers a separate judge credential only for the exact reviewed benchmark and source", async () => {
+  const { record, manifest } = run("EXAMPLE");
+  const source = `https://huggingface.co/datasets/example-org/tasks.git@${"b".repeat(40)}`;
+  record.harbor_job_config.datasets = [{ repo: source, path: "tasks" }];
+  const judge = {
+    ref: "INFERENCE_API_KEY_JUDGE",
+    worker_image: image,
+    benchmark: { name: "synthetic", preset: "synthetic" },
+    dataset_repo: source,
+    dataset_path: "tasks",
+    base_url: "https://judge.invalid/v1",
+    model: "model-judge",
+  };
+  manifest.bindings.push({
+    ...manifest.bindings[0]!,
+    ref: judge.ref,
+    source_env: "INFERENCE_SECRET_JUDGE",
+    label: "Synthetic judge",
+  });
+  const original = JSON.stringify(record);
+  const policy = () => new InferenceBindings(manifest);
+  const read = vi.fn((name: string) => `synthetic-value-${name}`);
+  const deliver = vi.fn(
+    async (
+      secrets: Readonly<Record<string, string>>,
+      environment: Readonly<Record<string, string>>,
+    ) => {
+      expect(secrets).toEqual({
+        INFERENCE_API_KEY_EXAMPLE: "synthetic-value-INFERENCE_SECRET_EXAMPLE",
+        AGENT_JUDGE_API_KEY: "synthetic-value-INFERENCE_SECRET_JUDGE",
+      });
+      expect(environment).toEqual({
+        AGENT_JUDGE_API_URL: "https://judge.invalid/v1",
+        AGENT_JUDGE_MODEL: "model-judge",
+      });
+      return "delivered";
+    },
+  );
+  await expect(
+    withSelectedInferenceSecret(record, image, policy, read, deliver, [judge]),
+  ).resolves.toBe("delivered");
+  expect(JSON.stringify(record)).toBe(original);
+  expect(read.mock.calls.map(([name]) => name)).toEqual([
+    "INFERENCE_SECRET_EXAMPLE",
+    "INFERENCE_SECRET_JUDGE",
+  ]);
+  expect(deliver.mock.calls[0]?.[0]).toEqual({});
+  record.harbor_job_config.datasets = [{ repo: source, path: "other" }];
+  await expect(
+    withSelectedInferenceSecret(record, image, policy, read, deliver, [judge]),
+  ).rejects.toThrow("not reviewed");
+  record.harbor_job_config.datasets = [{ repo: source, path: "tasks" }];
+  manifest.bindings[1]!.enabled = false;
+  await expect(
+    withSelectedInferenceSecret(record, image, policy, read, deliver, [judge]),
+  ).rejects.toThrow("not reviewed");
+  expect(deliver).toHaveBeenCalledTimes(1);
+});
+
 it("passes no secrets or source reads for a native no-inference configuration", async () => {
   const { record } = run("EXAMPLE");
   record.harbor_job_config.agents = [];

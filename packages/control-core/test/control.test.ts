@@ -154,6 +154,20 @@ describe("run submission", () => {
     expect(projection.run(result.run.run_id)?.status).toBe("queued");
   });
 
+  it("updates only the submitted run projection", async () => {
+    const first = await submit("first-run");
+    const rebuild = vi.spyOn(projection, "rebuild");
+    const second = await submit("second-run");
+    expect(rebuild).toHaveBeenCalledExactlyOnceWith(
+      store,
+      expect.any(Array),
+      second.run.run_id,
+    );
+    expect(projection.run(first.run.run_id)?.status).toBe("queued");
+    expect(projection.run(second.run.run_id)?.status).toBe("queued");
+    rebuild.mockRestore();
+  });
+
   it("loads the nine-trial diagnostic preset unchanged through both launch paths", async () => {
     const benchmark = { name: "terminal-bench-2-1", preset: "three-tasks-3-trials" };
     const canary = presets.benchmark(benchmark.name, benchmark.preset);
@@ -1536,10 +1550,13 @@ describe("reconciliation", () => {
         namespace: "example",
         accessToken: "synthetic",
         fetch: async (input) => {
-          if (String(input).includes("cursor=second"))
+          const url = new URL(String(input));
+          if (url.searchParams.has("cursor"))
             return fails
               ? new Response("unavailable", { status: 503 })
-              : new Response(JSON.stringify([raw("parent", "existing-parent")]));
+              : new Response("[]");
+          if (url.searchParams.get("label") === "harbor-hf-role=parent")
+            return new Response(JSON.stringify([raw("parent", "existing-parent")]));
           return new Response(
             JSON.stringify(
               Array.from({ length: 100 }, (_, i) => raw("trial", `child-${i}`)),

@@ -605,7 +605,7 @@ export class ControlService {
         return { created: true, run: record };
       }),
     );
-    await this.refresh();
+    await this.projection.rebuild(this.store, await this.jobs.list(), record.run_id);
     return result;
   }
 

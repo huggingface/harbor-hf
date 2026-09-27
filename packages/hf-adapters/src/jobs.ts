@@ -8,7 +8,10 @@ import { cancelJob, runJob, type SpaceHardwareFlavor } from "@huggingface/hub";
 
 import { isolatedGitSourceEnvironment } from "./git-environment.js";
 import { inspectJob, listJobPages, observation } from "./jobs-read.js";
-import { withSelectedInferenceSecret } from "./inference-secrets.js";
+import {
+  withSelectedInferenceSecret,
+  type ReviewedVerifierGrant,
+} from "./inference-secrets.js";
 
 export type ParentHardware = SpaceHardwareFlavor;
 
@@ -30,6 +33,7 @@ export interface HuggingFaceJobsOptions extends ReadOnlyHuggingFaceJobsOptions {
   hardware?: SpaceHardwareFlavor;
   localRoot?: string;
   timeoutSeconds?: number;
+  verifierGrants?: readonly ReviewedVerifierGrant[];
 }
 
 export class ReadOnlyHuggingFaceJobs implements JobsPort {
@@ -60,7 +64,12 @@ export class HuggingFaceJobs implements JobsPort {
   constructor(private readonly options: HuggingFaceJobsOptions) {
     if (!IMMUTABLE_IMAGE.test(options.parentImage))
       throw new Error("parent image must use an immutable sha256 digest");
-    this.options = Object.freeze({ ...options });
+    this.options = Object.freeze({
+      ...options,
+      ...(options.verifierGrants
+        ? { verifierGrants: structuredClone(options.verifierGrants) }
+        : {}),
+    });
     this.hardware = options.hardware ?? "cpu-basic";
     this.localRoot = options.localRoot ?? "/data";
     this.timeoutSeconds = options.timeoutSeconds ?? 86_400;
@@ -104,7 +113,8 @@ export class HuggingFaceJobs implements JobsPort {
       this.options.parentImage,
       policy,
       readSelected,
-      (secrets) => this.#startParent(run.run_id, secrets),
+      (secrets, environment) => this.#startParent(run.run_id, secrets, environment),
+      this.options.verifierGrants,
     );
   }
 
@@ -112,6 +122,7 @@ export class HuggingFaceJobs implements JobsPort {
   async #startParent(
     runId: string,
     inferenceSecrets: Readonly<Record<string, string>>,
+    verifierEnvironment: Readonly<Record<string, string>> = {},
   ): Promise<JobObservation> {
     assertRunId(runId);
     const value = await runJob({
@@ -124,6 +135,7 @@ export class HuggingFaceJobs implements JobsPort {
         HARBOR_HF_BUCKET_ID: this.options.bucketId,
         HARBOR_HF_NAMESPACE: this.options.namespace,
         ...isolatedGitSourceEnvironment(),
+        ...verifierEnvironment,
       },
       secrets: {
         HF_TOKEN: this.options.accessToken,

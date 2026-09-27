@@ -203,6 +203,17 @@ export class InferenceBindings {
     return this.#manifest.bindings.map(({ ref, source_env }) => ({ ref, source_env }));
   }
 
+  /** Select an active source owned by this operator for a separately scoped verifier grant. */
+  reviewedSource(ref: string, actor: string): string | null {
+    const binding = this.#manifest.bindings.find(
+      (entry) =>
+        entry.ref === ref &&
+        entry.enabled &&
+        entry.uses.some((use) => use.operator_subjects.includes(actor)),
+    );
+    return binding?.source_env ?? null;
+  }
+
   assertSourceTransitionFrom(previous: InferenceBindings): void {
     for (const binding of this.sourceIdentities()) {
       const prior = previous
@@ -379,12 +390,16 @@ export class InferenceBindings {
       kwargs && typeof kwargs === "object" && !Array.isArray(kwargs)
         ? (kwargs as Record<string, unknown>).model_api
         : undefined;
+    // ACP has no native model_api option. Its pinned source configures the client;
+    // admission still requires one unambiguous reviewed grant for the native
+    // agent identity, model, actor and image at every start or restart.
+    const isAcp = subject.import_path === "harbor.agents.installed.acp:AcpAgent";
     const matches =
-      modelId === null
+      modelId === null || (isAcp && modelApi !== undefined)
         ? undefined
         : binding?.uses.filter(
             (use) =>
-              use.model_api === modelApi &&
+              (isAcp || use.model_api === modelApi) &&
               this.presetMatches(use, subject, modelId, actor, image),
           );
     const grant = matches?.[0];

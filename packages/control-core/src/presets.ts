@@ -112,7 +112,10 @@ export function presetEndpointAgent(
     );
   if (preset.reasoning_option !== null && reasoningEffort !== "default")
     kwargs[preset.reasoning_option] = reasoningEffort;
-  kwargs.model_api = modelApi;
+  // Harbor's ACP runner takes a pinned source, not a model_api argument. The
+  // reviewed grant selects the wire API style; the source configures its client.
+  if (fragment.import_path !== "harbor.agents.installed.acp:AcpAgent")
+    kwargs.model_api = modelApi;
   return {
     ...base,
     ...(fragment.name ? { name: fragment.name } : {}),
