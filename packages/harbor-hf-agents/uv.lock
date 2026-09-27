@@ -687,7 +687,7 @@ wheels = [
 [[package]]
 name = "harbor"
 version = "0.23.0"
-source = { git = "https://github.com/harbor-framework/harbor.git?rev=fcf27e5502e30436b067ef2d655368e86cc42cf9#fcf27e5502e30436b067ef2d655368e86cc42cf9" }
+source = { git = "https://github.com/harbor-framework/harbor.git?rev=3c82380859d187957cfd5cd64802b076d9779550#3c82380859d187957cfd5cd64802b076d9779550" }
 dependencies = [
     { name = "dirhash" },
     { name = "fastapi" },
@@ -705,6 +705,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "requests" },
     { name = "rich" },
+    { name = "semver" },
     { name = "shortuuid" },
     { name = "supabase" },
     { name = "tenacity" },
@@ -737,7 +738,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "harbor", extras = ["hf-sandbox"], git = "https://github.com/harbor-framework/harbor.git?rev=fcf27e5502e30436b067ef2d655368e86cc42cf9" },
+    { name = "harbor", extras = ["hf-sandbox"], git = "https://github.com/harbor-framework/harbor.git?rev=3c82380859d187957cfd5cd64802b076d9779550" },
     { name = "huggingface-hub", path = "sdk-backport/dist/huggingface_hub-1.28.0+terminal.f1c01f0-py3-none-any.whl" },
 ]
 
@@ -1967,6 +1968,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b3/e4/40998faefc72ba1ddeb640a44fba92935353525dba110488806da8339c0b/scantree-0.0.4.tar.gz", hash = "sha256:15bd5cb24483b04db2c70653604e8ea3522e98087db7e38ab8482f053984c0ac", size = 24643, upload-time = "2024-08-03T20:08:59.413Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/93/ce/828467ddfa0d2fe473673026442d2032d552a168e42cfbf25fd0e5264e0c/scantree-0.0.4-py3-none-any.whl", hash = "sha256:7616ab65aa6b7f16fcf8e6fa1d9afaa99a27ab72bba05c61b691853b96763174", size = 20690, upload-time = "2024-08-03T20:08:58.137Z" },
+]
+
+[[package]]
+name = "semver"
+version = "3.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/92/f5/e1dfe8e1d91c54ce212fd93916eb01fd1c590f413be0a0978c39a97aa1bb/semver-3.1.0.tar.gz", hash = "sha256:14bc073439513d7773662a338f4db9829cf16c12b74b9568e2d2689975fbd7fc", size = 304162, upload-time = "2026-09-12T18:38:14.045Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/be/02/bce7a1d70e9d0f6ea8623c16386138c251b5855af6cd3a11433d3fba4e66/semver-3.1.0-py3-none-any.whl", hash = "sha256:6e4998f8b4762acdfea85f9bfd5b4032e0bb50038dc04bf82011b42d5d1145c5", size = 18783, upload-time = "2026-09-12T18:38:12.457Z" },
 ]
 
 [[package]]
