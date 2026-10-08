@@ -155,8 +155,14 @@ export class FilesystemObjectStore implements ObjectStore {
   }
 }
 
-export async function readJson(store: ObjectStore, key: string): Promise<unknown> {
-  return JSON.parse(new TextDecoder().decode(await store.read(key))) as unknown;
+export async function readJson(
+  store: ObjectStore,
+  key: string,
+  options?: { fresh?: boolean },
+): Promise<unknown> {
+  return JSON.parse(
+    new TextDecoder().decode(await store.read(key, options)),
+  ) as unknown;
 }
 
 export async function createJson(
