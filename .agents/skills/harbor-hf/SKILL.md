@@ -71,6 +71,25 @@ paths, caller-supplied agent environments or skills, custom environments,
 credential literals, and credentials in URLs. Direct runs are diagnostic and
 cannot enter the leaderboard.
 
+Failure signatures:
+
+- `control API returned 404: request rejected` (or any reply that is not the
+  API's error JSON) means the request never reached the control service. Check
+  `HARBOR_HF_CONTROL_URL` before suspecting credentials. The control Space is
+  private, so a wrong hostname is rejected by the Space edge with exactly this
+  shape. The correct host is the deployment's own owner-prefixed Space host
+  (`<owner>-<control-space>.hf.space`); the exact value lives in the operator's
+  environment configuration, never in tracked files.
+- `Failed to import module '<package>'` on a direct `JobConfig` submit means the
+  agent's package is not installed in the control image. That is a wrong door,
+  not a broken install: reviewed third-party agents go through the preset route
+  (`POST /api/v1/runs`), whose imports are validated where they run, on the
+  parent worker. Never install benchmark-specific agent packages into the
+  control service to fix this.
+- The client config enforces deployment floors on the campaign cost ceiling
+  (typically a $100 minimum per campaign). The ceiling is an enforced abort
+  bound, not expected spend; a one-trial diagnostic costs cents against it.
+
 ## Inspect and control runs
 
 Set these environment variables without printing their values:

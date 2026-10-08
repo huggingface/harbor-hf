@@ -417,7 +417,9 @@ def test_request_helper_handles_status_edges_and_invalid_bodies(
         cli._request("GET", "/rejected")
     assert rejected.value.exit_code == 1
     assert capsys.readouterr().err == (
-        '{"error": "control API returned 400: request rejected"}\n'
+        '{"error": "control API returned 400: the host did not answer with '
+        "the control API; check that HARBOR_HF_CONTROL_URL is the control "
+        'Space URL for this deployment"}\n'
     )
     assert cli._request("GET", "/empty") == {}
     assert capsys.readouterr().err == ""

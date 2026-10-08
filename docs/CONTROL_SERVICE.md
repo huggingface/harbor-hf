@@ -366,6 +366,27 @@ Operator write routes are:
 - `POST /api/v1/runs/{run_id}/cancel`
 - `PATCH /api/v1/runs/{run_id}/presentation` (shared archive/restore; no execution change)
 
+### Two submission routes
+
+Use one of two doors, by agent:
+
+- **Preset submission** (`POST /api/v1/runs`): the body names a reviewed benchmark
+  preset, a harness (`{agent, version}` from the approved agent presets), a model
+  route, and the campaign cost ceiling. The service resolves the presets against
+  the approved preset sources and builds the JobConfig itself. Agents whose code
+  ships outside the control image (pinned worker images) go through this door;
+  their imports are validated where they run, on the parent.
+- **Direct JobConfig** (`POST /api/v1/runs/config`): a full Harbor JobConfig. The
+  service import-validates every `import_path` in its own Python environment, so
+  only agents installed in the control image pass. A missing module here is a
+  wrong door, not a broken install — submit through the preset route instead.
+
+Admission floors: the campaign cost ceiling is a finite positive USD value, and
+the client config enforces deployment floors (typically a minimum of $100 per
+campaign). A wrong `HARBOR_HF_CONTROL_URL` never reaches the API: the Space edge
+answers with HTML and a 404, which the CLI reports as a rejected request — check
+the hostname before suspecting credentials.
+
 Preset, Workbench, setup-test, and direct submissions require
 `Idempotency-Key`. Direct submissions also require
 `X-Harbor-HF-Cost-Ceiling-USD` for the complete campaign. The configurable page

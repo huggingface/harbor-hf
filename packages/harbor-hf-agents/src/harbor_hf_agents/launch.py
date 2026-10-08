@@ -245,7 +245,18 @@ def check_agents(
 def check_agent_options(
     agent: AgentConfig, identities: list[dict[str, object]], approved: list[object]
 ) -> None:
-    cls = AgentFactory.get_agent_class_from_config(agent)
+    try:
+        cls = AgentFactory.get_agent_class_from_config(agent)
+    except ModuleNotFoundError as error:
+        # The control service validates imports in its own Python environment.
+        # A missing module here means the agent package ships somewhere else
+        # (for example a pinned worker image), and the bare import error reads
+        # like a broken install instead of a wrong submission route.
+        raise ValueError(
+            "The agent import_path is not importable in the control service; "
+            "reviewed third-party agents must be submitted through the "
+            "reviewed preset route, not as a direct JobConfig"
+        ) from error
     if cls.options_model is None:
         if not any(
             agent.kwargs == item.get("kwargs", {})
