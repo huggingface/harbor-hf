@@ -14,3 +14,5 @@ playwright-report/
 test-results/
 .fast-agent/
 .harbor-hf/
+packages/harbor-hf-agents/jobs/
+mutants/

@@ -88,7 +88,14 @@ def _request(
             body = response.json()
             detail = body["error"]["message"]
         except (KeyError, TypeError, ValueError):
-            detail = "request rejected"
+            # The control Space edge answers with HTML, not the API's error JSON.
+            # This means the request never reached the control service: the host
+            # is wrong (or the Space rejects this client). A wrong hostname looks
+            # exactly like an auth problem here; say so instead of "rejected".
+            detail = (
+                "the host did not answer with the control API; check that "
+                "HARBOR_HF_CONTROL_URL is the control Space URL for this deployment"
+            )
         _fail(f"control API returned {response.status_code}: {detail}")
     if response.status_code == 204:
         return {}
