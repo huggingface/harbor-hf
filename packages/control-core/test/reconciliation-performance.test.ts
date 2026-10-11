@@ -220,6 +220,30 @@ it.each([4, 16, 64])(
   },
 );
 
+it("refreshes a settled run once more after its last live Job stops", async () => {
+  const id = await seed(0, "cancelled");
+  const parent = observation(id);
+  jobs.push(parent);
+  // The cancelled parent is still stopping when the first pass closes.
+  vi.mocked(port.cancel).mockImplementation(async () => {});
+  await service.refresh();
+  await service.reconcile();
+  expect(port.cancel).toHaveBeenCalledExactlyOnceWith(parent.id);
+  // It uploads one more trial result, then stops before the next pass.
+  await putJson(store, `runs/${id}/job/task/result.json`, {
+    id: "attempt",
+    trial_name: "task",
+    agent_result: { cost_usd: 0.1 },
+  });
+  parent.stage = "stopped";
+  expect(projection.trials(id)).toHaveLength(0);
+  await service.reconcile();
+  expect(projection.trials(id)).toHaveLength(1);
+  const rebuild = vi.spyOn(projection, "rebuild");
+  await service.reconcile();
+  expect(rebuild).not.toHaveBeenCalled();
+});
+
 it("defers late Jobs on skipped history to the next pass, parent before child", async () => {
   await seed(0, "run");
   const terminal = await seed(1);

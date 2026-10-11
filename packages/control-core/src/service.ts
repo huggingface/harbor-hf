@@ -804,6 +804,12 @@ export class ControlService {
     const initiallyLiveRuns = new Set(
       observations.filter(isLiveJob).map((job) => job.run_id),
     );
+    // A parent uploads its last files before it stops. A run that had a live Job
+    // at the previous close gets one more refresh after that Job stopped.
+    const previouslyLiveRuns = this.projection
+      .jobObservations()
+      .jobs.filter(isLiveJob)
+      .map((job) => job.run_id);
     await this.refreshUnsettledProjection(observations);
     this.projection.observeJobs(observations, observedAt);
     // Runs that pass the idle shortcut below; the pass refreshes them again at its close.
@@ -991,11 +997,16 @@ export class ControlService {
       });
     }
     // Close the pass from a fresh complete listing: refresh the runs that this
-    // pass handled and any skipped run that now has a live Job, then publish it.
+    // pass handled, any run that now has a live Job, and any run whose Job was
+    // live at the previous close, then publish the listing.
     observedAt = new Date().toISOString();
     const closing = await this.jobs.list();
     for (const id of [
-      ...new Set([...handled, ...closing.filter(isLiveJob).map((job) => job.run_id)]),
+      ...new Set([
+        ...handled,
+        ...previouslyLiveRuns,
+        ...closing.filter(isLiveJob).map((job) => job.run_id),
+      ]),
     ].sort())
       await this.projection.rebuild(this.store, closing, id);
     this.projection.observeJobs(closing, observedAt);
