@@ -1131,7 +1131,7 @@ describe("projection observation display contract", () => {
     await completed();
     const before = await service.replacements(source.run_id);
     const list = vi
-      .spyOn(store, "list")
+      .spyOn(store, "listDirectory")
       .mockRejectedValueOnce(new Error("Unavailable"));
     await expect(service.refresh()).rejects.toThrow("Unavailable");
     expect(await service.replacements(source.run_id)).toMatchObject({
@@ -1253,7 +1253,7 @@ describe("projection observation display contract", () => {
     vi.mocked(native.replacementAggregate).mockImplementationOnce(
       async ({ original }) => {
         const list = vi
-          .spyOn(store, "list")
+          .spyOn(store, "listDirectory")
           .mockRejectedValueOnce(new Error("Unavailable"));
         await expect(service.refresh()).rejects.toThrow("Unavailable");
         list.mockRestore();

@@ -1701,9 +1701,9 @@ describe("reconciliation", () => {
   it("rechecks cost receipts after it acquires the run lock", async () => {
     const { run } = await submit("fresh-cost");
     const attemptId = "55555555-5555-4555-8555-555555555555";
-    const originalList = store.list.bind(store);
+    const originalList = store.listDirectory.bind(store);
     let runListings = 0;
-    store.list = async (prefix) => {
+    store.listDirectory = async (prefix, filenames) => {
       if (prefix === `runs/${run.run_id}/` && ++runListings === 1)
         await putJson(store, `runs/${run.run_id}/attempt-costs/${attemptId}.json`, {
           schema_version: "v1",
@@ -1711,12 +1711,13 @@ describe("reconciliation", () => {
           trial_name: "task__trial",
           cost_usd: 0.5,
         });
-      return originalList(prefix);
+      return originalList(prefix, filenames);
     };
 
     await service.reconcile();
 
-    expect(runListings).toBe(1);
+    // One refresh under the run lock, which sees the receipt, and one at the pass close.
+    expect(runListings).toBe(2);
     expect(jobs.starts).toBe(0);
     expect(projection.run(run.run_id)?.status).toBe("cost_stopped");
   });
