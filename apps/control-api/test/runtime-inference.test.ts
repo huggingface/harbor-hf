@@ -100,6 +100,9 @@ it.each(["example:native", "second:unchanged/model"])(
     vi.spyOn(HuggingFaceBucketStore.prototype, "list").mockImplementation((prefix) =>
       store.list(prefix),
     );
+    vi.spyOn(HuggingFaceBucketStore.prototype, "listDirectory").mockImplementation(
+      (prefix, filenames) => store.listDirectory(prefix, filenames),
+    );
     vi.spyOn(HuggingFaceBucketStore.prototype, "read").mockImplementation(
       (key, options) => store.read(key, options),
     );

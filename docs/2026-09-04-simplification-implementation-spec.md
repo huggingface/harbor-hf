@@ -454,8 +454,10 @@ the exact approval/removal boundary.
 
 ## SQLite projection
 
-SQLite is a disposable cache. Startup and periodic sync rebuild these tables
-from `runs/` plus current HF Job observations:
+SQLite is a disposable cache. Startup rebuilds these tables from `runs/` plus
+current HF Job observations, and each reconcile pass refreshes the runs that can
+change. A rebuild lists `runs/` one level at a time and never walks Harbor's
+artifact trees:
 
 - `runs`: immutable record and mutable state plus computed status and job summary
 - `trials`: one row per Harbor trial result

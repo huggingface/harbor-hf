@@ -205,6 +205,74 @@ export function authoritativeAttemptCosts(
   return costs;
 }
 
+const listingConcurrency = 8;
+
+async function readJsonIfPresent(
+  store: ObjectStore,
+  key: string,
+): Promise<unknown | null> {
+  try {
+    return await readJson(store, key, { fresh: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/**
+ * Lists the objects that a rebuild reads, one level at a time. A run folder holds
+ * its records, Harbor's `job/` folder and the attempt-cost receipts; `job/` holds
+ * Harbor's job metadata and one directory per trial. Harbor's agent, verifier and
+ * workspace artifacts are most of a run's objects and are never listed.
+ */
+async function projectedObjects(
+  store: ObjectStore,
+  runIdScope?: string,
+): Promise<{ entries: ObjectEntry[]; trialDirectories: Map<string, string[]> }> {
+  const runDirectories = runIdScope
+    ? [`runs/${runIdScope}/`]
+    : (await store.listDirectory("runs/")).directories.filter((directory) =>
+        /^runs\/run-[0-9a-f]{24}\/$/.test(directory),
+      );
+  const entries: ObjectEntry[] = [];
+  const trialDirectories = new Map<string, string[]>();
+  const listRun = async (directory: string): Promise<void> => {
+    const run = await store.listDirectory(directory, [
+      "run.json",
+      "state.json",
+      "presentation.json",
+    ]);
+    entries.push(...run.files);
+    if (run.directories.includes(`${directory}job/`)) {
+      const job = await store.listDirectory(`${directory}job/`, [
+        "result.json",
+        "config.json",
+        "lock.json",
+      ]);
+      entries.push(...job.files);
+      trialDirectories.set(
+        directory.slice("runs/".length, -1),
+        [...job.directories].sort(),
+      );
+    }
+    if (run.directories.includes(`${directory}attempt-costs/`))
+      entries.push(...(await store.listDirectory(`${directory}attempt-costs/`)).files);
+  };
+  // A few runs at a time: three small listings each, instead of one long walk.
+  let next = 0;
+  await Promise.all(
+    Array.from(
+      { length: Math.min(listingConcurrency, runDirectories.length) },
+      async () => {
+        while (next < runDirectories.length)
+          await listRun(runDirectories[next++] as string);
+      },
+    ),
+  );
+  entries.sort((left, right) => left.key.localeCompare(right.key));
+  return { entries, trialDirectories };
+}
+
 export class Projection {
   private observations: readonly JobObservation[] = [];
   private observationsAt: string | null = null;
@@ -311,7 +379,7 @@ export class Projection {
     const rebuildStart = this.presentationGeneration;
     const pricingEpoch = this.pricing.generation;
     const observedAt = new Date().toISOString();
-    const entries = await store.list(runIdScope ? `runs/${runIdScope}/` : "runs");
+    const { entries, trialDirectories } = await projectedObjects(store, runIdScope);
     const keys = new Set(entries.map((entry) => entry.key));
     const runIds = [...keys]
       .filter((key) => /^runs\/run-[0-9a-f]{24}\/run\.json$/.test(key))
@@ -351,21 +419,17 @@ export class Projection {
         ? asRecord(await readJson(store, resultKey))
         : null;
       const trialPrefix = `runs/${runId}/job/`;
-      const trialKeys = [...keys]
-        .filter(
-          (key) =>
-            key.startsWith(trialPrefix) &&
-            key.endsWith("/result.json") &&
-            key !== resultKey &&
-            key.slice(trialPrefix.length).split("/").length === 2,
+      // Trial results are read by key, not listed: a missing result is a trial
+      // that has not finished uploading. Fresh reads need no listed identity.
+      const trials = (
+        await Promise.all(
+          (trialDirectories.get(runId) ?? []).map(async (directory) => {
+            const name = directory.slice(trialPrefix.length, -1);
+            const value = await readJsonIfPresent(store, `${directory}result.json`);
+            return value === null ? null : summarizeTrial(runId, name, value);
+          }),
         )
-        .sort();
-      const trials = await Promise.all(
-        trialKeys.map(async (key) => {
-          const name = key.slice(trialPrefix.length, -"/result.json".length);
-          return summarizeTrial(runId, name, await readJson(store, key));
-        }),
-      );
+      ).filter((trial): trial is TrialSummary => trial !== null);
       const receiptPrefix = `runs/${runId}/attempt-costs/`;
       const receiptKeys = [...keys]
         .filter(
@@ -533,6 +597,31 @@ export class Projection {
       this.observations = structuredClone(jobs);
       this.observationsAt = observedAt;
     }
+  }
+
+  /**
+   * Publishes one complete Jobs listing, taken at `observedAt`, without reading
+   * the Bucket. Run rows keep the statuses of their last refresh: only runs that
+   * can still change depend on live Jobs, and the reconciler refreshes those.
+   */
+  observeJobs(jobs: readonly JobObservation[], observedAt: string): void {
+    this.database.transaction(() => {
+      this.database.exec("DELETE FROM parent_jobs");
+      const insertJob = this.database.prepare(
+        "INSERT INTO parent_jobs (job_id, run_id, stage, started_at, finished_at, body) VALUES (?, ?, ?, ?, ?, ?)",
+      );
+      for (const job of jobs.filter((item) => item.role === "parent"))
+        insertJob.run(
+          job.id,
+          job.run_id,
+          job.stage,
+          job.started_at,
+          job.finished_at,
+          JSON.stringify(job),
+        );
+    })();
+    this.observations = structuredClone(jobs);
+    this.observationsAt = observedAt;
   }
 
   markPresentationUnavailable(runId: string): void {

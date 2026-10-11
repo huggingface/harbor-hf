@@ -15,7 +15,13 @@ let service: ControlService;
 let template: RunRecordV1;
 let objects: Map<string, Uint8Array>;
 let jobs: JobObservation[];
-let counts: { lists: number; entries: number; reads: number; jobs: number };
+let counts: {
+  walks: number;
+  lists: number;
+  entries: number;
+  reads: number;
+  jobs: number;
+};
 let store: ObjectStore;
 let port: JobsPort;
 const now = "2026-09-01T00:00:00.000Z";
@@ -25,18 +31,34 @@ beforeEach(async () => {
   projection = await Projection.open(join(root, "projection.sqlite"));
   objects = new Map();
   jobs = [];
-  counts = { lists: 0, entries: 0, reads: 0, jobs: 0 };
+  counts = { walks: 0, lists: 0, entries: 0, reads: 0, jobs: 0 };
   // Deterministic serial I/O latency model, not wall-clock benchmark claims.
   const delay = (ms: number) => vi.setSystemTime(Date.now() + ms);
   store = new FilesystemObjectStore(join(root, "unused"));
   vi.spyOn(store, "list").mockImplementation(async (prefix) => {
-    counts.lists++;
+    counts.walks++;
     delay(7);
     const entries = [...objects]
       .filter(([key]) => key.startsWith(prefix))
       .map(([key, bytes]) => ({ key, size: bytes.length, source_identity: key }));
     counts.entries += entries.length;
     return entries;
+  });
+  vi.spyOn(store, "listDirectory").mockImplementation(async (prefix, filenames) => {
+    counts.lists++;
+    delay(7);
+    const directories = new Set<string>();
+    const files = [];
+    for (const [key, bytes] of objects) {
+      if (!key.startsWith(prefix)) continue;
+      const [child, ...rest] = key.slice(prefix.length).split("/");
+      if (!child) continue;
+      if (rest.length > 0) directories.add(`${prefix}${child}/`);
+      else if (!filenames || filenames.includes(child))
+        files.push({ key, size: bytes.length, source_identity: key });
+    }
+    counts.entries += files.length + directories.size;
+    return { files, directories: [...directories].sort() };
   });
   vi.spyOn(store, "read").mockImplementation(async (key) => {
     counts.reads++;
@@ -143,31 +165,60 @@ async function seed(index: number, desired: RunStateV1["desired_state"] = "pause
   return id;
 }
 
-it.each([4, 16, 64])("bounds projection I/O for %i historical runs", async (size) => {
-  for (let index = 0; index < size; index++) await seed(index);
-  const phases: number[] = [];
-  const rebuild = projection.rebuild.bind(projection);
-  vi.spyOn(projection, "rebuild").mockImplementation(
-    async (bucket, observations, scope) => {
-      const started = Date.now();
-      await rebuild(bucket, observations, scope);
-      phases.push(Date.now() - started);
-    },
-  );
-  const start = Date.now();
-  await service.reconcile();
-  expect(phases).toEqual([12 * size + 7, 12 * size + 7]);
-  expect(counts).toEqual({
-    lists: 2,
-    entries: 6 * size,
-    reads: 9 * size,
-    jobs: 2,
-  });
-  expect(Date.now() - start).toBe(36 + 27 * size);
-  expect(port.startParent).not.toHaveBeenCalled();
-  expect(port.inspect).not.toHaveBeenCalled();
-  expect(projection.listRuns()).toHaveLength(size);
-});
+it.each([4, 16, 64])(
+  "lists only the files that a full refresh reads for %i historical runs",
+  async (size) => {
+    const ids = [];
+    for (let index = 0; index < size; index++) {
+      const id = await seed(index);
+      await putJson(store, `runs/${id}/job/task/result.json`, {
+        id: "attempt",
+        trial_name: "task",
+        agent_result: { cost_usd: 0.1 },
+      });
+      // Harbor's artifacts are most of a run's objects; a refresh never lists or reads them.
+      for (const artifact of [
+        "agent/trajectory.json",
+        "verifier/reward.txt",
+        "workspace/a.txt",
+      ])
+        objects.set(`runs/${id}/job/task/${artifact}`, new TextEncoder().encode("{}"));
+      ids.push(id);
+    }
+    const read = vi.mocked(store.read);
+    await service.refresh();
+    expect(counts.walks).toBe(0);
+    // runs/, then each run folder and its job/ folder.
+    expect(counts.lists).toBe(1 + 2 * size);
+    // run.json, state.json, the job result, the trial result and the pricing history.
+    expect(counts.reads).toBe(5 * size);
+    expect(
+      read.mock.calls.some(([key]) => /\/(agent|verifier|workspace)\//.test(key)),
+    ).toBe(false);
+    expect(projection.listRuns()).toHaveLength(size);
+    for (const id of ids) expect(projection.trials(id)).toHaveLength(1);
+  },
+);
+
+it.each([4, 16, 64])(
+  "a pass over %i settled runs rebuilds no history",
+  async (size) => {
+    for (let index = 0; index < size; index++) await seed(index);
+    await service.refresh();
+    counts = { walks: 0, lists: 0, entries: 0, reads: 0, jobs: 0 };
+    const rebuild = vi.spyOn(projection, "rebuild");
+    const before = projection.jobObservations().observed_at;
+    vi.setSystemTime(Date.now() + 1_000);
+    await service.reconcile();
+    expect(rebuild).not.toHaveBeenCalled();
+    // One discovery listing, each run's state under its lock, and the two Jobs listings.
+    expect(counts).toEqual({ walks: 0, lists: 1, entries: size, reads: size, jobs: 2 });
+    expect(projection.jobObservations().observed_at).not.toBe(before);
+    expect(port.startParent).not.toHaveBeenCalled();
+    expect(port.inspect).not.toHaveBeenCalled();
+    expect(projection.listRuns()).toHaveLength(size);
+  },
+);
 
 it("defers late Jobs on skipped history to the next pass, parent before child", async () => {
   await seed(0, "run");
@@ -282,7 +333,7 @@ it("rejects invalid scoped paths before reading or changing the projection", asy
   await expect(projection.rebuild(store, [], "../runs")).rejects.toThrow(
     "invalid projection run scope",
   );
-  expect(counts.lists).toBe(0);
+  expect(counts.lists + counts.walks).toBe(0);
 });
 
 it.each([4, 16, 64])(
@@ -309,10 +360,14 @@ it.each([4, 16, 64])(
         });
       }
     }
+    await service.refresh();
     const queued = await seed(size, "run");
+    counts = { walks: 0, lists: 0, entries: 0, reads: 0, jobs: 0 };
     await service.reconcile();
     expect(counts.jobs).toBe(3);
-    expect(counts.lists).toBe(3);
+    // Discovery, then the queued run's folder before, inside and after the loop.
+    expect(counts.walks).toBe(0);
+    expect(counts.lists).toBe(4);
     expect(port.startParent).toHaveBeenCalledExactlyOnceWith(queued);
     expect(port.cancel).not.toHaveBeenCalled();
     expect(projection.listRuns()).toHaveLength(size + 1);
@@ -327,14 +382,17 @@ it("does not restart a parent when a finished native result appears after stale 
   const id = await seed(0, "run");
   const resultKey = `runs/${id}/job/result.json`;
   await putJson(store, resultKey, { finished_at: now, n_total_trials: 1 });
-  const list = vi.mocked(store.list).getMockImplementation();
+  const list = vi.mocked(store.listDirectory).getMockImplementation();
   if (!list) throw new Error("missing list fixture");
   let calls = 0;
-  vi.spyOn(store, "list").mockImplementation(async (prefix) => {
-    const entries = await list(prefix);
-    // The direct object is already readable, but both reconciliation listings
-    // started before its upload became visible in the Bucket listing.
-    return ++calls <= 2 ? entries.filter((entry) => entry.key !== resultKey) : entries;
+  vi.spyOn(store, "listDirectory").mockImplementation(async (prefix, filenames) => {
+    const listing = await list(prefix, filenames);
+    if (prefix !== `runs/${id}/job/`) return listing;
+    // The direct object is already readable, but the listings before and inside
+    // the loop started before its upload became visible in the Bucket listing.
+    return ++calls <= 2
+      ? { ...listing, files: listing.files.filter((entry) => entry.key !== resultKey) }
+      : listing;
   });
 
   await service.reconcile();
@@ -454,7 +512,7 @@ it("fails closed on an incomplete initial snapshot even with many inactive histo
   await seed(16, "run");
   vi.mocked(port.list).mockRejectedValue(new Error("later page unavailable"));
   await expect(service.reconcile()).rejects.toThrow("later page unavailable");
-  expect(counts.lists).toBe(0);
+  expect(counts.lists + counts.walks).toBe(0);
   expect(port.startParent).not.toHaveBeenCalled();
   expect(port.cancel).not.toHaveBeenCalled();
 });

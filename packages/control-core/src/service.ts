@@ -772,12 +772,42 @@ export class ControlService {
     return state;
   }
 
+  /**
+   * Refreshes the runs that the projection does not hold yet, such as runs
+   * written while the projection was rebuilding, and runs whose projected
+   * pricing or presentation could not be read. Settled history is not read again.
+   */
+  private async refreshUnsettledProjection(
+    observations: readonly JobObservation[],
+  ): Promise<void> {
+    const projected = new Map(
+      this.projection.listRuns().map((view) => [view.record.run_id, view]),
+    );
+    const { directories } = await this.store.listDirectory("runs/");
+    for (const directory of directories) {
+      const id = directory.slice("runs/".length, -1);
+      if (!/^run-[0-9a-f]{24}$/.test(id)) continue;
+      const view = projected.get(id);
+      if (
+        view &&
+        view.pricing_corrections_available !== false &&
+        view.presentation_available
+      )
+        continue;
+      await this.projection.rebuild(this.store, observations, id);
+    }
+  }
+
   async reconcile(): Promise<void> {
+    let observedAt = new Date().toISOString();
     let observations = await this.jobs.list();
     const initiallyLiveRuns = new Set(
       observations.filter(isLiveJob).map((job) => job.run_id),
     );
-    await this.projection.rebuild(this.store, observations);
+    await this.refreshUnsettledProjection(observations);
+    this.projection.observeJobs(observations, observedAt);
+    // Runs that pass the idle shortcut below; the pass refreshes them again at its close.
+    const handled = new Set<string>();
     const runs = this.projection
       .listRuns()
       .sort((left, right) =>
@@ -808,8 +838,9 @@ export class ControlService {
         )
           // Late Jobs are discovered by the closing/next complete scan and
           // cleaned on the next successful pass (parents before children).
-          // The closing rebuild also refreshes inactive results/costs/state.
+          // The closing refresh covers a skipped run that has a live Job then.
           return;
+        handled.add(initialView.record.run_id);
         const observedById = new Map(observations.map((job) => [job.id, job]));
         for (const job of await this.jobs.list()) observedById.set(job.id, job);
         observations = [...observedById.values()];
@@ -959,7 +990,15 @@ export class ControlService {
         activeParents += 1;
       });
     }
-    await this.projection.rebuild(this.store, await this.jobs.list());
+    // Close the pass from a fresh complete listing: refresh the runs that this
+    // pass handled and any skipped run that now has a live Job, then publish it.
+    observedAt = new Date().toISOString();
+    const closing = await this.jobs.list();
+    for (const id of [
+      ...new Set([...handled, ...closing.filter(isLiveJob).map((job) => job.run_id)]),
+    ].sort())
+      await this.projection.rebuild(this.store, closing, id);
+    this.projection.observeJobs(closing, observedAt);
     if (inspectionErrors.length > 0)
       throw new AggregateError(inspectionErrors, "Recorded parent inspection failed");
   }
