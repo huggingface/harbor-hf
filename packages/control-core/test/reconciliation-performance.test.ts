@@ -244,6 +244,20 @@ it("refreshes a settled run once more after its last live Job stops", async () =
   expect(rebuild).not.toHaveBeenCalled();
 });
 
+it("keeps refreshing a run for ten minutes after its Job stopped", async () => {
+  const id = await seed(0, "cancelled");
+  jobs.push({ ...observation(id), stage: "stopped", finished_at: now });
+  await service.refresh();
+  const rebuild = vi.spyOn(projection, "rebuild");
+  vi.setSystemTime(Date.parse(now) + 9 * 60_000);
+  await service.reconcile();
+  expect(rebuild).toHaveBeenCalledExactlyOnceWith(store, expect.anything(), id);
+  rebuild.mockClear();
+  vi.setSystemTime(Date.parse(now) + 11 * 60_000);
+  await service.reconcile();
+  expect(rebuild).not.toHaveBeenCalled();
+});
+
 it("defers late Jobs on skipped history to the next pass, parent before child", async () => {
   await seed(0, "run");
   const terminal = await seed(1);

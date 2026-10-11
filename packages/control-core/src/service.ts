@@ -136,6 +136,9 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
   );
 }
 
+/** How long a pass keeps refreshing a run after one of its Jobs stopped. */
+const settlingWindowMs = 10 * 60_000;
+
 async function readIfPresent(
   store: ObjectStore,
   key: string,
@@ -804,8 +807,9 @@ export class ControlService {
     const initiallyLiveRuns = new Set(
       observations.filter(isLiveJob).map((job) => job.run_id),
     );
-    // A parent uploads its last files before it stops. A run that had a live Job
-    // at the previous close gets one more refresh after that Job stopped.
+    // A parent uploads its last files before it stops, and a Bucket listing can
+    // show them late. A run whose Job was live at the previous close, or stopped
+    // within the settling window, is refreshed again when this pass closes.
     const previouslyLiveRuns = this.projection
       .jobObservations()
       .jobs.filter(isLiveJob)
@@ -997,15 +1001,23 @@ export class ControlService {
       });
     }
     // Close the pass from a fresh complete listing: refresh the runs that this
-    // pass handled, any run that now has a live Job, and any run whose Job was
-    // live at the previous close, then publish the listing.
+    // pass handled, any run that now has a live Job or a recently stopped one,
+    // and any run whose Job was live at the previous close, then publish it.
     observedAt = new Date().toISOString();
     const closing = await this.jobs.list();
+    const settlingSince = Date.parse(observedAt) - settlingWindowMs;
     for (const id of [
       ...new Set([
         ...handled,
         ...previouslyLiveRuns,
-        ...closing.filter(isLiveJob).map((job) => job.run_id),
+        ...closing
+          .filter(
+            (job) =>
+              isLiveJob(job) ||
+              (job.finished_at !== null &&
+                Date.parse(job.finished_at) >= settlingSince),
+          )
+          .map((job) => job.run_id),
       ]),
     ].sort())
       await this.projection.rebuild(this.store, closing, id);
