@@ -118,6 +118,23 @@ Cancellation is permanent.
 The Bucket is the durable source of truth. SQLite is a disposable three-table
 projection. HF Job state is an observation, not the run record.
 
+## Do not overload Hugging Face infrastructure
+
+The hosted namespace keeps every finished Job, and the Bucket holds millions of
+objects. Read [the Hub request audit](../../../docs/2026-10-13-hub-request-audit.md).
+
+- Use `uv run harbor-hf jobs` and `run status` for state. They read the service
+  projection, not the Hub.
+- Never list the namespace's Jobs without a live stage filter. With the Hub
+  client, pass `status=["RUNNING", "SCHEDULING"]` and a label to `list_jobs`.
+  Read a known Job with `inspect_job` by ID. Do not page through history to
+  count Jobs.
+- Never list a run folder recursively or download a whole run to inspect it.
+  Download the named files you need.
+- Keep inference concurrency for agents and judges within the route's limit.
+  Start at 6 parallel sessions per route, and lower it when HTTP 429 appears.
+- Poll a run no faster than every 30 seconds.
+
 ## Cost and completion rules
 
 The campaign cost ceiling is checked after each trial because Harbor writes the

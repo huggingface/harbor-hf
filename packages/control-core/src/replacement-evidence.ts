@@ -152,16 +152,24 @@ export class ReplacementEvidence {
     this.identities.push(`${key}:${sha256(bytes)}`);
     return nativeObject(JSON.parse(new TextDecoder().decode(bytes)));
   }
-  async records(): Promise<RunRecordV1[]> {
+  /**
+   * Lists the run folders afresh and returns their records. A run record never
+   * changes after it is created, so a record in `known` is not read again, and a
+   * record read here is added to it.
+   */
+  async records(known?: Map<string, RunRecordV1>): Promise<RunRecordV1[]> {
     const listing = await this.directory("runs/", []);
     // The Bucket can hold other folders under runs/; only run identities have records.
     const runs = listing.directories.filter((prefix) =>
       /^runs\/run-[0-9a-f]{24}\/$/.test(prefix),
     );
     return evidenceMap(runs, async (prefix) => {
+      const cached = known?.get(prefix.slice("runs/".length, -1));
+      if (cached) return structuredClone(cached);
       const record = validateRunRecord(await this.read(`${prefix}run.json`));
       if (prefix !== `runs/${record.run_id}/`)
         throw new ReplacementError(409, "Run record identity mismatch");
+      known?.set(record.run_id, structuredClone(record));
       return record;
     });
   }

@@ -149,32 +149,26 @@ async function listJobPages(
   options: ReadOnlyHuggingFaceJobsOptions,
 ): Promise<readonly JobObservation[]> {
   const values = new Map<string, JobObservation>();
-  // The account keeps every finished Job. Filter by role and live stage at the
-  // Hub, so a listing reads only live Jobs and never walks the Job history.
-  for (const role of ["parent", "trial"] as const) {
-    const query: [string, string][] = [
-      ["label", `harbor-hf-role=${role}`],
-      ...LIVE_STAGES.map((stage): [string, string] => ["stage", stage]),
-    ];
-    for await (const page of pages(options, query)) {
-      for (const input of page) {
-        const job = observation(input);
-        if (job) {
-          if (job.role !== role) throw new Error("Jobs label filter was not applied");
-          if (job.stage !== "queued" && job.stage !== "running")
-            throw new Error("Jobs stage filter was not applied");
-          const previous = values.get(job.id);
-          if (
-            previous &&
-            (previous.run_id !== job.run_id ||
-              previous.role !== job.role ||
-              previous.created_at !== job.created_at)
-          )
-            throw new Error("Conflicting Job in pagination");
-          // New Jobs can shift cursor pages. Keep the later stable observation.
-          values.set(job.id, job);
-        }
-      }
+  // The account keeps every finished Job. Filter by live stage at the Hub, so one
+  // listing reads only live Jobs and never walks the Job history. Jobs without
+  // the run and role labels belong to someone else and are skipped.
+  const query = LIVE_STAGES.map((stage): [string, string] => ["stage", stage]);
+  for await (const page of pages(options, query)) {
+    for (const input of page) {
+      const job = observation(input);
+      if (!job) continue;
+      if (job.stage !== "queued" && job.stage !== "running")
+        throw new Error("Jobs stage filter was not applied");
+      const previous = values.get(job.id);
+      if (
+        previous &&
+        (previous.run_id !== job.run_id ||
+          previous.role !== job.role ||
+          previous.created_at !== job.created_at)
+      )
+        throw new Error("Conflicting Job in pagination");
+      // New Jobs can shift cursor pages. Keep the later stable observation.
+      values.set(job.id, job);
     }
   }
   return [...values.values()];

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -25,6 +26,7 @@ let counts: {
 let store: ObjectStore;
 let port: JobsPort;
 const now = "2026-09-01T00:00:00.000Z";
+const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "reconcile-perf-"));
@@ -40,7 +42,11 @@ beforeEach(async () => {
     delay(7);
     const entries = [...objects]
       .filter(([key]) => key.startsWith(prefix))
-      .map(([key, bytes]) => ({ key, size: bytes.length, source_identity: key }));
+      .map(([key, bytes]) => ({
+        key,
+        size: bytes.length,
+        source_identity: digest(bytes),
+      }));
     counts.entries += entries.length;
     return entries;
   });
@@ -55,7 +61,7 @@ beforeEach(async () => {
       if (!child) continue;
       if (rest.length > 0) directories.add(`${prefix}${child}/`);
       else if (!filenames || filenames.includes(child))
-        files.push({ key, size: bytes.length, source_identity: key });
+        files.push({ key, size: bytes.length, source_identity: digest(bytes) });
     }
     counts.entries += files.length + directories.size;
     return { files, directories: [...directories].sort() };
@@ -211,12 +217,74 @@ it.each([4, 16, 64])(
     vi.setSystemTime(Date.now() + 1_000);
     await service.reconcile();
     expect(rebuild).not.toHaveBeenCalled();
-    // One discovery listing, each run's state under its lock, and the two Jobs listings.
-    expect(counts).toEqual({ walks: 0, lists: 1, entries: size, reads: size, jobs: 2 });
+    // The first pass is a safety pass: one discovery listing, each run's state
+    // under its lock, and one Jobs listing.
+    expect(counts).toEqual({ walks: 0, lists: 1, entries: size, reads: size, jobs: 1 });
     expect(projection.jobObservations().observed_at).not.toBe(before);
     expect(port.startParent).not.toHaveBeenCalled();
     expect(port.inspect).not.toHaveBeenCalled();
     expect(projection.listRuns()).toHaveLength(size);
+    // With nothing to watch, later passes send no request until the next safety pass.
+    counts = { walks: 0, lists: 0, entries: 0, reads: 0, jobs: 0 };
+    vi.setSystemTime(Date.now() + 9 * 60_000);
+    await service.reconcile();
+    expect(counts).toEqual({ walks: 0, lists: 0, entries: 0, reads: 0, jobs: 0 });
+    vi.setSystemTime(Date.now() + 2 * 60_000);
+    await service.reconcile();
+    expect(counts).toEqual({ walks: 0, lists: 1, entries: size, reads: size, jobs: 1 });
+    expect(rebuild).not.toHaveBeenCalled();
+  },
+);
+
+it.each([4, 64])(
+  "a steady pass over an active run with %i finished trials reads no trial result",
+  async (size) => {
+    const id = await seed(0, "run");
+    await putJson(store, `runs/${id}/state.json`, {
+      schema_version: "v1",
+      run_id: id,
+      revision: 1,
+      updated_at: now,
+      desired_state: "run",
+      actor: "synthetic-operator",
+      parent_jobs: [{ id: "late-parent", started_at: now }],
+    });
+    const finished = (index: number) => ({
+      id: `attempt-${index}`,
+      trial_name: `task-${index}`,
+      finished_at: now,
+      agent_result: { cost_usd: 0.001 },
+    });
+    for (let index = 0; index < size; index++)
+      await putJson(store, `runs/${id}/job/task-${index}/result.json`, finished(index));
+    await putJson(store, `runs/${id}/job/task-${size}/config.json`, {});
+    await putJson(store, `runs/${id}/job/result.json`, { n_completed_trials: size });
+    jobs.push(observation(id));
+    await service.refresh();
+    await service.reconcile();
+    const read = vi.mocked(store.read);
+    const trialReads = () =>
+      read.mock.calls.filter(([key]) => /\/job\/task-\d+\/result\.json$/.test(key));
+    read.mockClear();
+    counts = { walks: 0, lists: 0, entries: 0, reads: 0, jobs: 0 };
+    await service.reconcile();
+    expect(trialReads()).toEqual([]);
+    expect(counts.jobs).toBe(1);
+    expect(counts.walks).toBe(0);
+    // The run folder, job/ and nothing else, before the loop and at its close.
+    expect(counts.lists).toBeLessThanOrEqual(5);
+    expect(port.inspect).not.toHaveBeenCalled();
+    // A newly finished trial changes Harbor's job metadata: one trial read, not size + 1.
+    read.mockClear();
+    await putJson(store, `runs/${id}/job/task-${size}/result.json`, finished(size));
+    await putJson(store, `runs/${id}/job/result.json`, {
+      n_completed_trials: size + 1,
+    });
+    await service.reconcile();
+    expect(trialReads().map(([key]) => key)).toEqual([
+      `runs/${id}/job/task-${size}/result.json`,
+    ]);
+    expect(projection.trials(id)).toHaveLength(size + 1);
   },
 );
 
@@ -240,7 +308,14 @@ it("refreshes a settled run once more after its last live Job stops", async () =
   await service.reconcile();
   expect(projection.trials(id)).toHaveLength(1);
   const rebuild = vi.spyOn(projection, "rebuild");
+  // When the run leaves the settling window, the pass reads it once more in full.
   vi.setSystemTime(Date.now() + 11 * 60_000);
+  await service.reconcile();
+  expect(rebuild).toHaveBeenCalledExactlyOnceWith(store, expect.anything(), id, {
+    verify: true,
+  });
+  rebuild.mockClear();
+  vi.setSystemTime(Date.now() + 1_000);
   await service.reconcile();
   expect(rebuild).not.toHaveBeenCalled();
 });
@@ -259,10 +334,31 @@ it("keeps refreshing a run for ten minutes after its Job was last live", async (
   rebuild.mockClear();
   vi.setSystemTime(Date.parse(now) + 11 * 60_000);
   await service.reconcile();
+  expect(rebuild).toHaveBeenCalledExactlyOnceWith(store, expect.anything(), id, {
+    verify: true,
+  });
+  rebuild.mockClear();
+  vi.setSystemTime(Date.parse(now) + 12 * 60_000);
+  await service.reconcile();
   expect(rebuild).not.toHaveBeenCalled();
 });
 
-it("drops a Job that leaves the live listing during a pass", async () => {
+it("drops a Job that leaves the live listing before a run acts", async () => {
+  const id = await seed(0, "paused");
+  const parent = observation(id, "stopping-parent");
+  jobs.push(parent);
+  // The parent stops after the first listing of the pass.
+  vi.mocked(port.list).mockImplementationOnce(async () => {
+    const listed = structuredClone(jobs.filter(isLiveJob));
+    parent.stage = "stopped";
+    return listed;
+  });
+  await service.reconcile();
+  expect(port.list).toHaveBeenCalledTimes(2);
+  expect(port.cancel).not.toHaveBeenCalled();
+});
+
+it("keeps a steady run on the pass listing and restarts it on the next pass", async () => {
   const id = await seed(0, "run");
   await putJson(store, `runs/${id}/state.json`, {
     schema_version: "v1",
@@ -282,6 +378,9 @@ it("drops a Job that leaves the live listing during a pass", async () => {
     return listed;
   });
   await service.reconcile();
+  expect(port.list).toHaveBeenCalledOnce();
+  expect(port.startParent).not.toHaveBeenCalled();
+  await service.reconcile();
   expect(port.inspect).toHaveBeenCalledWith("stopping-parent");
   expect(port.startParent).toHaveBeenCalledExactlyOnceWith(id);
 });
@@ -298,7 +397,8 @@ it("defers late Jobs on skipped history to the next pass, parent before child", 
   });
   await service.reconcile();
   expect(port.cancel).not.toHaveBeenCalled();
-  expect(projection.jobs().some((job) => job.id === "late-parent")).toBe(true);
+  // The pass does not list again at its close; the next pass finds the late Jobs.
+  expect(projection.jobs().some((job) => job.id === "late-parent")).toBe(false);
   await service.reconcile();
   expect(port.cancel).toHaveBeenCalledWith("late-parent");
   expect(port.cancel).not.toHaveBeenCalledWith("late-child");
@@ -403,7 +503,7 @@ it("rejects invalid scoped paths before reading or changing the projection", asy
 });
 
 it.each([4, 16, 64])(
-  "uses only three complete Jobs listings for %i inactive histories plus a queued run",
+  "uses only two complete Jobs listings for %i inactive histories plus a queued run",
   async (size) => {
     for (let index = 0; index < size; index++) {
       const id = await seed(index);
@@ -430,7 +530,8 @@ it.each([4, 16, 64])(
     const queued = await seed(size, "run");
     counts = { walks: 0, lists: 0, entries: 0, reads: 0, jobs: 0 };
     await service.reconcile();
-    expect(counts.jobs).toBe(3);
+    // The pass listing, and a fresh one before the queued run starts its parent.
+    expect(counts.jobs).toBe(2);
     // Discovery, then the queued run's folder before, inside and after the loop.
     expect(counts.walks).toBe(0);
     expect(counts.lists).toBe(4);
@@ -491,7 +592,7 @@ it("does not skip terminal live Jobs present in the initial complete snapshot", 
   const terminal = await seed(0);
   jobs.push(observation(terminal), observation(terminal, "child", "trial"));
   await service.reconcile();
-  expect(counts.jobs).toBe(3);
+  expect(counts.jobs).toBe(2);
   expect(port.cancel).toHaveBeenCalledExactlyOnceWith("late-parent");
   await service.reconcile();
   expect(port.cancel).toHaveBeenCalledWith("child");
@@ -537,11 +638,16 @@ it("refreshes skipped history at pass close without authorizing mutations", asyn
     return bytes;
   });
   await service.reconcile();
-  expect(counts.jobs).toBe(2);
-  expect(projection.run(id)?.result?.n_total_trials).toBe(2);
-  expect(projection.jobs().some((job) => job.id === "late-parent")).toBe(true);
+  expect(counts.jobs).toBe(1);
+  // No closing listing. Nothing is watched, so the late parent and its run's new
+  // files wait for the next safety pass.
+  expect(projection.jobs().some((job) => job.id === "late-parent")).toBe(false);
   expect(port.cancel).not.toHaveBeenCalled();
   await service.reconcile();
+  expect(port.cancel).not.toHaveBeenCalled();
+  vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
+  await service.reconcile();
+  expect(projection.run(id)?.result?.n_total_trials).toBe(2);
   expect(port.cancel).toHaveBeenCalledExactlyOnceWith("late-parent");
 });
 

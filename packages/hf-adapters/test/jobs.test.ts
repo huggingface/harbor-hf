@@ -79,17 +79,13 @@ describe("HuggingFaceJobs", () => {
             status: { stage: "STOPPED", failureCount: 0 },
           }),
         );
-      const role = new URL(String(_input)).searchParams.get("label");
       return new Response(
-        JSON.stringify(
-          role === "harbor-hf-role=parent"
-            ? [
-                apiJob(),
-                { ...apiJob(), id: "unlabelled", labels: null },
-                { ...apiJob(), id: "unrelated", labels: { other: "value" } },
-              ]
-            : [apiJob("trial")],
-        ),
+        JSON.stringify([
+          apiJob(),
+          { ...apiJob(), id: "unlabelled", labels: null },
+          { ...apiJob(), id: "unrelated", labels: { other: "value" } },
+          apiJob("trial"),
+        ]),
       );
     };
     const jobs = new HuggingFaceJobs({
@@ -102,20 +98,19 @@ describe("HuggingFaceJobs", () => {
     });
     expect(await jobs.list()).toHaveLength(2);
     await jobs.cancel("parent-job");
-    expect(methods).toEqual(["GET", "GET", "POST"]);
+    expect(methods).toEqual(["GET", "POST"]);
   });
 
   it("observes owned Jobs without allowing lifecycle changes", async () => {
     const jobs = new ReadOnlyHuggingFaceJobs({
       namespace: "example",
       accessToken: controlToken,
-      fetch: async (input) =>
+      fetch: async () =>
         new Response(
-          JSON.stringify(
-            new URL(String(input)).searchParams.get("label") === "harbor-hf-role=parent"
-              ? [apiJob(), { ...apiJob(), id: "unrelated", labels: { other: "value" } }]
-              : [],
-          ),
+          JSON.stringify([
+            apiJob(),
+            { ...apiJob(), id: "unrelated", labels: { other: "value" } },
+          ]),
         ),
     });
     expect(await jobs.list()).toHaveLength(1);
@@ -314,10 +309,9 @@ describe("paginated Job reads", () => {
     });
   }
 
-  it("reads 100 children then the live parent, following relative and multi-rel Links", async () => {
+  it("reads the live parent and 100 children in one paged query, following relative and multi-rel Links", async () => {
     const transport = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify([apiJob()])))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify(
@@ -333,34 +327,22 @@ describe("paginated Job reads", () => {
           },
         ),
       )
-      .mockResolvedValueOnce(new Response("[]"));
+      .mockResolvedValueOnce(new Response(JSON.stringify([apiJob()])));
     const values = await reader(transport).list();
     expect(values).toHaveLength(101);
-    expect(values[0]?.role).toBe("parent");
-    expect(values.at(-1)?.role).toBe("trial");
+    expect(values[0]?.role).toBe("trial");
+    expect(values.at(-1)?.role).toBe("parent");
+    expect(transport).toHaveBeenCalledTimes(2);
     expect(transport.mock.calls[0]?.[0]).toBe(
-      "https://huggingface.co/api/jobs/example?label=harbor-hf-role%3Dparent&stage=RUNNING&stage=SCHEDULING",
+      "https://huggingface.co/api/jobs/example?stage=RUNNING&stage=SCHEDULING",
     );
     expect(transport.mock.calls[1]?.[0]).toBe(
-      "https://huggingface.co/api/jobs/example?label=harbor-hf-role%3Dtrial&stage=RUNNING&stage=SCHEDULING",
-    );
-    expect(transport.mock.calls[2]?.[0]).toBe(
       "https://huggingface.co/api/jobs/example?cursor=second",
     );
-    expect(transport.mock.calls[2]?.[1]).toMatchObject({
+    expect(transport.mock.calls[1]?.[1]).toMatchObject({
       redirect: "error",
       headers: { Authorization: `Bearer ${controlToken}` },
     });
-  });
-
-  it("rejects a Hub response that ignores the requested Job role", async () => {
-    const transport = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(new Response(JSON.stringify([apiJob("trial")])));
-    await expect(reader(transport).list()).rejects.toThrow(
-      "Jobs label filter was not applied",
-    );
-    expect(transport).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a Hub response that ignores the live stage filter", async () => {

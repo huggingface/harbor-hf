@@ -19,6 +19,29 @@ const defaultRetryDelaysMs = [
 const defaultListTimeoutMs = 30_000;
 const defaultCacheMaxBytes = 64 * 1024 * 1024;
 const defaultHubUrl = "https://huggingface.co";
+// At most this many Bucket requests are in flight for one store, from all callers.
+const maxConcurrentRequests = 8;
+
+/** Runs operations with at most `limit` in flight, in arrival order. */
+class RequestSlots {
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit)
+      await new Promise<void>((ready) => this.waiting.push(ready));
+    else this.active++;
+    try {
+      return await operation();
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.active--;
+    }
+  }
+}
 const xetHashPattern = /^[0-9a-f]{64}$/i;
 
 export interface HuggingFaceBucketStoreOptions {
@@ -86,6 +109,7 @@ export class HuggingFaceBucketStore implements ObjectStore {
   private cacheBytes = 0;
   private readonly sourceIdentities = new Map<string, string>();
   private queue: Promise<void> = Promise.resolve();
+  private readonly slots = new RequestSlots(maxConcurrentRequests);
 
   constructor(options: HuggingFaceBucketStoreOptions) {
     this.repo = { type: "bucket", name: options.bucketId };
@@ -169,7 +193,9 @@ export class HuggingFaceBucketStore implements ObjectStore {
     for (let attempt = 0; ; attempt += 1) {
       try {
         directories?.splice(0);
-        return await this.listEntries(key, recursive, directories, filenames);
+        return await this.slots.run(() =>
+          this.listEntries(key, recursive, directories, filenames),
+        );
       } catch (error) {
         const delay = this.retryDelaysMs[attempt];
         if (delay === undefined || !transientDownloadError(error)) throw error;
@@ -188,7 +214,7 @@ export class HuggingFaceBucketStore implements ObjectStore {
     let bytes: Uint8Array | null = null;
     for (let attempt = 0; ; attempt += 1) {
       try {
-        bytes = await this.download(key);
+        bytes = await this.slots.run(() => this.download(key));
         break;
       } catch (error) {
         const delay = this.retryDelaysMs[attempt];
@@ -248,13 +274,15 @@ export class HuggingFaceBucketStore implements ObjectStore {
         source_identity: await this.stableSourceIdentity(key, digest),
       };
     }
-    await uploadFile({
-      repo: this.repo,
-      file: { path: key, content: new Blob([Uint8Array.from(bytes).buffer]) },
-      commitTitle: `Create immutable control object ${key}`,
-      fetch: this.fetch,
-      ...this.credentials,
-    });
+    await this.slots.run(() =>
+      uploadFile({
+        repo: this.repo,
+        file: { path: key, content: new Blob([Uint8Array.from(bytes).buffer]) },
+        commitTitle: `Create immutable control object ${key}`,
+        fetch: this.fetch,
+        ...this.credentials,
+      }),
+    );
     return {
       created: true,
       digest,
@@ -277,13 +305,15 @@ export class HuggingFaceBucketStore implements ObjectStore {
   ): Promise<{ digest: string }> {
     const digest = sha256(bytes);
     this.deleteCached(key);
-    await uploadFile({
-      repo: this.repo,
-      file: { path: key, content: new Blob([Uint8Array.from(bytes).buffer]) },
-      commitTitle: `Update run state ${key}`,
-      fetch: this.fetch,
-      ...this.credentials,
-    });
+    await this.slots.run(() =>
+      uploadFile({
+        repo: this.repo,
+        file: { path: key, content: new Blob([Uint8Array.from(bytes).buffer]) },
+        commitTitle: `Update run state ${key}`,
+        fetch: this.fetch,
+        ...this.credentials,
+      }),
+    );
     await this.stableSourceIdentity(key, digest);
     return { digest };
   }

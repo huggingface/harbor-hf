@@ -246,13 +246,24 @@ def test_setup_wait_retries_transient_failures_and_stops_on_pass(
             "wait",
             "setup-one",
             "--poll-interval",
-            "0.2",
+            "2",
         ],
     )
 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["status"] == "passed"
     assert values == []
+
+
+def test_setup_wait_rejects_a_poll_interval_under_two_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure(monkeypatch)
+    result = runner.invoke(
+        app, ["workbench", "setup", "wait", "setup-one", "--poll-interval", "1"]
+    )
+
+    assert result.exit_code == 2
 
 
 def test_setup_wait_fails_for_a_terminal_setup_error(

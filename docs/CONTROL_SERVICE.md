@@ -81,8 +81,10 @@ Ten seconds is the visible-tab polling interval, not a delivery guarantee:
 requests may take longer and polling restarts after completion without catch-up.
 Background tabs may pause or throttle polling. Artifact reads are on demand with
 a 10-second backend cache, regardless of run status. The separate reconciler
-defaults to 15 seconds, is configurable via `HARBOR_HF_RECONCILE_INTERVAL_MS`, and
-skips ticks while a pass is running. Neither interval guarantees update latency.
+defaults to 30 seconds, is configurable via `HARBOR_HF_RECONCILE_INTERVAL_MS`, and
+skips ticks while a pass is running. With no queued, running or settling run, a
+tick sends no request, except one safety pass every 10 minutes. Neither interval
+guarantees update latency. See [the Hub request audit](2026-10-13-hub-request-audit.md).
 New responses render immediately, independently of the age timer.
 
 Run detail also keeps each agent's stored model/route, version, and reasoning
@@ -163,7 +165,7 @@ The service reads these Space variables:
 | `HARBOR_HF_PARENT_HARDWARE` | no | `cpu-basic` | parent Job hardware |
 | `HARBOR_HF_PARENT_TIMEOUT_SECONDS` | no | `86400` | parent Job timeout |
 | `HARBOR_HF_MAX_ACTIVE_JOBS` | no | `16` | live parent Job limit |
-| `HARBOR_HF_RECONCILE_INTERVAL_MS` | no | `15000` | reconcile interval |
+| `HARBOR_HF_RECONCILE_INTERVAL_MS` | no | `30000` | reconcile interval |
 | `HARBOR_HF_PARENT_RESTART_DELAY_MS` | no | `60000` | eligible parent restart delay |
 | `HARBOR_HF_PROJECTION_PATH` | no | `/tmp/harbor-hf/control.sqlite` | SQLite projection |
 | `HARBOR_HF_AUTH_PATH` | no | `/tmp/harbor-hf/auth.sqlite` | OAuth session store |

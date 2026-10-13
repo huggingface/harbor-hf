@@ -277,6 +277,7 @@ describe("Hugging Face Workbench runner", () => {
       jobs,
       10,
       10,
+      10,
     );
     try {
       const started = await runtime.startSetup(
@@ -329,6 +330,7 @@ describe("Hugging Face Workbench runner", () => {
       jobs,
       10,
       10,
+      10,
     );
     try {
       const started = await runtime.startSetup(
@@ -353,12 +355,38 @@ describe("Hugging Face Workbench runner", () => {
     }
   });
 
+  it("asks the Hub for a setup Job's stage at most once per observe interval", async () => {
+    const jobs = new FakeWorkbenchJobs();
+    // The first log stream stays open, so only status polls can reach the Hub.
+    const observe = vi.spyOn(jobs, "observe");
+    const runtime = new WorkbenchRuntime(
+      "hf-jobs",
+      "example.invalid/setup@sha256:test",
+      jobs,
+      60_000,
+      60_000,
+    );
+    try {
+      const started = await runtime.startSetup(
+        fastAgentWorkbenchStarter,
+        "test-operator",
+        "remote-polled",
+      );
+      for (let poll = 0; poll < 10; poll++)
+        await runtime.getSetup(started.setup_test_id, "test-operator");
+      expect(observe).toHaveBeenCalledTimes(1);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("cancels the exact remote Job and keeps the setup actor-scoped", async () => {
     const jobs = new FakeWorkbenchJobs(true);
     const runtime = new WorkbenchRuntime(
       "hf-jobs",
       "example.invalid/setup@sha256:test",
       jobs,
+      10,
       10,
       10,
     );
@@ -396,6 +424,7 @@ describe("Hugging Face Workbench runner", () => {
       jobs,
       10,
       10,
+      10,
     );
     const started = await first.startSetup(
       fastAgentWorkbenchStarter,
@@ -414,6 +443,7 @@ describe("Hugging Face Workbench runner", () => {
       "hf-jobs",
       "example.invalid/setup@sha256:test",
       jobs,
+      10,
       10,
       10,
     );

@@ -41,7 +41,6 @@ export class TrialProgressReader {
     private readonly options: {
       now?: () => number;
       ttlMs?: number;
-      reconcileMs?: number;
       maxSnapshots?: number;
       maxTrials?: number;
     } = {},
@@ -185,12 +184,11 @@ export class TrialProgressReader {
           )
             throw new Error("Invalid trial directory observation");
           const previous = snapshot.trials.get(name);
-          const record =
-            previous?.trial.result?.finished_at &&
-            observedAt >= previous.observedAt &&
-            observedAt - previous.observedAt < (this.options.reconcileMs ?? 300_000)
-              ? previous
-              : await this.observeTrial(runId, name, base, previous);
+          // The parent publishes a trial's result once, when the trial ends. A
+          // finished trial is not observed again while its directory is listed.
+          const record = previous?.trial.result?.finished_at
+            ? previous
+            : await this.observeTrial(runId, name, base, previous);
           if (record) records.set(name, record);
         }),
       );

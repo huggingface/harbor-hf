@@ -138,6 +138,8 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
 
 /** How long a pass keeps refreshing a run after it last had a live Job. */
 const settlingWindowMs = 10 * 60_000;
+/** With no run to watch, a pass sends no request except this often. */
+const safetyPassIntervalMs = 10 * 60_000;
 
 async function readIfPresent(
   store: ObjectStore,
@@ -195,6 +197,7 @@ export class ControlService {
   // When each run last had a live Job in a listing. The Jobs listing holds only
   // live Jobs, so this is how a pass knows that a run stopped lately.
   private readonly lastLive = new Map<string, number>();
+  private lastSafetyPass = Number.NEGATIVE_INFINITY;
 
   private observeLive(jobs: readonly JobObservation[]): void {
     const now = Date.now();
@@ -234,8 +237,11 @@ export class ControlService {
     await this.refresh();
   }
 
+  /** Rebuilds every run from the Bucket, reading every trial result once. */
   async refresh(): Promise<void> {
-    await this.projection.rebuild(this.store, await this.jobs.list());
+    await this.projection.rebuild(this.store, await this.jobs.list(), undefined, {
+      verify: true,
+    });
   }
 
   async submitPreset(
@@ -731,7 +737,11 @@ export class ControlService {
       }
       return next;
     });
-    await this.refresh();
+    // A parent can still start children or upload files after this change.
+    this.lastLive.set(runIdValue, Date.now());
+    await this.projection.rebuild(this.store, await this.jobs.list(), runIdValue, {
+      verify: true,
+    });
     return state;
   }
 
@@ -809,7 +819,27 @@ export class ControlService {
     }
   }
 
+  /** Whether a run can start, stop or still upload files, so a pass has work. */
+  private watching(): boolean {
+    return (
+      this.lastLive.size > 0 ||
+      this.projection
+        .listRuns()
+        .some(
+          (view) =>
+            view.state.desired_state === "run" &&
+            !["finished", "cost_stopped"].includes(view.status),
+        )
+    );
+  }
+
   async reconcile(): Promise<void> {
+    // An idle service sends no Hub, Jobs or Bucket request. A safety pass still
+    // finds runs and Jobs that this process did not create or see.
+    if (!this.watching()) {
+      if (Date.now() - this.lastSafetyPass < safetyPassIntervalMs) return;
+      this.lastSafetyPass = Date.now();
+    }
     let observedAt = new Date().toISOString();
     let observations = await this.jobs.list();
     this.observeLive(observations);
@@ -859,12 +889,25 @@ export class ControlService {
           // The closing refresh covers a skipped run that has a live Job then.
           return;
         handled.add(initialView.record.run_id);
-        // A Job missing from a fresh live listing is no longer live, so replace
-        // the earlier observations. Starts/stops and late children make
-        // pass-wide liveness caching unsafe.
-        const listed = await this.jobs.list();
-        this.observeLive(listed);
-        observations = withStarted(listed);
+        // A run that should run and has a live parent only keeps that parent, so
+        // the pass's listing is enough. Any other run can start or stop Jobs:
+        // list again first. A Job missing from a fresh live listing is no longer
+        // live, so replace the earlier observations. Starts/stops and late
+        // children make pass-wide liveness caching unsafe for those runs.
+        const steady =
+          lockedState.desired_state === "run" &&
+          observations.some(
+            (job) =>
+              job.run_id === initialView.record.run_id &&
+              job.role === "parent" &&
+              isLiveJob(job),
+          );
+        if (!steady) {
+          observedAt = new Date().toISOString();
+          const listed = await this.jobs.list();
+          this.observeLive(listed);
+          observations = withStarted(listed);
+        }
         await this.projection.rebuild(
           this.store,
           observations,
@@ -1009,17 +1052,22 @@ export class ControlService {
         activeParents += 1;
       });
     }
-    // Close the pass from a fresh live listing. A parent uploads its last files
+    // Close the pass from its latest listing. A parent uploads its last files
     // before it stops, and a Bucket listing can show them late. Refresh the runs
     // that this pass handled and every run that had a live Job within the
-    // settling window, then publish the listing.
-    observedAt = new Date().toISOString();
-    const closing = withStarted(await this.jobs.list());
-    this.observeLive(closing);
+    // settling window, then publish the listing. A run that leaves the window
+    // is read once more in full: its trials are settled.
+    const closing = withStarted(observations);
+    const settled: string[] = [];
     for (const [id, liveAt] of this.lastLive)
-      if (Date.now() - liveAt > settlingWindowMs) this.lastLive.delete(id);
+      if (Date.now() - liveAt > settlingWindowMs) {
+        this.lastLive.delete(id);
+        settled.push(id);
+      }
     for (const id of [...new Set([...handled, ...this.lastLive.keys()])].sort())
       await this.projection.rebuild(this.store, closing, id);
+    for (const id of settled.sort())
+      await this.projection.rebuild(this.store, closing, id, { verify: true });
     this.projection.observeJobs(closing, observedAt);
     if (inspectionErrors.length > 0)
       throw new AggregateError(inspectionErrors, "Recorded parent inspection failed");

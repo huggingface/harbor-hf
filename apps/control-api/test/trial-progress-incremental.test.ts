@@ -120,46 +120,17 @@ describe("incremental native trial observations", () => {
     expect((await f.snapshot()).trials).toEqual(next.trials);
   });
 
-  it("reconciles corrections, missing results, and same-name replacements without renewing old evidence", async () => {
+  it("never observes a finished trial again while its directory is listed", async () => {
     const f = fixture();
     f.put("done/result.json", finished);
     f.put("done/config.json", { trial_name: "done" });
     const first = await f.snapshot();
-    f.put("done/result.json", { ...finished, agent_result: { cost_usd: 0.5 } });
-    f.advance();
-    const retained = await f.snapshot();
-    expect(retained.observed_at).toBe(new Date(30_000).toISOString());
-    expect(retained.trials[0]?.observed_at).toBe(first.trials[0]?.observed_at);
-    f.advance(270_000);
-    expect((await f.snapshot()).trials[0]?.cost_usd).toBe(0.5);
-    f.objects.delete(`${base}done/result.json`);
-    f.advance(300_000);
-    const missing = await f.snapshot();
-    expect(missing.trials[0]?.result).toBeNull();
-    expect(missing.trials[0]?.cost_usd).toBeNull();
-    expect(missing.observed_at).toBe(new Date(600_000).toISOString());
-    f.put("done/result.json", {
-      ...finished,
-      id: "replacement",
-      verifier_result: { rewards: { reward: 1 } },
-    });
-    f.advance();
-    expect((await f.snapshot()).trials[0]?.reward).toBe(1);
-  });
-
-  it("reconfirms unchanged completed hashes periodically without downloading them", async () => {
-    const f = fixture();
-    f.put("done/result.json", finished);
-    await f.snapshot();
     f.clear();
-    f.advance(300_000);
-    const reconciled = await f.snapshot();
-    expect(reconciled.observed_at).toBe(new Date(300_000).toISOString());
-    expect(reconciled.trials[0]?.observed_at).toBe(reconciled.observed_at);
-    expect(f.listDirectory.mock.calls.map(([path]) => path)).toEqual([
-      base,
-      `${base}done/`,
-    ]);
+    f.advance(3_600_000);
+    const later = await f.snapshot();
+    expect(later.observed_at).toBe(new Date(3_600_000).toISOString());
+    expect(later.trials[0]?.observed_at).toBe(first.trials[0]?.observed_at);
+    expect(f.listDirectory.mock.calls.map(([path]) => path)).toEqual([base]);
     expect(f.store.read).not.toHaveBeenCalled();
   });
 
@@ -175,13 +146,13 @@ describe("incremental native trial observations", () => {
     expect((await f.snapshot()).trials[0]?.result).toBeNull();
   });
 
-  it("rejects failed reconciliation and recovers cold, including all finished records", async () => {
+  it("rejects a failed observation and recovers cold, including all finished records", async () => {
     const f = fixture();
-    f.put("done/result.json", finished);
+    f.put("done/config.json", { trial_name: "done" });
     await f.snapshot();
-    f.advance(300_000);
+    f.advance();
     vi.mocked(f.store.read).mockRejectedValueOnce(new Error("download failed"));
-    f.put("done/result.json", { ...finished, task_name: "changed" });
+    f.put("done/result.json", finished);
     await expect(f.snapshot()).rejects.toThrow("download failed");
     f.clear();
     expect((await f.snapshot()).trials).toHaveLength(1);

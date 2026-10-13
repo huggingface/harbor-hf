@@ -42,6 +42,9 @@ import { usePresets, useSystem } from "./queries";
 import { Badge, Button, Card, ConcurrentTrialsField, ErrorNotice, Loading } from "./ui";
 import { createWorkbenchDraftSaver, loadWorkbenchDraft } from "./workbench-draft";
 
+// The server keeps setup state; it asks the Hub at most every 15 seconds.
+const SETUP_POLL_INTERVAL_MS = 5_000;
+
 const sources = [
   "literal",
   "instruction_path",
@@ -449,7 +452,7 @@ export function WorkbenchPage() {
     if (!setup || terminalSetup(setup.status)) return;
     const timer = window.setInterval(() => {
       void getWorkbenchSetup(setup.setup_test_id).then(setSetup).catch(setSetupError);
-    }, 1_000);
+    }, SETUP_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [setup]);
 
@@ -464,7 +467,7 @@ export function WorkbenchPage() {
         .catch(setSetupError);
     load();
     if (terminalSetup(setup.status)) return;
-    const timer = window.setInterval(load, 1_000);
+    const timer = window.setInterval(load, SETUP_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [setup]);
 
