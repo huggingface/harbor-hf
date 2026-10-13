@@ -253,6 +253,8 @@ function publicApi(path: string): boolean {
 
 export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   const progressReader = new TrialProgressReader(runtime.store);
+  // Immutable run records for the public leaderboard; only the run listing is fresh.
+  const runRecords = new Map<string, RunRecordV1>();
   const app = Fastify({
     logger: runtime.config.node_env !== "test" && {
       // Allowlist request metadata: no query strings, headers, or cookies.
@@ -799,7 +801,7 @@ export async function buildApp(runtime: Runtime): Promise<FastifyInstance> {
   app.get("/api/v1/leaderboard", async () => {
     let records: RunRecordV1[];
     try {
-      records = await new ReplacementEvidence(runtime.store).records();
+      records = await new ReplacementEvidence(runtime.store).records(runRecords);
     } catch {
       return { rows: [] };
     }

@@ -53,6 +53,36 @@ function store(): HuggingFaceBucketStore {
 }
 
 describe("HuggingFaceBucketStore", () => {
+  it("keeps at most eight Bucket requests in flight", async () => {
+    let active = 0;
+    let peak = 0;
+    const held: Array<() => void> = [];
+    const slowFetch: typeof fetch = async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise<void>((release) => held.push(release));
+      active--;
+      return new Response(new TextEncoder().encode("{}"), { status: 200 });
+    };
+    const bucket = new HuggingFaceBucketStore({
+      bucketId: "example/bucket",
+      accessToken: "test-token",
+      retryDelaysMs: [],
+      cacheMaxBytes: 0,
+      fetch: slowFetch,
+    });
+    const reads = Array.from({ length: 20 }, (_, index) =>
+      bucket.read(`runs/run-${String(index).padStart(24, "0")}/run.json`),
+    );
+    while (held.length < 8) await new Promise((resolve) => setTimeout(resolve, 1));
+    for (let released = 0; released < 20; released++) {
+      while (held.length === 0) await new Promise((resolve) => setTimeout(resolve, 1));
+      held.shift()?.();
+    }
+    await Promise.all(reads);
+    expect(peak).toBe(8);
+  });
+
   it("creates immutable objects and updates mutable objects", async () => {
     memory.objects.clear();
     const bucket = store();

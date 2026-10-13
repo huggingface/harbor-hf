@@ -1575,12 +1575,11 @@ describe("reconciliation", () => {
             return fails
               ? new Response("unavailable", { status: 503 })
               : new Response("[]");
-          if (url.searchParams.get("label") === "harbor-hf-role=parent")
-            return new Response(JSON.stringify([raw("parent", "existing-parent")]));
           return new Response(
-            JSON.stringify(
-              Array.from({ length: 100 }, (_, i) => raw("trial", `child-${i}`)),
-            ),
+            JSON.stringify([
+              raw("parent", "existing-parent"),
+              ...Array.from({ length: 99 }, (_, i) => raw("trial", `child-${i}`)),
+            ]),
             { headers: { link: '<?cursor=second>; rel="next"' } },
           );
         },

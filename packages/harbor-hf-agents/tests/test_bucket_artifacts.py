@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from huggingface_hub import BucketFile, HfApi
+from huggingface_hub import BucketFile, BucketFolder, HfApi
 
 from harbor_hf_agents.bucket_artifacts import BucketArtifacts
 
@@ -23,27 +23,20 @@ class MemoryBucket:
         self.events: list[tuple[str, tuple[str, ...]]] = []
         self.fail_target: str | None = None
         self.api = Mock(spec=HfApi)
-        self.api.sync_bucket.side_effect = self.sync
         self.api.download_bucket_files.side_effect = self.download
         self.api.batch_bucket_files.side_effect = self.batch
         self.api.list_bucket_tree.side_effect = self.list_tree
         self.api.get_bucket_paths_info.side_effect = self.paths_info
 
-    def sync(self, source, destination):
-        assert source == f"hf://buckets/{BUCKET}/{PREFIX}"
-        self.events.append(("restore", ()))
-        for name, data in self.files.items():
-            if name.startswith(PREFIX + "/"):
-                write(Path(destination), name.removeprefix(PREFIX + "/"), data)
-
     def download(self, bucket_id, files, *, raise_on_missing_files):
         assert bucket_id == BUCKET
-        assert raise_on_missing_files is True
         for source, destination in files:
             assert isinstance(destination, Path)
             self.events.append(("download", (source,)))
             if source not in self.files:
-                raise FileNotFoundError(source)
+                if raise_on_missing_files:
+                    raise FileNotFoundError(source)
+                continue
             destination.write_bytes(self.files[source])
 
     def batch(self, bucket_id, *, add=(), delete=()):
@@ -73,7 +66,28 @@ class MemoryBucket:
 
     def list_tree(self, bucket_id, *, prefix, recursive):
         assert bucket_id == BUCKET
-        assert recursive is True
+        assert prefix.startswith(PREFIX)
+        self.events.append(("list", (prefix, "recursive" if recursive else "shallow")))
+        if not recursive:
+            # The tree endpoint lists the children of a path. Unrelated entries
+            # check that the adapter scopes them to that path.
+            base = prefix.rstrip("/") + "/"
+            children: dict[str, bool] = {}
+            for name in self.files:
+                if name.startswith(base):
+                    child, _, rest = name.removeprefix(base).partition("/")
+                    children[child] = children.get(child, False) or bool(rest)
+            return [
+                BucketFolder(type="directory", path=base + child)
+                if folder
+                else BucketFile(
+                    type="file",
+                    path=base + child,
+                    size=len(self.files[base + child]),
+                    xetHash="0" * 64,
+                )
+                for child, folder in sorted(children.items())
+            ] + [Mock(path=base + "not-a-bucket-entry")]
         assert prefix.startswith(PREFIX + "/job/")
         # Deliberately include unrelated paths: the adapter must scope deletions.
         return [
@@ -115,17 +129,65 @@ async def test_restore_native_tree_before_resume(storage, desired_state):
     remote.files = {
         f"{PREFIX}/state.json": state,
         f"{PREFIX}/run.json": b"controller-owned",
+        f"{PREFIX}/attempt-costs/<receipt>.json": b"receipt",
         f"{PREFIX}/job/config.json": native,
+        f"{PREFIX}/job/<trial>/config.json": b"trial config",
         f"{PREFIX}/job/<trial>/result.json": b"completed-native-trial",
+        f"{PREFIX}/job/<trial>/agent/trajectory.json": b"trial artifact",
+        f"{PREFIX}/job/<incomplete>/config.json": b"incomplete trial",
+        f"{PREFIX}/job/.sources/<uuid>/source.json": b"Harbor source cache",
     }
     await artifacts.restore()
-    # These files are ready for Harbor's native resume, without invoking a job.
-    for name, data in remote.files.items():
-        assert (
-            artifacts.run_dir / name.removeprefix(PREFIX + "/")
-        ).read_bytes() == data
-    assert remote.events == [("restore", ()), ("download", (f"{PREFIX}/state.json",))]
+    # Harbor's resume reads each trial's config and result; artifacts stay remote.
+    restored = {
+        name
+        for name in remote.files
+        if (artifacts.run_dir / name.removeprefix(PREFIX + "/")).is_file()
+    }
+    assert restored == set(remote.files) - {
+        f"{PREFIX}/job/<trial>/agent/trajectory.json"
+    }
+    for name in restored:
+        local = artifacts.run_dir / name.removeprefix(PREFIX + "/")
+        assert local.read_bytes() == remote.files[name]
+    assert [names for kind, names in remote.events if kind == "list"] == [
+        (PREFIX, "shallow"),
+        (f"{PREFIX}/attempt-costs", "shallow"),
+        (f"{PREFIX}/job", "shallow"),
+        (f"{PREFIX}/job/.sources", "recursive"),
+    ]
+    assert remote.events[-1] == ("download", (f"{PREFIX}/state.json",))
     assert uploaded(remote) == []
+
+
+@pytest.mark.asyncio
+async def test_finish_keeps_restored_trials_remote_and_uploads_only_changes(storage):
+    artifacts, remote = storage
+    remote.files = {
+        f"{PREFIX}/state.json": json.dumps({"desired_state": "run"}).encode(),
+        f"{PREFIX}/attempt-costs/<old>.json": b"old receipt",
+        f"{PREFIX}/job/config.json": b"job config",
+        f"{PREFIX}/job/<old>/config.json": b"old config",
+        f"{PREFIX}/job/<old>/result.json": b"old result",
+        f"{PREFIX}/job/<old>/agent/trajectory.json": b"old artifact",
+        f"{PREFIX}/job/<incomplete>/config.json": b"incomplete",
+    }
+    await artifacts.restore()
+    # Harbor removes the unfinished trial and runs a new one.
+    for path in (artifacts.run_dir / "job/<incomplete>").iterdir():
+        path.unlink()
+    (artifacts.run_dir / "job/<incomplete>").rmdir()
+    write(artifacts.run_dir, "job/<new>/result.json", b"new result")
+    write(artifacts.run_dir, "attempt-costs/<new>.json", b"new receipt")
+    await artifacts.trial("<new>")
+    write(artifacts.run_dir, "job/result.json", b"aggregate")
+    remote.events.clear()
+    await artifacts.finish()
+    names = uploaded(remote)
+    assert names == [f"{PREFIX}/job/config.json", f"{PREFIX}/job/result.json"]
+    assert remote.files[f"{PREFIX}/job/<old>/agent/trajectory.json"] == b"old artifact"
+    assert f"{PREFIX}/job/<incomplete>/config.json" not in remote.files
+    assert remote.files[f"{PREFIX}/job/<new>/result.json"] == b"new result"
 
 
 @pytest.mark.asyncio
@@ -476,7 +538,7 @@ async def test_late_trial_upload_failure_propagates_and_stops_publication(
 @pytest.mark.asyncio
 async def test_restore_sdk_failure_propagates_without_refresh(storage):
     artifacts, remote = storage
-    remote.api.sync_bucket.side_effect = OSError("offline restore failure")
+    remote.api.list_bucket_tree.side_effect = OSError("offline restore failure")
     with pytest.raises(OSError, match="offline restore failure"):
         await artifacts.restore()
     remote.api.download_bucket_files.assert_not_called()
@@ -529,3 +591,22 @@ async def test_unscrubbed_global_job_log_is_not_published(storage):
     await artifacts.finish()
     assert f"{PREFIX}/job/job.log" not in remote.files
     assert remote.files[f"{PREFIX}/job/trial/trial.log"] == b"scrubbed log"
+
+
+@pytest.mark.asyncio
+async def test_each_trial_uploads_only_its_new_receipt(storage):
+    artifacts, remote = storage
+    for index in range(3):
+        write(artifacts.run_dir, f"job/<trial-{index}>/result.json", b"result")
+        write(artifacts.run_dir, f"attempt-costs/<receipt-{index}>.json", b"receipt")
+        await artifacts.trial(f"<trial-{index}>")
+    receipts = [name for name in uploaded(remote) if "/attempt-costs/" in name]
+    assert receipts == [
+        f"{PREFIX}/attempt-costs/<receipt-{index}>.json" for index in range(3)
+    ]
+    # A changed receipt is sent again; an unchanged one is not.
+    write(artifacts.run_dir, "attempt-costs/<receipt-0>.json", b"corrected")
+    await artifacts.finish()
+    receipts = [name for name in uploaded(remote) if "/attempt-costs/" in name]
+    assert receipts[3:] == [f"{PREFIX}/attempt-costs/<receipt-0>.json"]
+    assert remote.files[f"{PREFIX}/attempt-costs/<receipt-0>.json"] == b"corrected"

@@ -69,7 +69,7 @@ const schema = z.object({
     .int()
     .min(1_000)
     .max(300_000)
-    .default(15_000),
+    .default(30_000),
   HARBOR_HF_PARENT_RESTART_DELAY_MS: z.coerce
     .number()
     .int()

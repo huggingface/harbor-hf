@@ -60,3 +60,9 @@ Job check counted only those 100 Jobs.
   that leaves the live listing during a pass is inspected instead of kept as live.
 - After deployment, an idle control service sends about two list requests per listing instead of
   hundreds.
+
+## Later change
+
+[The Hub request audit](2026-10-13-hub-request-audit.md) replaces the two role listings with one
+stage-filtered request, removes the closing listing, and stops all requests when the service is
+idle.

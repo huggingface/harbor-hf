@@ -1473,12 +1473,17 @@ describe("launch pricing API boundary", () => {
     expect(runtime.projection.run(record.run_id)?.shared_estimate?.cost_usd).toBe(
       2.425,
     );
+    // A run record never changes: later leaderboard requests list runs/ only.
+    const read = vi.spyOn(runtime.store, "read");
+    const list = vi.spyOn(runtime.store, "listDirectory");
     expect(
       (await app.inject({ url: "/api/v1/leaderboard" })).json().rows[0],
     ).toMatchObject({
       cost_usd: 77,
       shared_estimate: { cost_usd: 2.425, estimated_runs: 1, total_runs: 1 },
     });
+    expect(read).not.toHaveBeenCalled();
+    expect(list.mock.calls.map(([prefix]) => prefix)).toEqual(["runs/"]);
   });
   it.each([
     null,

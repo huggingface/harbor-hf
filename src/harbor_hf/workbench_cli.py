@@ -219,8 +219,8 @@ def register_workbench_commands(  # noqa: C901 -- Keep related Typer commands in
         ] = None,
         wait: Annotated[bool, typer.Option("--wait")] = False,
         poll_interval: Annotated[
-            float, typer.Option("--poll-interval", min=0.2, max=60.0)
-        ] = 1.0,
+            float, typer.Option("--poll-interval", min=2.0, max=60.0)
+        ] = 5.0,
         timeout_seconds: Annotated[
             float, typer.Option("--timeout-seconds", min=1.0)
         ] = 3900.0,
@@ -278,8 +278,8 @@ def register_workbench_commands(  # noqa: C901 -- Keep related Typer commands in
     def setup_wait(
         setup_test_id: Annotated[str, typer.Argument()],
         poll_interval: Annotated[
-            float, typer.Option("--poll-interval", min=0.2, max=60.0)
-        ] = 1.0,
+            float, typer.Option("--poll-interval", min=2.0, max=60.0)
+        ] = 5.0,
         timeout_seconds: Annotated[
             float, typer.Option("--timeout-seconds", min=1.0)
         ] = 3900.0,
@@ -300,8 +300,8 @@ def register_workbench_commands(  # noqa: C901 -- Keep related Typer commands in
         setup_test_id: Annotated[str, typer.Argument()],
         wait: Annotated[bool, typer.Option("--wait")] = False,
         poll_interval: Annotated[
-            float, typer.Option("--poll-interval", min=0.2, max=60.0)
-        ] = 1.0,
+            float, typer.Option("--poll-interval", min=2.0, max=60.0)
+        ] = 5.0,
         timeout_seconds: Annotated[
             float, typer.Option("--timeout-seconds", min=1.0)
         ] = 120.0,

@@ -205,7 +205,33 @@ export function authoritativeAttemptCosts(
   return costs;
 }
 
-const listingConcurrency = 8;
+// At most this many Bucket requests are in flight for one rebuild.
+const bucketConcurrency = 8;
+
+/** Maps values in order with at most `bucketConcurrency` operations in flight. */
+async function boundedMap<T, R>(
+  values: readonly T[],
+  operation: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const output = new Array<R>(values.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(bucketConcurrency, values.length) }, async () => {
+      while (next < values.length) {
+        const index = next++;
+        output[index] = await operation(values[index] as T);
+      }
+    }),
+  );
+  return output;
+}
+
+/** Harbor writes a trial's `result.json` once, when the trial ends. */
+function finalTrial(trial: TrialSummary): boolean {
+  return (
+    typeof trial.result.finished_at === "string" && Boolean(trial.result.finished_at)
+  );
+}
 
 async function readJsonIfPresent(
   store: ObjectStore,
@@ -259,16 +285,7 @@ async function projectedObjects(
       entries.push(...(await store.listDirectory(`${directory}attempt-costs/`)).files);
   };
   // A few runs at a time: three small listings each, instead of one long walk.
-  let next = 0;
-  await Promise.all(
-    Array.from(
-      { length: Math.min(listingConcurrency, runDirectories.length) },
-      async () => {
-        while (next < runDirectories.length)
-          await listRun(runDirectories[next++] as string);
-      },
-    ),
-  );
+  await boundedMap(runDirectories, listRun);
   entries.sort((left, right) => left.key.localeCompare(right.key));
   return { entries, trialDirectories };
 }
@@ -279,6 +296,14 @@ export class Projection {
   // Metadata from the same rebuild as the trial rows, not another artifact store.
   private resultObjects: readonly ObjectEntry[] = [];
   private readonly attemptReceipts = new Map<string, readonly AttemptCostV1[]>();
+  // For each run, Harbor's job metadata identities and trial folders at the last
+  // committed rebuild. The parent uploads that metadata after each trial, so while
+  // the listing is unchanged no trial ended, and no trial result is read.
+  // Each trial folder maps to the trial name of its row, or null without a result.
+  private readonly trialListings = new Map<
+    string,
+    { listing: string; trials: ReadonlyMap<string, string | null> }
+  >();
 
   replacementReceipts(runId: string): readonly AttemptCostV1[] {
     return structuredClone(this.attemptReceipts.get(runId) ?? []);
@@ -353,13 +378,19 @@ export class Projection {
     return new Projection(database);
   }
 
+  /**
+   * Rebuilds the projection from the Bucket. A finished trial's row is reused, and
+   * an unfinished trial is read again only after its run's job metadata or trial
+   * folders change. `verify` reads every trial result again.
+   */
   async rebuild(
     store: ObjectStore,
     jobs: readonly JobObservation[],
     runIdScope?: string,
+    options: { verify?: boolean } = {},
   ): Promise<void> {
     try {
-      await this.readAndCommit(store, jobs, runIdScope);
+      await this.readAndCommit(store, jobs, runIdScope, options.verify ?? false);
     } catch (error) {
       // Retained rows are not a successful observation after a failed refresh.
       this.observationsAt = null;
@@ -370,7 +401,8 @@ export class Projection {
   private async readAndCommit(
     store: ObjectStore,
     jobs: readonly JobObservation[],
-    runIdScope?: string,
+    runIdScope: string | undefined,
+    verify: boolean,
   ): Promise<void> {
     if (runIdScope !== undefined && !/^run-[0-9a-f]{24}$/.test(runIdScope))
       throw new Error("invalid projection run scope");
@@ -394,6 +426,10 @@ export class Projection {
       trials: TrialSummary[];
       receipts: AttemptCostV1[];
     }> = [];
+    const trialListings = new Map<
+      string,
+      { listing: string; trials: ReadonlyMap<string, string | null> }
+    >();
     for (const runId of runIds) {
       const stateKey = `runs/${runId}/state.json`;
       if (!keys.has(stateKey)) continue;
@@ -419,17 +455,58 @@ export class Projection {
         ? asRecord(await readJson(store, resultKey))
         : null;
       const trialPrefix = `runs/${runId}/job/`;
+      const directories = trialDirectories.get(runId) ?? [];
+      const trialListing = JSON.stringify([
+        entries
+          .filter(
+            (entry) =>
+              entry.key.startsWith(trialPrefix) &&
+              !entry.key.slice(trialPrefix.length).includes("/"),
+          )
+          .map((entry) => [entry.key, entry.source_identity]),
+        directories,
+      ]);
+      const last = verify ? undefined : this.trialListings.get(runId);
+      const unchanged = last?.listing === trialListing;
+      const rowsByName = new Map(
+        last ? this.trials(runId).map((trial) => [trial.trial_name, trial]) : [],
+      );
+      const names = new Map<string, string | null>();
       // Trial results are read by key, not listed: a missing result is a trial
       // that has not finished uploading. Fresh reads need no listed identity.
-      const trials = (
-        await Promise.all(
-          (trialDirectories.get(runId) ?? []).map(async (directory) => {
+      const readTrials = async (reuse: boolean) =>
+        (
+          await boundedMap(directories, async (directory) => {
+            const lastName = reuse ? last?.trials.get(directory) : undefined;
+            const previous = lastName ? rowsByName.get(lastName) : undefined;
+            if (previous && (unchanged || finalTrial(previous))) {
+              names.set(directory, previous.trial_name);
+              return previous;
+            }
+            if (reuse && unchanged && lastName === null) {
+              names.set(directory, null);
+              return null;
+            }
             const name = directory.slice(trialPrefix.length, -1);
             const value = await readJsonIfPresent(store, `${directory}result.json`);
-            return value === null ? null : summarizeTrial(runId, name, value);
-          }),
-        )
-      ).filter((trial): trial is TrialSummary => trial !== null);
+            const summary = value === null ? null : summarizeTrial(runId, name, value);
+            names.set(directory, summary?.trial_name ?? null);
+            return summary;
+          })
+        ).filter((trial): trial is TrialSummary => trial !== null);
+      let trials = await readTrials(true);
+      // Harbor removes a trial from its completed count when it runs the trial
+      // again under the same name. More finished rows than that count means a
+      // reused row is stale, so read every result again. An unchanged listing
+      // reuses everything, so a lasting mismatch costs at most one read per change.
+      const completed = numeric(asRecord(result?.stats)?.n_completed_trials);
+      if (
+        !unchanged &&
+        completed !== null &&
+        trials.filter(finalTrial).length > completed
+      )
+        trials = await readTrials(false);
+      trialListings.set(runId, { listing: trialListing, trials: names });
       const receiptPrefix = `runs/${runId}/attempt-costs/`;
       const receiptKeys = [...keys]
         .filter(
@@ -439,14 +516,12 @@ export class Projection {
             !key.slice(receiptPrefix.length).includes("/"),
         )
         .sort();
-      const receipts = await Promise.all(
-        receiptKeys.map(async (key) => {
-          const receipt = validateAttemptCost(await readJson(store, key));
-          if (receiptIdFromKey(receiptPrefix, key) !== receipt.attempt_id)
-            throw new Error("attempt cost receipt path does not match its id");
-          return receipt;
-        }),
-      );
+      const receipts = await boundedMap(receiptKeys, async (key) => {
+        const receipt = validateAttemptCost(await readJson(store, key));
+        if (receiptIdFromKey(receiptPrefix, key) !== receipt.attempt_id)
+          throw new Error("attempt cost receipt path does not match its id");
+        return receipt;
+      });
       const runJobs = jobs.filter((job) => job.run_id === runId);
       rows.push({
         view: {
@@ -592,6 +667,10 @@ export class Projection {
     // validated snapshot fences older overlapping reads (valid or failed).
     for (const { view } of rows) this.notePresentationMutation(view.record.run_id);
     for (const { view } of rows) this.pricing.committed(view.record.run_id);
+    if (!runIdScope) this.trialListings.clear();
+    else this.trialListings.delete(runIdScope);
+    for (const [runId, listing] of trialListings)
+      this.trialListings.set(runId, listing);
     // Only a full rebuild advances the globally published observation snapshot.
     if (!runIdScope) {
       this.observations = structuredClone(jobs);

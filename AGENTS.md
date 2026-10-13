@@ -102,6 +102,34 @@
 - Use a hard cutover. Do not add compatibility readers, dual writes, old profile
   support, or a second API version.
 
+## Hugging Face infrastructure load
+
+Harbor-HF runs on shared Hugging Face infrastructure: the Hub API, HF Jobs, the
+Jobs proxy and Buckets. A loop that is cheap on a test Bucket can overload that
+infrastructure on a namespace with tens of thousands of finished Jobs and
+millions of Bucket objects. This happened: see
+[the Hub request audit](docs/2026-10-13-hub-request-audit.md).
+
+- You MUST NOT list a namespace's Jobs without a live stage filter
+  (`stage=RUNNING&stage=SCHEDULING`). Read a known Job by ID. Never page through
+  finished Job history, in code, scripts or diagnostics.
+- You MUST NOT list a run's Harbor artifact tree recursively, except to delete
+  or copy one trial or one Harbor-owned folder. Use shallow listings.
+- When no run is queued, running or settling, the service MUST send no Hub,
+  Jobs or Bucket request, except one safety pass every 10 minutes.
+- Read data that does not change only once per process: run records, finished
+  trial results, final Job stages and uploaded receipts. Upload only new or
+  changed bytes.
+- A poll that waits for a state change MUST start at 1 second or more and back
+  off. A browser or CLI poll MUST read server state, not the Hub, and MUST NOT
+  be faster than 2 seconds.
+- Keep at most 8 Hub or Bucket requests in flight per process. Retry only HTTP
+  408, 429, 5xx and network errors, with growing delays.
+- Each reconcile, refresh, upload or poll loop MUST have a request-count test.
+  A change that raises a count needs a reason in its pull request.
+- Before you merge a change to a loop, estimate its request rate on a large run
+  (about 600 trials) and on an idle service, and state it in the pull request.
+
 ## Credentials
 
 - The control Space has two operator-managed secrets. `HF_TOKEN` is the

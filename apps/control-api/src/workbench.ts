@@ -87,6 +87,8 @@ interface SetupState extends WorkbenchSetupView {
   remote_result_received: boolean;
   remote_sequences: Set<number>;
   remote_preview_bytes: number;
+  // When the Hub was last asked for this Job's stage.
+  remote_observed_at: number;
 }
 
 function appendBounded(current: string, chunk: Buffer): string {
@@ -162,8 +164,13 @@ export class WorkbenchRuntime {
     private readonly mode: "disabled" | "docker" | "hf-jobs",
     private readonly image: string,
     private readonly remoteJobs: WorkbenchJobClient | null = null,
-    private readonly remoteLogSliceMs = 5_000,
+    // One log stream stays open this long before the loop checks the Job stage.
+    private readonly remoteLogSliceMs = 30_000,
+    // The wait after a slice doubles up to `remoteRetryMaxMs` while no log arrives.
     private readonly remoteRetryMs = 1_000,
+    // The Hub is asked for one Job's stage at most this often, except on demand.
+    private readonly remoteObserveMs = 15_000,
+    private readonly remoteRetryMaxMs = 30_000,
   ) {}
 
   preview(value: unknown): AgentWorkbenchPreview {
@@ -246,6 +253,7 @@ export class WorkbenchRuntime {
       remote_result_received: false,
       remote_sequences: new Set(),
       remote_preview_bytes: 0,
+      remote_observed_at: Number.NEGATIVE_INFINITY,
     };
     this.setupTests.set(setupTestId, state);
     const args = [
@@ -380,6 +388,7 @@ export class WorkbenchRuntime {
       remote_result_received: false,
       remote_sequences: new Set(),
       remote_preview_bytes: 0,
+      remote_observed_at: Number.NEGATIVE_INFINITY,
     };
     this.setupTests.set(setupTestId, state);
     try {
@@ -447,6 +456,7 @@ export class WorkbenchRuntime {
         remote_result_received: false,
         remote_sequences: new Set(),
         remote_preview_bytes: 0,
+        remote_observed_at: Number.NEGATIVE_INFINITY,
       };
       this.setupTests.set(recovery.setup_id, state);
       this.applyRemoteSnapshot(state, recovery.snapshot);
@@ -522,8 +532,10 @@ export class WorkbenchRuntime {
   ): Promise<void> {
     if (!this.remoteJobs || !state.remote_job_id) return;
     let terminalObserved = false;
+    let retryMs = this.remoteRetryMs;
     try {
       while (!signal.aborted && !state.remote_result_received) {
+        let received = false;
         try {
           const attemptSignal = AbortSignal.any([
             signal,
@@ -533,6 +545,7 @@ export class WorkbenchRuntime {
             state.remote_job_id,
             attemptSignal,
           )) {
+            received = true;
             this.applyRemoteEvent(state, event);
             if (state.remote_result_received) break;
           }
@@ -541,21 +554,28 @@ export class WorkbenchRuntime {
         }
         if (signal.aborted || state.remote_result_received) return;
         let snapshot: WorkbenchJobSnapshot | null = null;
-        try {
-          snapshot = await this.remoteJobs.observe(state.remote_job_id);
-          this.applyRemoteSnapshot(state, snapshot);
-        } catch {
-          snapshot = null;
+        if (Date.now() - state.remote_observed_at >= this.remoteObserveMs) {
+          try {
+            state.remote_observed_at = Date.now();
+            snapshot = await this.remoteJobs.observe(state.remote_job_id);
+            this.applyRemoteSnapshot(state, snapshot);
+          } catch {
+            snapshot = null;
+          }
+          const terminal =
+            snapshot !== null && this.remoteStageIsTerminal(snapshot.stage);
+          if (terminal && terminalObserved) return;
+          terminalObserved = terminal;
         }
-        const terminal =
-          snapshot !== null && this.remoteStageIsTerminal(snapshot.stage);
-        if (terminal && terminalObserved) return;
-        terminalObserved = terminal;
-        await this.waitForRemoteRetry(signal);
+        // A queued Job has no logs yet: back off instead of reconnecting each second.
+        retryMs = received
+          ? this.remoteRetryMs
+          : Math.min(retryMs * 2, this.remoteRetryMaxMs);
+        await this.waitForRemoteRetry(signal, retryMs);
       }
     } finally {
       state.remote_stream_complete = true;
-      if (!signal.aborted) await this.refreshRemote(state);
+      if (!signal.aborted) await this.refreshRemote(state, true);
     }
   }
 
@@ -565,10 +585,13 @@ export class WorkbenchRuntime {
     );
   }
 
-  private async waitForRemoteRetry(signal: AbortSignal): Promise<void> {
+  private async waitForRemoteRetry(
+    signal: AbortSignal,
+    delayMs: number,
+  ): Promise<void> {
     if (signal.aborted) return;
     await new Promise<void>((resolve) => {
-      const timeout = setTimeout(finish, this.remoteRetryMs);
+      const timeout = setTimeout(finish, delayMs);
       signal.addEventListener("abort", finish, { once: true });
       function finish() {
         clearTimeout(timeout);
@@ -613,8 +636,11 @@ export class WorkbenchRuntime {
     state.error ??= "setup Job completed without a final result";
   }
 
-  private async refreshRemote(state: SetupState): Promise<void> {
+  /** Reads the Job stage, at most once per `remoteObserveMs` unless forced. */
+  private async refreshRemote(state: SetupState, force = false): Promise<void> {
     if (!this.remoteJobs || !state.remote_job_id) return;
+    if (!force && Date.now() - state.remote_observed_at < this.remoteObserveMs) return;
+    state.remote_observed_at = Date.now();
     try {
       this.applyRemoteSnapshot(
         state,
@@ -650,7 +676,7 @@ export class WorkbenchRuntime {
           await this.remoteJobs.cancel(state.remote_job_id),
         );
       } catch (error) {
-        await this.refreshRemote(state);
+        await this.refreshRemote(state, true);
         if (!["cancelled", "passed", "failed", "timed-out"].includes(state.status))
           throw new Error("Hugging Face setup Job could not be cancelled", {
             cause: error,
@@ -684,7 +710,7 @@ export class WorkbenchRuntime {
       throw new Error("setup test is unavailable for this actor");
     if (!state.attestable)
       throw new Error("setup test must be rerun after service restart");
-    if (state.remote_job_id) await this.refreshRemote(state);
+    if (state.remote_job_id) await this.refreshRemote(state, true);
     if (
       state.recipe_digest !== preview.recipe_digest ||
       state.revision_id !== preview.revision_id
