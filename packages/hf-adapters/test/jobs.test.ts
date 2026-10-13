@@ -339,10 +339,10 @@ describe("paginated Job reads", () => {
     expect(values[0]?.role).toBe("parent");
     expect(values.at(-1)?.role).toBe("trial");
     expect(transport.mock.calls[0]?.[0]).toBe(
-      "https://huggingface.co/api/jobs/example?label=harbor-hf-role%3Dparent",
+      "https://huggingface.co/api/jobs/example?label=harbor-hf-role%3Dparent&stage=RUNNING&stage=SCHEDULING",
     );
     expect(transport.mock.calls[1]?.[0]).toBe(
-      "https://huggingface.co/api/jobs/example?label=harbor-hf-role%3Dtrial",
+      "https://huggingface.co/api/jobs/example?label=harbor-hf-role%3Dtrial&stage=RUNNING&stage=SCHEDULING",
     );
     expect(transport.mock.calls[2]?.[0]).toBe(
       "https://huggingface.co/api/jobs/example?cursor=second",
@@ -359,6 +359,24 @@ describe("paginated Job reads", () => {
       .mockResolvedValue(new Response(JSON.stringify([apiJob("trial")])));
     await expect(reader(transport).list()).rejects.toThrow(
       "Jobs label filter was not applied",
+    );
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a Hub response that ignores the live stage filter", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            ...apiJob(),
+            status: { stage: "COMPLETED" },
+            finishedAt: "2026-09-04T00:01:00Z",
+          },
+        ]),
+      ),
+    );
+    await expect(reader(transport).list()).rejects.toThrow(
+      "Jobs stage filter was not applied",
     );
     expect(transport).toHaveBeenCalledTimes(1);
   });
@@ -426,28 +444,21 @@ describe("paginated Job reads", () => {
     const transport = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
-        new Response(JSON.stringify([apiJob()]), {
-          headers: { link: "<?cursor=second>; rel=next" },
-        }),
-      )
-      .mockResolvedValueOnce(
         new Response(
           JSON.stringify([
-            {
-              ...apiJob(),
-              status: { stage: "COMPLETED" },
-              finishedAt: "2026-09-04T00:01:00Z",
-            },
+            { ...apiJob(), status: { stage: "SCHEDULING" }, startedAt: null },
           ]),
+          { headers: { link: "<?cursor=second>; rel=next" } },
         ),
       )
+      .mockResolvedValueOnce(new Response(JSON.stringify([apiJob()])))
       .mockResolvedValueOnce(new Response("[]"));
 
     await expect(reader(transport).list()).resolves.toEqual([
       expect.objectContaining({
         id: "parent-job",
-        stage: "stopped",
-        finished_at: "2026-09-04T00:01:00Z",
+        stage: "running",
+        started_at: "2026-09-04T00:00:01Z",
       }),
     ]);
   });
@@ -549,6 +560,38 @@ describe("paginated Job reads", () => {
       "https://huggingface.co/api/jobs/example/parent-job",
     );
     expect(transport.mock.calls[0]?.[1]?.redirect).toBe("error");
+  });
+
+  it.each([
+    ["ERROR", 1],
+    ["COMPLETED", 1],
+    ["CANCELED", 1],
+    ["DELETED", 1],
+    ["RUNNING", 2],
+    ["SCHEDULING", 2],
+    ["PAUSED", 2],
+    ["DELETING", 2],
+  ])("reads a %s Job again only while it can still change", async (stage, reads) => {
+    const transport = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({ ...apiJob(), status: { stage }, finishedAt: null }),
+        ),
+    );
+    const jobs = reader(transport);
+    await jobs.inspect("parent-job");
+    await jobs.inspect("parent-job");
+    expect(transport).toHaveBeenCalledTimes(reads);
+  });
+
+  it("returns a copy of a cached final Job", async () => {
+    const jobs = reader(
+      async () =>
+        new Response(JSON.stringify({ ...apiJob(), status: { stage: "ERROR" } })),
+    );
+    const first = await jobs.inspect("parent-job");
+    first.stage = "running";
+    expect((await jobs.inspect("parent-job")).stage).toBe("error");
   });
 
   it.each([

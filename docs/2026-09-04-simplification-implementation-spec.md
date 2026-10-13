@@ -381,7 +381,8 @@ cancelled. The API and UI state this limitation.
 
 ## Reconciliation and status
 
-The reconciler lists current Jobs, then handles each new run in creation order.
+The reconciler lists live Jobs, then handles each new run in creation order. A
+finished parent is read by ID from the run's recorded parents.
 It does not launch more than `HARBOR_HF_MAX_ACTIVE_JOBS` live parent Jobs.
 Benchmark presets fix trial concurrency.
 
@@ -492,7 +493,7 @@ The cutover exposes these routes:
 | `POST` | `/api/v1/runs/:run_id/cancel` | Operator | Cancel a run. |
 | `GET` | `/api/v1/runs/:run_id/trials` | Signed in | List trial summaries. |
 | `GET` | `/api/v1/runs/:run_id/trials/:trial_name` | Signed in | Read one trial result. |
-| `GET` | `/api/v1/jobs` | Signed in | List parent Job observations. |
+| `GET` | `/api/v1/jobs` | Signed in | List live parent Job observations. |
 | `GET` | `/api/v1/leaderboard` | Public | List eligible finished results. |
 
 OAuth and bearer access remain. CSRF checks and the existing installer also

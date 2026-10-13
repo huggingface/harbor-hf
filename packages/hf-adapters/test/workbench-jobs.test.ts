@@ -155,6 +155,17 @@ describe("HuggingFaceWorkbenchJobs", () => {
       return init?.method === "POST";
     });
     expect(post).toBeDefined();
+    const reads = fetchMock.mock.calls
+      .filter((call) => !(call[1] as RequestInit | undefined)?.method)
+      .map((call) => new URL(String(call[0])).searchParams);
+    expect(reads.map((query) => query.getAll("label"))).toEqual([
+      ["harbor_hf_kind=workbench-setup", `harbor_hf_setup_id=${request.setup_id}`],
+      [],
+    ]);
+    expect(reads.map((query) => query.getAll("stage"))).toEqual([
+      [],
+      ["RUNNING", "SCHEDULING"],
+    ]);
     const postInit = post?.[1] as RequestInit | undefined;
     expect(postInit?.headers).toMatchObject({
       Authorization: `Bearer ${testToken}`,
@@ -218,11 +229,16 @@ describe("HuggingFaceWorkbenchJobs", () => {
       environment: {},
     };
     const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify([apiJob(activeBody)]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
+      async (url: string | URL | Request) =>
+        new Response(
+          JSON.stringify(
+            new URL(String(url)).searchParams.has("stage") ? [apiJob(activeBody)] : [],
+          ),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
     );
     vi.stubGlobal("fetch", fetchMock);
     const adapter = new HuggingFaceWorkbenchJobs({
@@ -232,7 +248,52 @@ describe("HuggingFaceWorkbenchJobs", () => {
       maxActiveJobs: 1,
     });
     await expect(adapter.start(request)).rejects.toThrow("namespace active Job limit");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers an owner's setups through a label-filtered listing", async () => {
+    const body: JobBody = {
+      dockerImage: "python@sha256:test",
+      command: [],
+      arguments: [],
+      flavor: "cpu-basic",
+      arch: "amd64",
+      timeoutSeconds: 180,
+      attempts: 1,
+      labels: {
+        harbor_hf_kind: "workbench-setup",
+        harbor_hf_setup_id: request.setup_id,
+        harbor_hf_owner_digest: request.owner_digest,
+        harbor_hf_recipe_digest: "a".repeat(64),
+        harbor_hf_revision_id: request.revision_id,
+      },
+      environment: {},
+    };
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify([apiJob(body)]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new HuggingFaceWorkbenchJobs({
+      namespace: "example",
+      accessToken: testToken,
+      image: "python@sha256:test",
+    });
+    await expect(adapter.list(request.owner_digest)).resolves.toEqual([
+      expect.objectContaining({ setup_id: request.setup_id }),
+    ]);
+    expect(
+      new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams.getAll("label"),
+    ).toEqual([
+      "harbor_hf_kind=workbench-setup",
+      `harbor_hf_owner_digest=${request.owner_digest}`,
+    ]);
+    await expect(adapter.list("d".repeat(64))).rejects.toThrow(
+      "Jobs label filter was not applied",
+    );
   });
 
   it("cancels a newly created Job whose returned specification is not attested", async () => {
@@ -278,8 +339,8 @@ describe("HuggingFaceWorkbenchJobs", () => {
     await expect(adapter.start(request)).rejects.toThrow(
       "does not match the requested setup",
     );
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(String(fetchMock.mock.calls[2]?.[0])).toContain("/job-workbench-1/cancel");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(String(fetchMock.mock.calls[3]?.[0])).toContain("/job-workbench-1/cancel");
   });
 
   it("parses only valid framed stdout, stderr, files, and result records", async () => {

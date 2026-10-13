@@ -105,29 +105,64 @@ function nextPage(header: string | null, current: URL, first: URL): URL | null {
   return next;
 }
 
-export async function listJobPages(
+// The Hub filters Jobs only by its current stages, and these two are the live ones.
+const LIVE_STAGES = ["RUNNING", "SCHEDULING"] as const;
+// A Job never leaves these stages, so an inspection that reports one is final.
+const FINAL_STAGES = new Set(["COMPLETED", "CANCELED", "ERROR", "DELETED"]);
+const MAX_FINAL_INSPECTIONS = 10_000;
+
+async function* pages(
+  options: ReadOnlyHuggingFaceJobsOptions,
+  query: readonly (readonly [string, string])[],
+): AsyncGenerator<unknown[]> {
+  const first = endpoint(options);
+  for (const [name, value] of query) first.searchParams.append(name, value);
+  let url: URL | null = first;
+  const seen = new Set<string>();
+  while (url) {
+    if (seen.has(url.href) || seen.size >= 1000)
+      throw new Error("Jobs pagination loop or page limit");
+    seen.add(url.href);
+    const response = await read(options, url);
+    const page: unknown = await response.json();
+    if (!Array.isArray(page)) throw new Error("Invalid Jobs page");
+    yield page;
+    url = nextPage(response.headers.get("link"), url, first);
+  }
+}
+
+/** Reads at most `limit` Jobs that match the Hub label and stage query, newest first. */
+export async function listFilteredJobs(
+  options: ReadOnlyHuggingFaceJobsOptions,
+  query: readonly (readonly [string, string])[],
+  limit: number,
+): Promise<unknown[]> {
+  const jobs: unknown[] = [];
+  for await (const page of pages(options, query)) {
+    jobs.push(...page);
+    if (jobs.length >= limit) break;
+  }
+  return jobs.slice(0, limit);
+}
+
+async function listJobPages(
   options: ReadOnlyHuggingFaceJobsOptions,
 ): Promise<readonly JobObservation[]> {
-  const first = endpoint(options);
   const values = new Map<string, JobObservation>();
-  // The account has many unrelated Jobs. Filter at the Hub before pagination;
-  // still collect both roles so late children and parent liveness remain visible.
+  // The account keeps every finished Job. Filter by role and live stage at the
+  // Hub, so a listing reads only live Jobs and never walks the Job history.
   for (const role of ["parent", "trial"] as const) {
-    const filtered = new URL(first);
-    filtered.searchParams.set("label", `harbor-hf-role=${role}`);
-    let url: URL | null = filtered;
-    const seen = new Set<string>();
-    while (url) {
-      if (seen.has(url.href) || seen.size >= 1000)
-        throw new Error("Jobs pagination loop or page limit");
-      seen.add(url.href);
-      const response = await read(options, url);
-      const page: unknown = await response.json();
-      if (!Array.isArray(page)) throw new Error("Invalid Jobs page");
+    const query: [string, string][] = [
+      ["label", `harbor-hf-role=${role}`],
+      ...LIVE_STAGES.map((stage): [string, string] => ["stage", stage]),
+    ];
+    for await (const page of pages(options, query)) {
       for (const input of page) {
         const job = observation(input);
         if (job) {
           if (job.role !== role) throw new Error("Jobs label filter was not applied");
+          if (job.stage !== "queued" && job.stage !== "running")
+            throw new Error("Jobs stage filter was not applied");
           const previous = values.get(job.id);
           if (
             previous &&
@@ -140,16 +175,15 @@ export async function listJobPages(
           values.set(job.id, job);
         }
       }
-      url = nextPage(response.headers.get("link"), url, filtered);
     }
   }
   return [...values.values()];
 }
 
-export async function inspectJob(
+async function inspectJob(
   options: ReadOnlyHuggingFaceJobsOptions,
   jobId: string,
-): Promise<JobObservation> {
+): Promise<{ job: JobObservation; final: boolean }> {
   if (!jobId || jobId === "." || jobId === "..")
     throw new Error("Invalid Job identity");
   const url = endpoint(options);
@@ -158,5 +192,29 @@ export async function inspectJob(
   const input: unknown = await response.json();
   const job = observation(input);
   if (!job || job.id !== jobId) throw new Error("Inspected Job identity mismatch");
-  return job;
+  return { job, final: FINAL_STAGES.has(String(object(object(input).status).stage)) };
+}
+
+/** Lists live owned Jobs and inspects one Job by ID, reading a final Job only once. */
+export class JobReader {
+  private readonly final = new Map<string, JobObservation>();
+
+  constructor(private readonly options: ReadOnlyHuggingFaceJobsOptions) {}
+
+  list(): Promise<readonly JobObservation[]> {
+    return listJobPages(this.options);
+  }
+
+  async inspect(jobId: string): Promise<JobObservation> {
+    const cached = this.final.get(jobId);
+    if (cached) return { ...cached };
+    const { job, final } = await inspectJob(this.options, jobId);
+    if (final) {
+      this.final.set(jobId, job);
+      const oldest = this.final.keys().next().value;
+      if (this.final.size > MAX_FINAL_INSPECTIONS && oldest !== undefined)
+        this.final.delete(oldest);
+    }
+    return { ...job };
+  }
 }

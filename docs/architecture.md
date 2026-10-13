@@ -218,15 +218,19 @@ child. The child cannot become live outside the controller's ownership scope.
 
 ## Reconciliation
 
-The reconciler lists owned Jobs before each pass and refreshes only the runs that
-can change. It rebuilds a run that the projection does not hold yet, or whose
-projected pricing or presentation could not be read, and refreshes each runnable
-run or run with a live Job under the run lock. When the pass ends, it lists Jobs
-again, refreshes the runs that it handled and any run that has a live Job, and
-publishes the listing. A cancelled, paused, finished or cost-stopped run without a
-live Job is not read again. It handles runs in creation order and applies the
+The reconciler lists live owned Jobs before each pass and refreshes only the runs
+that can change. The Jobs listing asks the Hub for the live stages only, so it
+never reads the namespace's finished Job history. A finished parent is read by
+ID, and a final Job stage is read only once. The reconciler rebuilds a run that
+the projection does not hold yet, or whose projected pricing or presentation could
+not be read, and refreshes each runnable run or run with a live Job under the run
+lock. When the pass ends, it lists live Jobs again, refreshes the runs that it
+handled and any run that had a live Job in the last ten minutes, and publishes the
+listing. A cancelled, paused, finished or cost-stopped run without a recent live
+Job is not read again. It handles runs in creation order and applies the
 configured parent Job capacity. See
-[Reconcile active runs](2026-10-12-reconcile-active-runs.md).
+[Reconcile active runs](2026-10-12-reconcile-active-runs.md) and
+[List only live Jobs](2026-10-13-live-jobs-listing.md).
 
 For each run it:
 

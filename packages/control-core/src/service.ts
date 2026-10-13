@@ -136,7 +136,7 @@ function sameRequest(left: RunRecordV1, right: RunRecordV1): boolean {
   );
 }
 
-/** How long a pass keeps refreshing a run after one of its Jobs stopped. */
+/** How long a pass keeps refreshing a run after it last had a live Job. */
 const settlingWindowMs = 10 * 60_000;
 
 async function readIfPresent(
@@ -192,6 +192,14 @@ export class ControlService {
     return this.replacementViews.view(id);
   }
   private readonly runOperations = new Map<string, Promise<void>>();
+  // When each run last had a live Job in a listing. The Jobs listing holds only
+  // live Jobs, so this is how a pass knows that a run stopped lately.
+  private readonly lastLive = new Map<string, number>();
+
+  private observeLive(jobs: readonly JobObservation[]): void {
+    const now = Date.now();
+    for (const job of jobs.filter(isLiveJob)) this.lastLive.set(job.run_id, now);
+  }
 
   constructor(
     readonly store: ObjectStore,
@@ -804,16 +812,12 @@ export class ControlService {
   async reconcile(): Promise<void> {
     let observedAt = new Date().toISOString();
     let observations = await this.jobs.list();
+    this.observeLive(observations);
     const initiallyLiveRuns = new Set(
       observations.filter(isLiveJob).map((job) => job.run_id),
     );
-    // A parent uploads its last files before it stops, and a Bucket listing can
-    // show them late. A run whose Job was live at the previous close, or stopped
-    // within the settling window, is refreshed again when this pass closes.
-    const previouslyLiveRuns = this.projection
-      .jobObservations()
-      .jobs.filter(isLiveJob)
-      .map((job) => job.run_id);
+    // Jobs that this pass started. A listing can show a new Job late.
+    const started: JobObservation[] = [];
     await this.refreshUnsettledProjection(observations);
     this.projection.observeJobs(observations, observedAt);
     // Runs that pass the idle shortcut below; the pass refreshes them again at its close.
@@ -851,12 +855,13 @@ export class ControlService {
           // The closing refresh covers a skipped run that has a live Job then.
           return;
         handled.add(initialView.record.run_id);
-        const observedById = new Map(observations.map((job) => [job.id, job]));
-        for (const job of await this.jobs.list()) observedById.set(job.id, job);
-        observations = [...observedById.values()];
-        // Keep fresh per-run cost/result reads without rescanning all history.
-        // Jobs remain freshly listed above: starts/stops and late children make
+        // A Job missing from a fresh live listing is no longer live, so replace
+        // the earlier observations. Starts/stops and late children make
         // pass-wide liveness caching unsafe.
+        const listed = await this.jobs.list();
+        this.observeLive(listed);
+        const listedIds = new Set(listed.map((job) => job.id));
+        observations = [...listed, ...started.filter((job) => !listedIds.has(job.id))];
         await this.projection.rebuild(
           this.store,
           observations,
@@ -996,30 +1001,21 @@ export class ControlService {
           return;
         }
         await this.appendParent(projected.record.run_id, parent);
+        started.push(parent);
         observations = [...observations, parent];
         activeParents += 1;
       });
     }
-    // Close the pass from a fresh complete listing: refresh the runs that this
-    // pass handled, any run that now has a live Job or a recently stopped one,
-    // and any run whose Job was live at the previous close, then publish it.
+    // Close the pass from a fresh live listing. A parent uploads its last files
+    // before it stops, and a Bucket listing can show them late. Refresh the runs
+    // that this pass handled and every run that had a live Job within the
+    // settling window, then publish the listing.
     observedAt = new Date().toISOString();
     const closing = await this.jobs.list();
-    const settlingSince = Date.parse(observedAt) - settlingWindowMs;
-    for (const id of [
-      ...new Set([
-        ...handled,
-        ...previouslyLiveRuns,
-        ...closing
-          .filter(
-            (job) =>
-              isLiveJob(job) ||
-              (job.finished_at !== null &&
-                Date.parse(job.finished_at) >= settlingSince),
-          )
-          .map((job) => job.run_id),
-      ]),
-    ].sort())
+    this.observeLive(closing);
+    for (const [id, liveAt] of this.lastLive)
+      if (Date.now() - liveAt > settlingWindowMs) this.lastLive.delete(id);
+    for (const id of [...new Set([...handled, ...this.lastLive.keys()])].sort())
       await this.projection.rebuild(this.store, closing, id);
     this.projection.observeJobs(closing, observedAt);
     if (inspectionErrors.length > 0)

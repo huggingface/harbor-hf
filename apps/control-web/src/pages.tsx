@@ -1205,7 +1205,7 @@ export function TrialPage() {
 
 function JobsTable({ jobs, showRun = true }: { jobs: ParentJob[]; showRun?: boolean }) {
   const now = useRunClock();
-  if (jobs.length === 0) return <Empty>No parent Jobs are available.</Empty>;
+  if (jobs.length === 0) return <Empty>No live parent Jobs.</Empty>;
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-800">
       <table className="w-full min-w-[700px] border-collapse text-left text-sm">
@@ -1256,7 +1256,7 @@ export function JobsPage() {
     <>
       <PageHeader
         title="Parent Jobs"
-        description="Each entry is one parent HF Job for one logical Harbor run. Harbor owns its trial Jobs."
+        description="Each entry is one live parent HF Job for one logical Harbor run. Harbor owns its trial Jobs."
         action={
           <Button variant="outline" onClick={() => void query.refetch()}>
             <RotateCw size={14} aria-hidden="true" /> Refresh

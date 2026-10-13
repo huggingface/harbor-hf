@@ -19,6 +19,7 @@ import {
   createJson,
   FilesystemObjectStore,
   fastAgentWorkbenchStarter,
+  isLiveJob,
   type JobObservation,
   type JobsPort,
   leaderboard,
@@ -35,7 +36,7 @@ class FakeJobs implements JobsPort {
   starts = 0;
 
   async list(): Promise<readonly JobObservation[]> {
-    return structuredClone(this.values);
+    return structuredClone(this.values.filter(isLiveJob));
   }
 
   async inspect(jobId: string): Promise<JobObservation> {
@@ -1290,6 +1291,17 @@ describe("reconciliation", () => {
     if (!first) throw new Error("missing parent");
     first.stage = "error";
     jobs.values.push({ ...first, id: "historical-parent" });
+    // A finished parent is not listed, so only a recorded parent is inspected.
+    const recorded = projection.run(run.run_id)?.state;
+    if (!recorded) throw new Error("missing run state");
+    await putJson(store, runStatePath(run.run_id), {
+      ...recorded,
+      revision: recorded.revision + 1,
+      parent_jobs: [
+        { id: "historical-parent", started_at: first.created_at },
+        ...recorded.parent_jobs,
+      ],
+    });
     await service.reconcile();
     await service.setDesiredState(run.run_id, "run", "test-subject");
     await service.reconcile();
