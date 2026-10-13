@@ -25,6 +25,8 @@ type Snapshot = {
   pending: boolean;
   trials: Map<string, RecordObservation>;
   lock: { identity: string; value: TrialProgress["lock"] } | undefined;
+  // Harbor's count of trials with a result, from the job's `result.json`.
+  completed: { identity: string; value: number | null } | undefined;
 };
 
 function identity(files: readonly ObjectEntry[]): string {
@@ -69,6 +71,7 @@ export class TrialProgressReader {
         pending: true,
         trials: entry?.trials ?? new Map(),
         lock: entry?.lock,
+        completed: entry?.completed,
       };
       this.snapshots.delete(runId);
       this.snapshots.set(runId, fresh);
@@ -155,8 +158,24 @@ export class TrialProgressReader {
   private async load(runId: string, snapshot: Snapshot): Promise<TrialProgress> {
     const observedAt = this.now();
     const prefix = `runs/${runId}/job/`;
-    const listing = await this.store.listDirectory(prefix, ["lock.json"]);
-    const lockIdentity = identity(listing.files);
+    const listing = await this.store.listDirectory(prefix, [
+      "lock.json",
+      "result.json",
+    ]);
+    const lockIdentity = identity(
+      listing.files.filter((file) => file.key === `${prefix}lock.json`),
+    );
+    const resultEntry = listing.files.find(
+      (file) => file.key === `${prefix}result.json`,
+    );
+    const resultIdentity = identity(resultEntry ? [resultEntry] : []);
+    let completed = snapshot.completed?.value ?? null;
+    if (snapshot.completed?.identity !== resultIdentity) {
+      const stats = (await this.read(resultEntry)) as { stats?: unknown } | null;
+      const count = (stats?.stats as { n_completed_trials?: unknown } | undefined)
+        ?.n_completed_trials;
+      completed = typeof count === "number" && Number.isFinite(count) ? count : null;
+    }
     let lock: unknown = snapshot.lock?.value ?? null;
     if (snapshot.lock?.identity !== lockIdentity) {
       lock = await this.read(
@@ -169,30 +188,41 @@ export class TrialProgressReader {
         throw new Error("Artifact changed while reading trial progress");
     }
     const directories = [...new Set(listing.directories)].sort();
-    const records = new Map<string, RecordObservation>();
-    // Bound concurrent Bucket operations, never recurse into logs/trajectories.
-    for (let start = 0; start < directories.length; start += 6) {
-      await Promise.all(
-        directories.slice(start, start + 6).map(async (base) => {
-          const name = base.slice(prefix.length, -1);
-          if (
-            !base.startsWith(prefix) ||
-            !base.endsWith("/") ||
-            !name ||
-            name.includes("/") ||
-            [".", ".."].includes(name)
-          )
-            throw new Error("Invalid trial directory observation");
-          const previous = snapshot.trials.get(name);
-          // The parent publishes a trial's result once, when the trial ends. A
-          // finished trial is not observed again while its directory is listed.
-          const record = previous?.trial.result?.finished_at
-            ? previous
-            : await this.observeTrial(runId, name, base, previous);
-          if (record) records.set(name, record);
-        }),
-      );
-    }
+    const observeAll = async (reuseFinished: boolean) => {
+      const records = new Map<string, RecordObservation>();
+      // Bound concurrent Bucket operations, never recurse into logs/trajectories.
+      for (let start = 0; start < directories.length; start += 6) {
+        await Promise.all(
+          directories.slice(start, start + 6).map(async (base) => {
+            const name = base.slice(prefix.length, -1);
+            if (
+              !base.startsWith(prefix) ||
+              !base.endsWith("/") ||
+              !name ||
+              name.includes("/") ||
+              [".", ".."].includes(name)
+            )
+              throw new Error("Invalid trial directory observation");
+            const previous = snapshot.trials.get(name);
+            const record =
+              reuseFinished && previous?.trial.result?.finished_at
+                ? previous
+                : await this.observeTrial(runId, name, base, previous);
+            if (record) records.set(name, record);
+          }),
+        );
+      }
+      return records;
+    };
+    // The parent publishes a trial's result once, when the trial ends, so a
+    // finished trial is not observed again while its directory is listed. Harbor
+    // removes a trial from its completed count when it runs the trial again: more
+    // finished records than that count means one of them is stale.
+    let records = await observeAll(true);
+    const finished = [...records.values()].filter(
+      (record) => record.trial.result?.finished_at,
+    ).length;
+    if (completed !== null && finished > completed) records = await observeAll(false);
     const ordered = [...records.values()].sort((a, b) =>
       a.trial.trial_name.localeCompare(b.trial.trial_name),
     );
@@ -209,6 +239,7 @@ export class TrialProgressReader {
     });
     snapshot.trials = new Map([...records].slice(0, this.options.maxTrials ?? 8192));
     snapshot.lock = { identity: lockIdentity, value: value.lock };
+    snapshot.completed = { identity: resultIdentity, value: completed };
     return value;
   }
 }

@@ -474,25 +474,38 @@ export class Projection {
       const names = new Map<string, string | null>();
       // Trial results are read by key, not listed: a missing result is a trial
       // that has not finished uploading. Fresh reads need no listed identity.
-      const trials = (
-        await boundedMap(directories, async (directory) => {
-          const lastName = last?.trials.get(directory);
-          const previous = lastName ? rowsByName.get(lastName) : undefined;
-          if (previous && (unchanged || finalTrial(previous))) {
-            names.set(directory, previous.trial_name);
-            return previous;
-          }
-          if (unchanged && lastName === null) {
-            names.set(directory, null);
-            return null;
-          }
-          const name = directory.slice(trialPrefix.length, -1);
-          const value = await readJsonIfPresent(store, `${directory}result.json`);
-          const summary = value === null ? null : summarizeTrial(runId, name, value);
-          names.set(directory, summary?.trial_name ?? null);
-          return summary;
-        })
-      ).filter((trial): trial is TrialSummary => trial !== null);
+      const readTrials = async (reuse: boolean) =>
+        (
+          await boundedMap(directories, async (directory) => {
+            const lastName = reuse ? last?.trials.get(directory) : undefined;
+            const previous = lastName ? rowsByName.get(lastName) : undefined;
+            if (previous && (unchanged || finalTrial(previous))) {
+              names.set(directory, previous.trial_name);
+              return previous;
+            }
+            if (reuse && unchanged && lastName === null) {
+              names.set(directory, null);
+              return null;
+            }
+            const name = directory.slice(trialPrefix.length, -1);
+            const value = await readJsonIfPresent(store, `${directory}result.json`);
+            const summary = value === null ? null : summarizeTrial(runId, name, value);
+            names.set(directory, summary?.trial_name ?? null);
+            return summary;
+          })
+        ).filter((trial): trial is TrialSummary => trial !== null);
+      let trials = await readTrials(true);
+      // Harbor removes a trial from its completed count when it runs the trial
+      // again under the same name. More finished rows than that count means a
+      // reused row is stale, so read every result again. An unchanged listing
+      // reuses everything, so a lasting mismatch costs at most one read per change.
+      const completed = numeric(asRecord(result?.stats)?.n_completed_trials);
+      if (
+        !unchanged &&
+        completed !== null &&
+        trials.filter(finalTrial).length > completed
+      )
+        trials = await readTrials(false);
       trialListings.set(runId, { listing: trialListing, trials: names });
       const receiptPrefix = `runs/${runId}/attempt-costs/`;
       const receiptKeys = [...keys]

@@ -134,6 +134,21 @@ describe("incremental native trial observations", () => {
     expect(f.store.read).not.toHaveBeenCalled();
   });
 
+  it("observes finished trials again when Harbor's completed count drops", async () => {
+    const f = fixture();
+    f.put("done/result.json", finished);
+    f.put("done/config.json", { trial_name: "done" });
+    f.put("result.json", { stats: { n_completed_trials: 1 } });
+    expect((await f.snapshot()).trials[0]?.result?.finished_at).toBe(
+      finished.finished_at,
+    );
+    // Harbor runs the trial again under the same name: its old result is removed.
+    f.objects.delete(`${base}done/result.json`);
+    f.put("result.json", { stats: { n_completed_trials: 0 } });
+    f.advance();
+    expect((await f.snapshot()).trials[0]?.result).toBeNull();
+  });
+
   it("removes disappeared directories immediately and does not resurrect their cached identity", async () => {
     const f = fixture();
     f.put("done/result.json", finished);

@@ -288,6 +288,28 @@ it.each([4, 64])(
   },
 );
 
+it("reads every result again when Harbor's completed count drops below the finished rows", async () => {
+  const id = await seed(0, "run");
+  const finished = { id: "attempt", trial_name: "task", finished_at: now };
+  await putJson(store, `runs/${id}/job/task/config.json`, { trial_name: "task" });
+  await putJson(store, `runs/${id}/job/task/result.json`, finished);
+  await putJson(store, `runs/${id}/job/result.json`, {
+    stats: { n_completed_trials: 1 },
+  });
+  jobs.push(observation(id));
+  await service.refresh();
+  await service.reconcile();
+  expect(projection.trials(id)).toHaveLength(1);
+  // Harbor runs the trial again under the same name: the parent removes its old
+  // result and uploads job metadata with the lower count.
+  objects.delete(`runs/${id}/job/task/result.json`);
+  await putJson(store, `runs/${id}/job/result.json`, {
+    stats: { n_completed_trials: 0 },
+  });
+  await service.reconcile();
+  expect(projection.trials(id)).toEqual([]);
+});
+
 it("refreshes a settled run once more after its last live Job stops", async () => {
   const id = await seed(0, "cancelled");
   const parent = observation(id);
