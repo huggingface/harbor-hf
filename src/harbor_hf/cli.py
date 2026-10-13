@@ -299,7 +299,7 @@ def run_cancel(
 
 @app.command("jobs")
 def jobs() -> None:
-    """List owned parent Jobs."""
+    """List live owned parent Jobs."""
     _echo(_request("GET", "/api/v1/jobs"))
 
 

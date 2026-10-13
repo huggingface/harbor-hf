@@ -156,7 +156,7 @@ for (const width of [1440, 390]) {
     await expect(entry("Trial progress").getByText("Loading…")).toBeVisible();
     await expect(page.getByText("0 tasks × 0 repeat slots")).toHaveCount(0);
     await expect(entry("Parent Jobs").getByText("Loading…")).toBeVisible();
-    await expect(page.getByText("No parent Jobs are available.")).toHaveCount(0);
+    await expect(page.getByText("No live parent Jobs.")).toHaveCount(0);
     releaseJobs();
     const shots = process.env.RUN_LOADING_SCREENSHOTS;
     if (shots)

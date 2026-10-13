@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type RunRecordV1, type RunStateV1, runId } from "@harbor-hf/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { JobObservation, JobsPort } from "../src/jobs.js";
+import { isLiveJob, type JobObservation, type JobsPort } from "../src/jobs.js";
 import { PresetCatalog } from "../src/presets.js";
 import { Projection } from "../src/projection.js";
 import { ControlService } from "../src/service.js";
@@ -75,7 +75,7 @@ beforeEach(async () => {
     list: vi.fn(async () => {
       counts.jobs++;
       delay(11);
-      return structuredClone(jobs);
+      return structuredClone(jobs.filter(isLiveJob));
     }),
     inspect: vi.fn(async (id) => {
       const job = jobs.find((item) => item.id === id);
@@ -240,14 +240,18 @@ it("refreshes a settled run once more after its last live Job stops", async () =
   await service.reconcile();
   expect(projection.trials(id)).toHaveLength(1);
   const rebuild = vi.spyOn(projection, "rebuild");
+  vi.setSystemTime(Date.now() + 11 * 60_000);
   await service.reconcile();
   expect(rebuild).not.toHaveBeenCalled();
 });
 
-it("keeps refreshing a run for ten minutes after its Job stopped", async () => {
+it("keeps refreshing a run for ten minutes after its Job was last live", async () => {
   const id = await seed(0, "cancelled");
-  jobs.push({ ...observation(id), stage: "stopped", finished_at: now });
+  jobs.push(observation(id));
   await service.refresh();
+  // The pass cancels the live parent, so the closing listing no longer has it.
+  await service.reconcile();
+  expect(port.cancel).toHaveBeenCalledOnce();
   const rebuild = vi.spyOn(projection, "rebuild");
   vi.setSystemTime(Date.parse(now) + 9 * 60_000);
   await service.reconcile();
@@ -256,6 +260,30 @@ it("keeps refreshing a run for ten minutes after its Job stopped", async () => {
   vi.setSystemTime(Date.parse(now) + 11 * 60_000);
   await service.reconcile();
   expect(rebuild).not.toHaveBeenCalled();
+});
+
+it("drops a Job that leaves the live listing during a pass", async () => {
+  const id = await seed(0, "run");
+  await putJson(store, `runs/${id}/state.json`, {
+    schema_version: "v1",
+    run_id: id,
+    revision: 1,
+    updated_at: now,
+    desired_state: "run",
+    actor: "synthetic-operator",
+    parent_jobs: [{ id: "stopping-parent", started_at: now }],
+  });
+  const parent = observation(id, "stopping-parent");
+  jobs.push(parent);
+  // The parent stops after the first listing of the pass.
+  vi.mocked(port.list).mockImplementationOnce(async () => {
+    const listed = structuredClone(jobs.filter(isLiveJob));
+    parent.stage = "stopped";
+    return listed;
+  });
+  await service.reconcile();
+  expect(port.inspect).toHaveBeenCalledWith("stopping-parent");
+  expect(port.startParent).toHaveBeenCalledExactlyOnceWith(id);
 });
 
 it("defers late Jobs on skipped history to the next pass, parent before child", async () => {

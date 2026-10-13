@@ -1,11 +1,12 @@
 import {
   cancelJob,
   getJob,
-  listJobs,
   runJob,
   type SpaceHardwareFlavor,
   streamJobLogs,
 } from "@huggingface/hub";
+
+import { listFilteredJobs } from "./jobs-read.js";
 
 const PROTOCOL_PREFIX = "HARBOR_HF_WORKBENCH_V1 ";
 const MAX_EVENT_LINE_BYTES = 128 * 1024;
@@ -13,6 +14,10 @@ const MAX_PATH_BYTES = 4 * 1024;
 const MAX_FILE_PREVIEW_BYTES = 64 * 1024;
 const FINALIZATION_GRACE_SECONDS = 60;
 const AMBIGUOUS_ADOPTION_ATTEMPTS = 5;
+// One Hub page. A setup ID names one Job, and an owner sees at most 20 setups.
+const SETUP_LISTING_LIMIT = 100;
+// The Hub filters Jobs only by its current stages, and these two hold a Job slot.
+const ACTIVE_STAGES = ["RUNNING", "SCHEDULING"] as const;
 
 const REMOTE_SETUP_WRAPPER = String.raw`
 import base64
@@ -244,12 +249,6 @@ function labels(request: WorkbenchJobRequest): Record<string, string> {
   };
 }
 
-function active(job: ApiJob): boolean {
-  return ["RUNNING", "SCHEDULING", "UPDATING", "PAUSED"].includes(
-    String(job.status.stage).toUpperCase(),
-  );
-}
-
 function snapshot(job: ApiJob): WorkbenchJobSnapshot {
   const stage = String(job.status.stage);
   return {
@@ -439,23 +438,42 @@ export class HuggingFaceWorkbenchJobs implements WorkbenchJobClient {
     };
   }
 
+  // The namespace keeps every finished Job. Filter by label at the Hub, so a
+  // listing never walks the Job history.
+  private async labeled(selector: Readonly<Record<string, string>>): Promise<ApiJob[]> {
+    const jobs = (await listFilteredJobs(
+      this.parameters(),
+      Object.entries(selector).map(([name, value]): [string, string] => [
+        "label",
+        `${name}=${value}`,
+      ]),
+      SETUP_LISTING_LIMIT,
+    )) as ApiJob[];
+    if (
+      jobs.some((job) =>
+        Object.entries(selector).some(([name, value]) => job.labels?.[name] !== value),
+      )
+    )
+      throw new Error("Jobs label filter was not applied");
+    return jobs;
+  }
+
   private async matching(request: WorkbenchJobRequest): Promise<ApiJob[]> {
-    const jobs = await listJobs(this.parameters());
-    return jobs.filter(
-      (job) =>
-        job.labels?.harbor_hf_kind === "workbench-setup" &&
-        job.labels.harbor_hf_setup_id === request.setup_id,
-    );
+    return this.labeled({
+      harbor_hf_kind: "workbench-setup",
+      harbor_hf_setup_id: request.setup_id,
+    });
   }
 
   async list(ownerDigest: string): Promise<WorkbenchJobRecovery[]> {
-    const jobs = await listJobs(this.parameters());
+    const jobs = await this.labeled({
+      harbor_hf_kind: "workbench-setup",
+      harbor_hf_owner_digest: ownerDigest,
+    });
     return jobs
       .filter(
         (job) =>
-          job.labels?.harbor_hf_kind === "workbench-setup" &&
-          job.labels.harbor_hf_owner_digest === ownerDigest &&
-          typeof job.labels.harbor_hf_setup_id === "string" &&
+          typeof job.labels?.harbor_hf_setup_id === "string" &&
           typeof job.labels.harbor_hf_recipe_digest === "string" &&
           typeof job.labels.harbor_hf_revision_id === "string",
       )
@@ -488,19 +506,20 @@ export class HuggingFaceWorkbenchJobs implements WorkbenchJobClient {
   private async startSerialized(
     request: WorkbenchJobRequest,
   ): Promise<WorkbenchJobSnapshot> {
-    const jobs = await listJobs(this.parameters());
-    const existing = jobs.filter(
-      (job) =>
-        job.labels?.harbor_hf_kind === "workbench-setup" &&
-        job.labels.harbor_hf_setup_id === request.setup_id,
-    );
+    const existing = await this.matching(request);
     if (existing.length > 1)
       throw new Error("multiple Hugging Face Jobs match this setup test");
     if (existing[0]) {
       verifyJob(existing[0], request, this.config);
       return snapshot(existing[0]);
     }
-    if (jobs.filter(active).length >= (this.config.maxActiveJobs ?? 16))
+    const maxActiveJobs = this.config.maxActiveJobs ?? 16;
+    const active = await listFilteredJobs(
+      this.parameters(),
+      ACTIVE_STAGES.map((stage): [string, string] => ["stage", stage]),
+      maxActiveJobs,
+    );
+    if (active.length >= maxActiveJobs)
       throw new Error("the namespace active Job limit has been reached");
     let job: ApiJob;
     let created = false;

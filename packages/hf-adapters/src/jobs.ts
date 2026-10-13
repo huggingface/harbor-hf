@@ -7,7 +7,7 @@ import type {
 import { cancelJob, runJob, type SpaceHardwareFlavor } from "@huggingface/hub";
 
 import { isolatedGitSourceEnvironment } from "./git-environment.js";
-import { inspectJob, listJobPages, observation } from "./jobs-read.js";
+import { JobReader, observation } from "./jobs-read.js";
 import {
   withSelectedInferenceSecret,
   type ReviewedVerifierGrant,
@@ -37,14 +37,18 @@ export interface HuggingFaceJobsOptions extends ReadOnlyHuggingFaceJobsOptions {
 }
 
 export class ReadOnlyHuggingFaceJobs implements JobsPort {
-  constructor(private readonly options: ReadOnlyHuggingFaceJobsOptions) {}
+  private readonly reader: JobReader;
+
+  constructor(options: ReadOnlyHuggingFaceJobsOptions) {
+    this.reader = new JobReader(options);
+  }
 
   async list(): Promise<readonly JobObservation[]> {
-    return listJobPages(this.options);
+    return this.reader.list();
   }
 
   async inspect(jobId: string): Promise<JobObservation> {
-    return inspectJob(this.options, jobId);
+    return this.reader.inspect(jobId);
   }
 
   async startParent(_runId: string): Promise<JobObservation> {
@@ -60,6 +64,7 @@ export class HuggingFaceJobs implements JobsPort {
   private readonly hardware: SpaceHardwareFlavor;
   private readonly localRoot: string;
   private readonly timeoutSeconds: number;
+  private readonly reader: JobReader;
 
   constructor(private readonly options: HuggingFaceJobsOptions) {
     if (!IMMUTABLE_IMAGE.test(options.parentImage))
@@ -73,6 +78,7 @@ export class HuggingFaceJobs implements JobsPort {
     this.hardware = options.hardware ?? "cpu-basic";
     this.localRoot = options.localRoot ?? "/data";
     this.timeoutSeconds = options.timeoutSeconds ?? 86_400;
+    this.reader = new JobReader(this.options);
   }
 
   private credentials(): {
@@ -90,11 +96,11 @@ export class HuggingFaceJobs implements JobsPort {
   }
 
   async list(): Promise<readonly JobObservation[]> {
-    return listJobPages(this.options);
+    return this.reader.list();
   }
 
   async inspect(jobId: string): Promise<JobObservation> {
-    return inspectJob(this.options, jobId);
+    return this.reader.inspect(jobId);
   }
 
   async startParent(runId: string): Promise<JobObservation> {
