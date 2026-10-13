@@ -1355,6 +1355,12 @@ describe("reconciliation", () => {
     await service.reconcile();
 
     expect(jobs.starts).toBe(1);
+    // The closing refresh keeps the new parent while the listing lags.
+    expect(projection.jobs().map((job) => job.id)).toEqual(["parent-1"]);
+    expect(projection.listRuns().map((view) => view.status).sort()).toEqual([
+      "queued",
+      "running",
+    ]);
   });
 
   it("cancels the parent and child on pause, then resumes Harbor", async () => {

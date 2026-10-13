@@ -818,6 +818,10 @@ export class ControlService {
     );
     // Jobs that this pass started. A listing can show a new Job late.
     const started: JobObservation[] = [];
+    const withStarted = (listed: readonly JobObservation[]): JobObservation[] => {
+      const ids = new Set(listed.map((job) => job.id));
+      return [...listed, ...started.filter((job) => !ids.has(job.id))];
+    };
     await this.refreshUnsettledProjection(observations);
     this.projection.observeJobs(observations, observedAt);
     // Runs that pass the idle shortcut below; the pass refreshes them again at its close.
@@ -860,8 +864,7 @@ export class ControlService {
         // pass-wide liveness caching unsafe.
         const listed = await this.jobs.list();
         this.observeLive(listed);
-        const listedIds = new Set(listed.map((job) => job.id));
-        observations = [...listed, ...started.filter((job) => !listedIds.has(job.id))];
+        observations = withStarted(listed);
         await this.projection.rebuild(
           this.store,
           observations,
@@ -1011,7 +1014,7 @@ export class ControlService {
     // that this pass handled and every run that had a live Job within the
     // settling window, then publish the listing.
     observedAt = new Date().toISOString();
-    const closing = await this.jobs.list();
+    const closing = withStarted(await this.jobs.list());
     this.observeLive(closing);
     for (const [id, liveAt] of this.lastLive)
       if (Date.now() - liveAt > settlingWindowMs) this.lastLive.delete(id);
