@@ -2284,23 +2284,44 @@ describe("immutable launch pricing and shared SQL estimates", () => {
 });
 
 it("uses reviewed credential delivery for an HF provider run without a selected key", async () => {
-  const start = vi.fn(async (record: RunRecordV1) => jobs.startParent(record.run_id));
+  const policy = vi.fn(() => new InferenceBindings());
+  const read = vi.fn(() => undefined);
+  const start = vi.fn(async (record: RunRecordV1) =>
+    withSelectedInferenceSecret(
+      record,
+      inferenceImage,
+      policy,
+      read,
+      async (secrets) => {
+        expect(secrets).toEqual({ HF_INFERENCE_TOKEN: "synthetic-router-value" });
+        return jobs.startParent(record.run_id);
+      },
+      [],
+      "synthetic-router-value",
+    ),
+  );
   service = new ControlService(store, projection, presets, jobs, {
     harborRevision: "d".repeat(40),
     mountRoot: "/data",
     maxActiveJobs: 1,
     restartDelayMs: 0,
     inference: {
-      policy: () => new InferenceBindings(),
+      policy,
       image: inferenceImage,
       present: () => false,
       start,
     },
   });
   const submitted = await submit("hf-credential-delivery");
+  policy.mockClear();
   await service.reconcile();
   expect(start).toHaveBeenCalledExactlyOnceWith(submitted.run);
   expect(jobs.starts).toBe(1);
+  expect(policy).toHaveBeenCalledTimes(2);
+  expect(read).not.toHaveBeenCalled();
+  await service.reconcile();
+  expect(policy).toHaveBeenCalledTimes(2);
+  expect(start).toHaveBeenCalledTimes(1);
 });
 
 it("revalidates selected credentials at submit and every parent start/restart", async () => {
