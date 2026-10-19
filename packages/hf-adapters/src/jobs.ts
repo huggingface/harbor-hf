@@ -121,6 +121,7 @@ export class HuggingFaceJobs implements JobsPort {
       readSelected,
       (secrets, environment) => this.#startParent(run.run_id, secrets, environment),
       this.options.verifierGrants,
+      this.options.inferenceToken,
     );
   }
 

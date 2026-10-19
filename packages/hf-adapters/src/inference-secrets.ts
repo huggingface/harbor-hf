@@ -15,7 +15,7 @@ export interface ReviewedVerifierGrant {
   base_url: string;
 }
 
-/** Ephemeral delivery boundary. No environment enumeration, serialization or HF token path.
+/** Ephemeral delivery boundary. No environment enumeration or serialization.
  * The Jobs adapter supplies the transport; runtime derives reviewed policy from the private registry.
  */
 export async function withSelectedInferenceSecret<T>(
@@ -28,6 +28,7 @@ export async function withSelectedInferenceSecret<T>(
     environment: Readonly<Record<string, string>>,
   ) => Promise<T>,
   verifierGrants: readonly ReviewedVerifierGrant[] = [],
+  routerInferenceToken?: string,
 ): Promise<T> {
   let selected: ReturnType<InferenceBindings["selected"]>;
   let verifierSource: string | null = null;
@@ -49,8 +50,8 @@ export async function withSelectedInferenceSecret<T>(
         datasets[0]?.repo !== verifierGrant.dataset_repo ||
         datasets[0]?.path !== verifierGrant.dataset_path ||
         Object.keys(config.verifier?.env ?? {}).length !== 0 ||
-        !selected ||
-        selected.ref === verifierGrant.ref
+        (!selected && !routerInferenceToken) ||
+        selected?.ref === verifierGrant.ref
       )
         throw new InferenceBindingDenied();
       verifierSource = reviewed.reviewedSource(verifierGrant.ref, run.submitted_by);
@@ -61,6 +62,8 @@ export async function withSelectedInferenceSecret<T>(
     throw new InferenceBindingDenied();
   }
   const secrets: Record<string, string> = {};
+  if (!selected && routerInferenceToken)
+    secrets.HF_INFERENCE_TOKEN = routerInferenceToken;
   if (selected) {
     let value: string | undefined;
     try {
@@ -81,7 +84,11 @@ export async function withSelectedInferenceSecret<T>(
       } catch {
         throw new InferenceBindingDenied();
       }
-      if (typeof value !== "string" || !value || value === secrets[selected?.ref ?? ""])
+      if (
+        typeof value !== "string" ||
+        !value ||
+        value === secrets[selected?.ref ?? "HF_INFERENCE_TOKEN"]
+      )
         throw new InferenceBindingDenied();
       secrets.AGENT_JUDGE_API_KEY = value;
       verifierEnvironment.AGENT_JUDGE_API_URL = verifierGrant.base_url;

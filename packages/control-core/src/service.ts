@@ -1018,11 +1018,11 @@ export class ControlService {
         let parent: JobObservation;
         try {
           parent = await this.sequenceInference(async () => {
-            const selected = await this.selectedInference(
+            await this.selectedInference(
               projected.record.harbor_job_config,
               projected.record.submitted_by,
             );
-            return selected && this.options.inference
+            return this.options.inference
               ? this.options.inference.start(projected.record)
               : this.jobs.startParent(projected.record.run_id);
           });

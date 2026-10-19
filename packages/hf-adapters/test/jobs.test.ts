@@ -225,79 +225,135 @@ describe("reviewed provider parent transport", () => {
     );
   });
 
-  it("delivers a separately scoped verifier key and route to the same ephemeral parent", async () => {
-    const {
-      fixture,
-      actor,
-      image: worker,
-    } = await import("../../control-core/test/inference-fixture.js");
-    const { InferenceBindings } = await import("@harbor-hf/control-core");
-    const { validateRunRecord } = await import("@harbor-hf/contracts");
-    const data = fixture();
-    data.manifest.bindings.push({
-      ...data.manifest.bindings[0]!,
-      ref: "INFERENCE_API_KEY_JUDGE",
-      source_env: "INFERENCE_SECRET_JUDGE",
-    });
-    const source = `https://huggingface.co/datasets/example-org/tasks.git@${"b".repeat(40)}`;
-    const record = validateRunRecord({
-      schema_version: "v1",
-      run_id: runId,
-      created_at: "2026-01-01T00:00:00Z",
-      submitted_by: actor,
-      role: "diagnostic",
-      harbor_revision: "a".repeat(40),
-      submission: {
-        benchmark: { name: "synthetic", preset: "one" },
-        cost_ceiling_usd: 1,
-      },
-      harbor_job_config: { ...data.job(), datasets: [{ repo: source, path: "tasks" }] },
-    });
-    const requests: Record<string, unknown>[] = [];
-    const jobs = new HuggingFaceJobs({
-      namespace: "example",
-      accessToken: controlToken,
-      inferenceToken,
-      bucketId: "example/bucket",
-      parentImage: worker,
-      verifierGrants: [
-        {
-          ref: "INFERENCE_API_KEY_JUDGE",
-          worker_image: worker,
+  it.each(["selected", "hf"])(
+    "delivers a separate verifier key with %s inference",
+    async (route) => {
+      const {
+        fixture,
+        actor,
+        image: worker,
+      } = await import("../../control-core/test/inference-fixture.js");
+      const { InferenceBindings } = await import("@harbor-hf/control-core");
+      const { validateRunRecord } = await import("@harbor-hf/contracts");
+      const data = fixture();
+      data.manifest.bindings.push({
+        ...data.manifest.bindings[0]!,
+        ref: "INFERENCE_API_KEY_JUDGE",
+        source_env: "INFERENCE_SECRET_JUDGE",
+      });
+      const source = `https://huggingface.co/datasets/example-org/tasks.git@${"b".repeat(40)}`;
+      const record = validateRunRecord({
+        schema_version: "v1",
+        run_id: runId,
+        created_at: "2026-01-01T00:00:00Z",
+        submitted_by: actor,
+        role: "diagnostic",
+        harbor_revision: "a".repeat(40),
+        submission: {
           benchmark: { name: "synthetic", preset: "one" },
-          dataset_repo: source,
-          dataset_path: "tasks",
-          base_url: "https://judge.invalid/v1",
-          model: "judge-model",
+          cost_ceiling_usd: 1,
         },
-      ],
-      fetch: (async (_input, init) => {
-        requests.push(JSON.parse(String(init?.body)));
-        return new Response(JSON.stringify(apiJob()), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }) as typeof fetch,
-    });
-    const read = (name: string) => `synthetic-${name}`;
-    await jobs.startReviewedParent(
-      record,
-      () => new InferenceBindings(data.manifest),
-      read,
-    );
-    expect(requests[0]?.secrets).toMatchObject({
-      INFERENCE_API_KEY_EXAMPLE: "synthetic-INFERENCE_SECRET_EXAMPLE",
-      AGENT_JUDGE_API_KEY: "synthetic-INFERENCE_SECRET_JUDGE",
-    });
-    expect(requests[0]?.environment).toMatchObject({
-      AGENT_JUDGE_API_URL: "https://judge.invalid/v1",
-      AGENT_JUDGE_MODEL: "judge-model",
-    });
-    expect(JSON.stringify(requests[0]?.environment)).not.toContain(
-      "synthetic-INFERENCE_SECRET_JUDGE",
-    );
-    expect(JSON.stringify(record)).not.toContain("synthetic-INFERENCE_SECRET_JUDGE");
-  });
+        harbor_job_config: {
+          ...data.job(),
+          ...(route === "hf"
+            ? {
+                agents: [
+                  {
+                    name: "pi",
+                    model_name: "openai/example/model:synthetic",
+                    env: {
+                      OPENAI_API_KEY: "${HF_INFERENCE_TOKEN}",
+                      OPENAI_BASE_URL: "https://router.huggingface.co/v1",
+                    },
+                  },
+                ],
+              }
+            : {}),
+          datasets: [{ repo: source, path: "tasks" }],
+        },
+      });
+      const requests: Record<string, unknown>[] = [];
+      const jobs = new HuggingFaceJobs({
+        namespace: "example",
+        accessToken: controlToken,
+        inferenceToken,
+        bucketId: "example/bucket",
+        parentImage: worker,
+        verifierGrants: [
+          {
+            ref: "INFERENCE_API_KEY_JUDGE",
+            worker_image: worker,
+            benchmark: { name: "synthetic", preset: "one" },
+            dataset_repo: source,
+            dataset_path: "tasks",
+            base_url: "https://judge.invalid/v1",
+            model: "judge-model",
+          },
+        ],
+        fetch: (async (_input, init) => {
+          requests.push(JSON.parse(String(init?.body)));
+          return new Response(JSON.stringify(apiJob()), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }) as typeof fetch,
+      });
+      const read = (name: string) => `synthetic-${name}`;
+      await jobs.startReviewedParent(
+        record,
+        () => new InferenceBindings(data.manifest),
+        read,
+      );
+      expect(requests[0]?.secrets).toMatchObject({
+        ...(route === "hf"
+          ? { HF_INFERENCE_TOKEN: inferenceToken }
+          : { INFERENCE_API_KEY_EXAMPLE: "synthetic-INFERENCE_SECRET_EXAMPLE" }),
+        AGENT_JUDGE_API_KEY: "synthetic-INFERENCE_SECRET_JUDGE",
+      });
+      expect(requests[0]?.environment).toMatchObject({
+        AGENT_JUDGE_API_URL: "https://judge.invalid/v1",
+        AGENT_JUDGE_MODEL: "judge-model",
+      });
+      expect(JSON.stringify(requests[0]?.environment)).not.toContain(
+        "synthetic-INFERENCE_SECRET_JUDGE",
+      );
+      expect(JSON.stringify(record)).not.toContain("synthetic-INFERENCE_SECRET_JUDGE");
+      if (route === "hf") {
+        const policy = () => new InferenceBindings(data.manifest);
+        await expect(
+          jobs.startReviewedParent(record, policy, () => undefined),
+        ).rejects.toThrow("not reviewed");
+        await expect(
+          jobs.startReviewedParent(
+            { ...record, submitted_by: "ungranted" },
+            policy,
+            read,
+          ),
+        ).rejects.toThrow("not reviewed");
+        await expect(
+          jobs.startReviewedParent(
+            {
+              ...record,
+              harbor_job_config: {
+                ...record.harbor_job_config,
+                datasets: [{ repo: source, path: "other" }],
+              },
+            },
+            policy,
+            read,
+          ),
+        ).rejects.toThrow("not reviewed");
+        await expect(
+          jobs.startReviewedParent(
+            record,
+            () => new InferenceBindings(data.manifest),
+            () => inferenceToken,
+          ),
+        ).rejects.toThrow("not reviewed");
+        expect(requests).toHaveLength(1);
+      }
+    },
+  );
 });
 
 describe("paginated Job reads", () => {
