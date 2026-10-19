@@ -32,7 +32,7 @@ from harbor.registry.client.git_repo import resolve_repo_source
 from harbor.registry.client.package import PackageDatasetClient
 from pydantic import ValidationError
 
-REVISION = "3c82380859d187957cfd5cd64802b076d9779550"
+REVISION = "11a0fe2d3305e144a5e8af625d50a7394f293f75"
 COMMIT = re.compile(r"[0-9a-f]{40}")
 CONTENT = re.compile(r"sha256:[0-9a-f]{64}")
 HF_DATASET_GIT_PATH = re.compile(

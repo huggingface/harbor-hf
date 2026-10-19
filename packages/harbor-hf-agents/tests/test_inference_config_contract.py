@@ -2,11 +2,47 @@
 
 import ast
 import json
+import tomllib
 from importlib.metadata import distribution
+from pathlib import Path
 
 from harbor.models.job.config import JobConfig
 
-PIN = "3c82380859d187957cfd5cd64802b076d9779550"
+PIN = "11a0fe2d3305e144a5e8af625d50a7394f293f75"
+
+
+def test_worker_dependency_and_revision_guards_agree():
+    from harbor_hf_agents import launch
+    from harbor_hf_agents.scrub_before_upload import SCRUB_REVISION
+
+    project = Path(__file__).parents[1] / "pyproject.toml"
+    dependencies = tomllib.loads(project.read_text())["project"]["dependencies"]
+    [harbor] = [value for value in dependencies if value.startswith("harbor[")]
+    assert harbor.endswith("@" + PIN)
+    assert launch.REVISION == SCRUB_REVISION == PIN
+    root = Path(__file__).parents[3]
+    control = root / "apps/control-api/src/harbor-revision.ts"
+    assert control.read_text().strip() == f'export const HARBOR_REVISION = "{PIN}";'
+    launch.check_revision()
+
+
+def test_exported_job_schema_matches_the_installed_harbor():
+    root = Path(__file__).parents[3]
+    schema = root / "packages/contracts/schemas/harbor-job-config-v1.schema.json"
+    saved = json.loads(schema.read_text())
+    native = JobConfig.model_json_schema()
+    # Only document identity belongs to this repository; fields belong to Harbor.
+    for key in ("$id", "$schema", "title"):
+        saved.pop(key, None)
+        native.pop(key, None)
+    assert saved == native
+
+
+def test_provider_library_matches_the_declared_runtime_pin():
+    project = Path(__file__).parents[1] / "pyproject.toml"
+    dependencies = tomllib.loads(project.read_text())["project"]["dependencies"]
+    [provider] = [value for value in dependencies if value.startswith("litellm==")]
+    assert distribution("litellm").version == provider.split("==", 1)[1]
 
 
 def test_public_config_preserves_native_model_and_unresolved_reference(monkeypatch):
