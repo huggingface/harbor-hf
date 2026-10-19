@@ -1,12 +1,12 @@
 """Revision-scoped native scrub ordering; not an additional sanitizer.
 
 Reviewed Harbor trial/trial.py, trial/hooks.py, trial/queue.py and job.py at
-SCRUB_REVISION (scrubbing introduced in 046e2a6d). Re-verified at the current
-pin: ``Trial._emit`` and ``Trial._scrub_jobs_dir`` are unchanged, ``trial/hooks.py``
-is unchanged so END is still the last trial event, and the new trial writes
-(``stream.json`` from ``_write_stream_handle`` and injected skills from
-``_upload_injected_skills``) go into the trial directory or the trial environment
-only, like ``trial/sync_trajectory.py`` and ``trial/artifact_handler.py``.
+SCRUB_REVISION (scrubbing introduced in 046e2a6d). Re-verified for Harbor 0.24:
+``Trial._emit`` and ``Trial._scrub_jobs_dir`` are unchanged from the preceding
+pin, as are ``trial/hooks.py`` and ``job.py``. END still precedes native finally
+scrubbing. Separate-verifier definition and timeout handling changed; neither
+adds an artifact writer outside the existing trial paths. Trajectory syncing
+continues to write inside the trial's agent directory.
 Replace this integration at the first reviewed pin with a supported
 post-sanitization hook or pre-END scrub.
 
@@ -32,7 +32,7 @@ from harbor.trial.trial import Trial
 
 from harbor_hf_agents import launch
 
-SCRUB_REVISION = "3c82380859d187957cfd5cd64802b076d9779550"
+SCRUB_REVISION = "11a0fe2d3305e144a5e8af625d50a7394f293f75"
 _NATIVE_EMIT = Trial._emit
 _PATCH_LOCK = Lock()
 

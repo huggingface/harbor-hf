@@ -444,6 +444,7 @@
           "type": "array"
         },
         "extra_docker_compose": {
+          "description": "Additional Docker Compose overlays for the agent environment only.",
           "items": {
             "format": "path",
             "type": "string"
@@ -490,6 +491,7 @@
             }
           ],
           "default": null,
+          "description": "Additional mounts for the agent environment only.",
           "title": "Mounts"
         },
         "override_cpus": {
@@ -551,6 +553,11 @@
           ],
           "default": null
         },
+        "stream": {
+          "default": false,
+          "title": "Stream",
+          "type": "boolean"
+        },
         "suppress_override_warnings": {
           "default": false,
           "description": "Deprecated; has no effect.",
@@ -591,7 +598,6 @@
         "islo",
         "tensorlake",
         "cwsandbox",
-        "wandb",
         "use-computer",
         "cua-cloud",
         "blaxel",
@@ -601,7 +607,11 @@
         "hf-sandbox",
         "hyperbrowser",
         "vercel",
-        "kata"
+        "runta",
+        "prime",
+        "kata",
+        "mosaic",
+        "smol"
       ],
       "title": "EnvironmentType",
       "type": "string"
@@ -815,10 +825,10 @@
       "type": "object"
     },
     "SourceJobConfig": {
-      "description": "A source job this job derives from.\n\n``action`` names the derivation and must be stated explicitly; only\n``regrade`` exists today. A ``hub`` source records only the hub job\nUUID; a ``local`` source records the job directory path plus its UUID\nwhen known.",
+      "description": "A source job this job derives from.\n\n``action`` names the derivation and must be stated explicitly. ``regrade``\nderives one regrade trial per matching source trial. ``diff`` compares the\nsource against the target job and derives only the required regrades and\nreruns. A ``hub`` source records only the hub job UUID; a ``local`` source\nrecords the job directory path plus its UUID when known.",
       "properties": {
         "action": {
-          "const": "regrade",
+          "enum": ["regrade", "diff"],
           "title": "Action",
           "type": "string"
         },
@@ -1381,6 +1391,7 @@
     },
     "n_attempts": {
       "default": 1,
+      "minimum": 1,
       "title": "N Attempts",
       "type": "integer"
     },
@@ -1401,7 +1412,7 @@
       "$ref": "#/$defs/RetryConfig"
     },
     "source_jobs": {
-      "description": "Source jobs this job derives from. When non-empty with action='regrade', trials are derived from the source jobs' recorded trials (one regrade trial per source trial, matched by task name against 'tasks') instead of the tasks x agents x attempts expansion. The CLI passes a single source; multiple sources are supported programmatically.",
+      "description": "Source jobs this job derives from. 'regrade' creates one regrade trial per matching source trial. 'diff' compares the normal target expansion against the sources and creates only required regrades and reruns. All source jobs must use the same action.",
       "items": {
         "$ref": "#/$defs/SourceJobConfig"
       },

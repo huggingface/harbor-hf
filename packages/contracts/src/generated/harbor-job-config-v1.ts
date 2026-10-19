@@ -96,10 +96,16 @@ export type Delete = boolean
  * Run-specific hostnames or IP addresses merged into the [environment] network baseline at agent env start.
  */
 export type ExtraAllowedHosts1 = string[]
+/**
+ * Additional Docker Compose overlays for the agent environment only.
+ */
 export type ExtraDockerCompose = string[]
 export type ForceBuild = boolean
 export type ImportPath1 = (string | null)
 export type ResourceMode1 = ("auto" | "limit" | "request" | "guarantee" | "ignore")
+/**
+ * Additional mounts for the agent environment only.
+ */
 export type Mounts = (ServiceVolumeConfig[] | null)
 export type CreateHostPath = false
 export type Selinux = ("z" | "Z")
@@ -121,11 +127,12 @@ export type Topology = string
  * TPU accelerator type. Accepts either a user-friendly alias (e.g., 'v6e', 'trillium', 'v4') or a canonical GKE label (e.g., 'tpu-v6e-slice', 'tpu7x').
  */
 export type Type1 = string
+export type Stream = boolean
 /**
  * Deprecated; has no effect.
  */
 export type SuppressOverrideWarnings = boolean
-export type EnvironmentType = ("docker" | "podman" | "daytona" | "e2b" | "modal" | "runloop" | "langsmith" | "ec2" | "gke" | "ack" | "openshift" | "novita" | "apple-container" | "singularity" | "islo" | "tensorlake" | "cwsandbox" | "wandb" | "use-computer" | "cua-cloud" | "blaxel" | "opensandbox" | "beam" | "skypilot" | "hf-sandbox" | "hyperbrowser" | "vercel" | "kata")
+export type EnvironmentType = ("docker" | "podman" | "daytona" | "e2b" | "modal" | "runloop" | "langsmith" | "ec2" | "gke" | "ack" | "openshift" | "novita" | "apple-container" | "singularity" | "islo" | "tensorlake" | "cwsandbox" | "use-computer" | "cua-cloud" | "blaxel" | "opensandbox" | "beam" | "skypilot" | "hf-sandbox" | "hyperbrowser" | "vercel" | "runta" | "prime" | "kata" | "mosaic" | "smol")
 export type EnvironmentBuildTimeoutMultiplier = (number | null)
 /**
  * Paths to extra instruction files appended to each task instruction. File contents are appended before ``extra_instructions``.
@@ -176,12 +183,12 @@ export type MinWaitSec = number
  * Multiplier for exponential backoff wait time
  */
 export type WaitMultiplier = number
-export type Action = "regrade"
+export type Action = ("regrade" | "diff")
 export type JobId = (string | null)
 export type Path1 = (string | null)
 export type Type2 = ("local" | "hub")
 /**
- * Source jobs this job derives from. When non-empty with action='regrade', trials are derived from the source jobs' recorded trials (one regrade trial per source trial, matched by task name against 'tasks') instead of the tasks x agents x attempts expansion. The CLI passes a single source; multiple sources are supported programmatically.
+ * Source jobs this job derives from. 'regrade' creates one regrade trial per matching source trial. 'diff' compares the normal target expansion against the sources and creates only required regrades and reruns. All source jobs must use the same action.
  */
 export type SourceJobs = SourceJobConfig[]
 export type DownloadDir1 = (string | null)
@@ -356,6 +363,7 @@ override_gpus?: OverrideGpus
 override_memory_mb?: OverrideMemoryMb
 override_storage_mb?: OverrideStorageMb
 override_tpu?: (TpuSpec | null)
+stream?: Stream
 suppress_override_warnings?: SuppressOverrideWarnings
 type?: (EnvironmentType | null)
 [k: string]: unknown
@@ -421,10 +429,11 @@ wait_multiplier?: WaitMultiplier
 /**
  * A source job this job derives from.
  *
- * ``action`` names the derivation and must be stated explicitly; only
- * ``regrade`` exists today. A ``hub`` source records only the hub job
- * UUID; a ``local`` source records the job directory path plus its UUID
- * when known.
+ * ``action`` names the derivation and must be stated explicitly. ``regrade``
+ * derives one regrade trial per matching source trial. ``diff`` compares the
+ * source against the target job and derives only the required regrades and
+ * reruns. A ``hub`` source records only the hub job UUID; a ``local`` source
+ * records the job directory path plus its UUID when known.
  */
 export interface SourceJobConfig {
 action: Action
