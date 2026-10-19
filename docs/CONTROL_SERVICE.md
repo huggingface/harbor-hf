@@ -227,7 +227,9 @@ model as `AGENT_JUDGE_API_URL` and `AGENT_JUDGE_MODEL`. Harbor then resolves
 the task's `${AGENT_JUDGE_API_KEY:-}` verifier environment entry from the
 parent Job environment. The run record and trial configuration contain no
 judge key. A different dataset or a verifier environment override blocks the
-credential. This grant does not replace the separate reviewed agent connection.
+credential. These checks apply to both HF provider runs and reviewed agent
+connections. Agent and judge keys must differ; the judge key never replaces
+the agent's inference credential.
 
 Admission and repository inspection occur before model inference. A missing
 token, denied repository, missing commit, malformed source, or native Harbor
